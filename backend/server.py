@@ -1981,29 +1981,13 @@ if __name__ == '__main__':
     # Get port from environment (Railway/Render provide this)
     port = int(os.environ.get('PORT', 5000))
     
-    # Check for development mode flag
-    dev_mode = '--dev' in sys.argv or '-d' in sys.argv or config.DEBUG
-    
     print("=" * 50)
     print(f"🚀 {config.APP_NAME} Backend Server")
     print("=" * 50)
     print(f"📍 Running on: http://0.0.0.0:{port}")
     print(f"📚 API Docs: /api/health")
     print(f"💾 Database: {'PostgreSQL' if config.USE_POSTGRES else 'SQLite'}")
+    print("=" * 50)
     
-    if dev_mode:
-        print("⚠️  Mode: DEVELOPMENT (Flask)")
-        print("=" * 50)
-        app.run(debug=True, port=port, host='0.0.0.0')
-    else:
-        print("✅ Mode: PRODUCTION (Gunicorn/Waitress)")
-        print("=" * 50)
-        # Use gunicorn on Linux (Railway/Render), waitress on Windows
-        try:
-            import gunicorn
-            # Running on Linux - will be started by Procfile
-            app.run(host='0.0.0.0', port=port)
-        except ImportError:
-            # Running on Windows
-            from waitress import serve
-            serve(app, host='0.0.0.0', port=port, threads=4)
+    # Run Flask server
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

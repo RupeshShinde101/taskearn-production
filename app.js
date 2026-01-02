@@ -660,8 +660,12 @@ function deserializeTasks(tasks) {
     return tasks.map(t => deserializeTask(t));
 }
 
-// Task Data
-let tasks = [
+// Task Data - Initially empty, loaded from server
+// Demo tasks are only shown if server is unavailable
+let tasks = [];
+
+// Demo tasks for offline/fallback mode
+const DEMO_TASKS = [
     {
         id: 1,
         title: "Need help with laundry pickup",
@@ -1000,6 +1004,83 @@ document.addEventListener('click', function(e) {
 // INITIALIZATION
 // ========================================
 
+// Update map markers when tasks change
+function updateMapMarkers() {
+    if (!map) return;
+    
+    // Clear existing markers
+    taskMarkers.forEach(marker => marker.remove());
+    taskMarkers = [];
+    
+    // Add markers for active tasks
+    tasks.filter(t => t.status === 'active').forEach(task => {
+        if (task.location && task.location.lat && task.location.lng) {
+            const marker = L.marker([task.location.lat, task.location.lng], {
+                icon: L.divIcon({
+                    className: 'task-marker',
+                    html: `<div class="marker-pin" style="background: var(--primary-gradient)"><i class="fas fa-tasks"></i></div>`,
+                    iconSize: [30, 42],
+                    iconAnchor: [15, 42]
+                })
+            }).addTo(map);
+            
+            marker.bindPopup(`
+                <div class="task-popup">
+                    <h4>${task.title}</h4>
+                    <p>${task.description}</p>
+                    <span class="task-price">₹${task.price}</span>
+                </div>
+            `);
+            
+            taskMarkers.push(marker);
+        }
+    });
+}
+
+// Load tasks from backend API
+async function loadTasksFromServer() {
+    try {
+        console.log('📡 Loading tasks from server...');
+        if (typeof TasksAPI !== 'undefined' && TasksAPI.getAll) {
+            const result = await TasksAPI.getAll();
+            if (result.success && result.tasks) {
+                // Merge server tasks with local tasks (avoiding duplicates)
+                const serverTasks = result.tasks.map(t => ({
+                    ...t,
+                    postedAt: new Date(t.postedAt),
+                    expiresAt: new Date(t.expiresAt)
+                }));
+                
+                // Keep only server tasks (they are the source of truth)
+                // But also keep any local-only tasks that haven't been synced
+                const localOnlyTasks = tasks.filter(t => t.localOnly === true);
+                tasks = [...serverTasks, ...localOnlyTasks];
+                
+                console.log('✅ Loaded', serverTasks.length, 'tasks from server');
+                renderTasks();
+                updateMapMarkers();
+                return true;
+            } else {
+                // Server returned no tasks or error - use demo tasks as fallback
+                if (tasks.length === 0 && typeof DEMO_TASKS !== 'undefined') {
+                    tasks = [...DEMO_TASKS];
+                    console.log('⚠️ No server tasks, using demo tasks');
+                }
+            }
+        }
+        console.log('⚠️ TasksAPI not available, using local tasks');
+        return false;
+    } catch (error) {
+        console.error('❌ Error loading tasks:', error);
+        // Use demo tasks as fallback on error
+        if (tasks.length === 0 && typeof DEMO_TASKS !== 'undefined') {
+            tasks = [...DEMO_TASKS];
+            console.log('⚠️ Server error, using demo tasks');
+        }
+        return false;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 TaskEarn Starting...');
     console.log('📦 localStorage available:', STORAGE_AVAILABLE);
@@ -1043,8 +1124,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Setup UI
     setupEventListeners();
     setMinDateTime();
+    
+    // Load tasks from server (replaces demo tasks)
+    await loadTasksFromServer();
+    
+    // Fallback render if server load failed
     renderTasks();
     startTaskTimers();
+    
+    // Refresh tasks from server every 30 seconds
+    setInterval(loadTasksFromServer, 30000);
     
     console.log('✅ TaskEarn Ready!');
 });

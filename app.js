@@ -2089,7 +2089,7 @@ function completeTask(taskId) {
 
 // Show task completion modal
 function showTaskCompletionModal(task) {
-    const platformFee = Math.ceil(task.price * 0.02); // 2% platform fee
+    const platformFee = Math.ceil(task.price * 0.10); // 10% platform fee
     const totalPayable = task.price + platformFee;
     
     const content = `
@@ -2130,7 +2130,7 @@ async function payForCompletedTask(taskId) {
         return;
     }
     
-    const platformFee = Math.ceil(task.price * 0.02); // 2% platform fee
+    const platformFee = Math.ceil(task.price * 0.10); // 10% platform fee
     const totalPayable = task.price + platformFee;
     
     // Try Razorpay for real payment
@@ -2304,7 +2304,7 @@ function showPaymentSuccessModal(task, totalPayable, platformFee) {
                     <span>₹${task.price}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span>Platform Fee (2%):</span>
+                    <span>Platform Fee (10%):</span>
                     <span>₹${platformFee}</span>
                 </div>
                 <hr style="border-color: rgba(255,255,255,0.1); margin: 10px 0;">
@@ -2792,7 +2792,7 @@ function renderPostedTasks() {
     }
 
     el.innerHTML = myPostedTasks.map(t => {
-        const platformFee = Math.ceil(t.price * 0.02);
+        const platformFee = Math.ceil(t.price * 0.10); // 10% platform fee
         const totalPayable = t.price + platformFee;
         
         let actionButtons = '';
@@ -2808,7 +2808,7 @@ function renderPostedTasks() {
                         <span>Task Amount:</span><span>₹${t.price}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                        <span>Platform Fee (2%):</span><span>₹${platformFee}</span>
+                        <span>Platform Fee (10%):</span><span>₹${platformFee}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; font-weight: 600; border-top: 1px solid rgba(251,191,36,0.3); padding-top: 8px;">
                         <span>Total Payable:</span><span style="color: #fbbf24;">₹${totalPayable}</span>

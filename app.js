@@ -2417,7 +2417,7 @@ function showPaymentSuccessModal(task, totalPayable, platformFee) {
 // FORM HANDLERS
 // ========================================
 
-function handleTaskSubmit(event) {
+async function handleTaskSubmit(event) {
     event.preventDefault();
 
     if (!currentUser) {
@@ -2441,8 +2441,7 @@ function handleTaskSubmit(event) {
     const serviceCharge = getServiceCharge(category);
     const totalPayable = totalPrice + serviceCharge;
 
-    const newTask = {
-        id: Date.now(),
+    const taskData = {
         title: document.getElementById('modalTaskTitle').value,
         category: category,
         description: document.getElementById('modalTaskDescription').value,
@@ -2453,11 +2452,33 @@ function handleTaskSubmit(event) {
         },
         price: totalPrice,
         serviceCharge: serviceCharge,
-        totalPaid: totalPayable,
+        totalPaid: totalPayable
+    };
+
+    // Try to save to server first
+    let serverTaskId = null;
+    try {
+        if (typeof TasksAPI !== 'undefined' && TasksAPI.create) {
+            const result = await TasksAPI.create(taskData);
+            if (result.success) {
+                serverTaskId = result.taskId;
+                console.log('✅ Task saved to server with ID:', serverTaskId);
+            } else {
+                console.log('⚠️ Server save failed:', result.message);
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error saving task to server:', error);
+    }
+
+    const newTask = {
+        id: serverTaskId || Date.now(),
+        ...taskData,
         postedBy: currentUser,
         postedAt: new Date(),
         expiresAt: new Date(Date.now() + 12 * 3600000),
-        status: 'active'
+        status: 'active',
+        localOnly: !serverTaskId // Mark as local-only if server save failed
     };
 
     tasks.unshift(newTask);
@@ -2483,6 +2504,9 @@ function handleTaskSubmit(event) {
     renderTasks();
     addTaskMarkers();
     renderDashboard();
+    
+    // Refresh tasks from server to sync
+    setTimeout(() => loadTasksFromServer(), 1000);
     
     // Show success modal with edit option
     showTaskPostedSuccess(newTask);
@@ -2709,6 +2733,7 @@ function updateNavForUser() {
     const nav = document.querySelector('.nav-buttons');
     const notificationWrapper = document.getElementById('notificationWrapper');
     const mobileNotificationItem = document.getElementById('mobileNotificationItem');
+    const mobileMenu = document.getElementById('mobileMenu');
     
     if (nav && currentUser) {
         nav.innerHTML = `
@@ -2719,6 +2744,36 @@ function updateNavForUser() {
                 <button class="btn btn-primary" onclick="logout()">Logout</button>
             </div>
         `;
+        
+        // Update mobile menu for logged-in user
+        if (mobileMenu) {
+            const mobileMenuList = mobileMenu.querySelector('ul');
+            if (mobileMenuList) {
+                // Find and update/replace the login/signup buttons
+                const existingAuthButtons = mobileMenuList.querySelectorAll('li:has(button)');
+                existingAuthButtons.forEach(btn => btn.remove());
+                
+                // Remove old profile items if any
+                const oldProfileItems = mobileMenuList.querySelectorAll('.mobile-profile-item, .mobile-logout-item, .mobile-dashboard-item');
+                oldProfileItems.forEach(item => item.remove());
+                
+                // Add user profile and logout for mobile
+                const profileLi = document.createElement('li');
+                profileLi.className = 'mobile-profile-item';
+                profileLi.innerHTML = `<a href="#" onclick="openUserProfile(); toggleMobileMenu();"><i class="fas fa-user-circle"></i> ${currentUser.name}</a>`;
+                mobileMenuList.appendChild(profileLi);
+                
+                const dashboardLi = document.createElement('li');
+                dashboardLi.className = 'mobile-dashboard-item';
+                dashboardLi.innerHTML = `<a href="#my-tasks" onclick="scrollToSection('my-tasks'); toggleMobileMenu();"><i class="fas fa-tasks"></i> My Tasks</a>`;
+                mobileMenuList.appendChild(dashboardLi);
+                
+                const logoutLi = document.createElement('li');
+                logoutLi.className = 'mobile-logout-item';
+                logoutLi.innerHTML = `<button class="btn btn-primary" onclick="logout(); toggleMobileMenu();">Logout</button>`;
+                mobileMenuList.appendChild(logoutLi);
+            }
+        }
         
         // Show notification bell when logged in
         if (notificationWrapper) {
@@ -2732,6 +2787,27 @@ function updateNavForUser() {
         notifications = loadNotifications();
         updateNotificationUI();
     } else {
+        // Reset mobile menu for logged-out user
+        if (mobileMenu) {
+            const mobileMenuList = mobileMenu.querySelector('ul');
+            if (mobileMenuList) {
+                // Remove profile items
+                const profileItems = mobileMenuList.querySelectorAll('.mobile-profile-item, .mobile-logout-item, .mobile-dashboard-item');
+                profileItems.forEach(item => item.remove());
+                
+                // Check if login/signup buttons exist, if not add them
+                if (!mobileMenuList.querySelector('button')) {
+                    const loginLi = document.createElement('li');
+                    loginLi.innerHTML = `<button class="btn btn-outline" onclick="openModal('loginModal')">Login</button>`;
+                    mobileMenuList.appendChild(loginLi);
+                    
+                    const signupLi = document.createElement('li');
+                    signupLi.innerHTML = `<button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button>`;
+                    mobileMenuList.appendChild(signupLi);
+                }
+            }
+        }
+        
         // Hide notification bell when logged out
         if (notificationWrapper) {
             notificationWrapper.style.display = 'none';

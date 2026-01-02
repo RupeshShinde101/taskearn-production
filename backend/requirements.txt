@@ -8,14 +8,9 @@ Werkzeug==3.0.1
 # Authentication
 PyJWT==2.8.0
 
-# Database
-psycopg2-binary==2.9.9
-
 # Environment Variables
 python-dotenv==1.0.0
 
 # Payment Gateway
 razorpay==1.4.1
-
-# Validation
 email-validator==2.1.0

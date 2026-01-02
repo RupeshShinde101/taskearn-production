@@ -2457,18 +2457,34 @@ async function handleTaskSubmit(event) {
 
     // Try to save to server first
     let serverTaskId = null;
+    let serverSaveError = null;
+    
+    // Check if user has API token
+    const hasApiToken = localStorage.getItem('taskearn_token');
+    
+    if (!hasApiToken) {
+        console.log('⚠️ No API token - user logged in locally. Need to re-register via API.');
+        showToast('⚠️ Please logout and register again to post tasks visible to others');
+    }
+    
     try {
-        if (typeof TasksAPI !== 'undefined' && TasksAPI.create) {
+        if (typeof TasksAPI !== 'undefined' && TasksAPI.create && hasApiToken) {
             const result = await TasksAPI.create(taskData);
             if (result.success) {
                 serverTaskId = result.taskId;
                 console.log('✅ Task saved to server with ID:', serverTaskId);
+                showToast('✅ Task posted successfully!');
             } else {
+                serverSaveError = result.message;
                 console.log('⚠️ Server save failed:', result.message);
+                if (result.message && result.message.includes('token')) {
+                    showToast('⚠️ Session expired. Please login again.');
+                }
             }
         }
     } catch (error) {
         console.error('❌ Error saving task to server:', error);
+        serverSaveError = error.message;
     }
 
     const newTask = {
@@ -2480,6 +2496,11 @@ async function handleTaskSubmit(event) {
         status: 'active',
         localOnly: !serverTaskId // Mark as local-only if server save failed
     };
+    
+    // Show warning if task is local only
+    if (!serverTaskId) {
+        showToast('⚠️ Task saved locally only - others cannot see it. Please re-login via the app.');
+    }
 
     tasks.unshift(newTask);
     myPostedTasks.unshift(newTask);
@@ -2551,13 +2572,41 @@ async function handleLogin(event) {
                     renderDashboard();
                     return;
                 } else {
-                    showToast('❌ ' + result.message);
+                    // API login failed - check if user exists locally and try to migrate
+                    const localUser = await validateLogin(email, password);
+                    if (localUser) {
+                        // User exists locally but not on server - try to register them
+                        console.log('🔄 Migrating local user to server...');
+                        const registerResult = await AuthAPI.register({
+                            name: localUser.name,
+                            email: email,
+                            password: password,
+                            phone: localUser.phone || '',
+                            dob: localUser.dob || '2000-01-01'
+                        });
+                        
+                        if (registerResult.success) {
+                            currentUser = registerResult.user;
+                            myPostedTasks = [];
+                            myAcceptedTasks = [];
+                            myCompletedTasks = [];
+                            console.log('✅ User migrated to server successfully');
+                            showToast('✅ Account upgraded! Welcome back, ' + currentUser.name + '!');
+                            closeModal('loginModal');
+                            document.getElementById('loginEmail').value = '';
+                            document.getElementById('loginPassword').value = '';
+                            updateNavForUser();
+                            renderDashboard();
+                            return;
+                        }
+                    }
+                    showToast('❌ ' + result.message + '. Try signing up if new user.');
                     return;
                 }
             }
         }
         
-        // Fallback to localStorage validation
+        // Fallback to localStorage validation (offline mode)
         const user = await validateLogin(email, password);
         
         if (user) {
@@ -2570,8 +2619,9 @@ async function handleLogin(event) {
             const sessionSaved = saveCurrentSession(currentUser);
             console.log('✅ Login successful:', currentUser.name);
             console.log('📋 Loaded', myPostedTasks.length, 'posted tasks');
+            console.log('⚠️ Offline mode - tasks will not sync with other users');
             
-            showToast('Welcome back, ' + currentUser.name + '!');
+            showToast('Welcome back, ' + currentUser.name + '! (Offline mode)');
             closeModal('loginModal');
             document.getElementById('loginEmail').value = '';
             document.getElementById('loginPassword').value = '';

@@ -2066,27 +2066,262 @@ function showTaskPostedSuccess(task) {
 function completeTask(taskId) {
     const task = myAcceptedTasks.find(t => t.id === taskId);
     if (task && currentUser) {
-        task.status = 'completed';
+        // Mark task as pending payment (helper completed, waiting for poster to pay)
+        task.status = 'pending_payment';
         task.completedAt = new Date().toISOString();
-        myCompletedTasks.push(task);
-        myAcceptedTasks = myAcceptedTasks.filter(t => t.id !== taskId);
-
-        // Calculate total earnings (task price + service charge based on category)
-        const serviceCharge = getServiceCharge(task.category);
-        const taskEarnings = task.price + serviceCharge;
-        const newEarnings = (currentUser.totalEarnings || 0) + taskEarnings;
-        const newCompleted = (currentUser.tasksCompleted || 0) + 1;
+        task.helperId = currentUser.id;
+        task.helperName = currentUser.name;
         
+        // Update task in accepted tasks
         updateUserData(currentUser.id, {
-            totalEarnings: newEarnings,
-            tasksCompleted: newCompleted,
-            acceptedTasks: serializeTasks(myAcceptedTasks),
-            completedTasks: serializeTasks(myCompletedTasks)
+            acceptedTasks: serializeTasks(myAcceptedTasks)
         });
-
-        showToast('🎉 Earned ₹' + taskEarnings + ' (₹' + task.price + ' + ₹' + serviceCharge + ' service)! Total: ₹' + newEarnings);
+        
+        // Notify task poster to pay
+        showToast('✅ Task marked complete! Waiting for payment from task poster.');
+        
+        // Show completion modal with payment info
+        showTaskCompletionModal(task);
+        
         renderDashboard();
     }
+}
+
+// Show task completion modal
+function showTaskCompletionModal(task) {
+    const platformFee = Math.ceil(task.price * 0.02); // 2% platform fee
+    const totalPayable = task.price + platformFee;
+    
+    const content = `
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 60px; margin-bottom: 20px;">🎉</div>
+            <h2 style="color: #4ade80; margin-bottom: 15px;">Task Completed!</h2>
+            <p style="margin-bottom: 20px;">Your task completion has been submitted.</p>
+            
+            <div style="background: rgba(74, 222, 128, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px;">${task.title}</h3>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span>Task Amount:</span>
+                    <span>₹${task.price}</span>
+                </div>
+                <hr style="border-color: rgba(255,255,255,0.1); margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 600;">
+                    <span>You'll Receive:</span>
+                    <span style="color: #4ade80;">₹${task.price}</span>
+                </div>
+            </div>
+            
+            <p style="color: #888; font-size: 14px;">
+                The task poster will be notified to complete the payment.<br>
+                You'll receive the amount in your wallet once payment is confirmed.
+            </p>
+        </div>
+    `;
+    
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    openModal('taskSuccessModal');
+}
+
+// Process payment for completed task (called by task poster)
+async function payForCompletedTask(taskId) {
+    const task = myPostedTasks.find(t => t.id === taskId);
+    if (!task || !currentUser) {
+        showToast('❌ Task not found');
+        return;
+    }
+    
+    const platformFee = Math.ceil(task.price * 0.02); // 2% platform fee
+    const totalPayable = task.price + platformFee;
+    
+    // Try Razorpay for real payment
+    if (typeof addMoneyToWallet === 'function' && typeof Razorpay !== 'undefined') {
+        initiateTaskPayment(task, totalPayable, platformFee);
+    } else {
+        // Fallback to wallet/local payment
+        processTaskPaymentLocal(task, totalPayable, platformFee);
+    }
+}
+
+// Initiate Razorpay payment for task
+function initiateTaskPayment(task, totalPayable, platformFee) {
+    const userStr = localStorage.getItem('taskearn_user') || localStorage.getItem('taskearn_current_user');
+    if (!userStr) {
+        showToast('❌ Please login first');
+        return;
+    }
+    
+    const user = JSON.parse(userStr);
+    const RAZORPAY_KEY = 'rzp_live_Rz0lerO1zBlLgQ';
+    
+    const options = {
+        key: RAZORPAY_KEY,
+        amount: totalPayable * 100, // Razorpay expects paise
+        currency: 'INR',
+        name: 'TaskEarn',
+        description: `Payment for: ${task.title}`,
+        handler: function(response) {
+            // Payment successful
+            console.log('Payment successful:', response);
+            completeTaskPayment(task, totalPayable, platformFee, response.razorpay_payment_id);
+        },
+        prefill: {
+            name: user.name || '',
+            email: user.email || '',
+            contact: user.phone || ''
+        },
+        notes: {
+            task_id: task.id,
+            task_title: task.title,
+            helper_id: task.helperId,
+            platform_fee: platformFee
+        },
+        theme: {
+            color: '#667eea'
+        },
+        modal: {
+            ondismiss: function() {
+                showToast('Payment cancelled');
+            }
+        }
+    };
+    
+    const razorpay = new Razorpay(options);
+    razorpay.on('payment.failed', function(response) {
+        showToast('❌ Payment failed: ' + response.error.description);
+    });
+    razorpay.open();
+}
+
+// Complete task payment and transfer to helper
+function completeTaskPayment(task, totalPayable, platformFee, paymentId) {
+    // Update task status
+    task.status = 'paid';
+    task.paidAt = new Date().toISOString();
+    task.paymentId = paymentId;
+    task.platformFee = platformFee;
+    
+    // Move to completed tasks for poster
+    myCompletedTasks.push(task);
+    myPostedTasks = myPostedTasks.filter(t => t.id !== task.id);
+    
+    // Update poster's data
+    updateUserData(currentUser.id, {
+        postedTasks: serializeTasks(myPostedTasks),
+        completedTasks: serializeTasks(myCompletedTasks)
+    });
+    
+    // Credit helper's wallet (in local storage for demo)
+    creditHelperWallet(task.helperId, task.price, task);
+    
+    showToast('✅ Payment of ₹' + totalPayable + ' successful! (₹' + task.price + ' to helper + ₹' + platformFee + ' platform fee)');
+    renderDashboard();
+    
+    // Show success modal
+    showPaymentSuccessModal(task, totalPayable, platformFee);
+}
+
+// Process payment locally (without Razorpay)
+function processTaskPaymentLocal(task, totalPayable, platformFee) {
+    // Check wallet balance
+    const walletStr = localStorage.getItem('taskearn_local_wallet');
+    const wallet = walletStr ? JSON.parse(walletStr) : { balance: 0 };
+    
+    if (wallet.balance < totalPayable) {
+        showToast('❌ Insufficient wallet balance. Please add ₹' + (totalPayable - wallet.balance) + ' to your wallet.');
+        window.location.href = 'wallet.html';
+        return;
+    }
+    
+    // Deduct from wallet
+    wallet.balance -= totalPayable;
+    wallet.transactions = wallet.transactions || [];
+    wallet.transactions.unshift({
+        id: Date.now(),
+        type: 'debit',
+        amount: totalPayable,
+        description: `Payment for task: ${task.title}`,
+        date: new Date().toISOString()
+    });
+    localStorage.setItem('taskearn_local_wallet', JSON.stringify(wallet));
+    
+    // Complete payment
+    completeTaskPayment(task, totalPayable, platformFee, 'local_' + Date.now());
+}
+
+// Credit helper's wallet
+function creditHelperWallet(helperId, amount, task) {
+    // For demo, we'll store in a shared wallet system
+    const helperWalletsStr = localStorage.getItem('taskearn_helper_wallets') || '{}';
+    const helperWallets = JSON.parse(helperWalletsStr);
+    
+    if (!helperWallets[helperId]) {
+        helperWallets[helperId] = { balance: 0, transactions: [] };
+    }
+    
+    helperWallets[helperId].balance += amount;
+    helperWallets[helperId].transactions.unshift({
+        id: Date.now(),
+        type: 'credit',
+        amount: amount,
+        description: `Earned from task: ${task.title}`,
+        date: new Date().toISOString()
+    });
+    
+    localStorage.setItem('taskearn_helper_wallets', JSON.stringify(helperWallets));
+    
+    // Also update the current user's wallet if they're the helper
+    const currentUserStr = localStorage.getItem('taskearn_current_user') || localStorage.getItem('taskearn_user');
+    if (currentUserStr) {
+        const currentUserData = JSON.parse(currentUserStr);
+        if (currentUserData.id === helperId) {
+            const localWalletStr = localStorage.getItem('taskearn_local_wallet');
+            const localWallet = localWalletStr ? JSON.parse(localWalletStr) : { balance: 0, transactions: [], totalEarned: 0 };
+            localWallet.balance += amount;
+            localWallet.totalEarned = (localWallet.totalEarned || 0) + amount;
+            localWallet.transactions.unshift({
+                id: Date.now(),
+                type: 'earned',
+                amount: amount,
+                description: `Earned from task: ${task.title}`,
+                date: new Date().toISOString()
+            });
+            localStorage.setItem('taskearn_local_wallet', JSON.stringify(localWallet));
+        }
+    }
+}
+
+// Show payment success modal
+function showPaymentSuccessModal(task, totalPayable, platformFee) {
+    const content = `
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 60px; margin-bottom: 20px;">💰</div>
+            <h2 style="color: #4ade80; margin-bottom: 15px;">Payment Successful!</h2>
+            
+            <div style="background: rgba(74, 222, 128, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px;">${task.title}</h3>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span>Task Amount:</span>
+                    <span>₹${task.price}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span>Platform Fee (2%):</span>
+                    <span>₹${platformFee}</span>
+                </div>
+                <hr style="border-color: rgba(255,255,255,0.1); margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 600;">
+                    <span>Total Paid:</span>
+                    <span style="color: #4ade80;">₹${totalPayable}</span>
+                </div>
+            </div>
+            
+            <p style="color: #4ade80; font-size: 14px;">
+                ✅ ₹${task.price} has been credited to ${task.helperName || 'the helper'}'s wallet
+            </p>
+        </div>
+    `;
+    
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    openModal('taskSuccessModal');
 }
 
 // ========================================
@@ -2556,17 +2791,60 @@ function renderPostedTasks() {
         return;
     }
 
-    el.innerHTML = myPostedTasks.map(t => `
-        <div class="my-task-card">
-            <div class="my-task-card-header">
-                <span class="task-category">${formatCategory(t.category)}</span>
-                <span class="task-status ${t.status}">${t.status}</span>
+    el.innerHTML = myPostedTasks.map(t => {
+        const platformFee = Math.ceil(t.price * 0.02);
+        const totalPayable = t.price + platformFee;
+        
+        let actionButtons = '';
+        if (t.status === 'active') {
+            actionButtons = `<div class="task-actions"><button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button><button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button></div>`;
+        } else if (t.status === 'pending_payment') {
+            actionButtons = `
+                <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                    <p style="color: #fbbf24; margin-bottom: 8px; font-size: 14px;">
+                        <i class="fas fa-check-circle"></i> ${t.helperName || 'Helper'} completed this task!
+                    </p>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
+                        <span>Task Amount:</span><span>₹${t.price}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
+                        <span>Platform Fee (2%):</span><span>₹${platformFee}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-weight: 600; border-top: 1px solid rgba(251,191,36,0.3); padding-top: 8px;">
+                        <span>Total Payable:</span><span style="color: #fbbf24;">₹${totalPayable}</span>
+                    </div>
+                    <button class="btn btn-success" style="width: 100%; margin-top: 12px;" onclick="payForCompletedTask(${t.id})">
+                        <i class="fas fa-credit-card"></i> Pay ₹${totalPayable} Now
+                    </button>
+                </div>
+            `;
+        } else if (t.status === 'paid') {
+            actionButtons = `
+                <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                    <p style="color: #4ade80; margin: 0;">
+                        <i class="fas fa-check-circle"></i> Payment completed - ₹${t.price} sent to ${t.helperName || 'helper'}
+                    </p>
+                </div>
+            `;
+        }
+        
+        const statusColor = t.status === 'pending_payment' ? 'style="background: #fbbf24; color: #000;"' : 
+                           t.status === 'paid' ? 'style="background: #4ade80; color: #000;"' : '';
+        const statusText = t.status === 'pending_payment' ? '⏳ Awaiting Payment' : 
+                          t.status === 'paid' ? '✅ Paid' : t.status;
+        
+        return `
+            <div class="my-task-card">
+                <div class="my-task-card-header">
+                    <span class="task-category">${formatCategory(t.category)}</span>
+                    <span class="task-status ${t.status}" ${statusColor}>${statusText}</span>
+                </div>
+                <h4>${t.title}</h4>
+                <div class="task-meta"><span>₹${t.price}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
+                ${actionButtons}
             </div>
-            <h4>${t.title}</h4>
-            <div class="task-meta"><span>₹${t.price}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
-            ${t.status === 'active' ? `<div class="task-actions"><button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button><button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button></div>` : ''}
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function renderAcceptedTasks() {
@@ -2974,6 +3252,8 @@ window.acceptTask = acceptTask;
 window.cancelTask = cancelTask;
 window.deleteTask = deleteTask;
 window.completeTask = completeTask;
+window.payForCompletedTask = payForCompletedTask;
+window.initiateTaskPayment = initiateTaskPayment;
 window.openEditTask = openEditTask;
 window.selectBudgetIncrease = selectBudgetIncrease;
 window.updateNewBudget = updateNewBudget;

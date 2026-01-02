@@ -8,7 +8,7 @@
 // For local development: 'http://localhost:5000/api'
 // For Railway: 'https://your-app-name.up.railway.app/api'
 // For Render: 'https://your-app-name.onrender.com/api'
-const API_BASE_URL = window.TASKEARN_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = window.TASKEARN_API_URL || 'https://web-production-b8388.up.railway.app/api';
 
 // Store auth token
 let authToken = localStorage.getItem('taskearn_token');

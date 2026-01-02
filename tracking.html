@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Tracking - TaskEarn</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Mapbox GL JS -->
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css' rel='stylesheet' />
+    
+    <!-- Mapbox Directions -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.1/mapbox-gl-directions.js"></script>
+    <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.1/mapbox-gl-directions.css">
+    
+    <link rel="stylesheet" href="styles.css">
+    
+    <style>
+        /* Tracking Page Specific Styles */
+        .tracking-container {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            height: calc(100vh - 70px);
+            margin-top: 70px;
+        }
+
+        .map-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #trackingMap {
+            width: 100%;
+            height: 100%;
+        }
+
+        .tracking-sidebar {
+            background: var(--white);
+            padding: 24px;
+            overflow-y: auto;
+            border-left: 1px solid var(--light);
+            box-shadow: -4px 0 20px rgba(0,0,0,0.05);
+        }
+
+        .tracking-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--light);
+        }
+
+        .tracking-status-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .tracking-status-icon.active {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        .tracking-status-icon.pending {
+            background: var(--warning);
+            color: white;
+        }
+
+        .tracking-status-icon.completed {
+            background: var(--success);
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); }
+        }
+
+        .tracking-info h2 {
+            font-size: 1.25rem;
+            margin-bottom: 4px;
+        }
+
+        .tracking-info p {
+            color: var(--gray);
+            font-size: 0.9rem;
+        }
+
+        .eta-card {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .eta-card h3 {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 8px;
+        }
+
+        .eta-time {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .eta-distance {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-top: 8px;
+        }
+
+        .tracking-timeline {
+            margin-bottom: 24px;
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 16px;
+            padding: 16px 0;
+            position: relative;
+        }
+
+        .timeline-item:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            left: 15px;
+            top: 48px;
+            width: 2px;
+            height: calc(100% - 32px);
+            background: var(--light);
+        }
+
+        .timeline-item.completed:not(:last-child)::after {
+            background: var(--success);
+        }
+
+        .timeline-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--light);
+            color: var(--gray);
+            flex-shrink: 0;
+            z-index: 1;
+        }
+
+        .timeline-item.completed .timeline-icon {
+            background: var(--success);
+            color: white;
+        }
+
+        .timeline-item.active .timeline-icon {
+            background: var(--primary);
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        .timeline-content h4 {
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+
+        .timeline-content p {
+            font-size: 0.85rem;
+            color: var(--gray);
+        }
+
+        .timeline-time {
+            font-size: 0.75rem;
+            color: var(--gray-light);
+            margin-top: 4px;
+        }
+
+        .helper-card {
+            background: var(--light);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        .helper-card h4 {
+            font-size: 0.85rem;
+            color: var(--gray);
+            margin-bottom: 12px;
+        }
+
+        .helper-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .helper-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 1.2rem;
+        }
+
+        .helper-details h5 {
+            font-size: 1rem;
+            margin-bottom: 4px;
+        }
+
+        .helper-rating {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: var(--warning);
+            font-size: 0.85rem;
+        }
+
+        .helper-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .helper-actions button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-call {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-call:hover {
+            background: #059669;
+        }
+
+        .btn-message {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-message:hover {
+            background: var(--primary-dark);
+        }
+
+        .task-details {
+            background: var(--white);
+            border: 1px solid var(--light);
+            border-radius: var(--radius);
+            padding: 16px;
+        }
+
+        .task-details h4 {
+            font-size: 0.85rem;
+            color: var(--gray);
+            margin-bottom: 12px;
+        }
+
+        .task-detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--light);
+        }
+
+        .task-detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .task-detail-row span:first-child {
+            color: var(--gray);
+            font-size: 0.9rem;
+        }
+
+        .task-detail-row span:last-child {
+            font-weight: 500;
+        }
+
+        /* Map Controls */
+        .map-controls {
+            position: absolute;
+            bottom: 24px;
+            left: 24px;
+            z-index: 10;
+            display: flex;
+            gap: 12px;
+        }
+
+        .map-control-btn {
+            padding: 12px 20px;
+            background: white;
+            border: none;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .map-control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-xl);
+        }
+
+        .map-control-btn.primary {
+            background: var(--gradient);
+            color: white;
+        }
+
+        /* Live indicator */
+        .live-indicator {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            z-index: 10;
+            background: white;
+            padding: 10px 16px;
+            border-radius: 30px;
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+
+        .live-dot {
+            width: 10px;
+            height: 10px;
+            background: #ef4444;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Custom Mapbox marker */
+        .delivery-marker {
+            width: 50px;
+            height: 50px;
+            background: var(--gradient);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+            border: 3px solid white;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .delivery-marker:hover {
+            transform: scale(1.1);
+        }
+
+        .destination-marker {
+            width: 40px;
+            height: 40px;
+            background: #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+            border: 3px solid white;
+        }
+
+        .pickup-marker {
+            width: 40px;
+            height: 40px;
+            background: #10b981;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+            border: 3px solid white;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .tracking-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 60vh auto;
+            }
+
+            .tracking-sidebar {
+                border-left: none;
+                border-top: 1px solid var(--light);
+            }
+        }
+
+        /* No task state */
+        .no-tracking {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .no-tracking i {
+            font-size: 64px;
+            color: var(--gray-light);
+            margin-bottom: 24px;
+        }
+
+        .no-tracking h2 {
+            margin-bottom: 12px;
+            color: var(--dark);
+        }
+
+        .no-tracking p {
+            color: var(--gray);
+            margin-bottom: 24px;
+        }
+
+        /* Share location toggle */
+        .share-location-toggle {
+            background: var(--light);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .toggle-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toggle-info i {
+            color: var(--primary);
+            font-size: 1.2rem;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--gray-light);
+            transition: 0.4s;
+            border-radius: 26px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background: var(--gradient);
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        /* Task Selection Styles */
+        .task-selection {
+            padding: 20px 0;
+        }
+
+        .task-selection h3 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .task-select-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px;
+            background: var(--light);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .task-select-item:hover {
+            background: var(--primary);
+            color: white;
+            transform: translateX(8px);
+        }
+
+        .task-select-item:hover .task-price {
+            background: white;
+            color: var(--primary);
+        }
+
+        .task-select-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .task-select-info {
+            flex: 1;
+        }
+
+        .task-select-info h4 {
+            margin-bottom: 4px;
+            font-size: 1rem;
+        }
+
+        .task-select-info p {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .task-price {
+            background: var(--success);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        /* Loading State */
+        .loading-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 20px;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--light);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Task Completed Banner */
+        .task-completed-banner {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .completed-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 40px;
+            color: white;
+        }
+
+        .task-completed-banner h2 {
+            color: var(--success);
+            margin-bottom: 12px;
+        }
+
+        .completed-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        /* Notification Animation */
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        @keyframes slideUp {
+            from { opacity: 1; transform: translateX(-50%) translateY(0); }
+            to { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        }
+
+        /* Last Updated Badge */
+        .last-updated {
+            font-size: 0.75rem;
+            color: var(--gray);
+            text-align: center;
+            margin-top: 8px;
+        }
+    </style>
+
+    <script>
+        // Backend API URL
+        window.TASKEARN_API_URL = 'https://web-production-b8388.up.railway.app/api';
+    </script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="logo">
+                <i class="fas fa-tasks"></i>
+                <span>Task<span class="highlight">Earn</span></span>
+            </a>
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="index.html#find-tasks">Find Tasks</a></li>
+                <li><a href="#" class="active">Live Tracking</a></li>
+            </ul>
+            <div class="nav-buttons">
+                <button class="btn btn-outline" onclick="window.location.href='index.html'">
+                    <i class="fas fa-arrow-left"></i> Back
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Tracking Container -->
+    <div class="tracking-container">
+        <!-- Map Section -->
+        <div class="map-container">
+            <div id="trackingMap"></div>
+            
+            <!-- Live Indicator -->
+            <div class="live-indicator">
+                <div class="live-dot"></div>
+                <span>Live Tracking</span>
+            </div>
+
+            <!-- Map Controls -->
+            <div class="map-controls">
+                <button class="map-control-btn" onclick="centerOnHelper()">
+                    <i class="fas fa-location-crosshairs"></i> Find Helper
+                </button>
+                <button class="map-control-btn primary" onclick="toggleShareLocation()">
+                    <i class="fas fa-share-location"></i> Share My Location
+                </button>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="tracking-sidebar" id="trackingSidebar">
+            <!-- Content will be loaded dynamically -->
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // MAPBOX CONFIGURATION
+        // ========================================
+        
+        // 🔑 Mapbox access token configured
+        mapboxgl.accessToken = 'pk.eyJ1IjoidGFza2Vhcm4iLCJhIjoiY21qd2tsOHZ4NW9zYzNkcXhoZW4zaWM4MCJ9.KQMDzQGhs6qPRj-HhP72dQ';
+
+        let map;
+        let helperMarker;
+        let destinationMarker;
+        let pickupMarker;
+        let userMarker;
+        let currentRoute;
+        let watchId;
+        let trackingInterval;
+        let isSharing = false;
+        let trackingData = null;
+        let currentTaskId = null;
+        let userRole = null; // 'poster' or 'helper'
+
+        // ========================================
+        // INITIALIZE MAP
+        // ========================================
+
+        function initMap() {
+            // Default center (India)
+            const defaultCenter = [77.2090, 28.6139]; // Delhi
+
+            map = new mapboxgl.Map({
+                container: 'trackingMap',
+                style: 'mapbox://styles/mapbox/streets-v12',
+                center: defaultCenter,
+                zoom: 13
+            });
+
+            // Add navigation controls
+            map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+            map.addControl(new mapboxgl.GeolocateControl({
+                positionOptions: { enableHighAccuracy: true },
+                trackUserLocation: true,
+                showUserHeading: true
+            }), 'top-right');
+
+            map.on('load', () => {
+                // Check if user is logged in (both login methods now save to taskearn_user)
+                const userStr = localStorage.getItem('taskearn_user') || localStorage.getItem('taskearn_current_user');
+                
+                if (!userStr) {
+                    showLoginRequired();
+                    return;
+                }
+
+                // Try to get URL params for task tracking
+                const urlParams = new URLSearchParams(window.location.search);
+                const taskId = urlParams.get('task');
+                
+                if (taskId) {
+                    loadTrackingData(taskId);
+                } else {
+                    // Load user's active tasks for tracking
+                    loadUserActiveTasks();
+                }
+            });
+        }
+
+        // ========================================
+        // LOAD USER'S ACTIVE TASKS
+        // ========================================
+
+        async function loadUserActiveTasks() {
+            const token = localStorage.getItem('taskearn_token');
+            showLoadingState();
+            
+            try {
+                const response = await fetch(`${window.TASKEARN_API_URL}/user/active-tracking`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.tasks && data.tasks.length > 0) {
+                    // Show task selection if multiple active tasks
+                    if (data.tasks.length === 1) {
+                        loadTrackingData(data.tasks[0].id);
+                    } else {
+                        showTaskSelection(data.tasks);
+                    }
+                } else {
+                    showNoTrackingState('You have no active tasks being tracked.');
+                }
+            } catch (error) {
+                console.error('Error loading active tasks:', error);
+                showNoTrackingState('Unable to connect to server. Please check your connection.');
+            }
+        }
+
+        // ========================================
+        // LOAD TRACKING DATA
+        // ========================================
+
+        async function loadTrackingData(taskId) {
+            const token = localStorage.getItem('taskearn_token');
+            showLoadingState();
+            
+            try {
+                const response = await fetch(`${window.TASKEARN_API_URL}/tracking/${taskId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    trackingData = data.tracking;
+                    currentTaskId = taskId;
+                    renderTrackingSidebar(trackingData);
+                    
+                    if (trackingData.helperLocation) {
+                        setupMapMarkers(trackingData);
+                    } else {
+                        showWaitingForHelper(trackingData);
+                    }
+                    
+                    startRealTimeTracking(taskId);
+                } else {
+                    showNoTrackingState(data.message || 'Task not found or access denied.');
+                }
+            } catch (error) {
+                console.error('Error loading tracking:', error);
+                showNoTrackingState('Unable to load tracking data. Please try again.');
+            }
+        }
+
+        // ========================================
+        // SHOW TASK SELECTION (Multiple Active Tasks)
+        // ========================================
+
+        function showTaskSelection(tasks) {
+            const sidebar = document.getElementById('trackingSidebar');
+            sidebar.innerHTML = `
+                <div class="task-selection">
+                    <h3><i class="fas fa-list"></i> Select Task to Track</h3>
+                    <p style="color: var(--gray); margin-bottom: 20px;">You have ${tasks.length} active tasks</p>
+                    <div class="task-list">
+                        ${tasks.map(task => `
+                            <div class="task-select-item" onclick="loadTrackingData(${task.id})">
+                                <div class="task-select-icon">
+                                    <i class="fas fa-${task.status === 'accepted' ? 'motorcycle' : 'clock'}"></i>
+                                </div>
+                                <div class="task-select-info">
+                                    <h4>${task.title}</h4>
+                                    <p>${task.status === 'accepted' ? 'In Progress' : 'Waiting for helper'}</p>
+                                    <span class="task-price">₹${task.price}</span>
+                                </div>
+                                <i class="fas fa-chevron-right"></i>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // ========================================
+        // SHOW LOADING STATE
+        // ========================================
+
+        function showLoadingState() {
+            const sidebar = document.getElementById('trackingSidebar');
+            sidebar.innerHTML = `
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>Loading tracking data...</p>
+                </div>
+            `;
+        }
+
+        // ========================================
+        // SHOW WAITING FOR HELPER
+        // ========================================
+
+        function showWaitingForHelper(data) {
+            // Show destination on map
+            if (data.destination && data.destination.lat) {
+                const destEl = document.createElement('div');
+                destEl.className = 'destination-marker';
+                destEl.innerHTML = '<i class="fas fa-flag-checkered"></i>';
+
+                destinationMarker = new mapboxgl.Marker(destEl)
+                    .setLngLat([data.destination.lng, data.destination.lat])
+                    .addTo(map);
+
+                map.flyTo({
+                    center: [data.destination.lng, data.destination.lat],
+                    zoom: 14
+                });
+            }
+        }
+
+        // ========================================
+        // SHOW LOGIN REQUIRED
+        // ========================================
+
+        function showLoginRequired() {
+            const sidebar = document.getElementById('trackingSidebar');
+            sidebar.innerHTML = `
+                <div class="no-tracking">
+                    <i class="fas fa-lock"></i>
+                    <h2>Login Required</h2>
+                    <p>Please login to access live tracking features.</p>
+                    <a href="index.html" class="btn btn-primary">
+                        <i class="fas fa-sign-in-alt"></i> Go to Login
+                    </a>
+                </div>
+            `;
+        }
+
+        // ========================================
+        // RENDER SIDEBAR
+        // ========================================
+
+        function renderTrackingSidebar(data) {
+            const sidebar = document.getElementById('trackingSidebar');
+            
+            const statusIcon = data.status === 'accepted' ? 'active' : 
+                              data.status === 'completed' ? 'completed' : 'pending';
+            const statusText = data.status === 'accepted' ? 'In Progress' :
+                              data.status === 'completed' ? 'Completed' : 'Waiting for Helper';
+
+            // Determine if current user is helper or poster
+            let currentUserId = null;
+            try {
+                const userStr = localStorage.getItem('taskearn_user');
+                if (userStr) {
+                    const user = JSON.parse(userStr);
+                    currentUserId = user.id || user.userId || user.user_id;
+                }
+            } catch (e) {
+                console.error('Error parsing user data:', e);
+            }
+            userRole = data.helperId === currentUserId ? 'helper' : 'poster';
+
+            const helperSection = data.helper ? `
+                <!-- Helper Card -->
+                <div class="helper-card">
+                    <h4>${userRole === 'helper' ? 'CUSTOMER' : 'YOUR HELPER'}</h4>
+                    <div class="helper-info">
+                        <div class="helper-avatar">${data.helper.avatar || data.helper.name.charAt(0)}</div>
+                        <div class="helper-details">
+                            <h5>${data.helper.name}</h5>
+                            <div class="helper-rating">
+                                <i class="fas fa-star"></i>
+                                <span>${data.helper.rating}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="helper-actions">
+                        <button class="btn-call" onclick="callHelper('${data.helper.phone}')">
+                            <i class="fas fa-phone"></i> Call
+                        </button>
+                        <button class="btn-message" onclick="messageHelper('${data.helper.phone}')">
+                            <i class="fas fa-comment"></i> Message
+                        </button>
+                    </div>
+                </div>
+            ` : `
+                <div class="helper-card">
+                    <h4>WAITING FOR HELPER</h4>
+                    <div class="waiting-helper">
+                        <div class="loading-spinner" style="width:30px;height:30px;"></div>
+                        <p>Looking for a helper to accept your task...</p>
+                    </div>
+                </div>
+            `;
+
+            sidebar.innerHTML = `
+                <!-- Header -->
+                <div class="tracking-header">
+                    <div class="tracking-status-icon ${statusIcon}">
+                        <i class="fas fa-${userRole === 'helper' ? 'briefcase' : 'motorcycle'}"></i>
+                    </div>
+                    <div class="tracking-info">
+                        <h2>${statusText}</h2>
+                        <p>${data.title}</p>
+                        <p id="lastUpdated" class="last-updated">Live updates active</p>
+                    </div>
+                </div>
+
+                <!-- ETA Card -->
+                <div class="eta-card">
+                    <h3>Estimated ${userRole === 'helper' ? 'Distance' : 'Arrival'}</h3>
+                    <div class="eta-time" id="etaTime">${data.eta || 'Calculating...'}</div>
+                    <div class="eta-distance">
+                        <i class="fas fa-route"></i> <span id="distanceSpan">${data.distance || 'Calculating...'}</span> away
+                    </div>
+                </div>
+
+                <!-- Share Location Toggle -->
+                <div class="share-location-toggle">
+                    <div class="toggle-info">
+                        <i class="fas fa-broadcast-tower"></i>
+                        <div>
+                            <strong>Share My Location</strong>
+                            <p style="font-size: 0.8rem; color: var(--gray); margin: 0;">
+                                ${userRole === 'helper' ? 'Required for customer to track you' : 'Help helper find you faster'}
+                            </p>
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="shareLocationToggle" onchange="toggleShareLocation()" ${userRole === 'helper' ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Timeline -->
+                <div class="tracking-timeline">
+                    ${data.timeline ? data.timeline.map(item => `
+                        <div class="timeline-item ${item.status}">
+                            <div class="timeline-icon">
+                                <i class="fas ${item.icon}"></i>
+                            </div>
+                            <div class="timeline-content">
+                                <h4>${item.title}</h4>
+                                <p class="timeline-time">${formatTime(item.time)}</p>
+                            </div>
+                        </div>
+                    `).join('') : ''}
+                </div>
+
+                ${helperSection}
+
+                <!-- Task Details -->
+                <div class="task-details">
+                    <h4>TASK DETAILS</h4>
+                    <div class="task-detail-row">
+                        <span>Task ID</span>
+                        <span>#${data.taskId}</span>
+                    </div>
+                    ${data.pickup && data.pickup.address ? `
+                    <div class="task-detail-row">
+                        <span>Pickup</span>
+                        <span style="text-align: right; max-width: 200px; font-size: 0.85rem;">
+                            ${data.pickup.address}
+                        </span>
+                    </div>
+                    ` : ''}
+                    <div class="task-detail-row">
+                        <span>Destination</span>
+                        <span style="text-align: right; max-width: 200px; font-size: 0.85rem;">
+                            ${data.destination?.address || 'Not specified'}
+                        </span>
+                    </div>
+                    <div class="task-detail-row">
+                        <span>Payment</span>
+                        <span style="color: var(--success);">₹${data.price}</span>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="tracking-actions" style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
+                    ${userRole === 'helper' ? `
+                        <button class="btn btn-primary" onclick="completeTask(${data.taskId})" style="width:100%;">
+                            <i class="fas fa-check-circle"></i> Mark as Completed
+                        </button>
+                    ` : ''}
+                    <button class="btn btn-secondary" onclick="refreshTracking()" style="width:100%;">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            `;
+
+            // Auto-start location sharing for helpers
+            if (userRole === 'helper') {
+                setTimeout(() => {
+                    isSharing = true;
+                    startSharingLocation();
+                }, 1000);
+            }
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr || timeStr === 'Now' || timeStr === 'Expected') return timeStr;
+            try {
+                const date = new Date(timeStr);
+                return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+            } catch {
+                return timeStr;
+            }
+        }
+
+        async function completeTask(taskId) {
+            if (!confirm('Are you sure you want to mark this task as completed?')) return;
+
+            const token = localStorage.getItem('taskearn_token');
+            
+            try {
+                const response = await fetch(`${window.TASKEARN_API_URL}/tasks/${taskId}/complete`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    handleTaskCompleted();
+                } else {
+                    showNotification(data.message || 'Failed to complete task', 'error');
+                }
+            } catch (error) {
+                showNotification('Error completing task', 'error');
+            }
+        }
+
+        function refreshTracking() {
+            if (currentTaskId) {
+                loadTrackingData(currentTaskId);
+            } else {
+                loadUserActiveTasks();
+            }
+        }
+
+        // ========================================
+        // SETUP MAP MARKERS
+        // ========================================
+
+        function setupMapMarkers(data) {
+            // Helper marker (delivery person)
+            const helperEl = document.createElement('div');
+            helperEl.className = 'delivery-marker';
+            helperEl.innerHTML = '<i class="fas fa-motorcycle"></i>';
+
+            helperMarker = new mapboxgl.Marker(helperEl)
+                .setLngLat([data.helperLocation.lng, data.helperLocation.lat])
+                .setPopup(new mapboxgl.Popup().setHTML(`
+                    <strong>${data.helper.name}</strong><br>
+                    <span style="color: #f59e0b;">★ ${data.helper.rating}</span>
+                `))
+                .addTo(map);
+
+            // Pickup marker
+            const pickupEl = document.createElement('div');
+            pickupEl.className = 'pickup-marker';
+            pickupEl.innerHTML = '<i class="fas fa-store"></i>';
+
+            pickupMarker = new mapboxgl.Marker(pickupEl)
+                .setLngLat([data.pickup.lng, data.pickup.lat])
+                .setPopup(new mapboxgl.Popup().setHTML(`
+                    <strong>Pickup Location</strong><br>
+                    ${data.pickup.address}
+                `))
+                .addTo(map);
+
+            // Destination marker
+            const destEl = document.createElement('div');
+            destEl.className = 'destination-marker';
+            destEl.innerHTML = '<i class="fas fa-flag-checkered"></i>';
+
+            destinationMarker = new mapboxgl.Marker(destEl)
+                .setLngLat([data.destination.lng, data.destination.lat])
+                .setPopup(new mapboxgl.Popup().setHTML(`
+                    <strong>Delivery Location</strong><br>
+                    ${data.destination.address}
+                `))
+                .addTo(map);
+
+            // Fit bounds to show all markers
+            const bounds = new mapboxgl.LngLatBounds();
+            bounds.extend([data.helperLocation.lng, data.helperLocation.lat]);
+            bounds.extend([data.pickup.lng, data.pickup.lat]);
+            bounds.extend([data.destination.lng, data.destination.lat]);
+            
+            map.fitBounds(bounds, { padding: 80 });
+
+            // Draw route
+            drawRoute(data.helperLocation, data.destination);
+        }
+
+        // ========================================
+        // DRAW ROUTE
+        // ========================================
+
+        async function drawRoute(origin, destination) {
+            const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.routes && data.routes.length > 0) {
+                    const route = data.routes[0].geometry;
+
+                    // Remove existing route if any
+                    if (map.getSource('route')) {
+                        map.removeLayer('route');
+                        map.removeSource('route');
+                    }
+
+                    // Add new route
+                    map.addSource('route', {
+                        type: 'geojson',
+                        data: {
+                            type: 'Feature',
+                            properties: {},
+                            geometry: route
+                        }
+                    });
+
+                    map.addLayer({
+                        id: 'route',
+                        type: 'line',
+                        source: 'route',
+                        layout: {
+                            'line-join': 'round',
+                            'line-cap': 'round'
+                        },
+                        paint: {
+                            'line-color': '#6366f1',
+                            'line-width': 5,
+                            'line-opacity': 0.8
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error drawing route:', error);
+            }
+        }
+
+        // ========================================
+        // REAL-TIME TRACKING
+        // ========================================
+
+        function startRealTimeTracking(taskId) {
+            // Clear any existing interval
+            if (trackingInterval) {
+                clearInterval(trackingInterval);
+            }
+
+            // Poll for updates every 3 seconds for real-time feel
+            trackingInterval = setInterval(async () => {
+                const token = localStorage.getItem('taskearn_token');
+                
+                try {
+                    const response = await fetch(`${window.TASKEARN_API_URL}/tracking/${taskId}/location`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        if (data.location) {
+                            updateHelperPosition(data.location);
+                        }
+                        if (data.eta) {
+                            updateETA(data.eta, data.distance);
+                        }
+                        if (data.status === 'completed') {
+                            handleTaskCompleted();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error fetching location:', error);
+                    updateConnectionStatus(false);
+                }
+            }, 3000);
+
+            // Initial fetch
+            fetchLatestLocation(taskId);
+        }
+
+        async function fetchLatestLocation(taskId) {
+            const token = localStorage.getItem('taskearn_token');
+            
+            try {
+                const response = await fetch(`${window.TASKEARN_API_URL}/tracking/${taskId}/location`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.location) {
+                    updateHelperPosition(data.location);
+                    updateETA(data.eta, data.distance);
+                    updateConnectionStatus(true);
+                }
+            } catch (error) {
+                console.error('Error fetching location:', error);
+            }
+        }
+
+        function stopRealTimeTracking() {
+            if (trackingInterval) {
+                clearInterval(trackingInterval);
+                trackingInterval = null;
+            }
+        }
+
+        function updateConnectionStatus(isConnected) {
+            const indicator = document.querySelector('.live-indicator');
+            if (indicator) {
+                if (isConnected) {
+                    indicator.innerHTML = '<div class="live-dot"></div><span>Live Tracking</span>';
+                    indicator.style.background = 'white';
+                } else {
+                    indicator.innerHTML = '<div class="live-dot" style="background:#ef4444;"></div><span>Reconnecting...</span>';
+                }
+            }
+        }
+
+        function handleTaskCompleted() {
+            stopRealTimeTracking();
+            stopSharingLocation();
+            
+            const sidebar = document.getElementById('trackingSidebar');
+            const completedHtml = `
+                <div class="task-completed-banner">
+                    <div class="completed-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <h2>Task Completed!</h2>
+                    <p>The task has been successfully completed.</p>
+                    <div class="completed-actions">
+                        <button class="btn btn-primary" onclick="window.location.href='index.html'">
+                            <i class="fas fa-home"></i> Back to Home
+                        </button>
+                        <button class="btn btn-secondary" onclick="loadUserActiveTasks()">
+                            <i class="fas fa-list"></i> Other Tasks
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            sidebar.innerHTML = completedHtml;
+        }
+
+        function updateHelperPosition(location) {
+            if (!location || !location.lat || !location.lng) return;
+
+            const coords = [location.lng, location.lat];
+
+            if (helperMarker) {
+                // Smooth animation to new position
+                helperMarker.setLngLat(coords);
+            } else if (trackingData && trackingData.helper) {
+                // Create helper marker if doesn't exist
+                const helperEl = document.createElement('div');
+                helperEl.className = 'delivery-marker';
+                helperEl.innerHTML = '<i class="fas fa-motorcycle"></i>';
+
+                helperMarker = new mapboxgl.Marker(helperEl)
+                    .setLngLat(coords)
+                    .setPopup(new mapboxgl.Popup().setHTML(`
+                        <strong>${trackingData.helper.name}</strong><br>
+                        <span style="color: #f59e0b;">★ ${trackingData.helper.rating}</span>
+                    `))
+                    .addTo(map);
+            }
+            
+            // Update route
+            if (trackingData && trackingData.destination && trackingData.destination.lat) {
+                drawRoute(location, trackingData.destination);
+            }
+
+            // Update last updated time
+            updateLastUpdated();
+        }
+
+        function updateETA(eta, distance) {
+            const etaEl = document.getElementById('etaTime');
+            const distEl = document.querySelector('.eta-distance');
+            
+            if (etaEl && eta) {
+                etaEl.textContent = eta;
+            }
+            if (distEl && distance) {
+                distEl.innerHTML = `<i class="fas fa-route"></i> ${distance} away`;
+            }
+        }
+
+        function updateLastUpdated() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+            const lastUpdatedEl = document.getElementById('lastUpdated');
+            if (lastUpdatedEl) {
+                lastUpdatedEl.textContent = `Updated: ${timeStr}`;
+            }
+        }
+
+        // ========================================
+        // SHARE LOCATION (For Helpers)
+        // ========================================
+
+        function toggleShareLocation() {
+            const toggle = document.getElementById('shareLocationToggle');
+            isSharing = toggle ? toggle.checked : !isSharing;
+
+            if (isSharing) {
+                startSharingLocation();
+            } else {
+                stopSharingLocation();
+            }
+
+            // Update button state
+            updateShareButtonState();
+        }
+
+        function updateShareButtonState() {
+            const btn = document.querySelector('.map-control-btn.primary');
+            if (btn) {
+                if (isSharing) {
+                    btn.innerHTML = '<i class="fas fa-stop-circle"></i> Stop Sharing';
+                    btn.style.background = '#ef4444';
+                } else {
+                    btn.innerHTML = '<i class="fas fa-share-location"></i> Share My Location';
+                    btn.style.background = '';
+                }
+            }
+        }
+
+        async function startSharingLocation() {
+            if (!navigator.geolocation) {
+                showNotification('Geolocation is not supported by your browser', 'error');
+                return;
+            }
+
+            if (!currentTaskId) {
+                showNotification('No active task to share location for', 'error');
+                return;
+            }
+
+            showNotification('Location sharing started', 'success');
+
+            watchId = navigator.geolocation.watchPosition(
+                async (position) => {
+                    const location = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        heading: position.coords.heading,
+                        speed: position.coords.speed,
+                        timestamp: new Date().toISOString()
+                    };
+
+                    // Update user marker on map
+                    updateUserMarker(location);
+
+                    // Send to backend
+                    await sendLocationToServer(location);
+                },
+                (error) => {
+                    console.error('Geolocation error:', error);
+                    let message = 'Unable to get your location.';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            message = 'Location permission denied. Please enable in browser settings.';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            message = 'Location unavailable. Please check GPS.';
+                            break;
+                        case error.TIMEOUT:
+                            message = 'Location request timed out.';
+                            break;
+                    }
+                    showNotification(message, 'error');
+                    isSharing = false;
+                    updateShareButtonState();
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 3000,
+                    timeout: 10000
+                }
+            );
+        }
+
+        async function sendLocationToServer(location) {
+            const token = localStorage.getItem('taskearn_token');
+            
+            try {
+                const response = await fetch(`${window.TASKEARN_API_URL}/tracking/update-location`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        taskId: currentTaskId,
+                        location: location
+                    })
+                });
+
+                const data = await response.json();
+                if (!data.success) {
+                    console.error('Failed to update location:', data.message);
+                }
+            } catch (error) {
+                console.error('Error sending location:', error);
+            }
+        }
+
+        function updateUserMarker(location) {
+            const coords = [location.lng, location.lat];
+
+            if (userMarker) {
+                userMarker.setLngLat(coords);
+            } else {
+                const userEl = document.createElement('div');
+                userEl.className = 'user-marker';
+                userEl.innerHTML = '<i class="fas fa-user"></i>';
+                userEl.style.cssText = `
+                    width: 36px;
+                    height: 36px;
+                    background: #0ea5e9;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-size: 14px;
+                    box-shadow: 0 4px 15px rgba(14, 165, 233, 0.4);
+                    border: 3px solid white;
+                `;
+
+                userMarker = new mapboxgl.Marker(userEl)
+                    .setLngLat(coords)
+                    .setPopup(new mapboxgl.Popup().setText('Your Location'))
+                    .addTo(map);
+            }
+        }
+
+        function stopSharingLocation() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            
+            // Notify server to stop tracking
+            if (currentTaskId) {
+                const token = localStorage.getItem('taskearn_token');
+                fetch(`${window.TASKEARN_API_URL}/tracking/stop/${currentTaskId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                }).catch(console.error);
+            }
+
+            showNotification('Location sharing stopped', 'info');
+        }
+
+        // ========================================
+        // NOTIFICATIONS
+        // ========================================
+
+        function showNotification(message, type = 'info') {
+            // Remove existing notification
+            const existing = document.querySelector('.tracking-notification');
+            if (existing) existing.remove();
+
+            const colors = {
+                success: '#10b981',
+                error: '#ef4444',
+                info: '#6366f1',
+                warning: '#f59e0b'
+            };
+
+            const notification = document.createElement('div');
+            notification.className = 'tracking-notification';
+            notification.style.cssText = `
+                position: fixed;
+                top: 90px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: ${colors[type] || colors.info};
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+                z-index: 1000;
+                animation: slideDown 0.3s ease;
+            `;
+            notification.textContent = message;
+
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.animation = 'slideUp 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // ========================================
+        // UTILITY FUNCTIONS
+        // ========================================
+
+        function centerOnHelper() {
+            if (helperMarker) {
+                map.flyTo({
+                    center: helperMarker.getLngLat(),
+                    zoom: 16,
+                    essential: true
+                });
+            } else if (trackingData && trackingData.destination) {
+                map.flyTo({
+                    center: [trackingData.destination.lng, trackingData.destination.lat],
+                    zoom: 14,
+                    essential: true
+                });
+            } else {
+                showNotification('No location to center on', 'info');
+            }
+        }
+
+        function callHelper(phone) {
+            if (phone) {
+                window.location.href = `tel:${phone}`;
+            } else {
+                showNotification('Phone number not available', 'error');
+            }
+        }
+
+        function messageHelper(phone) {
+            if (phone) {
+                const message = encodeURIComponent(`Hi, regarding TaskEarn task #${currentTaskId}`);
+                window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${message}`, '_blank');
+            } else {
+                showNotification('Phone number not available', 'error');
+            }
+        }
+
+        function showNoTrackingState(message = '') {
+            const sidebar = document.getElementById('trackingSidebar');
+            sidebar.innerHTML = `
+                <div class="no-tracking">
+                    <i class="fas fa-map-marked-alt"></i>
+                    <h2>No Active Tracking</h2>
+                    <p>${message || 'You don\'t have any active tasks to track.'}</p>
+                    <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+                        <a href="index.html#find-tasks" class="btn btn-primary" style="width: 100%;">
+                            <i class="fas fa-search"></i> Find Tasks
+                        </a>
+                        <a href="index.html#upload-task" class="btn btn-secondary" style="width: 100%;">
+                            <i class="fas fa-plus"></i> Post a Task
+                        </a>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ========================================
+        // CLEANUP ON PAGE UNLOAD
+        // ========================================
+
+        window.addEventListener('beforeunload', () => {
+            stopRealTimeTracking();
+            stopSharingLocation();
+        });
+
+        // ========================================
+        // INITIALIZE
+        // ========================================
+
+        document.addEventListener('DOMContentLoaded', initMap);
+    </script>
+</body>
+</html>

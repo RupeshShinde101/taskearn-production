@@ -1,0 +1,26 @@
+{
+  "name": "taskearn-backend",
+  "version": "1.0.0",
+  "engines": {
+    "python": "3.11"
+  },
+  "scripts": {
+    "start": "gunicorn server:app --bind 0.0.0.0:$PORT"
+  },
+  "env": {
+    "FLASK_ENV": "production",
+    "SECRET_KEY": {
+      "description": "Secret key for JWT tokens",
+      "required": true
+    },
+    "DATABASE_URL": {
+      "description": "PostgreSQL database URL",
+      "required": true
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+}

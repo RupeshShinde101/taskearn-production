@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskEarn - Get Tasks Done, Earn Money</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Leaflet.js - Free OpenStreetMap (No API Key Required) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <!-- Razorpay Checkout -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Backend API Configuration -->
+    <script>
+        // Production Backend URL (Railway)
+        window.TASKEARN_API_URL = 'https://web-production-b8388.up.railway.app/api';
+    </script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <i class="fas fa-tasks"></i>
+                <span>Task<span class="highlight">Earn</span></span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#home">Home</a></li>
+                <li><a href="#how-it-works">How It Works</a></li>
+                <li><a href="#upload-task">Post Task</a></li>
+                <li><a href="#find-tasks">Find Tasks</a></li>
+                <li><a href="#categories">Categories</a></li>
+                <li><a href="tracking.html"><i class="fas fa-location-dot"></i> Live Tracking</a></li>
+                <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
+            </ul>
+            <div class="notification-wrapper" id="notificationWrapper" style="display: none;">
+                <button class="notification-bell" onclick="toggleNotifications()">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge" id="notificationBadge">0</span>
+                </button>
+                <div class="notification-dropdown" id="notificationDropdown">
+                    <div class="notification-header">
+                        <h4>Notifications</h4>
+                        <button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button>
+                    </div>
+                    <div class="notification-list" id="notificationList">
+                        <div class="no-notifications">
+                            <i class="fas fa-bell-slash"></i>
+                            <p>No notifications yet</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="nav-buttons">
+                <button class="btn btn-outline" onclick="openModal('loginModal')">Login</button>
+                <button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button>
+            </div>
+            <div class="hamburger" onclick="toggleMobileMenu()">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Mobile Menu -->
+    <div class="mobile-menu" id="mobileMenu">
+        <ul>
+            <li><a href="#home" onclick="toggleMobileMenu()">Home</a></li>
+            <li><a href="#how-it-works" onclick="toggleMobileMenu()">How It Works</a></li>
+            <li><a href="#upload-task" onclick="toggleMobileMenu()">Post Task</a></li>
+            <li><a href="#find-tasks" onclick="toggleMobileMenu()">Find Tasks</a></li>
+            <li><a href="#categories" onclick="toggleMobileMenu()">Categories</a></li>
+            <li class="mobile-notification-item" id="mobileNotificationItem" style="display: none;">
+                <a href="#" onclick="toggleNotifications(); toggleMobileMenu();">
+                    <i class="fas fa-bell"></i> Notifications <span class="mobile-badge" id="mobileBadge">0</span>
+                </a>
+            </li>
+            <li><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button></li>
+            <li><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></li>
+        </ul>
+    </div>
+
+    <!-- Hero Section -->
+    <section class="hero" id="home">
+        <div class="hero-content">
+            <div class="hero-text">
+                <span class="badge">🇮🇳 India's #1 Task Marketplace Platform</span>
+                <h1>Get Your Tasks Done or <span class="highlight">Earn Money</span> Doing Tasks</h1>
+                <p>Connect with local helpers across India for everyday tasks - from laundry to tutoring, deliveries to repairs. Post a task or earn by helping others in your community.</p>
+                <div class="hero-buttons">
+                    <button class="btn btn-primary btn-large" onclick="openModal('postTaskModal')">
+                        <i class="fas fa-plus-circle"></i> Post a Task
+                    </button>
+                    <button class="btn btn-secondary btn-large" onclick="scrollToSection('find-tasks')">
+                        <i class="fas fa-search"></i> Find Tasks to Do
+                    </button>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat">
+                        <h3>50K+</h3>
+                        <p>Active Users in India</p>
+                    </div>
+                    <div class="stat">
+                        <h3>1L+</h3>
+                        <p>Tasks Completed</p>
+                    </div>
+                    <div class="stat">
+                        <h3>₹2Cr+</h3>
+                        <p>Earned by Taskers</p>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-image">
+                <div class="floating-card card-1">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Task Completed!</span>
+                </div>
+                <div class="floating-card card-2">
+                    <i class="fas fa-rupee-sign"></i>
+                    <span>+₹3,500 Earned</span>
+                </div>
+                <div class="hero-illustration">
+                    <i class="fas fa-hands-helping"></i>
+                </div>
+            </div>
+        </div>
+        <div class="hero-wave">
+            <svg viewBox="0 0 1440 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M0 120L60 105C120 90 240 60 360 45C480 30 600 30 720 37.5C840 45 960 60 1080 67.5C1200 75 1320 75 1380 75L1440 75V120H1380C1320 120 1200 120 1080 120C960 120 840 120 720 120C600 120 480 120 360 120C240 120 120 120 60 120H0Z" fill="#f8fafc"/>
+            </svg>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Simple Process</span>
+                <h2>How TaskEarn Works</h2>
+                <p>Get started in minutes - whether you need help or want to earn</p>
+            </div>
+            <div class="steps-container">
+                <div class="step">
+                    <div class="step-icon">
+                        <i class="fas fa-user-plus"></i>
+                        <span class="step-number">1</span>
+                    </div>
+                    <h3>Create Account</h3>
+                    <p>Sign up for free in seconds. Must be 16+ years old to join our community.</p>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step">
+                    <div class="step-icon">
+                        <i class="fas fa-clipboard-list"></i>
+                        <span class="step-number">2</span>
+                    </div>
+                    <h3>Post or Find Tasks</h3>
+                    <p>Upload tasks you need done or browse available tasks near you on the map.</p>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step">
+                    <div class="step-icon">
+                        <i class="fas fa-handshake"></i>
+                        <span class="step-number">3</span>
+                    </div>
+                    <h3>Connect & Complete</h3>
+                    <p>Match with taskers, track progress in real-time, and complete the task.</p>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step">
+                    <div class="step-icon">
+                        <i class="fas fa-wallet"></i>
+                        <span class="step-number">4</span>
+                    </div>
+                    <h3>Pay or Get Paid</h3>
+                    <p>Secure payment system. Task posters pay, taskers earn money instantly.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Categories Section -->
+    <section class="categories" id="categories">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Services</span>
+                <h2>Popular Task Categories</h2>
+                <p>Find help for any task or offer your skills in these categories</p>
+            </div>
+            <div class="categories-grid">
+                <div class="category-card" onclick="filterByCategory('household')">
+                    <div class="category-icon household">
+                        <i class="fas fa-home"></i>
+                    </div>
+                    <h3>Household Chores</h3>
+                    <p>Laundry, Cleaning, Organizing</p>
+                    <span class="task-count">234 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('delivery')">
+                    <div class="category-icon delivery">
+                        <i class="fas fa-shipping-fast"></i>
+                    </div>
+                    <h3>Delivery Services</h3>
+                    <p>Parcels, Groceries, Medicines, Tiffin</p>
+                    <span class="task-count">189 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('tutoring')">
+                    <div class="category-icon tutoring">
+                        <i class="fas fa-graduation-cap"></i>
+                    </div>
+                    <h3>Online Tutoring</h3>
+                    <p>JEE, NEET, Board Exams, Languages</p>
+                    <span class="task-count">156 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('transport')">
+                    <div class="category-icon transport">
+                        <i class="fas fa-car"></i>
+                    </div>
+                    <h3>Pick & Drop</h3>
+                    <p>Railway Station, Airport, Events</p>
+                    <span class="task-count">98 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('vehicle')">
+                    <div class="category-icon vehicle">
+                        <i class="fas fa-car-side"></i>
+                    </div>
+                    <h3>Vehicle Services</h3>
+                    <p>Car Wash, Bike Wash, Detailing</p>
+                    <span class="task-count">87 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('repair')">
+                    <div class="category-icon repair">
+                        <i class="fas fa-tools"></i>
+                    </div>
+                    <h3>Repairs & Mechanical</h3>
+                    <p>Plumbing, Electrical, Appliances</p>
+                    <span class="task-count">145 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('photography')">
+                    <div class="category-icon photography">
+                        <i class="fas fa-camera"></i>
+                    </div>
+                    <h3>Photography</h3>
+                    <p>Weddings, Events, Pre-wedding</p>
+                    <span class="task-count">67 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('freelance')">
+                    <div class="category-icon freelance">
+                        <i class="fas fa-laptop-code"></i>
+                    </div>
+                    <h3>Freelance Services</h3>
+                    <p>Design, Writing, Development</p>
+                    <span class="task-count">312 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('waste')">
+                    <div class="category-icon waste">
+                        <i class="fas fa-recycle"></i>
+                    </div>
+                    <h3>Waste Collection</h3>
+                    <p>Garbage, Recycling, Junk Removal</p>
+                    <span class="task-count">45 tasks</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Upload Task Section -->
+    <section class="upload-task" id="upload-task">
+        <div class="container">
+            <div class="upload-wrapper">
+                <div class="upload-info">
+                    <span class="section-badge">Post a Task</span>
+                    <h2>Need Something Done?</h2>
+                    <p>Post your task and let skilled helpers come to you. Set your budget based on distance and complexity.</p>
+                    <ul class="upload-features">
+                        <li><i class="fas fa-check"></i> Tasks visible for 12 hours</li>
+                        <li><i class="fas fa-check"></i> Cancel anytime before acceptance</li>
+                        <li><i class="fas fa-check"></i> Distance-based pricing suggestions</li>
+                        <li><i class="fas fa-check"></i> Verified taskers only</li>
+                        <li><i class="fas fa-check"></i> Secure payment protection</li>
+                    </ul>
+                </div>
+                <div class="upload-form-container">
+                    <form class="upload-form" id="taskUploadForm">
+                        <h3><i class="fas fa-plus-circle"></i> Create New Task</h3>
+                        
+                        <div class="form-group">
+                            <label for="taskTitle">Task Title</label>
+                            <input type="text" id="taskTitle" placeholder="e.g., Need help with laundry" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="taskCategory">Category</label>
+                            <select id="taskCategory" required>
+                                <option value="">Select a category</option>
+                                <option value="household">Household Chores</option>
+                                <option value="delivery">Delivery Services</option>
+                                <option value="tutoring">Online Tutoring</option>
+                                <option value="transport">Pick & Drop</option>
+                                <option value="vehicle">Vehicle Services</option>
+                                <option value="repair">Repairs & Mechanical</option>
+                                <option value="photography">Photography</option>
+                                <option value="freelance">Freelance Services</option>
+                                <option value="waste">Waste Collection</option>
+                                <option value="cleaning">Cleaning Services</option>
+                                <option value="cooking">Cooking & Chef</option>
+                                <option value="petcare">Pet Care</option>
+                                <option value="gardening">Gardening & Lawn</option>
+                                <option value="shopping">Shopping & Errands</option>
+                                <option value="eventhelp">Event Help</option>
+                                <option value="moving">Moving & Packing</option>
+                                <option value="techsupport">Tech Support</option>
+                                <option value="beauty">Beauty & Wellness</option>
+                                <option value="laundry">Laundry & Ironing</option>
+                                <option value="catering">Catering Services</option>
+                                <option value="babysitting">Babysitting</option>
+                                <option value="eldercare">Elder Care</option>
+                                <option value="fitness">Fitness Training</option>
+                                <option value="painting">Painting & Decor</option>
+                                <option value="electrician">Electrician</option>
+                                <option value="plumbing">Plumbing</option>
+                                <option value="carpentry">Carpentry</option>
+                                <option value="tailoring">Tailoring & Alterations</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="taskDescription">Description</label>
+                            <textarea id="taskDescription" rows="3" placeholder="Describe what you need done..." required></textarea>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="taskLocation">Location</label>
+                                <input type="text" id="taskLocation" placeholder="Enter address" required>
+                                <button type="button" class="location-btn" onclick="getCurrentLocation()">
+                                    <i class="fas fa-crosshairs"></i>
+                                </button>
+                            </div>
+                            <div class="form-group">
+                                <label for="taskDate">Date & Time</label>
+                                <input type="datetime-local" id="taskDate" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="taskBudget">Your Budget (₹)</label>
+                            <input type="number" id="taskBudget" placeholder="Suggested: ₹500" min="50" required>
+                            <small class="price-suggestion">Suggested price based on distance: <span id="suggestedPrice">₹500</span></small>
+                        </div>
+                        
+                        <div class="task-timer-info">
+                            <i class="fas fa-clock"></i>
+                            <span>This task will be visible for 12 hours after posting</span>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary btn-block">
+                            <i class="fas fa-paper-plane"></i> Post Task
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Find Tasks Section with Map -->
+    <section class="find-tasks" id="find-tasks">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Earn Money</span>
+                <h2>Find Tasks Near You</h2>
+                <p>Browse available tasks on the map and start earning today</p>
+            </div>
+            
+            <div class="tasks-wrapper">
+                <div class="tasks-sidebar">
+                    <div class="tasks-filter">
+                        <div class="filter-header">
+                            <h3><i class="fas fa-filter"></i> Filters</h3>
+                            <button class="clear-filters" onclick="clearFilters()">Clear All</button>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Category</label>
+                            <select id="filterCategory">
+                                <option value="all">All Categories</option>
+                                <option value="household">Household Chores</option>
+                                <option value="delivery">Delivery Services</option>
+                                <option value="tutoring">Online Tutoring</option>
+                                <option value="transport">Pick & Drop</option>
+                                <option value="vehicle">Vehicle Services</option>
+                                <option value="repair">Repairs & Mechanical</option>
+                                <option value="photography">Photography</option>
+                                <option value="freelance">Freelance Services</option>
+                                <option value="waste">Waste Collection</option>
+                                <option value="cleaning">Cleaning Services</option>
+                                <option value="cooking">Cooking & Chef</option>
+                                <option value="petcare">Pet Care</option>
+                                <option value="gardening">Gardening & Lawn</option>
+                                <option value="shopping">Shopping & Errands</option>
+                                <option value="eventhelp">Event Help</option>
+                                <option value="moving">Moving & Packing</option>
+                                <option value="techsupport">Tech Support</option>
+                                <option value="beauty">Beauty & Wellness</option>
+                                <option value="laundry">Laundry & Ironing</option>
+                                <option value="catering">Catering Services</option>
+                                <option value="babysitting">Babysitting</option>
+                                <option value="eldercare">Elder Care</option>
+                                <option value="fitness">Fitness Training</option>
+                                <option value="painting">Painting & Decor</option>
+                                <option value="electrician">Electrician</option>
+                                <option value="plumbing">Plumbing</option>
+                                <option value="carpentry">Carpentry</option>
+                                <option value="tailoring">Tailoring & Alterations</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Distance</label>
+                            <input type="range" id="filterDistance" min="1" max="50" value="10">
+                            <span class="range-value"><span id="distanceValue">10</span> km</span>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Budget Range</label>
+                            <div class="budget-inputs">
+                                <input type="number" id="minBudget" placeholder="Min ₹">
+                                <span>-</span>
+                                <input type="number" id="maxBudget" placeholder="Max ₹">
+                            </div>
+                        </div>
+                        
+                        <button class="btn btn-primary btn-block" onclick="applyFilters()">
+                            <i class="fas fa-search"></i> Apply Filters
+                        </button>
+                    </div>
+                    
+                    <div class="tasks-list" id="tasksList">
+                        <!-- Tasks will be dynamically loaded here -->
+                    </div>
+                </div>
+                
+                <div class="tasks-map">
+                    <div class="tracking-status" id="trackingStatus">
+                        <span class="tracking-dot"></span>
+                        <span>GPS Tracking: <strong id="trackingText">Connecting...</strong></span>
+                    </div>
+                    <div id="map"></div>
+                    <div class="map-controls">
+                        <button class="map-btn" onclick="centerOnUser()" title="My Location">
+                            <i class="fas fa-crosshairs"></i>
+                        </button>
+                        <button class="map-btn" onclick="toggleTracking()" id="trackingBtn" title="Toggle Live Tracking">
+                            <i class="fas fa-satellite-dish"></i>
+                        </button>
+                        <button class="map-btn" onclick="zoomIn()" title="Zoom In">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                        <button class="map-btn" onclick="zoomOut()" title="Zoom Out">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                        <button class="map-btn" onclick="toggleMapType()" title="Map Type">
+                            <i class="fas fa-layer-group"></i>
+                        </button>
+                    </div>
+                    <div class="distance-info" id="distanceInfo"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- My Tasks Section (Dashboard) -->
+    <section class="my-tasks" id="my-tasks">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Dashboard</span>
+                <h2>My Tasks</h2>
+                <p>Manage your posted tasks and track your earnings</p>
+            </div>
+            
+            <div class="dashboard-tabs">
+                <button class="tab-btn active" onclick="switchTab('posted')">
+                    <i class="fas fa-upload"></i> Posted Tasks
+                </button>
+                <button class="tab-btn" onclick="switchTab('accepted')">
+                    <i class="fas fa-check-circle"></i> Accepted Tasks
+                </button>
+                <button class="tab-btn" onclick="switchTab('completed')">
+                    <i class="fas fa-trophy"></i> Completed
+                </button>
+            </div>
+            
+            <div class="dashboard-content" id="dashboardContent">
+                <div class="tab-content active" id="postedTasks">
+                    <div class="my-tasks-list" id="myPostedTasks">
+                        <!-- User's posted tasks will appear here -->
+                    </div>
+                </div>
+                <div class="tab-content" id="acceptedTasks">
+                    <div class="my-tasks-list" id="myAcceptedTasks">
+                        <!-- Tasks user has accepted to do -->
+                    </div>
+                </div>
+                <div class="tab-content" id="completedTasks">
+                    <div class="my-tasks-list" id="myCompletedTasks">
+                        <!-- Completed tasks history -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section class="testimonials">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Reviews</span>
+                <h2>What Our Users Say</h2>
+                <p>Join thousands of satisfied users on TaskEarn</p>
+            </div>
+            <div class="testimonials-grid">
+                <div class="testimonial-card">
+                    <div class="stars">
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                    </div>
+                    <p>"I've earned over ₹40,000 this month just helping with deliveries in my area. The map feature makes it so easy to find tasks nearby!"</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="author-info">
+                            <h4>Rahul Sharma</h4>
+                            <span>Tasker • Delhi • 127 tasks completed</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <div class="stars">
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                    </div>
+                    <p>"As a busy working mom in Mumbai, TaskEarn is a lifesaver! I post tasks for laundry pickup and grocery runs. Always get help within an hour."</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="author-info">
+                            <h4>Priya Patel</h4>
+                            <span>Task Poster • Mumbai • 45 tasks posted</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <div class="stars">
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star-half-alt"></i>
+                    </div>
+                    <p>"The 12-hour visibility keeps tasks fresh and urgent. I love the distance-based pricing - it's fair for everyone involved. Great for students like me!"</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="author-info">
+                            <h4>Arjun Reddy</h4>
+                            <span>Tasker • Bangalore • 89 tasks completed</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div class="logo">
+                        <i class="fas fa-tasks"></i>
+                        <span>Task<span class="highlight">Earn</span></span>
+                    </div>
+                    <p>Connect with your community across India. Get tasks done or earn money helping others.</p>
+                    <div class="social-links">
+                        <a href="#"><i class="fab fa-facebook-f"></i></a>
+                        <a href="#"><i class="fab fa-twitter"></i></a>
+                        <a href="#"><i class="fab fa-instagram"></i></a>
+                        <a href="#"><i class="fab fa-linkedin-in"></i></a>
+                    </div>
+                </div>
+                <div class="footer-links">
+                    <h4>Quick Links</h4>
+                    <ul>
+                        <li><a href="#home">Home</a></li>
+                        <li><a href="#how-it-works">How It Works</a></li>
+                        <li><a href="#upload-task">Post a Task</a></li>
+                        <li><a href="#find-tasks">Find Tasks</a></li>
+                    </ul>
+                </div>
+                <div class="footer-links">
+                    <h4>Categories</h4>
+                    <ul>
+                        <li><a href="#">Household Chores</a></li>
+                        <li><a href="#">Delivery Services</a></li>
+                        <li><a href="#">Tutoring</a></li>
+                        <li><a href="#">Repairs</a></li>
+                    </ul>
+                </div>
+                <div class="footer-links">
+                    <h4>Support</h4>
+                    <ul>
+                        <li><a href="help.html">Help Center</a></li>
+                        <li><a href="safety.html">Safety Tips</a></li>
+                        <li><a href="terms.html">Terms of Service</a></li>
+                        <li><a href="privacy.html">Privacy Policy</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 TaskEarn India. All rights reserved. Must be 16+ to use this platform. Available across all major Indian cities.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Login Modal -->
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('loginModal')">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2><i class="fas fa-sign-in-alt"></i> Welcome Back</h2>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="loginEmail">Email Address</label>
+                    <input type="email" id="loginEmail" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" placeholder="Enter password" required>
+                </div>
+                <div class="form-options">
+                    <label class="checkbox-label">
+                        <input type="checkbox"> Remember me
+                    </label>
+                    <a href="#" class="forgot-link" onclick="openForgotPassword()">Forgot Password?</a>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Login</button>
+            </form>
+            <div class="modal-footer">
+                <p>Don't have an account? <a href="#" onclick="switchModal('loginModal', 'signupModal')">Sign Up</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sign Up Modal -->
+    <div class="modal" id="signupModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('signupModal')">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2><i class="fas fa-user-plus"></i> Create Account</h2>
+            <form id="signupForm" onsubmit="handleSignup(event)">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="signupFirstName">First Name</label>
+                        <input type="text" id="signupFirstName" placeholder="John" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signupLastName">Last Name</label>
+                        <input type="text" id="signupLastName" placeholder="Doe" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="signupEmail">Email Address</label>
+                    <input type="email" id="signupEmail" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="signupPhone">Phone Number</label>
+                    <input type="tel" id="signupPhone" placeholder="+91 98765 43210" required>
+                </div>
+                <div class="form-group">
+                    <label for="signupDOB">Date of Birth</label>
+                    <input type="date" id="signupDOB" required>
+                    <small>You must be 16 or older to use TaskEarn</small>
+                </div>
+                <div class="form-group">
+                    <label for="signupPassword">Password</label>
+                    <input type="password" id="signupPassword" placeholder="Create a strong password" required>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" required> I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+            </form>
+            <div class="modal-footer">
+                <p>Already have an account? <a href="#" onclick="switchModal('signupModal', 'loginModal')">Login</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div class="modal" id="forgotPasswordModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('forgotPasswordModal'); resetForgotPassword();">
+                <i class="fas fa-times"></i>
+            </button>
+            
+            <!-- Step 1: Enter Email -->
+            <div id="forgotStep1" class="forgot-step active">
+                <div class="forgot-icon">
+                    <i class="fas fa-lock"></i>
+                </div>
+                <h2>Forgot Password?</h2>
+                <p class="forgot-subtitle">Enter your registered email address to recover your account</p>
+                <form onsubmit="findAccount(event)">
+                    <div class="form-group">
+                        <label for="forgotEmail">Email Address</label>
+                        <input type="email" id="forgotEmail" placeholder="your@email.com" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-search"></i> Find Account
+                    </button>
+                </form>
+                <div class="modal-footer">
+                    <p>Remember your password? <a href="#" onclick="switchModal('forgotPasswordModal', 'loginModal')">Login</a></p>
+                </div>
+            </div>
+            
+            <!-- Step 2: Select Verification Method -->
+            <div id="forgotStep2" class="forgot-step">
+                <div class="forgot-icon success">
+                    <i class="fas fa-user-check"></i>
+                </div>
+                <h2>Account Found!</h2>
+                <p class="forgot-subtitle">We'll send a verification code to your registered email</p>
+                <div class="account-preview" id="accountPreview">
+                    <!-- Account info will be shown here -->
+                </div>
+                <div class="verification-options">
+                    <button class="verification-option" onclick="sendOTP('email')" id="emailOTPBtn">
+                        <i class="fas fa-envelope"></i>
+                        <div class="option-info">
+                            <span class="option-title">Send OTP via Email</span>
+                            <span class="option-value" id="maskedEmail">***@***.com</span>
+                        </div>
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+                <button class="btn btn-outline btn-block" onclick="goToForgotStep(1)">
+                    <i class="fas fa-arrow-left"></i> Back
+                </button>
+            </div>
+            
+            <!-- Step 3: Enter OTP -->
+            <div id="forgotStep3" class="forgot-step">
+                <div class="forgot-icon">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <h2>Verify OTP</h2>
+                <p class="forgot-subtitle" id="otpSentMessage">Enter the 6-digit code sent to your email</p>
+                <form onsubmit="verifyOTP(event)">
+                    <div class="otp-input-container">
+                        <input type="text" class="otp-input" maxlength="1" data-index="0" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)">
+                        <input type="text" class="otp-input" maxlength="1" data-index="1" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)">
+                        <input type="text" class="otp-input" maxlength="1" data-index="2" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)">
+                        <input type="text" class="otp-input" maxlength="1" data-index="3" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)">
+                        <input type="text" class="otp-input" maxlength="1" data-index="4" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)">
+                        <input type="text" class="otp-input" maxlength="1" data-index="5" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)">
+                    </div>
+                    <div class="otp-timer">
+                        <span id="otpTimer">Resend OTP in <strong>60s</strong></span>
+                        <button type="button" class="resend-btn" id="resendBtn" onclick="resendOTP()" disabled>Resend OTP</button>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-check"></i> Verify Code
+                    </button>
+                </form>
+                <button class="btn btn-outline btn-block" onclick="goToForgotStep(2)">
+                    <i class="fas fa-arrow-left"></i> Back
+                </button>
+            </div>
+            
+            <!-- Step 4: Set New Password -->
+            <div id="forgotStep4" class="forgot-step">
+                <div class="forgot-icon success">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <h2>Verified!</h2>
+                <p class="forgot-subtitle">Create a new password for your account</p>
+                <form onsubmit="resetPassword(event)">
+                    <div class="form-group">
+                        <label for="newPassword">New Password</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="newPassword" placeholder="Enter new password" required minlength="6">
+                            <button type="button" class="toggle-password" onclick="togglePasswordVisibility('newPassword')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <div class="password-strength" id="passwordStrength"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmNewPassword">Confirm Password</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="confirmNewPassword" placeholder="Confirm new password" required minlength="6">
+                            <button type="button" class="toggle-password" onclick="togglePasswordVisibility('confirmNewPassword')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-save"></i> Reset Password
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Step 5: Success -->
+            <div id="forgotStep5" class="forgot-step">
+                <div class="forgot-icon success animate-success">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <h2>Password Reset!</h2>
+                <p class="forgot-subtitle">Your password has been successfully changed. You can now login with your new password.</p>
+                <button class="btn btn-primary btn-block" onclick="closeModal('forgotPasswordModal'); resetForgotPassword(); openModal('loginModal');">
+                    <i class="fas fa-sign-in-alt"></i> Login Now
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Task Detail Modal -->
+    <div class="modal" id="taskDetailModal">
+        <div class="modal-content modal-large">
+            <button class="modal-close" onclick="closeModal('taskDetailModal')">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="task-detail" id="taskDetailContent">
+                <!-- Task details will be loaded dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Post Task Modal -->
+    <div class="modal" id="postTaskModal">
+        <div class="modal-content modal-large">
+            <button class="modal-close" onclick="closeModal('postTaskModal')">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2><i class="fas fa-plus-circle"></i> Post a New Task</h2>
+            <form id="modalTaskForm" onsubmit="handleTaskSubmit(event)">
+                <div class="form-group">
+                    <label for="modalTaskTitle">Task Title</label>
+                    <input type="text" id="modalTaskTitle" placeholder="What do you need help with?" required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modalTaskCategory">Category</label>
+                        <select id="modalTaskCategory" required>
+                            <option value="">Select category</option>
+                            <option value="household">Household Chores</option>
+                            <option value="delivery">Delivery Services</option>
+                            <option value="tutoring">Online Tutoring</option>
+                            <option value="transport">Pick & Drop</option>
+                            <option value="vehicle">Vehicle Services</option>
+                            <option value="repair">Repairs & Mechanical</option>
+                            <option value="photography">Photography</option>
+                            <option value="freelance">Freelance Services</option>
+                            <option value="waste">Waste Collection</option>
+                            <option value="cleaning">Cleaning Services</option>
+                            <option value="cooking">Cooking & Chef</option>
+                            <option value="petcare">Pet Care</option>
+                            <option value="gardening">Gardening & Lawn</option>
+                            <option value="shopping">Shopping & Errands</option>
+                            <option value="eventhelp">Event Help</option>
+                            <option value="moving">Moving & Packing</option>
+                            <option value="techsupport">Tech Support</option>
+                            <option value="beauty">Beauty & Wellness</option>
+                            <option value="laundry">Laundry & Ironing</option>
+                            <option value="catering">Catering Services</option>
+                            <option value="babysitting">Babysitting</option>
+                            <option value="eldercare">Elder Care</option>
+                            <option value="fitness">Fitness Training</option>
+                            <option value="painting">Painting & Decor</option>
+                            <option value="electrician">Electrician</option>
+                            <option value="plumbing">Plumbing</option>
+                            <option value="carpentry">Carpentry</option>
+                            <option value="tailoring">Tailoring & Alterations</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="modalTaskDate">When do you need this done?</label>
+                        <input type="datetime-local" id="modalTaskDate" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="modalTaskDescription">Description</label>
+                    <textarea id="modalTaskDescription" rows="4" placeholder="Provide details about the task, any special requirements, etc." required></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="modalTaskLocation">Task Location</label>
+                    <div class="location-input-wrapper">
+                        <input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required>
+                        <button type="button" class="location-btn" onclick="getModalLocation()">
+                            <i class="fas fa-map-marker-alt"></i> Use My Location
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Task Budget (Min ₹50)</label>
+                    <div class="budget-selector">
+                        <div class="budget-option" onclick="selectBudget(this, 50)">₹50</div>
+                        <div class="budget-option" onclick="selectBudget(this, 100)">₹100</div>
+                        <div class="budget-option" onclick="selectBudget(this, 200)">₹200</div>
+                        <div class="budget-option" onclick="selectBudget(this, 500)">₹500</div>
+                        <div class="budget-option" onclick="selectBudget(this, 1000)">₹1000</div>
+                        <input type="number" id="customBudget" placeholder="Custom ₹" min="50">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label>
+                    <div class="bonus-section">
+                        <p class="bonus-hint">Increase your budget to attract more taskers and get faster responses!</p>
+                        <div class="bonus-options">
+                            <button type="button" class="bonus-btn" onclick="addBonus(50)">+₹50</button>
+                            <button type="button" class="bonus-btn" onclick="addBonus(100)">+₹100</button>
+                            <button type="button" class="bonus-btn" onclick="addBonus(200)">+₹200</button>
+                            <button type="button" class="bonus-btn" onclick="addBonus(500)">+₹500</button>
+                        </div>
+                        <div class="total-budget-display">
+                            <span>Task Budget:</span>
+                            <strong id="totalBudgetDisplay">₹500</strong>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="service-charge-box">
+                    <div class="charge-header">
+                        <i class="fas fa-receipt"></i>
+                        <span>Service Charge</span>
+                    </div>
+                    <div class="charge-details">
+                        <div class="charge-row">
+                            <span>Task Budget:</span>
+                            <span id="displayTaskBudget">₹50</span>
+                        </div>
+                        <div class="charge-row" style="color: #10b981;">
+                            <span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span>
+                            <span id="serviceChargeAmount">₹50</span>
+                        </div>
+                        <div class="charge-row" style="font-size: 12px; color: #666;">
+                            <span>Est. Time:</span>
+                            <span id="serviceChargeTime">1-3 hours</span>
+                        </div>
+                        <div class="charge-row total">
+                            <span><strong>You Pay:</strong></span>
+                            <span><strong id="totalPayable">₹100</strong></span>
+                        </div>
+                        <div class="charge-row" style="color: #10b981; font-size: 13px; margin-top: 5px;">
+                            <span>Worker Earns:</span>
+                            <span><strong id="workerEarns">₹100</strong></span>
+                        </div>
+                    </div>
+                    <p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity: Quick ₹30-35 | Medium ₹40-50 | Skilled ₹60-70 | Expert ₹70-80 | Professional ₹90-100</p>
+                </div>
+                
+                <div class="task-info-box">
+                    <i class="fas fa-info-circle"></i>
+                    <div>
+                        <strong>Task Visibility</strong>
+                        <p>Your task will be visible to nearby taskers for 12 hours. You can edit or delete the task anytime before it's accepted.</p>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-block btn-large">
+                    <i class="fas fa-paper-plane"></i> Post Task Now
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Task Modal -->
+    <div class="modal" id="editTaskModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('editTaskModal')">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2><i class="fas fa-edit"></i> Edit Task</h2>
+            <div class="edit-task-info" id="editTaskInfo">
+                <!-- Task info will be loaded -->
+            </div>
+            
+            <form id="editTaskForm" onsubmit="saveTaskEdit(event)">
+                <input type="hidden" id="editTaskId">
+                
+                <div class="form-group">
+                    <label for="editTaskTitle">Task Title</label>
+                    <input type="text" id="editTaskTitle" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editTaskCategory">Category</label>
+                    <select id="editTaskCategory" required>
+                        <option value="household">Household Chores</option>
+                        <option value="delivery">Delivery Services</option>
+                        <option value="tutoring">Online Tutoring</option>
+                        <option value="transport">Pick & Drop</option>
+                        <option value="vehicle">Vehicle Services</option>
+                        <option value="repair">Repairs & Mechanical</option>
+                        <option value="photography">Photography</option>
+                        <option value="freelance">Freelance Services</option>
+                        <option value="waste">Waste Collection</option>
+                        <option value="cleaning">Cleaning Services</option>
+                        <option value="cooking">Cooking & Chef</option>
+                        <option value="petcare">Pet Care</option>
+                        <option value="gardening">Gardening & Lawn</option>
+                        <option value="shopping">Shopping & Errands</option>
+                        <option value="eventhelp">Event Help</option>
+                        <option value="moving">Moving & Packing</option>
+                        <option value="techsupport">Tech Support</option>
+                        <option value="beauty">Beauty & Wellness</option>
+                        <option value="laundry">Laundry & Ironing</option>
+                        <option value="catering">Catering Services</option>
+                        <option value="babysitting">Babysitting</option>
+                        <option value="eldercare">Elder Care</option>
+                        <option value="fitness">Fitness Training</option>
+                        <option value="painting">Painting & Decor</option>
+                        <option value="electrician">Electrician</option>
+                        <option value="plumbing">Plumbing</option>
+                        <option value="carpentry">Carpentry</option>
+                        <option value="tailoring">Tailoring & Alterations</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editTaskDescription">Description</label>
+                    <textarea id="editTaskDescription" rows="3" required></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editTaskLocation">Location</label>
+                    <input type="text" id="editTaskLocation" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Current Budget</label>
+                    <div class="current-budget-display">
+                        <span id="editCurrentBudget">₹500</span>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label><i class="fas fa-arrow-up"></i> Increase Budget</label>
+                    <div class="budget-increase-section">
+                        <p class="increase-hint">Add more to your budget to attract more taskers!</p>
+                        <div class="increase-options">
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 50)">+₹50</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 100)">+₹100</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 200)">+₹200</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 500)">+₹500</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 1000)">+₹1000</button>
+                        </div>
+                        <div class="custom-increase">
+                            <label>Or enter custom amount:</label>
+                            <input type="number" id="customBudgetIncrease" placeholder="Enter amount" min="0" oninput="updateNewBudget()">
+                        </div>
+                        <div class="new-budget-display">
+                            <span>New Budget:</span>
+                            <strong id="editNewBudget">₹500</strong>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="edit-task-actions">
+                    <button type="button" class="btn btn-outline" onclick="closeModal('editTaskModal')">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Task Posted Success Modal -->
+    <div class="modal" id="taskSuccessModal">
+        <div class="modal-content modal-success">
+            <button class="modal-close" onclick="closeModal('taskSuccessModal')">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="task-success-content" id="taskSuccessContent">
+                <!-- Success content will be loaded dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast">
+        <i class="fas fa-check-circle"></i>
+        <span id="toastMessage">Action completed successfully!</span>
+    </div>
+
+    <!-- Leaflet.js - Free OpenStreetMap (No API Key Required!) -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    
+    <!-- EmailJS SDK for Real Email OTP -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    
+    <!-- API Client for Python Backend -->
+    <script src="api-client.js"></script>
+    
+    <!-- Razorpay Payment Integration -->
+    <script src="razorpay.js"></script>
+    
+    <script src="app.js"></script>
+</body>
+</html>

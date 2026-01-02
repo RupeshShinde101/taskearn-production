@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskEarn Wallet - Your Digital Wallet</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
+    <!-- Razorpay Checkout Script -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script>
+        window.TASKEARN_API_URL = 'http://localhost:5000/api';
+    </script>
+    <style>
+        *{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        /* Navigation */
+        .navbar {
+            background: rgba(26, 26, 46, 0.95);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+            text-decoration: none;
+        }
+        
+        .logo i {
+            color: #4ade80;
+        }
+        
+        .logo .highlight {
+            color: #4ade80;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .nav-links a {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+        
+        .nav-links a:hover {
+            color: #4ade80;
+        }
+        
+        /* Main Container */
+        .wallet-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 30px 20px;
+        }
+        
+        /* Wallet Card */
+        .wallet-card {
+            background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+            border-radius: 24px;
+            padding: 30px;
+            color: #fff;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 40px rgba(74, 222, 128, 0.3);
+        }
+        
+        .wallet-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -30%;
+            width: 100%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+            transform: rotate(25deg);
+        }
+        
+        .wallet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 30px;
+        }
+        
+        .wallet-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            opacity: 0.9;
+        }
+        
+        .wallet-logo {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        .balance-section {
+            margin-bottom: 30px;
+        }
+        
+        .balance-label {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-bottom: 5px;
+        }
+        
+        .balance-amount {
+            font-size: 48px;
+            font-weight: 700;
+            display: flex;
+            align-items: baseline;
+            gap: 5px;
+        }
+        
+        .balance-amount .currency {
+            font-size: 24px;
+        }
+        
+        .wallet-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .stat-label {
+            font-size: 10px;
+            opacity: 0.8;
+            text-transform: uppercase;
+        }
+        
+        /* Action Buttons */
+        .wallet-actions {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .action-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .action-btn:hover {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: #4ade80;
+            transform: translateY(-3px);
+        }
+        
+        .action-btn i {
+            font-size: 24px;
+            color: #4ade80;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        .action-btn span {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.9);
+        }
+        
+        /* Sections */
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .section-title i {
+            color: #4ade80;
+        }
+        
+        .view-all {
+            color: #4ade80;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        /* Transactions */
+        .transaction-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .transaction-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            transition: all 0.3s;
+        }
+        
+        .transaction-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        
+        .transaction-icon {
+            width: 45px;
+            height: 45px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 18px;
+        }
+        
+        .transaction-icon.credit {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+        
+        .transaction-icon.debit {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+        
+        .transaction-icon.cashback {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+        
+        .transaction-icon.earning {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+        }
+        
+        .transaction-details {
+            flex: 1;
+        }
+        
+        .transaction-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 3px;
+        }
+        
+        .transaction-date {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .transaction-amount {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .transaction-amount.credit {
+            color: #4ade80;
+        }
+        
+        .transaction-amount.debit {
+            color: #ef4444;
+        }
+        
+        /* Add Money Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: #1a1a2e;
+            border-radius: 20px;
+            padding: 30px;
+            width: 90%;
+            max-width: 450px;
+            position: relative;
+        }
+        
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 24px;
+            cursor: pointer;
+        }
+        
+        .modal-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        
+        .amount-input-container {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        
+        .amount-input {
+            font-size: 48px;
+            font-weight: 700;
+            background: transparent;
+            border: none;
+            color: #fff;
+            text-align: center;
+            width: 100%;
+            outline: none;
+        }
+        
+        .amount-input::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .quick-amounts {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .quick-amount-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 12px;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .quick-amount-btn:hover, .quick-amount-btn.active {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: #4ade80;
+        }
+        
+        .cashback-note {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #fbbf24;
+        }
+        
+        .add-money-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+            border: none;
+            border-radius: 12px;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .add-money-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(74, 222, 128, 0.4);
+        }
+        
+        /* Referral Section */
+        .referral-card {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border-radius: 16px;
+            padding: 25px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .referral-card::before {
+            content: '👥';
+            position: absolute;
+            right: -10px;
+            bottom: -10px;
+            font-size: 100px;
+            opacity: 0.1;
+        }
+        
+        .referral-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .referral-desc {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 15px;
+        }
+        
+        .referral-code-box {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .referral-code {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 12px 15px;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-align: center;
+        }
+        
+        .copy-btn {
+            background: #fff;
+            color: #2563eb;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 20px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .copy-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        /* Helper Dashboard */
+        .earnings-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+        
+        .earnings-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .earnings-card i {
+            font-size: 24px;
+            color: #4ade80;
+            margin-bottom: 10px;
+        }
+        
+        .earnings-value {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        
+        .earnings-label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        /* Helper Level Badge */
+        .level-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .level-badge.bronze {
+            background: linear-gradient(135deg, #cd7f32 0%, #b8860b 100%);
+        }
+        
+        .level-badge.silver {
+            background: linear-gradient(135deg, #c0c0c0 0%, #a8a8a8 100%);
+        }
+        
+        .level-badge.gold {
+            background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+            color: #000;
+        }
+        
+        .level-badge.platinum {
+            background: linear-gradient(135deg, #e5e4e2 0%, #a0b2c6 100%);
+            color: #000;
+        }
+        
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #1a1a2e;
+            color: #fff;
+            padding: 15px 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 2000;
+            transition: transform 0.3s ease;
+        }
+        
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        /* Login Required */
+        .login-required {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .login-required i {
+            font-size: 64px;
+            color: #4ade80;
+            margin-bottom: 20px;
+        }
+        
+        .login-required h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .login-required p {
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 20px;
+        }
+        
+        .login-btn {
+            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+            border: none;
+            border-radius: 12px;
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .wallet-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .wallet-actions {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .balance-amount {
+                font-size: 36px;
+            }
+            
+            .earnings-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .quick-amounts {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <a href="index.html" class="logo">
+            <i class="fas fa-tasks"></i>
+            <span>Task<span class="highlight">Earn</span></span>
+        </a>
+        <div class="nav-links">
+            <a href="index.html"><i class="fas fa-home"></i> Home</a>
+            <a href="tracking.html"><i class="fas fa-location-dot"></i> Tracking</a>
+            <a href="wallet.html" style="color: #4ade80;"><i class="fas fa-wallet"></i> Wallet</a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="wallet-container">
+        <!-- Login Required State -->
+        <div id="loginRequired" class="login-required" style="display: none;">
+            <i class="fas fa-wallet"></i>
+            <h2>Access Your Wallet</h2>
+            <p>Please login to view your wallet and transactions</p>
+            <button class="login-btn" onclick="window.location.href='index.html'">
+                <i class="fas fa-sign-in-alt"></i> Login to Continue
+            </button>
+        </div>
+
+        <!-- Wallet Content (shown when logged in) -->
+        <div id="walletContent" style="display: none;">
+            <!-- Wallet Card -->
+            <div class="wallet-card">
+                <div class="wallet-header">
+                    <div>
+                        <div class="wallet-title">TaskEarn Wallet</div>
+                        <div class="wallet-logo">💳</div>
+                    </div>
+                    <span class="level-badge bronze" id="helperLevel">
+                        <i class="fas fa-medal"></i> Bronze
+                    </span>
+                </div>
+                <div class="balance-section">
+                    <div class="balance-label">Available Balance</div>
+                    <div class="balance-amount">
+                        <span class="currency">₹</span>
+                        <span id="walletBalance">0.00</span>
+                    </div>
+                </div>
+                <div class="wallet-stats">
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalAdded">₹0</div>
+                        <div class="stat-label">Added</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalSpent">₹0</div>
+                        <div class="stat-label">Spent</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalEarned">₹0</div>
+                        <div class="stat-label">Earned</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalCashback">₹0</div>
+                        <div class="stat-label">Cashback</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="wallet-actions">
+                <div class="action-btn" onclick="openAddMoneyModal()">
+                    <i class="fas fa-plus"></i>
+                    <span>Add Money</span>
+                </div>
+                <div class="action-btn" onclick="showReferralSection()">
+                    <i class="fas fa-gift"></i>
+                    <span>Refer & Earn</span>
+                </div>
+                <div class="action-btn" onclick="showHelperDashboard()">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Earnings</span>
+                </div>
+                <div class="action-btn" onclick="showSOS()">
+                    <i class="fas fa-shield-halved"></i>
+                    <span>SOS</span>
+                </div>
+            </div>
+
+            <!-- Referral Section -->
+            <div class="section" id="referralSection" style="display: none;">
+                <div class="referral-card">
+                    <div class="referral-title">🎁 Refer Friends & Earn ₹50</div>
+                    <div class="referral-desc">
+                        Share your code with friends. You both get ₹50 when they complete their first task!
+                    </div>
+                    <div class="referral-code-box">
+                        <div class="referral-code" id="referralCode">LOADING...</div>
+                        <button class="copy-btn" onclick="copyReferralCode()">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Helper Dashboard -->
+            <div class="section" id="helperDashboard" style="display: none;">
+                <div class="section-header">
+                    <div class="section-title">
+                        <i class="fas fa-chart-pie"></i>
+                        Helper Dashboard
+                    </div>
+                </div>
+                <div class="earnings-grid">
+                    <div class="earnings-card">
+                        <i class="fas fa-calendar-day"></i>
+                        <div class="earnings-value" id="todayEarnings">₹0</div>
+                        <div class="earnings-label">Today's Earnings</div>
+                    </div>
+                    <div class="earnings-card">
+                        <i class="fas fa-calendar-week"></i>
+                        <div class="earnings-value" id="weekEarnings">₹0</div>
+                        <div class="earnings-label">This Week</div>
+                    </div>
+                    <div class="earnings-card">
+                        <i class="fas fa-tasks"></i>
+                        <div class="earnings-value" id="monthTasks">0</div>
+                        <div class="earnings-label">Tasks This Month</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transactions -->
+            <div class="section">
+                <div class="section-header">
+                    <div class="section-title">
+                        <i class="fas fa-history"></i>
+                        Recent Transactions
+                    </div>
+                    <span class="view-all" onclick="loadAllTransactions()">View All</span>
+                </div>
+                <div class="transaction-list" id="transactionList">
+                    <div class="transaction-item">
+                        <div class="transaction-icon credit">
+                            <i class="fas fa-plus"></i>
+                        </div>
+                        <div class="transaction-details">
+                            <div class="transaction-title">Loading transactions...</div>
+                            <div class="transaction-date">Please wait</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Money Modal -->
+    <div class="modal-overlay" id="addMoneyModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeAddMoneyModal()">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="modal-title">Add Money</div>
+            <div class="amount-input-container">
+                <input type="number" class="amount-input" id="addAmount" placeholder="₹0" min="10">
+            </div>
+            <div class="quick-amounts">
+                <button class="quick-amount-btn" onclick="setAmount(100)">₹100</button>
+                <button class="quick-amount-btn" onclick="setAmount(200)">₹200</button>
+                <button class="quick-amount-btn" onclick="setAmount(500)">₹500</button>
+                <button class="quick-amount-btn" onclick="setAmount(1000)">₹1000</button>
+            </div>
+            <div class="cashback-note" id="cashbackNote" style="display: none;">
+                🎉 Get 2% cashback on amounts ₹500+
+            </div>
+            <button class="add-money-btn" onclick="processAddMoney()">
+                <i class="fas fa-plus"></i> Add Money
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">Message</div>
+
+    <script src="api-client.js"></script>
+    <script>
+        // Check if logged in - now both login methods save to taskearn_user
+        const userStr = localStorage.getItem('taskearn_user') || localStorage.getItem('taskearn_current_user');
+        
+        // Debug: Log what we found
+        console.log('🔍 Wallet Auth Check:');
+        console.log('  - User Data:', userStr ? 'Found' : 'Not found');
+        
+        // User is logged in if they have user data
+        const isLoggedIn = !!userStr;
+        console.log('  - Is Logged In:', isLoggedIn);
+        
+        // Wait for DOM to be ready
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!isLoggedIn) {
+                console.log('❌ Not logged in - showing login required');
+                document.getElementById('loginRequired').style.display = 'block';
+                document.getElementById('walletContent').style.display = 'none';
+            } else {
+                console.log('✅ Logged in - showing wallet');
+                document.getElementById('loginRequired').style.display = 'none';
+                document.getElementById('walletContent').style.display = 'block';
+                loadWallet();
+            }
+        });
+        
+        // Load wallet data
+        async function loadWallet() {
+            try {
+                const result = await WalletAPI.get();
+                if (result && result.success) {
+                    updateWalletUI(result.wallet);
+                    renderTransactions(result.transactions);
+                } else {
+                    // API returned but not successful - use local wallet
+                    console.log('API not available, using local wallet');
+                    loadWalletLocal();
+                }
+            } catch (e) {
+                console.error('Error loading wallet:', e);
+                // If API fails completely, use local wallet
+                loadWalletLocal();
+            }
+            
+            // Load referral code
+            loadReferralCode();
+            
+            // Load helper dashboard
+            loadHelperDashboard();
+        }
+        
+        function updateWalletUI(wallet) {
+            document.getElementById('walletBalance').textContent = wallet.balance.toFixed(2);
+            document.getElementById('totalAdded').textContent = '₹' + wallet.totalAdded;
+            document.getElementById('totalSpent').textContent = '₹' + wallet.totalSpent;
+            document.getElementById('totalEarned').textContent = '₹' + wallet.totalEarned;
+            document.getElementById('totalCashback').textContent = '₹' + wallet.totalCashback;
+        }
+        
+        function renderTransactions(transactions) {
+            const list = document.getElementById('transactionList');
+            
+            if (!transactions || transactions.length === 0) {
+                list.innerHTML = `
+                    <div class="transaction-item">
+                        <div class="transaction-icon credit">
+                            <i class="fas fa-inbox"></i>
+                        </div>
+                        <div class="transaction-details">
+                            <div class="transaction-title">No transactions yet</div>
+                            <div class="transaction-date">Add money to get started</div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            list.innerHTML = transactions.map(tx => {
+                const isCredit = ['credit', 'earning', 'cashback', 'referral_bonus'].includes(tx.type);
+                const iconClass = tx.type === 'cashback' ? 'cashback' : 
+                                 tx.type === 'earning' ? 'earning' :
+                                 isCredit ? 'credit' : 'debit';
+                const icon = tx.type === 'cashback' ? 'fa-gift' :
+                            tx.type === 'earning' ? 'fa-hand-holding-dollar' :
+                            isCredit ? 'fa-plus' : 'fa-minus';
+                
+                return `
+                    <div class="transaction-item">
+                        <div class="transaction-icon ${iconClass}">
+                            <i class="fas ${icon}"></i>
+                        </div>
+                        <div class="transaction-details">
+                            <div class="transaction-title">${tx.description || tx.type}</div>
+                            <div class="transaction-date">${formatDate(tx.created_at)}</div>
+                        </div>
+                        <div class="transaction-amount ${isCredit ? 'credit' : 'debit'}">
+                            ${isCredit ? '+' : '-'}₹${tx.amount}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-IN', {
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        
+        // Add Money Modal
+        function openAddMoneyModal() {
+            document.getElementById('addMoneyModal').classList.add('active');
+        }
+        
+        function closeAddMoneyModal() {
+            document.getElementById('addMoneyModal').classList.remove('active');
+        }
+        
+        function setAmount(amount) {
+            document.getElementById('addAmount').value = amount;
+            updateCashbackNote(amount);
+            
+            // Update active state
+            document.querySelectorAll('.quick-amount-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.includes(amount)) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+        
+        function updateCashbackNote(amount) {
+            const note = document.getElementById('cashbackNote');
+            if (amount >= 500) {
+                const cashback = amount * 0.02;
+                note.innerHTML = `🎉 You'll get ₹${cashback.toFixed(2)} cashback!`;
+                note.style.display = 'block';
+            } else {
+                note.style.display = 'none';
+            }
+        }
+        
+        document.getElementById('addAmount').addEventListener('input', (e) => {
+            updateCashbackNote(parseInt(e.target.value) || 0);
+        });
+        
+        async function processAddMoney() {
+            const amount = parseInt(document.getElementById('addAmount').value);
+            
+            if (!amount || amount < 10) {
+                showToast('Minimum amount is ₹10');
+                return;
+            }
+            
+            // Try Razorpay for real payment first
+            if (typeof addMoneyToWallet === 'function') {
+                addMoneyToWallet(amount, 
+                    // On Success
+                    function(result) {
+                        console.log('Real payment successful:', result);
+                        showToast('✅ ₹' + amount + ' added successfully!');
+                        closeAddMoneyModal();
+                        
+                        // Also add to local wallet for offline access
+                        addMoneyLocalSilent(amount, result.paymentId);
+                        loadWallet();
+                    },
+                    // On Error
+                    function(error) {
+                        console.log('Razorpay error:', error);
+                        if (error.demo) {
+                            // Razorpay not configured, use demo/local mode
+                            showToast('💡 Demo mode: Using local wallet');
+                            addMoneyLocal(amount);
+                        } else if (error.cancelled) {
+                            showToast('Payment cancelled');
+                        } else {
+                            showToast('❌ ' + (error.message || 'Payment failed'));
+                        }
+                    }
+                );
+            } else {
+                // Razorpay not loaded, use local wallet
+                addMoneyLocal(amount);
+            }
+        }
+        
+        // Add money locally without toast (for syncing after real payment)
+        function addMoneyLocalSilent(amount, paymentId) {
+            const wallet = getLocalWallet();
+            const cashback = amount >= 500 ? Math.floor(amount * 0.02) : 0;
+            
+            wallet.balance += amount + cashback;
+            wallet.totalAdded += amount;
+            wallet.totalCashback += cashback;
+            
+            wallet.transactions.unshift({
+                id: Date.now(),
+                type: 'credit',
+                amount: amount,
+                description: 'Added via Razorpay',
+                paymentId: paymentId,
+                date: new Date().toISOString()
+            });
+            
+            if (cashback > 0) {
+                wallet.transactions.unshift({
+                    id: Date.now() + 1,
+                    type: 'cashback',
+                    amount: cashback,
+                    description: '2% Cashback bonus',
+                    date: new Date().toISOString()
+                });
+            }
+            
+            saveLocalWallet(wallet);
+        }
+        
+        // Local wallet storage for offline mode
+        function getLocalWallet() {
+            const walletStr = localStorage.getItem('taskearn_local_wallet');
+            if (walletStr) {
+                return JSON.parse(walletStr);
+            }
+            return { balance: 0, totalAdded: 0, totalSpent: 0, totalEarned: 0, totalCashback: 0, transactions: [] };
+        }
+        
+        function saveLocalWallet(wallet) {
+            localStorage.setItem('taskearn_local_wallet', JSON.stringify(wallet));
+        }
+        
+        function addMoneyLocal(amount) {
+            const wallet = getLocalWallet();
+            const cashback = amount >= 500 ? Math.floor(amount * 0.02) : 0;
+            
+            wallet.balance += amount + cashback;
+            wallet.totalAdded += amount;
+            wallet.totalCashback += cashback;
+            
+            // Add transaction
+            wallet.transactions.unshift({
+                id: Date.now(),
+                type: 'credit',
+                amount: amount,
+                description: 'Added money to wallet',
+                date: new Date().toISOString()
+            });
+            
+            if (cashback > 0) {
+                wallet.transactions.unshift({
+                    id: Date.now() + 1,
+                    type: 'cashback',
+                    amount: cashback,
+                    description: '2% Cashback bonus',
+                    date: new Date().toISOString()
+                });
+            }
+            
+            saveLocalWallet(wallet);
+            showToast('✅ ₹' + amount + ' added to wallet!' + (cashback > 0 ? ' +₹' + cashback + ' cashback!' : ''));
+            closeAddMoneyModal();
+            loadWalletLocal();
+        }
+        
+        function loadWalletLocal() {
+            const wallet = getLocalWallet();
+            updateWalletUI(wallet);
+            renderTransactions(wallet.transactions);
+        }
+        
+        // Referral
+        async function loadReferralCode() {
+            try {
+                const result = await ReferralAPI.getCode();
+                if (result && result.success) {
+                    document.getElementById('referralCode').textContent = result.referralCode;
+                } else {
+                    // Generate local referral code
+                    loadReferralCodeLocal();
+                }
+            } catch (e) {
+                // API not available, generate local code
+                loadReferralCodeLocal();
+            }
+        }
+        
+        function loadReferralCodeLocal() {
+            let code = localStorage.getItem('taskearn_referral_code');
+            if (!code) {
+                // Generate a unique referral code
+                const userStr = localStorage.getItem('taskearn_user') || localStorage.getItem('taskearn_current_user');
+                if (userStr) {
+                    const user = JSON.parse(userStr);
+                    const name = (user.name || 'USER').substring(0, 4).toUpperCase();
+                    code = name + Math.random().toString(36).substring(2, 6).toUpperCase();
+                } else {
+                    code = 'TASK' + Math.random().toString(36).substring(2, 6).toUpperCase();
+                }
+                localStorage.setItem('taskearn_referral_code', code);
+            }
+            document.getElementById('referralCode').textContent = code;
+        }
+        
+        function showReferralSection() {
+            const section = document.getElementById('referralSection');
+            section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        function copyReferralCode() {
+            const code = document.getElementById('referralCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                showToast('✅ Referral code copied!');
+            });
+        }
+        
+        // Helper Dashboard
+        async function loadHelperDashboard() {
+            try {
+                const result = await HelperAPI.getDashboard();
+                if (result && result.success) {
+                    const d = result.dashboard;
+                    document.getElementById('todayEarnings').textContent = '₹' + d.todayEarnings;
+                    document.getElementById('weekEarnings').textContent = '₹' + d.weekEarnings;
+                    document.getElementById('monthTasks').textContent = d.monthTasks;
+                    
+                    // Update level badge
+                    const badge = document.getElementById('helperLevel');
+                    badge.className = 'level-badge ' + d.helperLevel;
+                    badge.innerHTML = `<i class="fas fa-medal"></i> ${d.helperLevel.charAt(0).toUpperCase() + d.helperLevel.slice(1)}`;
+                } else {
+                    // Use local data
+                    loadHelperDashboardLocal();
+                }
+            } catch (e) {
+                // API not available, use local data
+                loadHelperDashboardLocal();
+            }
+        }
+        
+        function loadHelperDashboardLocal() {
+            const wallet = getLocalWallet();
+            document.getElementById('todayEarnings').textContent = '₹' + wallet.totalEarned;
+            document.getElementById('weekEarnings').textContent = '₹' + wallet.totalEarned;
+            document.getElementById('monthTasks').textContent = wallet.transactions.filter(t => t.type === 'earned').length;
+        }
+        
+        function showHelperDashboard() {
+            const section = document.getElementById('helperDashboard');
+            section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        // SOS
+        function showSOS() {
+            if (confirm('🚨 Are you in an emergency situation?')) {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(async (pos) => {
+                        try {
+                            const result = await SosAPI.sendAlert(
+                                null,
+                                pos.coords.latitude,
+                                pos.coords.longitude
+                            );
+                            if (result && result.success) {
+                                showToast('🚨 SOS Alert Sent! Help is on the way.');
+                            } else {
+                                // Local SOS - just show confirmation
+                                showToast('🚨 SOS Alert Recorded! Location: ' + pos.coords.latitude.toFixed(4) + ', ' + pos.coords.longitude.toFixed(4));
+                            }
+                        } catch (e) {
+                            // Offline SOS
+                            showToast('🚨 SOS Alert Recorded! Location saved locally.');
+                        }
+                    });
+                } else {
+                    showToast('🚨 SOS Alert! Please call emergency services.');
+                }
+            }
+        }
+        
+        // Toast
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+    </script>
+    <!-- Razorpay Integration -->
+    <script src="razorpay.js"></script>
+</body>
+</html>

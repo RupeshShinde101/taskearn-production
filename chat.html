@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskEarn Chat - In-App Messaging</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
+    <script>
+        window.TASKEARN_API_URL = 'http://localhost:5000/api';
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        /* Navigation */
+        .navbar {
+            background: rgba(26, 26, 46, 0.95);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+            text-decoration: none;
+        }
+        
+        .logo i { color: #4ade80; }
+        .logo .highlight { color: #4ade80; }
+        
+        .back-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 10px;
+            padding: 10px 20px;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* Chat Container */
+        .chat-container {
+            display: flex;
+            height: calc(100vh - 70px);
+        }
+        
+        /* Chat List */
+        .chat-list {
+            width: 350px;
+            background: rgba(255, 255, 255, 0.03);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            overflow-y: auto;
+        }
+        
+        .chat-list-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .chat-list-header h3 {
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        
+        .search-box {
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 10px 15px;
+        }
+        
+        .search-box i {
+            color: rgba(255, 255, 255, 0.5);
+            margin-right: 10px;
+        }
+        
+        .search-box input {
+            flex: 1;
+            background: none;
+            border: none;
+            color: #fff;
+            outline: none;
+        }
+        
+        .chat-item {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            cursor: pointer;
+            transition: background 0.3s;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .chat-item:hover, .chat-item.active {
+            background: rgba(74, 222, 128, 0.1);
+        }
+        
+        .chat-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 600;
+            margin-right: 15px;
+        }
+        
+        .chat-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .chat-name {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+        
+        .chat-preview {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .chat-meta {
+            text-align: right;
+        }
+        
+        .chat-time {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-bottom: 5px;
+        }
+        
+        .unread-badge {
+            background: #4ade80;
+            color: #000;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        
+        /* Chat Window */
+        .chat-window {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-header {
+            padding: 15px 25px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .chat-user-info {
+            display: flex;
+            align-items: center;
+        }
+        
+        .chat-user-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 600;
+            margin-right: 15px;
+        }
+        
+        .chat-user-name {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .chat-task-title {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .chat-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .action-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .action-icon:hover {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+        
+        .action-icon.sos {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+        
+        /* Messages */
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .message {
+            max-width: 70%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .message.sent {
+            align-self: flex-end;
+        }
+        
+        .message.received {
+            align-self: flex-start;
+        }
+        
+        .message-bubble {
+            padding: 12px 16px;
+            border-radius: 18px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .message.sent .message-bubble {
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            color: #000;
+            border-bottom-right-radius: 5px;
+        }
+        
+        .message.received .message-bubble {
+            background: rgba(255, 255, 255, 0.1);
+            border-bottom-left-radius: 5px;
+        }
+        
+        .message-time {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 5px;
+            padding: 0 5px;
+        }
+        
+        .message.sent .message-time {
+            text-align: right;
+        }
+        
+        /* Quick Actions */
+        .quick-actions {
+            padding: 10px 20px;
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .quick-action-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 8px 16px;
+            color: #fff;
+            font-size: 12px;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .quick-action-btn:hover {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: #4ade80;
+        }
+        
+        /* Input Area */
+        .message-input-container {
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .message-input-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 25px;
+            padding: 5px 10px;
+        }
+        
+        .input-action {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: color 0.3s;
+        }
+        
+        .input-action:hover {
+            color: #4ade80;
+        }
+        
+        .message-input {
+            flex: 1;
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 14px;
+            padding: 10px;
+            outline: none;
+        }
+        
+        .send-btn {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            border: none;
+            color: #000;
+            font-size: 18px;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+        
+        .send-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        /* OTP Verification Card */
+        .otp-card {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 15px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        
+        .otp-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fbbf24;
+            margin-bottom: 10px;
+        }
+        
+        .otp-code {
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: 8px;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
+        .otp-note {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            text-align: center;
+        }
+        
+        /* Photo Proof */
+        .proof-upload {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        
+        .proof-btn {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            color: #fff;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .proof-btn:hover {
+            background: rgba(74, 222, 128, 0.1);
+            border-color: #4ade80;
+        }
+        
+        .proof-btn i {
+            font-size: 24px;
+            margin-bottom: 5px;
+            display: block;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .empty-state i {
+            font-size: 64px;
+            margin-bottom: 20px;
+            color: #4ade80;
+        }
+        
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+        
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #1a1a2e;
+            color: #fff;
+            padding: 15px 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 2000;
+            transition: transform 0.3s ease;
+        }
+        
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .chat-list {
+                display: none;
+                position: fixed;
+                top: 70px;
+                left: 0;
+                width: 100%;
+                height: calc(100vh - 70px);
+                z-index: 100;
+            }
+            
+            .chat-list.show {
+                display: block;
+            }
+            
+            .message {
+                max-width: 85%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <a href="index.html" class="logo">
+            <i class="fas fa-tasks"></i>
+            <span>Task<span class="highlight">Earn</span></span>
+        </a>
+        <button class="back-btn" onclick="window.history.back()">
+            <i class="fas fa-arrow-left"></i> Back
+        </button>
+    </nav>
+
+    <div class="chat-container">
+        <!-- Chat List -->
+        <div class="chat-list" id="chatList">
+            <div class="chat-list-header">
+                <h3><i class="fas fa-comments"></i> Messages</h3>
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="Search conversations...">
+                </div>
+            </div>
+            <div id="conversationList">
+                <!-- Conversations will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Chat Window -->
+        <div class="chat-window">
+            <!-- Empty State (shown when no chat selected) -->
+            <div class="empty-state" id="emptyState">
+                <i class="fas fa-comments"></i>
+                <h3>Select a conversation</h3>
+                <p>Choose a task to start chatting</p>
+            </div>
+
+            <!-- Active Chat (hidden by default) -->
+            <div id="activeChat" style="display: none; flex: 1; display: flex; flex-direction: column;">
+                <div class="chat-header">
+                    <div class="chat-user-info">
+                        <div class="chat-user-avatar" id="chatAvatar">J</div>
+                        <div>
+                            <div class="chat-user-name" id="chatUserName">John Doe</div>
+                            <div class="chat-task-title" id="chatTaskTitle">Grocery Delivery</div>
+                        </div>
+                    </div>
+                    <div class="chat-actions">
+                        <div class="action-icon" onclick="callUser()">
+                            <i class="fas fa-phone"></i>
+                        </div>
+                        <div class="action-icon" onclick="showOTP()">
+                            <i class="fas fa-key"></i>
+                        </div>
+                        <div class="action-icon sos" onclick="sendSOS()">
+                            <i class="fas fa-shield-halved"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="messages-container" id="messagesContainer">
+                    <!-- Messages will be loaded here -->
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                    <button class="quick-action-btn" onclick="sendQuickMessage('On my way!')">🚗 On my way!</button>
+                    <button class="quick-action-btn" onclick="sendQuickMessage('I have arrived')">📍 Arrived</button>
+                    <button class="quick-action-btn" onclick="sendQuickMessage('Item picked up')">📦 Picked up</button>
+                    <button class="quick-action-btn" onclick="sendQuickMessage('Delivered!')">✅ Delivered</button>
+                    <button class="quick-action-btn" onclick="showOTP()">🔑 Share OTP</button>
+                </div>
+
+                <!-- Message Input -->
+                <div class="message-input-container">
+                    <div class="message-input-box">
+                        <button class="input-action" onclick="uploadProof()">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                        <input type="text" class="message-input" id="messageInput" 
+                               placeholder="Type a message..." 
+                               onkeypress="handleKeyPress(event)">
+                        <button class="send-btn" onclick="sendMessage()">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">Message</div>
+
+    <script src="api-client.js"></script>
+    <script>
+        let currentTaskId = null;
+        let currentUserId = null;
+        let otherUserId = null;
+        let pollInterval = null;
+
+        // Get task ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const taskIdParam = urlParams.get('task');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Check for user session (both login methods now save to taskearn_user)
+            const userStr = localStorage.getItem('taskearn_user') || localStorage.getItem('taskearn_current_user');
+            
+            if (!userStr) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            try {
+                const user = JSON.parse(userStr);
+                currentUserId = user.id;
+            } catch (e) {
+                console.error('Error parsing user:', e);
+            }
+
+            loadConversations();
+
+            if (taskIdParam) {
+                loadChat(parseInt(taskIdParam));
+            }
+        });
+
+        // Load conversations
+        async function loadConversations() {
+            // In a full implementation, this would fetch all active tasks with messages
+            // For now, we'll show a placeholder
+            const list = document.getElementById('conversationList');
+            
+            try {
+                // This would be a dedicated API endpoint
+                const response = await fetch(`${window.TASKEARN_API_URL}/user/tasks`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+                    }
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    const allTasks = [
+                        ...(data.postedTasks || []).filter(t => t.status === 'accepted'),
+                        ...(data.acceptedTasks || [])
+                    ];
+                    
+                    if (allTasks.length === 0) {
+                        list.innerHTML = `
+                            <div style="padding: 30px; text-align: center; color: rgba(255,255,255,0.5);">
+                                <i class="fas fa-inbox" style="font-size: 32px; margin-bottom: 10px;"></i>
+                                <p>No active conversations</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    list.innerHTML = allTasks.map(task => `
+                        <div class="chat-item ${currentTaskId === task.id ? 'active' : ''}" 
+                             onclick="loadChat(${task.id})">
+                            <div class="chat-avatar">${task.title.charAt(0)}</div>
+                            <div class="chat-info">
+                                <div class="chat-name">${task.title}</div>
+                                <div class="chat-preview">${task.description || 'Task in progress...'}</div>
+                            </div>
+                            <div class="chat-meta">
+                                <div class="chat-time">${formatTime(task.acceptedAt || task.postedAt)}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error('Error loading conversations:', e);
+            }
+        }
+
+        // Load chat for a task
+        async function loadChat(taskId) {
+            currentTaskId = taskId;
+            
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('activeChat').style.display = 'flex';
+            
+            // Update active state in list
+            document.querySelectorAll('.chat-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.onclick.toString().includes(taskId)) {
+                    item.classList.add('active');
+                }
+            });
+            
+            // Load messages
+            await loadMessages();
+            
+            // Start polling for new messages
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(loadMessages, 3000);
+        }
+
+        // Load messages
+        async function loadMessages() {
+            if (!currentTaskId) return;
+            
+            try {
+                const result = await ChatAPI.getMessages(currentTaskId);
+                
+                if (result.success) {
+                    renderMessages(result.messages);
+                }
+            } catch (e) {
+                console.error('Error loading messages:', e);
+            }
+        }
+
+        // Render messages
+        function renderMessages(messages) {
+            const container = document.getElementById('messagesContainer');
+            
+            if (!messages || messages.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: rgba(255,255,255,0.5);">
+                        <i class="fas fa-comment-dots" style="font-size: 48px; margin-bottom: 15px;"></i>
+                        <p>No messages yet. Start the conversation!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = messages.map(msg => {
+                const isSent = msg.sender_id === currentUserId;
+                return `
+                    <div class="message ${isSent ? 'sent' : 'received'}">
+                        <div class="message-bubble">${escapeHtml(msg.message)}</div>
+                        <div class="message-time">
+                            ${msg.sender_name ? msg.sender_name + ' • ' : ''}
+                            ${formatTime(msg.created_at)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Send message
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || !currentTaskId) return;
+            
+            input.value = '';
+            
+            try {
+                const result = await ChatAPI.send(currentTaskId, message);
+                
+                if (result.success) {
+                    loadMessages();
+                } else {
+                    showToast('❌ Failed to send message');
+                }
+            } catch (e) {
+                showToast('❌ Error sending message');
+            }
+        }
+
+        // Send quick message
+        function sendQuickMessage(message) {
+            document.getElementById('messageInput').value = message;
+            sendMessage();
+        }
+
+        // Handle enter key
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Show OTP
+        async function showOTP() {
+            if (!currentTaskId) return;
+            
+            try {
+                const result = await ProofAPI.generateOTP(currentTaskId);
+                
+                if (result.success) {
+                    // Send OTP as message
+                    const otpMessage = `🔐 Delivery OTP: ${result.otp}\n\nShare this code with the helper to confirm delivery.`;
+                    await ChatAPI.send(currentTaskId, otpMessage);
+                    loadMessages();
+                    showToast('OTP shared in chat!');
+                }
+            } catch (e) {
+                showToast('❌ Failed to generate OTP');
+            }
+        }
+
+        // Upload proof
+        async function uploadProof() {
+            // In a full implementation, this would open camera/gallery
+            // For now, simulate with prompt
+            const proofType = confirm('Upload pickup photo?') ? 'pickup' : 'delivery';
+            
+            showToast('📸 Opening camera...');
+            
+            // Simulate upload
+            setTimeout(async () => {
+                try {
+                    const result = await ProofAPI.upload(currentTaskId, proofType, 'demo-image-url');
+                    if (result.success) {
+                        await ChatAPI.send(currentTaskId, `📸 ${proofType} proof uploaded`);
+                        loadMessages();
+                        showToast('✅ Proof uploaded!');
+                    }
+                } catch (e) {
+                    showToast('❌ Upload failed');
+                }
+            }, 1000);
+        }
+
+        // Call user
+        function callUser() {
+            showToast('📞 Calling... (Feature coming soon)');
+        }
+
+        // Send SOS
+        async function sendSOS() {
+            if (confirm('🚨 Send emergency SOS alert?')) {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(async (pos) => {
+                        try {
+                            const result = await SosAPI.sendAlert(
+                                currentTaskId,
+                                pos.coords.latitude,
+                                pos.coords.longitude
+                            );
+                            if (result.success) {
+                                showToast('🚨 SOS Alert Sent!');
+                            }
+                        } catch (e) {
+                            showToast('❌ Failed to send SOS');
+                        }
+                    });
+                }
+            }
+        }
+
+        // Helper functions
+        function formatTime(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleTimeString('en-IN', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Cleanup on page leave
+        window.addEventListener('beforeunload', () => {
+            if (pollInterval) clearInterval(pollInterval);
+        });
+    </script>
+</body>
+</html>

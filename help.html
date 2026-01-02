@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Help Center - TaskEarn</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; line-height: 1.8; color: #334155; background: #f8fafc; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; text-align: center; }
+        .header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .header p { opacity: 0.9; }
+        .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+        .back-link { display: inline-flex; align-items: center; gap: 0.5rem; color: #667eea; text-decoration: none; margin-bottom: 2rem; font-weight: 500; }
+        .back-link:hover { text-decoration: underline; }
+        .content { background: white; border-radius: 16px; padding: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); }
+        h2 { color: #1e293b; font-size: 1.5rem; margin-top: 2rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0; }
+        h2:first-child { margin-top: 0; }
+        h3 { color: #475569; font-size: 1.1rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+        p { margin-bottom: 1rem; }
+        ul, ol { margin-left: 1.5rem; margin-bottom: 1rem; }
+        li { margin-bottom: 0.5rem; }
+        .faq-item { background: #f8fafc; border-radius: 8px; padding: 1rem 1.5rem; margin: 1rem 0; border-left: 4px solid #667eea; }
+        .faq-item h4 { color: #1e293b; margin-bottom: 0.5rem; }
+        .search-box { background: #f1f5f9; padding: 1.5rem; border-radius: 12px; margin-bottom: 2rem; text-align: center; }
+        .search-box input { width: 100%; max-width: 400px; padding: 0.75rem 1rem; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; }
+        .search-box input:focus { outline: none; border-color: #667eea; }
+        .contact-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; border-radius: 12px; text-align: center; margin-top: 2rem; }
+        .contact-box h3 { color: white; margin-bottom: 1rem; }
+        .contact-box a { color: white; }
+        .footer { text-align: center; padding: 2rem; color: #64748b; }
+        .footer a { color: #667eea; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><i class="fas fa-question-circle"></i> Help Center</h1>
+        <p>Find answers to common questions</p>
+    </div>
+    
+    <div class="container">
+        <a href="index.html" class="back-link"><i class="fas fa-arrow-left"></i> Back to TaskEarn</a>
+        
+        <div class="content">
+            <h2>Getting Started</h2>
+            
+            <div class="faq-item">
+                <h4>How do I create an account?</h4>
+                <p>Click the "Get Started" or "Sign Up" button on our homepage. Enter your name, email, phone number, and create a password. You'll receive an OTP to verify your account.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>What is the minimum age requirement?</h4>
+                <p>You must be at least 16 years old to use TaskEarn.</p>
+            </div>
+            
+            <h2>Posting Tasks</h2>
+            
+            <div class="faq-item">
+                <h4>How do I post a task?</h4>
+                <p>After logging in, click "Post a Task" or navigate to the task upload section. Fill in the task title, description, category, budget, and location. Click submit to post your task.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>How much should I pay for a task?</h4>
+                <p>Pricing depends on task complexity, time required, and your location. Browse similar tasks in your area to get an idea of fair pricing.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>Can I edit or cancel my task?</h4>
+                <p>Yes, you can edit or cancel tasks that haven't been accepted yet. Once a Tasker accepts, contact them to discuss any changes.</p>
+            </div>
+            
+            <h2>Finding & Completing Tasks</h2>
+            
+            <div class="faq-item">
+                <h4>How do I find tasks near me?</h4>
+                <p>Go to "Find Tasks" section. Enable location access or enter your city/area to see nearby tasks. You can filter by category and budget.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>How do I get paid?</h4>
+                <p>Once you complete a task and the Task Poster confirms, the payment is processed through Razorpay and transferred to your linked account.</p>
+            </div>
+            
+            <h2>Payments</h2>
+            
+            <div class="faq-item">
+                <h4>What payment methods are accepted?</h4>
+                <p>We accept UPI, debit cards, credit cards, net banking, and popular wallets through Razorpay.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>Is my payment information secure?</h4>
+                <p>Yes, all payments are processed through Razorpay, a PCI-DSS compliant payment gateway. We never store your card details.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>How do refunds work?</h4>
+                <p>If a task is cancelled before completion, refunds are processed within 5-7 business days to your original payment method.</p>
+            </div>
+            
+            <h2>Account & Security</h2>
+            
+            <div class="faq-item">
+                <h4>How do I reset my password?</h4>
+                <p>Click "Forgot Password" on the login screen. Enter your email to receive an OTP, then set a new password.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>How do I delete my account?</h4>
+                <p>Contact us at support@taskearn.com with your account email. We'll process deletion within 30 days.</p>
+            </div>
+            
+            <div class="contact-box">
+                <h3>Still need help?</h3>
+                <p>Contact our support team</p>
+                <p><i class="fas fa-envelope"></i> <a href="mailto:support@taskearn.com">support@taskearn.com</a></p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>&copy; 2026 TaskEarn India. All rights reserved.</p>
+        <p><a href="index.html">Home</a> | <a href="privacy.html">Privacy Policy</a> | <a href="terms.html">Terms of Service</a></p>
+    </div>
+</body>
+</html>

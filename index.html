@@ -20,6 +20,25 @@
     </script>
 </head>
 <body>
+    <!-- Migration Warning Banner (Hidden by default) -->
+    <div id="migrationWarningBanner" style="display: none; position: fixed; top: 0; left: 0; right: 0; background: linear-gradient(135deg, #f59e0b, #ea580c); color: white; padding: 15px; text-align: center; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+        <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div style="flex: 1; min-width: 300px;">
+                <strong><i class="fas fa-exclamation-triangle"></i> ACTION REQUIRED:</strong> 
+                Your account is in local-only mode. Tasks you post won't be visible to others. 
+                <strong>Please logout and login again to sync with the server.</strong>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="handleLogout()" style="background: white; color: #ea580c; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer;">
+                    <i class="fas fa-sign-out-alt"></i> Logout & Migrate Now
+                </button>
+                <button onclick="document.getElementById('migrationWarningBanner').style.display='none'" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid white; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
+                    Remind Later
+                </button>
+            </div>
+        </div>
+    </div>
+    
     <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
@@ -482,6 +501,7 @@
                 <span class="section-badge">Dashboard</span>
                 <h2>My Tasks</h2>
                 <p>Manage your posted tasks and track your earnings</p>
+                <div id="authStatus" style="display: none; margin-top: 10px; padding: 10px; background: #f0f9ff; border-radius: 8px; font-size: 14px;"></div>
             </div>
             
             <div class="dashboard-tabs">

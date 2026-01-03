@@ -564,10 +564,11 @@ def create_task():
         
         # Get the inserted task ID
         if config.USE_POSTGRES:
-            cursor.execute('SELECT lastval()')
+            cursor.execute('SELECT lastval() AS id')
+            task_id = cursor.fetchone()['id']
         else:
-            cursor.execute('SELECT last_insert_rowid()')
-        task_id = cursor.fetchone()[0]
+            cursor.execute('SELECT last_insert_rowid() AS id')
+            task_id = cursor.fetchone()['id']
         
         # Update user's tasks_posted count
         cursor.execute(f'UPDATE users SET tasks_posted = tasks_posted + 1 WHERE id = {PH}', 

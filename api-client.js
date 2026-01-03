@@ -10,9 +10,6 @@
 // For Render: 'https://your-app-name.onrender.com/api'
 const API_BASE_URL = window.TASKEARN_API_URL || 'https://web-production-b8388.up.railway.app/api';
 
-// Store auth token
-let authToken = localStorage.getItem('taskearn_token');
-
 // ========================================
 // API HELPER FUNCTIONS
 // ========================================
@@ -25,23 +22,34 @@ async function apiRequest(endpoint, options = {}) {
         ...options.headers
     };
     
-    // Add auth token if available
+    // ALWAYS fetch fresh token from localStorage (don't cache it!)
+    const authToken = localStorage.getItem('taskearn_token');
     if (authToken) {
         headers['Authorization'] = `Bearer ${authToken}`;
+        console.log('🔐 Using auth token for request:', endpoint);
+    } else {
+        console.warn('⚠️ No auth token available for request:', endpoint);
     }
     
     try {
+        console.log('🌐 Making API request to:', url);
+        console.log('📤 Method:', options.method || 'GET');
+        console.log('📦 Headers:', headers);
+        if (options.body) console.log('📄 Body:', options.body);
+        
         const response = await fetch(url, {
             ...options,
             headers
         });
         
+        console.log('📥 Response status:', response.status, response.statusText);
+        
         const data = await response.json();
+        console.log('📄 Response data:', data);
         
         // Handle token expiration - only clear if we actually had an API token
         if (response.status === 401 && data.message === 'Invalid or expired token') {
-            // Only clear API token, not local session
-            authToken = null;
+            // Clear API token from localStorage
             localStorage.removeItem('taskearn_token');
             // Don't clear taskearn_user or taskearn_current_user - let local login still work
             console.log('⚠️ API token expired, cleared token but kept local session');
@@ -49,22 +57,29 @@ async function apiRequest(endpoint, options = {}) {
         
         return { success: response.ok, status: response.status, data };
     } catch (error) {
-        console.error('API Error:', error);
+        console.error('❌ API Request Failed!');
+        console.error('❌ Error type:', error.name);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Full error:', error);
+        console.error('❌ URL was:', url);
+        
         return { 
             success: false, 
             status: 0, 
-            data: { success: false, message: 'Network error. Is the backend server running?' }
+            data: { 
+                success: false, 
+                message: 'Network error: ' + error.message
+            }
         };
     }
 }
 
 function setAuthToken(token) {
-    authToken = token;
     localStorage.setItem('taskearn_token', token);
+    console.log('✅ Auth token saved to localStorage');
 }
 
 function clearAuthToken() {
-    authToken = null;
     localStorage.removeItem('taskearn_token');
     localStorage.removeItem('taskearn_user');
     localStorage.removeItem('taskearn_current_user');

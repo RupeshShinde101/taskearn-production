@@ -1041,9 +1041,17 @@ function updateMapMarkers() {
 async function loadTasksFromServer() {
     try {
         console.log('📡 Loading tasks from server...');
+        console.log('🔑 API Token exists:', !!localStorage.getItem('taskearn_token'));
+        console.log('🌐 API URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : window.TASKEARN_API_URL);
+        
         if (typeof TasksAPI !== 'undefined' && TasksAPI.getAll) {
+            console.log('🚀 Calling TasksAPI.getAll...');
             const result = await TasksAPI.getAll();
+            console.log('📥 Raw server response:', JSON.stringify(result, null, 2));
+            
             if (result.success && result.tasks) {
+                console.log('✅ Tasks received:', result.tasks.length);
+                
                 // Merge server tasks with local tasks (avoiding duplicates)
                 const serverTasks = result.tasks.map(t => ({
                     ...t,
@@ -1051,16 +1059,21 @@ async function loadTasksFromServer() {
                     expiresAt: new Date(t.expiresAt)
                 }));
                 
+                console.log('📊 Server tasks after parsing:', serverTasks.length);
+                
                 // Keep only server tasks (they are the source of truth)
                 // But also keep any local-only tasks that haven't been synced
                 const localOnlyTasks = tasks.filter(t => t.localOnly === true);
                 tasks = [...serverTasks, ...localOnlyTasks];
                 
                 console.log('✅ Loaded', serverTasks.length, 'tasks from server');
+                console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
                 updateMapMarkers();
                 return true;
             } else {
+                console.warn('⚠️ Server returned success=false or no tasks');
+                console.warn('Result:', result);
                 // Server returned no tasks or error - use demo tasks as fallback
                 if (tasks.length === 0 && typeof DEMO_TASKS !== 'undefined') {
                     tasks = [...DEMO_TASKS];
@@ -1084,6 +1097,10 @@ async function loadTasksFromServer() {
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 TaskEarn Starting...');
     console.log('📦 localStorage available:', STORAGE_AVAILABLE);
+    console.log('🔑 API Token:', localStorage.getItem('taskearn_token') ? 'EXISTS (✅)' : 'MISSING (❌)');
+    console.log('🌐 Backend URL:', window.TASKEARN_API_URL);
+    console.log('🔌 TasksAPI available:', typeof TasksAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
+    console.log('🔌 AuthAPI available:', typeof AuthAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
     
     // Wait for IndexedDB to initialize
     await initIndexedDB();
@@ -1110,6 +1127,22 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.log('✅ Session restored for:', currentUser.name);
         console.log('📋 Posted tasks:', myPostedTasks.length);
         console.log('✔️ Accepted tasks:', myAcceptedTasks.length);
+        
+        // Check if user has API token (backend authentication)
+        const hasApiToken = !!localStorage.getItem('taskearn_token');
+        if (!hasApiToken) {
+            console.warn('⚠️ Local-only user detected:', currentUser.email);
+            console.warn('⚠️ This user needs to be migrated to backend on next login');
+            // Show migration warning banner
+            setTimeout(() => {
+                const banner = document.getElementById('migrationWarningBanner');
+                if (banner) {
+                    banner.style.display = 'block';
+                }
+                console.warn('📢 User needs to re-login to migrate to backend');
+            }, 2000);
+        }
+        
         setTimeout(() => {
             updateNavForUser();
             renderDashboard();
@@ -2427,6 +2460,20 @@ async function handleTaskSubmit(event) {
         return;
     }
 
+    // Check if user has API token for server sync
+    const hasApiToken = localStorage.getItem('taskearn_token');
+    if (!hasApiToken) {
+        showToast('❌ You need to register/login via the backend to post tasks visible to others', 5000);
+        closeModal('postTaskModal');
+        
+        // Show detailed warning
+        if (confirm('Your account is in local-only mode. Tasks you create won\'t be visible to other users.\n\nWould you like to logout and register properly now?')) {
+            handleLogout();
+            setTimeout(() => openModal('loginModal'), 500);
+        }
+        return;
+    }
+
     const customBudgetValue = parseInt(document.getElementById('customBudget').value) || 0;
     let baseBudget = customBudgetValue > 0 ? customBudgetValue : selectedBudget;
     
@@ -2459,48 +2506,61 @@ async function handleTaskSubmit(event) {
     let serverTaskId = null;
     let serverSaveError = null;
     
-    // Check if user has API token
-    const hasApiToken = localStorage.getItem('taskearn_token');
-    
-    if (!hasApiToken) {
-        console.log('⚠️ No API token - user logged in locally. Need to re-register via API.');
-        showToast('⚠️ Please logout and register again to post tasks visible to others');
-    }
+    // Task posting requires API authentication (already checked above)
+    console.log('📤 Attempting to post task to server...');
+    console.log('🔑 Has API token:', !!hasApiToken);
+    console.log('👤 Current user:', currentUser?.name, currentUser?.id);
+    console.log('📦 Task data:', JSON.stringify(taskData, null, 2));
     
     try {
-        if (typeof TasksAPI !== 'undefined' && TasksAPI.create && hasApiToken) {
+        if (typeof TasksAPI !== 'undefined' && TasksAPI.create) {
+            console.log('🚀 Calling TasksAPI.create...');
             const result = await TasksAPI.create(taskData);
+            console.log('📥 Server response:', JSON.stringify(result, null, 2));
+            
             if (result.success) {
                 serverTaskId = result.taskId;
                 console.log('✅ Task saved to server with ID:', serverTaskId);
                 showToast('✅ Task posted successfully!');
             } else {
                 serverSaveError = result.message;
-                console.log('⚠️ Server save failed:', result.message);
+                console.error('⚠️ Server save failed:', result.message);
                 if (result.message && result.message.includes('token')) {
-                    showToast('⚠️ Session expired. Please login again.');
+                    showToast('❌ Session expired. Please login again.');
+                    setTimeout(() => {
+                        handleLogout();
+                        openModal('loginModal');
+                    }, 2000);
+                    return;
+                } else {
+                    showToast('❌ Failed to post task: ' + result.message);
+                    return;
                 }
             }
+        } else {
+            showToast('❌ Backend API not available. Please try again later.');
+            return;
         }
     } catch (error) {
         console.error('❌ Error saving task to server:', error);
-        serverSaveError = error.message;
+        showToast('❌ Network error. Please check your connection and try again.');
+        return;
+    }
+
+    // Only create task if server save was successful
+    if (!serverTaskId) {
+        showToast('❌ Failed to post task. Please try again.');
+        return;
     }
 
     const newTask = {
-        id: serverTaskId || Date.now(),
+        id: serverTaskId,
         ...taskData,
         postedBy: currentUser,
         postedAt: new Date(),
         expiresAt: new Date(Date.now() + 12 * 3600000),
-        status: 'active',
-        localOnly: !serverTaskId // Mark as local-only if server save failed
+        status: 'active'
     };
-    
-    // Show warning if task is local only
-    if (!serverTaskId) {
-        showToast('⚠️ Task saved locally only - others cannot see it. Please re-login via the app.');
-    }
 
     tasks.unshift(newTask);
     myPostedTasks.unshift(newTask);
@@ -2531,6 +2591,42 @@ async function handleTaskSubmit(event) {
     
     // Show success modal with edit option
     showTaskPostedSuccess(newTask);
+}
+
+// Check if backend API is healthy and available
+async function checkBackendHealth() {
+    try {\n        if (typeof API_BASE_URL === 'undefined') {\n            // API_BASE_URL is defined in api-client.js\n            const apiUrl = window.TASKEARN_API_URL || 'https://web-production-b8388.up.railway.app/api';\n            const healthUrl = apiUrl.replace('/api', '/health');\n            const response = await fetch(healthUrl, {\n                method: 'GET',\n                signal: AbortSignal.timeout(5000) // 5 second timeout\n            });\n            return response.ok;\n        }\n        const healthUrl = API_BASE_URL.replace('/api', '/health');\n        const response = await fetch(healthUrl, {
+            method: 'GET',
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+        return response.ok;
+    } catch (error) {
+        console.error('Backend health check failed:', error);
+        return false;
+    }
+}
+
+// Check if user has proper backend authentication
+function isUserBackendAuthenticated() {
+    return !!localStorage.getItem('taskearn_token');
+}
+
+// Display authentication status in UI
+function updateAuthenticationStatus() {
+    const statusElement = document.getElementById('authStatus');
+    if (statusElement) {
+        if (currentUser) {
+            const isBackendAuth = isUserBackendAuthenticated();
+            if (isBackendAuth) {
+                statusElement.innerHTML = '<span style="color: #10b981;"><i class="fas fa-check-circle"></i> Connected to server</span>';
+            } else {
+                statusElement.innerHTML = '<span style="color: #f59e0b;"><i class="fas fa-exclamation-triangle"></i> Local mode - tasks won\'t sync</span>';
+            }
+            statusElement.style.display = 'block';
+        } else {
+            statusElement.style.display = 'none';
+        }
+    }
 }
 
 async function handleLogin(event) {
@@ -2576,7 +2672,9 @@ async function handleLogin(event) {
                     const localUser = await validateLogin(email, password);
                     if (localUser) {
                         // User exists locally but not on server - try to register them
-                        console.log('🔄 Migrating local user to server...');
+                        console.log('🔄 Detected local-only user. Attempting migration to backend...');
+                        showToast('🔄 Migrating your account to server...', 3000);
+                        
                         const registerResult = await AuthAPI.register({
                             name: localUser.name,
                             email: email,
@@ -2587,6 +2685,28 @@ async function handleLogin(event) {
                         
                         if (registerResult.success) {
                             currentUser = registerResult.user;
+                            myPostedTasks = [];
+                            myAcceptedTasks = [];
+                            myCompletedTasks = [];
+                            
+                            // Hide migration banner if visible
+                            const banner = document.getElementById('migrationWarningBanner');
+                            if (banner) banner.style.display = 'none';
+                            
+                            console.log('✅ User migrated to server successfully');
+                            showToast('✅ Account upgraded! You can now post tasks visible to all users!', 5000);
+                            closeModal('loginModal');
+                            document.getElementById('loginEmail').value = '';
+                            document.getElementById('loginPassword').value = '';
+                            updateNavForUser();
+                            renderDashboard();
+                            return;
+                        } else {
+                            showToast('❌ Migration failed: ' + (registerResult.message || 'Email already registered on server'));
+                            console.error('Migration failed:', registerResult.message);
+                            return;
+                        }
+                    }
                             myPostedTasks = [];
                             myAcceptedTasks = [];
                             myCompletedTasks = [];
@@ -2603,33 +2723,21 @@ async function handleLogin(event) {
                     showToast('❌ ' + result.message + '. Try signing up if new user.');
                     return;
                 }
+            } else {
+                showToast('❌ Backend server is unavailable. Please try again later.');
+                console.error('❌ Backend health check failed - cannot login users');
+                return;
             }
-        }
-        
-        // Fallback to localStorage validation (offline mode)
-        const user = await validateLogin(email, password);
-        
-        if (user) {
-            currentUser = user;
-            myPostedTasks = deserializeTasks(user.postedTasks);
-            myAcceptedTasks = deserializeTasks(user.acceptedTasks);
-            myCompletedTasks = deserializeTasks(user.completedTasks);
-            
-            // Save session and verify
-            const sessionSaved = saveCurrentSession(currentUser);
-            console.log('✅ Login successful:', currentUser.name);
-            console.log('📋 Loaded', myPostedTasks.length, 'posted tasks');
-            console.log('⚠️ Offline mode - tasks will not sync with other users');
-            
-            showToast('Welcome back, ' + currentUser.name + '! (Offline mode)');
-            closeModal('loginModal');
-            document.getElementById('loginEmail').value = '';
-            document.getElementById('loginPassword').value = '';
-            updateNavForUser();
-            renderDashboard();
         } else {
-            showToast('❌ Invalid email or password');
+            showToast('❌ Backend API not available. Please check your connection.');
+            console.error('❌ AuthAPI not defined - cannot login users');
+            return;
         }
+        
+        // NO FALLBACK - All logins must go through API backend
+        // Existing local users will be automatically migrated above
+        showToast('❌ Login failed. Please check your internet connection and try again.');
+        return;
     } catch (error) {
         console.error('Login error:', error);
         showToast('❌ Login failed. Please try again.');
@@ -2716,57 +2824,25 @@ async function handleSignup(event) {
                 } else {
                     showToast('❌ ' + result.message);
                     return;
+                } else {
+                    showToast('❌ ' + result.message);
+                    return;
                 }
+            } else {
+                showToast('❌ Backend server is unavailable. Please try again later.');
+                console.error('❌ Backend health check failed - cannot register users');
+                return;
             }
-        }
-        
-        // Fallback: Check if email already exists (check both localStorage and IndexedDB)
-        const existingUser = await getUserByEmailAsync(email);
-        if (existingUser) {
-            showToast('❌ Email already registered. Please login.');
+        } else {
+            showToast('❌ Backend API not available. Please check your connection.');
+            console.error('❌ AuthAPI not defined - cannot register users');
             return;
         }
         
-        // Fallback: Register with localStorage
-        currentUser = await registerUser({
-            name: firstName + ' ' + lastName,
-            email: email,
-            password: password,
-            phone: phone,
-            dob: dob
-        });
-        
-        if (!currentUser) {
-            showToast('❌ Failed to create account. Please try again.');
-            return;
-        }
-        
-        myPostedTasks = [];
-        myAcceptedTasks = [];
-        myCompletedTasks = [];
-        
-        // Save session and verify
-        const sessionSaved = saveCurrentSession(currentUser);
-        if (!sessionSaved) {
-            console.error('⚠️ Warning: Session may not persist after browser close');
-        }
-        
-        console.log('✅ Account created successfully:', currentUser.id);
-        console.log('✅ User saved to storage');
-
-        showToast('🎉 Welcome to TaskEarn! Your ID: ' + currentUser.id);
-        closeModal('signupModal');
-        
-        // Clear form
-        document.getElementById('signupFirstName').value = '';
-        document.getElementById('signupLastName').value = '';
-        document.getElementById('signupEmail').value = '';
-        document.getElementById('signupPassword').value = '';
-        if (document.getElementById('signupPhone')) document.getElementById('signupPhone').value = '';
-        document.getElementById('signupDOB').value = '';
-        
-        updateNavForUser();
-        renderDashboard();
+        // NO FALLBACK - All registrations must go through API backend
+        // This ensures all tasks are synced across all users
+        showToast('❌ Registration failed. Please check your internet connection and try again.');
+        return;
     } catch (error) {
         console.error('Signup error:', error);
         showToast('❌ Signup failed. Please try again.');
@@ -2971,8 +3047,14 @@ function logout() {
     if (notificationWrapper) notificationWrapper.style.display = 'none';
     if (mobileNotificationItem) mobileNotificationItem.style.display = 'none';
     
+    updateAuthenticationStatus(); // Update auth status
     renderDashboard();
     showToast('Logged out successfully');
+}
+
+// Alias for handleLogout
+function handleLogout() {
+    logout();
 }
 
 // ========================================
@@ -2992,6 +3074,7 @@ function switchTab(tab) {
 }
 
 function renderDashboard() {
+    updateAuthenticationStatus(); // Update auth status indicator
     renderPostedTasks();
     renderAcceptedTasks();
     renderCompletedTasks();

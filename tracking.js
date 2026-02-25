@@ -9,30 +9,24 @@
 // ========================================
 
 const TrackingConfig = {
-    // Mapbox access token configured
-    MAPBOX_TOKEN: 'pk.eyJ1IjoidGFza2Vhcm4iLCJhIjoiY21qd2tsOHZ4NW9zYzNkcXhoZW4zaWM4MCJ9.KQMDzQGhs6qPRj-HhP72dQ',
+    // LOCAL MODE - No external API
+    // GPS tracking disabled
     
-    // How often to poll for helper location updates (milliseconds)
-    POLL_INTERVAL: 3000,  // 3 seconds for real-time feel
+    POLL_INTERVAL: 3000,  // 3 seconds
+    SEND_INTERVAL: 2000,    // 2 seconds
     
-    // How often to send location to server when sharing
-    SEND_INTERVAL: 2000,    // 2 seconds for accurate tracking
-    
-    // Geolocation options for high accuracy
     GEO_OPTIONS: {
         enableHighAccuracy: true,
         maximumAge: 3000,
         timeout: 10000
     },
     
-    // Map default settings
     MAP_DEFAULTS: {
         center: [77.2090, 28.6139], // Delhi, India
         zoom: 14,
-        style: 'mapbox://styles/mapbox/streets-v12'
+        style: null // No map available
     },
     
-    // Average speed for ETA calculation (km/h)
     AVG_SPEED_CITY: 20,
     AVG_SPEED_HIGHWAY: 50
 };
@@ -44,7 +38,6 @@ const TrackingConfig = {
 class TaskEarnTracker {
     constructor(options = {}) {
         this.mapContainer = options.mapContainer || 'trackingMap';
-        this.apiUrl = window.TASKEARN_API_URL || 'https://web-production-b8388.up.railway.app/api';
         
         this.map = null;
         this.markers = {

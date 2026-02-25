@@ -46,8 +46,19 @@ class Config:
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE = int(os.environ.get('RATE_LIMIT_PER_MINUTE', 60))
     
-    # Debug mode
+    # Debug mode - ALWAYS False in production
     DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+    
+    # Production database
+    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+        # Railway uses postgres:// which psycopg2 recognizes
+        pass
+    elif DATABASE_URL and DATABASE_URL.startswith('postgresql://'):
+        # Standard PostgreSQL format
+        pass
+    else:
+        # Fallback to SQLite if no DATABASE_URL
+        USE_POSTGRES = False
 
 
 class DevelopmentConfig(Config):

@@ -4,11 +4,9 @@
 // ========================================
 
 // API URL Configuration
-// Change this to your deployed backend URL
-// For local development: 'http://localhost:5000/api'
-// For Railway: 'https://your-app-name.up.railway.app/api'
-// For Render: 'https://your-app-name.onrender.com/api'
-const API_BASE_URL = window.TASKEARN_API_URL || 'https://web-production-b8388.up.railway.app/api';
+// For local: http://localhost:5000/api
+// For production: use deployed URL
+const API_BASE_URL = window.TASKEARN_API_URL || 'http://localhost:5000/api';
 
 // ========================================
 // API HELPER FUNCTIONS

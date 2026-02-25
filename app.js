@@ -2594,17 +2594,7 @@ async function handleTaskSubmit(event) {
 }
 
 // Check if backend API is healthy and available
-async function checkBackendHealth() {
-    try {\n        if (typeof API_BASE_URL === 'undefined') {\n            // API_BASE_URL is defined in api-client.js\n            const apiUrl = window.TASKEARN_API_URL || 'https://web-production-b8388.up.railway.app/api';\n            const healthUrl = apiUrl.replace('/api', '/health');\n            const response = await fetch(healthUrl, {\n                method: 'GET',\n                signal: AbortSignal.timeout(5000) // 5 second timeout\n            });\n            return response.ok;\n        }\n        const healthUrl = API_BASE_URL.replace('/api', '/health');\n        const response = await fetch(healthUrl, {
-            method: 'GET',
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-        });
-        return response.ok;
-    } catch (error) {
-        console.error('Backend health check failed:', error);
-        return false;
-    }
-}
+async function checkBackendHealth() { return false; }
 
 // Check if user has proper backend authentication
 function isUserBackendAuthenticated() {
@@ -2636,113 +2626,43 @@ async function handleLogin(event) {
     const password = document.getElementById('loginPassword').value;
     const loginBtn = event.target.querySelector('button[type="submit"]');
     
-    // Show loading state
     if (loginBtn) {
         loginBtn.disabled = true;
         loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
     }
     
     try {
-        // Try API first (Python backend)
+        // Try server login first
         if (typeof AuthAPI !== 'undefined') {
-            const isBackendHealthy = await checkBackendHealth();
-            if (isBackendHealthy) {
-                const result = await AuthAPI.login(email, password);
-                if (result.success) {
-                    currentUser = result.user;
-                    // Load tasks from API
-                    const tasksResult = await UserAPI.getTasks();
-                    if (tasksResult.success) {
-                        myPostedTasks = tasksResult.postedTasks || [];
-                        myAcceptedTasks = tasksResult.acceptedTasks || [];
-                        myCompletedTasks = tasksResult.completedTasks || [];
-                    }
-                    // Ensure session is saved for persistence
-                    console.log('✅ API Login successful:', currentUser.name);
-                    console.log('🔐 Token saved to localStorage');
-                    showToast('Welcome back, ' + currentUser.name + '!');
-                    closeModal('loginModal');
-                    document.getElementById('loginEmail').value = '';
-                    document.getElementById('loginPassword').value = '';
-                    updateNavForUser();
-                    renderDashboard();
-                    return;
-                } else {
-                    // API login failed - check if user exists locally and try to migrate
-                    const localUser = await validateLogin(email, password);
-                    if (localUser) {
-                        // User exists locally but not on server - try to register them
-                        console.log('🔄 Detected local-only user. Attempting migration to backend...');
-                        showToast('🔄 Migrating your account to server...', 3000);
-                        
-                        const registerResult = await AuthAPI.register({
-                            name: localUser.name,
-                            email: email,
-                            password: password,
-                            phone: localUser.phone || '',
-                            dob: localUser.dob || '2000-01-01'
-                        });
-                        
-                        if (registerResult.success) {
-                            currentUser = registerResult.user;
-                            myPostedTasks = [];
-                            myAcceptedTasks = [];
-                            myCompletedTasks = [];
-                            
-                            // Hide migration banner if visible
-                            const banner = document.getElementById('migrationWarningBanner');
-                            if (banner) banner.style.display = 'none';
-                            
-                            console.log('✅ User migrated to server successfully');
-                            showToast('✅ Account upgraded! You can now post tasks visible to all users!', 5000);
-                            closeModal('loginModal');
-                            document.getElementById('loginEmail').value = '';
-                            document.getElementById('loginPassword').value = '';
-                            updateNavForUser();
-                            renderDashboard();
-                            return;
-                        } else {
-                            showToast('❌ Migration failed: ' + (registerResult.message || 'Email already registered on server'));
-                            console.error('Migration failed:', registerResult.message);
-                            return;
-                        }
-                    }
-                            myPostedTasks = [];
-                            myAcceptedTasks = [];
-                            myCompletedTasks = [];
-                            console.log('✅ User migrated to server successfully');
-                            showToast('✅ Account upgraded! Welcome back, ' + currentUser.name + '!');
-                            closeModal('loginModal');
-                            document.getElementById('loginEmail').value = '';
-                            document.getElementById('loginPassword').value = '';
-                            updateNavForUser();
-                            renderDashboard();
-                            return;
-                        }
-                    }
-                    showToast('❌ ' + result.message + '. Try signing up if new user.');
-                    return;
-                }
+            const result = await AuthAPI.login(email, password);
+            
+            if (result.success) {
+                currentUser = result.user;
+                myPostedTasks = result.postedTasks || [];
+                myAcceptedTasks = result.acceptedTasks || [];
+                myCompletedTasks = result.completedTasks || [];
+                
+                showToast('✅ Welcome back, ' + currentUser.name);
+                closeModal('loginModal');
+                document.getElementById('loginEmail').value = '';
+                document.getElementById('loginPassword').value = '';
+                
+                updateNavForUser();
+                renderDashboard();
+                loadTasksFromServer();
+                return;
             } else {
-                showToast('❌ Backend server is unavailable. Please try again later.');
-                console.error('❌ Backend health check failed - cannot login users');
+                showToast('❌ ' + (result.message || 'Login failed'));
                 return;
             }
         } else {
-            showToast('❌ Backend API not available. Please check your connection.');
-            console.error('❌ AuthAPI not defined - cannot login users');
+            showToast('❌ Login service unavailable');
             return;
         }
-        
-        // NO FALLBACK - All logins must go through API backend
-        // Existing local users will be automatically migrated above
-        showToast('❌ Login failed. Please check your internet connection and try again.');
-        return;
     } catch (error) {
         console.error('Login error:', error);
-        showToast('❌ Login failed. Please try again.');
+        showToast('❌ Login failed.');
     } finally {
-        // Reset button state
         if (loginBtn) {
             loginBtn.disabled = false;
             loginBtn.innerHTML = 'Login';
@@ -2789,60 +2709,45 @@ async function handleSignup(event) {
     }
     
     try {
-        // Try API first (Python backend)
+        // Try server registration first
         if (typeof AuthAPI !== 'undefined') {
-            const isBackendHealthy = await checkBackendHealth();
-            if (isBackendHealthy) {
-                const result = await AuthAPI.register({
-                    name: firstName + ' ' + lastName,
-                    email: email,
-                    password: password,
-                    phone: phone,
-                    dob: dob
-                });
+            const result = await AuthAPI.register({
+                name: firstName + ' ' + lastName,
+                email: email,
+                password: password,
+                phone: phone,
+                dob: dob
+            });
+            
+            if (result.success) {
+                currentUser = result.user;
+                myPostedTasks = [];
+                myAcceptedTasks = [];
+                myCompletedTasks = [];
                 
-                if (result.success) {
-                    currentUser = result.user;
-                    myPostedTasks = [];
-                    myAcceptedTasks = [];
-                    myCompletedTasks = [];
-                    
-                    showToast('🎉 Welcome to TaskEarn! Your ID: ' + currentUser.id);
-                    closeModal('signupModal');
-                    
-                    // Clear form
-                    document.getElementById('signupFirstName').value = '';
-                    document.getElementById('signupLastName').value = '';
-                    document.getElementById('signupEmail').value = '';
-                    document.getElementById('signupPassword').value = '';
-                    if (document.getElementById('signupPhone')) document.getElementById('signupPhone').value = '';
-                    document.getElementById('signupDOB').value = '';
-                    
-                    updateNavForUser();
-                    renderDashboard();
-                    return;
-                } else {
-                    showToast('❌ ' + result.message);
-                    return;
-                } else {
-                    showToast('❌ ' + result.message);
-                    return;
-                }
+                showToast('🎉 Welcome to TaskEarn! Your ID: ' + currentUser.id);
+                closeModal('signupModal');
+                
+                // Clear form
+                document.getElementById('signupFirstName').value = '';
+                document.getElementById('signupLastName').value = '';
+                document.getElementById('signupEmail').value = '';
+                document.getElementById('signupPassword').value = '';
+                if (document.getElementById('signupPhone')) document.getElementById('signupPhone').value = '';
+                document.getElementById('signupDOB').value = '';
+                
+                updateNavForUser();
+                renderDashboard();
+                loadTasksFromServer();
+                return;
             } else {
-                showToast('❌ Backend server is unavailable. Please try again later.');
-                console.error('❌ Backend health check failed - cannot register users');
+                showToast('❌ ' + result.message);
                 return;
             }
         } else {
-            showToast('❌ Backend API not available. Please check your connection.');
-            console.error('❌ AuthAPI not defined - cannot register users');
+            showToast('❌ Registration service unavailable');
             return;
         }
-        
-        // NO FALLBACK - All registrations must go through API backend
-        // This ensures all tasks are synced across all users
-        showToast('❌ Registration failed. Please check your internet connection and try again.');
-        return;
     } catch (error) {
         console.error('Signup error:', error);
         showToast('❌ Signup failed. Please try again.');

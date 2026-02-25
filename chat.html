@@ -8,7 +8,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
     <script>
-        window.TASKEARN_API_URL = 'https://web-production-b8388.up.railway.app/api';
+        // Auto-detect environment and set API URL  
+        (function() {
+            const hostname = window.location.hostname;
+            if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+                window.TASKEARN_API_URL = 'https://taskearn.up.railway.app/api';
+            } else {
+                window.TASKEARN_API_URL = 'http://localhost:5000/api';
+            }
+        })();
     </script>
     <style>
         * {

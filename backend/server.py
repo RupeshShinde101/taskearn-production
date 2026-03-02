@@ -49,8 +49,8 @@ def generate_jwt_token(user_id, email):
     payload = {
         'user_id': user_id,
         'email': email,
-        'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=config.JWT_EXPIRATION_HOURS),
-        'iat': datetime.datetime.now(datetime.UTC)
+        'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=config.JWT_EXPIRATION_HOURS),
+        'iat': datetime.datetime.now(datetime.timezone.utc)
     }
     return jwt.encode(payload, config.SECRET_KEY, algorithm='HS256')
 
@@ -187,7 +187,7 @@ def register():
     # Create user
     user_id = generate_user_id()
     password_hash = generate_password_hash(password, method='pbkdf2:sha256')
-    joined_at = datetime.datetime.now(datetime.UTC).isoformat()
+    joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         try:
@@ -232,7 +232,7 @@ def login():
     
     # Update last login
     with get_db() as (cursor, conn):
-        last_login = datetime.datetime.now(datetime.UTC).isoformat()
+        last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
         session_token = secrets.token_hex(32)
         cursor.execute(f'''
             UPDATE users SET last_login = {PH}, session_token = {PH} WHERE id = {PH}
@@ -297,8 +297,8 @@ def forgot_password():
     
     # Store reset token
     with get_db() as (cursor, conn):
-        created_at = datetime.datetime.now(datetime.UTC).isoformat()
-        expires_at = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=10)).isoformat()
+        created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)).isoformat()
         
         cursor.execute(f'''
             INSERT INTO password_resets (user_id, token, otp, created_at, expires_at)
@@ -353,7 +353,7 @@ def verify_otp():
         return jsonify({'success': False, 'message': 'Reset token and OTP required'}), 400
     
     with get_db() as (cursor, conn):
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cursor.execute(f'''
             SELECT * FROM password_resets 
             WHERE token = {PH} AND otp = {PH} AND used = {PH} AND expires_at > {PH}
@@ -387,7 +387,7 @@ def reset_password():
         return jsonify({'success': False, 'message': message}), 400
     
     with get_db() as (cursor, conn):
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
         # Get reset record
         cursor.execute(f'''
@@ -540,8 +540,8 @@ def create_task():
             return jsonify({'success': False, 'message': f'{field} is required'}), 400
     
     with get_db() as (cursor, conn):
-        posted_at = datetime.datetime.now(datetime.UTC).isoformat()
-        expires_at = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=12)).isoformat()
+        posted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=12)).isoformat()
         
         location = data.get('location', {})
         
@@ -600,7 +600,7 @@ def accept_task(task_id):
             return jsonify({'success': False, 'message': 'Cannot accept your own task'}), 400
         
         # Accept task
-        accepted_at = datetime.datetime.now(datetime.UTC).isoformat()
+        accepted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cursor.execute(f'''
             UPDATE tasks SET status = 'accepted', accepted_by = {PH}, accepted_at = {PH}
             WHERE id = {PH}
@@ -629,7 +629,7 @@ def complete_task(task_id):
         task = dict_from_row(task)
         
         # Complete task
-        completed_at = datetime.datetime.now(datetime.UTC).isoformat()
+        completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cursor.execute(f'''
             UPDATE tasks SET status = 'completed', completed_at = {PH}
             WHERE id = {PH}
@@ -1013,7 +1013,7 @@ def update_location():
         ''', (False if config.USE_POSTGRES else 0, task_id, request.user_id))
         
         # Insert new location
-        recorded_at = datetime.datetime.now(datetime.UTC).isoformat()
+        recorded_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cursor.execute(f'''
             INSERT INTO location_tracking 
             (task_id, user_id, user_type, latitude, longitude, accuracy, heading, speed, recorded_at, is_active)
@@ -1108,7 +1108,7 @@ def get_or_create_wallet(user_id):
         wallet = cursor.fetchone()
         
         if not wallet:
-            now = datetime.datetime.now(datetime.UTC).isoformat()
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cursor.execute(f'''
                 INSERT INTO wallets (user_id, balance, total_added, total_spent, total_earned, total_cashback, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
@@ -1166,7 +1166,7 @@ def add_money_to_wallet():
     
     wallet = get_or_create_wallet(request.user_id)
     new_balance = float(wallet['balance']) + total_credit
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         # Update wallet
@@ -1212,7 +1212,7 @@ def pay_from_wallet():
         return jsonify({'success': False, 'message': 'Insufficient wallet balance'}), 400
     
     new_balance = float(wallet['balance']) - amount
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         cursor.execute(f'''
@@ -1244,7 +1244,7 @@ def earn_to_wallet():
     
     wallet = get_or_create_wallet(request.user_id)
     new_balance = float(wallet['balance']) + amount
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         cursor.execute(f'''
@@ -1321,7 +1321,7 @@ def request_withdrawal():
         return jsonify({'success': False, 'message': 'Insufficient balance for withdrawal'}), 400
     
     # Process withdrawal
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         # Create withdrawal request
@@ -1399,7 +1399,7 @@ def cancel_withdrawal(withdrawal_id):
         if withdrawal['status'] != 'pending':
             return jsonify({'success': False, 'message': f'Cannot cancel {withdrawal["status"]} withdrawal'}), 400
         
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         amount = float(withdrawal['amount'])
         
         # Refund to wallet
@@ -1503,7 +1503,7 @@ def send_chat_message(task_id):
         if not receiver_id:
             return jsonify({'success': False, 'message': 'No one to chat with yet'}), 400
         
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
         cursor.execute(f'''
             INSERT INTO chat_messages (task_id, sender_id, receiver_id, message, message_type, created_at)
@@ -1557,7 +1557,7 @@ def generate_delivery_otp(task_id):
     """Generate OTP for delivery verification"""
     import random
     otp = str(random.randint(1000, 9999))
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         # Check if OTP already exists
@@ -1602,7 +1602,7 @@ def verify_delivery_otp(task_id):
         if not proof:
             return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
         
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cursor.execute(f'''
             UPDATE task_proofs SET otp_verified = {PH}, notes = {PH}
             WHERE id = {PH}
@@ -1623,7 +1623,7 @@ def upload_proof(task_id):
     image_url = data.get('imageUrl')  # Base64 or URL
     notes = data.get('notes', '')
     
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         cursor.execute(f'''
@@ -1701,7 +1701,7 @@ def rate_user(task_id):
         if cursor.fetchone():
             return jsonify({'success': False, 'message': 'Already rated'}), 400
         
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
         # Add rating
         cursor.execute(f'''
@@ -1840,7 +1840,7 @@ def apply_referral_code():
         if user['referred_by']:
             return jsonify({'success': False, 'message': 'Already used a referral code'}), 400
         
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         reward = 50  # ₹50 for both
         
         # Create referral record
@@ -1923,7 +1923,7 @@ def create_sos_alert():
     longitude = data.get('longitude')
     alert_type = data.get('alertType', 'emergency')
     
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         cursor.execute(f'''
@@ -1949,7 +1949,7 @@ def create_sos_alert():
 @require_auth
 def resolve_sos_alert(alert_id):
     """Resolve SOS alert"""
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         cursor.execute(f'''
@@ -1996,7 +1996,7 @@ def create_scheduled_task():
     schedule_days = data.get('scheduleDays', '')  # comma-separated days for weekly
     next_run = data.get('nextRun')
     
-    now = datetime.datetime.now(datetime.UTC).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     with get_db() as (cursor, conn):
         cursor.execute(f'''
@@ -2044,7 +2044,7 @@ def get_helper_dashboard():
         wallet = get_or_create_wallet(request.user_id)
         
         # Today's earnings
-        today = datetime.datetime.now(datetime.UTC).date().isoformat()
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
         cursor.execute(f'''
             SELECT COALESCE(SUM(amount), 0) as today_earnings
             FROM wallet_transactions 
@@ -2053,7 +2053,7 @@ def get_helper_dashboard():
         today_data = dict_from_row(cursor.fetchone())
         
         # This week's earnings
-        week_ago = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=7)).isoformat()
+        week_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).isoformat()
         cursor.execute(f'''
             SELECT COALESCE(SUM(amount), 0) as week_earnings
             FROM wallet_transactions 
@@ -2062,7 +2062,7 @@ def get_helper_dashboard():
         week_data = dict_from_row(cursor.fetchone())
         
         # Tasks completed this month
-        month_start = datetime.datetime.now(datetime.UTC).replace(day=1).isoformat()
+        month_start = datetime.datetime.now(datetime.timezone.utc).replace(day=1).isoformat()
         cursor.execute(f'''
             SELECT COUNT(*) as month_tasks
             FROM tasks 
@@ -2104,7 +2104,7 @@ def health_check():
     return jsonify({
         'success': True,
         'status': 'healthy',
-        'timestamp': datetime.datetime.now(datetime.UTC).isoformat(),
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'database': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite'
     })
 
@@ -2133,3 +2133,4 @@ if __name__ == '__main__':
     
     # Run Flask server
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+

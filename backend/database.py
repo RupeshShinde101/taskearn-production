@@ -592,3 +592,4 @@ def get_placeholder():
     if config.USE_POSTGRES and POSTGRES_AVAILABLE:
         return '%s'
     return '?'
+

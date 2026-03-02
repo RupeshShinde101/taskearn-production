@@ -1294,6 +1294,147 @@ def get_transactions():
     })
 
 
+@app.route('/api/wallet/withdraw', methods=['POST'])
+@require_auth
+def request_withdrawal():
+    """Request withdrawal from wallet to bank account"""
+    data = request.get_json()
+    amount = float(data.get('amount', 0))
+    bank_name = data.get('bankName', '').strip()
+    account_holder = data.get('accountHolder', '').strip()
+    account_number = data.get('accountNumber', '').strip()
+    ifsc_code = data.get('ifscCode', '').strip().upper()
+    
+    # Validation
+    if amount < 100:
+        return jsonify({'success': False, 'message': 'Minimum withdrawal amount is ₹100'}), 400
+    
+    if not all([bank_name, account_holder, account_number, ifsc_code]):
+        return jsonify({'success': False, 'message': 'All bank details are required'}), 400
+    
+    if not ifsc_code or len(ifsc_code) != 11:
+        return jsonify({'success': False, 'message': 'Invalid IFSC code (must be 11 characters)'}), 400
+    
+    # Check wallet balance
+    wallet = get_or_create_wallet(request.user_id)
+    if float(wallet['balance']) < amount:
+        return jsonify({'success': False, 'message': 'Insufficient balance for withdrawal'}), 400
+    
+    # Process withdrawal
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    
+    with get_db() as (cursor, conn):
+        # Create withdrawal request
+        cursor.execute(f'''
+            INSERT INTO withdrawal_requests 
+            (user_id, amount, bank_name, account_holder_name, account_number, ifsc_code, status, requested_at, created_at, updated_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (request.user_id, amount, bank_name, account_holder, account_number, ifsc_code, 'pending', now, now, now))
+        
+        # Deduct from wallet (mark as processing)
+        new_balance = float(wallet['balance']) - amount
+        cursor.execute(f'''
+            UPDATE wallets 
+            SET balance = {PH}, total_spent = total_spent + {PH}, updated_at = {PH}
+            WHERE user_id = {PH}
+        ''', (new_balance, amount, now, request.user_id))
+        
+        # Add transaction record
+        cursor.execute(f'''
+            INSERT INTO wallet_transactions 
+            (wallet_id, user_id, type, amount, balance_after, description, created_at, status)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (wallet['id'], request.user_id, 'withdrawal', amount, new_balance, f'Withdrawal to {bank_name}', now, 'pending'))
+        
+        conn.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Withdrawal request of ₹{amount} submitted. It will be processed within 2-3 business days.',
+        'newBalance': new_balance,
+        'requestId': 'REQ_' + ''.join([str(ord(c) % 10) for c in now[:10]])
+    })
+
+
+@app.route('/api/wallet/withdrawals', methods=['GET'])
+@require_auth
+def get_withdrawals():
+    """Get user's withdrawal history"""
+    page = int(request.args.get('page', 1))
+    limit = int(request.args.get('limit', 10))
+    offset = (page - 1) * limit
+    
+    with get_db() as (cursor, conn):
+        cursor.execute(f'''
+            SELECT * FROM withdrawal_requests 
+            WHERE user_id = {PH} 
+            ORDER BY created_at DESC 
+            LIMIT {PH} OFFSET {PH}
+        ''', (request.user_id, limit, offset))
+        withdrawals = [dict_from_row(row) for row in cursor.fetchall()]
+        
+        cursor.execute(f'SELECT COUNT(*) as count FROM withdrawal_requests WHERE user_id = {PH}', (request.user_id,))
+        total = dict_from_row(cursor.fetchone())['count']
+    
+    return jsonify({
+        'success': True,
+        'withdrawals': withdrawals,
+        'total': total,
+        'page': page,
+        'pages': (total + limit - 1) // limit
+    })
+
+
+@app.route('/api/wallet/withdrawal/<int:withdrawal_id>/cancel', methods=['POST'])
+@require_auth
+def cancel_withdrawal(withdrawal_id):
+    """Cancel a pending withdrawal request"""
+    with get_db() as (cursor, conn):
+        cursor.execute(f'SELECT * FROM withdrawal_requests WHERE id = {PH} AND user_id = {PH}', (withdrawal_id, request.user_id))
+        withdrawal = dict_from_row(cursor.fetchone())
+        
+        if not withdrawal:
+            return jsonify({'success': False, 'message': 'Withdrawal request not found'}), 404
+        
+        if withdrawal['status'] != 'pending':
+            return jsonify({'success': False, 'message': f'Cannot cancel {withdrawal["status"]} withdrawal'}), 400
+        
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+        amount = float(withdrawal['amount'])
+        
+        # Refund to wallet
+        wallet = get_or_create_wallet(request.user_id)
+        new_balance = float(wallet['balance']) + amount
+        
+        cursor.execute(f'''
+            UPDATE wallets 
+            SET balance = {PH}, updated_at = {PH}
+            WHERE user_id = {PH}
+        ''', (new_balance, now, request.user_id))
+        
+        # Mark withdrawal as cancelled
+        cursor.execute(f'''
+            UPDATE withdrawal_requests 
+            SET status = {PH}, updated_at = {PH}
+            WHERE id = {PH}
+        ''', ('cancelled', now, withdrawal_id))
+        
+        # Add refund transaction
+        cursor.execute(f'''
+            INSERT INTO wallet_transactions 
+            (wallet_id, user_id, type, amount, balance_after, description, created_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (wallet['id'], request.user_id, 'refund', amount, new_balance, 'Withdrawal cancelled - refunded', now))
+        
+        conn.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Withdrawal cancelled. ₹{amount} refunded to wallet.',
+        'newBalance': new_balance
+    })
+
+
 # ========================================
 # CHAT API
 # ========================================

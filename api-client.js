@@ -297,6 +297,35 @@ const WalletAPI = {
     async getTransactions(page = 1) {
         const result = await apiRequest(`/wallet/transactions?page=${page}`, { method: 'GET' });
         return result.data;
+    },
+    
+    // Request withdrawal
+    async withdraw(options) {
+        const result = await apiRequest('/wallet/withdraw', {
+            method: 'POST',
+            body: JSON.stringify({
+                amount: options.amount,
+                bankName: options.bankName,
+                accountHolder: options.accountHolder,
+                accountNumber: options.accountNumber,
+                ifscCode: options.ifscCode
+            })
+        });
+        return result.data;
+    },
+    
+    // Get withdrawal history
+    async getWithdrawals(page = 1) {
+        const result = await apiRequest(`/wallet/withdrawals?page=${page}`, { method: 'GET' });
+        return result.data;
+    },
+    
+    // Cancel withdrawal
+    async cancelWithdrawal(withdrawalId) {
+        const result = await apiRequest(`/wallet/withdrawal/${withdrawalId}/cancel`, {
+            method: 'POST'
+        });
+        return result.data;
     }
 };
 

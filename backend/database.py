@@ -285,6 +285,26 @@ def init_postgres_db():
             )
         ''')
         
+        # Withdrawal requests table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS withdrawal_requests (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL REFERENCES users(id),
+                amount DECIMAL(10,2) NOT NULL,
+                bank_name VARCHAR(100) NOT NULL,
+                account_holder_name VARCHAR(100) NOT NULL,
+                account_number VARCHAR(50) NOT NULL,
+                ifsc_code VARCHAR(20) NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending',
+                transaction_id VARCHAR(100),
+                rejection_reason TEXT,
+                requested_at TIMESTAMP NOT NULL,
+                processed_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP
+            )
+        ''')
+        
         # Add referral_code to users
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20) UNIQUE

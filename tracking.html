@@ -736,8 +736,15 @@
         // MAPBOX CONFIGURATION
         // ========================================
         
-        // 🔑 Mapbox access token configured
-        mapboxgl.accessToken = 'pk.eyJ1IjoidGFza2Vhcm4iLCJhIjoiY21qd2tsOHZ4NW9zYzNkcXhoZW4zaWM4MCJ9.KQMDzQGhs6qPRj-HhP72dQ';
+        // Mapbox access token - use environment variable or placeholder
+        // Set this in your environment: MAPBOX_TOKEN environment variable
+        const mapboxToken = window.MAPBOX_TOKEN || 'pk.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+        
+        if (mapboxToken.includes('XXX')) {
+            console.warn('⚠️  Mapbox token not configured. Set MAPBOX_TOKEN environment variable.');
+        }
+        
+        mapboxgl.accessToken = mapboxToken;
 
         let map;
         let helperMarker;

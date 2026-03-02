@@ -1,34 +1,21 @@
-# Environment files (contains secrets)
 .env
 .env.local
-.env.production
-backend/.env
-
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
-venv/
-env/
-.venv/
-
-# Database files
+*.pyc
 *.db
 *.sqlite
 *.sqlite3
-
-# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS files
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
 .DS_Store
 Thumbs.db
-
-# Node modules (if any)
-node_modules/
-
-# Logs
 *.log
+logs/
+.venv
+node_modules/

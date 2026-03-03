@@ -2128,7 +2128,7 @@ def get_helper_dashboard():
 
 
 # ========================================
-# HEALTH CHECK
+# HEALTH CHECK & DIAGNOSTIC
 # ========================================
 
 @app.route('/api/health', methods=['GET'])
@@ -2138,7 +2138,32 @@ def health_check():
         'success': True,
         'status': 'healthy',
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        'database': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite'
+        'database': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite',
+        'environment': 'production' if config.USE_POSTGRES else 'development'
+    })
+
+
+@app.route('/api/diagnostic', methods=['GET'])
+def diagnostic():
+    """Diagnostic endpoint for debugging deployment issues"""
+    return jsonify({
+        'success': True,
+        'message': 'Flask API is running correctly',
+        'title': 'TaskEarn Backend API - WORKING',
+        'status': 'operational',
+        'routes': [
+            '/api/health - Health check',
+            '/api/auth/register - User registration',
+            '/api/auth/login - User login',
+            '/api/tasks - Get/create tasks',
+            '/api/wallet - Wallet operations'
+        ],
+        'database_config': {
+            'type': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite',
+            'status': 'connected' if config.USE_POSTGRES else 'local'
+        },
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'environment_production': config.USE_POSTGRES
     })
 
 

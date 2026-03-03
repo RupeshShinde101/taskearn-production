@@ -21,13 +21,46 @@ from database import init_db, get_db, dict_from_row, get_placeholder
 config = get_config()
 app = Flask(__name__)
 
-# CORS configuration
-if config.CORS_ORIGINS == ['*']:
-    CORS(app)
-else:
-    CORS(app, origins=config.CORS_ORIGINS)
+# CORS configuration - Allow all origins for development
+CORS(app, 
+     resources={r"/api/*": {"origins": "*"}},
+     supports_credentials=True,
+     allow_headers=['Content-Type', 'Authorization', 'Accept'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+     max_age=3600)
 
 app.config['SECRET_KEY'] = config.SECRET_KEY
+
+# Add explicit CORS headers handler
+@app.after_request
+def add_cors_headers(response):
+    """Add CORS headers to all responses"""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    
+    # Add cache headers for API responses
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    
+    return response
+
+# Handle OPTIONS requests
+@app.before_request
+def handle_preflight():
+    """Handle preflight CORS requests"""
+    if request.method == 'OPTIONS':
+        response = jsonify({'success': True})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
+        response.headers['Access-Control-Max-Age'] = '3600'
+        response.status_code = 200
+        return response
 
 # Placeholder for SQL queries (? for SQLite, %s for PostgreSQL)
 PH = get_placeholder()

@@ -60,13 +60,20 @@ async function apiRequest(endpoint, options = {}) {
         console.error('❌ Error message:', error.message);
         console.error('❌ Full error:', error);
         console.error('❌ URL was:', url);
+        console.error('❌ Network error - check if backend is running at:', url);
+        
+        // Show more helpful error message
+        let errorMessage = 'Network error: ' + error.message;
+        if (error.message.includes('Failed to fetch')) {
+            errorMessage = `Cannot connect to API server at ${url}. Make sure:\n1. Backend server is running (python server.py)\n2. Server is on port 5000\n3. Check if there's a firewall blocking the connection`;
+        }
         
         return { 
             success: false, 
             status: 0, 
             data: { 
                 success: false, 
-                message: 'Network error: ' + error.message
+                message: errorMessage
             }
         };
     }
@@ -101,32 +108,50 @@ function getUserFromStorage() {
 const AuthAPI = {
     // Register new user
     async register(userData) {
+        console.log('📝 Starting registration with data:', userData);
         const result = await apiRequest('/auth/register', {
             method: 'POST',
             body: JSON.stringify(userData)
         });
         
-        if (result.success && result.data.token) {
+        console.log('✅ Register API response:', result);
+        
+        if (result.success && result.data && result.data.token) {
+            console.log('🎯 Setting auth token...');
             setAuthToken(result.data.token);
             saveUserToStorage(result.data.user);
+        } else if (result.success && result.data) {
+            console.log('⚠️ Success but no token in response:', result.data);
+        } else if (!result.success) {
+            console.log('❌ Registration failed:', result.data?.message || result.data);
         }
         
-        return result.data;
+        // Return the actual response data from backend
+        return result.data || { success: false, message: 'No response data' };
     },
     
     // Login user
     async login(email, password) {
+        console.log('🔑 Starting login for:', email);
         const result = await apiRequest('/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email, password })
         });
         
-        if (result.success && result.data.token) {
+        console.log('✅ Login API response:', result);
+        
+        if (result.success && result.data && result.data.token) {
+            console.log('🎯 Setting auth token...');
             setAuthToken(result.data.token);
             saveUserToStorage(result.data.user);
+        } else if (result.success && result.data) {
+            console.log('⚠️ Success but no token:', result.data);
+        } else if (!result.success) {
+            console.log('❌ Login failed:', result.data?.message || result.data);
         }
         
-        return result.data;
+        // Return the actual response data from backend
+        return result.data || { success: false, message: 'No response data' };
     },
     
     // Get current user

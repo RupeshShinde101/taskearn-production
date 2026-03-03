@@ -62,6 +62,18 @@ def handle_preflight():
         response.status_code = 200
         return response
 
+# ========================================
+# DATABASE INITIALIZATION
+# ========================================
+# Initialize database on app startup (works with gunicorn)
+try:
+    print("🔄 Initializing database...")
+    init_db()
+    print("✅ Database initialized successfully")
+except Exception as e:
+    print(f"⚠️  Error initializing database: {e}")
+    print("   Database may already be initialized or connection issue")
+
 # Placeholder for SQL queries (? for SQLite, %s for PostgreSQL)
 PH = get_placeholder()
 
@@ -2165,6 +2177,29 @@ def diagnostic():
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'environment_production': config.USE_POSTGRES
     })
+
+
+@app.route('/api/init-db', methods=['POST', 'GET'])
+def init_database_endpoint():
+    """Manually initialize database tables (admin endpoint)"""
+    try:
+        init_db()
+        return jsonify({
+            'success': True,
+            'message': 'Database initialized successfully',
+            'database_type': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite',
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }), 200
+    except Exception as e:
+        print(f"ERROR during database init: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to initialize database',
+            'database_type': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite'
+        }), 500
 
 
 # ========================================

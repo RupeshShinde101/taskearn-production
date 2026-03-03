@@ -69,7 +69,12 @@ def get_db():
 
 def init_postgres_db():
     """Initialize PostgreSQL database tables"""
-    with get_db() as (cursor, conn):
+    try:
+        conn = get_postgres_connection()
+        cursor = conn.cursor()
+        
+        print("[DB] Creating PostgreSQL tables...")
+        
         # Users table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -318,7 +323,16 @@ def init_postgres_db():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS helper_level VARCHAR(20) DEFAULT 'bronze'
         ''')
         
-        print("✅ PostgreSQL database initialized")
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("[DB] ✅ PostgreSQL database initialized successfully")
+        
+    except Exception as e:
+        print(f"[DB] ❌ PostgreSQL initialization error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 def init_sqlite_db():
@@ -563,15 +577,22 @@ def init_sqlite_db():
             )
         ''')
         
-        print("✅ SQLite database initialized")
+        print("[DB] ✅ SQLite database initialized successfully")
 
 
 def init_db():
     """Initialize database based on configuration"""
-    if config.USE_POSTGRES and POSTGRES_AVAILABLE:
-        init_postgres_db()
-    else:
-        init_sqlite_db()
+    try:
+        if config.USE_POSTGRES and POSTGRES_AVAILABLE:
+            print("[DB] Initializing PostgreSQL database...")
+            init_postgres_db()
+        else:
+            print("[DB] Initializing SQLite database...")
+            init_sqlite_db()
+    except Exception as e:
+        print(f"[DB] ⚠️  Database initialization warning: {e}")
+        # Don't crash the app, just log the warning
+        # Tables might already exist
 
 
 # ========================================

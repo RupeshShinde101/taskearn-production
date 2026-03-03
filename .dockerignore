@@ -1,26 +1,42 @@
+# Git and version control
 .git
 .gitignore
+.github
+
+# Python
 .venv
-.env
 __pycache__
 *.pyc
 *.pyo
 .pytest_cache
 .coverage
+
+# Database
 *.db
 *.sqlite
 *.sqlite3
-node_modules
-.DS_Store
-.idea
-.vscode
-taskearn-backend.zip
-*.log
+taskearn.db
 
-# Frontend files - don't include in backend Docker image
-*.html
+# Environment
+.env
+.env.example
+
+# Frontend - EXPLICITLY EXCLUDE
+index.html
+wallet.html
+chat.html
+help.html
+privacy.html
+safety.html
+terms.html
+admin.html
+tracking.html
+quick-test.html
+test-api.html
+api-diagnostic.html
 *.css
 *.js
+!backend/*.js
 netlify.toml
 netlify/
 vercel.json
@@ -30,9 +46,18 @@ vercel.json
 SETUP_GUIDE.md
 QUICK_START.md
 README_PRODUCTION.md
-PRODUCTION_DEPLOYMENT.md
+PRODUCTION_CHECKLIST.md
 
 # Temp files
 temp/
 tmp/
-test/
+test_*.py
+*.zip
+*.log
+.DS_Store
+.idea
+.vscode
+
+# Other
+node_modules
+server_old.py

@@ -17,15 +17,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend requirements & code
-COPY backend/requirements.txt .
+# Copy backend directory
+COPY backend/ .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend application
-COPY backend/config.py .
-COPY backend/database.py .
-COPY backend/payments.py .
-COPY backend/server.py .
+# Copy startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 # Expose port
 EXPOSE 5000
@@ -34,5 +34,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT:-5000}/api/health || exit 1
 
-# Run the application with gunicorn (Railway will pass $PORT)
-CMD ["/bin/sh", "-c", "gunicorn -w 4 -b 0.0.0.0:${PORT:-5000} --timeout 120 server:app"]
+# Run startup script
+ENTRYPOINT ["/app/start.sh"]

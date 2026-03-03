@@ -1,0 +1,38 @@
+.git
+.gitignore
+.venv
+.env
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+*.db
+*.sqlite
+*.sqlite3
+node_modules
+.DS_Store
+.idea
+.vscode
+taskearn-backend.zip
+*.log
+
+# Frontend files - don't include in backend Docker image
+*.html
+*.css
+*.js
+netlify.toml
+netlify/
+vercel.json
+
+# Documentation
+*.md
+SETUP_GUIDE.md
+QUICK_START.md
+README_PRODUCTION.md
+PRODUCTION_DEPLOYMENT.md
+
+# Temp files
+temp/
+tmp/
+test/

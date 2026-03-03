@@ -5,11 +5,11 @@
 
 # Environment variables for production
 [context.production.environment]
-  RAILWAY_API_URL = "https://your-railway-backend-url"
+  RAILWAY_API_URL = "https://taskearn-production-production.up.railway.app"
 
 # Environment variables for deploy-preview
 [context.deploy-preview.environment]
-  RAILWAY_API_URL = "https://your-railway-backend-url"
+  RAILWAY_API_URL = "https://taskearn-production-production.up.railway.app"
 
 # Configuration for SPA routing
 [[redirects]]

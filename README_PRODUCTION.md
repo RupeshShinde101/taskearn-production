@@ -134,8 +134,7 @@ OR (automatic detection):
     // Automatically switches between dev and production
     const hostname = window.location.hostname;
     if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-        window.TASKEARN_API_URL = 'https://taskearn.up.railway.app/api';
-    } else {
+        window.TASKEARN_API_URL = 'https://your-railway-url.up.railway.app/api';    } else {
         window.TASKEARN_API_URL = 'http://localhost:5000/api';
     }
 </script>

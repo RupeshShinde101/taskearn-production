@@ -1,12 +1,43 @@
 [build]
+  # No build needed - using static HTML/CSS/JS
   publish = "."
+  functions = "netlify/functions"
 
-[[headers]]
-  for = "/*"
-  [headers.values]
-    Access-Control-Allow-Origin = "*"
+# Environment variables for production
+[context.production.environment]
+  RAILWAY_API_URL = "https://your-railway-backend-url"
 
+# Environment variables for deploy-preview
+[context.deploy-preview.environment]
+  RAILWAY_API_URL = "https://your-railway-backend-url"
+
+# Configuration for SPA routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# CORS headers for API requests
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    Cache-Control = "public, max-age=3600"
+
+# Caching for static assets
+[[headers]]
+  for = "*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000"
+
+[[headers]]
+  for = "*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000"
+
+[[headers]]
+  for = "*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"

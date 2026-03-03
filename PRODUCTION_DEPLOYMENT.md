@@ -84,8 +84,7 @@ Railway is the easiest way to deploy - it handles everything automatically.
    - Change it to:
      ```html
      <script>
-         window.TASKEARN_API_URL = 'https://taskearn.up.railway.app/api';
-     </script>
+         window.TASKEARN_API_URL = 'https://your-railway-url.up.railway.app/api';     </script>
      ```
    - Commit and push to GitHub
    - Netlify will auto-redeploy
@@ -104,8 +103,7 @@ Update your frontend files with the correct backend URL:
 ```html
 <script>
     // Production Backend URL
-    window.TASKEARN_API_URL = 'https://taskearn.up.railway.app/api';
-</script>
+    window.TASKEARN_API_URL = 'https://your-railway-url.up.railway.app/api';</script>
 ```
 
 ---

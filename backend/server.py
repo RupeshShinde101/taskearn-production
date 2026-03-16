@@ -2676,6 +2676,124 @@ def get_wallet_balance():
         return jsonify({'success': False, 'message': 'Failed to get wallet balance'}), 500
 
 
+# ========================================
+# WALLET TOP-UP WITH RAZORPAY (REAL MONEY)
+# ========================================
+
+@app.route('/api/payments/wallet-topup-order', methods=['POST'])
+@require_auth
+def create_wallet_topup_order():
+    """Create Razorpay order for wallet top-up (real money)"""
+    try:
+        if not razorpay_client:
+            return jsonify({'success': False, 'message': 'Payment gateway not available'}), 503
+        
+        data = request.get_json()
+        amount = int(data.get('amount', 0))  # In paise
+        
+        if amount < 1000:  # Minimum ₹10
+            return jsonify({'success': False, 'message': 'Minimum top-up is ₹10'}), 400
+        
+        print(f"[WALLET] Creating Razorpay order for wallet top-up: {amount} paise (₹{amount/100})")
+        
+        # Create Razorpay order
+        order_data = {
+            'amount': amount,
+            'currency': 'INR',
+            'receipt': f'wallet-{request.user_id}-{int(time.time())}',
+            'description': f'Wallet Top-up - ₹{amount/100}',
+            'notes': {
+                'userId': str(request.user_id),
+                'type': 'wallet_topup',
+                'platform': 'Workmate4u'
+            }
+        }
+        
+        order = razorpay_client.order.create(data=order_data)
+        print(f"✅ [WALLET] Order created: {order['id']}")
+        
+        return jsonify({
+            'success': True,
+            'orderId': order['id'],
+            'amount': amount,
+            'currency': 'INR',
+            'key': config.RAZORPAY_KEY_ID
+        }), 201
+        
+    except Exception as e:
+        print(f"❌ [WALLET] Error creating order: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Failed to create order: {str(e)}'}), 500
+
+
+@app.route('/api/payments/wallet-topup-verify', methods=['POST'])
+@require_auth
+def verify_wallet_topup():
+    """Verify wallet top-up payment and credit wallet"""
+    try:
+        data = request.get_json()
+        payment_id = data.get('paymentId')
+        order_id = data.get('orderId')
+        amount = float(data.get('amount', 0))
+        
+        print(f"\n[WALLET] Verifying wallet top-up:")
+        print(f"  Order ID: {order_id}")
+        print(f"  Payment ID: {payment_id}")
+        print(f"  Amount: ₹{amount}")
+        print(f"  User: {request.user_id}")
+        
+        if not all([payment_id, order_id, amount]) or amount <= 0:
+            return jsonify({'success': False, 'message': 'Invalid payment details'}), 400
+        
+        with get_db() as (cursor, conn):
+            # Get or create wallet for user
+            wallet = get_or_create_wallet(request.user_id)
+            current_balance = float(wallet.get('balance', 0))
+            new_balance = current_balance + amount
+            
+            print(f"[WALLET] Current balance: ₹{current_balance}")
+            print(f"[WALLET] Adding: ₹{amount}")
+            print(f"[WALLET] New balance: ₹{new_balance}")
+            
+            # Update wallet balance
+            cursor.execute(f'''
+                UPDATE wallets
+                SET balance = {PH}, total_added = total_added + {PH}, updated_at = NOW()
+                WHERE user_id = {PH}
+            ''', (new_balance, amount, request.user_id))
+            
+            # Record transaction
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after,
+                    description, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                wallet.get('id'), request.user_id, 'credit',
+                amount, new_balance,
+                f'Wallet top-up via Razorpay',
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
+            ))
+            
+            conn.commit()
+        
+        print(f"✅ [WALLET] Payment verified and wallet credited: ₹{amount}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Wallet credited with ₹{amount}',
+            'newBalance': new_balance,
+            'transactionId': payment_id
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ [WALLET] Verification failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Verification failed: {str(e)}'}), 500
+
+
 @app.route('/api/wallet/topup', methods=['POST'])
 @require_auth
 def topup_wallet():

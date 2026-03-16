@@ -1109,53 +1109,141 @@
                 return;
             }
             
-            // Show processing
-            const btn = document.querySelector('.add-money-btn');
-            const originalText = btn.textContent;
-            btn.textContent = 'Processing...';
-            btn.disabled = true;
+            console.log('[WALLET] Opening Razorpay for wallet top-up: ₹' + amount);
+            
+            // Close modal first
+            closeAddMoneyModal();
             
             try {
-                // Call backend to add money to wallet
-                const response = await fetch(window.TASKEARN_API_URL + '/wallet/topup', {
+                // Create Razorpay order via backend
+                const orderResponse = await fetch(window.TASKEARN_API_URL + '/api/payments/wallet-topup-order', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify({
+                        amount: amount * 100  // Convert to paise
+                    })
+                });
+                
+                if (!orderResponse.ok) {
+                    throw new Error('Failed to create payment order');
+                }
+                
+                const orderData = await orderResponse.json();
+                
+                if (orderData.success && orderData.orderId) {
+                    console.log('[WALLET] Order created:', orderData.orderId);
+                    // Open Razorpay checkout
+                    openWalletRazorpayCheckout(orderData.orderId, amount);
+                } else {
+                    showToast('Failed to initialize payment. Please try again.');
+                }
+            } catch (error) {
+                console.error('[WALLET] Error:', error);
+                showToast('Payment error: ' + error.message);
+            }
+        }
+        
+        function openWalletRazorpayCheckout(orderId, amount) {
+            try {
+                if (typeof Razorpay === 'undefined') {
+                    showToast('Payment gateway not available. Please refresh page.');
+                    return;
+                }
+                
+                const token = localStorage.getItem('taskearn_token');
+                const user = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+                
+                const options = {
+                    key: 'rzp_live_SRt7rogPTT3FuK',
+                    amount: amount * 100,  // Razorpay uses paise
+                    currency: 'INR',
+                    order_id: orderId,
+                    name: 'Workmate4u Wallet',
+                    description: `Add ₹${amount} to wallet`,
+                    prefill: {
+                        name: user.name || '',
+                        email: user.email || '',
+                        contact: user.phone || ''
+                    },
+                    handler: function(response) {
+                        console.log('[WALLET] Payment successful:', response.razorpay_payment_id);
+                        verifyWalletPayment(response, orderId, amount);
+                    },
+                    theme: {
+                        color: '#6366f1'
+                    },
+                    modal: {
+                        ondismiss: function() {
+                            console.log('[WALLET] Payment cancelled');
+                            showToast('Payment cancelled. You can try again.');
+                        }
+                    }
+                };
+                
+                const rzp = new Razorpay(options);
+                
+                rzp.on('payment.failed', function(response) {
+                    console.error('[WALLET] Payment failed:', response.error);
+                    showToast('Payment failed: ' + (response.error?.description || 'Please try again'));
+                });
+                
+                console.log('[WALLET] Opening Razorpay with QR code and payment options...');
+                rzp.open();
+            } catch (error) {
+                console.error('[WALLET] Razorpay error:', error);
+                showToast('Payment error. Please try again.');
+            }
+        }
+        
+        async function verifyWalletPayment(response, orderId, amount) {
+            try {
+                const token = localStorage.getItem('taskearn_token');
+                
+                console.log('[WALLET] Verifying payment...');
+                
+                const verifyResponse = await fetch(window.TASKEARN_API_URL + '/api/payments/wallet-topup-verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        orderId: orderId,
+                        paymentId: response.razorpay_payment_id,
+                        signature: response.razorpay_signature,
                         amount: amount
                     })
                 });
                 
-                const data = await response.json();
+                const verifyData = await verifyResponse.json();
                 
-                if (data.success) {
-                    console.log('[WALLET] Money added successfully:', data);
+                if (verifyData.success) {
+                    console.log('[WALLET] ✅ Payment verified and wallet credited');
                     showToast('✅ ₹' + amount + ' added to wallet successfully!');
                     
-                    // Update local cache
+                    // Update local wallet
                     const user = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
-                    user.wallet = data.newBalance;
+                    user.wallet = verifyData.newBalance || (user.wallet || 0) + amount;
                     localStorage.setItem('taskearn_user', JSON.stringify(user));
                     
-                    // Update currentUser object in app.js if available
+                    // Update in app.js if available
                     if (typeof currentUser !== 'undefined') {
-                        currentUser.wallet = data.newBalance;
+                        currentUser.wallet = user.wallet;
                     }
                     
-                    closeAddMoneyModal();
-                    loadWallet();
+                    // Reload wallet display
+                    setTimeout(() => {
+                        loadWallet();
+                    }, 1000);
                 } else {
-                    showToast('❌ ' + (data.message || 'Failed to add money'));
-                    console.error('[WALLET] Error:', data);
+                    showToast('❌ Payment verification failed: ' + (verifyData.message || 'Please contact support'));
                 }
             } catch (error) {
-                console.error('[WALLET] Error adding money:', error);
-                showToast('❌ Something went wrong. Please try again.');
-            } finally {
-                btn.textContent = originalText;
-                btn.disabled = false;
+                console.error('[WALLET] Verification error:', error);
+                showToast('Verification error. Please contact support if money was deducted.');
             }
         }
         

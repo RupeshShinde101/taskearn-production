@@ -2822,54 +2822,15 @@ def verify_wallet_topup():
 @app.route('/api/wallet/topup', methods=['POST'])
 @require_auth
 def topup_wallet():
-    """Top-up wallet balance
+    """✅ DEPRECATED - Virtual wallet topups are disabled. Use Razorpay for all transactions.
     
-    Request Body:
-    {
-        "amount": 1000,
-        "orderId": "order_xxx" (optional, for Razorpay)
-    }
+    Only Razorpay-verified transactions are now supported.
+    Use /api/payments/wallet-topup-order for real money wallet top-ups.
     """
-    try:
-        data = request.get_json()
-        amount = float(data.get('amount', 0))
-        
-        if amount < 10:
-            return jsonify({'success': False, 'message': 'Minimum amount is ₹10'}), 400
-        
-        # Get or create wallet
-        wallet = get_or_create_wallet(request.user_id)
-        new_balance = float(wallet['balance']) + amount
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
-        with get_db() as (cursor, conn):
-            # Update wallet balance
-            cursor.execute(f'''
-                UPDATE wallets 
-                SET balance = {PH}, total_added = total_added + {PH}, updated_at = {PH}
-                WHERE user_id = {PH}
-            ''', (new_balance, amount, now, request.user_id))
-            
-            # Add transaction record
-            cursor.execute(f'''
-                INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, created_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (wallet['id'], request.user_id, 'credit', amount, new_balance, 'Wallet top-up', now))
-            conn.commit()
-            
-            print(f"✅ Wallet topped up: ₹{amount} for user {request.user_id}, new balance: ₹{new_balance}")
-            
-            return jsonify({
-                'success': True,
-                'message': 'Wallet topped up successfully',
-                'newBalance': float(new_balance)
-            }), 200
-            
-    except Exception as e:
-        print(f"❌ Error topping up wallet: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'message': f'Failed to top-up wallet: {str(e)}'}), 500
+    return jsonify({
+        'success': False, 
+        'message': 'Virtual wallet top-ups are disabled. Please use Razorpay payment gateway with /api/payments/wallet-topup-order'
+    }), 403
 
 
 @app.route('/api/payments/<payment_id>', methods=['GET'])

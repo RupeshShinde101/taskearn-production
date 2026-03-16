@@ -2480,6 +2480,487 @@ function showPaymentSuccessModal(task, totalPayable, platformFee) {
 }
 
 // ========================================
+// PAYMENT RECEPTION (For Helpers to Receive Payment)
+// ========================================
+
+/**
+ * Open payment reception modal for a completed task
+ * Called when helper clicks "Receive Payment" on a completed task
+ */
+function openPaymentReceptionModal(taskId) {
+    const task = myAcceptedTasks.find(t => t.id === taskId);
+    if (!task || task.status !== 'pending_payment') {
+        showToast('❌ Task not found or not ready for payment');
+        return;
+    }
+
+    const helperEarnings = task.price; // Helper gets 100% of task price (commission deducted from poster)
+    const platformFee = Math.ceil(task.price * 0.10); // 10% platform commission
+    const totalFromPoster = task.price + platformFee; // What poster pays
+    const helperReceives = task.price; // What helper gets
+
+    const content = `
+        <div style="padding: 20px;">
+            <div style="background: linear-gradient(135deg, #4ade80, #22c55e); border-radius: 15px; padding: 25px; text-align: center; margin-bottom: 25px; color: white;">
+                <h3 style="margin: 0 0 10px 0; font-size: 18px;">Task Payment Ready</h3>
+                <div style="font-size: 2.5rem; font-weight: 800; margin: 15px 0;">₹${helperReceives}</div>
+                <p style="margin: 10px 0 0 0; opacity: 0.95;">Amount to Receive</p>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 15px; margin-bottom: 20px;">
+                <h4 style="margin-top: 0;">📋 Payment Breakdown</h4>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span>Task Amount</span>
+                    <span style="font-weight: 600;">₹${task.price}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0;">
+                    <span>Platform Commission (10%)</span>
+                    <span style="color: #fbbf24; font-weight: 600;">-₹${platformFee}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 2px solid rgba(255,255,255,0.2); font-weight: 700; font-size: 16px;">
+                    <span>You Receive</span>
+                    <span style="color: #4ade80;">₹${helperReceives}</span>
+                </div>
+            </div>
+
+            <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                <h4 style="margin-top: 0; color: #fbbf24;"><i class="fas fa-info-circle"></i> Payment Methods</h4>
+                <p style="font-size: 14px; margin: 10px 0 0 0; opacity: 0.9;">Choose how you want to receive your payment. Commission will be deducted in both cases.</p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <button class="btn btn-success" style="width: 100%; padding: 15px; font-size: 15px; border-radius: 10px;" 
+                    onclick="initiatePaymentReception(${taskId}, 'digital')">
+                    <i class="fas fa-credit-card"></i><br>Digital Payment<br><small>UPI/Bank Transfer</small>
+                </button>
+                <button class="btn btn-secondary" style="width: 100%; padding: 15px; font-size: 15px; border-radius: 10px; background: #0ea5e9;" 
+                    onclick="initiatePaymentReception(${taskId}, 'cash')">
+                    <i class="fas fa-money-bill"></i><br>Cash Payment<br><small>Direct Settlement</small>
+                </button>
+            </div>
+
+            <div style="background: rgba(74, 222, 128, 0.05); border-left: 4px solid #4ade80; border-radius: 5px; padding: 12px; margin-top: 15px; font-size: 13px;">
+                <i class="fas fa-check-circle" style="color: #4ade80;"></i> <strong>Note:</strong> Payment is processed through the task poster's payment. Your ₹${helperReceives} will be added to your wallet upon confirmation.
+            </div>
+        </div>
+    `;
+
+    document.getElementById('paymentReceptionContent').innerHTML = content;
+    openModal('receivePaymentModal');
+}
+
+/**
+ * Initiate payment reception by helper
+ * @param {number} taskId - Task ID
+ * @param {string} method - Payment method ('digital' or 'cash')
+ */
+function initiatePaymentReception(taskId, method) {
+    const task = myAcceptedTasks.find(t => t.id === taskId);
+    if (!task) {
+        showToast('❌ Task not found');
+        return;
+    }
+
+    const helperReceives = task.price;
+    const platformFee = Math.ceil(task.price * 0.10);
+
+    if (method === 'digital') {
+        showDigitalPaymentOptions(task, helperReceives, platformFee);
+    } else if (method === 'cash') {
+        showCashPaymentOptions(task, helperReceives, platformFee);
+    }
+}
+
+/**
+ * Show digital payment options (UPI, Bank Transfer, Wallet)
+ */
+function showDigitalPaymentOptions(task, helperReceives, platformFee) {
+    const content = `
+        <div style="padding: 20px;">
+            <h3><i class="fas fa-arrow-left" style="cursor: pointer; opacity: 0.6;" onclick="openPaymentReceptionModal(${task.id})"></i> Digital Payment Methods</h3>
+
+            <div style="background: rgba(100, 200, 255, 0.1); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span>Amount to Receive</span>
+                    <span style="font-weight: 700; color: #4ade80;">₹${helperReceives}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; opacity: 0.7;">
+                    <span style="font-size: 12px;">Platform Commission (10%)</span>
+                    <span style="font-size: 12px; color: #fbbf24;">-₹${platformFee}</span>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="payment-option-btn" onclick="selectDigitalPaymentMethod('upi', ${task.id}, ${helperReceives}, ${platformFee})">
+                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <i class="fas fa-mobile-alt" style="font-size: 24px; color: #667eea;"></i>
+                            <div style="text-align: left;">
+                                <div style="font-weight: 600;">UPI Transfer</div>
+                                <div style="font-size: 12px; opacity: 0.7;">Fast and instant transfer</div>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="opacity: 0.5;"></i>
+                    </div>
+                </button>
+
+                <button class="payment-option-btn" onclick="selectDigitalPaymentMethod('bank', ${task.id}, ${helperReceives}, ${platformFee})">
+                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <i class="fas fa-university" style="font-size: 24px; color: #10b981;"></i>
+                            <div style="text-align: left;">
+                                <div style="font-weight: 600;">Bank Transfer</div>
+                                <div style="font-size: 12px; opacity: 0.7;">Direct to your bank account</div>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="opacity: 0.5;"></i>
+                    </div>
+                </button>
+
+                <button class="payment-option-btn" onclick="selectDigitalPaymentMethod('wallet', ${task.id}, ${helperReceives}, ${platformFee})">
+                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <i class="fas fa-wallet" style="font-size: 24px; color: #f59e0b;"></i>
+                            <div style="text-align: left;">
+                                <div style="font-weight: 600;">Add to Wallet</div>
+                                <div style="font-size: 12px; opacity: 0.7;">Instant credit to your wallet</div>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="opacity: 0.5;"></i>
+                    </div>
+                </button>
+            </div>
+
+            <style>
+                .payment-option-btn {
+                    background: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    padding: 15px;
+                    border-radius: 10px;
+                    color: #fff;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                    text-align: left;
+                    width: 100%;
+                    font-family: inherit;
+                    font-size: 14px;
+                }
+                .payment-option-btn:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                    border-color: rgba(255, 255, 255, 0.2);
+                    transform: translateX(5px);
+                }
+            </style>
+        </div>
+    `;
+
+    document.getElementById('paymentReceptionContent').innerHTML = content;
+}
+
+/**
+ * Process digital payment method selection
+ */
+function selectDigitalPaymentMethod(method, taskId, helperReceives, platformFee) {
+    const task = myAcceptedTasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (method === 'wallet') {
+        // Direct wallet credit
+        completePaymentReception(task, helperReceives, platformFee, 'wallet');
+    } else if (method === 'upi' || method === 'bank') {
+        // Show payment collection form
+        showPaymentDetailsForm(task, helperReceives, platformFee, method);
+    }
+}
+
+/**
+ * Show form to collect payment details
+ */
+function showPaymentDetailsForm(task, helperReceives, platformFee, method) {
+    const methodTitle = method === 'upi' ? 'UPI ID' : 'Bank Account';
+    const methodPlaceholder = method === 'upi' ? 'example@upi' : 'Account number';
+
+    const content = `
+        <div style="padding: 20px;">
+            <h3><i class="fas fa-arrow-left" style="cursor: pointer; opacity: 0.6;" onclick="initiatePaymentReception(${task.id}, 'digital')"></i> ${methodTitle} Details</h3>
+
+            <div style="background: rgba(74, 222, 128, 0.1); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Amount to Receive</span>
+                    <span style="font-weight: 700; color: #4ade80;">₹${helperReceives}</span>
+                </div>
+            </div>
+
+            <form onsubmit="processPaymentDetails(event, ${task.id}, ${helperReceives}, ${platformFee}, '${method}')">
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">
+                        ${methodTitle}
+                        <span style="color: #ef4444;">*</span>
+                    </label>
+                    <input type="text" placeholder="${methodPlaceholder}" required 
+                        style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff; font-size: 14px;"
+                        id="paymentDetail">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">
+                        Account Holder Name
+                        <span style="color: #ef4444;">*</span>
+                    </label>
+                    <input type="text" placeholder="Your full name" required 
+                        style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff; font-size: 14px;"
+                        id="accountHolderName" value="${currentUser ? currentUser.name : ''}">
+                </div>
+
+                <button type="submit" class="btn btn-success" style="width: 100%; padding: 12px; font-size: 15px; border-radius: 8px;">
+                    <i class="fas fa-check-circle"></i> Confirm Payment Details
+                </button>
+            </form>
+        </div>
+    `;
+
+    document.getElementById('paymentReceptionContent').innerHTML = content;
+}
+
+/**
+ * Process payment details form submission
+ */
+function processPaymentDetails(event, taskId, helperReceives, platformFee, method) {
+    event.preventDefault();
+    
+    const paymentDetail = document.getElementById('paymentDetail').value;
+    const accountHolderName = document.getElementById('accountHolderName').value;
+
+    if (!paymentDetail || !accountHolderName) {
+        showToast('❌ Please fill in all fields');
+        return;
+    }
+
+    // In production, this would be validated server-side
+    const task = myAcceptedTasks.find(t => t.id === taskId);
+    if (task) {
+        completePaymentReception(task, helperReceives, platformFee, method, {
+            detail: paymentDetail,
+            accountHolder: accountHolderName
+        });
+    }
+}
+
+/**
+ * Show cash payment settlement options
+ */
+function showCashPaymentOptions(task, helperReceives, platformFee) {
+    const content = `
+        <div style="padding: 20px;">
+            <h3>💵 Cash Payment Settlement</h3>
+
+            <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                <h4 style="margin-top: 0; color: #fbbf24;"><i class="fas fa-warning-circle"></i> Important</h4>
+                <p style="font-size: 14px; margin: 10px 0 0 0;">For cash payments, you will receive:</p>
+                <div style="background: rgba(100, 100, 100, 0.3); border-radius: 8px; padding: 12px; margin-top: 10px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Cash Amount</span>
+                        <span style="font-weight: 700;">₹${helperReceives}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; opacity: 0.7; font-size: 12px; margin-top: 5px;">
+                        <span>Platform Commission (10%)</spans>
+                        <span style="color: #fbbf24;">-₹${platformFee} (to company)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="background: rgba(52, 211, 153, 0.1); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                <h4 style="margin-top: 0;"><i class="fas fa-handshake"></i> Settlement with ${task.postedBy ? task.postedBy.name : 'Task Poster'}</h4>
+                <p style="font-size: 14px; margin: 10px 0 0 0;">
+                    You will meet with the task poster and settle ₹${helperReceives} in cash. 
+                    The 10% platform commission (₹${platformFee}) will be collected separately.
+                </p>
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 15px; border-radius: 8px; margin-bottom: 10px;"
+                onclick="processChargeVerification(${task.id}, 'cash', ${helperReceives}, ${platformFee})">
+                <i class="fas fa-phone"></i> Get Contact Details
+            </button>
+
+            <button class="btn btn-secondary" style="width: 100%; padding: 12px; font-size: 15px; border-radius: 8px; background: #666;"
+                onclick="initiatePaymentReception(${task.id}, 'digital')">
+                <i class="fas fa-arrow-left"></i> Back
+            </button>
+        </div>
+    `;
+
+    document.getElementById('paymentReceptionContent').innerHTML = content;
+}
+
+/**
+ * Verify and display task poster's contact for cash settlement
+ */
+function processChargeVerification(taskId, method, helperReceives, platformFee) {
+    const task = myAcceptedTasks.find(t => t.id === taskId);
+    if (!task || !task.postedBy) {
+        showToast('❌ Task poster information not found');
+        return;
+    }
+
+    const content = `
+        <div style="padding: 20px;">
+            <h3 style="text-align: center;"><i class="fas fa-check-circle" style="color: #4ade80;"></i> Contact Details</h3>
+
+            <div style="background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(52, 211, 153, 0.1)); border-radius: 15px; padding: 20px; margin-bottom: 20px;">
+                <h4 style="margin-top: 0; text-align: center;">${task.postedBy.name}</h4>
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <i class="fas fa-phone" style="font-size: 30px; color: #4ade80;"></i>
+                </div>
+                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 12px; margin-bottom: 10px;">
+                    <div style="font-size: 12px; opacity: 0.7;">Phone Number</div>
+                    <div style="font-size: 16px; font-weight: 700; font-family: monospace;">${task.postedBy.phone || '+91-XXXXXXXXXX'}</div>
+                </div>
+                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 12px;">
+                    <div style="font-size: 12px; opacity: 0.7;">Location</div>
+                    <div style="font-size: 14px;">${task.location.address}</div>
+                </div>
+            </div>
+
+            <div style="background: rgba(251, 191, 36, 0.1); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                <h4 style="margin-top: 0; color: #fbbf24;"><i class="fas fa-info-circle"></i> Settlement Instructions</h4>
+                <ol style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px;">
+                    <li>Contact the task poster using the number above</li>
+                    <li>Arrange cash payment of ₹${helperReceives}</li>
+                    <li>After settlement, confirm payment in the app</li>
+                    <li>Amount will be added to your wallet (10% commission deducted)</li>
+                </ol>
+            </div>
+
+            <button class="btn btn-success" style="width: 100%; padding: 12px; font-size: 15px; border-radius: 8px; margin-bottom: 10px;"
+                onclick="completePaymentReception(${task.id}, ${helperReceives}, ${platformFee}, 'cash')">
+                <i class="fas fa-check-circle"></i> Confirm Cash Settlement
+            </button>
+
+            <button class="btn btn-secondary" style="width: 100%; padding: 12px; font-size: 15px; border-radius: 8px; background: #666;"
+                onclick="showCashPaymentOptions(JSON.parse('${JSON.stringify(task).replace(/'/g, "\\'")}'), ${helperReceives}, ${platformFee})">
+                <i class="fas fa-arrow-left"></i> Back
+            </button>
+        </div>
+    `;
+
+    document.getElementById('paymentReceptionContent').innerHTML = content;
+}
+
+/**
+ * Complete payment reception process
+ * Updates task status to 'paid' and adds earnings to wallet
+ */
+function completePaymentReception(task, helperReceives, platformFee, method, paymentDetails = {}) {
+    if (!task || !currentUser) {
+        showToast('❌ Error processing payment');
+        return;
+    }
+
+    // Update task status to paid
+    task.status = 'paid';
+    task.paidAt = new Date().toISOString();
+    task.paymentMethod = method;
+    task.platformFeeDeducted = platformFee;
+    task.paymentDetails = paymentDetails;
+
+    // Update myAcceptedTasks
+    updateUserData(currentUser.id, {
+        acceptedTasks: serializeTasks(myAcceptedTasks)
+    });
+
+    // Add earnings to local wallet (in production, this would be server-side)
+    addEarningsToWallet(currentUser.id, helperReceives, platformFee, task);
+
+    // Show success message
+    closeModal('receivePaymentModal');
+    showPaymentReceptionSuccessModal(task, helperReceives, platformFee, method);
+
+    // Update dashboard
+    renderDashboard();
+}
+
+/**
+ * Add earnings to helper's wallet
+ */
+function addEarningsToWallet(userId, earnings, platformFee, task) {
+    const walletStr = localStorage.getItem('taskearn_local_wallet');
+    const wallet = walletStr ? JSON.parse(walletStr) : { balance: 0, transactions: [], totalEarned: 0 };
+
+    wallet.balance += earnings;
+    wallet.totalEarned = (wallet.totalEarned || 0) + earnings;
+    wallet.transactions = wallet.transactions || [];
+    wallet.transactions.unshift({
+        id: Date.now(),
+        type: 'earned',
+        amount: earnings,
+        platformFee: platformFee,
+        gross: earnings + platformFee,
+        description: `Payment received for task: ${task.title}`,
+        paymentMethod: task.paymentMethod,
+        date: new Date().toISOString()
+    });
+
+    localStorage.setItem('taskearn_local_wallet', JSON.stringify(wallet));
+
+    console.log('✅ Wallet updated:', {
+        newBalance: wallet.balance,
+        earnedAmount: earnings,
+        platformCommission: platformFee
+    });
+}
+
+/**
+ * Show payment reception success modal
+ */
+function showPaymentReceptionSuccessModal(task, helperReceives, platformFee, method) {
+    const methodLabel = method === 'wallet' ? '💳 Wallet Credit' : method === 'upi' ? '📱 UPI Transfer' : method === 'bank' ? '🏦 Bank Transfer' : '💵 Cash Payment';
+
+    const content = `
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 60px; margin-bottom: 20px;">✅</div>
+            <h2 style="color: #4ade80; margin-bottom: 15px;">Payment Received!</h2>
+            
+            <div style="background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(52, 211, 153, 0.1)); border-radius: 15px; padding: 25px; margin-bottom: 20px;">
+                <div style="font-size: 2rem; font-weight: 800; color: #4ade80; margin-bottom: 10px;">₹${helperReceives}</div>
+                <p style="margin: 10px 0 0 0; opacity: 0.9;">Added to Your Wallet</p>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 15px; margin-bottom: 20px; text-align: left;">
+                <h4 style="margin: 0 0 12px 0;">Transaction Details</h4>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding: 6px 0;">
+                    <span>Task</span>
+                    <span style="font-weight: 600;">${task.title}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span>Payment Method</span>
+                    <span style="color: #0ea5e9;">${methodLabel}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding: 6px 0;">
+                    <span>Gross Amount</span>
+                    <span>₹${helperReceives + platformFee}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding: 6px 0;">
+                    <span style="opacity: 0.7;">Platform Commission (10%)</span>
+                    <span style="color: #fbbf24; opacity: 0.7;">-₹${platformFee}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 16px; font-weight: 700; border-top: 2px solid rgba(255,255,255,0.1); margin-top: 8px;">
+                    <span>You Received</span>
+                    <span style="color: #4ade80;">₹${helperReceives}</span>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 15px; border-radius: 8px;" 
+                onclick="closeModal('taskSuccessModal'); scrollToSection('my-tasks')">
+                <i class="fas fa-arrow-left"></i> Back to Tasks
+            </button>
+        </div>
+    `;
+
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    openModal('taskSuccessModal');
+}
+
+// ========================================
 // FORM HANDLERS
 // ========================================
 
@@ -3209,17 +3690,47 @@ function renderAcceptedTasks() {
         return;
     }
 
-    el.innerHTML = myAcceptedTasks.map(t => `
-        <div class="my-task-card">
-            <div class="my-task-card-header">
-                <span class="task-category">${formatCategory(t.category)}</span>
-                <span class="task-status pending">In Progress</span>
+    el.innerHTML = myAcceptedTasks.map(t => {
+        // ✅ Show different UI based on task status
+        let actionHTML = '';
+        let statusHTML = 'In Progress';
+        let statusColor = 'pending';
+        
+        if (t.status === 'pending_payment') {
+            // Task completed, waiting for payment from poster
+            statusHTML = '⏳ Awaiting Payment';
+            statusColor = 'warning';
+            actionHTML = `<div class="task-actions">
+                <button class="btn btn-success" onclick="openPaymentReceptionModal(${t.id})" title="Receive payment for completed task">
+                    <i class="fas fa-wallet"></i> Receive Payment
+                </button>
+            </div>`;
+        } else if (t.status === 'paid') {
+            // Payment received
+            statusHTML = '✅ Paid';
+            statusColor = 'success';
+            actionHTML = `<div style="background: rgba(74, 222, 128, 0.1); border-radius: 8px; padding: 12px; margin-top: 10px;">
+                <p style="color: #4ade80; margin: 0;">
+                    <i class="fas fa-check-circle"></i> Payment received - ₹${t.price} added to your wallet
+                </p>
+            </div>`;
+        } else {
+            // Still in progress
+            actionHTML = `<div class="task-actions"><button class="btn btn-success" onclick="completeTask(${t.id})">Mark Complete</button></div>`;
+        }
+        
+        return `
+            <div class="my-task-card">
+                <div class="my-task-card-header">
+                    <span class="task-category">${formatCategory(t.category)}</span>
+                    <span class="task-status ${statusColor}">${statusHTML}</span>
+                </div>
+                <h4>${t.title}</h4>
+                <div class="task-meta"><span>₹${t.price}</span><span>${t.location.address}</span></div>
+                ${actionHTML}
             </div>
-            <h4>${t.title}</h4>
-            <div class="task-meta"><span>₹${t.price}</span><span>${t.location.address}</span></div>
-            <div class="task-actions"><button class="btn btn-success" onclick="completeTask(${t.id})">Mark Complete</button></div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function renderCompletedTasks() {

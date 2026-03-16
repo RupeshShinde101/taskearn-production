@@ -3958,3 +3958,171 @@ section {
     padding: 8px 12px;
     margin: -8px -12px;
 }
+
+/* ========================================
+   PAYMENT RECEPTION MODAL STYLING
+   ======================================== */
+
+#receivePaymentModal .modal-content {
+    max-width: 500px;
+    width: 100%;
+}
+
+#paymentReceptionContent {
+    color: #fff;
+}
+
+#paymentReceptionContent h3 {
+    font-size: 22px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#paymentReceptionContent h4 {
+    font-size: 16px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.payment-reception-card {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.payment-info {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.amount-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.amount-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 14px;
+}
+
+.amount-row.total {
+    padding: 12px 0;
+    border-top: 2px solid rgba(255, 255, 255, 0.1);
+    font-weight: 700;
+    color: #fff;
+    margin-top: 8px;
+}
+
+.amount {
+    font-weight: 600;
+    color: #4ade80;
+}
+
+.commission {
+    color: #fbbf24;
+}
+
+.total-amount {
+    font-size: 16px;
+    color: #4ade80;
+}
+
+.payment-methods {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.payment-methods h4 {
+    margin: 0 0 15px 0;
+}
+
+.payment-method-btn {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08));
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: #fff;
+    padding: 15px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.payment-method-btn i {
+    font-size: 20px;
+    color: #4ade80;
+}
+
+.payment-method-btn small {
+    font-size: 12px;
+    opacity: 0.7;
+    display: block;
+}
+
+.payment-method-btn:hover {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15));
+    border-color: rgba(139, 92, 246, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(139, 92, 246, 0.2);
+}
+
+#paymentReceptionContent input {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    font-family: inherit;
+    margin-bottom: 10px;
+}
+
+#paymentReceptionContent input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+#paymentReceptionContent input:focus {
+    outline: none;
+    border-color: rgba(139, 92, 246, 0.5);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+#paymentReceptionContent label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #fff;
+}
+
+#paymentReceptionContent form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+@media (max-width: 600px) {
+    #receivePaymentModal .modal-content {
+        margin: 0 15px;
+    }
+
+    .payment-method-btn {
+        padding: 12px;
+    }
+}

@@ -2095,59 +2095,93 @@ def delete_scheduled_task(schedule_id):
 @require_auth
 def get_helper_dashboard():
     """Get helper earnings dashboard"""
-    with get_db() as (cursor, conn):
-        # Get user stats
-        cursor.execute(f'SELECT * FROM users WHERE id = {PH}', (request.user_id,))
-        user = dict_from_row(cursor.fetchone())
+    try:
+        with get_db() as (cursor, conn):
+            # Get user stats
+            cursor.execute(f'SELECT * FROM users WHERE id = {PH}', (request.user_id,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+            user = dict_from_row(user_row)
+            if not user:
+                return jsonify({'success': False, 'message': 'Failed to retrieve user data'}), 500
+            
+            # Get wallet - ensure table exists
+            cursor.execute(f'''
+                SELECT id, user_id, balance, total_earned FROM user_wallets 
+                WHERE user_id = {PH}
+            ''', (request.user_id,))
+            wallet_row = cursor.fetchone()
+            
+            if wallet_row:
+                wallet = dict_from_row(wallet_row)
+            else:
+                # Create wallet if it doesn't exist
+                cursor.execute(f'''
+                    INSERT INTO user_wallets (user_id, balance, total_earned)
+                    VALUES ({PH}, 0, 0)
+                    RETURNING id, user_id, balance, total_earned
+                ''', (request.user_id,))
+                wallet = dict_from_row(cursor.fetchone())
+                conn.commit()
+            
+            # Today's earnings
+            today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+            cursor.execute(f'''
+                SELECT COALESCE(SUM(amount), 0) as today_earnings
+                FROM wallet_transactions 
+                WHERE user_id = {PH} AND type = {PH} AND created_at LIKE {PH}
+            ''', (request.user_id, 'earning', f'{today}%'))
+            today_row = cursor.fetchone()
+            today_data = dict_from_row(today_row) if today_row else {'today_earnings': 0}
+            
+            # This week's earnings
+            week_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).isoformat()
+            cursor.execute(f'''
+                SELECT COALESCE(SUM(amount), 0) as week_earnings
+                FROM wallet_transactions 
+                WHERE user_id = {PH} AND type = {PH} AND created_at >= {PH}
+            ''', (request.user_id, 'earning', week_ago))
+            week_row = cursor.fetchone()
+            week_data = dict_from_row(week_row) if week_row else {'week_earnings': 0}
+            
+            # Tasks completed this month
+            month_start = datetime.datetime.now(datetime.timezone.utc).replace(day=1).isoformat()
+            cursor.execute(f'''
+                SELECT COUNT(*) as month_tasks
+                FROM tasks 
+                WHERE accepted_by = {PH} AND status = {PH} AND completed_at >= {PH}
+            ''', (request.user_id, 'completed', month_start))
+            month_row = cursor.fetchone()
+            month_tasks = dict_from_row(month_row) if month_row else {'month_tasks': 0}
+            
+            # Get recent earnings
+            cursor.execute(f'''
+                SELECT * FROM wallet_transactions 
+                WHERE user_id = {PH} AND type = {PH}
+                ORDER BY created_at DESC LIMIT 10
+            ''', (request.user_id, 'earning'))
+            recent_earnings = [dict_from_row(row) for row in cursor.fetchall()]
         
-        # Get wallet
-        wallet = get_or_create_wallet(request.user_id)
-        
-        # Today's earnings
-        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-        cursor.execute(f'''
-            SELECT COALESCE(SUM(amount), 0) as today_earnings
-            FROM wallet_transactions 
-            WHERE user_id = {PH} AND type = {PH} AND created_at LIKE {PH}
-        ''', (request.user_id, 'earning', f'{today}%'))
-        today_data = dict_from_row(cursor.fetchone())
-        
-        # This week's earnings
-        week_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).isoformat()
-        cursor.execute(f'''
-            SELECT COALESCE(SUM(amount), 0) as week_earnings
-            FROM wallet_transactions 
-            WHERE user_id = {PH} AND type = {PH} AND created_at >= {PH}
-        ''', (request.user_id, 'earning', week_ago))
-        week_data = dict_from_row(cursor.fetchone())
-        
-        # Tasks completed this month
-        month_start = datetime.datetime.now(datetime.timezone.utc).replace(day=1).isoformat()
-        cursor.execute(f'''
-            SELECT COUNT(*) as month_tasks
-            FROM tasks 
-            WHERE accepted_by = {PH} AND status = {PH} AND completed_at >= {PH}
-        ''', (request.user_id, 'completed', month_start))
-        month_tasks = dict_from_row(cursor.fetchone())
-        
-        # Get recent earnings
-        cursor.execute(f'''
-            SELECT * FROM wallet_transactions 
-            WHERE user_id = {PH} AND type = {PH}
-            ORDER BY created_at DESC LIMIT 10
-        ''', (request.user_id, 'earning'))
-        recent_earnings = [dict_from_row(row) for row in cursor.fetchall()]
-    
-    return jsonify({
-        'success': True,
-        'dashboard': {
-            'walletBalance': float(wallet['balance']),
-            'totalEarned': float(wallet['total_earned']),
-            'todayEarnings': float(today_data['today_earnings']),
-            'weekEarnings': float(week_data['week_earnings']),
-            'monthTasks': month_tasks['month_tasks'],
-            'totalTasksCompleted': user['tasks_completed'] or 0,
-            'rating': float(user['rating'] or 5),
+        return jsonify({
+            'success': True,
+            'dashboard': {
+                'walletBalance': float(wallet.get('balance', 0) or 0),
+                'totalEarned': float(wallet.get('total_earned', 0) or 0),
+                'todayEarnings': float(today_data.get('today_earnings', 0) or 0),
+                'weekEarnings': float(week_data.get('week_earnings', 0) or 0),
+                'monthTasks': int(month_tasks.get('month_tasks', 0) or 0),
+                'totalTasksCompleted': int(user.get('tasks_completed') or 0),
+                'rating': float(user.get('rating', 5) or 5),
+                'recentEarnings': recent_earnings
+            }
+        }), 200
+    except Exception as e:
+        print(f"❌ Error fetching helper dashboard: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Failed to fetch dashboard: {str(e)}'}), 500
             'helperLevel': user.get('helper_level', 'bronze'),
             'recentEarnings': recent_earnings
         }
@@ -2597,37 +2631,47 @@ def topup_wallet():
         "orderId": "order_xxx" (optional, for Razorpay)
     }
     """
-    data = request.get_json()
-    amount = data.get('amount')
-    
-    if not amount or amount <= 0:
-        return jsonify({'success': False, 'message': 'Invalid amount'}), 400
-    
     try:
+        data = request.get_json()
+        amount = data.get('amount')
+        
+        if not amount or amount <= 0:
+            return jsonify({'success': False, 'message': 'Invalid amount'}), 400
+        
         with get_db() as (cursor, conn):
+            # First, ensure wallet_balance column exists and has a value
             cursor.execute(f'''
                 UPDATE users 
-                SET wallet_balance = wallet_balance + {PH}
+                SET wallet_balance = COALESCE(wallet_balance, 0) + {PH}
                 WHERE id = {PH}
             ''', (amount, request.user_id))
+            conn.commit()
             
             # Get updated balance
             cursor.execute(f'''
-                SELECT wallet_balance FROM users WHERE id = {PH}
+                SELECT COALESCE(wallet_balance, 0) as wallet_balance FROM users WHERE id = {PH}
             ''', (request.user_id,))
-            user = dict_from_row(cursor.fetchone())
             
-            print(f"✅ Wallet topped up: ₹{amount} for user {request.user_id}")
+            result = cursor.fetchone()
+            if not result:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+            user = dict_from_row(result)
+            new_balance = user.get('wallet_balance', 0) if user else 0
+            
+            print(f"✅ Wallet topped up: ₹{amount} for user {request.user_id}, new balance: ₹{new_balance}")
             
             return jsonify({
                 'success': True,
                 'message': 'Wallet topped up successfully',
-                'newBalance': float(user['wallet_balance'])
+                'newBalance': float(new_balance)
             }), 200
             
     except Exception as e:
         print(f"❌ Error topping up wallet: {e}")
-        return jsonify({'success': False, 'message': 'Failed to top-up wallet'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Failed to top-up wallet: {str(e)}'}), 500
 
 
 @app.route('/api/payments/<payment_id>', methods=['GET'])

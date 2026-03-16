@@ -22,6 +22,7 @@ import re
 import hashlib
 import hmac
 import json
+import time
 
 from config import get_config
 from database import init_db, get_db, dict_from_row, get_placeholder
@@ -2208,41 +2209,84 @@ def create_payment_order():
     Request Body:
     {
         "taskId": 123,
-        "amount": 500,  // In paise (500 paise = ₹5)
+        "amount": 50000,  // In paise (50000 paise = ₹500)
         "description": "Payment for Website Redesign",
         "helperId": 45  // User ID who accepted the task
     }
     """
-    if not razorpay_client:
-        return jsonify({'success': False, 'message': 'Payment service not available'}), 503
-    
-    data = request.get_json()
-    task_id = data.get('taskId')
-    amount = int(data.get('amount', 0))  # In paise
-    helper_id = data.get('helperId')
-    description = data.get('description', 'Task Payment - TaskEarn')
-    
-    if amount <= 0 or not task_id or not helper_id:
-        return jsonify({'success': False, 'message': 'Invalid payment details'}), 400
-    
     try:
+        if not razorpay_client:
+            print("❌ [RAZORPAY] Client not initialized")
+            return jsonify({'success': False, 'message': 'Razorpay not configured. Please contact support.'}), 503
+        
+        data = request.get_json()
+        task_id = data.get('taskId')
+        amount = int(data.get('amount', 0))  # In paise
+        helper_id = data.get('helperId')
+        description = data.get('description', 'Task Payment - Workmate4u')
+        
+        print(f"\n[RAZORPAY] Creating order:")
+        print(f"  Task ID: {task_id}")
+        print(f"  Amount: {amount} paise (₹{amount/100})")
+        print(f"  Helper ID: {helper_id}")
+        print(f"  Posted by: {request.user_id}")
+        
+        if amount <= 0 or not task_id or not helper_id:
+            print(f"❌ [RAZORPAY] Invalid payment details")
+            return jsonify({'success': False, 'message': 'Invalid payment details. Please check amount and task.'}), 400
+        
         # Create Razorpay order
         order_data = {
             'amount': amount,  # Amount in paise
             'currency': 'INR',
-            'receipt': f'task-{task_id}-{request.user_id}',
+            'receipt': f'task-{task_id}-{int(time.time())}',
             'description': description,
             'notes': {
                 'taskId': str(task_id),
                 'posterId': str(request.user_id),
                 'helperId': str(helper_id),
-                'platform': 'TaskEarn'
+                'platform': 'Workmate4u'
             }
         }
         
+        print(f"[RAZORPAY] Order data: {order_data}")
+        
         order = razorpay_client.order.create(data=order_data)
         
+        print(f"✅ [RAZORPAY] Order created: {order['id']}")
+        
         # Store order in database
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                INSERT INTO payments (
+                    task_id, poster_id, helper_id, amount, currency, 
+                    status, razorpay_order_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                task_id, request.user_id, helper_id, 
+                amount / 100.0,  # Convert from paise to rupees
+                'INR', 'pending', order['id'], 
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
+            ))
+            conn.commit()
+        
+        response = {
+            'success': True,
+            'orderId': order['id'],
+            'amount': amount,
+            'currency': 'INR',
+            'key': config.RAZORPAY_KEY_ID
+        }
+        
+        print(f"✅ [RAZORPAY] Sending response: {response}")
+        
+        return jsonify(response), 201
+        
+    except Exception as e:
+        print(f"❌ [RAZORPAY] Error creating order: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Order creation failed: {str(e)}'}), 500
         with get_db() as (cursor, conn):
             cursor.execute(f'''
                 INSERT INTO payments (

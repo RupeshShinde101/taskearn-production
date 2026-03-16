@@ -4878,7 +4878,7 @@ function openPaymentModal(taskId, helperId) {
         amount: amount,
         helperShare: helperShare,
         companyShare: companyShare,
-        paymentMethod: 'razorpay'  // CHANGED: Always use Razorpay for real money
+        paymentMethod: 'razorpay'  // Always Razorpay for real money
     };
     
     // Validate helperId
@@ -4887,7 +4887,7 @@ function openPaymentModal(taskId, helperId) {
         return;
     }
     
-    // Update UI
+    // Update UI with task details
     document.getElementById('paymentTaskTitle').textContent = currentPaymentData.taskTitle;
     document.getElementById('paymentHelperName').textContent = currentPaymentData.helperName;
     document.getElementById('paymentAmount').textContent = `₹${currentPaymentData.amount}`;
@@ -4895,22 +4895,19 @@ function openPaymentModal(taskId, helperId) {
     document.getElementById('companyShare').textContent = `₹${currentPaymentData.companyShare}`;
     document.getElementById('totalPaymentAmount').textContent = `₹${currentPaymentData.amount}`;
     
-    console.log('[PAYMENT] Initiating Razorpay payment for real money...');
+    console.log('[PAYMENT] Opening Razorpay payment...');
+    console.log('[PAYMENT] Amount: ₹' + currentPaymentData.amount);
+    console.log('[PAYMENT] Task: ' + currentPaymentData.taskTitle);
+    console.log('[PAYMENT] Helper: ' + currentPaymentData.helperName);
     
-    // Skip method selection and go directly to Razorpay
-    // Show summary modal
-    document.getElementById('paymentSummaryModal').style.display = 'flex';
+    // Open modal and go directly to payment step 1 (summary view)
+    openModal('makePaymentModal');
+    goToPaymentStep(1);
     
-    // Set up "Proceed to Payment" button to use Razorpay
+    // After modal opens, automatically start Razorpay process
     setTimeout(() => {
-        const proceedBtn = document.getElementById('proceedPaymentBtn');
-        if (proceedBtn) {
-            proceedBtn.onclick = () => {
-                document.getElementById('paymentSummaryModal').style.display = 'none';
-                initiateRazorpayPayment();
-            };
-        }
-    }, 100);
+        proceedToPayment();
+    }, 300);
 }
 
 // Select payment method (DEPRECATED - Always use Razorpay now)
@@ -5102,51 +5099,65 @@ function retryPayment() {
 // Initialize Razorpay payment (MAIN PAYMENT FLOW NOW)
 function initiateRazorpayPayment() {
     console.log('[RAZORPAY] Starting real payment process...');
-    
-    // Close summary modal if open
-    const summaryModal = document.getElementById('paymentSummaryModal');
-    if (summaryModal) summaryModal.style.display = 'none';
+    console.log('[RAZORPAY] Payment Data:', {
+        taskId: currentPaymentData.taskId,
+        amount: currentPaymentData.amount,
+        helperId: currentPaymentData.helperId
+    });
     
     // Show processing step
     goToPaymentStep(3);
     
     // Check if Razorpay SDK is loaded
     if (typeof Razorpay === 'undefined') {
-        console.error('[RAZORPAY] SDK not loaded');
-        showPaymentError('Razorpay SDK not available. Please use wallet payment instead.');
+        console.error('[RAZORPAY] SDK not loaded - trying to reload');
+        showPaymentError('Razorpay SDK not available. Refreshing page...');
+        setTimeout(() => { location.reload(); }, 2000);
         return;
     }
     
+    console.log('[RAZORPAY] Razorpay SDK loaded successfully');
+    console.log('[RAZORPAY] Creating order with backend...');
+    
     // Call backend to create order
-    fetch('https://taskearn-production-production.up.railway.app/api/payments/create-order', {
+    const createOrderUrl = 'https://taskearn-production-production.up.railway.app/api/payments/create-order';
+    console.log('[RAZORPAY] Calling:', createOrderUrl);
+    
+    fetch(createOrderUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
         },
         body: JSON.stringify({
-            amount: currentPaymentData.amount,
-            taskId: currentPaymentData.taskId
+            amount: currentPaymentData.amount * 100,  // Convert to paise for Razorpay
+            taskId: currentPaymentData.taskId,
+            helperId: currentPaymentData.helperId,
+            description: currentPaymentData.taskTitle
         })
     })
     .then(res => {
-        if (res.status === 401) {
-            throw new Error('Authentication failed');
+        console.log('[RAZORPAY] Response status:', res.status);
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
         }
         return res.json();
     })
     .then(data => {
+        console.log('[RAZORPAY] Backend response:', data);
         if (data.success && data.orderId) {
             currentPaymentData.orderId = data.orderId;
-            console.log('[RAZORPAY] Order created:', data.orderId);
+            console.log('[RAZORPAY] Order created successfully:', data.orderId);
+            console.log('[RAZORPAY] Opening checkout...');
             openRazorpayCheckout(data.orderId);
         } else {
             throw new Error(data.message || 'Failed to create payment order');
         }
     })
     .catch(err => {
-        console.error('[RAZORPAY] Error:', err);
-        showPaymentError('Razorpay temporarily unavailable. Please use wallet payment or try again later.');
+        console.error('[RAZORPAY] Full Error:', err);
+        console.error('[RAZORPAY] Error Message:', err.message);
+        showPaymentError('Failed to create payment: ' + err.message + '. Please try again.');
     });
 }
 

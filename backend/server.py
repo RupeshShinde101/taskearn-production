@@ -2685,11 +2685,18 @@ def get_wallet_balance():
 def create_wallet_topup_order():
     """Create Razorpay order for wallet top-up (real money)"""
     try:
+        print(f"\n[WALLET] Wallet top-up order request")
+        print(f"  Razorpay client initialized: {razorpay_client is not None}")
+        print(f"  Razorpay key available: {bool(config.RAZORPAY_KEY_ID)}")
+        
         if not razorpay_client:
-            return jsonify({'success': False, 'message': 'Payment gateway not available'}), 503
+            print("❌ [WALLET] Razorpay client not available")
+            return jsonify({'success': False, 'message': 'Payment gateway not configured'}), 503
         
         data = request.get_json()
         amount = int(data.get('amount', 0))  # In paise
+        
+        print(f"  Amount: {amount} paise (₹{amount/100})")
         
         if amount < 1000:  # Minimum ₹10
             return jsonify({'success': False, 'message': 'Minimum top-up is ₹10'}), 400
@@ -2709,19 +2716,29 @@ def create_wallet_topup_order():
             }
         }
         
-        order = razorpay_client.order.create(data=order_data)
-        print(f"✅ [WALLET] Order created: {order['id']}")
+        print(f"[WALLET] Order data prepared: {order_data}")
         
-        return jsonify({
+        try:
+            order = razorpay_client.order.create(data=order_data)
+            print(f"✅ [WALLET] Order created: {order['id']}")
+        except Exception as razorpay_error:
+            print(f"❌ [WALLET] Razorpay API error: {razorpay_error}")
+            raise razorpay_error
+        
+        response_data = {
             'success': True,
             'orderId': order['id'],
             'amount': amount,
             'currency': 'INR',
             'key': config.RAZORPAY_KEY_ID
-        }), 201
+        }
+        
+        print(f"✅ [WALLET] Returning response with order: {response_data}")
+        
+        return jsonify(response_data), 201
         
     except Exception as e:
-        print(f"❌ [WALLET] Error creating order: {e}")
+        print(f"❌ [WALLET] Error creating order: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Failed to create order: {str(e)}'}), 500

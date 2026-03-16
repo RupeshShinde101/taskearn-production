@@ -1181,6 +1181,40 @@ def get_or_create_wallet(user_id):
         return dict_from_row(wallet)
 
 
+@app.route('/api/wallet/debug', methods=['GET'])
+@require_auth
+def debug_wallet():
+    """Debug endpoint - check actual wallet balance in database"""
+    try:
+        with get_db() as (cursor, conn):
+            # Get wallet directly from database
+            cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
+            wallet = dict_from_row(cursor.fetchone())
+            
+            if not wallet:
+                return jsonify({'success': False, 'message': 'Wallet not found'}), 404
+            
+            # Get recent transactions
+            cursor.execute(f'''
+                SELECT type, amount, balance_after, description, created_at
+                FROM wallet_transactions 
+                WHERE user_id = {PH}
+                ORDER BY created_at DESC 
+                LIMIT 10
+            ''', (request.user_id,))
+            transactions = [dict_from_row(row) for row in cursor.fetchall()]
+        
+        return jsonify({
+            'success': True,
+            'wallet': wallet,
+            'recentTransactions': transactions
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error in debug endpoint: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/wallet', methods=['GET'])
 @require_auth
 def get_wallet():
@@ -2788,27 +2822,28 @@ def verify_wallet_topup():
                 WHERE user_id = {PH}
             ''', (new_balance, amount, request.user_id))
             
-            # Record transaction
+            # Record transaction (use 'topup' type to distinguish from virtual 'credit')
             cursor.execute(f'''
                 INSERT INTO wallet_transactions (
                     wallet_id, user_id, type, amount, balance_after,
                     description, created_at
                 ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (
-                wallet.get('id'), request.user_id, 'credit',
+                wallet.get('id'), request.user_id, 'topup',
                 amount, new_balance,
-                f'Wallet top-up via Razorpay',
+                f'Wallet top-up via Razorpay - ₹{amount}',
                 datetime.datetime.now(datetime.timezone.utc).isoformat()
             ))
             
             conn.commit()
         
         print(f"✅ [WALLET] Payment verified and wallet credited: ₹{amount}")
+        print(f"[WALLET] Final balance in database: ₹{new_balance}")
         
         return jsonify({
             'success': True,
             'message': f'Wallet credited with ₹{amount}',
-            'newBalance': new_balance,
+            'newBalance': float(new_balance),
             'transactionId': payment_id
         }), 200
         

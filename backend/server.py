@@ -2619,7 +2619,7 @@ def get_wallet_balance():
 @app.route('/api/wallet/topup', methods=['POST'])
 @require_auth
 def topup_wallet():
-    """Top-up wallet balance (for testing/admin)
+    """Top-up wallet balance
     
     Request Body:
     {
@@ -2629,31 +2629,30 @@ def topup_wallet():
     """
     try:
         data = request.get_json()
-        amount = data.get('amount')
+        amount = float(data.get('amount', 0))
         
-        if not amount or amount <= 0:
-            return jsonify({'success': False, 'message': 'Invalid amount'}), 400
+        if amount < 10:
+            return jsonify({'success': False, 'message': 'Minimum amount is ₹10'}), 400
+        
+        # Get or create wallet
+        wallet = get_or_create_wallet(request.user_id)
+        new_balance = float(wallet['balance']) + amount
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
         with get_db() as (cursor, conn):
-            # First, ensure wallet_balance column exists and has a value
+            # Update wallet balance
             cursor.execute(f'''
-                UPDATE users 
-                SET wallet_balance = COALESCE(wallet_balance, 0) + {PH}
-                WHERE id = {PH}
-            ''', (amount, request.user_id))
+                UPDATE wallets 
+                SET balance = {PH}, total_added = total_added + {PH}, updated_at = {PH}
+                WHERE user_id = {PH}
+            ''', (new_balance, amount, now, request.user_id))
+            
+            # Add transaction record
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (wallet['id'], request.user_id, 'credit', amount, new_balance, 'Wallet top-up', now))
             conn.commit()
-            
-            # Get updated balance
-            cursor.execute(f'''
-                SELECT COALESCE(wallet_balance, 0) as wallet_balance FROM users WHERE id = {PH}
-            ''', (request.user_id,))
-            
-            result = cursor.fetchone()
-            if not result:
-                return jsonify({'success': False, 'message': 'User not found'}), 404
-            
-            user = dict_from_row(result)
-            new_balance = user.get('wallet_balance', 0) if user else 0
             
             print(f"✅ Wallet topped up: ₹{amount} for user {request.user_id}, new balance: ₹{new_balance}")
             

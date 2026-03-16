@@ -2386,6 +2386,247 @@ def verify_payment():
         return jsonify({'success': False, 'message': 'Payment verification failed'}), 500
 
 
+# ========================================
+# WALLET PAYMENT ENDPOINTS (Production)
+# ========================================
+
+@app.route('/api/payments/wallet-pay', methods=['POST'])
+@require_auth
+def wallet_payment():
+    """Process wallet payment for completed task
+    
+    Request Body:
+    {
+        "taskId": 123,
+        "amount": 500,
+        "helperId": 45
+    }
+    """
+    data = request.get_json()
+    task_id = data.get('taskId')
+    amount = data.get('amount')
+    helper_id = data.get('helperId')
+    poster_id = request.user_id
+    
+    if not all([task_id, amount, helper_id]):
+        return jsonify({'success': False, 'message': 'Missing payment details'}), 400
+    
+    if amount <= 0:
+        return jsonify({'success': False, 'message': 'Invalid amount'}), 400
+    
+    try:
+        with get_db() as (cursor, conn):
+            # Check poster wallet balance
+            cursor.execute(f'''
+                SELECT wallet_balance FROM users WHERE id = {PH}
+            ''', (poster_id,))
+            user = dict_from_row(cursor.fetchone())
+            
+            if not user or user['wallet_balance'] < amount:
+                return jsonify({
+                    'success': False, 
+                    'message': 'Insufficient wallet balance'
+                }), 400
+            
+            # Calculate split: Helper gets 90%, Company gets 10%
+            helper_amount = amount * 0.9
+            company_amount = amount * 0.1
+            
+            # Deduct from poster wallet
+            cursor.execute(f'''
+                UPDATE users 
+                SET wallet_balance = wallet_balance - {PH}
+                WHERE id = {PH}
+            ''', (amount, poster_id))
+            
+            # Add to helper wallet
+            cursor.execute(f'''
+                UPDATE users 
+                SET wallet_balance = wallet_balance + {PH}
+                WHERE id = {PH}
+            ''', (helper_amount, helper_id))
+            
+            # Add company commission to treasury
+            cursor.execute(f'''
+                UPDATE company_wallet 
+                SET balance = balance + {PH}, total_commissions = total_commissions + {PH}
+                WHERE id = 1
+            ''', (company_amount, company_amount))
+            
+            # Create payment record
+            transaction_id = f'TXN-{int(time.time())}'
+            cursor.execute(f'''
+                INSERT INTO payments 
+                (task_id, poster_id, helper_id, amount, payment_method, 
+                 status, transaction_id, created_at, verified_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                task_id, poster_id, helper_id, amount, 'wallet',
+                'paid', transaction_id,
+                datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
+            ))
+            
+            # Update task status
+            cursor.execute(f'''
+                UPDATE tasks 
+                SET status = {PH}, paid_at = {PH}
+                WHERE id = {PH}
+            ''', (
+                'paid',
+                datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                task_id
+            ))
+            
+            print(f"✅ Wallet payment processed: ₹{amount} from user {poster_id} to {helper_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Payment processed successfully',
+                'transactionId': transaction_id,
+                'amount': amount,
+                'helperAmount': helper_amount,
+                'companyAmount': company_amount
+            }), 200
+            
+    except Exception as e:
+        print(f"❌ Error processing wallet payment: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': 'Payment processing failed'}), 500
+
+
+@app.route('/api/wallet/transaction', methods=['POST'])
+@require_auth
+def log_transaction():
+    """Log wallet transaction
+    
+    Request Body:
+    {
+        "type": "payment" | "topup" | "refund",
+        "amount": 500,
+        "taskId": 123,
+        "transactionId": "TXN-...",
+        "status": "completed" | "pending" | "failed"
+    }
+    """
+    data = request.get_json()
+    tx_type = data.get('type')
+    amount = data.get('amount')
+    task_id = data.get('taskId')
+    transaction_id = data.get('transactionId')
+    status = data.get('status', 'completed')
+    
+    if not all([tx_type, amount, transaction_id]):
+        return jsonify({'success': False, 'message': 'Missing transaction details'}), 400
+    
+    try:
+        with get_db() as (cursor, conn):
+            # Check if transaction already exists
+            cursor.execute(f'''
+                SELECT id FROM payments 
+                WHERE transaction_id = {PH}
+            ''', (transaction_id,))
+            
+            if cursor.fetchone():
+                return jsonify({
+                    'success': False,
+                    'message': 'Transaction already logged'
+                }), 400
+            
+            # Log transaction
+            cursor.execute(f'''
+                INSERT INTO payments 
+                (poster_id, amount, payment_method, status, 
+                 transaction_id, task_id, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                request.user_id, amount, tx_type, status,
+                transaction_id, task_id,
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
+            ))
+            
+            print(f"✅ Transaction logged: {tx_type} ₹{amount} - ID: {transaction_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Transaction logged',
+                'transactionId': transaction_id
+            }), 200
+            
+    except Exception as e:
+        print(f"❌ Error logging transaction: {e}")
+        return jsonify({'success': False, 'message': 'Failed to log transaction'}), 500
+
+
+@app.route('/api/wallet/balance', methods=['GET'])
+@require_auth
+def get_wallet_balance():
+    """Get current wallet balance for user"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT wallet_balance FROM users WHERE id = {PH}
+            ''', (request.user_id,))
+            user = dict_from_row(cursor.fetchone())
+            
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+            return jsonify({
+                'success': True,
+                'balance': float(user['wallet_balance'] or 0)
+            }), 200
+            
+    except Exception as e:
+        print(f"❌ Error getting wallet balance: {e}")
+        return jsonify({'success': False, 'message': 'Failed to get wallet balance'}), 500
+
+
+@app.route('/api/wallet/topup', methods=['POST'])
+@require_auth
+def topup_wallet():
+    """Top-up wallet balance (for testing/admin)
+    
+    Request Body:
+    {
+        "amount": 1000,
+        "orderId": "order_xxx" (optional, for Razorpay)
+    }
+    """
+    data = request.get_json()
+    amount = data.get('amount')
+    
+    if not amount or amount <= 0:
+        return jsonify({'success': False, 'message': 'Invalid amount'}), 400
+    
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                UPDATE users 
+                SET wallet_balance = wallet_balance + {PH}
+                WHERE id = {PH}
+            ''', (amount, request.user_id))
+            
+            # Get updated balance
+            cursor.execute(f'''
+                SELECT wallet_balance FROM users WHERE id = {PH}
+            ''', (request.user_id,))
+            user = dict_from_row(cursor.fetchone())
+            
+            print(f"✅ Wallet topped up: ₹{amount} for user {request.user_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Wallet topped up successfully',
+                'newBalance': float(user['wallet_balance'])
+            }), 200
+            
+    except Exception as e:
+        print(f"❌ Error topping up wallet: {e}")
+        return jsonify({'success': False, 'message': 'Failed to top-up wallet'}), 500
+
+
 @app.route('/api/payments/<payment_id>', methods=['GET'])
 @require_auth
 def get_payment_status(payment_id):

@@ -4974,33 +4974,44 @@ function processWalletPayment() {
 
 // Complete wallet payment
 function completeWalletPayment() {
-    // Deduct from poster's wallet
-    currentUser.wallet = (currentUser.wallet || 0) - currentPaymentData.amount;
-    updateUserData(currentUser.id, { wallet: currentUser.wallet });
-    
-    // Generate transaction ID
-    currentPaymentData.transactionId = `TXN-${Date.now()}`;
-    
-    // Show success
-    goToPaymentStep(4);
-    document.getElementById('transactionId').textContent = currentPaymentData.transactionId;
-    document.getElementById('amountPaid').textContent = `₹${currentPaymentData.amount}`;
-    document.getElementById('helperEarned').textContent = `₹${currentPaymentData.helperShare}`;
-    
-    // Add to wallet transaction history
-    const transaction = {
-        id: currentPaymentData.transactionId,
-        type: 'payment',
-        amount: currentPaymentData.amount,
-        timestamp: new Date().toISOString(),
-        taskId: currentPaymentData.taskId,
-        status: 'completed'
-    };
-    
-    // Log transaction and send to backend
-    saveTransaction(transaction);
-    
-    console.log('✅ Wallet payment completed:', currentPaymentData);
+    // Call backend to process wallet payment
+    fetch('https://taskearn-production-production.up.railway.app/api/payments/wallet-pay', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+        },
+        body: JSON.stringify({
+            taskId: currentPaymentData.taskId,
+            amount: currentPaymentData.amount,
+            helperId: currentPaymentData.helperId
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            // Update local wallet
+            currentUser.wallet = (currentUser.wallet || 0) - currentPaymentData.amount;
+            updateUserData(currentUser.id, { wallet: currentUser.wallet });
+            
+            // Store transaction data
+            currentPaymentData.transactionId = data.transactionId;
+            
+            // Show success
+            goToPaymentStep(4);
+            document.getElementById('transactionId').textContent = currentPaymentData.transactionId;
+            document.getElementById('amountPaid').textContent = `₹${currentPaymentData.amount}`;
+            document.getElementById('helperEarned').textContent = `₹${data.helperAmount}`;
+            
+            console.log('✅ Wallet payment completed:', data);
+        } else {
+            showPaymentError(data.message || 'Payment failed. Please try again.');
+        }
+    })
+    .catch(err => {
+        console.error('Error processing payment:', err);
+        showPaymentError('Network error. Please check your connection.');
+    });
 }
 
 // Show payment error

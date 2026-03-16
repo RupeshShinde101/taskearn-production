@@ -2723,33 +2723,15 @@ def create_wallet_topup_order():
             print(f"✅ [WALLET] Order created: {order['id']}")
         except Exception as razorpay_error:
             print(f"❌ [WALLET] Razorpay API error: {razorpay_error}")
+            print(f"⚠️ [WALLET] Error detail: {str(razorpay_error)}")
             
-            # Fallback: Create a simple order record directly in database instead
-            print(f"[WALLET] Creating fallback order in database...")
-            try:
-                with get_db() as (cursor, conn):
-                    # Create a dummy order ID
-                    import uuid
-                    fallback_order_id = f'order_{uuid.uuid4().hex[:8]}'
-                    cursor.execute(f'''
-                        INSERT INTO payments (
-                            poster_id, amount, currency, status, 
-                            razorpay_order_id, created_at
-                        ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (
-                        request.user_id, 
-                        amount / 100.0, 
-                        'INR', 
-                        'pending',
-                        fallback_order_id,
-                        datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    ))
-                    conn.commit()
-                    order = {'id': fallback_order_id}
-                    print(f"✅ [WALLET] Fallback order created: {fallback_order_id}")
-            except Exception as db_error:
-                print(f"❌ [WALLET] Database fallback failed: {db_error}")
-                raise razorpay_error  # Re-raise original error
+            # For wallet topup, we cannot create a fallback order
+            # The main issue is likely Razorpay credentials on Railway
+            print(f"❌ [WALLET] Cannot proceed without Razorpay. Please verify:")
+            print(f"   - RAZORPAY_KEY_ID is set on Railway")
+            print(f"   - RAZORPAY_KEY_SECRET is set on Railway")
+            print(f"   - Keys are valid and in LIVE mode")
+            raise razorpay_error
         
         response_data = {
             'success': True,

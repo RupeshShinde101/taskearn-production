@@ -5235,5 +5235,3 @@ function saveTransaction(transaction) {
         console.error('Error saving transaction:', err);
     });
 }
-    }
-};

@@ -2110,7 +2110,7 @@ def get_helper_dashboard():
             
             # Get wallet - ensure table exists
             cursor.execute(f'''
-                SELECT id, user_id, balance, total_earned FROM user_wallets 
+                SELECT id, user_id, balance, total_earned FROM wallets 
                 WHERE user_id = {PH}
             ''', (request.user_id,))
             wallet_row = cursor.fetchone()
@@ -2120,7 +2120,7 @@ def get_helper_dashboard():
             else:
                 # Create wallet if it doesn't exist
                 cursor.execute(f'''
-                    INSERT INTO user_wallets (user_id, balance, total_earned)
+                    INSERT INTO wallets (user_id, balance, total_earned)
                     VALUES ({PH}, 0, 0)
                     RETURNING id, user_id, balance, total_earned
                 ''', (request.user_id,))

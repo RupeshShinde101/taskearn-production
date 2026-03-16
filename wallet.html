@@ -1102,36 +1102,60 @@
                 return;
             }
             
-            // Try Razorpay for real payment first
-            if (typeof addMoneyToWallet === 'function') {
-                addMoneyToWallet(amount, 
-                    // On Success
-                    function(result) {
-                        console.log('Real payment successful:', result);
-                        showToast('✅ ₹' + amount + ' added successfully!');
-                        closeAddMoneyModal();
-                        
-                        // Also add to local wallet for offline access
-                        addMoneyLocalSilent(amount, result.paymentId);
-                        loadWallet();
+            // Get auth token
+            const token = localStorage.getItem('taskearn_token');
+            if (!token) {
+                showToast('Please login first');
+                return;
+            }
+            
+            // Show processing
+            const btn = document.querySelector('.add-money-btn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Processing...';
+            btn.disabled = true;
+            
+            try {
+                // Call backend to add money to wallet
+                const response = await fetch(window.TASKEARN_API_URL + '/wallet/topup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
                     },
-                    // On Error
-                    function(error) {
-                        console.log('Razorpay error:', error);
-                        if (error.demo) {
-                            // Razorpay not configured, use demo/local mode
-                            showToast('💡 Demo mode: Using local wallet');
-                            addMoneyLocal(amount);
-                        } else if (error.cancelled) {
-                            showToast('Payment cancelled');
-                        } else {
-                            showToast('❌ ' + (error.message || 'Payment failed'));
-                        }
+                    body: JSON.stringify({
+                        amount: amount
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    console.log('[WALLET] Money added successfully:', data);
+                    showToast('✅ ₹' + amount + ' added to wallet successfully!');
+                    
+                    // Update local cache
+                    const user = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+                    user.wallet = data.newBalance;
+                    localStorage.setItem('taskearn_user', JSON.stringify(user));
+                    
+                    // Update currentUser object in app.js if available
+                    if (typeof currentUser !== 'undefined') {
+                        currentUser.wallet = data.newBalance;
                     }
-                );
-            } else {
-                // Razorpay not loaded, use local wallet
-                addMoneyLocal(amount);
+                    
+                    closeAddMoneyModal();
+                    loadWallet();
+                } else {
+                    showToast('❌ ' + (data.message || 'Failed to add money'));
+                    console.error('[WALLET] Error:', data);
+                }
+            } catch (error) {
+                console.error('[WALLET] Error adding money:', error);
+                showToast('❌ Something went wrong. Please try again.');
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
             }
         }
         

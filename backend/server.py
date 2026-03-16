@@ -2127,13 +2127,13 @@ def get_helper_dashboard():
                 wallet = dict_from_row(cursor.fetchone())
                 conn.commit()
             
-            # Today's earnings
+            # Today's earnings (use date cast instead of LIKE for timestamp)
             today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
             cursor.execute(f'''
                 SELECT COALESCE(SUM(amount), 0) as today_earnings
                 FROM wallet_transactions 
-                WHERE user_id = {PH} AND type = {PH} AND created_at LIKE {PH}
-            ''', (request.user_id, 'earning', f'{today}%'))
+                WHERE user_id = {PH} AND type = {PH} AND created_at::date = {PH}
+            ''', (request.user_id, 'earning', today))
             today_row = cursor.fetchone()
             today_data = dict_from_row(today_row) if today_row else {'today_earnings': 0}
             

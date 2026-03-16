@@ -1876,6 +1876,9 @@ function openTaskDetail(taskId) {
                 <i class="fas fa-times"></i> Close
             </button>
             ${!isOwner ? `
+            <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="contactTaskProvider(${task.id}, '${task.postedBy.name.replace(/'/g, "\\'")}')" title="Message the task provider">
+                <i class="fas fa-comment-dots"></i> Contact Provider
+            </button>
             <button class="btn btn-primary" onclick="acceptTask(${task.id})">
                 <i class="fas fa-check"></i> Accept Task
             </button>
@@ -1948,6 +1951,22 @@ function acceptTask(taskId) {
         renderTasks();
         addTaskMarkers();
         renderDashboard();
+    }
+}
+
+function contactTaskProvider(taskId, providerName) {
+    if (!currentUser) {
+        showToast('Please login first to contact provider');
+        closeModal('taskDetailModal');
+        openModal('loginModal');
+        return;
+    }
+
+    const task = tasks.find(t => t.id === taskId);
+    if (task && task.postedBy) {
+        // Redirect to chat page with provider ID
+        const providerId = task.postedBy.id;
+        window.location.href = `chat.html?provider=${providerId}&task=${taskId}&taskTitle=${encodeURIComponent(task.title)}`;
     }
 }
 
@@ -2980,9 +2999,89 @@ function switchTab(tab) {
 
 function renderDashboard() {
     updateAuthenticationStatus(); // Update auth status indicator
+    renderAvailableTasks();
     renderPostedTasks();
     renderAcceptedTasks();
     renderCompletedTasks();
+}
+
+function renderAvailableTasks() {
+    const el = document.getElementById('availableTasks');
+    if (!el) return;
+
+    // Get available tasks (not posted by current user and not already accepted by them)
+    const availableTasksList = tasks.filter(t => 
+        t.status === 'active' && 
+        (!currentUser || t.postedBy.id !== currentUser.id) &&
+        (!myAcceptedTasks.find(at => at.id === t.id))
+    ).sort((a, b) => {
+        // Sort by distance (closest first)
+        const distA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
+        const distB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);
+        return distA - distB;
+    });
+
+    if (availableTasksList.length === 0) {
+        el.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-inbox"></i>
+                <h3>No available tasks</h3>
+                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Check back soon for new tasks in your area!</p>
+                <button class="btn btn-primary" onclick="setTimeout(() => location.reload(), 500)">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    el.innerHTML = availableTasksList.slice(0, 10).map(t => {
+        const dist = getDistance(userLocation.lat, userLocation.lng, t.location.lat, t.location.lng);
+        const serviceCharge = getServiceCharge(t.category);
+        const totalEarnings = t.price + serviceCharge;
+        return `
+            <div class="available-task-card">
+                <div class="available-task-header">
+                    <span class="task-category">${formatCategory(t.category)}</span>
+                    <span class="task-distance"><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
+                </div>
+                <h4 class="available-task-title">${t.title}</h4>
+                <p class="available-task-description">${t.description.substring(0, 100)}...</p>
+                <div class="available-task-meta">
+                    <span><i class="fas fa-map-pin"></i> ${t.location.address.split(',')[0]}</span>
+                    <span><i class="fas fa-clock"></i> ${getTimeLeft(t.expiresAt)} left</span>
+                </div>
+                <div class="available-task-footer">
+                    <div class="available-task-poster">
+                        <div class="poster-avatar-small"><i class="fas fa-user"></i></div>
+                        <div class="poster-info-small">
+                            <p>${t.postedBy.name}</p>
+                            <span>${generateStars(t.postedBy.rating)} ${t.postedBy.rating}</span>
+                        </div>
+                    </div>
+                    <span class="available-task-price">₹${totalEarnings}</span>
+                </div>
+                <div class="available-task-actions">
+                    <button class="btn btn-secondary" style="flex: 1; background: #0ea5e9; border: none; font-size: 13px;" onclick="contactTaskProvider(${t.id}, '${t.postedBy.name.replace(/'/g, "\\'")}')" title="Message provider for details">
+                        <i class="fas fa-comment-dots"></i> Contact
+                    </button>
+                    <button class="btn btn-primary" style="flex: 1; font-size: 13px;" onclick="acceptTaskFromBrowse(${t.id})">
+                        <i class="fas fa-check"></i> Accept
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function acceptTaskFromBrowse(taskId) {
+    if (!currentUser) {
+        showToast('Please login first');
+        openModal('loginModal');
+        return;
+    }
+    acceptTask(taskId);
+    showToast('✅ Task accepted! Check your Accepted Tasks tab.');
 }
 
 function renderPostedTasks() {

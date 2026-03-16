@@ -1146,6 +1146,125 @@ section {
     font-weight: 500;
 }
 
+/* Available Tasks Browse Styles */
+.available-task-card {
+    background: var(--white);
+    border: 2px solid var(--light);
+    border-radius: var(--radius-lg);
+    padding: 18px;
+    margin-bottom: 16px;
+    transition: var(--transition);
+    overflow: hidden;
+}
+
+.available-task-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 12px 24px rgba(99, 102, 241, 0.15);
+    transform: translateY(-4px);
+}
+
+.available-task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.available-task-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 10px;
+}
+
+.available-task-description {
+    color: var(--gray);
+    font-size: 0.9rem;
+    margin-bottom: 12px;
+}
+
+.available-task-meta {
+    display: flex;
+    gap: 15px;
+    font-size: 0.85rem;
+    color: var(--gray);
+    margin-bottom: 12px;
+}
+
+.available-task-meta span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.available-task-meta i {
+    color: var(--primary);
+}
+
+.available-task-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    padding: 12px 0;
+    border-top: 1px solid var(--light);
+    border-bottom: 1px solid var(--light);
+}
+
+.available-task-poster {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.poster-avatar-small {
+    width: 36px;
+    height: 36px;
+    background: var(--gradient);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--white);
+    font-size: 0.9rem;
+}
+
+.poster-info-small {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.poster-info-small p {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--dark);
+}
+
+.poster-info-small span {
+    font-size: 0.75rem;
+    color: var(--warning);
+}
+
+.available-task-price {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--success);
+}
+
+.available-task-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.available-task-actions .btn {
+    flex: 1;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
 /* Map Styles */
 .tasks-map {
     border-radius: var(--radius-lg);

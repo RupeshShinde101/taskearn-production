@@ -2163,16 +2163,8 @@ async function payForCompletedTask(taskId) {
         return;
     }
     
-    const platformFee = Math.ceil(task.price * 0.10); // 10% platform fee
-    const totalPayable = task.price + platformFee;
-    
-    // Try Razorpay for real payment
-    if (typeof addMoneyToWallet === 'function' && typeof Razorpay !== 'undefined') {
-        initiateTaskPayment(task, totalPayable, platformFee);
-    } else {
-        // Fallback to wallet/local payment
-        processTaskPaymentLocal(task, totalPayable, platformFee);
-    }
+    // Use new real-time payment modal for better experience
+    openPaymentModal(taskId, task.postedBy?.id || task.helperId);
 }
 
 // Initiate Razorpay payment for task
@@ -3788,8 +3780,10 @@ function renderPostedTasks() {
     }
 
     el.innerHTML = myPostedTasks.map(t => {
-        const platformFee = Math.ceil(t.price * 0.10); // 10% platform fee
-        const totalPayable = t.price + platformFee;
+        // Payment system: Poster pays full amount, 90% goes to helper, 10% to company
+        const taskAmount = t.price;
+        const helperAmount = Math.floor(taskAmount * 0.9);
+        const companyAmount = taskAmount - helperAmount;
         
         let actionButtons = '';
         if (t.status === 'active') {
@@ -3801,16 +3795,16 @@ function renderPostedTasks() {
                         <i class="fas fa-check-circle"></i> ${t.helperName || 'Helper'} completed this task!
                     </p>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                        <span>Task Amount:</span><span>₹${t.price}</span>
+                        <span>Task Amount:</span><span>₹${taskAmount}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                        <span>Platform Fee (10%):</span><span>₹${platformFee}</span>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #888;">
+                        <span>Helper receives (90%):</span><span>₹${helperAmount}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; font-weight: 600; border-top: 1px solid rgba(251,191,36,0.3); padding-top: 8px;">
-                        <span>Total Payable:</span><span style="color: #fbbf24;">₹${totalPayable}</span>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #888;">
+                        <span>Platform (10%):</span><span>₹${companyAmount}</span>
                     </div>
-                    <button class="btn btn-success" style="width: 100%; margin-top: 12px;" onclick="payForCompletedTask(${t.id})">
-                        <i class="fas fa-credit-card"></i> Pay ₹${totalPayable} Now
+                    <button class="btn btn-success" style="width: 100%; margin-top: 12px;" onclick="payForCompletedTask(${t.id})" title="Open real-time payment modal">
+                        <i class="fas fa-credit-card"></i> Pay ₹${taskAmount} Now
                     </button>
                 </div>
             `;
@@ -3818,7 +3812,7 @@ function renderPostedTasks() {
             actionButtons = `
                 <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; border-radius: 8px; padding: 12px; margin-top: 10px;">
                     <p style="color: #4ade80; margin: 0;">
-                        <i class="fas fa-check-circle"></i> Payment completed - ₹${t.price} sent to ${t.helperName || 'helper'}
+                        <i class="fas fa-check-circle"></i> Payment completed - ₹${taskAmount} sent to ${t.helperName || 'helper'}
                     </p>
                 </div>
             `;
@@ -4862,25 +4856,36 @@ let currentPaymentData = {
 };
 
 // Open payment modal (called when task marked as completed)
-function openPaymentModal(taskId) {
+function openPaymentModal(taskId, helperId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task || !currentUser) return;
     
+    // If not found in tasks, try myPostedTasks
+    const taskToUse = task || myPostedTasks.find(t => t.id === taskId);
+    if (!taskToUse) return;
+    
     // Calculate amounts
-    const amount = task.price;
+    const amount = taskToUse.price;
     const helperShare = Math.floor(amount * 0.9); // 90% to helper
     const companyShare = amount - helperShare; // 10% to company
     
     // Store payment data
     currentPaymentData = {
         taskId: taskId,
-        taskTitle: task.title || 'Task',
-        helperName: task.postedBy?.name || 'Helper',
+        taskTitle: taskToUse.title || 'Task',
+        helperName: taskToUse.helperName || taskToUse.postedBy?.name || 'Helper',
+        helperId: helperId || taskToUse.helperId || taskToUse.postedBy?.id,
         amount: amount,
         helperShare: helperShare,
         companyShare: companyShare,
         paymentMethod: 'wallet'
     };
+    
+    // Validate helperId
+    if (!currentPaymentData.helperId) {
+        showToast('❌ Helper ID not found. Please refresh and try again.');
+        return;
+    }
     
     // Update UI
     document.getElementById('paymentTaskTitle').textContent = currentPaymentData.taskTitle;
@@ -4974,12 +4979,32 @@ function processWalletPayment() {
 
 // Complete wallet payment
 function completeWalletPayment() {
+    // Verify we have auth token
+    const token = localStorage.getItem('taskearn_token');
+    if (!token) {
+        showPaymentError('Authentication required. Please login again.');
+        return;
+    }
+    
+    // Verify helperId exists
+    if (!currentPaymentData.helperId) {
+        showPaymentError('Helper information missing. Please refresh and try again.');
+        return;
+    }
+    
+    console.log('[PAYMENT] Starting wallet payment:', {
+        taskId: currentPaymentData.taskId,
+        amount: currentPaymentData.amount,
+        helperId: currentPaymentData.helperId,
+        timestamp: new Date().toISOString()
+    });
+    
     // Call backend to process wallet payment
     fetch('https://taskearn-production-production.up.railway.app/api/payments/wallet-pay', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+            'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
             taskId: currentPaymentData.taskId,
@@ -4987,10 +5012,18 @@ function completeWalletPayment() {
             helperId: currentPaymentData.helperId
         })
     })
-    .then(res => res.json())
+    .then(res => {
+        console.log('[PAYMENT] Backend response status:', res.status);
+        if (res.status === 401) {
+            throw new Error('Authentication failed. Please login again.');
+        }
+        return res.json();
+    })
     .then(data => {
+        console.log('[PAYMENT] Backend response data:', data);
+        
         if (data.success) {
-            // Update local wallet
+            // Update local wallet immediately for real-time feedback
             currentUser.wallet = (currentUser.wallet || 0) - currentPaymentData.amount;
             updateUserData(currentUser.id, { wallet: currentUser.wallet });
             
@@ -4999,18 +5032,31 @@ function completeWalletPayment() {
             
             // Show success
             goToPaymentStep(4);
-            document.getElementById('transactionId').textContent = currentPaymentData.transactionId;
+            document.getElementById('transactionId').textContent = currentPaymentData.transactionId || 'TXN-' + Date.now();
             document.getElementById('amountPaid').textContent = `₹${currentPaymentData.amount}`;
-            document.getElementById('helperEarned').textContent = `₹${data.helperAmount}`;
+            document.getElementById('helperEarned').textContent = `₹${currentPaymentData.helperShare}`;
             
-            console.log('✅ Wallet payment completed:', data);
+            showToast('✅ Payment successful! Wallet updated in real-time.');
+            console.log('[PAYMENT] Wallet payment completed successfully');
+            
+            // Refresh dashboard after 2 seconds
+            setTimeout(() => {
+                renderDashboard();
+            }, 2000);
         } else {
             showPaymentError(data.message || 'Payment failed. Please try again.');
+            console.error('[PAYMENT] Backend returned error:', data);
         }
     })
     .catch(err => {
-        console.error('Error processing payment:', err);
-        showPaymentError('Network error. Please check your connection.');
+        console.error('[PAYMENT] Error processing payment:', err);
+        
+        let errorMsg = 'Network error. Please check your connection.';
+        if (err.message.includes('Authentication')) {
+            errorMsg = err.message;
+        }
+        
+        showPaymentError(errorMsg);
     });
 }
 

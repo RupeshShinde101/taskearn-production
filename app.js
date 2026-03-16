@@ -2507,18 +2507,18 @@ function openPaymentReceptionModal(taskId) {
                 <p style="margin: 10px 0 0 0; opacity: 0.95;">Amount to Receive</p>
             </div>
 
-            <div style="background: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 15px; margin-bottom: 20px;">
-                <h4 style="margin-top: 0;">📋 Payment Breakdown</h4>
+            <div style="background: rgba(30, 30, 40, 0.9); border: 2px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 15px; margin-bottom: 20px; color: #fff;">
+                <h4 style="margin-top: 0; color: #fff;">📋 Payment Breakdown</h4>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
                     <span>Task Amount</span>
-                    <span style="font-weight: 600;">₹${task.price}</span>
+                    <span style="font-weight: 600; color: #fff;">₹${task.price}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0;">
-                    <span>Platform Commission (10%)</span>
+                    <span style="color: #fff;">Platform Commission (10%)</span>
                     <span style="color: #fbbf24; font-weight: 600;">-₹${platformFee}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 2px solid rgba(255,255,255,0.2); font-weight: 700; font-size: 16px;">
-                    <span>You Receive</span>
+                    <span style="color: #fff;">You Receive</span>
                     <span style="color: #4ade80;">₹${helperReceives}</span>
                 </div>
             </div>
@@ -2577,15 +2577,15 @@ function initiatePaymentReception(taskId, method) {
 function showDigitalPaymentOptions(task, helperReceives, platformFee) {
     const content = `
         <div style="padding: 20px;">
-            <h3><i class="fas fa-arrow-left" style="cursor: pointer; opacity: 0.6;" onclick="openPaymentReceptionModal(${task.id})"></i> Digital Payment Methods</h3>
+            <h3 style="color: #fff;"><i class="fas fa-arrow-left" style="cursor: pointer; opacity: 0.6;" onclick="openPaymentReceptionModal(${task.id})"></i> Digital Payment Methods</h3>
 
-            <div style="background: rgba(100, 200, 255, 0.1); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
+            <div style="background: rgba(30, 30, 40, 0.9); border: 2px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 15px; margin-bottom: 15px; color: #fff;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                    <span>Amount to Receive</span>
+                    <span style="color: #fff;">Amount to Receive</span>
                     <span style="font-weight: 700; color: #4ade80;">₹${helperReceives}</span>
                 </div>
-                <div style="display: flex; justify-content: space-between; opacity: 0.7;">
-                    <span style="font-size: 12px;">Platform Commission (10%)</span>
+                <div style="display: flex; justify-content: space-between; opacity: 0.8;">
+                    <span style="font-size: 12px; color: #fff;">Platform Commission (10%)</span>
                     <span style="font-size: 12px; color: #fbbf24;">-₹${platformFee}</span>
                 </div>
             </div>
@@ -2596,11 +2596,11 @@ function showDigitalPaymentOptions(task, helperReceives, platformFee) {
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <i class="fas fa-mobile-alt" style="font-size: 24px; color: #667eea;"></i>
                             <div style="text-align: left;">
-                                <div style="font-weight: 600;">UPI Transfer</div>
-                                <div style="font-size: 12px; opacity: 0.7;">Fast and instant transfer</div>
+                                <div style="font-weight: 600; color: #fff;">UPI Transfer</div>
+                                <div style="font-size: 12px; opacity: 0.8; color: #ccc;">Fast and instant transfer</div>
                             </div>
                         </div>
-                        <i class="fas fa-chevron-right" style="opacity: 0.5;"></i>
+                        <i class="fas fa-chevron-right" style="opacity: 0.6; color: #fff;"></i>
                     </div>
                 </button>
 
@@ -2609,11 +2609,11 @@ function showDigitalPaymentOptions(task, helperReceives, platformFee) {
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <i class="fas fa-university" style="font-size: 24px; color: #10b981;"></i>
                             <div style="text-align: left;">
-                                <div style="font-weight: 600;">Bank Transfer</div>
-                                <div style="font-size: 12px; opacity: 0.7;">Direct to your bank account</div>
+                                <div style="font-weight: 600; color: #fff;">Bank Transfer</div>
+                                <div style="font-size: 12px; opacity: 0.8; color: #ccc;">Direct to your bank account</div>
                             </div>
                         </div>
-                        <i class="fas fa-chevron-right" style="opacity: 0.5;"></i>
+                        <i class="fas fa-chevron-right" style="opacity: 0.6; color: #fff;"></i>
                     </div>
                 </button>
 
@@ -2622,19 +2622,19 @@ function showDigitalPaymentOptions(task, helperReceives, platformFee) {
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <i class="fas fa-wallet" style="font-size: 24px; color: #f59e0b;"></i>
                             <div style="text-align: left;">
-                                <div style="font-weight: 600;">Add to Wallet</div>
-                                <div style="font-size: 12px; opacity: 0.7;">Instant credit to your wallet</div>
+                                <div style="font-weight: 600; color: #fff;">Add to Wallet</div>
+                                <div style="font-size: 12px; opacity: 0.8; color: #ccc;">Instant credit to your wallet</div>
                             </div>
                         </div>
-                        <i class="fas fa-chevron-right" style="opacity: 0.5;"></i>
+                        <i class="fas fa-chevron-right" style="opacity: 0.6; color: #fff;"></i>
                     </div>
                 </button>
             </div>
 
             <style>
                 .payment-option-btn {
-                    background: rgba(255, 255, 255, 0.05);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    background: rgba(30, 30, 40, 0.9);
+                    border: 2px solid rgba(139, 92, 246, 0.5);
                     padding: 15px;
                     border-radius: 10px;
                     color: #fff;
@@ -2646,9 +2646,10 @@ function showDigitalPaymentOptions(task, helperReceives, platformFee) {
                     font-size: 14px;
                 }
                 .payment-option-btn:hover {
-                    background: rgba(255, 255, 255, 0.1);
-                    border-color: rgba(255, 255, 255, 0.2);
+                    background: rgba(30, 30, 40, 1);
+                    border-color: rgba(139, 92, 246, 0.8);
                     transform: translateX(5px);
+                    box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
                 }
             </style>
         </div>
@@ -2682,33 +2683,33 @@ function showPaymentDetailsForm(task, helperReceives, platformFee, method) {
 
     const content = `
         <div style="padding: 20px;">
-            <h3><i class="fas fa-arrow-left" style="cursor: pointer; opacity: 0.6;" onclick="initiatePaymentReception(${task.id}, 'digital')"></i> ${methodTitle} Details</h3>
+            <h3 style="color: #fff;"><i class="fas fa-arrow-left" style="cursor: pointer; opacity: 0.6;" onclick="initiatePaymentReception(${task.id}, 'digital')"></i> ${methodTitle} Details</h3>
 
-            <div style="background: rgba(74, 222, 128, 0.1); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+            <div style="background: rgba(30, 30, 40, 0.9); border: 2px solid rgba(139, 92, 246, 0.3); border-radius: 10px; padding: 15px; margin-bottom: 20px; color: #fff;">
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Amount to Receive</span>
+                    <span style="color: #fff;">Amount to Receive</span>
                     <span style="font-weight: 700; color: #4ade80;">₹${helperReceives}</span>
                 </div>
             </div>
 
             <form onsubmit="processPaymentDetails(event, ${task.id}, ${helperReceives}, ${platformFee}, '${method}')">
                 <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #fff;">
                         ${methodTitle}
                         <span style="color: #ef4444;">*</span>
                     </label>
                     <input type="text" placeholder="${methodPlaceholder}" required 
-                        style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff; font-size: 14px;"
+                        style="width: 100%; padding: 12px; background: rgba(50, 50, 60, 0.95); border: 2px solid rgba(139, 92, 246, 0.4); border-radius: 8px; color: #fff; font-size: 14px;"
                         id="paymentDetail">
                 </div>
 
                 <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #fff;">
                         Account Holder Name
                         <span style="color: #ef4444;">*</span>
                     </label>
                     <input type="text" placeholder="Your full name" required 
-                        style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff; font-size: 14px;"
+                        style="width: 100%; padding: 12px; background: rgba(50, 50, 60, 0.95); border: 2px solid rgba(139, 92, 246, 0.4); border-radius: 8px; color: #fff; font-size: 14px;"
                         id="accountHolderName" value="${currentUser ? currentUser.name : ''}">
                 </div>
 
@@ -2752,26 +2753,26 @@ function processPaymentDetails(event, taskId, helperReceives, platformFee, metho
 function showCashPaymentOptions(task, helperReceives, platformFee) {
     const content = `
         <div style="padding: 20px;">
-            <h3>💵 Cash Payment Settlement</h3>
+            <h3 style="color: #fff;">💵 Cash Payment Settlement</h3>
 
-            <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+            <div style="background: rgba(30, 30, 40, 0.9); border: 2px solid rgba(251, 191, 36, 0.5); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
                 <h4 style="margin-top: 0; color: #fbbf24;"><i class="fas fa-warning-circle"></i> Important</h4>
-                <p style="font-size: 14px; margin: 10px 0 0 0;">For cash payments, you will receive:</p>
-                <div style="background: rgba(100, 100, 100, 0.3); border-radius: 8px; padding: 12px; margin-top: 10px;">
+                <p style="font-size: 14px; margin: 10px 0 0 0; color: #fff;">For cash payments, you will receive:</p>
+                <div style="background: rgba(50, 50, 60, 0.8); border-radius: 8px; padding: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1);">
                     <div style="display: flex; justify-content: space-between;">
-                        <span>Cash Amount</span>
-                        <span style="font-weight: 700;">₹${helperReceives}</span>
+                        <span style="color: #fff;">Cash Amount</span>
+                        <span style="font-weight: 700; color: #fff;">₹${helperReceives}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; opacity: 0.7; font-size: 12px; margin-top: 5px;">
-                        <span>Platform Commission (10%)</spans>
+                    <div style="display: flex; justify-content: space-between; opacity: 0.9; font-size: 12px; margin-top: 5px;">
+                        <span style="color: #ccc;">Platform Commission (10%)</span>
                         <span style="color: #fbbf24;">-₹${platformFee} (to company)</span>
                     </div>
                 </div>
             </div>
 
-            <div style="background: rgba(52, 211, 153, 0.1); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
-                <h4 style="margin-top: 0;"><i class="fas fa-handshake"></i> Settlement with ${task.postedBy ? task.postedBy.name : 'Task Poster'}</h4>
-                <p style="font-size: 14px; margin: 10px 0 0 0;">
+            <div style="background: rgba(30, 30, 40, 0.9); border: 2px solid rgba(52, 211, 153, 0.5); border-radius: 10px; padding: 15px; margin-bottom: 20px; color: #fff;">
+                <h4 style="margin-top: 0; color: #4ade80;"><i class="fas fa-handshake"></i> Settlement with ${task.postedBy ? task.postedBy.name : 'Task Poster'}</h4>
+                <p style="font-size: 14px; margin: 10px 0 0 0; color: #fff;">
                     You will meet with the task poster and settle ₹${helperReceives} in cash. 
                     The 10% platform commission (₹${platformFee}) will be collected separately.
                 </p>
@@ -2804,26 +2805,26 @@ function processChargeVerification(taskId, method, helperReceives, platformFee) 
 
     const content = `
         <div style="padding: 20px;">
-            <h3 style="text-align: center;"><i class="fas fa-check-circle" style="color: #4ade80;"></i> Contact Details</h3>
+            <h3 style="text-align: center; color: #fff;"><i class="fas fa-check-circle" style="color: #4ade80;"></i> Contact Details</h3>
 
-            <div style="background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(52, 211, 153, 0.1)); border-radius: 15px; padding: 20px; margin-bottom: 20px;">
-                <h4 style="margin-top: 0; text-align: center;">${task.postedBy.name}</h4>
+            <div style="background: rgba(30, 30, 40, 0.95); border: 2px solid rgba(52, 211, 153, 0.5); border-radius: 15px; padding: 20px; margin-bottom: 20px; color: #fff;">
+                <h4 style="margin-top: 0; text-align: center; color: #4ade80;">${task.postedBy.name}</h4>
                 <div style="text-align: center; margin-bottom: 15px;">
                     <i class="fas fa-phone" style="font-size: 30px; color: #4ade80;"></i>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 12px; margin-bottom: 10px;">
-                    <div style="font-size: 12px; opacity: 0.7;">Phone Number</div>
-                    <div style="font-size: 16px; font-weight: 700; font-family: monospace;">${task.postedBy.phone || '+91-XXXXXXXXXX'}</div>
+                <div style="background: rgba(50, 50, 60, 0.8); border-radius: 10px; padding: 12px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="font-size: 12px; opacity: 0.8; color: #ccc;">Phone Number</div>
+                    <div style="font-size: 16px; font-weight: 700; font-family: monospace; color: #fff;">${task.postedBy.phone || '+91-XXXXXXXXXX'}</div>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 12px;">
-                    <div style="font-size: 12px; opacity: 0.7;">Location</div>
-                    <div style="font-size: 14px;">${task.location.address}</div>
+                <div style="background: rgba(50, 50, 60, 0.8); border-radius: 10px; padding: 12px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="font-size: 12px; opacity: 0.8; color: #ccc;">Location</div>
+                    <div style="font-size: 14px; color: #fff;">${task.location.address}</div>
                 </div>
             </div>
 
-            <div style="background: rgba(251, 191, 36, 0.1); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+            <div style="background: rgba(30, 30, 40, 0.9); border: 2px solid rgba(251, 191, 36, 0.5); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
                 <h4 style="margin-top: 0; color: #fbbf24;"><i class="fas fa-info-circle"></i> Settlement Instructions</h4>
-                <ol style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px;">
+                <ol style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; color: #fff;">
                     <li>Contact the task poster using the number above</li>
                     <li>Arrange cash payment of ₹${helperReceives}</li>
                     <li>After settlement, confirm payment in the app</li>

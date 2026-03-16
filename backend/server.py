@@ -19,6 +19,9 @@ import jwt
 import datetime
 import secrets
 import re
+import hashlib
+import hmac
+import json
 
 from config import get_config
 from database import init_db, get_db, dict_from_row, get_placeholder
@@ -2724,29 +2727,78 @@ def payment_webhook():
     - payment.authorized
     - payment.failed
     - payment.captured
+    
+    Verifies webhook signature for security.
     """
     try:
-        data = request.get_json()
+        # Get webhook secret from environment
+        webhook_secret = os.getenv('RAZORPAY_WEBHOOK_SECRET', '')
+        
+        if not webhook_secret:
+            print("⚠️  Warning: RAZORPAY_WEBHOOK_SECRET not set in environment")
+            # For development, continue without verification
+            # In production, this should fail
+            if config.USE_POSTGRES:
+                print("❌ Production mode: Webhook secret required")
+                return jsonify({'success': False, 'message': 'Webhook secret not configured'}), 400
+        
+        # Get request data
+        raw_body = request.get_data(as_text=True)
+        signature = request.headers.get('X-Razorpay-Signature', '')
+        
+        # Verify signature if secret is configured
+        if webhook_secret and signature:
+            expected_signature = hmac.new(
+                webhook_secret.encode('utf-8'),
+                raw_body.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            
+            if signature != expected_signature:
+                print(f"❌ Invalid webhook signature received")
+                return jsonify({'success': False, 'message': 'Invalid signature'}), 401
+            
+            print("✅ Webhook signature verified")
+        
+        # Parse JSON payload
+        data = json.loads(raw_body)
         event = data.get('event')
         payload = data.get('payload', {})
+        
+        print(f"📨 Razorpay Webhook Event: {event}")
         
         if event == 'payment.authorized' or event == 'payment.captured':
             payment_id = payload.get('payment', {}).get('entity', {}).get('id')
             order_id = payload.get('payment', {}).get('entity', {}).get('order_id')
+            amount = payload.get('payment', {}).get('entity', {}).get('amount', 0) / 100  # Convert paise to rupees
             
-            # Mark as captured in database
+            print(f"💰 Payment captured: {payment_id} (Order: {order_id}, Amount: ₹{amount})")
+            
+            # Mark as captured in database and update task
             with get_db() as (cursor, conn):
+                # Update payment status
                 cursor.execute(f'''
                     UPDATE payments 
                     SET status = {PH}
                     WHERE razorpay_payment_id = {PH}
                 ''', ('captured', payment_id))
+                
+                # Also update task status to 'paid' if it's linked
+                cursor.execute(f'''
+                    UPDATE tasks 
+                    SET status = {PH}
+                    WHERE id IN (
+                        SELECT task_id FROM payments WHERE razorpay_payment_id = {PH}
+                    )
+                ''', ('paid', payment_id))
+                
                 conn.commit()
-            
-            print(f"✅ Payment captured: {payment_id}")
         
         elif event == 'payment.failed':
             payment_id = payload.get('payment', {}).get('entity', {}).get('id')
+            error_reason = payload.get('payment', {}).get('entity', {}).get('error_reason', 'Unknown')
+            
+            print(f"❌ Payment failed: {payment_id} - Reason: {error_reason}")
             
             with get_db() as (cursor, conn):
                 cursor.execute(f'''
@@ -2755,14 +2807,19 @@ def payment_webhook():
                     WHERE razorpay_payment_id = {PH}
                 ''', ('failed', payment_id))
                 conn.commit()
-            
-            print(f"❌ Payment failed: {payment_id}")
         
-        return jsonify({'success': True}), 200
+        elif event == 'payment.authorized':
+            # Razorpay sometimes sends authorization before capture
+            payment_id = payload.get('payment', {}).get('entity', {}).get('id')
+            print(f"⏳ Payment authorized (pending capture): {payment_id}")
+        
+        return jsonify({'success': True, 'message': 'Webhook received'}), 200
         
     except Exception as e:
         print(f"❌ Webhook error: {e}")
-        return jsonify({'success': False}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ========================================

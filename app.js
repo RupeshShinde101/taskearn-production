@@ -2871,6 +2871,9 @@ function completePaymentReception(task, helperReceives, platformFee, method, pay
     // Add earnings to local wallet (in production, this would be server-side)
     addEarningsToWallet(currentUser.id, helperReceives, platformFee, task);
 
+    // Track company commission
+    trackCompanyCommission(task.id, platformFee, currentUser.name, method);
+
     // Show success message
     closeModal('receivePaymentModal');
     showPaymentReceptionSuccessModal(task, helperReceives, platformFee, method);
@@ -2958,6 +2961,72 @@ function showPaymentReceptionSuccessModal(task, helperReceives, platformFee, met
 
     document.getElementById('taskSuccessContent').innerHTML = content;
     openModal('taskSuccessModal');
+}
+
+/**
+ * Track company commission from payment
+ * Stores commission in localStorage for accounting purposes
+ */
+function trackCompanyCommission(taskId, amount, helperName, method = 'digital') {
+    const commissionStr = localStorage.getItem('taskearn_company_commissions');
+    const commissions = commissionStr ? JSON.parse(commissionStr) : {
+        transactions: [],
+        totalCommission: 0,
+        lastUpdated: null
+    };
+
+    const commission = {
+        id: `commission-${Date.now()}`,
+        taskId: taskId,
+        amount: amount,
+        helperName: helperName,
+        paymentMethod: method,
+        date: new Date().toISOString(),
+        status: 'received'
+    };
+
+    commissions.transactions.unshift(commission);
+    commissions.totalCommission += amount;
+    commissions.lastUpdated = new Date().toISOString();
+
+    localStorage.setItem('taskearn_company_commissions', JSON.stringify(commissions));
+    
+    console.log('📊 Company Commission Tracked:', {
+        commission: amount,
+        helper: helperName,
+        totalCommissions: commissions.totalCommission,
+        transactionCount: commissions.transactions.length
+    });
+
+    return commissions;
+}
+
+/**
+ * Get company commission summary
+ */
+function getCompanyCommissionSummary() {
+    const commissionStr = localStorage.getItem('taskearn_company_commissions');
+    return commissionStr ? JSON.parse(commissionStr) : {
+        transactions: [],
+        totalCommission: 0,
+        lastUpdated: null
+    };
+}
+
+/**
+ * Get this month's commission
+ */
+function getCurrentMonthCommission() {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const commissionStr = localStorage.getItem('taskearn_company_commissions');
+    
+    if (!commissionStr) return 0;
+    
+    const commissions = JSON.parse(commissionStr);
+    return commissions.transactions
+        .filter(t => new Date(t.date) >= firstDay && new Date(t.date) <= now)
+        .reduce((sum, t) => sum + t.amount, 0);
 }
 
 // ========================================

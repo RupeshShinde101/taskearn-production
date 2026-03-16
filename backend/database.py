@@ -53,11 +53,14 @@ def get_db():
             cursor = conn.cursor()
         
         yield cursor, conn
-        conn.commit()
     except Exception as e:
         if conn:
             conn.rollback()
         raise e
+    else:
+        # Only commit if no exception occurred
+        if conn:
+            conn.commit()
     finally:
         if conn:
             conn.close()

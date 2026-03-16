@@ -249,7 +249,10 @@ def register():
                 INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (user_id, name, email, password_hash, phone, dob, joined_at))
+            conn.commit()  # Explicitly commit the transaction
         except Exception as e:
+            conn.rollback()  # Rollback on error
+            print(f"[ERROR] Registration failed: {str(e)}")
             return jsonify({'success': False, 'message': 'Email already registered'}), 400
     
     # Generate token

@@ -2479,6 +2479,27 @@ function showPaymentSuccessModal(task, totalPayable, platformFee) {
     openModal('taskSuccessModal');
 }
 
+/**
+ * Pay for a completed task using Razorpay
+ * Called when task poster clicks "Pay Now" on completed task
+ */
+function payForCompletedTask(taskId) {
+    const task = myPostedTasks.find(t => t.id === taskId);
+    
+    if (!task || task.status !== 'pending_payment') {
+        showToast('❌ Task not ready for payment');
+        return;
+    }
+    
+    // Confirm payment dialog
+    if (!confirm(`Confirm payment of ₹${task.price + Math.ceil(task.price * 0.10)} for task: "${task.title}"?\n\n✓ Helper will receive: ₹${task.price}\n✓ Platform fee (10%): ₹${Math.ceil(task.price * 0.10)}`)) {
+        return;
+    }
+    
+    // Initiate Razorpay payment
+    initiateRazorpayPayment(task);
+}
+
 // ========================================
 // RAZORPAY PAYMENT INTEGRATION
 // ========================================

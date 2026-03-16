@@ -2149,6 +2149,379 @@ def get_helper_dashboard():
 
 
 # ========================================
+# RAZORPAY PAYMENT INTEGRATION
+# ========================================
+
+import razorpay
+import hashlib
+import hmac
+
+# Initialize Razorpay client
+if config.RAZORPAY_KEY_ID and config.RAZORPAY_KEY_SECRET:
+    razorpay_client = razorpay.Client(auth=(config.RAZORPAY_KEY_ID, config.RAZORPAY_KEY_SECRET))
+else:
+    razorpay_client = None
+    print("⚠️ WARNING: Razorpay credentials not configured. Payment features will be disabled.")
+
+
+@app.route('/api/payments/create-order', methods=['POST'])
+@require_auth
+def create_payment_order():
+    """Create Razorpay payment order for task
+    
+    Request Body:
+    {
+        "taskId": 123,
+        "amount": 500,  // In paise (500 paise = ₹5)
+        "description": "Payment for Website Redesign",
+        "helperId": 45  // User ID who accepted the task
+    }
+    """
+    if not razorpay_client:
+        return jsonify({'success': False, 'message': 'Payment service not available'}), 503
+    
+    data = request.get_json()
+    task_id = data.get('taskId')
+    amount = int(data.get('amount', 0))  # In paise
+    helper_id = data.get('helperId')
+    description = data.get('description', 'Task Payment - TaskEarn')
+    
+    if amount <= 0 or not task_id or not helper_id:
+        return jsonify({'success': False, 'message': 'Invalid payment details'}), 400
+    
+    try:
+        # Create Razorpay order
+        order_data = {
+            'amount': amount,  # Amount in paise
+            'currency': 'INR',
+            'receipt': f'task-{task_id}-{request.user_id}',
+            'description': description,
+            'notes': {
+                'taskId': str(task_id),
+                'posterId': str(request.user_id),
+                'helperId': str(helper_id),
+                'platform': 'TaskEarn'
+            }
+        }
+        
+        order = razorpay_client.order.create(data=order_data)
+        
+        # Store order in database
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                INSERT INTO payments (
+                    task_id, poster_id, helper_id, amount, currency, 
+                    status, razorpay_order_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                task_id, request.user_id, helper_id, 
+                amount / 100.0,  # Convert from paise to rupees
+                'INR', 'pending', order['id'], 
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
+            ))
+            conn.commit()
+        
+        return jsonify({
+            'success': True,
+            'orderId': order['id'],
+            'amount': amount,
+            'currency': 'INR',
+            'key': config.RAZORPAY_KEY_ID
+        }), 201
+        
+    except Exception as e:
+        print(f"❌ Error creating payment order: {e}")
+        return jsonify({'success': False, 'message': 'Failed to create payment order'}), 500
+
+
+@app.route('/api/payments/verify', methods=['POST'])
+@require_auth
+def verify_payment():
+    """Verify Razorpay payment signature and complete payment
+    
+    Request Body:
+    {
+        "razorpayPaymentId": "pay_...",
+        "razorpayOrderId": "order_...",
+        "razorpaySignature": "signature...",
+        "taskId": 123,
+        "helperId": 45
+    }
+    """
+    if not razorpay_client or not config.RAZORPAY_KEY_SECRET:
+        return jsonify({'success': False, 'message': 'Payment verification not available'}), 503
+    
+    data = request.get_json()
+    payment_id = data.get('razorpayPaymentId')
+    order_id = data.get('razorpayOrderId')
+    signature = data.get('razorpaySignature')
+    task_id = data.get('taskId')
+    helper_id = data.get('helperId')
+    
+    if not all([payment_id, order_id, signature, task_id, helper_id]):
+        return jsonify({'success': False, 'message': 'Missing payment details'}), 400
+    
+    try:
+        # Verify signature
+        message = f'{order_id}|{payment_id}'
+        expected_signature = hmac.new(
+            config.RAZORPAY_KEY_SECRET.encode(),
+            message.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        if expected_signature != signature:
+            return jsonify({
+                'success': False, 
+                'message': 'Payment verification failed - invalid signature'
+            }), 400
+        
+        # Get payment details from database
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT * FROM payments 
+                WHERE razorpay_order_id = {PH} AND task_id = {PH}
+            ''', (order_id, task_id))
+            payment = dict_from_row(cursor.fetchone())
+            
+            if not payment:
+                return jsonify({'success': False, 'message': 'Payment record not found'}), 404
+            
+            # Calculate split: Helper gets 90%, Company gets 10%
+            amount = float(payment['amount'])
+            platform_fee = amount * 0.10
+            helper_amount = amount - platform_fee
+            
+            # Update payment record
+            cursor.execute(f'''
+                UPDATE payments 
+                SET status = {PH}, razorpay_payment_id = {PH}, 
+                    verified_at = {PH}, platform_fee = {PH}
+                WHERE razorpay_order_id = {PH}
+            ''', (
+                'paid', payment_id,
+                datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                platform_fee, order_id
+            ))
+            
+            # Update task status to paid
+            cursor.execute(f'''
+                UPDATE tasks 
+                SET status = {PH}, paid_at = {PH}, 
+                    razorpay_payment_id = {PH}
+                WHERE id = {PH}
+            ''', (
+                'paid',
+                datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                payment_id,
+                task_id
+            ))
+            
+            # Credit helper's wallet (90%)
+            helper_wallet = get_or_create_wallet(helper_id)
+            helper_balance = float(helper_wallet['balance']) + helper_amount
+            
+            cursor.execute(f'''
+                UPDATE wallets 
+                SET balance = {PH}, total_earned = total_earned + {PH}
+                WHERE user_id = {PH}
+            ''', (helper_balance, helper_amount, helper_id))
+            
+            # Record transaction for helper
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after, 
+                    description, created_at, metadata
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                helper_wallet['id'], helper_id, 'earned',
+                helper_amount, helper_balance,
+                f'Payment for task: {task_id} (Platform fee deducted)',
+                datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                f'{{"taskId": {task_id}, "platformFee": {platform_fee}, "razorpayPaymentId": "{payment_id}"}}'
+            ))
+            
+            # Credit company account (10% commission)
+            company_wallet = get_or_create_wallet(1)  # Assuming company ID is 1
+            company_balance = float(company_wallet['balance']) + platform_fee
+            
+            cursor.execute(f'''
+                UPDATE wallets 
+                SET balance = {PH}, total_earned = total_earned + {PH}
+                WHERE user_id = {PH}
+            ''', (company_balance, platform_fee, 1))
+            
+            # Record transaction for company
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after, 
+                    description, created_at, metadata
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                company_wallet['id'], 1, 'commission',
+                platform_fee, company_balance,
+                f'Platform commission (10%) from task {task_id}',
+                datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                f'{{"taskId": {task_id}, "helperId": {helper_id}, "amount": {amount}, "razorpayPaymentId": "{payment_id}"}}'
+            ))
+            
+            conn.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Payment verified and completed successfully',
+            'paymentId': payment_id,
+            'helperCredit': helper_amount,
+            'platformCommission': platform_fee,
+            'taskId': task_id
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error verifying payment: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': 'Payment verification failed'}), 500
+
+
+@app.route('/api/payments/<payment_id>', methods=['GET'])
+@require_auth
+def get_payment_status(payment_id):
+    """Get payment status by Razorpay payment ID"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT * FROM payments 
+                WHERE razorpay_payment_id = {PH} OR razorpay_order_id = {PH}
+            ''', (payment_id, payment_id))
+            payment = dict_from_row(cursor.fetchone())
+            
+            if not payment:
+                return jsonify({'success': False, 'message': 'Payment not found'}), 404
+            
+            return jsonify({
+                'success': True,
+                'payment': {
+                    'id': payment['id'],
+                    'taskId': payment['task_id'],
+                    'amount': float(payment['amount']),
+                    'platformFee': float(payment['platform_fee'] or 0),
+                    'status': payment['status'],
+                    'createdAt': payment['created_at'],
+                    'verifiedAt': payment['verified_at'],
+                    'razorpayPaymentId': payment['razorpay_payment_id'],
+                    'razorpayOrderId': payment['razorpay_order_id']
+                }
+            }), 200
+            
+    except Exception as e:
+        print(f"❌ Error getting payment status: {e}")
+        return jsonify({'success': False, 'message': 'Failed to get payment status'}), 500
+
+
+@app.route('/api/payments/history', methods=['GET'])
+@require_auth
+def get_payment_history():
+    """Get payment history for user (as payer or receiver)"""
+    try:
+        with get_db() as (cursor, conn):
+            # Get payments made (as poster)
+            cursor.execute(f'''
+                SELECT * FROM payments 
+                WHERE poster_id = {PH}
+                ORDER BY created_at DESC LIMIT 50
+            ''', (request.user_id,))
+            made_payments = [dict_from_row(row) for row in cursor.fetchall()]
+            
+            # Get payments received (as helper)
+            cursor.execute(f'''
+                SELECT * FROM payments 
+                WHERE helper_id = {PH}
+                ORDER BY created_at DESC LIMIT 50
+            ''', (request.user_id,))
+            received_payments = [dict_from_row(row) for row in cursor.fetchall()]
+            
+            return jsonify({
+                'success': True,
+                'made': [
+                    {
+                        'id': p['id'],
+                        'taskId': p['task_id'],
+                        'amount': float(p['amount']),
+                        'status': p['status'],
+                        'createdAt': p['created_at'],
+                        'verifiedAt': p['verified_at'],
+                        'type': 'made'
+                    } for p in made_payments
+                ],
+                'received': [
+                    {
+                        'id': p['id'],
+                        'taskId': p['task_id'],
+                        'amount': float(p['amount']) * 0.9,  # Helper receives 90%
+                        'platformFee': float(p['amount']) * 0.1,
+                        'status': p['status'],
+                        'createdAt': p['created_at'],
+                        'verifiedAt': p['verified_at'],
+                        'type': 'received'
+                    } for p in received_payments
+                ]
+            }), 200
+            
+    except Exception as e:
+        print(f"❌ Error getting payment history: {e}")
+        return jsonify({'success': False, 'message': 'Failed to get payment history'}), 500
+
+
+@app.route('/api/payments/webhook', methods=['POST'])
+def payment_webhook():
+    """Razorpay webhook handler for payment events
+    
+    Handles:
+    - payment.authorized
+    - payment.failed
+    - payment.captured
+    """
+    try:
+        data = request.get_json()
+        event = data.get('event')
+        payload = data.get('payload', {})
+        
+        if event == 'payment.authorized' or event == 'payment.captured':
+            payment_id = payload.get('payment', {}).get('entity', {}).get('id')
+            order_id = payload.get('payment', {}).get('entity', {}).get('order_id')
+            
+            # Mark as captured in database
+            with get_db() as (cursor, conn):
+                cursor.execute(f'''
+                    UPDATE payments 
+                    SET status = {PH}
+                    WHERE razorpay_payment_id = {PH}
+                ''', ('captured', payment_id))
+                conn.commit()
+            
+            print(f"✅ Payment captured: {payment_id}")
+        
+        elif event == 'payment.failed':
+            payment_id = payload.get('payment', {}).get('entity', {}).get('id')
+            
+            with get_db() as (cursor, conn):
+                cursor.execute(f'''
+                    UPDATE payments 
+                    SET status = {PH}
+                    WHERE razorpay_payment_id = {PH}
+                ''', ('failed', payment_id))
+                conn.commit()
+            
+            print(f"❌ Payment failed: {payment_id}")
+        
+        return jsonify({'success': True}), 200
+        
+    except Exception as e:
+        print(f"❌ Webhook error: {e}")
+        return jsonify({'success': False}), 500
+
+
+# ========================================
 # HEALTH CHECK & DIAGNOSTIC
 # ========================================
 

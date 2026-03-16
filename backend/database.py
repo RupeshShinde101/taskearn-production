@@ -133,15 +133,18 @@ def init_postgres_db():
             CREATE TABLE IF NOT EXISTS payments (
                 id SERIAL PRIMARY KEY,
                 task_id INTEGER REFERENCES tasks(id),
-                user_id VARCHAR(50) NOT NULL REFERENCES users(id),
+                poster_id INTEGER REFERENCES users(id),
+                helper_id INTEGER REFERENCES users(id),
                 razorpay_order_id VARCHAR(255),
                 razorpay_payment_id VARCHAR(255),
                 razorpay_signature VARCHAR(255),
                 amount DECIMAL(10,2) NOT NULL,
+                platform_fee DECIMAL(10,2),
                 currency VARCHAR(10) DEFAULT 'INR',
                 status VARCHAR(20) DEFAULT 'pending',
                 created_at TIMESTAMP NOT NULL,
-                completed_at TIMESTAMP
+                verified_at TIMESTAMP,
+                paid_at TIMESTAMP
             )
         ''')
         
@@ -399,17 +402,21 @@ def init_sqlite_db():
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task_id INTEGER,
-                user_id TEXT NOT NULL,
+                poster_id INTEGER,
+                helper_id INTEGER,
                 razorpay_order_id TEXT,
                 razorpay_payment_id TEXT,
                 razorpay_signature TEXT,
                 amount REAL NOT NULL,
+                platform_fee REAL,
                 currency TEXT DEFAULT 'INR',
                 status TEXT DEFAULT 'pending',
                 created_at TEXT NOT NULL,
-                completed_at TEXT,
+                verified_at TEXT,
+                paid_at TEXT,
                 FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                FOREIGN KEY (poster_id) REFERENCES users(id),
+                FOREIGN KEY (helper_id) REFERENCES users(id)
             )
         ''')
         

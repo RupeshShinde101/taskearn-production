@@ -2480,6 +2480,199 @@ function showPaymentSuccessModal(task, totalPayable, platformFee) {
 }
 
 // ========================================
+// RAZORPAY PAYMENT INTEGRATION
+// ========================================
+
+/**
+ * Initiate Razorpay payment for task (Task Poster pays)
+ * Called when posting a task or making payment
+ */
+async function initiateRazorpayPayment(task) {
+    if (!task || task.status !== 'pending_payment') {
+        showToast('❌ Task not ready for payment');
+        return;
+    }
+
+    // Amount in paise (multiply rupees by 100)
+    const amount = Math.ceil(task.price * 100);
+    const platforFee = Math.ceil(task.price * 10);  // 10% commission
+    const totalAmount = amount + (platforFee * 100);
+
+    try {
+        // Step 1: Create payment order on backend
+        const orderResponse = await fetch('/api/payments/create-order', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+            },
+            body: JSON.stringify({
+                taskId: task.id,
+                amount: totalAmount,
+                helperId: task.acceptedBy?.id,
+                description: `Payment for task: ${task.title}`
+            })
+        });
+
+        if (!orderResponse.ok) {
+            showToast('❌ Failed to create payment order');
+            return;
+        }
+
+        const orderData = await orderResponse.json();
+        
+        if (!orderData.success) {
+            showToast('❌ ' + orderData.message);
+            return;
+        }
+
+        // Step 2: Open Razorpay payment window
+        const options = {
+            key: orderData.key,  // Razorpay Key ID
+            amount: totalAmount,
+            currency: 'INR',
+            order_id: orderData.orderId,
+            name: 'TaskEarn',
+            description: task.title,
+            image: 'https://taskearn.app/logo.png',
+            
+            handler: async function(response) {
+                // Step 3: Verify payment on backend
+                paymentSuccessHandler(task, response);
+            },
+            
+            prefill: {
+                name: currentUser?.name || '',
+                email: currentUser?.email || '',
+                contact: currentUser?.phone || ''
+            },
+            
+            notes: {
+                taskId: task.id,
+                taskTitle: task.title,
+                Platform: 'TaskEarn'
+            },
+            
+            theme: {
+                color: '#6366f1'  // Indigo color
+            },
+            
+            modal: {
+                ondismiss: function() {
+                    showToast('⚠️ Payment cancelled');
+                }
+            }
+        };
+
+        // Open Razorpay
+        const rzp = new Razorpay(options);
+        rzp.open();
+
+    } catch (error) {
+        console.error('Payment error:', error);
+        showToast('❌ Payment error: ' + error.message);
+    }
+}
+
+/**
+ * Handle successful Razorpay payment
+ */
+async function paymentSuccessHandler(task, response) {
+    try {
+        showToast('⏳ Verifying payment...');
+
+        // Verify payment signature on backend
+        const verifyResponse = await fetch('/api/payments/verify', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+            },
+            body: JSON.stringify({
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpaySignature: response.razorpay_signature,
+                taskId: task.id,
+                helperId: task.acceptedBy?.id
+            })
+        });
+
+        const verifyData = await verifyResponse.json();
+
+        if (!verifyData.success) {
+            showToast('❌ Payment verification failed: ' + verifyData.message);
+            return;
+        }
+
+        // Update task status locally
+        task.status = 'paid';
+        task.paidAt = new Date().toISOString();
+        task.razorpayPaymentId = response.razorpay_payment_id;
+
+        // Update myPostedTasks
+        updateUserData(currentUser.id, {
+            postedTasks: serializeTasks(myPostedTasks)
+        });
+
+        // Show success modal
+        showPaymentSuccessModal(task, verifyData);
+
+        // Refresh dashboard
+        renderDashboard();
+
+        showToast('✅ Payment successful! ' + verifyData.message);
+
+    } catch (error) {
+        console.error('Verification error:', error);
+        showToast('❌ Error verifying payment: ' + error.message);
+    }
+}
+
+/**
+ * Show payment success modal
+ */
+function showPaymentSuccessModal(task, verifyData) {
+    const content = `
+        <div style="text-align: center; padding: 30px;">
+            <div style="font-size: 60px; margin-bottom: 20px;">✅</div>
+            <h2 style="color: #4ade80; margin-bottom: 20px;">Payment Successful!</h2>
+            
+            <div style="background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(52, 211, 153, 0.1)); border-radius: 15px; padding: 25px; margin-bottom: 20px; text-align: left; color: #fff;">
+                <h3>${task.title}</h3>
+                
+                <div style="background: rgba(50, 50, 60, 0.8); border-radius: 10px; padding: 15px; margin-top: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <span>Task Amount</span>
+                        <span style="font-weight: 600;">₹${task.price}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0;">
+                        <span>Platform Commission (10%)</span>
+                        <span style="color: #fbbf24;">₹${Math.ceil(task.price * 10)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 16px; font-weight: 700; border-top: 2px solid rgba(255,255,255,0.1); margin-top: 8px;">
+                        <span>Total Paid</span>
+                        <span style="color: #4ade80;">₹${task.price + Math.ceil(task.price * 10)}</span>
+                    </div>
+                </div>
+
+                <div style="background: rgba(74, 222, 128, 0.1); border-left: 4px solid #4ade80; border-radius: 5px; padding: 12px; margin-top: 15px; font-size: 13px;">
+                    <strong>✓ Helper receives: ₹${verifyData.helperCredit}</strong><br>
+                    <small style="opacity: 0.8;">Payment will be credited to helper's wallet immediately</small>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 15px; border-radius: 8px;" 
+                onclick="closeModal('taskSuccessModal'); renderDashboard()">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </button>
+        </div>
+    `;
+
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    openModal('taskSuccessModal');
+}
+
+// ========================================
 // PAYMENT RECEPTION (For Helpers to Receive Payment)
 // ========================================
 

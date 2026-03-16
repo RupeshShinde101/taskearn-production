@@ -4953,31 +4953,53 @@ function goToPaymentStep(step) {
 // Process wallet payment
 function processWalletPayment() {
     const userWallet = currentUser?.wallet || 0;
+    const confirmBtn = document.getElementById('confirmWalletPayBtn');
+    
+    // Disable button immediately to prevent double-clicks
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    }
     
     // Check balance
     if (userWallet < currentPaymentData.amount) {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="fas fa-check"></i> Confirm & Pay';
+        }
         showPaymentError('Insufficient wallet balance. Please add funds to your wallet.');
         return;
     }
     
-    // Show processing
+    // Show processing immediately with animation
     goToPaymentStep(3);
     
-    // Simulate processing
+    // Fast animation like Rapido (1 second instead of 3)
     let progress = 0;
-    const interval = setInterval(() => {
-        progress += Math.random() * 30;
-        if (progress > 100) progress = 100;
-        document.getElementById('paymentProgress').style.width = progress + '%';
+    const startTime = Date.now();
+    const duration = 1000; // 1 second total
+    
+    const animate = () => {
+        const elapsed = Date.now() - startTime;
+        progress = Math.min((elapsed / duration) * 100, 100);
         
-        if (progress >= 100) {
-            clearInterval(interval);
-            setTimeout(() => completeWalletPayment(), 500);
+        const progressBar = document.getElementById('paymentProgress');
+        if (progressBar) {
+            progressBar.style.width = progress + '%';
         }
-    }, 300);
+        
+        if (progress < 100) {
+            requestAnimationFrame(animate);
+        } else {
+            // After animation completes, process payment immediately
+            completeWalletPayment();
+        }
+    };
+    
+    animate();
 }
 
-// Complete wallet payment
+// Complete wallet payment - REAL-TIME like Rapido/Zomato
 function completeWalletPayment() {
     // Verify we have auth token
     const token = localStorage.getItem('taskearn_token');
@@ -4992,14 +5014,24 @@ function completeWalletPayment() {
         return;
     }
     
-    console.log('[PAYMENT] Starting wallet payment:', {
-        taskId: currentPaymentData.taskId,
-        amount: currentPaymentData.amount,
-        helperId: currentPaymentData.helperId,
-        timestamp: new Date().toISOString()
+    console.log('[PAYMENT] Processing wallet payment instantly...');
+    
+    // IMMEDIATELY deduct from wallet locally (real-time UI feedback)
+    const previousBalance = currentUser.wallet || 0;
+    currentUser.wallet = Math.max(0, previousBalance - currentPaymentData.amount);
+    
+    // Update localStorage immediately for instant display
+    const user = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+    user.wallet = currentUser.wallet;
+    localStorage.setItem('taskearn_user', JSON.stringify(user));
+    
+    console.log('[PAYMENT] Local wallet updated immediately:', {
+        before: previousBalance,
+        after: currentUser.wallet,
+        deducted: currentPaymentData.amount
     });
     
-    // Call backend to process wallet payment
+    // Call backend in parallel (doesn't block UI)
     fetch('https://taskearn-production-production.up.railway.app/api/payments/wallet-pay', {
         method: 'POST',
         headers: {
@@ -5013,50 +5045,50 @@ function completeWalletPayment() {
         })
     })
     .then(res => {
-        console.log('[PAYMENT] Backend response status:', res.status);
+        console.log('[PAYMENT] Backend response:', res.status);
         if (res.status === 401) {
-            throw new Error('Authentication failed. Please login again.');
+            throw new Error('Authentication failed');
         }
         return res.json();
     })
     .then(data => {
-        console.log('[PAYMENT] Backend response data:', data);
+        console.log('[PAYMENT] Backend confirmed:', data);
         
         if (data.success) {
-            // Update local wallet immediately for real-time feedback
-            currentUser.wallet = (currentUser.wallet || 0) - currentPaymentData.amount;
-            updateUserData(currentUser.id, { wallet: currentUser.wallet });
-            
             // Store transaction data
             currentPaymentData.transactionId = data.transactionId;
             
-            // Show success
+            // Show success immediately (payment already processed locally)
             goToPaymentStep(4);
             document.getElementById('transactionId').textContent = currentPaymentData.transactionId || 'TXN-' + Date.now();
             document.getElementById('amountPaid').textContent = `₹${currentPaymentData.amount}`;
             document.getElementById('helperEarned').textContent = `₹${currentPaymentData.helperShare}`;
             
-            showToast('✅ Payment successful! Wallet updated in real-time.');
-            console.log('[PAYMENT] Wallet payment completed successfully');
+            showToast('✅ Payment successful!');
+            console.log('[PAYMENT] ✅ Payment completed successfully');
             
-            // Refresh dashboard after 2 seconds
+            // Update UI in background without blocking
             setTimeout(() => {
                 renderDashboard();
-            }, 2000);
+            }, 1500);
         } else {
-            showPaymentError(data.message || 'Payment failed. Please try again.');
-            console.error('[PAYMENT] Backend returned error:', data);
+            // Rollback if backend fails
+            currentUser.wallet = previousBalance;
+            user.wallet = previousBalance;
+            localStorage.setItem('taskearn_user', JSON.stringify(user));
+            
+            showPaymentError(data.message || 'Payment failed. Wallet restored.');
+            console.error('[PAYMENT] Backend error:', data);
         }
     })
     .catch(err => {
-        console.error('[PAYMENT] Error processing payment:', err);
+        // Rollback on network error
+        currentUser.wallet = previousBalance;
+        user.wallet = previousBalance;
+        localStorage.setItem('taskearn_user', JSON.stringify(user));
         
-        let errorMsg = 'Network error. Please check your connection.';
-        if (err.message.includes('Authentication')) {
-            errorMsg = err.message;
-        }
-        
-        showPaymentError(errorMsg);
+        console.error('[PAYMENT] Error:', err);
+        showPaymentError('Network error. Wallet restored. Please try again.');
     });
 }
 

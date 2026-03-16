@@ -2182,10 +2182,6 @@ def get_helper_dashboard():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Failed to fetch dashboard: {str(e)}'}), 500
-            'helperLevel': user.get('helper_level', 'bronze'),
-            'recentEarnings': recent_earnings
-        }
-    })
 
 
 # ========================================

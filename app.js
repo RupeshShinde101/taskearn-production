@@ -2661,6 +2661,37 @@ async function handleLogin(event) {
                 myAcceptedTasks = result.acceptedTasks || [];
                 myCompletedTasks = result.completedTasks || [];
                 
+                // ✅ CRITICAL FIX: Also restore tasks from local storage if not provided by API
+                const allUsers = await getStoredUsersAsync();
+                if (currentUser && allUsers[currentUser.id]) {
+                    const storedUser = allUsers[currentUser.id];
+                    console.log('📦 Merging locally stored tasks with API response...');
+                    
+                    // Merge tasks: prefer API data, fallback to local storage
+                    if ((!myPostedTasks || myPostedTasks.length === 0) && storedUser.postedTasks) {
+                        myPostedTasks = deserializeTasks(storedUser.postedTasks);
+                        console.log('✅ Restored', myPostedTasks.length, 'posted tasks from local storage');
+                    }
+                    
+                    if ((!myAcceptedTasks || myAcceptedTasks.length === 0) && storedUser.acceptedTasks) {
+                        myAcceptedTasks = deserializeTasks(storedUser.acceptedTasks);
+                        console.log('✅ Restored', myAcceptedTasks.length, 'accepted tasks from local storage');
+                    }
+                    
+                    if ((!myCompletedTasks || myCompletedTasks.length === 0) && storedUser.completedTasks) {
+                        myCompletedTasks = deserializeTasks(storedUser.completedTasks);
+                        console.log('✅ Restored', myCompletedTasks.length, 'completed tasks from local storage');
+                    }
+                }
+                
+                // Also save current user to storage for next session
+                saveCurrentSession(currentUser);
+                updateUserData(currentUser.id, {
+                    postedTasks: serializeTasks(myPostedTasks),
+                    acceptedTasks: serializeTasks(myAcceptedTasks),
+                    completedTasks: serializeTasks(myCompletedTasks)
+                });
+                
                 showToast('✅ Welcome back, ' + currentUser.name);
                 closeModal('loginModal');
                 document.getElementById('loginEmail').value = '';

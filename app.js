@@ -4878,7 +4878,7 @@ function openPaymentModal(taskId, helperId) {
         amount: amount,
         helperShare: helperShare,
         companyShare: companyShare,
-        paymentMethod: 'wallet'
+        paymentMethod: 'razorpay'  // CHANGED: Always use Razorpay for real money
     };
     
     // Validate helperId
@@ -4895,42 +4895,35 @@ function openPaymentModal(taskId, helperId) {
     document.getElementById('companyShare').textContent = `₹${currentPaymentData.companyShare}`;
     document.getElementById('totalPaymentAmount').textContent = `₹${currentPaymentData.amount}`;
     
-    // Update wallet balance
-    const userWallet = currentUser.wallet || 0;
-    document.getElementById('walletBalanceDisplay').innerHTML = `Balance: <strong>₹${userWallet}</strong>`;
+    console.log('[PAYMENT] Initiating Razorpay payment for real money...');
     
-    if (userWallet < currentPaymentData.amount) {
-        document.getElementById('walletStatus').textContent = 'Insufficient Balance';
-        document.getElementById('walletStatus').style.color = '#ef4444';
-    } else {
-        document.getElementById('walletStatus').textContent = 'Available';
-        document.getElementById('walletStatus').style.color = '#10b981';
-    }
+    // Skip method selection and go directly to Razorpay
+    // Show summary modal
+    document.getElementById('paymentSummaryModal').style.display = 'flex';
     
-    // Reset to step 1
-    goToPaymentStep(1);
-    openModal('makePaymentModal');
+    // Set up "Proceed to Payment" button to use Razorpay
+    setTimeout(() => {
+        const proceedBtn = document.getElementById('proceedPaymentBtn');
+        if (proceedBtn) {
+            proceedBtn.onclick = () => {
+                document.getElementById('paymentSummaryModal').style.display = 'none';
+                initiateRazorpayPayment();
+            };
+        }
+    }, 100);
 }
 
-// Select payment method
+// Select payment method (DEPRECATED - Always use Razorpay now)
 function selectPaymentMethod(element, method) {
-    document.querySelectorAll('.payment-option').forEach(opt => opt.classList.remove('active'));
-    element.closest('.payment-option').classList.add('active');
-    currentPaymentData.paymentMethod = method;
-    console.log(`Payment method selected: ${method}`);
+    // Kept for backward compatibility, but always routes to Razorpay
+    currentPaymentData.paymentMethod = 'razorpay';
+    console.log('[PAYMENT] Payment method forced to Razorpay for real money');
 }
 
-// Proceed to payment
+// Proceed to payment (DEPRECATED - Always use Razorpay now)
 function proceedToPayment() {
-    const method = currentPaymentData.paymentMethod;
-    
-    if (method === 'wallet') {
-        goToPaymentStep(2); // Wallet confirmation
-    } else if (method === 'razorpay') {
-        initRazorpayPayment();
-    } else if (method === 'upi') {
-        showUPIOptions();
-    }
+    // Always use Razorpay for real payments
+    initiateRazorpayPayment();
 }
 
 // Wallet payment - Step 2
@@ -5106,11 +5099,16 @@ function retryPayment() {
     document.querySelectorAll('.payment-option')[0].classList.add('active');
 }
 
-// Initialize Razorpay payment
-function initRazorpayPayment() {
-    goToPaymentStep(3);
+// Initialize Razorpay payment (MAIN PAYMENT FLOW NOW)
+function initiateRazorpayPayment() {
+    console.log('[RAZORPAY] Starting real payment process...');
     
-    console.log('[RAZORPAY] Attempting to initialize Razorpay payment...');
+    // Close summary modal if open
+    const summaryModal = document.getElementById('paymentSummaryModal');
+    if (summaryModal) summaryModal.style.display = 'none';
+    
+    // Show processing step
+    goToPaymentStep(3);
     
     // Check if Razorpay SDK is loaded
     if (typeof Razorpay === 'undefined') {
@@ -5152,32 +5150,33 @@ function initRazorpayPayment() {
     });
 }
 
-// Open Razorpay checkout
+// Open Razorpay checkout (REAL MONEY COLLECTION)
 function openRazorpayCheckout(orderId) {
     try {
         const options = {
-            key: 'rzp_live_SRt7rogPTT3FuK', // Live key - Valid and tested
+            key: 'rzp_live_SRt7rogPTT3FuK', // LIVE KEY - Real money will be collected here
             amount: currentPaymentData.amount * 100, // Convert to paise
             currency: 'INR',
             order_id: orderId,
-            name: 'Workmate4u',
-            description: currentPaymentData.taskTitle,
-            handler: function(response) {
-                console.log('[RAZORPAY] Payment successful:', response.razorpay_payment_id);
-                verifyRazorpayPayment(response);
-            },
+            name: 'Workmate4u - Payment',
+            description: `Payment for: ${currentPaymentData.taskTitle}`,
             prefill: {
                 name: currentUser?.name || '',
                 email: currentUser?.email || '',
                 contact: currentUser?.phone || ''
+            },
+            handler: function(response) {
+                console.log('[RAZORPAY] REAL PAYMENT SUCCESSFUL:', response.razorpay_payment_id);
+                console.log('[RAZORPAY] Money collected. Now verifying and recording in wallet...');
+                verifyRazorpayPayment(response);
             },
             theme: {
                 color: '#6366f1'
             },
             modal: {
                 ondismiss: function() {
-                    console.log('[RAZORPAY] User dismissed checkout');
-                    showPaymentError('Payment cancelled. Try again with wallet or another method.');
+                    console.log('[RAZORPAY] User dismissed checkout without payment');
+                    showPaymentError('Payment cancelled. Please try again.');
                 }
             }
         };
@@ -5185,24 +5184,28 @@ function openRazorpayCheckout(orderId) {
         const rzp = new Razorpay(options);
         
         rzp.on('payment.failed', function(response) {
-            console.error('[RAZORPAY] Payment failed:', response.error);
-            showPaymentError('Payment failed: ' + (response.error?.description || 'Unknown error') + '. Please try wallet payment instead.');
+            console.error('[RAZORPAY] PAYMENT DECLINED:', response.error);
+            showPaymentError('Payment declined: ' + (response.error?.description || 'Unknown error') + '. Please try another payment method.');
         });
         
         rzp.on('payment.authorized', function(response) {
             console.log('[RAZORPAY] Payment authorized:', response);
         });
         
-        console.log('[RAZORPAY] Opening checkout UI...');
+        console.log('[RAZORPAY] Opening real payment checkout UI...');
+        console.log('[RAZORPAY] Amount: ₹' + currentPaymentData.amount);
+        console.log('[RAZORPAY] Real money will be collected to your account');
         rzp.open();
     } catch (error) {
         console.error('[RAZORPAY] Exception:', error);
-        showPaymentError('Payment error. Please use wallet payment instead.');
+        showPaymentError('Payment error. Please try again later.');
     }
 }
 
 // Verify Razorpay payment
 function verifyRazorpayPayment(response) {
+    console.log('[RAZORPAY] Verifying payment with backend and recording to wallet...');
+    
     fetch('https://taskearn-production-production.up.railway.app/api/payments/verify', {
         method: 'POST',
         headers: {
@@ -5212,24 +5215,55 @@ function verifyRazorpayPayment(response) {
         body: JSON.stringify({
             orderId: currentPaymentData.orderId,
             paymentId: response.razorpay_payment_id,
-            signature: response.razorpay_signature
+            signature: response.razorpay_signature,
+            taskId: currentPaymentData.taskId,
+            helperId: currentPaymentData.helperId,
+            amount: currentPaymentData.amount
         })
     })
-    .then(res => res.json())
+    .then(res => {
+        if (res.status === 401) {
+            throw new Error('Authentication failed');
+        }
+        return res.json();
+    })
     .then(data => {
         if (data.success) {
+            console.log('[RAZORPAY] PAYMENT VERIFIED AND RECORDED');
+            console.log('[RAZORPAY] Amount: ₹' + currentPaymentData.amount);
+            console.log('[RAZORPAY] Helper earned: ₹' + currentPaymentData.helperShare);
+            console.log('[RAZORPAY] Company earned: ₹' + currentPaymentData.companyShare);
+            console.log('[RAZORPAY] Payment recorded in wallet');
+            
+            // Update wallet in localStorage
+            if (currentUser && currentUser.wallet !== undefined) {
+                // Wallet already used in this session, update with commission tracking
+                currentUser.wallet = (currentUser.wallet || 0) - currentPaymentData.amount;
+                const user = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+                user.wallet = currentUser.wallet;
+                localStorage.setItem('taskearn_user', JSON.stringify(user));
+            }
+            
             currentPaymentData.transactionId = response.razorpay_payment_id;
             goToPaymentStep(4);
             document.getElementById('transactionId').textContent = currentPaymentData.transactionId;
             document.getElementById('amountPaid').textContent = `₹${currentPaymentData.amount}`;
             document.getElementById('helperEarned').textContent = `₹${currentPaymentData.helperShare}`;
+            
+            showToast('✅ Payment successful! Real money collected. Helper received ₹' + currentPaymentData.helperShare);
+            
+            // Refresh dashboard after 2 seconds
+            setTimeout(() => {
+                renderDashboard();
+            }, 2000);
         } else {
-            showPaymentError(data.message || 'Payment verification failed');
+            console.error('[RAZORPAY] Verification failed:', data.message);
+            showPaymentError(data.message || 'Payment verification failed. Amount has been refunded.');
         }
     })
     .catch(err => {
-        console.error('Error verifying payment:', err);
-        showPaymentError('Failed to verify payment');
+        console.error('[RAZORPAY] Error verifying payment:', err);
+        showPaymentError('Failed to verify payment: ' + err.message + '. Please contact support if money was deducted.');
     });
 }
 

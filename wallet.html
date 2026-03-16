@@ -7,9 +7,22 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
-    <!-- Razorpay Checkout Script -->
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script>
+        // Load Razorpay dynamically to avoid preload warnings
+        function loadRazorpayScript() {
+            if (typeof Razorpay !== 'undefined') return;
+            const script = document.createElement('script');
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            script.async = true;
+            document.head.appendChild(script);
+        }
+        // Load after DOM ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadRazorpayScript);
+        } else {
+            loadRazorpayScript();
+        }
+        
         // Auto-detect environment and set API URL
         (function() {
             const hostname = window.location.hostname;

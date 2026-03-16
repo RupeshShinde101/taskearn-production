@@ -9,8 +9,23 @@
     <!-- Leaflet.js - Free OpenStreetMap (No API Key Required) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-    <!-- Razorpay Checkout -->
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- Razorpay Checkout - Loaded dynamically -->
+    <script>
+        // Load Razorpay dynamically to avoid preload warnings
+        function loadRazorpayScript() {
+            if (typeof Razorpay !== 'undefined') return;
+            const script = document.createElement('script');
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            script.async = true;
+            document.head.appendChild(script);
+        }
+        // Load after DOM ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadRazorpayScript);
+        } else {
+            loadRazorpayScript();
+        }
+    </script>
     <link rel="stylesheet" href="styles.css">
     
     <!-- Backend API Configuration -->

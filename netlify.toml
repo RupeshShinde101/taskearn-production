@@ -5,19 +5,22 @@
 
 # Environment variables for production
 [context.production.environment]
-  RAILWAY_API_URL = "https://taskearn-production-production.up.railway.app"
+  # Set BACKEND_URL to your actual backend server (Railway, Render, etc)
+  # IMPORTANT: Update this to your deployed backend URL
+  # Example: BACKEND_URL = "https://taskearn-api.up.railway.app"
+  BACKEND_URL = "https://taskearn-production-production.up.railway.app"
 
 # Environment variables for deploy-preview
 [context.deploy-preview.environment]
-  RAILWAY_API_URL = "https://taskearn-production-production.up.railway.app"
+  BACKEND_URL = "https://taskearn-production-production.up.railway.app"
 
-# Configuration for SPA routing
+# API and dynamic routes - SPA routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# CORS headers for API requests
+# CORS headers for all requests
 [[headers]]
   for = "/*"
   [headers.values]

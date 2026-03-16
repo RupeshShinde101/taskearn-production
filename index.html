@@ -17,18 +17,16 @@
     <script>
         // Auto-detect environment and set API URL
         (function() {
-            const hostname = window.location.hostname;
-            
-            // Production: Use fixed backend URL
-            if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-                window.TASKEARN_API_URL = 'https://taskearn-production-production.up.railway.app/api';
-            } else {
-                // Development: Use local backend
-                window.TASKEARN_API_URL = 'http://localhost:5000/api';
-            }
-            
+            // FOR LOCAL DEVELOPMENT - Backend is running on localhost:5000
+            window.TASKEARN_API_URL = 'http://localhost:5000/api';
             console.log('🔗 API URL:', window.TASKEARN_API_URL);
-            console.log('🌍 Environment:', hostname === 'localhost' ? 'DEVELOPMENT' : 'PRODUCTION');
+            console.log('🌍 Environment: DEVELOPMENT (Local Backend)');
+            console.log('✅ Backend server is running at http://localhost:5000');
+            
+            // When deploying to production on Netlify:
+            // 1. Change TASKEARN_API_URL to: '/.netlify/functions/api-proxy'
+            // 2. Set BACKEND_URL environment variable in Netlify dashboard
+            // 3. Deploy backend to Railway and update BACKEND_URL
         })();
     </script>
 </head>

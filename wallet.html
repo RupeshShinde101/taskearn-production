@@ -1116,7 +1116,7 @@
             
             try {
                 // Create Razorpay order via backend
-                const orderResponse = await fetch(window.TASKEARN_API_URL + '/api/payments/wallet-topup-order', {
+                const orderResponse = await fetch(window.TASKEARN_API_URL + '/payments/wallet-topup-order', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1204,7 +1204,7 @@
                 
                 console.log('[WALLET] Verifying payment...');
                 
-                const verifyResponse = await fetch(window.TASKEARN_API_URL + '/api/payments/wallet-topup-verify', {
+                const verifyResponse = await fetch(window.TASKEARN_API_URL + '/payments/wallet-topup-verify', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

@@ -1615,7 +1615,10 @@ function renderTasks(filtered = null) {
     const container = document.getElementById('tasksList');
     if (!container) return;
 
-    let list = filtered || tasks.filter(t => t.status === 'active');
+    // Filter: Show only active tasks (hide completed, paid, cancelled)
+    let list = filtered || tasks.filter(t => {
+        return t.status === 'active' || t.status === 'pending_payment';
+    });
 
     // Sort by distance
     list.sort((a, b) => {
@@ -4839,5 +4842,303 @@ showToast = function(msg, duration = 3000) {
         text.textContent = msg;
         toast.classList.add('show');
         setTimeout(() => toast.classList.remove('show'), duration);
+    }
+}
+
+// ========================================
+// PRODUCTION PAYMENT SYSTEM
+// ========================================
+
+let currentPaymentData = {
+    taskId: null,
+    taskTitle: '',
+    helperName: '',
+    amount: 0,
+    helperShare: 0,
+    companyShare: 0,
+    paymentMethod: 'wallet',
+    orderId: null,
+    transactionId: null
+};
+
+// Open payment modal (called when task marked as completed)
+function openPaymentModal(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !currentUser) return;
+    
+    // Calculate amounts
+    const amount = task.price;
+    const helperShare = Math.floor(amount * 0.9); // 90% to helper
+    const companyShare = amount - helperShare; // 10% to company
+    
+    // Store payment data
+    currentPaymentData = {
+        taskId: taskId,
+        taskTitle: task.title || 'Task',
+        helperName: task.postedBy?.name || 'Helper',
+        amount: amount,
+        helperShare: helperShare,
+        companyShare: companyShare,
+        paymentMethod: 'wallet'
+    };
+    
+    // Update UI
+    document.getElementById('paymentTaskTitle').textContent = currentPaymentData.taskTitle;
+    document.getElementById('paymentHelperName').textContent = currentPaymentData.helperName;
+    document.getElementById('paymentAmount').textContent = `₹${currentPaymentData.amount}`;
+    document.getElementById('helperShare').textContent = `₹${currentPaymentData.helperShare}`;
+    document.getElementById('companyShare').textContent = `₹${currentPaymentData.companyShare}`;
+    document.getElementById('totalPaymentAmount').textContent = `₹${currentPaymentData.amount}`;
+    
+    // Update wallet balance
+    const userWallet = currentUser.wallet || 0;
+    document.getElementById('walletBalanceDisplay').innerHTML = `Balance: <strong>₹${userWallet}</strong>`;
+    
+    if (userWallet < currentPaymentData.amount) {
+        document.getElementById('walletStatus').textContent = 'Insufficient Balance';
+        document.getElementById('walletStatus').style.color = '#ef4444';
+    } else {
+        document.getElementById('walletStatus').textContent = 'Available';
+        document.getElementById('walletStatus').style.color = '#10b981';
+    }
+    
+    // Reset to step 1
+    goToPaymentStep(1);
+    openModal('makePaymentModal');
+}
+
+// Select payment method
+function selectPaymentMethod(element, method) {
+    document.querySelectorAll('.payment-option').forEach(opt => opt.classList.remove('active'));
+    element.closest('.payment-option').classList.add('active');
+    currentPaymentData.paymentMethod = method;
+    console.log(`Payment method selected: ${method}`);
+}
+
+// Proceed to payment
+function proceedToPayment() {
+    const method = currentPaymentData.paymentMethod;
+    
+    if (method === 'wallet') {
+        goToPaymentStep(2); // Wallet confirmation
+    } else if (method === 'razorpay') {
+        initRazorpayPayment();
+    } else if (method === 'upi') {
+        showUPIOptions();
+    }
+}
+
+// Wallet payment - Step 2
+function goToPaymentStep(step) {
+    document.querySelectorAll('.payment-step').forEach(s => s.classList.remove('active'));
+    const stepElement = document.getElementById(`paymentStep${step}`);
+    if (stepElement) {
+        stepElement.classList.add('active');
+        
+        // Update wallet details for step 2
+        if (step === 2) {
+            const userWallet = currentUser?.wallet || 0;
+            document.getElementById('currentWalletBalance').textContent = `₹${userWallet}`;
+            document.getElementById('walletPaymentAmount').textContent = `₹${currentPaymentData.amount}`;
+            document.getElementById('remainingBalance').textContent = `₹${Math.max(0, userWallet - currentPaymentData.amount)}`;
+        }
+    }
+}
+
+// Process wallet payment
+function processWalletPayment() {
+    const userWallet = currentUser?.wallet || 0;
+    
+    // Check balance
+    if (userWallet < currentPaymentData.amount) {
+        showPaymentError('Insufficient wallet balance. Please add funds to your wallet.');
+        return;
+    }
+    
+    // Show processing
+    goToPaymentStep(3);
+    
+    // Simulate processing
+    let progress = 0;
+    const interval = setInterval(() => {
+        progress += Math.random() * 30;
+        if (progress > 100) progress = 100;
+        document.getElementById('paymentProgress').style.width = progress + '%';
+        
+        if (progress >= 100) {
+            clearInterval(interval);
+            setTimeout(() => completeWalletPayment(), 500);
+        }
+    }, 300);
+}
+
+// Complete wallet payment
+function completeWalletPayment() {
+    // Deduct from poster's wallet
+    currentUser.wallet = (currentUser.wallet || 0) - currentPaymentData.amount;
+    updateUserData(currentUser.id, { wallet: currentUser.wallet });
+    
+    // Generate transaction ID
+    currentPaymentData.transactionId = `TXN-${Date.now()}`;
+    
+    // Show success
+    goToPaymentStep(4);
+    document.getElementById('transactionId').textContent = currentPaymentData.transactionId;
+    document.getElementById('amountPaid').textContent = `₹${currentPaymentData.amount}`;
+    document.getElementById('helperEarned').textContent = `₹${currentPaymentData.helperShare}`;
+    
+    // Add to wallet transaction history
+    const transaction = {
+        id: currentPaymentData.transactionId,
+        type: 'payment',
+        amount: currentPaymentData.amount,
+        timestamp: new Date().toISOString(),
+        taskId: currentPaymentData.taskId,
+        status: 'completed'
+    };
+    
+    // Log transaction and send to backend
+    saveTransaction(transaction);
+    
+    console.log('✅ Wallet payment completed:', currentPaymentData);
+}
+
+// Show payment error
+function showPaymentError(message) {
+    goToPaymentStep(5);
+    document.getElementById('errorMessage').textContent = message;
+}
+
+// Retry payment
+function retryPayment() {
+    goToPaymentStep(1);
+    currentPaymentData.paymentMethod = 'wallet';
+    document.querySelectorAll('.payment-option').forEach(opt => opt.classList.remove('active'));
+    document.querySelectorAll('.payment-option')[0].classList.add('active');
+}
+
+// Initialize Razorpay payment
+function initRazorpayPayment() {
+    goToPaymentStep(3);
+    
+    // Call Razorpay API to create order
+    fetch('https://taskearn-production-production.up.railway.app/api/payments/create-order', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+        },
+        body: JSON.stringify({
+            amount: currentPaymentData.amount,
+            taskId: currentPaymentData.taskId
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.orderId) {
+            currentPaymentData.orderId = data.orderId;
+            openRazorpayCheckout(data.orderId);
+        } else {
+            showPaymentError('Failed to create payment order. Please try again.');
+        }
+    })
+    .catch(err => {
+        console.error('Error creating order:', err);
+        showPaymentError('Network error. Please try again.');
+    });
+}
+
+// Open Razorpay checkout
+function openRazorpayCheckout(orderId) {
+    const options = {
+        key: 'rzp_live_SRt7rogPTT3FuK',
+        amount: currentPaymentData.amount * 100,
+        currency: 'INR',
+        order_id: orderId,
+        name: 'Workmate4u',
+        description: currentPaymentData.taskTitle,
+        handler: function(response) {
+            verifyRazorpayPayment(response);
+        },
+        prefill: {
+            name: currentUser.name,
+            email: currentUser.email,
+            contact: currentUser.phone
+        },
+        theme: {
+            color: '#6366f1'
+        }
+    };
+    
+    const rzp = new Razorpay(options);
+    rzp.open();
+}
+
+// Verify Razorpay payment
+function verifyRazorpayPayment(response) {
+    fetch('https://taskearn-production-production.up.railway.app/api/payments/verify', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+        },
+        body: JSON.stringify({
+            orderId: currentPaymentData.orderId,
+            paymentId: response.razorpay_payment_id,
+            signature: response.razorpay_signature
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            currentPaymentData.transactionId = response.razorpay_payment_id;
+            goToPaymentStep(4);
+            document.getElementById('transactionId').textContent = currentPaymentData.transactionId;
+            document.getElementById('amountPaid').textContent = `₹${currentPaymentData.amount}`;
+            document.getElementById('helperEarned').textContent = `₹${currentPaymentData.helperShare}`;
+        } else {
+            showPaymentError(data.message || 'Payment verification failed');
+        }
+    })
+    .catch(err => {
+        console.error('Error verifying payment:', err);
+        showPaymentError('Failed to verify payment');
+    });
+}
+
+// Show UPI payment options
+function showUPIOptions() {
+    const upiString = `upi://pay?pa=workmate4u@bankname&pn=Workmate4u&am=${currentPaymentData.amount}&tr=${Date.now()}&tn=Task%20Payment`;
+    
+    alert(`UPI Payment Link:\n\nCopy this and paste in your UPI app:\n\n${upiString}\n\nYou can also use:\n1. Google Pay\n2. PhonePe\n3. BHIM\n4. Your Bank's UPI App`);
+    
+    // Open default UPI handler
+    window.location.href = `upi://pay?pa=workmate4u@paytm&pn=Workmate4u&am=${currentPaymentData.amount}&tn=Task`;
+}
+
+// Save transaction to backend
+function saveTransaction(transaction) {
+    fetch('https://taskearn-production-production.up.railway.app/api/wallet/transaction', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+        },
+        body: JSON.stringify({
+            taskId: transaction.taskId,
+            amount: transaction.amount,
+            type: transaction.type,
+            transactionId: transaction.id,
+            status: transaction.status
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        console.log('Transaction saved:', data);
+    })
+    .catch(err => {
+        console.error('Error saving transaction:', err);
+    });
+}
     }
 };

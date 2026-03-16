@@ -1165,6 +1165,227 @@
         </div>
     </div>
 
+    <!-- PRODUCTION: Payment Modal - For Task Poster (When Helper Marks Complete) -->
+    <div class="modal" id="makePaymentModal">
+        <div class="modal-content modal-large">
+            <button class="modal-close" onclick="closeModal('makePaymentModal')" id="paymentModalClose">
+                <i class="fas fa-times"></i>
+            </button>
+            
+            <div class="payment-container" id="paymentContainer">
+                <!-- Step 1: Task Summary -->
+                <div class="payment-step active" id="paymentStep1">
+                    <div class="payment-header">
+                        <div class="payment-icon">
+                            <i class="fas fa-credit-card"></i>
+                        </div>
+                        <h2>Complete Payment</h2>
+                        <p class="payment-subtitle">Task completed! Please process the payment</p>
+                    </div>
+                    
+                    <div class="task-summary-payment">
+                        <div class="summary-item">
+                            <span class="summary-label">Task:</span>
+                            <span class="summary-value" id="paymentTaskTitle">Loading...</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Helper:</span>
+                            <span class="summary-value" id="paymentHelperName">Loading...</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Amount:</span>
+                            <span class="summary-value amount" id="paymentAmount">₹0</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Commission Breakdown -->
+                    <div class="commission-breakdown">
+                        <h4><i class="fas fa-percent"></i> Commission Breakdown</h4>
+                        <div class="breakdown-row">
+                            <span>Helper Gets (90%):</span>
+                            <span class="helper-share" id="helperShare">₹0</span>
+                        </div>
+                        <div class="breakdown-row">
+                            <span>Company Gets (10%):</span>
+                            <span class="company-share" id="companyShare">₹0</span>
+                        </div>
+                        <div class="breakdown-row total">
+                            <span>Total Amount:</span>
+                            <span class="total-amount" id="totalPaymentAmount">₹0</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Payment Method Selector -->
+                    <div class="payment-methods-section">
+                        <h4><i class="fas fa-wallet"></i> Choose Payment Method</h4>
+                        <div class="payment-methods">
+                            <div class="payment-option active" onclick="selectPaymentMethod(this, 'wallet')">
+                                <div class="option-header">
+                                    <i class="fas fa-wallet"></i>
+                                    <span>Wallet</span>
+                                </div>
+                                <div class="option-balance" id="walletBalanceDisplay">Balance: ₹0</div>
+                                <div class="option-status" id="walletStatus">Available</div>
+                            </div>
+                            
+                            <div class="payment-option" onclick="selectPaymentMethod(this, 'razorpay')">
+                                <div class="option-header">
+                                    <i class="fas fa-cc-primary"></i>
+                                    <span>Card / UPI</span>
+                                </div>
+                                <div class="option-methods">Credit Card, Debit Card, UPI</div>
+                                <div class="option-status">Via Razorpay</div>
+                            </div>
+                            
+                            <div class="payment-option" onclick="selectPaymentMethod(this, 'upi')">
+                                <div class="option-header">
+                                    <i class="fas fa-mobile-alt"></i>
+                                    <span>Direct UPI</span>
+                                </div>
+                                <div class="option-methods">GPay, PhonePe, UPI Apps</div>
+                                <div class="option-status">Use Your UPI App</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="payment-actions" id="paymentStep1Actions">
+                        <button class="btn btn-outline" onclick="closeModal('makePaymentModal')">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                        <button class="btn btn-primary" onclick="proceedToPayment()">
+                            <i class="fas fa-arrow-right"></i> Continue
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Step 2: Wallet Payment Confirmation -->
+                <div class="payment-step" id="paymentStep2">
+                    <div class="payment-header">
+                        <div class="payment-icon success">
+                            <i class="fas fa-wallet"></i>
+                        </div>
+                        <h2>Wallet Payment</h2>
+                        <p class="payment-subtitle">Pay instantly from your wallet</p>
+                    </div>
+                    
+                    <div class="wallet-payment-details">
+                        <div class="detail-row">
+                            <span>Wallet Balance:</span>
+                            <span class="amount" id="currentWalletBalance">₹0</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Payment Amount:</span>
+                            <span class="amount" id="walletPaymentAmount">₹0</span>
+                        </div>
+                        <div class="detail-row result">
+                            <span>Remaining Balance:</span>
+                            <span class="amount" id="remainingBalance">₹0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="security-info">
+                        <i class="fas fa-lock"></i>
+                        <span>Your wallet payment is instantly verified and secure</span>
+                    </div>
+                    
+                    <div class="payment-actions">
+                        <button class="btn btn-outline" onclick="goToPaymentStep(1)">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </button>
+                        <button class="btn btn-success" onclick="processWalletPayment()" id="confirmWalletPayBtn">
+                            <i class="fas fa-check"></i> Confirm & Pay
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Step 3: Payment Processing -->
+                <div class="payment-step" id="paymentStep3">
+                    <div class="payment-header">
+                        <div class="payment-icon processing">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                        <h2>Processing Payment</h2>
+                        <p class="payment-subtitle">Please wait while we process your payment</p>
+                    </div>
+                    
+                    <div class="processing-info">
+                        <div class="progress-bar">
+                            <div class="progress" id="paymentProgress" style="width: 0%"></div>
+                        </div>
+                        <p id="processingMessage">Verifying payment...</p>
+                    </div>
+                </div>
+                
+                <!-- Step 4: Payment Success -->
+                <div class="payment-step" id="paymentStep4">
+                    <div class="payment-header">
+                        <div class="payment-icon success animate-success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <h2>Payment Successful! 🎉</h2>
+                        <p class="payment-subtitle">Transaction completed successfully</p>
+                    </div>
+                    
+                    <div class="payment-confirmation">
+                        <div class="confirmation-detail">
+                            <span class="detail-label">Transaction ID:</span>
+                            <span class="detail-value" id="transactionId">TXN-000000000</span>
+                        </div>
+                        <div class="confirmation-detail">
+                            <span class="detail-label">Amount Paid:</span>
+                            <span class="detail-value amount" id="amountPaid">₹0</span>
+                        </div>
+                        <div class="confirmation-detail">
+                            <span class="detail-label">Helper Earned:</span>
+                            <span class="detail-value amount helper" id="helperEarned">₹0</span>
+                        </div>
+                        <div class="confirmation-detail">
+                            <span class="detail-label">Status:</span>
+                            <span class="detail-value status-paid">✓ Paid</span>
+                        </div>
+                    </div>
+                    
+                    <div class="success-receipt">
+                        <p class="receipt-info">
+                            <i class="fas fa-info-circle"></i>
+                            A receipt has been sent to both your email and the helper's email.
+                        </p>
+                    </div>
+                    
+                    <div class="payment-actions">
+                        <button class="btn btn-primary btn-block" onclick="closeModal('makePaymentModal'); location.reload();">
+                            <i class="fas fa-home"></i> Go to Home
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Step 5: Payment Failed -->
+                <div class="payment-step" id="paymentStep5">
+                    <div class="payment-header">
+                        <div class="payment-icon error">
+                            <i class="fas fa-times-circle"></i>
+                        </div>
+                        <h2>Payment Failed</h2>
+                        <p class="payment-subtitle" id="errorMessage">Unable to process payment</p>
+                    </div>
+                    
+                    <div class="error-details" id="errorDetails">
+                        <!-- Error details will be shown here -->
+                    </div>
+                    
+                    <div class="payment-actions">
+                        <button class="btn btn-outline" onclick="goToPaymentStep(1)">
+                            <i class="fas fa-arrow-left"></i> Try Another Method
+                        </button>
+                        <button class="btn btn-primary" onclick="retryPayment()">
+                            <i class="fas fa-redo"></i> Retry
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div class="toast" id="toast">
         <i class="fas fa-check-circle"></i>

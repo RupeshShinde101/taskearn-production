@@ -1950,7 +1950,14 @@ function acceptTask(taskId) {
         clearRoute();
         renderTasks();
         addTaskMarkers();
-        renderDashboard();
+        
+        // ✅ FIX: Update profile display after task acceptance
+        setTimeout(() => {
+            renderDashboard();
+            if (currentUser) {
+                openUserProfile();
+            }
+        }, 300);
     }
 }
 
@@ -2225,6 +2232,13 @@ function completeTask(taskId) {
         showTaskCompletionModal(task);
         
         renderDashboard();
+        
+        // ✅ FIX: Update profile after completing task
+        setTimeout(() => {
+            if (currentUser) {
+                openUserProfile();
+            }
+        }, 500);
     }
 }
 
@@ -2586,6 +2600,7 @@ async function handleTaskSubmit(event) {
 
     // Update user stats in storage (serialize for localStorage)
     const newPostedCount = (currentUser.tasksPosted || 0) + 1;
+    currentUser.tasksPosted = newPostedCount; // ✅ Update in memory immediately
     updateUserData(currentUser.id, {
         tasksPosted: newPostedCount,
         postedTasks: serializeTasks(myPostedTasks)
@@ -2604,6 +2619,11 @@ async function handleTaskSubmit(event) {
     renderTasks();
     addTaskMarkers();
     renderDashboard();
+    
+    // ✅ FIX: Refresh profile after posting
+    setTimeout(() => {
+        openUserProfile();
+    }, 500);
     
     // Refresh tasks from server to sync
     setTimeout(() => loadTasksFromServer(), 1000);

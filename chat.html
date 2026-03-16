@@ -607,9 +607,11 @@
         let otherUserId = null;
         let pollInterval = null;
 
-        // Get task ID from URL
+        // Get parameters from URL
         const urlParams = new URLSearchParams(window.location.search);
         const taskIdParam = urlParams.get('task');
+        const providerIdParam = urlParams.get('provider');
+        const taskTitleParam = urlParams.get('taskTitle');
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
@@ -617,6 +619,7 @@
             const userStr = localStorage.getItem('taskearn_user') || localStorage.getItem('taskearn_current_user');
             
             if (!userStr) {
+                console.warn('No user session found, redirecting to login');
                 window.location.href = 'index.html';
                 return;
             }
@@ -624,6 +627,13 @@
             try {
                 const user = JSON.parse(userStr);
                 currentUserId = user.id;
+                console.log('✅ Loaded current user:', user.name, 'ID:', currentUserId);
+                
+                // If provider ID passed, set other user
+                if (providerIdParam) {
+                    otherUserId = providerIdParam;
+                    console.log('📞 Provider ID from URL:', otherUserId);
+                }
             } catch (e) {
                 console.error('Error parsing user:', e);
             }
@@ -631,55 +641,69 @@
             loadConversations();
 
             if (taskIdParam) {
+                console.log('💬 Loading chat for task:', taskIdParam);
                 loadChat(parseInt(taskIdParam));
             }
         });
 
         // Load conversations
         async function loadConversations() {
-            // In a full implementation, this would fetch all active tasks with messages
-            // For now, we'll show a placeholder
             const list = document.getElementById('conversationList');
+            let allTasks = [];
             
             try {
-                // This would be a dedicated API endpoint
-                const response = await fetch(`${window.TASKEARN_API_URL}/user/tasks`, {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
-                    }
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    const allTasks = [
-                        ...(data.postedTasks || []).filter(t => t.status === 'accepted'),
-                        ...(data.acceptedTasks || [])
-                    ];
-                    
-                    if (allTasks.length === 0) {
-                        list.innerHTML = `
-                            <div style="padding: 30px; text-align: center; color: rgba(255,255,255,0.5);">
-                                <i class="fas fa-inbox" style="font-size: 32px; margin-bottom: 10px;"></i>
-                                <p>No active conversations</p>
-                            </div>
-                        `;
-                        return;
-                    }
-                    
-                    list.innerHTML = allTasks.map(task => `
-                        <div class="chat-item ${currentTaskId === task.id ? 'active' : ''}" 
-                             onclick="loadChat(${task.id})">
-                            <div class="chat-avatar">${task.title.charAt(0)}</div>
-                            <div class="chat-info">
-                                <div class="chat-name">${task.title}</div>
-                                <div class="chat-preview">${task.description || 'Task in progress...'}</div>
-                            </div>
-                            <div class="chat-meta">
-                                <div class="chat-time">${formatTime(task.acceptedAt || task.postedAt)}</div>
-                            </div>
-                        </div>
-                    `).join('');
+                // First try to get tasks from the opener window (if chat opened from index.html)
+                if (window.opener && window.opener.myAcceptedTasks) {
+                    allTasks = window.opener.myAcceptedTasks;
+                    console.log('✅ Loaded', allTasks.length, 'tasks from opener window');
                 }
+                
+                // If no tasks from opener, try API
+                if (!allTasks || allTasks.length === 0) {
+                    console.log('📡 Loading from API...');
+                    const token = localStorage.getItem('taskearn_token');
+                    if (token) {
+                        const response = await fetch(`${window.TASKEARN_API_URL}/user/tasks`, {
+                            headers: {
+                                'Authorization': `Bearer ${token}`
+                            }
+                        });
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            allTasks = [
+                                ...(data.postedTasks || []).filter(t => t.status === 'accepted'),
+                                ...(data.acceptedTasks || [])
+                            ];
+                            console.log('✅ Loaded', allTasks.length, 'tasks from API');
+                        }
+                    }
+                }
+                
+                if (allTasks.length === 0) {
+                    list.innerHTML = `
+                        <div style="padding: 30px; text-align: center; color: rgba(255,255,255,0.5);">
+                            <i class="fas fa-comments" style="font-size: 32px; margin-bottom: 10px;"></i>
+                            <p>No active conversations yet</p>
+                            <p style="font-size: 12px; margin-top: 10px;">Accept or post a task to start messaging</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                list.innerHTML = allTasks.map(task => `
+                    <div class="chat-item ${currentTaskId === task.id ? 'active' : ''}" 
+                         onclick="loadChat(${task.id})">
+                        <div class="chat-avatar">${task.title.charAt(0).toUpperCase()}</div>
+                        <div class="chat-info">
+                            <div class="chat-name">${task.title}</div>
+                            <div class="chat-preview">${task.description ? task.description.substring(0, 50) : 'Click to chat...'}</div>
+                        </div>
+                        <div class="chat-meta">
+                            <div class="chat-time">${formatTime(task.acceptedAt || task.postedAt)}</div>
+                        </div>
+                    </div>
+                `).join('');
             } catch (e) {
                 console.error('Error loading conversations:', e);
             }

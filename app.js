@@ -5078,7 +5078,16 @@ function retryPayment() {
 function initRazorpayPayment() {
     goToPaymentStep(3);
     
-    // Call Razorpay API to create order
+    console.log('[RAZORPAY] Attempting to initialize Razorpay payment...');
+    
+    // Check if Razorpay SDK is loaded
+    if (typeof Razorpay === 'undefined') {
+        console.error('[RAZORPAY] SDK not loaded');
+        showPaymentError('Razorpay SDK not available. Please use wallet payment instead.');
+        return;
+    }
+    
+    // Call backend to create order
     fetch('https://taskearn-production-production.up.railway.app/api/payments/create-order', {
         method: 'POST',
         headers: {
@@ -5090,45 +5099,74 @@ function initRazorpayPayment() {
             taskId: currentPaymentData.taskId
         })
     })
-    .then(res => res.json())
+    .then(res => {
+        if (res.status === 401) {
+            throw new Error('Authentication failed');
+        }
+        return res.json();
+    })
     .then(data => {
         if (data.success && data.orderId) {
             currentPaymentData.orderId = data.orderId;
+            console.log('[RAZORPAY] Order created:', data.orderId);
             openRazorpayCheckout(data.orderId);
         } else {
-            showPaymentError('Failed to create payment order. Please try again.');
+            throw new Error(data.message || 'Failed to create payment order');
         }
     })
     .catch(err => {
-        console.error('Error creating order:', err);
-        showPaymentError('Network error. Please try again.');
+        console.error('[RAZORPAY] Error:', err);
+        showPaymentError('Razorpay temporarily unavailable. Please use wallet payment or try again later.');
     });
 }
 
 // Open Razorpay checkout
 function openRazorpayCheckout(orderId) {
-    const options = {
-        key: 'rzp_live_SRt7rogPTT3FuK',
-        amount: currentPaymentData.amount * 100,
-        currency: 'INR',
-        order_id: orderId,
-        name: 'Workmate4u',
-        description: currentPaymentData.taskTitle,
-        handler: function(response) {
-            verifyRazorpayPayment(response);
-        },
-        prefill: {
-            name: currentUser.name,
-            email: currentUser.email,
-            contact: currentUser.phone
-        },
-        theme: {
-            color: '#6366f1'
-        }
-    };
-    
-    const rzp = new Razorpay(options);
-    rzp.open();
+    try {
+        const options = {
+            key: 'rzp_live_SRt7rogPTT3FuK', // Live key
+            amount: currentPaymentData.amount * 100, // Convert to paise
+            currency: 'INR',
+            order_id: orderId,
+            name: 'Workmate4u',
+            description: currentPaymentData.taskTitle,
+            handler: function(response) {
+                console.log('[RAZORPAY] Payment successful:', response.razorpay_payment_id);
+                verifyRazorpayPayment(response);
+            },
+            prefill: {
+                name: currentUser?.name || '',
+                email: currentUser?.email || '',
+                contact: currentUser?.phone || ''
+            },
+            theme: {
+                color: '#6366f1'
+            },
+            modal: {
+                ondismiss: function() {
+                    console.log('[RAZORPAY] User dismissed checkout');
+                    showPaymentError('Payment cancelled. Try again with wallet or another method.');
+                }
+            }
+        };
+        
+        const rzp = new Razorpay(options);
+        
+        rzp.on('payment.failed', function(response) {
+            console.error('[RAZORPAY] Payment failed:', response.error);
+            showPaymentError('Payment failed: ' + (response.error?.description || 'Unknown error') + '. Please try wallet payment instead.');
+        });
+        
+        rzp.on('payment.authorized', function(response) {
+            console.log('[RAZORPAY] Payment authorized:', response);
+        });
+        
+        console.log('[RAZORPAY] Opening checkout UI...');
+        rzp.open();
+    } catch (error) {
+        console.error('[RAZORPAY] Exception:', error);
+        showPaymentError('Payment error. Please use wallet payment instead.');
+    }
 }
 
 // Verify Razorpay payment

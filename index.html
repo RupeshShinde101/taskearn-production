@@ -1219,13 +1219,14 @@
                     <div class="payment-methods-section">
                         <h4><i class="fas fa-wallet"></i> Choose Payment Method</h4>
                         <div class="payment-methods">
-                            <div class="payment-option active" onclick="selectPaymentMethod(this, 'wallet')">
+                            <div class="payment-option active" onclick="selectPaymentMethod(this, 'wallet')" style="border: 2px solid #4ade80; position: relative;">
+                                <div style="position: absolute; top: -10px; right: 10px; background: #4ade80; color: #000; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;">FASTEST</div>
                                 <div class="option-header">
-                                    <i class="fas fa-wallet"></i>
+                                    <i class="fas fa-wallet" style="color: #4ade80;"></i>
                                     <span>Wallet</span>
                                 </div>
                                 <div class="option-balance" id="walletBalanceDisplay">Balance: ₹0</div>
-                                <div class="option-status" id="walletStatus">Available</div>
+                                <div class="option-status" id="walletStatus" style="color: #4ade80; font-weight: 600;">Instant Payment</div>
                             </div>
                             
                             <div class="payment-option" onclick="selectPaymentMethod(this, 'razorpay')">
@@ -1234,7 +1235,7 @@
                                     <span>Card / UPI</span>
                                 </div>
                                 <div class="option-methods">Credit Card, Debit Card, UPI</div>
-                                <div class="option-status">Via Razorpay</div>
+                                <div class="option-status">Via Razorpay (Limited)</div>
                             </div>
                             
                             <div class="payment-option" onclick="selectPaymentMethod(this, 'upi')">

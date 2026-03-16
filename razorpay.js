@@ -2,7 +2,7 @@
 // Razorpay Payment Integration for TaskEarn
 // ========================================
 
-const RAZORPAY_KEY_ID = 'rzp_live_Rz0lerO1zBlLgQ'; // Live Key ID
+const RAZORPAY_KEY_ID = 'rzp_live_SRt7rogPTT3FuK'; // Live Key ID - Updated March 17
 
 // ========================================
 // PAYMENT FUNCTIONS

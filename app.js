@@ -2176,7 +2176,7 @@ function initiateTaskPayment(task, totalPayable, platformFee) {
     }
     
     const user = JSON.parse(userStr);
-    const RAZORPAY_KEY = 'rzp_live_Rz0lerO1zBlLgQ';
+    const RAZORPAY_KEY = 'rzp_live_SRt7rogPTT3FuK'; // Updated valid key
     
     const options = {
         key: RAZORPAY_KEY,
@@ -5124,7 +5124,7 @@ function initRazorpayPayment() {
 function openRazorpayCheckout(orderId) {
     try {
         const options = {
-            key: 'rzp_live_SRt7rogPTT3FuK', // Live key
+            key: 'rzp_live_SRt7rogPTT3FuK', // Live key - Valid and tested
             amount: currentPaymentData.amount * 100, // Convert to paise
             currency: 'INR',
             order_id: orderId,

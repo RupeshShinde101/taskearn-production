@@ -4,9 +4,9 @@
 // ========================================
 
 // API URL Configuration
-// For local: http://localhost:5000/api
-// For production: use deployed URL
-const API_BASE_URL = window.TASKEARN_API_URL || 'http://localhost:5000/api';
+// For production: https://taskearn-production-production.up.railway.app/api
+// For local: use http://localhost:5000/api only for development
+const API_BASE_URL = window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api';
 
 // ========================================
 // API HELPER FUNCTIONS

@@ -232,7 +232,7 @@
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('frontend-url').textContent = window.location.href;
-            document.getElementById('api-endpoint').textContent = window.TASKEARN_API_URL || 'Not set';
+            document.getElementById('api-endpoint').textContent = window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api';
             const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
             document.getElementById('mode').textContent = isLocal ? 'DEVELOPMENT' : 'PRODUCTION';
         });

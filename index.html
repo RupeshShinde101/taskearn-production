@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Workmate4u - Get Tasks Done, Earn Money</title>
+    <title>TaskEarn - Get Tasks Done, Earn Money</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Leaflet.js - Free OpenStreetMap (No API Key Required) -->
@@ -17,14 +17,14 @@
     <script>
         // Auto-detect environment and set API URL
         (function() {
-            // FOR LOCAL DEVELOPMENT - Backend is running on localhost:5000
-            window.WORKMATE4U_API_URL = 'http://localhost:5000/api';
-            console.log('🔗 API URL:', window.WORKMATE4U_API_URL);
-            console.log('🌍 Environment: DEVELOPMENT (Local Backend)');
-            console.log('✅ Backend server is running at http://localhost:5000');
+            // PRODUCTION - Backend running on Railway
+            window.TASKEARN_API_URL = 'https://taskearn-production-production.up.railway.app/api';
+            console.log('🔗 API URL:', window.TASKEARN_API_URL);
+            console.log('🌍 Environment: PRODUCTION (Railway Backend)');
+            console.log('✅ Backend server is running at https://taskearn-production-production.up.railway.app');
             
             // When deploying to production on Netlify:
-            // 1. Change WORKMATE4U_API_URL to: '/.netlify/functions/api-proxy'
+            // 1. Change TASKEARN_API_URL to: '/.netlify/functions/api-proxy'
             // 2. Set BACKEND_URL environment variable in Netlify dashboard
             // 3. Deploy backend to Railway and update BACKEND_URL
         })();
@@ -165,7 +165,7 @@
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Simple Process</span>
-                <h2>How Workmate4u Works</h2>
+                <h2>How TaskEarn Works</h2>
                 <p>Get started in minutes - whether you need help or want to earn</p>
             </div>
             <div class="steps-container">
@@ -556,7 +556,7 @@
             <div class="section-header">
                 <span class="section-badge">Reviews</span>
                 <h2>What Our Users Say</h2>
-                <p>Join thousands of satisfied users on Workmate4u</p>
+                <p>Join thousands of satisfied users on TaskEarn</p>
             </div>
             <div class="testimonials-grid">
                 <div class="testimonial-card">
@@ -586,7 +586,7 @@
                         <i class="fas fa-star"></i>
                         <i class="fas fa-star"></i>
                     </div>
-                    <p>"As a busy working mom in Mumbai, Workmate4u is a lifesaver! I post tasks for laundry pickup and grocery runs. Always get help within an hour."</p>
+                    <p>"As a busy working mom in Mumbai, TaskEarn is a lifesaver! I post tasks for laundry pickup and grocery runs. Always get help within an hour."</p>
                     <div class="testimonial-author">
                         <div class="author-avatar">
                             <i class="fas fa-user"></i>
@@ -666,7 +666,7 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2026 Workmate4u India. All rights reserved. Must be 16+ to use this platform. Available across all major Indian cities.</p>
+                <p>&copy; 2026 TaskEarn India. All rights reserved. Must be 16+ to use this platform. Available across all major Indian cities.</p>
             </div>
         </div>
     </footer>
@@ -730,7 +730,7 @@
                 <div class="form-group">
                     <label for="signupDOB">Date of Birth</label>
                     <input type="date" id="signupDOB" required>
-                    <small>You must be 16 or older to use Workmate4u</small>
+                    <small>You must be 16 or older to use TaskEarn</small>
                 </div>
                 <div class="form-group">
                     <label for="signupPassword">Password</label>

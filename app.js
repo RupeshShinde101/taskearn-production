@@ -665,128 +665,8 @@ function deserializeTasks(tasks) {
 let tasks = [];
 
 // Demo tasks for offline/fallback mode
-const DEMO_TASKS = [
-    {
-        id: 1,
-        title: "Need help with laundry pickup",
-        description: "I have 3 bags of laundry that need to be taken to the laundromat and brought back.",
-        category: "household",
-        location: { lat: 28.6329, lng: 77.2195, address: "Connaught Place, New Delhi" },
-        price: 500,
-        postedBy: { name: "Ananya Gupta", rating: 4.8, tasksPosted: 45 },
-        postedAt: new Date(Date.now() - 2 * 3600000),
-        expiresAt: new Date(Date.now() + 10 * 3600000),
-        status: "active"
-    },
-    {
-        id: 2,
-        title: "Grocery delivery from D-Mart",
-        description: "Need someone to pick up groceries from D-Mart and deliver to my apartment.",
-        category: "delivery",
-        location: { lat: 28.6508, lng: 77.2289, address: "Karol Bagh, New Delhi" },
-        price: 700,
-        postedBy: { name: "Vikram Singh", rating: 4.5, tasksPosted: 23 },
-        postedAt: new Date(Date.now() - 1 * 3600000),
-        expiresAt: new Date(Date.now() + 11 * 3600000),
-        status: "active"
-    },
-    {
-        id: 3,
-        title: "JEE Maths tutoring needed",
-        description: "Looking for someone to help with JEE preparation - Calculus and Algebra.",
-        category: "tutoring",
-        location: { lat: 28.5672, lng: 77.2410, address: "Lajpat Nagar, New Delhi" },
-        price: 800,
-        postedBy: { name: "Meera Krishnan", rating: 5.0, tasksPosted: 12 },
-        postedAt: new Date(Date.now() - 3 * 3600000),
-        expiresAt: new Date(Date.now() + 9 * 3600000),
-        status: "active"
-    },
-    {
-        id: 4,
-        title: "Car wash needed",
-        description: "Need my SUV washed inside and out. I have all supplies.",
-        category: "vehicle",
-        location: { lat: 28.5245, lng: 77.2066, address: "Saket, New Delhi" },
-        price: 600,
-        postedBy: { name: "Amit Deshmukh", rating: 4.7, tasksPosted: 67 },
-        postedAt: new Date(Date.now() - 0.5 * 3600000),
-        expiresAt: new Date(Date.now() + 11.5 * 3600000),
-        status: "active"
-    },
-    {
-        id: 5,
-        title: "Furniture assembly help",
-        description: "Need help assembling a bookshelf and desk. Should take about 2 hours.",
-        category: "repair",
-        location: { lat: 28.5491, lng: 77.2594, address: "Nehru Place, New Delhi" },
-        price: 1200,
-        postedBy: { name: "Sneha Iyer", rating: 4.9, tasksPosted: 34 },
-        postedAt: new Date(Date.now() - 4 * 3600000),
-        expiresAt: new Date(Date.now() + 8 * 3600000),
-        status: "active"
-    },
-    {
-        id: 6,
-        title: "Medicine pickup from Apollo",
-        description: "Need someone to pick up my prescription from Apollo Pharmacy.",
-        category: "delivery",
-        location: { lat: 28.6448, lng: 77.1198, address: "Rajouri Garden, New Delhi" },
-        price: 400,
-        postedBy: { name: "Rajesh Kumar", rating: 4.6, tasksPosted: 19 },
-        postedAt: new Date(Date.now() - 0.75 * 3600000),
-        expiresAt: new Date(Date.now() + 11.25 * 3600000),
-        status: "active"
-    },
-    {
-        id: 7,
-        title: "Wedding photography needed",
-        description: "Wedding ceremony photography for 4 hours. Own camera required.",
-        category: "photography",
-        location: { lat: 28.6129, lng: 77.2295, address: "India Gate, New Delhi" },
-        price: 5000,
-        postedBy: { name: "Kavitha Nair", rating: 4.8, tasksPosted: 8 },
-        postedAt: new Date(Date.now() - 5 * 3600000),
-        expiresAt: new Date(Date.now() + 7 * 3600000),
-        status: "active"
-    },
-    {
-        id: 8,
-        title: "Garden waste removal",
-        description: "Several bags of yard waste need disposal at collection center.",
-        category: "waste",
-        location: { lat: 28.5921, lng: 77.0460, address: "Dwarka Sector 21, New Delhi" },
-        price: 1000,
-        postedBy: { name: "Suresh Menon", rating: 4.4, tasksPosted: 56 },
-        postedAt: new Date(Date.now() - 6 * 3600000),
-        expiresAt: new Date(Date.now() + 6 * 3600000),
-        status: "active"
-    },
-    {
-        id: 9,
-        title: "Airport pickup needed",
-        description: "Pickup from IGI Airport T3 to Gurgaon. Flight at 6 PM.",
-        category: "transport",
-        location: { lat: 28.5562, lng: 77.1000, address: "IGI Airport T3, New Delhi" },
-        price: 1500,
-        postedBy: { name: "Deepak Verma", rating: 4.9, tasksPosted: 31 },
-        postedAt: new Date(Date.now() - 2.5 * 3600000),
-        expiresAt: new Date(Date.now() + 9.5 * 3600000),
-        status: "active"
-    },
-    {
-        id: 10,
-        title: "Website development help",
-        description: "Need help with React.js website. Small project, 2-3 days.",
-        category: "freelance",
-        location: { lat: 28.4595, lng: 77.0266, address: "Cyber City, Gurgaon" },
-        price: 8000,
-        postedBy: { name: "Ritu Sharma", rating: 4.7, tasksPosted: 15 },
-        postedAt: new Date(Date.now() - 1.5 * 3600000),
-        expiresAt: new Date(Date.now() + 10.5 * 3600000),
-        status: "active"
-    }
-];
+// PRODUCTION MODE - NO DEMO DATA
+// All data comes from the production API backend
 
 let myPostedTasks = [];
 let myAcceptedTasks = [];
@@ -1037,10 +917,10 @@ function updateMapMarkers() {
     });
 }
 
-// Load tasks from backend API
+// Load tasks from backend API (PRODUCTION ONLY - NO LOCAL FALLBACKS)
 async function loadTasksFromServer() {
     try {
-        console.log('📡 Loading tasks from server...');
+        console.log('📡 Loading tasks from production server...');
         console.log('🔑 API Token exists:', !!localStorage.getItem('taskearn_token'));
         console.log('🌐 API URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : window.TASKEARN_API_URL);
         
@@ -1052,7 +932,7 @@ async function loadTasksFromServer() {
             if (result.success && result.tasks) {
                 console.log('✅ Tasks received:', result.tasks.length);
                 
-                // Merge server tasks with local tasks (avoiding duplicates)
+                // Map server tasks with proper date parsing
                 const serverTasks = result.tasks.map(t => ({
                     ...t,
                     postedAt: new Date(t.postedAt),
@@ -1060,36 +940,31 @@ async function loadTasksFromServer() {
                 }));
                 
                 console.log('📊 Server tasks after parsing:', serverTasks.length);
+                tasks = serverTasks;
                 
-                // Keep only server tasks (they are the source of truth)
-                // But also keep any local-only tasks that haven't been synced
-                const localOnlyTasks = tasks.filter(t => t.localOnly === true);
-                tasks = [...serverTasks, ...localOnlyTasks];
-                
-                console.log('✅ Loaded', serverTasks.length, 'tasks from server');
+                console.log('✅ Loaded', serverTasks.length, 'tasks from production server');
                 console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
                 updateMapMarkers();
                 return true;
             } else {
-                console.warn('⚠️ Server returned success=false or no tasks');
-                console.warn('Result:', result);
-                // Server returned no tasks or error - use demo tasks as fallback
-                if (tasks.length === 0 && typeof DEMO_TASKS !== 'undefined') {
-                    tasks = [...DEMO_TASKS];
-                    console.log('⚠️ No server tasks, using demo tasks');
-                }
+                console.error('❌ PRODUCTION ERROR: Server returned success=false');
+                console.error('Result:', result);
+                showNotification('❌ Cannot load tasks from production server. Backend error.', 'error');
+                tasks = [];
+                renderTasks();
+                return false;
             }
+        } else {
+            console.error('❌ PRODUCTION ERROR: TasksAPI not available');
+            showNotification('❌ Production API not configured. Please contact support.', 'error');
+            return false;
         }
-        console.log('⚠️ TasksAPI not available, using local tasks');
-        return false;
     } catch (error) {
-        console.error('❌ Error loading tasks:', error);
-        // Use demo tasks as fallback on error
-        if (tasks.length === 0 && typeof DEMO_TASKS !== 'undefined') {
-            tasks = [...DEMO_TASKS];
-            console.log('⚠️ Server error, using demo tasks');
-        }
+        console.error('❌ PRODUCTION ERROR - Cannot connect to backend:', error);
+        showNotification('❌ Cannot connect to production server. Check your internet connection.', 'error');
+        tasks = [];
+        renderTasks();
         return false;
     }
 }

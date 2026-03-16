@@ -65,7 +65,7 @@ async function apiRequest(endpoint, options = {}) {
         // Show more helpful error message
         let errorMessage = 'Network error: ' + error.message;
         if (error.message.includes('Failed to fetch')) {
-            errorMessage = `Cannot connect to API server at ${url}. Make sure:\n1. Backend server is running (python server.py)\n2. Server is on port 5000\n3. Check if there's a firewall blocking the connection`;
+            errorMessage = `❌ PRODUCTION ERROR: Cannot connect to Railway backend at ${url}\nMake sure:\n1. Railway deployment is active\n2. Backend service is running\n3. Network/firewall allows outbound HTTPS requests`;
         }
         
         return { 

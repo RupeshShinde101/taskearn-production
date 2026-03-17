@@ -172,6 +172,91 @@ if (!STORAGE_AVAILABLE) {
     console.error('⚠️ WARNING: localStorage is not available. Trying IndexedDB...');
 }
 
+// ========================================
+// NOTIFICATION SYSTEM
+// ========================================
+
+function showNotification(message, type = 'info', duration = 5000) {
+    // Create notification container if it doesn't exist
+    let container = document.getElementById('notification-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notification-container';
+        container.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            max-width: 400px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        `;
+        document.body.appendChild(container);
+    }
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    const bgColor = type === 'error' ? '#ff4444' : type === 'success' ? '#44dd44' : '#4444ff';
+    const bgColor2 = type === 'error' ? '#cc0000' : type === 'success' ? '#00aa00' : '#0000cc';
+    
+    notification.style.cssText = `
+        background: linear-gradient(135deg, ${bgColor}, ${bgColor2});
+        color: white;
+        padding: 16px 20px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        animation: slideIn 0.3s ease-out;
+        font-size: 14px;
+        line-height: 1.4;
+    `;
+    
+    notification.textContent = message;
+    container.appendChild(notification);
+    
+    // Add animation keyframes if not exists
+    if (!document.getElementById('notification-styles')) {
+        const style = document.createElement('style');
+        style.id = 'notification-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Remove after duration
+    const timeout = setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease-out forwards';
+        setTimeout(() => notification.remove(), 300);
+    }, duration);
+    
+    // Allow manual close
+    notification.style.cursor = 'pointer';
+    notification.addEventListener('click', () => {
+        clearTimeout(timeout);
+        notification.style.animation = 'slideOut 0.3s ease-out forwards';
+        setTimeout(() => notification.remove(), 300);
+    });
+}
+
 // Initialize IndexedDB on load
 initIndexedDB().then(dbAvailable => {
     if (!STORAGE_AVAILABLE && !dbAvailable) {
@@ -920,7 +1005,7 @@ function updateMapMarkers() {
 // Load tasks from backend API (PRODUCTION ONLY - NO LOCAL FALLBACKS)
 async function loadTasksFromServer() {
     try {
-        console.log('📡 Loading tasks from production server...');
+        console.log('📡 Loading tasks from backend server...');
         console.log('🔑 API Token exists:', !!localStorage.getItem('taskearn_token'));
         console.log('🌐 API URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : window.TASKEARN_API_URL);
         
@@ -942,27 +1027,77 @@ async function loadTasksFromServer() {
                 console.log('📊 Server tasks after parsing:', serverTasks.length);
                 tasks = serverTasks;
                 
-                console.log('✅ Loaded', serverTasks.length, 'tasks from production server');
+                console.log('✅ Loaded', serverTasks.length, 'tasks from server');
                 console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
                 updateMapMarkers();
                 return true;
             } else {
-                console.error('❌ PRODUCTION ERROR: Server returned success=false');
+                console.error('❌ Server error: Server returned success=false');
                 console.error('Result:', result);
-                showNotification('❌ Cannot load tasks from production server. Backend error.', 'error');
+                // Try to use local cache
+                const cachedTasks = localStorage.getItem('cached_tasks');
+                if (cachedTasks) {
+                    try {
+                        tasks = JSON.parse(cachedTasks).map(t => ({
+                            ...t,
+                            postedAt: new Date(t.postedAt),
+                            expiresAt: new Date(t.expiresAt)
+                        }));
+                        showNotification('⚠️ Showing cached tasks. Backend is temporarily unavailable.', 'warning');
+                        renderTasks();
+                        updateMapMarkers();
+                        return true;
+                    } catch (e) {
+                        console.error('Failed to parse cached tasks:', e);
+                    }
+                }
+                showNotification('❌ Cannot load tasks. Backend server error.', 'error');
                 tasks = [];
                 renderTasks();
                 return false;
             }
         } else {
-            console.error('❌ PRODUCTION ERROR: TasksAPI not available');
-            showNotification('❌ Production API not configured. Please contact support.', 'error');
+            console.error('❌ TasksAPI not available');
+            showNotification('⚠️ Working in offline mode. Some features may be limited.', 'warning');
             return false;
         }
     } catch (error) {
-        console.error('❌ PRODUCTION ERROR - Cannot connect to backend:', error);
-        showNotification('❌ Cannot connect to production server. Check your internet connection.', 'error');
+        console.error('❌ Error loading tasks from backend:', error);
+        
+        // Try to use local cache or sample data
+        const cachedTasks = localStorage.getItem('cached_tasks');
+        if (cachedTasks) {
+            try {
+                tasks = JSON.parse(cachedTasks).map(t => ({
+                    ...t,
+                    postedAt: new Date(t.postedAt),
+                    expiresAt: new Date(t.expiresAt)
+                }));
+                showNotification('⚠️ Backend unavailable. Showing cached tasks.', 'warning');
+                renderTasks();
+                updateMapMarkers();
+                return true;
+            } catch (e) {
+                console.error('Failed to parse cached tasks:', e);
+            }
+        }
+        
+        // Show helpful error message with troubleshooting steps
+        const errorMsg = `⚠️ Cannot connect to backend server (${error.message}).\n\n` +
+                        `To fix:\n` +
+                        `1. Check your internet connection\n` +
+                        `2. Verify backend is running: python backend/run.py\n` +
+                        `3. For Railway deployment, check the service status\n\n` +
+                        `Working in offline mode with local data only.`;
+        console.warn(errorMsg);
+        showNotification(errorMsg, 'error', 8000);
+        
+        tasks = [];
+        renderTasks();
+        return false;
+    }
+}
         tasks = [];
         renderTasks();
         return false;

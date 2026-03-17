@@ -3,10 +3,23 @@
 // Connect frontend to Python backend
 // ========================================
 
-// API URL Configuration
-// For production: https://taskearn-production-production.up.railway.app/api
-// For local: use http://localhost:5000/api only for development
-const API_BASE_URL = window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api';
+// API URL Configuration with fallback logic
+let API_BASE_URL = window.TASKEARN_API_URL;
+
+// If not explicitly set, determine based on environment
+if (!API_BASE_URL) {
+    // Check if we're on localhost (development)
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        API_BASE_URL = 'http://localhost:5000/api';
+        console.log('🔧 Using local backend: http://localhost:5000/api');
+    } else {
+        // Production: Use Railway backend URL or fallback
+        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+        console.log('🌍 Using production backend: https://taskearn-production-production.up.railway.app/api');
+    }
+}
+
+console.log('📡 API Base URL:', API_BASE_URL);
 
 // ========================================
 // API HELPER FUNCTIONS
@@ -260,6 +273,17 @@ const TasksAPI = {
         const result = await apiRequest('/tasks', {
             method: 'GET'
         });
+        
+        // Cache successful results
+        if (result.data && result.data.success && result.data.tasks) {
+            try {
+                localStorage.setItem('cached_tasks', JSON.stringify(result.data.tasks));
+                console.log('💾 Tasks cached to localStorage');
+            } catch (e) {
+                console.warn('⚠️ Could not cache tasks:', e);
+            }
+        }
+        
         return result.data;
     },
     

@@ -220,21 +220,18 @@ def init_postgres_db():
             )
         ''')
         
-        # Chat messages table
+        # Chat messages table (group chat per task)
         cursor.execute('''
-            # Chat messages table (group chat per task)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id SERIAL PRIMARY KEY,
-                    task_id INTEGER NOT NULL,
-                    user_id VARCHAR(50) NOT NULL,
-                    user_name VARCHAR(255),
-                    message TEXT NOT NULL,
-                    timestamp TIMESTAMP NOT NULL,
-                    FOREIGN KEY (task_id) REFERENCES tasks(id),
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                )
-            ''')
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER NOT NULL,
+                user_id VARCHAR(50) NOT NULL,
+                user_name VARCHAR(255),
+                message TEXT NOT NULL,
+                timestamp TIMESTAMP NOT NULL,
+                FOREIGN KEY (task_id) REFERENCES tasks(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
         ''')
         
         # Task proofs table (photo proof)
@@ -503,21 +500,18 @@ def init_sqlite_db():
             )
         ''')
         
-        # Chat messages table
+        # Chat messages table (group chat per task)
         cursor.execute('''
-            # Chat messages table (group chat per task)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id INTEGER NOT NULL,
-                    user_id TEXT NOT NULL,
-                    user_name TEXT,
-                    message TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    FOREIGN KEY (task_id) REFERENCES tasks(id),
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                )
-            ''')
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                user_name TEXT,
+                message TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY (task_id) REFERENCES tasks(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
         ''')
         
         # Task proofs table (photo proof)

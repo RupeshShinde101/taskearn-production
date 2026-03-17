@@ -222,16 +222,19 @@ def init_postgres_db():
         
         # Chat messages table
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id SERIAL PRIMARY KEY,
-                task_id INTEGER NOT NULL REFERENCES tasks(id),
-                sender_id VARCHAR(50) NOT NULL REFERENCES users(id),
-                receiver_id VARCHAR(50) NOT NULL REFERENCES users(id),
-                message TEXT NOT NULL,
-                message_type VARCHAR(20) DEFAULT 'text',
-                is_read BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP NOT NULL
-            )
+            # Chat messages table (group chat per task)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    task_id INTEGER NOT NULL,
+                    user_id VARCHAR(50) NOT NULL,
+                    user_name VARCHAR(255),
+                    message TEXT NOT NULL,
+                    timestamp TIMESTAMP NOT NULL,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id),
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            ''')
         ''')
         
         # Task proofs table (photo proof)
@@ -502,19 +505,19 @@ def init_sqlite_db():
         
         # Chat messages table
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER NOT NULL,
-                sender_id TEXT NOT NULL,
-                receiver_id TEXT NOT NULL,
-                message TEXT NOT NULL,
-                message_type TEXT DEFAULT 'text',
-                is_read INTEGER DEFAULT 0,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (sender_id) REFERENCES users(id),
-                FOREIGN KEY (receiver_id) REFERENCES users(id)
-            )
+            # Chat messages table (group chat per task)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL,
+                    user_id TEXT NOT NULL,
+                    user_name TEXT,
+                    message TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id),
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            ''')
         ''')
         
         # Task proofs table (photo proof)

@@ -14,6 +14,7 @@ if sys.platform == 'win32':
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from socketio import Server, ASGIApp
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
@@ -33,6 +34,14 @@ from database import init_db, get_db, dict_from_row, get_placeholder
 
 config = get_config()
 app = Flask(__name__)
+
+# Socket.IO for real-time chat
+socketio = Server(
+    async_mode='threading',
+    cors_allowed_origins='*',
+    ping_timeout=60,
+    ping_interval=25
+)
 
 # CORS configuration - Allow all origins for development
 CORS(app, 
@@ -197,6 +206,126 @@ def require_auth(f):
         request.user_email = payload['email']
         return f(*args, **kwargs)
     return decorated
+
+
+# ========================================
+# SOCKET.IO EVENT HANDLERS - REAL-TIME CHAT
+# ========================================
+
+# Track active chat connections per task
+task_users = {}  # {task_id: {user_id: sid}}
+
+@socketio.event
+def connect(auth):
+    """User connected to chat"""
+    try:
+        # Verify user authentication
+        token = auth.get('token') if isinstance(auth, dict) else None
+        task_id = auth.get('taskId') if isinstance(auth, dict) else None
+        
+        if not token or not task_id:
+            return False  # Reject connection
+        
+        payload = verify_jwt_token(token)
+        if not payload:
+            return False
+        
+        user_id = payload['user_id']
+        
+        # Track user in task chat
+        if task_id not in task_users:
+            task_users[task_id] = {}
+        
+        task_users[task_id][user_id] = request.sid
+        
+        # Notify others that user joined
+        socketio.emit('user_joined', {
+            'userId': user_id,
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }, room=f'task_{task_id}')
+        
+        print(f"✅ User {user_id} connected to chat for task {task_id}")
+        return True
+    except Exception as e:
+        print(f"❌ Connection error: {e}")
+        return False
+
+@socketio.event
+def join_task(data):
+    """Join a task chat room"""
+    task_id = data.get('taskId')
+    token = data.get('token')
+    
+    payload = verify_jwt_token(token)
+    if not payload:
+        return
+    
+    user_id = payload['user_id']
+    room = f'task_{task_id}'
+    socketio.enter_room(request.sid, room)
+    
+    socketio.emit('notification', {
+        'message': 'Connected to task chat',
+        'type': 'connected'
+    }, to=request.sid)
+
+@socketio.event
+def send_message(data):
+    """Send a chat message"""
+    message = data.get('message', '').strip()
+    task_id = data.get('taskId')
+    token = data.get('token')
+    
+    if not message:
+        return
+    
+    payload = verify_jwt_token(token)
+    if not payload:
+        return
+    
+    user_id = payload['user_id']
+    user_name = data.get('userName', 'User')
+    
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    room = f'task_{task_id}'
+    
+    # Store message in database
+    with get_db() as (cursor, conn):
+        cursor.execute(f'''
+            INSERT INTO chat_messages (task_id, user_id, message, timestamp, user_name)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (task_id, user_id, message, timestamp, user_name))
+    
+    # Broadcast message to task room
+    socketio.emit('new_message', {
+        'userId': user_id,
+        'userName': user_name,
+        'message': message,
+        'timestamp': timestamp
+    }, room=room)
+    
+    print(f"💬 Message from {user_name}: {message[:50]}...")
+
+@socketio.event
+def typing_indicator(data):
+    """Show when user is typing"""
+    task_id = data.get('taskId')
+    token = data.get('token')
+    user_name = data.get('userName', 'User')
+    
+    payload = verify_jwt_token(token)
+    if not payload:
+        return
+    
+    room = f'task_{task_id}'
+    socketio.emit('user_typing', {
+        'userName': user_name
+    }, room=room, skip_sid=request.sid)
+
+@socketio.event
+def disconnect():
+    """User disconnected"""
+    print(f"❌ User {request.sid} disconnected")
 
 
 # ========================================

@@ -705,14 +705,18 @@
 
         // Open chat
         function openChat() {
-            alert('Chat feature coming soon!\nCurrently you can call the provider.');
-            // This will be enhanced with WebSocket later
+            const taskId = currentTask.id || '1';
+            window.location.href = 'chat.html?taskId=' + taskId;
         }
 
         // Call provider
         function callProvider() {
-            alert('Calling ' + currentTask.providerName + '...\n' + currentTask.providerPhone);
-            // In real app, this would initiate WebRTC call
+            const taskId = currentTask.id || '1';
+            const providerName = encodeURIComponent(currentTask.providerName);
+            const providerPhone = encodeURIComponent(currentTask.providerPhone);
+            window.location.href = 'voice-call.html?taskId=' + taskId + 
+                                  '&providerName=' + providerName + 
+                                  '&providerPhone=' + providerPhone;
         }
 
         // Complete task

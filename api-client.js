@@ -3,10 +3,24 @@
 // Connect frontend to Python backend
 // ========================================
 
+// Detect if user is on mobile (using User-Agent sniffing)
+function isMobileDevice() {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+}
+
+// Detect if we're on Netlify (production frontend)
+function isNetlifyDeployed() {
+    return window.location.hostname.includes('netlify.app') || 
+           window.location.hostname.includes('taskearn');
+}
+
 // API URL Configuration with fallback logic
 let API_BASE_URL = window.TASKEARN_API_URL;
 let RAILWAY_CHECKED = false;
 let RAILWAY_AVAILABLE = false;
+const MOBILE = isMobileDevice();
+const ON_NETLIFY = isNetlifyDeployed();
 
 // Set default API URL immediately (don't wait for async detection)
 if (!API_BASE_URL) {
@@ -15,18 +29,35 @@ if (!API_BASE_URL) {
         API_BASE_URL = 'http://localhost:5000/api';
         console.log('🔧 Development Mode: Using local backend');
     } else {
-        // Production: Use Railway (will check availability in background)
-        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        console.log('🌍 Production Mode: Using Railway backend');
+        // Production mode
+        if (MOBILE && ON_NETLIFY) {
+            // MOBILE on Netlify: Use Netlify proxy (bypasses ISP/carrier blocking)
+            API_BASE_URL = '/.netlify/functions/api-proxy/api';
+            console.log('📱 Mobile on Netlify: Using proxy relay (bypasses ISP blocking)');
+        } else {
+            // Desktop or direct Railway: Use Railway directly
+            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+            console.log('🌍 Production Mode: Using Railway backend directly');
+        }
     }
 }
 
 console.log('📡 API Base URL:', API_BASE_URL);
+console.log('📱 Mobile device:', MOBILE);
+console.log('☁️ On Netlify:', ON_NETLIFY);
 
 // Try to determine if Railway is actually available (run in background, non-blocking)
 async function checkRailwayHealth() {
     if (RAILWAY_CHECKED || API_BASE_URL === 'OFFLINE') {
         return; // Already checked or explicitly offline
+    }
+    
+    // Skip health check for mobile users (they use proxy which handles it)
+    if (MOBILE && ON_NETLIFY) {
+        console.log('⏭️ Skipping Railway health check for mobile users (using proxy)');
+        RAILWAY_CHECKED = true;
+        RAILWAY_AVAILABLE = true; // Assume available when using proxy
+        return;
     }
     
     const railwayURL = 'https://taskearn-production-production.up.railway.app/api';
@@ -59,13 +90,15 @@ async function checkRailwayHealth() {
     RAILWAY_CHECKED = true;
 }
 
-// Run Railway health check in the background (non-blocking)
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(checkRailwayHealth, 100); // Start checking after DOM is ready
-    });
-} else {
-    setTimeout(checkRailwayHealth, 100); // DOM already ready
+// Run Railway health check in the background (non-blocking) - but only for desktop users
+if (!MOBILE || !ON_NETLIFY) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(checkRailwayHealth, 100); // Start checking after DOM is ready
+        });
+    } else {
+        setTimeout(checkRailwayHealth, 100); // DOM already ready
+    }
 }
 
 // ========================================
@@ -140,7 +173,13 @@ async function apiRequest(endpoint, options = {}) {
         // Show more helpful error message
         let errorMessage = 'Network error: ' + error.message;
         if (error.message.includes('Failed to fetch')) {
-            errorMessage = `❌ PRODUCTION ERROR: Cannot connect to Railway backend at ${url}\nMake sure:\n1. Railway deployment is active\n2. Backend service is running\n3. Network/firewall allows outbound HTTPS requests`;
+            if (MOBILE) {
+                // Mobile-specific help message
+                errorMessage = '📱 MOBILE: Your carrier network is blocking the backend. Try connecting to WiFi or using a VPN to continue.';
+            } else {
+                // Desktop help message  
+                errorMessage = `❌ Cannot connect to Railway backend at ${url}\nDesktop users: Try connecting to VPN if your network is blocking the backend.`;
+            }
         }
         
         return { 

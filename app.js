@@ -1032,6 +1032,43 @@ async function loadTasksFromServer() {
                 renderTasks();
                 updateMapMarkers();
                 return true;
+            } else if (result.offline) {
+                // Offline mode - use cached data
+                console.warn('⚠️ Backend offline - using cached data');
+                const cachedTasks = localStorage.getItem('cached_tasks');
+                if (cachedTasks) {
+                    try {
+                        tasks = JSON.parse(cachedTasks).map(t => ({
+                            ...t,
+                            postedAt: new Date(t.postedAt),
+                            expiresAt: new Date(t.expiresAt)
+                        }));
+                        try {
+                            if (typeof showNotification === 'function') {
+                                showNotification('⚠️ Backend offline. Showing cached tasks.', 'warning');
+                            }
+                        } catch (e) {
+                            console.warn('showNotification not available, using alert');
+                            alert('⚠️ Backend offline. Showing cached tasks.');
+                        }
+                        renderTasks();
+                        updateMapMarkers();
+                        return true;
+                    } catch (e) {
+                        console.error('Failed to parse cached tasks:', e);
+                    }
+                }
+                try {
+                    if (typeof showNotification === 'function') {
+                        showNotification('⚠️ Backend offline. No cached data available.', 'warning');
+                    }
+                } catch (e) {
+                    console.warn('Using alert instead of showNotification');
+                    alert('⚠️ Backend offline. No cached data available.');
+                }
+                tasks = [];
+                renderTasks();
+                return false;
             } else {
                 console.error('❌ Server error: Server returned success=false');
                 console.error('Result:', result);
@@ -1044,7 +1081,13 @@ async function loadTasksFromServer() {
                             postedAt: new Date(t.postedAt),
                             expiresAt: new Date(t.expiresAt)
                         }));
-                        showNotification('⚠️ Showing cached tasks. Backend is temporarily unavailable.', 'warning');
+                        try {
+                            if (typeof showNotification === 'function') {
+                                showNotification('⚠️ Showing cached tasks. Backend is temporarily unavailable.', 'warning');
+                            }
+                        } catch (e) {
+                            console.warn('showNotification not available');
+                        }
                         renderTasks();
                         updateMapMarkers();
                         return true;
@@ -1052,14 +1095,26 @@ async function loadTasksFromServer() {
                         console.error('Failed to parse cached tasks:', e);
                     }
                 }
-                showNotification('❌ Cannot load tasks. Backend server error.', 'error');
+                try {
+                    if (typeof showNotification === 'function') {
+                        showNotification('❌ Cannot load tasks. Backend server not responding.', 'error');
+                    }
+                } catch (e) {
+                    console.warn('showNotification error');
+                }
                 tasks = [];
                 renderTasks();
                 return false;
             }
         } else {
             console.error('❌ TasksAPI not available');
-            showNotification('⚠️ Working in offline mode. Some features may be limited.', 'warning');
+            try {
+                if (typeof showNotification === 'function') {
+                    showNotification('⚠️ Working in offline mode. Some features may be limited.', 'warning');
+                }
+            } catch (e) {
+                console.warn('showNotification not available');
+            }
             return false;
         }
     } catch (error) {
@@ -1074,7 +1129,13 @@ async function loadTasksFromServer() {
                     postedAt: new Date(t.postedAt),
                     expiresAt: new Date(t.expiresAt)
                 }));
-                showNotification('⚠️ Backend unavailable. Showing cached tasks.', 'warning');
+                try {
+                    if (typeof showNotification === 'function') {
+                        showNotification('⚠️ Backend unavailable. Showing cached tasks.', 'warning');
+                    }
+                } catch (e) {
+                    console.warn('showNotification not available');
+                }
                 renderTasks();
                 updateMapMarkers();
                 return true;
@@ -1084,14 +1145,22 @@ async function loadTasksFromServer() {
         }
         
         // Show helpful error message with troubleshooting steps
-        const errorMsg = `⚠️ Cannot connect to backend server (${error.message}).\n\n` +
-                        `To fix:\n` +
-                        `1. Check your internet connection\n` +
-                        `2. Verify backend is running: python backend/run.py\n` +
-                        `3. For Railway deployment, check the service status\n\n` +
-                        `Working in offline mode with local data only.`;
-        console.warn(errorMsg);
-        showNotification(errorMsg, 'error', 8000);
+        const errorMsg = `⚠️ Cannot connect to backend server.\n\n` +
+                        `This could be due to:\n` +
+                        `1. Railway deployment not started yet\n` +
+                        `2. Network connectivity issues\n` +
+                        `3. Backend service temporarily down\n\n` +
+                        `Using offline mode with local data.`;
+        try {
+            if (typeof showNotification === 'function') {
+                showNotification(errorMsg, 'error', 8000);
+            } else {
+                console.warn(errorMsg);
+                alert(errorMsg);
+            }
+        } catch (e) {
+            console.warn('Cannot show notification:', e);
+        }
         
         tasks = [];
         renderTasks();

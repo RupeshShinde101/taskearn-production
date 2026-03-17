@@ -5,28 +5,90 @@
 
 // API URL Configuration with fallback logic
 let API_BASE_URL = window.TASKEARN_API_URL;
+let RAILWAY_CHECKED = false;
+let RAILWAY_AVAILABLE = false;
 
-// If not explicitly set, determine based on environment
-if (!API_BASE_URL) {
+// Try to determine if we're in production and Railway is available
+async function detectAPIServer() {
+    // If explicitly set, use it
+    if (API_BASE_URL) {
+        console.log('🔐 Using explicitly configured API URL:', API_BASE_URL);
+        return API_BASE_URL;
+    }
+    
     // Check if we're on localhost (development)
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         API_BASE_URL = 'http://localhost:5000/api';
-        console.log('🔧 Using local backend: http://localhost:5000/api');
-    } else {
-        // Production: Use Railway backend URL or fallback
-        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        console.log('🌍 Using production backend: https://taskearn-production-production.up.railway.app/api');
+        console.log('🔧 Development Mode: Using local backend at http://localhost:5000/api');
+        return API_BASE_URL;
     }
+    
+    // Production: Try Railway first, then fallback to other options
+    const railwayURL = 'https://taskearn-production-production.up.railway.app/api';
+    
+    // Quick health check for Railway (non-blocking)
+    try {
+        console.log('🌍 Production Mode: Checking Railway availability...');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+        
+        const response = await fetch(railwayURL + '/health', {
+            method: 'GET',
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+            API_BASE_URL = railwayURL;
+            RAILWAY_AVAILABLE = true;
+            RAILWAY_CHECKED = true;
+            console.log('✅ Railway backend is available:', railwayURL);
+            return API_BASE_URL;
+        }
+    } catch (error) {
+        console.warn('⚠️ Railway not responding (this is OK for offline mode):', error.message);
+    }
+    
+    // Railway not available - use offline/demo mode
+    API_BASE_URL = 'OFFLINE';
+    RAILWAY_CHECKED = true;
+    RAILWAY_AVAILABLE = false;
+    console.log('📴 Railway unavailable - Using OFFLINE/DEMO mode with cached data');
+    return API_BASE_URL;
 }
 
-console.log('📡 API Base URL:', API_BASE_URL);
+// Initialize API server detection on load
+let API_INITIALIZED = detectAPIServer();
+
+console.log('📡 Initial API Base URL:', API_BASE_URL);
 
 // ========================================
 // API HELPER FUNCTIONS
 // ========================================
 
 async function apiRequest(endpoint, options = {}) {
+    // If API not initialized, wait for it
+    if (API_BASE_URL === undefined) {
+        await API_INITIALIZED;
+    }
+    
+    // If offline mode, return cached data
+    if (API_BASE_URL === 'OFFLINE' || !RAILWAY_AVAILABLE) {
+        console.log('📴 Offline mode - returning cached data for:', endpoint);
+        return {
+            success: false,
+            status: 503,
+            data: {
+                success: false,
+                message: 'Backend server temporarily unavailable. Working with offline data.',
+                offline: true
+            }
+        };
+    }
+    
     const url = `${API_BASE_URL}${endpoint}`;
+
     
     const headers = {
         'Content-Type': 'application/json',

@@ -1167,11 +1167,6 @@ async function loadTasksFromServer() {
         return false;
     }
 }
-        tasks = [];
-        renderTasks();
-        return false;
-    }
-}
 
 document.addEventListener('DOMContentLoaded', async function() {
     try {

@@ -1035,7 +1035,7 @@
             }
             
             list.innerHTML = transactions.map(tx => {
-                const isCredit = ['credit', 'earning', 'cashback', 'referral_bonus'].includes(tx.type);
+                const isCredit = ['credit', 'earning', 'cashback', 'referral_bonus', 'topup', 'razorpay_topup'].includes(tx.type);
                 const iconClass = tx.type === 'cashback' ? 'cashback' : 
                                  tx.type === 'earning' ? 'earning' :
                                  isCredit ? 'credit' : 'debit';
@@ -1058,6 +1058,40 @@
                     </div>
                 `;
             }).join('');
+        }
+        
+        function loadAllTransactions() {
+            console.log('[WALLET] Loading all transactions...');
+            const token = localStorage.getItem('taskearn_token');
+            
+            if (!token) {
+                showToast('Please login first');
+                return;
+            }
+            
+            fetch(window.TASKEARN_API_URL + '/wallet/transactions', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.transactions) {
+                    console.log('[WALLET] Loaded', data.transactions.length, 'transactions');
+                    renderTransactions(data.transactions);
+                    showToast('Loaded ' + data.transactions.length + ' transactions');
+                } else {
+                    console.log('[WALLET] Using local transactions');
+                    const wallet = getLocalWallet();
+                    renderTransactions(wallet.transactions || []);
+                }
+            })
+            .catch(err => {
+                console.error('[WALLET] Error loading transactions:', err);
+                const wallet = getLocalWallet();
+                renderTransactions(wallet.transactions || []);
+            });
         }
         
         function formatDate(dateStr) {

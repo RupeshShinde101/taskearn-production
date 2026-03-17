@@ -6,13 +6,18 @@
 // Detect if user is on mobile (using User-Agent sniffing)
 function isMobileDevice() {
     const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-    return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+    const isMobile = /android|webos|iphone|ipad|ipot|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+    console.log('📱 User-Agent:', userAgent.substring(0, 80) + '...');
+    return isMobile;
 }
 
 // Detect if we're on Netlify (production frontend)
 function isNetlifyDeployed() {
-    return window.location.hostname.includes('netlify.app') || 
-           window.location.hostname.includes('taskearn');
+    const isNetlify = window.location.hostname.includes('netlify.app') || 
+                      window.location.hostname.includes('taskearn');
+    console.log('🌍 Hostname:', window.location.hostname);
+    console.log('☁️ Is Netlify deployed:', isNetlify);
+    return isNetlify;
 }
 
 // API URL Configuration with fallback logic
@@ -33,13 +38,17 @@ if (!API_BASE_URL) {
     } else {
         // Production mode
         if (MOBILE && ON_NETLIFY) {
-            // MOBILE on Netlify: Try to use Netlify proxy first (bypasses ISP/carrier blocking)
+            // MOBILE on Netlify: ALWAYS use Netlify proxy (this bypasses ISP blocking)
             API_BASE_URL = '/.netlify/functions/api-proxy/api';
-            console.log('📱 Mobile on Netlify: Will use proxy relay (testing availability first)');
-        } else {
-            // Desktop or direct Railway: Use Railway directly
+            console.log('📱 Mobile on Netlify: Using Netlify proxy relay ONLY');
+        } else if (!MOBILE && ON_NETLIFY) {
+            // Desktop on Netlify: Try Railway first, fallback to proxy if needed
             API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-            console.log('🌍 Production Mode: Using Railway backend directly');
+            console.log('🖥️ Desktop on Netlify: Using Railway backend');
+        } else {
+            // Fallback: Direct Railway
+            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+            console.log('🌍 Fallback: Using Railway backend directly');
         }
     }
 }
@@ -146,18 +155,23 @@ async function checkProxyHealth() {
 }
 
 // Run health checks in the background (non-blocking)
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+// SKIP for mobile on Netlify - they MUST use proxy, no fallback needed
+if (!MOBILE || !ON_NETLIFY) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                checkProxyHealth();
+                checkRailwayHealth();
+            }, 50);
+        });
+    } else {
         setTimeout(() => {
             checkProxyHealth();
             checkRailwayHealth();
-        }, 50); // Start checking after DOM is ready
-    });
+        }, 50);
+    }
 } else {
-    setTimeout(() => {
-        checkProxyHealth();
-        checkRailwayHealth();
-    }, 50); // DOM already ready
+    console.log('📱 Mobile on Netlify: Skipping health checks (using proxy only)');
 }
 
 // ========================================
@@ -238,17 +252,54 @@ async function apiRequest(endpoint, options = {}) {
         console.error('❌ Error message:', error.message);
         console.error('❌ URL was:', url);
         
-        // Handle CORB errors - if using proxy, fall back to Railway
-        const isCorbError = error.message.includes('Failed to fetch') || error.name === 'TypeError';
+        // Handle network errors
+        const isNetworkError = error.message.includes('Failed to fetch') || 
+                               error.message.includes('ERR_NAME_NOT_RESOLVED') ||
+                               error.name === 'TypeError';
         
-        if (isUsingProxy && isCorbError) {
-            console.warn('⚠️ Proxy appears to be blocked (CORB error). Falling back to Railway...');
-            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-            PROXY_AVAILABLE = false;
+        // If mobile is using proxy and proxy fails, try cached data instead of falling back to Railway
+        // (because Railway DNS is likely blocked too)
+        if (MOBILE && ON_NETLIFY && isUsingProxy && isNetworkError) {
+            console.warn('⚠️ Mobile proxy request failed. Checking cached data...');
             
-            // Retry with Railway URL
-            console.log('🔄 Retrying with Railway backend...');
-            const railwayUrl = `${API_BASE_URL}${endpoint}`;
+            // Try to use cached data
+            const cachedData = localStorage.getItem('taskearn_cached_' + endpoint);
+            if (cachedData) {
+                console.log('✅ Using cached data for:', endpoint);
+                try {
+                    return {
+                        success: false,
+                        status: 0,
+                        data: {
+                            ...JSON.parse(cachedData),
+                            offline: true,
+                            message: '📱 Using cached data. Your carrier network may be blocking the backend.'
+                        }
+                    };
+                } catch (e) {
+                    console.warn('Could not parse cached data');
+                }
+            }
+            
+            // If no cache and on mobile with ISP blocking, provide helpful error
+            return {
+                success: false,
+                status: 0,
+                data: {
+                    success: false,
+                    message: '📱 Your carrier network is blocking the backend. Try:\n1. Switch to WiFi\n2. Use a VPN\n3. Login later when on WiFi',
+                    offline: true,
+                    carrier_blocked: true
+                }
+            };
+        }
+        
+        // For desktop or if proxy failed for other reasons, try fallback
+        if (isUsingProxy && isNetworkError && !MOBILE) {
+            console.warn('⚠️ Desktop proxy request failed. Falling back to Railway...');
+            
+            // Try Railway directly
+            const railwayUrl = `https://taskearn-production-production.up.railway.app/api${endpoint}`;
             
             try {
                 const railwayResponse = await fetch(railwayUrl, {
@@ -264,31 +315,30 @@ async function apiRequest(endpoint, options = {}) {
                     railwayData = { success: false, message: 'Invalid response' };
                 }
                 
-                console.log('✅ Railway backend successful');
+                console.log('✅ Railway fallback successful');
                 return { success: railwayResponse.ok, status: railwayResponse.status, data: railwayData };
                 
             } catch (railwayError) {
-                console.error('❌ Railway backend also failed:', railwayError.message);
-                // Both failed - return offline error
+                console.error('❌ Railway fallback also failed:', railwayError.message);
                 return {
                     success: false,
                     status: 0,
                     data: {
                         success: false,
-                        message: '📱 Cannot connect to backend. Try WiFi or VPN.',
+                        message: 'Cannot connect to backend. Try VPN.',
                         offline: true
                     }
                 };
             }
         }
         
-        // Handle other errors
+        // Handle other network errors
         let errorMessage = 'Network error: ' + error.message;
-        if (error.message.includes('Failed to fetch')) {
+        if (isNetworkError) {
             if (MOBILE) {
-                errorMessage = '📱 MOBILE: Your network is blocking the backend. Try WiFi or VPN.';
+                errorMessage = '📱 MOBILE: Your carrier network is blocking the backend. Try WiFi or VPN.';
             } else {
-                errorMessage = `❌ Cannot connect to backend. Try VPN if your network is blocking it.`;
+                errorMessage = '❌ Cannot connect to backend. Try VPN.';
             }
         }
         

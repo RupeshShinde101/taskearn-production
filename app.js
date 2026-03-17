@@ -1174,80 +1174,137 @@ async function loadTasksFromServer() {
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('🚀 TaskEarn Starting...');
-    console.log('📦 localStorage available:', STORAGE_AVAILABLE);
-    console.log('🔑 API Token:', localStorage.getItem('taskearn_token') ? 'EXISTS (✅)' : 'MISSING (❌)');
-    console.log('🌐 Backend URL:', window.TASKEARN_API_URL);
-    console.log('🔌 TasksAPI available:', typeof TasksAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
-    console.log('🔌 AuthAPI available:', typeof AuthAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
-    
-    // Wait for IndexedDB to initialize
-    await initIndexedDB();
-    
-    // Initialize Push Notifications
-    initPushNotifications();
-    
-    // Debug: Show all stored users (using async version for full support)
-    const allUsers = await getStoredUsersAsync();
-    console.log('👥 Registered users:', Object.keys(allUsers).length);
-    
-    // List registered user emails for debugging
-    if (Object.keys(allUsers).length > 0) {
-        console.log('📧 Registered emails:', Object.values(allUsers).map(u => u.email));
-    }
-    
-    // Check for existing session (using async version)
-    const savedUser = await loadCurrentSessionAsync();
-    if (savedUser) {
-        currentUser = savedUser;
-        myPostedTasks = deserializeTasks(savedUser.postedTasks);
-        myAcceptedTasks = deserializeTasks(savedUser.acceptedTasks);
-        myCompletedTasks = deserializeTasks(savedUser.completedTasks);
-        console.log('✅ Session restored for:', currentUser.name);
-        console.log('📋 Posted tasks:', myPostedTasks.length);
-        console.log('✔️ Accepted tasks:', myAcceptedTasks.length);
+    try {
+        console.log('🚀 TaskEarn Starting...');
+        console.log('📦 localStorage available:', STORAGE_AVAILABLE);
+        console.log('🔑 API Token:', localStorage.getItem('taskearn_token') ? 'EXISTS (✅)' : 'MISSING (❌)');
+        console.log('🌐 Backend URL:', window.TASKEARN_API_URL);
+        console.log('🔌 TasksAPI available:', typeof TasksAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
+        console.log('🔌 AuthAPI available:', typeof AuthAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
         
-        // Check if user has API token (backend authentication)
-        const hasApiToken = !!localStorage.getItem('taskearn_token');
-        if (!hasApiToken) {
-            console.warn('⚠️ Local-only user detected:', currentUser.email);
-            console.warn('⚠️ This user needs to be migrated to backend on next login');
-            // Show migration warning banner
-            setTimeout(() => {
-                const banner = document.getElementById('migrationWarningBanner');
-                if (banner) {
-                    banner.style.display = 'block';
-                }
-                console.warn('📢 User needs to re-login to migrate to backend');
-            }, 2000);
+        // Wait for IndexedDB to initialize
+        try {
+            await initIndexedDB();
+        } catch (e) {
+            console.warn('⚠️ IndexedDB init failed:', e.message);
         }
         
-        setTimeout(() => {
-            updateNavForUser();
-            renderDashboard();
-        }, 100);
-    } else {
-        console.log('👤 No active session - user needs to login');
+        // Initialize Push Notifications (non-critical, won't fail)
+        try {
+            initPushNotifications();
+        } catch (e) {
+            console.warn('⚠️ Push notifications failed:', e.message);
+        }
+        
+        // Debug: Show all stored users (using async version for full support)
+        try {
+            const allUsers = await getStoredUsersAsync();
+            console.log('👥 Registered users:', Object.keys(allUsers).length);
+            
+            // List registered user emails for debugging
+            if (Object.keys(allUsers).length > 0) {
+                console.log('📧 Registered emails:', Object.values(allUsers).map(u => u.email));
+            }
+        } catch (e) {
+            console.warn('⚠️ Could not load users:', e.message);
+        }
+        
+        // Check for existing session (using async version)
+        try {
+            const savedUser = await loadCurrentSessionAsync();
+            if (savedUser) {
+                currentUser = savedUser;
+                myPostedTasks = deserializeTasks(savedUser.postedTasks);
+                myAcceptedTasks = deserializeTasks(savedUser.acceptedTasks);
+                myCompletedTasks = deserializeTasks(savedUser.completedTasks);
+                console.log('✅ Session restored for:', currentUser.name);
+                console.log('📋 Posted tasks:', myPostedTasks.length);
+                console.log('✔️ Accepted tasks:', myAcceptedTasks.length);
+                
+                // Check if user has API token (backend authentication)
+                const hasApiToken = !!localStorage.getItem('taskearn_token');
+                if (!hasApiToken) {
+                    console.warn('⚠️ Local-only user detected:', currentUser.email);
+                    console.warn('⚠️ This user needs to be migrated to backend on next login');
+                    // Show migration warning banner
+                    setTimeout(() => {
+                        try {
+                            const banner = document.getElementById('migrationWarningBanner');
+                            if (banner) {
+                                banner.style.display = 'block';
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ Could not show migration banner:', e.message);
+                        }
+                        console.warn('📢 User needs to re-login to migrate to backend');
+                    }, 2000);
+                }
+                
+                setTimeout(() => {
+                    try {
+                        updateNavForUser();
+                        renderDashboard();
+                    } catch (e) {
+                        console.warn('⚠️ Dashboard render failed:', e.message);
+                    }
+                }, 100);
+            } else {
+                console.log('👤 No active session - user needs to login');
+            }
+        } catch (e) {
+            console.warn('⚠️ Session load failed:', e.message);
+        }
+        
+        // Initialize map first
+        try {
+            initializeMap();
+        } catch (e) {
+            console.warn('⚠️ Map initialization failed:', e.message);
+        }
+        
+        // Setup UI
+        try {
+            setupEventListeners();
+            setMinDateTime();
+        } catch (e) {
+            console.warn('⚠️ Event listener setup failed:', e.message);
+        }
+        
+        // Load tasks from server (replaces demo tasks)
+        try {
+            await loadTasksFromServer();
+        } catch (e) {
+            console.warn('⚠️ Could not load tasks from server:', e.message);
+        }
+        
+        // Fallback render if server load failed
+        try {
+            renderTasks();
+            startTaskTimers();
+        } catch (e) {
+            console.warn('⚠️ Task rendering failed:', e.message);
+        }
+        
+        // Refresh tasks from server every 30 seconds
+        setInterval(() => {
+            try {
+                loadTasksFromServer().catch(e => console.warn('⚠️ Auto-refresh failed:', e.message));
+            } catch (e) {
+                console.warn('⚠️ Task refresh failed:', e.message);
+            }
+        }, 30000);
+        
+        console.log('✅ TaskEarn Ready!');
+    } catch (error) {
+        console.error('❌ CRITICAL ERROR during initialization:', error);
+        console.error('Stack:', error.stack);
+        // Still try to show UI
+        try {
+            renderTasks();
+        } catch (e) {
+            console.error('❌ Could not even render tasks:', e);
+        }
     }
-    
-    // Initialize map first
-    initializeMap();
-    
-    // Setup UI
-    setupEventListeners();
-    setMinDateTime();
-    
-    // Load tasks from server (replaces demo tasks)
-    await loadTasksFromServer();
-    
-    // Fallback render if server load failed
-    renderTasks();
-    startTaskTimers();
-    
-    // Refresh tasks from server every 30 seconds
-    setInterval(loadTasksFromServer, 30000);
-    
-    console.log('✅ TaskEarn Ready!');
 });
 
 // ========================================

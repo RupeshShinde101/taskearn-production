@@ -8,73 +8,73 @@ let API_BASE_URL = window.TASKEARN_API_URL;
 let RAILWAY_CHECKED = false;
 let RAILWAY_AVAILABLE = false;
 
-// Try to determine if we're in production and Railway is available
-async function detectAPIServer() {
-    // If explicitly set, use it
-    if (API_BASE_URL) {
-        console.log('🔐 Using explicitly configured API URL:', API_BASE_URL);
-        return API_BASE_URL;
-    }
-    
+// Set default API URL immediately (don't wait for async detection)
+if (!API_BASE_URL) {
     // Check if we're on localhost (development)
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         API_BASE_URL = 'http://localhost:5000/api';
-        console.log('🔧 Development Mode: Using local backend at http://localhost:5000/api');
-        return API_BASE_URL;
+        console.log('🔧 Development Mode: Using local backend');
+    } else {
+        // Production: Use Railway (will check availability in background)
+        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+        console.log('🌍 Production Mode: Using Railway backend');
+    }
+}
+
+console.log('📡 API Base URL:', API_BASE_URL);
+
+// Try to determine if Railway is actually available (run in background, non-blocking)
+async function checkRailwayHealth() {
+    if (RAILWAY_CHECKED || API_BASE_URL === 'OFFLINE') {
+        return; // Already checked or explicitly offline
     }
     
-    // Production: Try Railway first, then fallback to other options
     const railwayURL = 'https://taskearn-production-production.up.railway.app/api';
     
-    // Quick health check for Railway (non-blocking)
     try {
-        console.log('🌍 Production Mode: Checking Railway availability...');
+        // Quick health check for Railway (non-blocking, 5 second timeout)
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
         
         const response = await fetch(railwayURL + '/health', {
             method: 'GET',
-            signal: controller.signal
+            signal: controller.signal,
+            mode: 'cors'
         });
         
         clearTimeout(timeoutId);
         
         if (response.ok) {
-            API_BASE_URL = railwayURL;
             RAILWAY_AVAILABLE = true;
-            RAILWAY_CHECKED = true;
-            console.log('✅ Railway backend is available:', railwayURL);
-            return API_BASE_URL;
+            console.log('✅ Railway backend is available');
+        } else {
+            RAILWAY_AVAILABLE = false;
+            console.warn('⚠️ Railway responded but with error status:', response.status);
         }
     } catch (error) {
-        console.warn('⚠️ Railway not responding (this is OK for offline mode):', error.message);
+        RAILWAY_AVAILABLE = false;
+        console.warn('⚠️ Railway health check failed:', error.message);
     }
     
-    // Railway not available - use offline/demo mode
-    API_BASE_URL = 'OFFLINE';
     RAILWAY_CHECKED = true;
-    RAILWAY_AVAILABLE = false;
-    console.log('📴 Railway unavailable - Using OFFLINE/DEMO mode with cached data');
-    return API_BASE_URL;
 }
 
-// Initialize API server detection on load
-let API_INITIALIZED = detectAPIServer();
-
-console.log('📡 Initial API Base URL:', API_BASE_URL);
+// Run Railway health check in the background (non-blocking)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(checkRailwayHealth, 100); // Start checking after DOM is ready
+    });
+} else {
+    setTimeout(checkRailwayHealth, 100); // DOM already ready
+}
 
 // ========================================
 // API HELPER FUNCTIONS
 // ========================================
 
 async function apiRequest(endpoint, options = {}) {
-    // If API not initialized, wait for it
-    if (API_BASE_URL === undefined) {
-        await API_INITIALIZED;
-    }
-    
-    // If offline mode, return cached data
-    if (API_BASE_URL === 'OFFLINE' || !RAILWAY_AVAILABLE) {
+    // If explicitly offline mode, return cached data
+    if (API_BASE_URL === 'OFFLINE') {
         console.log('📴 Offline mode - returning cached data for:', endpoint);
         return {
             success: false,

@@ -7,21 +7,22 @@
 function isMobileDevice() {
     const userAgent = navigator.userAgent || navigator.vendor || window.opera;
     const isMobile = /android|webos|iphone|ipad|ipot|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
-    console.log('📱 User-Agent:', userAgent.substring(0, 80) + '...');
+    console.log('� User-Agent substring:', userAgent.substring(0, 100));
+    console.log('📱 Detected as mobile:', isMobile ? '✅ YES' : '❌ NO');
     return isMobile;
 }
 
 // Detect if we're on Netlify (production frontend)
 function isNetlifyDeployed() {
-    const isNetlify = window.location.hostname.includes('netlify.app') || 
-                      window.location.hostname.includes('taskearn');
-    console.log('🌍 Hostname:', window.location.hostname);
-    console.log('☁️ Is Netlify deployed:', isNetlify);
+    const hostname = window.location.hostname;
+    const isNetlify = hostname.includes('netlify.app') || hostname.includes('taskearn');
+    console.log('🌍 Current hostname:', hostname);
+    console.log('☁️ Detected as Netlify:', isNetlify ? '✅ YES' : '❌ NO');
     return isNetlify;
 }
 
 // API URL Configuration with fallback logic
-let API_BASE_URL = window.TASKEARN_API_URL;
+let API_BASE_URL = undefined;  // Start empty, will be set based on detection
 let RAILWAY_CHECKED = false;
 let RAILWAY_AVAILABLE = false;
 let PROXY_CHECKED = false;
@@ -29,35 +30,34 @@ let PROXY_AVAILABLE = false;
 const MOBILE = isMobileDevice();
 const ON_NETLIFY = isNetlifyDeployed();
 
-// Set default API URL immediately (don't wait for async detection)
-if (!API_BASE_URL) {
-    // Check if we're on localhost (development)
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        API_BASE_URL = 'http://localhost:5000/api';
-        console.log('🔧 Development Mode: Using local backend');
-    } else {
-        // Production mode
-        if (MOBILE && ON_NETLIFY) {
-            // MOBILE on Netlify: ALWAYS use Netlify proxy (this bypasses ISP blocking)
-            API_BASE_URL = '/.netlify/functions/api-proxy/api';
-            console.log('📱 Mobile on Netlify: Using Netlify proxy relay ONLY');
-        } else if (!MOBILE && ON_NETLIFY) {
-            // Desktop on Netlify: Try Railway first, fallback to proxy if needed
-            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-            console.log('🖥️ Desktop on Netlify: Using Railway backend');
-        } else {
-            // Fallback: Direct Railway
-            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-            console.log('🌍 Fallback: Using Railway backend directly');
-        }
-    }
+console.log('🔍 Detecting environment...');
+console.log('📱 Device type:', MOBILE ? 'MOBILE 📱' : 'DESKTOP 🖥️');
+console.log('☁️ Deployment:', ON_NETLIFY ? 'NETLIFY ☁️' : 'LOCAL/OTHER');
+
+// Set default API URL based on device and deployment
+// NOTE: This OVERRIDES any pre-set window.TASKEARN_API_URL
+if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    // Development: Use local backend
+    API_BASE_URL = 'http://localhost:5000/api';
+    console.log('🔧 Development Mode: Using local backend at', API_BASE_URL);
+} else if (MOBILE && ON_NETLIFY) {
+    // MOBILE + NETLIFY: MUST use proxy (carrier DNS blocking is common)
+    API_BASE_URL = '/.netlify/functions/api-proxy/api';
+    console.log('📱 MOBILE on Netlify → Using Netlify proxy relay ONLY');
+    console.log('   This bypasses ISP/carrier DNS blocking of Railway');
+} else if (!MOBILE && ON_NETLIFY) {
+    // DESKTOP + NETLIFY: Try Railway first (usually not blocked on desktop)
+    API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+    console.log('🖥️ DESKTOP on Netlify → Using Railway backend');
+} else {
+    // Fallback (shouldn't happen in production)
+    API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+    console.log('🌍 Fallback Mode: Using Railway backend');
 }
 
-console.log('📡 API Base URL:', API_BASE_URL);
-console.log('📱 Mobile device:', MOBILE);
-console.log('☁️ On Netlify:', ON_NETLIFY);
 console.log('=====================================');
-console.log('API_BASE_URL will be used for all requests');
+console.log('✅ API_BASE_URL:', API_BASE_URL);
+console.log('✅ All requests will use this URL');
 console.log('=====================================');
 
 // Try to determine if Railway is actually available (run in background, non-blocking)

@@ -31,17 +31,17 @@
     <!-- Backend API Configuration -->
     <script>
         // Auto-detect environment and set API URL
+        // NOTE: Actual API URL is determined in api-client.js based on device type (mobile/desktop) and deployment location
         (function() {
-            // PRODUCTION - Backend running on Railway
-            window.TASKEARN_API_URL = 'https://taskearn-production-production.up.railway.app/api';
-            console.log('🔗 API URL:', window.TASKEARN_API_URL);
-            console.log('🌍 Environment: PRODUCTION (Railway Backend)');
-            console.log('✅ Backend server is running at https://taskearn-production-production.up.railway.app');
+            console.log('🔗 Backend API will be configured by api-client.js');
+            console.log('🌍 Environment detection: PRODUCTION (Netlify Frontend)');
+            console.log('📱 Device detection: Mobile-aware proxy routing enabled');
             
             // When deploying to production on Netlify:
-            // 1. Change TASKEARN_API_URL to: '/.netlify/functions/api-proxy'
-            // 2. Set BACKEND_URL environment variable in Netlify dashboard
-            // 3. Deploy backend to Railway and update BACKEND_URL
+            // 1. API URL is set in api-client.js
+            // 2. Mobile devices use: /.netlify/functions/api-proxy/api
+            // 3. Desktop devices use: https://taskearn-production-production.up.railway.app/api
+            // 4. Set BACKEND_URL environment variable in Netlify dashboard
         })();
     </script>
 </head>

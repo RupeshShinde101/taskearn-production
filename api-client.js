@@ -56,6 +56,9 @@ if (!API_BASE_URL) {
 console.log('📡 API Base URL:', API_BASE_URL);
 console.log('📱 Mobile device:', MOBILE);
 console.log('☁️ On Netlify:', ON_NETLIFY);
+console.log('=====================================');
+console.log('API_BASE_URL will be used for all requests');
+console.log('=====================================');
 
 // Try to determine if Railway is actually available (run in background, non-blocking)
 async function checkRailwayHealth() {

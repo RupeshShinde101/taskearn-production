@@ -1728,19 +1728,12 @@ def get_chat_messages(task_id):
         
         # Get messages
         cursor.execute(f'''
-            SELECT cm.*, u.name as sender_name 
-            FROM chat_messages cm
-            JOIN users u ON cm.sender_id = u.id
-            WHERE cm.task_id = {PH}
-            ORDER BY cm.created_at ASC
+            SELECT id, task_id, user_id, user_name, message, timestamp
+            FROM chat_messages
+            WHERE task_id = {PH}
+            ORDER BY timestamp ASC
         ''', (task_id,))
         messages = [dict_from_row(row) for row in cursor.fetchall()]
-        
-        # Mark messages as read
-        cursor.execute(f'''
-            UPDATE chat_messages SET is_read = {PH}
-            WHERE task_id = {PH} AND receiver_id = {PH} AND is_read = {PH}
-        ''', (True if config.USE_POSTGRES else 1, task_id, request.user_id, False if config.USE_POSTGRES else 0))
     
     return jsonify({
         'success': True,
@@ -1751,54 +1744,41 @@ def get_chat_messages(task_id):
 @app.route('/api/chat/<int:task_id>/send', methods=['POST'])
 @require_auth
 def send_chat_message(task_id):
-    """Send a chat message"""
+    """Send a chat message (REST fallback for Socket.IO)"""
     data = request.get_json()
     message = data.get('message', '').strip()
-    message_type = data.get('type', 'text')
     
     if not message:
         return jsonify({'success': False, 'message': 'Message cannot be empty'}), 400
     
     with get_db() as (cursor, conn):
-        # Get task and determine receiver
-        cursor.execute(f'SELECT * FROM tasks WHERE id = {PH}', (task_id,))
-        task = dict_from_row(cursor.fetchone())
+        # Verify user is part of this task
+        cursor.execute(f'''
+            SELECT * FROM tasks WHERE id = {PH} AND (posted_by = {PH} OR accepted_by = {PH})
+        ''', (task_id, request.user_id, request.user_id))
+        task = cursor.fetchone()
         
         if not task:
-            return jsonify({'success': False, 'message': 'Task not found'}), 404
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
-        # Determine receiver
-        if request.user_id == task['posted_by']:
-            receiver_id = task['accepted_by']
-        else:
-            receiver_id = task['posted_by']
+        # Get user info
+        cursor.execute(f'SELECT id, name FROM users WHERE id = {PH}', (request.user_id,))
+        user = dict_from_row(cursor.fetchone())
         
-        if not receiver_id:
-            return jsonify({'success': False, 'message': 'No one to chat with yet'}), 400
-        
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
+        # Store message
+        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cursor.execute(f'''
-            INSERT INTO chat_messages (task_id, sender_id, receiver_id, message, message_type, created_at)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (task_id, request.user_id, receiver_id, message, message_type, now))
-        
-        # Get sender name
-        cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (request.user_id,))
-        sender = dict_from_row(cursor.fetchone())
+            INSERT INTO chat_messages (task_id, user_id, user_name, message, timestamp)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (task_id, request.user_id, user['name'], message, timestamp))
     
     return jsonify({
         'success': True,
         'message': {
-            'id': cursor.lastrowid,
-            'taskId': task_id,
-            'senderId': request.user_id,
-            'senderName': sender['name'],
-            'receiverId': receiver_id,
+            'userId': request.user_id,
+            'userName': user['name'],
             'message': message,
-            'messageType': message_type,
-            'isRead': False,
-            'createdAt': now
+            'timestamp': timestamp
         }
     })
 
@@ -1806,17 +1786,11 @@ def send_chat_message(task_id):
 @app.route('/api/chat/unread', methods=['GET'])
 @require_auth
 def get_unread_count():
-    """Get unread message count"""
-    with get_db() as (cursor, conn):
-        cursor.execute(f'''
-            SELECT COUNT(*) as count FROM chat_messages 
-            WHERE receiver_id = {PH} AND is_read = {PH}
-        ''', (request.user_id, False if config.USE_POSTGRES else 0))
-        result = dict_from_row(cursor.fetchone())
-    
+    """Get unread message count (for backward compatibility)"""
+    # This endpoint maintained for compatibility, but Socket.IO handles real-time updates
     return jsonify({
         'success': True,
-        'unreadCount': result['count']
+        'unreadCount': 0
     })
 
 

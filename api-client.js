@@ -19,6 +19,8 @@ function isNetlifyDeployed() {
 let API_BASE_URL = window.TASKEARN_API_URL;
 let RAILWAY_CHECKED = false;
 let RAILWAY_AVAILABLE = false;
+let PROXY_CHECKED = false;
+let PROXY_AVAILABLE = false;
 const MOBILE = isMobileDevice();
 const ON_NETLIFY = isNetlifyDeployed();
 
@@ -31,9 +33,9 @@ if (!API_BASE_URL) {
     } else {
         // Production mode
         if (MOBILE && ON_NETLIFY) {
-            // MOBILE on Netlify: Use Netlify proxy (bypasses ISP/carrier blocking)
+            // MOBILE on Netlify: Try to use Netlify proxy first (bypasses ISP/carrier blocking)
             API_BASE_URL = '/.netlify/functions/api-proxy/api';
-            console.log('📱 Mobile on Netlify: Using proxy relay (bypasses ISP blocking)');
+            console.log('📱 Mobile on Netlify: Will use proxy relay (testing availability first)');
         } else {
             // Desktop or direct Railway: Use Railway directly
             API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
@@ -52,8 +54,8 @@ async function checkRailwayHealth() {
         return; // Already checked or explicitly offline
     }
     
-    // Skip health check for mobile users (they use proxy which handles it)
-    if (MOBILE && ON_NETLIFY) {
+    // Skip health check for mobile users using proxy (proxy handles it)
+    if (MOBILE && ON_NETLIFY && PROXY_AVAILABLE) {
         console.log('⏭️ Skipping Railway health check for mobile users (using proxy)');
         RAILWAY_CHECKED = true;
         RAILWAY_AVAILABLE = true; // Assume available when using proxy
@@ -90,15 +92,60 @@ async function checkRailwayHealth() {
     RAILWAY_CHECKED = true;
 }
 
-// Run Railway health check in the background (non-blocking) - but only for desktop users
-if (!MOBILE || !ON_NETLIFY) {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            setTimeout(checkRailwayHealth, 100); // Start checking after DOM is ready
-        });
-    } else {
-        setTimeout(checkRailwayHealth, 100); // DOM already ready
+// Check if Netlify proxy is working (for mobile users)
+async function checkProxyHealth() {
+    if (PROXY_CHECKED || !MOBILE || !ON_NETLIFY) {
+        return; // Already checked or not applicable
     }
+    
+    try {
+        console.log('🔍 Testing Netlify proxy availability...');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch('/.netlify/functions/api-proxy/api/health', {
+            method: 'GET',
+            signal: controller.signal,
+            mode: 'cors'
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok || response.status === 404) {
+            // 200 OK or 404 is fine (means proxy is working)
+            PROXY_AVAILABLE = true;
+            console.log('✅ Netlify proxy is available for mobile');
+        } else {
+            PROXY_AVAILABLE = false;
+            console.warn('⚠️ Proxy returned unexpected status:', response.status);
+            // Fallback to Railway
+            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+            console.log('📱 Proxy unavailable, falling back to Railway for mobile');
+        }
+    } catch (error) {
+        PROXY_AVAILABLE = false;
+        console.warn('⚠️ Proxy health check failed:', error.message);
+        // Fallback to Railway
+        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+        console.log('📱 Proxy check failed, falling back to Railway');
+    }
+    
+    PROXY_CHECKED = true;
+}
+
+// Run health checks in the background (non-blocking)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            checkProxyHealth();
+            checkRailwayHealth();
+        }, 50); // Start checking after DOM is ready
+    });
+} else {
+    setTimeout(() => {
+        checkProxyHealth();
+        checkRailwayHealth();
+    }, 50); // DOM already ready
 }
 
 // ========================================

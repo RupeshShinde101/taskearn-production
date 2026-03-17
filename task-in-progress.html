@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task In Progress - TaskEarn</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Google Maps -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBn5QNUkJFwv8lfWKf4KXJQfKYqbLVDNOE"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #f5f5f5;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Map Section - 60% */
+        .map-section {
+            flex: 1;
+            position: relative;
+            background: #e0e0e0;
+        }
+
+        #taskMap {
+            width: 100%;
+            height: 100%;
+            border-radius: 0;
+        }
+
+        .map-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+
+        .map-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: none;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            cursor: pointer;
+            font-size: 18px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .map-btn:hover {
+            background: #f0f0f0;
+            transform: scale(1.1);
+        }
+
+        /* Task Details Section - 40% */
+        .details-section {
+            width: 40%;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+            z-index: 5;
+        }
+
+        .details-header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .details-header h2 {
+            font-size: 20px;
+            color: #333;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .details-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .task-status {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .status-badge {
+            display: inline-block;
+            background: #4caf50;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .task-info {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .info-label {
+            color: #999;
+            font-weight: 500;
+        }
+
+        .info-value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .provider-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .provider-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+        }
+
+        .provider-info h3 {
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+
+        .provider-info p {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .rating {
+            color: #ffc107;
+            font-size: 14px;
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            padding: 0 20px;
+            margin-bottom: 15px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-contact {
+            background: #2196F3;
+            color: white;
+        }
+
+        .btn-contact:hover {
+            background: #1976D2;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+        }
+
+        .btn-call {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-call:hover {
+            background: #388e3c;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+
+        /* Chat Section */
+        .chat-section {
+            border: 1px solid #eee;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #fafafa;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .chat-header {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .chat-message {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            border-left: 3px solid #2196F3;
+        }
+
+        .chat-message.provider {
+            border-left-color: #667eea;
+        }
+
+        .chat-time {
+            color: #999;
+            font-size: 11px;
+            margin-top: 5px;
+        }
+
+        /* Complete Task Button */
+        .complete-section {
+            padding: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .btn-complete {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-complete:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-complete:active {
+            transform: translateY(0);
+        }
+
+        /* Timer/Progress */
+        .progress-info {
+            background: #fff3e0;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            text-align: center;
+            color: #f57c00;
+        }
+
+        .progress-timer {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .modal-icon {
+            font-size: 60px;
+            margin-bottom: 15px;
+            color: #4caf50;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .modal-text {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .modal-btn-confirm {
+            background: #4caf50;
+            color: white;
+        }
+
+        .modal-btn-confirm:hover {
+            background: #388e3c;
+        }
+
+        .modal-btn-cancel {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .modal-btn-cancel:hover {
+            background: #e0e0e0;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .map-section {
+                height: 60%;
+            }
+
+            .details-section {
+                width: 100%;
+                height: 40%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Map Section -->
+        <div class="map-section">
+            <div id="taskMap"></div>
+            <div class="map-controls">
+                <button class="map-btn" onclick="myLocation()" title="My Location">
+                    <i class="fas fa-location-dot"></i>
+                </button>
+                <button class="map-btn" onclick="navigateToTask()" title="Navigate">
+                    <i class="fas fa-directions"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Task Details Section -->
+        <div class="details-section">
+            <!-- Header -->
+            <div class="details-header">
+                <h2>Task In Progress</h2>
+                <button class="close-btn" onclick="goBack()">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="details-content">
+                <!-- Status -->
+                <div class="task-status">
+                    <div class="status-badge">IN PROGRESS</div>
+                    <div class="progress-timer" id="timer">00:00</div>
+                </div>
+
+                <!-- Task Info -->
+                <div class="task-info">
+                    <div class="info-row">
+                        <span class="info-label">Task:</span>
+                        <span class="info-value" id="taskTitle">Grocery Shopping</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Amount:</span>
+                        <span class="info-value">₹<span id="taskAmount">500</span></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Distance:</span>
+                        <span class="info-value" id="distance">2.5 km</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Deadline:</span>
+                        <span class="info-value" id="deadline">2:30 PM</span>
+                    </div>
+                </div>
+
+                <!-- Task Provider -->
+                <div class="provider-card">
+                    <div class="provider-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="provider-info">
+                        <h3 id="providerName">Rupesh Shinde</h3>
+                        <p id="providerPhone">+91 9876543210</p>
+                        <div class="rating">
+                            <i class="fas fa-star"></i> 4.8 (124 ratings)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button class="action-btn btn-contact" onclick="openChat()">
+                        <i class="fas fa-comment"></i>
+                        Chat
+                    </button>
+                    <button class="action-btn btn-call" onclick="callProvider()">
+                        <i class="fas fa-phone"></i>
+                        Call
+                    </button>
+                </div>
+
+                <!-- Chat Section -->
+                <div class="chat-section">
+                    <div class="chat-header">Recent Messages</div>
+                    <div id="chatMessages">
+                        <div class="chat-message provider">
+                            <strong>Provider:</strong> Please reach on time
+                            <div class="chat-time">2:10 PM</div>
+                        </div>
+                        <div class="chat-message">
+                            <strong>You:</strong> On my way!
+                            <div class="chat-time">2:12 PM</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Info -->
+                <div class="progress-info">
+                    <i class="fas fa-info-circle"></i>
+                    You're on track! Complete this task to earn ₹<span id="earningAmount">500</span>
+                </div>
+            </div>
+
+            <!-- Complete Section -->
+            <div class="complete-section">
+                <button class="btn-complete" onclick="completeTask()">
+                    <i class="fas fa-check-circle"></i>
+                    Mark Task Completed
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content">
+            <div class="modal-icon">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="modal-title">Task Completed!</div>
+            <div class="modal-text">
+                Great job! You earned ₹<span id="modalAmount">500</span>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-confirm" onclick="proceedToPayment()">
+                    Proceed to Payment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentTask = {
+            id: 1,
+            title: 'Grocery Shopping',
+            amount: 500,
+            providerId: 1,
+            providerName: 'Rupesh Shinde',
+            providerPhone: '+91 9876543210',
+            location: { lat: 19.0760, lng: 72.8777 }, // Mumbai coordinates
+            userLocation: null,
+            startTime: Date.now()
+        };
+
+        // Get task ID from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const taskIdFromUrl = urlParams.get('taskId') || null;
+
+        // API URL
+        const API_URL = 'https://taskearn-production-production.up.railway.app/api';
+
+        let map;
+        let userMarker;
+        let taskMarker;
+        let directionsService;
+        let directionsRenderer;
+        let timerInterval;
+
+        // Load task details from localStorage or API
+        function loadTaskDetails() {
+            // First, try to get from localStorage (set by app.js when task was accepted)
+            const savedTask = localStorage.getItem('currentTask');
+            if (savedTask) {
+                try {
+                    const taskData = JSON.parse(savedTask);
+                    currentTask = {
+                        ...currentTask,
+                        ...taskData
+                    };
+                    console.log('✅ Loaded task from localStorage:', currentTask);
+                } catch (e) {
+                    console.error('Error parsing saved task:', e);
+                }
+            }
+
+            // Update UI with task details
+            document.getElementById('taskTitle').textContent = currentTask.title;
+            document.getElementById('taskAmount').textContent = currentTask.amount;
+            document.getElementById('earningAmount').textContent = currentTask.amount;
+            document.getElementById('providerName').textContent = currentTask.providerName;
+            document.getElementById('providerPhone').textContent = currentTask.providerPhone;
+        }
+
+        // Initialize map
+        function initMap() {
+            const mapOptions = {
+                zoom: 14,
+                center: currentTask.location,
+                mapTypeControl: false,
+                fullscreenControl: false
+            };
+
+            map = new google.maps.Map(document.getElementById('taskMap'), mapOptions);
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({ map: map });
+
+            // Task location marker
+            taskMarker = new google.maps.Marker({
+                position: currentTask.location,
+                map: map,
+                title: 'Task Location',
+                icon: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png'
+            });
+
+            // Start timer
+            startTimer();
+
+            // Get user location
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    currentTask.userLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+
+                    // User location marker
+                    userMarker = new google.maps.Marker({
+                        position: currentTask.userLocation,
+                        map: map,
+                        title: 'Your Location',
+                        icon: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+                    });
+
+                    // Calculate distance
+                    calculateDistance();
+                }, function(error) {
+                    console.warn('Geolocation error:', error);
+                    // Use default location if geolocation fails
+                    currentTask.userLocation = currentTask.location;
+                });
+            }
+        }
+
+        // Calculate distance
+        function calculateDistance() {
+            if (!currentTask.userLocation) return;
+
+            const R = 6371; // Earth radius in km
+            const lat1 = currentTask.userLocation.lat * Math.PI / 180;
+            const lat2 = currentTask.location.lat * Math.PI / 180;
+            const deltaLat = (currentTask.location.lat - currentTask.userLocation.lat) * Math.PI / 180;
+            const deltaLng = (currentTask.location.lng - currentTask.userLocation.lng) * Math.PI / 180;
+
+            const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
+                      Math.cos(lat1) * Math.cos(lat2) *
+                      Math.sin(deltaLng/2) * Math.sin(deltaLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const distance = (R * c).toFixed(1);
+
+            document.getElementById('distance').textContent = distance + ' km';
+        }
+
+        // Navigate to task
+        function navigateToTask() {
+            if (!currentTask.userLocation) {
+                alert('Unable to get your location. Please enable location services.');
+                return;
+            }
+
+            const request = {
+                origin: currentTask.userLocation,
+                destination: currentTask.location,
+                travelMode: 'DRIVING'
+            };
+
+            directionsService.route(request, function(result, status) {
+                if (status === 'OK') {
+                    directionsRenderer.setDirections(result);
+                } else {
+                    alert('Unable to calculate route');
+                }
+            });
+        }
+
+        // My location button
+        function myLocation() {
+            if (currentTask.userLocation) {
+                map.setCenter(currentTask.userLocation);
+                map.setZoom(16);
+            }
+        }
+
+        // Start timer
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - currentTask.startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('timer').textContent = 
+                    String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+            }, 1000);
+        }
+
+        // Open chat
+        function openChat() {
+            alert('Chat feature coming soon!\nCurrently you can call the provider.');
+            // This will be enhanced with WebSocket later
+        }
+
+        // Call provider
+        function callProvider() {
+            alert('Calling ' + currentTask.providerName + '...\n' + currentTask.providerPhone);
+            // In real app, this would initiate WebRTC call
+        }
+
+        // Complete task
+        function completeTask() {
+            // Call API to mark task as completed
+            const token = localStorage.getItem('authToken') || '';
+            
+            fetch(API_URL + '/tasks/' + currentTask.id + '/complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    clearInterval(timerInterval);
+                    document.getElementById('modalAmount').textContent = data.amount || currentTask.amount;
+                    document.getElementById('confirmModal').classList.add('active');
+                } else {
+                    alert('Error: ' + (data.message || 'Failed to complete task'));
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                // Fallback: Show modal anyway
+                clearInterval(timerInterval);
+                document.getElementById('modalAmount').textContent = currentTask.amount;
+                document.getElementById('confirmModal').classList.add('active');
+            });
+        }
+
+        // Proceed to payment
+        function proceedToPayment() {
+            // Redirect to payment page with task details
+            window.location.href = 'payment-qr.html?taskId=' + currentTask.id + '&amount=' + currentTask.amount + 
+                                   '&taskName=' + encodeURIComponent(currentTask.title) + 
+                                   '&providerName=' + encodeURIComponent(currentTask.providerName);
+        }
+
+        // Go back
+        function goBack() {
+            if (confirm('Cancel task? This cannot be undone.')) {
+                clearInterval(timerInterval);
+                window.history.back();
+            }
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', function() {
+            loadTaskDetails();
+            initMap();
+        });
+    </script>
+</body>
+</html>

@@ -1820,22 +1820,32 @@ function acceptTask(taskId) {
             acceptedTasks: serializeTasks(myAcceptedTasks)
         });
 
+        // Save current task to localStorage for Task In Progress page
+        localStorage.setItem('currentTask', JSON.stringify({
+            id: task.id,
+            title: task.title,
+            price: task.price,
+            location: task.location,
+            category: task.category,
+            description: task.description,
+            providerId: task.postedBy?.id,
+            providerName: task.postedBy?.name,
+            providerPhone: task.postedBy?.phone,
+            providerRating: task.postedBy?.rating,
+            startTime: Date.now()
+        }));
+
         // 🔔 Notify the task poster (in-app + email)
         notifyTaskPoster(task, currentUser);
 
         showToast('✅ Task accepted: ' + task.title);
         closeModal('taskDetailModal');
         clearRoute();
-        renderTasks();
-        addTaskMarkers();
         
-        // ✅ FIX: Update profile display after task acceptance
+        // Redirect to Task In Progress page after short delay
         setTimeout(() => {
-            renderDashboard();
-            if (currentUser) {
-                openUserProfile();
-            }
-        }, 300);
+            window.location.href = 'task-in-progress.html?taskId=' + task.id;
+        }, 500);
     }
 }
 

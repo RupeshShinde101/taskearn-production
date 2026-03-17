@@ -673,6 +673,52 @@ def accept_task(task_id):
     })
 
 
+@app.route('/api/tasks/<int:task_id>/details', methods=['GET'])
+@require_auth
+def get_task_details(task_id):
+    """Get task details with provider info for Task In Progress page"""
+    with get_db() as (cursor, conn):
+        # Get task with provider details
+        cursor.execute(f'''
+            SELECT t.*, u.name as provider_name, u.phone as provider_phone, 
+                   u.rating as provider_rating, u.tasks_completed as provider_tasks
+            FROM tasks t
+            LEFT JOIN users u ON t.posted_by = u.id
+            WHERE t.id = {PH} AND t.status IN ('accepted', 'completed')
+        ''', (task_id,))
+        task = cursor.fetchone()
+        
+        if not task:
+            return jsonify({'success': False, 'message': 'Task not found'}), 404
+        
+        task = dict_from_row(task)
+        
+        return jsonify({
+            'success': True,
+            'task': {
+                'id': task['id'],
+                'title': task['title'],
+                'description': task['description'],
+                'category': task['category'],
+                'amount': float(task['price']),
+                'location': {
+                    'lat': task['location_lat'],
+                    'lng': task['location_lng'],
+                    'address': task['location_address']
+                },
+                'status': task['status'],
+                'postedAt': task['posted_at'],
+                'provider': {
+                    'id': task['posted_by'],
+                    'name': task['provider_name'],
+                    'phone': task['provider_phone'],
+                    'rating': float(task['provider_rating'] or 0),
+                    'tasksCompleted': task['provider_tasks']
+                }
+            }
+        })
+
+
 @app.route('/api/tasks/<int:task_id>/complete', methods=['POST'])
 @require_auth
 def complete_task(task_id):
@@ -705,7 +751,10 @@ def complete_task(task_id):
     
     return jsonify({
         'success': True,
-        'message': 'Task completed successfully'
+        'message': 'Task completed successfully',
+        'amount': float(task['price']),
+        'taskId': task_id,
+        'paymentRedirect': f'/payment-qr.html?taskId={task_id}&amount={task["price"]}'
     })
 
 

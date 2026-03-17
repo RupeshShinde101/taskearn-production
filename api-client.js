@@ -33,6 +33,7 @@ const ON_NETLIFY = isNetlifyDeployed();
 console.log('🔍 Detecting environment...');
 console.log('📱 Device type:', MOBILE ? 'MOBILE 📱' : 'DESKTOP 🖥️');
 console.log('☁️ Deployment:', ON_NETLIFY ? 'NETLIFY ☁️' : 'LOCAL/OTHER');
+console.log('⚠️ Force Proxy Flag:', window.FORCE_PROXY ? '✅ YES' : '❌ NO');
 
 // Set default API URL based on device and deployment
 // NOTE: This OVERRIDES any pre-set window.TASKEARN_API_URL
@@ -40,8 +41,8 @@ if (window.location.hostname === 'localhost' || window.location.hostname === '12
     // Development: Use local backend
     API_BASE_URL = 'http://localhost:5000/api';
     console.log('🔧 Development Mode: Using local backend at', API_BASE_URL);
-} else if (MOBILE && ON_NETLIFY) {
-    // MOBILE + NETLIFY: MUST use proxy (carrier DNS blocking is common)
+} else if (window.FORCE_PROXY || (MOBILE && ON_NETLIFY)) {
+    // MOBILE + NETLIFY or FORCE_PROXY: MUST use proxy (carrier DNS blocking is common)
     API_BASE_URL = '/.netlify/functions/api-proxy/api';
     console.log('📱 MOBILE on Netlify → Using Netlify proxy relay ONLY');
     console.log('   This bypasses ISP/carrier DNS blocking of Railway');

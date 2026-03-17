@@ -1416,11 +1416,35 @@
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20260317"></script>
+    <script src="api-client.js?v=20260317_mobile_fix_1"></script>
     
     <!-- Razorpay Payment Integration -->
-    <script src="razorpay.js?v=20260317"></script>
+    <script src="razorpay.js?v=20260317_mobile_fix_1"></script>
     
-    <script src="app.js?v=20260317"></script>
+    <script src="app.js?v=20260317_mobile_fix_1"></script>
+    
+    <!-- CRITICAL: Force mobile to use proxy BEFORE scripts load -->
+    <script>
+        (function() {
+            const hostname = window.location.hostname;
+            const isNetlify = hostname.includes('netlify.app') || hostname.includes('taskearn');
+            const userAgent = (navigator.userAgent || '').toLowerCase();
+            const isMobile = /android|iphone|ipad|mobile/i.test(userAgent);
+            
+            console.log('%c⚡ CRITICAL MOBILE PROXY OVERRIDE', 'background: #ff6600; color: white; font-size: 14px; font-weight: bold; padding: 5px 10px; border-radius: 3px;');
+            console.log('Hostname:', hostname, '| Netlify?', isNetlify);
+            console.log('User-Agent:', userAgent.substring(0, 60));
+            console.log('Mobile?', isMobile);
+            
+            if (isMobile && isNetlify) {
+                console.log('%c✅ MOBILE ON NETLIFY - FORCING PROXY', 'background: #00cc00; color: white; font-size: 12px; font-weight: bold; padding: 3px 8px;');
+                window.FORCE_PROXY = true;
+            } else if (isMobile && !isNetlify) {
+                console.log('📱 Mobile but not on Netlify');
+            } else if (!isMobile && isNetlify) {
+                console.log('🖥️ Desktop on Netlify');
+            }
+        })();
+    </script>
 </body>
 </html>

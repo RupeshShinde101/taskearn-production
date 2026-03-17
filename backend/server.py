@@ -2789,30 +2789,74 @@ def create_wallet_topup_order():
 @app.route('/api/payments/wallet-topup-verify', methods=['POST'])
 @require_auth
 def verify_wallet_topup():
-    """Verify wallet top-up payment and credit wallet"""
+    """Verify wallet top-up payment with Razorpay signature and credit wallet"""
     try:
         data = request.get_json()
         payment_id = data.get('paymentId')
         order_id = data.get('orderId')
+        signature = data.get('signature')
         amount = float(data.get('amount', 0))
         
-        print(f"\n[WALLET] Verifying wallet top-up:")
-        print(f"  Order ID: {order_id}")
-        print(f"  Payment ID: {payment_id}")
-        print(f"  Amount: ₹{amount}")
-        print(f"  User: {request.user_id}")
+        print(f"\n[WALLET] ===== WALLET TOP-UP VERIFICATION =====")
+        print(f"[WALLET] Order ID: {order_id}")
+        print(f"[WALLET] Payment ID: {payment_id}")
+        print(f"[WALLET] Amount: ₹{amount/100}")
+        print(f"[WALLET] User: {request.user_id}")
         
         if not all([payment_id, order_id, amount]) or amount <= 0:
+            print(f"❌ [WALLET] Missing required fields")
             return jsonify({'success': False, 'message': 'Invalid payment details'}), 400
+        
+        # CRITICAL: Verify payment with Razorpay using signature
+        if not signature:
+            print(f"❌ [WALLET] Missing Razorpay signature - cannot verify payment")
+            return jsonify({'success': False, 'message': 'Payment signature required'}), 400
+        
+        print(f"[WALLET] Verifying Razorpay signature...")
+        
+        # Verify signature
+        try:
+            import hmac
+            import hashlib
+            
+            # Create signature verification string
+            verify_string = f"{order_id}|{payment_id}"
+            generated_signature = hmac.new(
+                config.RAZORPAY_KEY_SECRET.encode(),
+                verify_string.encode(),
+                hashlib.sha256
+            ).hexdigest()
+            
+            if generated_signature != signature:
+                print(f"❌ [WALLET] Signature verification FAILED!")
+                print(f"   Expected: {generated_signature}")
+                print(f"   Got: {signature}")
+                return jsonify({
+                    'success': False,
+                    'message': 'Payment verification failed - signature mismatch'
+                }), 401
+            
+            print(f"✅ [WALLET] Signature verified successfully")
+            
+        except Exception as sig_error:
+            print(f"❌ [WALLET] Signature verification error: {sig_error}")
+            return jsonify({
+                'success': False,
+                'message': f'Verification error: {str(sig_error)}'
+            }), 400
+        
+        # Payment verified! Now credit wallet
+        print(f"[WALLET] Payment verified, crediting wallet...")
         
         with get_db() as (cursor, conn):
             # Get or create wallet for user
             wallet = get_or_create_wallet(request.user_id)
             current_balance = float(wallet.get('balance', 0))
-            new_balance = current_balance + amount
+            credit_amount = amount / 100.0  # Convert from paise to rupees
+            new_balance = current_balance + credit_amount
             
             print(f"[WALLET] Current balance: ₹{current_balance}")
-            print(f"[WALLET] Adding: ₹{amount}")
+            print(f"[WALLET] Crediting: ₹{credit_amount}")
             print(f"[WALLET] New balance: ₹{new_balance}")
             
             # Update wallet balance
@@ -2820,29 +2864,29 @@ def verify_wallet_topup():
                 UPDATE wallets
                 SET balance = {PH}, total_added = total_added + {PH}, updated_at = NOW()
                 WHERE user_id = {PH}
-            ''', (new_balance, amount, request.user_id))
+            ''', (new_balance, credit_amount, request.user_id))
             
-            # Record transaction (use 'topup' type to distinguish from virtual 'credit')
+            # Record transaction
             cursor.execute(f'''
                 INSERT INTO wallet_transactions (
                     wallet_id, user_id, type, amount, balance_after,
                     description, created_at
                 ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (
-                wallet.get('id'), request.user_id, 'topup',
-                amount, new_balance,
-                f'Wallet top-up via Razorpay - ₹{amount}',
+                wallet.get('id'), request.user_id, 'razorpay_topup',
+                credit_amount, new_balance,
+                f'Razorpay verified wallet top-up - ₹{credit_amount}',
                 datetime.datetime.now(datetime.timezone.utc).isoformat()
             ))
             
             conn.commit()
         
-        print(f"✅ [WALLET] Payment verified and wallet credited: ₹{amount}")
-        print(f"[WALLET] Final balance in database: ₹{new_balance}")
+        print(f"✅ [WALLET] Wallet credited successfully: ₹{credit_amount}")
+        print(f"[WALLET] New balance: ₹{new_balance}")
         
         return jsonify({
             'success': True,
-            'message': f'Wallet credited with ₹{amount}',
+            'message': f'Wallet credited with ₹{credit_amount}',
             'newBalance': float(new_balance),
             'transactionId': payment_id
         }), 200

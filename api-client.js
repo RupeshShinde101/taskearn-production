@@ -101,20 +101,28 @@ async function checkProxyHealth() {
     try {
         console.log('🔍 Testing Netlify proxy availability...');
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
         
         const response = await fetch('/.netlify/functions/api-proxy/api/health', {
             method: 'GET',
             signal: controller.signal,
-            mode: 'cors'
+            mode: 'cors',
+            credentials: 'omit'  // Important: don't send cookies to proxy
         });
         
         clearTimeout(timeoutId);
         
-        if (response.ok || response.status === 404) {
-            // 200 OK or 404 is fine (means proxy is working)
+        console.log('Proxy response status:', response.status);
+        console.log('Proxy response content-type:', response.headers.get('content-type'));
+        
+        if (response.ok) {
+            // 200 OK - proxy is working
             PROXY_AVAILABLE = true;
             console.log('✅ Netlify proxy is available for mobile');
+        } else if (response.status === 404 || response.status === 200) {
+            // 404 or 200 means proxy function is responding (even if endpoint doesn't exist)
+            PROXY_AVAILABLE = true;
+            console.log('✅ Netlify proxy is responding');
         } else {
             PROXY_AVAILABLE = false;
             console.warn('⚠️ Proxy returned unexpected status:', response.status);
@@ -125,9 +133,13 @@ async function checkProxyHealth() {
     } catch (error) {
         PROXY_AVAILABLE = false;
         console.warn('⚠️ Proxy health check failed:', error.message);
-        // Fallback to Railway
-        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        console.log('📱 Proxy check failed, falling back to Railway');
+        
+        // IMPORTANT: If proxy is blocked (CORB error), fall back to Railway immediately
+        if (error.message.includes('Failed to fetch') || error.name === 'AbortError') {
+            console.log('📱 Proxy blocked or timeout - using Railway backend directly');
+            // Try to use Railway directly (some carriers might not block it on this second attempt)
+            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+        }
     }
     
     PROXY_CHECKED = true;
@@ -168,7 +180,7 @@ async function apiRequest(endpoint, options = {}) {
     }
     
     const url = `${API_BASE_URL}${endpoint}`;
-
+    const isUsingProxy = API_BASE_URL.includes('api-proxy');
     
     const headers = {
         'Content-Type': 'application/json',
@@ -190,42 +202,93 @@ async function apiRequest(endpoint, options = {}) {
         console.log('📦 Headers:', headers);
         if (options.body) console.log('📄 Body:', options.body);
         
-        const response = await fetch(url, {
+        const fetchOptions = {
             ...options,
-            headers
-        });
+            headers,
+            mode: 'cors',
+            credentials: 'omit'
+        };
+        
+        const response = await fetch(url, fetchOptions);
         
         console.log('📥 Response status:', response.status, response.statusText);
+        console.log('📥 Response type:', response.type);
         
-        const data = await response.json();
-        console.log('📄 Response data:', data);
+        // Try to parse JSON
+        let data;
+        try {
+            data = await response.json();
+            console.log('📄 Response data:', data);
+        } catch (parseError) {
+            console.warn('⚠️ Could not parse JSON response:', parseError.message);
+            data = { success: false, message: 'Invalid JSON response' };
+        }
         
         // Handle token expiration - only clear if we actually had an API token
         if (response.status === 401 && data.message === 'Invalid or expired token') {
-            // Clear API token from localStorage
             localStorage.removeItem('taskearn_token');
-            // Don't clear taskearn_user or taskearn_current_user - let local login still work
             console.log('⚠️ API token expired, cleared token but kept local session');
         }
         
         return { success: response.ok, status: response.status, data };
+        
     } catch (error) {
         console.error('❌ API Request Failed!');
         console.error('❌ Error type:', error.name);
         console.error('❌ Error message:', error.message);
-        console.error('❌ Full error:', error);
         console.error('❌ URL was:', url);
-        console.error('❌ Network error - check if backend is running at:', url);
         
-        // Show more helpful error message
+        // Handle CORB errors - if using proxy, fall back to Railway
+        const isCorbError = error.message.includes('Failed to fetch') || error.name === 'TypeError';
+        
+        if (isUsingProxy && isCorbError) {
+            console.warn('⚠️ Proxy appears to be blocked (CORB error). Falling back to Railway...');
+            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+            PROXY_AVAILABLE = false;
+            
+            // Retry with Railway URL
+            console.log('🔄 Retrying with Railway backend...');
+            const railwayUrl = `${API_BASE_URL}${endpoint}`;
+            
+            try {
+                const railwayResponse = await fetch(railwayUrl, {
+                    ...options,
+                    headers,
+                    mode: 'cors'
+                });
+                
+                let railwayData;
+                try {
+                    railwayData = await railwayResponse.json();
+                } catch (parseError) {
+                    railwayData = { success: false, message: 'Invalid response' };
+                }
+                
+                console.log('✅ Railway backend successful');
+                return { success: railwayResponse.ok, status: railwayResponse.status, data: railwayData };
+                
+            } catch (railwayError) {
+                console.error('❌ Railway backend also failed:', railwayError.message);
+                // Both failed - return offline error
+                return {
+                    success: false,
+                    status: 0,
+                    data: {
+                        success: false,
+                        message: '📱 Cannot connect to backend. Try WiFi or VPN.',
+                        offline: true
+                    }
+                };
+            }
+        }
+        
+        // Handle other errors
         let errorMessage = 'Network error: ' + error.message;
         if (error.message.includes('Failed to fetch')) {
             if (MOBILE) {
-                // Mobile-specific help message
-                errorMessage = '📱 MOBILE: Your carrier network is blocking the backend. Try connecting to WiFi or using a VPN to continue.';
+                errorMessage = '📱 MOBILE: Your network is blocking the backend. Try WiFi or VPN.';
             } else {
-                // Desktop help message  
-                errorMessage = `❌ Cannot connect to Railway backend at ${url}\nDesktop users: Try connecting to VPN if your network is blocking the backend.`;
+                errorMessage = `❌ Cannot connect to backend. Try VPN if your network is blocking it.`;
             }
         }
         
@@ -234,7 +297,8 @@ async function apiRequest(endpoint, options = {}) {
             status: 0, 
             data: { 
                 success: false, 
-                message: errorMessage
+                message: errorMessage,
+                offline: true
             }
         };
     }

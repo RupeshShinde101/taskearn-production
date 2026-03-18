@@ -3570,20 +3570,26 @@ def cleanup_old_tasks():
     try:
         with get_db() as (cursor, conn):
             # Delete completed tasks older than 30 days
-            thirty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
-            
-            cursor.execute(f'''
-                DELETE FROM tasks 
-                WHERE (status = 'completed' OR status = 'paid')
-                AND completed_at < {PH}
-            ''', (thirty_days_ago,))
-            
-            deleted_count = cursor.rowcount
-            
-            if deleted_count > 0:
-                print(f"✅ Cleaned up {deleted_count} old completed/paid tasks")
-            
-            return deleted_count
+            try:
+                thirty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
+                
+                cursor.execute(f'''
+                    DELETE FROM tasks 
+                    WHERE (status = 'completed' OR status = 'paid')
+                    AND completed_at IS NOT NULL
+                    AND completed_at < {PH}
+                ''', (thirty_days_ago,))
+                
+                deleted_count = cursor.rowcount
+                
+                if deleted_count > 0:
+                    print(f"✅ Cleaned up {deleted_count} old completed/paid tasks")
+                
+                return deleted_count
+            except Exception as query_error:
+                print(f"⚠️  Query error during cleanup: {query_error}")
+                # Don't crash if cleanup fails
+                return 0
     except Exception as e:
         print(f"⚠️  Cleanup error: {e}")
         return 0
@@ -3621,8 +3627,11 @@ if __name__ == '__main__':
     # Initialize database
     init_db()
     
-    # Run cleanup on startup
-    cleanup_old_tasks()
+    # Try to run cleanup on startup (but don't crash if it fails)
+    try:
+        cleanup_old_tasks()
+    except Exception as cleanup_error:
+        print(f"⚠️  Cleanup failed at startup (non-fatal): {cleanup_error}")
     
     # Get port from environment (Railway/Render provide this)
     port = int(os.environ.get('PORT', 5000))

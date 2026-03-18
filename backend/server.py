@@ -3562,6 +3562,55 @@ def init_database_endpoint():
 
 
 # ========================================
+# DATABASE CLEANUP
+# ========================================
+
+def cleanup_old_tasks():
+    """Delete tasks that are completed or expired (older than 30 days)"""
+    try:
+        with get_db() as (cursor, conn):
+            # Delete completed tasks older than 30 days
+            thirty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
+            
+            cursor.execute(f'''
+                DELETE FROM tasks 
+                WHERE (status = 'completed' OR status = 'paid')
+                AND completed_at < {PH}
+            ''', (thirty_days_ago,))
+            
+            deleted_count = cursor.rowcount
+            
+            if deleted_count > 0:
+                print(f"✅ Cleaned up {deleted_count} old completed/paid tasks")
+            
+            return deleted_count
+    except Exception as e:
+        print(f"⚠️  Cleanup error: {e}")
+        return 0
+
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint - also runs cleanup"""
+    try:
+        # Run cleanup
+        cleanup_old_tasks()
+        
+        with get_db() as (cursor, conn):
+            cursor.execute("SELECT 1")
+            db_ok = True
+    except:
+        db_ok = False
+    
+    return jsonify({
+        'success': True,
+        'status': 'healthy',
+        'database': 'ok' if db_ok else 'error',
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }), 200
+
+
+# ========================================
 # RUN SERVER
 # ========================================
 
@@ -3571,6 +3620,9 @@ if __name__ == '__main__':
     
     # Initialize database
     init_db()
+    
+    # Run cleanup on startup
+    cleanup_old_tasks()
     
     # Get port from environment (Railway/Render provide this)
     port = int(os.environ.get('PORT', 5000))

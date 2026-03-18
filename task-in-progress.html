@@ -27,25 +27,18 @@
         }
 
         /* Map Section - 60% */
-        .map-section {
-            flex: 1;
-            position: relative;
-            background: #e0e0e0;
+        .location-section {
+            background: #f5f5f5;
+            padding: 20px;
+            border-bottom: 1px solid #ddd;
+            font-size: 14px;
+            line-height: 1.6;
         }
 
-        #taskMap {
-            width: 100%;
-            height: 100%;
-            border-radius: 0;
-        }
-
-        .map-controls {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            display: flex;
-            gap: 10px;
-            z-index: 10;
+        .location-section strong {
+            color: #333;
+            display: block;
+            margin-bottom: 8px;
         }
 
         .map-btn {
@@ -413,17 +406,10 @@
 </head>
 <body>
     <div class="container">
-        <!-- Map Section -->
-        <div class="map-section">
-            <div id="taskMap"></div>
-            <div class="map-controls">
-                <button class="map-btn" onclick="myLocation()" title="My Location">
-                    <i class="fas fa-location-dot"></i>
-                </button>
-                <button class="map-btn" onclick="navigateToTask()" title="Navigate">
-                    <i class="fas fa-directions"></i>
-                </button>
-            </div>
+        <!-- Location Section -->
+        <div class="location-section">
+            <strong>📍 Task Location:</strong>
+            <div id="taskLocation">Loading location...</div>
         </div>
 
         <!-- Task Details Section -->
@@ -598,36 +584,17 @@
             document.getElementById('providerPhone').textContent = currentTask.providerPhone;
         }
 
-        // Initialize map
-        function initMap() {
-            const mapOptions = {
-                zoom: 14,
-                center: currentTask.location,
-                mapTypeControl: false,
-                fullscreenControl: false
-            };
-
-            map = new google.maps.Map(document.getElementById('taskMap'), mapOptions);
-            directionsService = new google.maps.DirectionsService();
-            directionsRenderer = new google.maps.DirectionsRenderer({ map: map });
-
-            // Task location marker
-            taskMarker = new google.maps.Marker({
-                position: currentTask.location,
-                map: map,
-                title: 'Task Location',
-                icon: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png'
-            });
+        // Show location text
+        function showLocation() {
+            const locationDiv = document.getElementById('taskLocation');
+            if (currentTask.location) {
+                locationDiv.textContent = currentTask.location.address || `Lat: ${currentTask.location.lat}, Lng: ${currentTask.location.lng}`;
+            } else {
+                locationDiv.textContent = 'Location not available';
+            }
 
             // Start timer
             startTimer();
-
-            // Get user location
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(function(position) {
-                    currentTask.userLocation = {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude
                     };
 
                     // User location marker

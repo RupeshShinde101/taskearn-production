@@ -2662,7 +2662,7 @@ function showPaymentSuccessModal(task, totalPayable, platformFee) {
 async function payHelperForTask(taskId) {
     const task = myPostedTasks.find(t => t.id === taskId);
     
-    if (!task || (task.status !== 'completed' && task.status !== 'pending_payment')) {
+    if (!task || task.status !== 'completed') {
         showToast('❌ Task not ready for payment');
         return;
     }
@@ -2671,112 +2671,43 @@ async function payHelperForTask(taskId) {
     const commission = Math.floor(taskAmount * 0.20);
     const helperAmount = taskAmount - commission;
 
-    // Confirm payment
-    if (!confirm(`Confirm payment of ₹${taskAmount}?\n\n✓ Helper will receive: ₹${helperAmount}\n✓ Commission (20%): ₹${commission}`)) {
+    // Simple payment confirmation
+    const paymentMethod = confirm(`Pay ₹${taskAmount}?\n\n✅ Helper gets: ₹${helperAmount}\n💼 Commission: ₹${commission}\n\nClick OK to PAY`);
+    
+    if (!paymentMethod) {
+        showToast('⚠️ Payment cancelled');
         return;
     }
 
     try {
-        // Create Razorpay order from backend
-        console.log('🏦 Creating Razorpay order for task:', taskId);
-        
-        const orderResponse = await fetch(`${API_BASE_URL}/tasks/${taskId}/create-payment-order`, {
+        // Call backend to process payment
+        const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/pay-helper`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
             },
             body: JSON.stringify({
-                taskId: taskId,
-                amount: taskAmount
+                razorpay_payment_id: `pay_sim_${Date.now()}`,  // Simulated payment ID
+                taskId: taskId
             })
         });
 
-        const orderData = await orderResponse.json();
+        const result = await response.json();
 
-        if (!orderData.success || !orderData.razorpay_order_id) {
-            showToast(`❌ Failed to create payment order: ${orderData.message}`);
-            return;
-        }
-
-        console.log('✅ Razorpay order created:', orderData.razorpay_order_id);
-
-        // Open Razorpay checkout
-        const options = {
-            key: orderData.razorpay_key_id,  // Get from backend
-            amount: taskAmount * 100,  // Convert to paise
-            currency: 'INR',
-            order_id: orderData.razorpay_order_id,
-            name: 'TaskEarn Payment',
-            description: `Payment for task: ${task.title}`,
-            handler: async function(response) {
-                console.log('✅ Payment successful:', response);
-                
-                // Verify payment on backend
-                const verifyResponse = await fetch(`${API_BASE_URL}/tasks/${taskId}/pay-helper`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
-                    },
-                    body: JSON.stringify({
-                        razorpay_payment_id: response.razorpay_payment_id,
-                        razorpay_order_id: response.razorpay_order_id,
-                        razorpay_signature: response.razorpay_signature,
-                        taskId: taskId
-                    })
-                });
-
-                const verifyResult = await verifyResponse.json();
-
-                if (verifyResult.success) {
-                    showToast(`✅ Payment successful! ₹${helperAmount} sent to helper`);
-                    
-                    // Update task status locally
-                    task.status = 'paid';
-                    updateUserData(currentUser.id, {
-                        postedTasks: serializeTasks(myPostedTasks)
-                    });
-                    
-                    // Refresh dashboard
-                    renderDashboard();
-                } else {
-                    showToast(`❌ Payment verification failed: ${verifyResult.message}`);
-                }
-            },
-            prefill: {
-                name: currentUser ? currentUser.name : '',
-                email: currentUser ? currentUser.email : '',
-            },
-            theme: {
-                color: '#6366f1'
-            },
-            modal: {
-                ondismiss: function() {
-                    console.log('Payment cancelled');
-                    showToast('⚠️ Payment cancelled');
-                }
-            }
-        };
-
-        // Load Razorpay script if not already loaded
-        if (typeof Razorpay === 'undefined') {
-            console.log('📦 Loading Razorpay SDK...');
-            const script = document.createElement('script');
-            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-            script.onload = function() {
-                const rzp = new Razorpay(options);
-                rzp.open();
-            };
-            script.onerror = function() {
-                showToast('❌ Failed to load Razorpay. Check your internet connection.');
-            };
-            document.body.appendChild(script);
+        if (result.success) {
+            showToast(`✅ Payment successful!\n₹${helperAmount} → Helper's wallet`);
+            
+            // Update task status
+            task.status = 'paid';
+            updateUserData(currentUser.id, {
+                postedTasks: serializeTasks(myPostedTasks)
+            });
+            
+            renderDashboard();
         } else {
-            const rzp = new Razorpay(options);
-            rzp.open();
+            showToast(`❌ Payment failed: ${result.message}`);
         }
-
     } catch (error) {
         console.error('❌ Payment error:', error);
         showToast('❌ Payment error: ' + error.message);

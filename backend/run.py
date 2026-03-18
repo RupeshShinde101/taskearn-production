@@ -8,7 +8,7 @@ import socket
 sys.path.insert(0, os.path.dirname(__file__))
 
 from server import app
-from database import init_sqlite_db
+from database import init_db
 
 def get_local_ip():
     """Get local machine IP address"""
@@ -29,8 +29,8 @@ if __name__ == '__main__':
     # Initialize database (create tables if needed)
     print("📦 Initializing database...")
     try:
-        init_sqlite_db()
-        print("✅ Database ready (SQLite: taskearn.db)")
+        init_db()  # Use init_db() which handles both PostgreSQL and SQLite
+        print("✅ Database ready")
     except Exception as e:
         print(f"⚠️ Database warning: {e}")
     

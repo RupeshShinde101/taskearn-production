@@ -722,53 +722,76 @@ def get_tasks():
 @require_auth
 def create_task():
     """Create a new task"""
-    data = request.get_json()
+    try:
+        data = request.get_json()
+        
+        required = ['title', 'description', 'category', 'price']
+        for field in required:
+            if not data.get(field):
+                print(f"⚠️ Task creation failed: missing required field '{field}'")
+                return jsonify({'success': False, 'message': f'{field} is required'}), 400
+        
+        print(f"📝 Creating task: '{data.get('title')}' by user {request.user_id}")
+        
+        with get_db() as (cursor, conn):
+            posted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=12)).isoformat()
+            
+            location = data.get('location', {})
+            
+            # Insert task
+            cursor.execute(f'''
+                INSERT INTO tasks (title, description, category, location_lat, location_lng, 
+                                  location_address, price, posted_by, posted_at, expires_at, status)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active')
+            ''', (
+                data['title'],
+                data['description'],
+                data['category'],
+                location.get('lat'),
+                location.get('lng'),
+                location.get('address'),
+                data['price'],
+                request.user_id,
+                posted_at,
+                expires_at
+            ))
+            
+            # Get the inserted task ID
+            try:
+                if config.USE_POSTGRES:
+                    cursor.execute('SELECT lastval() AS id')
+                    result = cursor.fetchone()
+                    task_id = result['id'] if result else None
+                else:
+                    cursor.execute('SELECT last_insert_rowid() AS id')
+                    result = cursor.fetchone()
+                    task_id = result[0] if result else None
+            except Exception as id_error:
+                print(f"❌ Error getting task ID: {id_error}")
+                task_id = None
+            
+            if not task_id:
+                print("❌ Failed to get task ID after insertion")
+                return jsonify({'success': False, 'message': 'Failed to create task'}), 500
+            
+            # Update user's tasks_posted count
+            cursor.execute(f'UPDATE users SET tasks_posted = tasks_posted + 1 WHERE id = {PH}', 
+                           (request.user_id,))
+            
+            print(f"✅ Task created successfully with ID: {task_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Task created successfully',
+            'taskId': task_id
+        }), 201
     
-    required = ['title', 'description', 'category', 'price']
-    for field in required:
-        if not data.get(field):
-            return jsonify({'success': False, 'message': f'{field} is required'}), 400
-    
-    with get_db() as (cursor, conn):
-        posted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=12)).isoformat()
-        
-        location = data.get('location', {})
-        
-        cursor.execute(f'''
-            INSERT INTO tasks (title, description, category, location_lat, location_lng, 
-                              location_address, price, posted_by, posted_at, expires_at, status)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active')
-        ''', (
-            data['title'],
-            data['description'],
-            data['category'],
-            location.get('lat'),
-            location.get('lng'),
-            location.get('address'),
-            data['price'],
-            request.user_id,
-            posted_at,
-            expires_at
-        ))
-        
-        # Get the inserted task ID
-        if config.USE_POSTGRES:
-            cursor.execute('SELECT lastval() AS id')
-            task_id = cursor.fetchone()['id']
-        else:
-            cursor.execute('SELECT last_insert_rowid() AS id')
-            task_id = cursor.fetchone()['id']
-        
-        # Update user's tasks_posted count
-        cursor.execute(f'UPDATE users SET tasks_posted = tasks_posted + 1 WHERE id = {PH}', 
-                       (request.user_id,))
-    
-    return jsonify({
-        'success': True,
-        'message': 'Task created successfully',
-        'taskId': task_id
-    }), 201
+    except Exception as e:
+        print(f"❌ Task creation error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Task creation failed: {str(e)}'}), 500
 
 
 @app.route('/api/tasks/<int:task_id>/accept', methods=['POST'])
@@ -2375,16 +2398,27 @@ def get_helper_dashboard():
 # RAZORPAY PAYMENT INTEGRATION
 # ========================================
 
-import razorpay
 import hashlib
 import hmac
 
+# Try to import razorpay, but don't fail if not available
+try:
+    import razorpay
+    RAZORPAY_AVAILABLE = True
+except ImportError:
+    razorpay = None
+    RAZORPAY_AVAILABLE = False
+    print("⚠️ Razorpay library not available")
+
 # Initialize Razorpay client
-if config.RAZORPAY_KEY_ID and config.RAZORPAY_KEY_SECRET:
+if RAZORPAY_AVAILABLE and config.RAZORPAY_KEY_ID and config.RAZORPAY_KEY_SECRET:
     razorpay_client = razorpay.Client(auth=(config.RAZORPAY_KEY_ID, config.RAZORPAY_KEY_SECRET))
 else:
     razorpay_client = None
-    print("⚠️ WARNING: Razorpay credentials not configured. Payment features will be disabled.")
+    if not RAZORPAY_AVAILABLE:
+        print("⚠️ Razorpay library not installed")
+    else:
+        print("⚠️ Razorpay credentials not configured. Payment features will be disabled.")
 
 
 @app.route('/api/payments/create-order', methods=['POST'])

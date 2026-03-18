@@ -3505,12 +3505,18 @@ def payment_webhook():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
+    import os
+    db_url = os.environ.get('DATABASE_URL', 'NOT SET')
+    db_url_masked = db_url[:30] + '***' if db_url != 'NOT SET' else 'NOT SET'
+    
     return jsonify({
         'success': True,
         'status': 'healthy',
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'database': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite',
-        'environment': 'production' if config.USE_POSTGRES else 'development'
+        'environment': 'production' if config.USE_POSTGRES else 'development',
+        'config.DATABASE_URL': db_url_masked,
+        'config.USE_POSTGRES': config.USE_POSTGRES
     })
 
 

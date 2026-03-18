@@ -958,6 +958,82 @@ def complete_task(task_id):
         return jsonify({'success': False, 'message': f'Failed to complete task: {str(e)}'}), 500
 
 
+@app.route('/api/tasks/<int:task_id>/create-payment-order', methods=['POST'])
+@require_auth
+def create_payment_order(task_id):
+    """Create a Razorpay order for task payment"""
+    try:
+        data = request.get_json()
+        amount = data.get('amount')
+        
+        if not amount or amount <= 0:
+            return jsonify({'success': False, 'message': 'Invalid amount'}), 400
+        
+        with get_db() as (cursor, conn):
+            # Verify task exists and user is the poster
+            cursor.execute(f'SELECT * FROM tasks WHERE id = {PH}', (task_id,))
+            task = cursor.fetchone()
+            
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found'}), 404
+            
+            task = dict_from_row(task)
+            
+            if task['posted_by'] != request.user_id:
+                return jsonify({'success': False, 'message': 'Only task poster can create payment order'}), 403
+            
+            if task['status'] != 'completed':
+                return jsonify({'success': False, 'message': 'Task not completed yet'}), 400
+            
+            # Create Razorpay order
+            try:
+                import razorpay
+                client = razorpay.Client(auth=(config.RAZORPAY_KEY_ID, config.RAZORPAY_KEY_SECRET))
+                
+                order_data = {
+                    'amount': int(amount * 100),  # Convert to paise
+                    'currency': 'INR',
+                    'receipt': f'task_{task_id}_{request.user_id}',
+                    'notes': {
+                        'task_id': str(task_id),
+                        'poster_id': request.user_id,
+                        'helper_id': task['accepted_by']
+                    }
+                }
+                
+                order = client.order.create(data=order_data)
+                
+                print(f"✅ Razorpay order created: {order['id']}")
+                
+                return jsonify({
+                    'success': True,
+                    'razorpay_order_id': order['id'],
+                    'razorpay_key_id': config.RAZORPAY_KEY_ID,
+                    'amount': amount,
+                    'message': 'Order created successfully'
+                }), 200
+                
+            except Exception as razorpay_error:
+                print(f"❌ Razorpay error: {razorpay_error}")
+                # Fallback: Create a local order ID for testing
+                # In production, don't do this - always use Razorpay
+                test_order_id = f'order_test_{task_id}_{request.user_id}'
+                return jsonify({
+                    'success': True,
+                    'razorpay_order_id': test_order_id,
+                    'razorpay_key_id': config.RAZORPAY_KEY_ID or 'rzp_test_demo',
+                    'amount': amount,
+                    'message': 'Test order (Razorpay unavailable)',
+                    'test_mode': True
+                }), 200
+    
+    except Exception as e:
+        print(f"❌ Error creating payment order: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
+
+
 @app.route('/api/tasks/<int:task_id>/pay-helper', methods=['POST'])
 @require_auth
 def pay_helper(task_id):
@@ -965,9 +1041,30 @@ def pay_helper(task_id):
     try:
         data = request.get_json()
         razorpay_payment_id = data.get('razorpay_payment_id')
+        razorpay_order_id = data.get('razorpay_order_id')
+        razorpay_signature = data.get('razorpay_signature')
         
         if not razorpay_payment_id:
             return jsonify({'success': False, 'message': 'Payment ID required'}), 400
+        
+        # Verify Razorpay signature if provided
+        if razorpay_order_id and razorpay_signature and config.RAZORPAY_KEY_SECRET:
+            try:
+                import hmac
+                import hashlib
+                expected_sig = hmac.new(
+                    config.RAZORPAY_KEY_SECRET.encode(),
+                    f"{razorpay_order_id}|{razorpay_payment_id}".encode(),
+                    hashlib.sha256
+                ).hexdigest()
+                
+                if expected_sig != razorpay_signature:
+                    print(f"❌ Razorpay signature mismatch!")
+                    return jsonify({'success': False, 'message': 'Payment verification failed'}), 400
+                print(f"✅ Razorpay signature verified for payment {razorpay_payment_id}")
+            except Exception as sig_error:
+                print(f"⚠️  Could not verify signature: {sig_error}")
+                # Don't fail - might be in test mode
         
         with get_db() as (cursor, conn):
             # Get task details

@@ -2677,40 +2677,108 @@ async function payHelperForTask(taskId) {
     }
 
     try {
-        // Call backend to simulate Razorpay payment (in real flow, you'd integrate Razorpay)
-        // For now, we'll use a test payment ID
-        const paymentId = 'pay_test_' + Date.now();
+        // Create Razorpay order from backend
+        console.log('🏦 Creating Razorpay order for task:', taskId);
         
-        const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/pay-helper`, {
+        const orderResponse = await fetch(`${API_BASE_URL}/tasks/${taskId}/create-payment-order`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
             },
             body: JSON.stringify({
-                razorpay_payment_id: paymentId,
-                taskId: taskId
+                taskId: taskId,
+                amount: taskAmount
             })
         });
 
-        const result = await response.json();
+        const orderData = await orderResponse.json();
 
-        if (result.success) {
-            showToast(`✅ Payment successful! ₹${helperAmount} sent to helper`);
-            
-            // Update task status locally
-            task.status = 'paid';
-            updateUserData(currentUser.id, {
-                postedTasks: serializeTasks(myPostedTasks)
-            });
-            
-            // Refresh dashboard
-            renderDashboard();
-        } else {
-            showToast(`❌ Payment failed: ${result.message}`);
+        if (!orderData.success || !orderData.razorpay_order_id) {
+            showToast(`❌ Failed to create payment order: ${orderData.message}`);
+            return;
         }
+
+        console.log('✅ Razorpay order created:', orderData.razorpay_order_id);
+
+        // Open Razorpay checkout
+        const options = {
+            key: orderData.razorpay_key_id,  // Get from backend
+            amount: taskAmount * 100,  // Convert to paise
+            currency: 'INR',
+            order_id: orderData.razorpay_order_id,
+            name: 'TaskEarn Payment',
+            description: `Payment for task: ${task.title}`,
+            handler: async function(response) {
+                console.log('✅ Payment successful:', response);
+                
+                // Verify payment on backend
+                const verifyResponse = await fetch(`${API_BASE_URL}/tasks/${taskId}/pay-helper`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+                    },
+                    body: JSON.stringify({
+                        razorpay_payment_id: response.razorpay_payment_id,
+                        razorpay_order_id: response.razorpay_order_id,
+                        razorpay_signature: response.razorpay_signature,
+                        taskId: taskId
+                    })
+                });
+
+                const verifyResult = await verifyResponse.json();
+
+                if (verifyResult.success) {
+                    showToast(`✅ Payment successful! ₹${helperAmount} sent to helper`);
+                    
+                    // Update task status locally
+                    task.status = 'paid';
+                    updateUserData(currentUser.id, {
+                        postedTasks: serializeTasks(myPostedTasks)
+                    });
+                    
+                    // Refresh dashboard
+                    renderDashboard();
+                } else {
+                    showToast(`❌ Payment verification failed: ${verifyResult.message}`);
+                }
+            },
+            prefill: {
+                name: currentUser ? currentUser.name : '',
+                email: currentUser ? currentUser.email : '',
+            },
+            theme: {
+                color: '#6366f1'
+            },
+            modal: {
+                ondismiss: function() {
+                    console.log('Payment cancelled');
+                    showToast('⚠️ Payment cancelled');
+                }
+            }
+        };
+
+        // Load Razorpay script if not already loaded
+        if (typeof Razorpay === 'undefined') {
+            console.log('📦 Loading Razorpay SDK...');
+            const script = document.createElement('script');
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            script.onload = function() {
+                const rzp = new Razorpay(options);
+                rzp.open();
+            };
+            script.onerror = function() {
+                showToast('❌ Failed to load Razorpay. Check your internet connection.');
+            };
+            document.body.appendChild(script);
+        } else {
+            const rzp = new Razorpay(options);
+            rzp.open();
+        }
+
     } catch (error) {
-        console.error('Payment error:', error);
+        console.error('❌ Payment error:', error);
         showToast('❌ Payment error: ' + error.message);
     }
 }

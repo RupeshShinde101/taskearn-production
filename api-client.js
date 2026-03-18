@@ -206,8 +206,11 @@ async function apiRequest(endpoint, options = {}) {
     // ALWAYS fetch fresh token from localStorage (don't cache it!)
     const authToken = localStorage.getItem('taskearn_token');
     if (authToken) {
+        const tokenPreview = authToken.substring(0, 20) + '...' + authToken.substring(authToken.length - 10);
+        console.log('🔐 Using auth token:', tokenPreview);
+        console.log('   Token length:', authToken.length);
         headers['Authorization'] = `Bearer ${authToken}`;
-        console.log('🔐 Using auth token for request:', endpoint);
+        console.log('✅ Authorization header set to: Bearer [TOKEN]');
     } else {
         console.warn('⚠️ No auth token available for request:', endpoint);
     }
@@ -241,9 +244,17 @@ async function apiRequest(endpoint, options = {}) {
         }
         
         // Handle token expiration - only clear if we actually had an API token
-        if (response.status === 401 && data.message === 'Invalid or expired token') {
+        if (response.status === 401) {
+            const token = localStorage.getItem('taskearn_token');
+            console.log('❌ 401 Unauthorized response received!');
+            console.log('   Error message:', data.message);
+            console.log('   Token exists:', !!token);
+            if (token) {
+                console.log('   Token length:', token.length);
+                console.log('   Token preview:', token.substring(0, 30) + '...');
+            }
             localStorage.removeItem('taskearn_token');
-            console.log('⚠️ API token expired, cleared token but kept local session');
+            console.log('⚠️  Token cleared from localStorage');
         }
         
         return { success: response.ok, status: response.status, data };

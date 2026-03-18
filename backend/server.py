@@ -798,40 +798,46 @@ def create_task():
 @require_auth
 def accept_task(task_id):
     """Accept a task - with suspension check"""
-    with get_db() as (cursor, conn):
-        # Check if user is suspended
-        cursor.execute(f'SELECT is_suspended, suspension_reason FROM users WHERE id = {PH}', (request.user_id,))
-        user = cursor.fetchone()
-        if user:
-            user = dict_from_row(user)
-            if user.get('is_suspended'):
-                reason = user.get('suspension_reason', 'Account suspended')
-                return jsonify({'success': False, 'message': f'Cannot accept tasks: {reason}'}), 403
+    try:
+        with get_db() as (cursor, conn):
+            # Check if user is suspended
+            cursor.execute(f'SELECT is_suspended, suspension_reason FROM users WHERE id = {PH}', (request.user_id,))
+            user = cursor.fetchone()
+            if user:
+                user = dict_from_row(user)
+                if user.get('is_suspended'):
+                    reason = user.get('suspension_reason', 'Account suspended')
+                    return jsonify({'success': False, 'message': f'Cannot accept tasks: {reason}'}), 403
+            
+            # Check if task exists and is active
+            cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
+            task = cursor.fetchone()
+            
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found or already taken'}), 404
+            
+            task = dict_from_row(task)
+            
+            # Can't accept own task
+            if task['posted_by'] == request.user_id:
+                return jsonify({'success': False, 'message': 'Cannot accept your own task'}), 400
+            
+            # Accept task
+            accepted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                UPDATE tasks SET status = 'accepted', accepted_by = {PH}, accepted_at = {PH}
+                WHERE id = {PH}
+            ''', (request.user_id, accepted_at, task_id))
         
-        # Check if task exists and is active
-        cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
-        task = cursor.fetchone()
-        
-        if not task:
-            return jsonify({'success': False, 'message': 'Task not found or already taken'}), 404
-        
-        task = dict_from_row(task)
-        
-        # Can't accept own task
-        if task['posted_by'] == request.user_id:
-            return jsonify({'success': False, 'message': 'Cannot accept your own task'}), 400
-        
-        # Accept task
-        accepted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        cursor.execute(f'''
-            UPDATE tasks SET status = 'accepted', accepted_by = {PH}, accepted_at = {PH}
-            WHERE id = {PH}
-        ''', (request.user_id, accepted_at, task_id))
-    
-    return jsonify({
-        'success': True,
-        'message': 'Task accepted successfully'
-    })
+        return jsonify({
+            'success': True,
+            'message': 'Task accepted successfully'
+        })
+    except Exception as e:
+        print(f"❌ Error in accept_task: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error accepting task: {str(e)}'}), 500
 
 
 @app.route('/api/tasks/<int:task_id>/details', methods=['GET'])

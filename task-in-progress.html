@@ -579,6 +579,11 @@
                         ...currentTask,
                         ...taskData
                     };
+                    // Ensure lat/lng are numbers, not strings
+                    if (currentTask.location) {
+                        currentTask.location.lat = parseFloat(currentTask.location.lat);
+                        currentTask.location.lng = parseFloat(currentTask.location.lng);
+                    }
                     console.log('✅ Loaded task from localStorage:', currentTask);
                 } catch (e) {
                     console.error('Error parsing saved task:', e);

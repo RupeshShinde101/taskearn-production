@@ -2077,11 +2077,15 @@ function acceptTask(taskId) {
         });
 
         // Save current task to localStorage for Task In Progress page
+        const taskLocation = task.location || {};
         localStorage.setItem('currentTask', JSON.stringify({
             id: task.id,
             title: task.title,
             price: task.price,
-            location: task.location,
+            location: {
+                lat: parseFloat(taskLocation.lat) || 19.0760,
+                lng: parseFloat(taskLocation.lng) || 72.8777
+            },
             category: task.category,
             description: task.description,
             providerId: task.postedBy?.id,

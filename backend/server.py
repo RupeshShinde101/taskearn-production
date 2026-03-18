@@ -797,25 +797,9 @@ def create_task():
 @app.route('/api/tasks/<int:task_id>/accept', methods=['POST'])
 @require_auth
 def accept_task(task_id):
-    """Accept a task - with suspension check"""
+    """Accept a task"""
     try:
         with get_db() as (cursor, conn):
-            # Check if user is suspended (try-except in case columns don't exist yet)
-            try:
-                cursor.execute(f'SELECT is_suspended, suspension_reason FROM users WHERE id = {PH}', (request.user_id,))
-                user = cursor.fetchone()
-                if user:
-                    user = dict_from_row(user)
-                    if user.get('is_suspended'):
-                        reason = user.get('suspension_reason', 'Account suspended')
-                        return jsonify({'success': False, 'message': f'Cannot accept tasks: {reason}'}), 403
-            except Exception as e:
-                # Columns might not exist yet, skip suspension check
-                if "is_suspended" in str(e) or "does not exist" in str(e):
-                    print(f"[!] Suspension columns not found in database, skipping check: {e}")
-                else:
-                    raise
-            
             # Check if task exists and is active
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
             task = cursor.fetchone()

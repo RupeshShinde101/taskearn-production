@@ -2360,9 +2360,9 @@ async function completeTask(taskId) {
     if (task && currentUser) {
         try {
             // Call backend API to complete task and process commission
-            const result = await taskApi.complete(taskId);
+            const result = await TasksAPI.complete(taskId);
             
-            if (result.success) {
+            if (result && result.success) {
                 // Show commission breakdown
                 const breakdown = `
                     💼 Task Payment Processed:

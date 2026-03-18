@@ -2651,13 +2651,74 @@ function showPaymentSuccessModal(task, totalPayable, platformFee) {
 }
 
 /**
+ * Pay the helper for a completed task
+ * Called when task poster clicks "Pay Now" on completed task with 'completed' status
+ * Calls backend /api/tasks/<id>/pay-helper endpoint
+ */
+async function payHelperForTask(taskId) {
+    const task = myPostedTasks.find(t => t.id === taskId);
+    
+    if (!task || (task.status !== 'completed' && task.status !== 'pending_payment')) {
+        showToast('❌ Task not ready for payment');
+        return;
+    }
+
+    const taskAmount = task.price;
+    const commission = Math.floor(taskAmount * 0.20);
+    const helperAmount = taskAmount - commission;
+
+    // Confirm payment
+    if (!confirm(`Confirm payment of ₹${taskAmount}?\n\n✓ Helper will receive: ₹${helperAmount}\n✓ Commission (20%): ₹${commission}`)) {
+        return;
+    }
+
+    try {
+        // Call backend to simulate Razorpay payment (in real flow, you'd integrate Razorpay)
+        // For now, we'll use a test payment ID
+        const paymentId = 'pay_test_' + Date.now();
+        
+        const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/pay-helper`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+            },
+            body: JSON.stringify({
+                razorpay_payment_id: paymentId,
+                taskId: taskId
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast(`✅ Payment successful! ₹${helperAmount} sent to helper`);
+            
+            // Update task status locally
+            task.status = 'paid';
+            updateUserData(currentUser.id, {
+                postedTasks: serializeTasks(myPostedTasks)
+            });
+            
+            // Refresh dashboard
+            renderDashboard();
+        } else {
+            showToast(`❌ Payment failed: ${result.message}`);
+        }
+    } catch (error) {
+        console.error('Payment error:', error);
+        showToast('❌ Payment error: ' + error.message);
+    }
+}
+
+/**
  * Pay for a completed task using Razorpay
  * Called when task poster clicks "Pay Now" on completed task
  */
 function payForCompletedTask(taskId) {
     const task = myPostedTasks.find(t => t.id === taskId);
     
-    if (!task || task.status !== 'pending_payment') {
+    if (!task || (task.status !== 'completed' && task.status !== 'pending_payment')) {
         showToast('❌ Task not ready for payment');
         return;
     }
@@ -4081,30 +4142,30 @@ function renderPostedTasks() {
     }
 
     el.innerHTML = myPostedTasks.map(t => {
-        // Payment system: Poster pays full amount, 90% goes to helper, 10% to company
+        // Payment system: Poster pays full amount, 80% goes to helper (20% is commission), 0% to company (commission model)
         const taskAmount = t.price;
-        const helperAmount = Math.floor(taskAmount * 0.9);
-        const companyAmount = taskAmount - helperAmount;
+        const commission = Math.floor(taskAmount * 0.20);
+        const helperAmount = taskAmount - commission;
         
         let actionButtons = '';
         if (t.status === 'active') {
             actionButtons = `<div class="task-actions"><button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button><button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button></div>`;
-        } else if (t.status === 'pending_payment') {
+        } else if (t.status === 'completed' || t.status === 'pending_payment') {
             actionButtons = `
                 <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-top: 10px;">
                     <p style="color: #fbbf24; margin-bottom: 8px; font-size: 14px;">
-                        <i class="fas fa-check-circle"></i> ${t.helperName || 'Helper'} completed this task!
+                        <i class="fas fa-check-circle"></i> ✅ Helper completed this task!
                     </p>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
                         <span>Task Amount:</span><span>₹${taskAmount}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #888;">
-                        <span>Helper receives (90%):</span><span>₹${helperAmount}</span>
+                        <span>Helper receives (80%):</span><span>₹${helperAmount}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #888;">
-                        <span>Platform (10%):</span><span>₹${companyAmount}</span>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #f59e0b;">
+                        <span>Commission (20%):</span><span>₹${commission}</span>
                     </div>
-                    <button class="btn btn-success" style="width: 100%; margin-top: 12px;" onclick="payForCompletedTask(${t.id})" title="Open real-time payment modal">
+                    <button class="btn btn-success" style="width: 100%; margin-top: 12px;" onclick="payHelperForTask(${t.id})" title="Pay the helper via Razorpay">
                         <i class="fas fa-credit-card"></i> Pay ₹${taskAmount} Now
                     </button>
                 </div>
@@ -4119,9 +4180,9 @@ function renderPostedTasks() {
             `;
         }
         
-        const statusColor = t.status === 'pending_payment' ? 'style="background: #fbbf24; color: #000;"' : 
+        const statusColor = (t.status === 'completed' || t.status === 'pending_payment') ? 'style="background: #fbbf24; color: #000;"' : 
                            t.status === 'paid' ? 'style="background: #4ade80; color: #000;"' : '';
-        const statusText = t.status === 'pending_payment' ? '⏳ Awaiting Payment' : 
+        const statusText = (t.status === 'completed' || t.status === 'pending_payment') ? '⏳ Awaiting Payment' : 
                           t.status === 'paid' ? '✅ Paid' : t.status;
         
         return `
@@ -4153,14 +4214,15 @@ function renderAcceptedTasks() {
         let statusHTML = 'In Progress';
         let statusColor = 'pending';
         
-        if (t.status === 'pending_payment') {
+        if (t.status === 'completed' || t.status === 'pending_payment') {
             // Task completed, waiting for payment from poster
             statusHTML = '⏳ Awaiting Payment';
             statusColor = 'warning';
-            actionHTML = `<div class="task-actions">
-                <button class="btn btn-success" onclick="openPaymentReceptionModal(${t.id})" title="Receive payment for completed task">
-                    <i class="fas fa-wallet"></i> Receive Payment
-                </button>
+            actionHTML = `<div style="background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                <p style="color: #fbbf24; margin-bottom: 8px;">
+                    <i class="fas fa-clock"></i> Waiting for task poster to pay...
+                </p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${t.price - Math.floor(t.price * 0.20)} (after commission)</p>
             </div>`;
         } else if (t.status === 'paid') {
             // Payment received

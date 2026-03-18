@@ -569,6 +569,7 @@
             document.getElementById('taskTitle').textContent = currentTask.title || '';
             document.getElementById('taskAmount').textContent = currentTask.amount || currentTask.price || 0;
             document.getElementById('earningAmount').textContent = currentTask.amount || currentTask.price || 0;
+            document.getElementById('modalAmount').textContent = currentTask.amount || currentTask.price || 0;
             document.getElementById('providerName').textContent = currentTask.providerName || 'Provider';
             document.getElementById('providerPhone').textContent = currentTask.providerPhone || 'N/A';
         }
@@ -623,7 +624,7 @@
             // Call API to mark task as completed
             const token = localStorage.getItem('taskearn_token') || '';
             
-            fetch(API_BASE_URL + '/tasks/' + currentTask.id + '/complete', {
+            fetch(API_URL + '/tasks/' + currentTask.id + '/complete', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -126,10 +126,15 @@ def verify_jwt_token(token):
     """Verify JWT token and return payload"""
     try:
         payload = jwt.decode(token, config.SECRET_KEY, algorithms=['HS256'])
+        print(f"✅ Token valid for user: {payload.get('email')}")
         return payload
-    except jwt.ExpiredSignatureError:
+    except jwt.ExpiredSignatureError as e:
+        print(f"❌ Token expired: {e}")
         return None
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        print(f"❌ Invalid token: {e}")
+        print(f"   Token first 50 chars: {token[:50] if token else 'EMPTY'}")
+        print(f"   SECRET_KEY available: {bool(config.SECRET_KEY)}")
         return None
 
 
@@ -194,14 +199,21 @@ def require_auth(f):
     from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        auth_header = request.headers.get('Authorization', '')
+        print(f"🔍 Auth header received: {auth_header[:50] if auth_header else 'EMPTY'}...")
+        
+        token = auth_header.replace('Bearer ', '')
         if not token:
+            print("❌ No token found in Authorization header")
             return jsonify({'success': False, 'message': 'Authentication required'}), 401
         
+        print(f"🔑 Attempting to verify token (first 50 chars): {token[:50]}...")
         payload = verify_jwt_token(token)
         if not payload:
+            print("❌ Token verification failed - returning Invalid or expired token")
             return jsonify({'success': False, 'message': 'Invalid or expired token'}), 401
         
+        print(f"✅ Auth successful for user: {payload.get('email')}")
         request.user_id = payload['user_id']
         request.user_email = payload['email']
         return f(*args, **kwargs)
@@ -882,6 +894,7 @@ def get_task_details(task_id):
 def complete_task(task_id):
     """Mark task as completed - waiting for payment from task poster"""
     try:
+        print(f"\n📋 Completing task {task_id} for user {request.user_id}")
         with get_db() as (cursor, conn):
             # Check if task exists and is accepted by current user (the helper)
             cursor.execute(f'''

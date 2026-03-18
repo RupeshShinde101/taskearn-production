@@ -2355,34 +2355,69 @@ function showTaskPostedSuccess(task) {
     openModal('taskSuccessModal');
 }
 
-function completeTask(taskId) {
+async function completeTask(taskId) {
     const task = myAcceptedTasks.find(t => t.id === taskId);
     if (task && currentUser) {
-        // Mark task as pending payment (helper completed, waiting for poster to pay)
-        task.status = 'pending_payment';
-        task.completedAt = new Date().toISOString();
-        task.helperId = currentUser.id;
-        task.helperName = currentUser.name;
-        
-        // Update task in accepted tasks
-        updateUserData(currentUser.id, {
-            acceptedTasks: serializeTasks(myAcceptedTasks)
-        });
-        
-        // Notify task poster to pay
-        showToast('✅ Task marked complete! Waiting for payment from task poster.');
-        
-        // Show completion modal with payment info
-        showTaskCompletionModal(task);
-        
-        renderDashboard();
-        
-        // ✅ FIX: Update profile after completing task
-        setTimeout(() => {
-            if (currentUser) {
-                openUserProfile();
+        try {
+            // Call backend API to complete task and process commission
+            const result = await taskApi.complete(taskId);
+            
+            if (result.success) {
+                // Show commission breakdown
+                const breakdown = `
+                    💼 Task Payment Processed:
+                    Task Amount: ₹${result.taskAmount}
+                    Commission (20%): -₹${result.commission}
+                    Your Earnings: ₹${result.netEarnings}
+                    New Balance: ₹${result.newBalance}
+                `;
+                
+                console.log(breakdown);
+                
+                // Mark task as completed
+                task.status = 'completed';
+                task.completedAt = new Date().toISOString();
+                task.helperId = currentUser.id;
+                task.helperName = currentUser.name;
+                
+                // Move from accepted to completed
+                myAcceptedTasks = myAcceptedTasks.filter(t => t.id !== taskId);
+                myCompletedTasks.push(task);
+                
+                // Update task in accepted tasks
+                updateUserData(currentUser.id, {
+                    acceptedTasks: serializeTasks(myAcceptedTasks),
+                    completedTasks: serializeTasks(myCompletedTasks)
+                });
+                
+                // Show success with payment details
+                showToast(`✅ Task completed! You earned ₹${result.netEarnings} (after 20% commission)`);
+                
+                // Check if suspended
+                if (result.isSuspended) {
+                    showToast('⚠️ Your wallet balance is below -₹500. Your account has been suspended.', 'error');
+                }
+                
+                // Show completion modal with payment info
+                showTaskCompletionModal(task, result);
+                
+                renderDashboard();
+                
+                // Update profile after completing task
+                setTimeout(() => {
+                    if (currentUser) {
+                        openUserProfile();
+                    }
+                }, 500);
+            } else {
+                showToast(`❌ Error completing task: ${result.message}`, 'error');
             }
-        }, 500);
+        } catch (error) {
+            console.error('Error completing task:', error);
+            showToast('❌ Failed to complete task. Please try again.', 'error');
+        }
+    } else {
+        showToast('❌ Task not found', 'error');
     }
 }
 

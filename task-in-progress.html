@@ -649,7 +649,14 @@
 
         // Proceed to payment
         function proceedToPayment() {
-            window.history.back();
+            // Close modal and go back to dashboard
+            document.getElementById('confirmModal').classList.remove('active');
+            
+            // Show message explaining the payment process
+            alert('✅ Task marked as completed!\n\nThe task poster will now pay you. You will receive ₹' + (currentTask.price - Math.floor(currentTask.price * 0.20)) + ' in your wallet once they confirm payment.\n\nPlease wait for payment confirmation.');
+            
+            // Go back to dashboard
+            window.location.href = 'index.html?tab=accepted-tasks';
         }
 
         // Go back

@@ -2702,7 +2702,7 @@ async function payHelperForTask(taskId) {
 
     try {
         // Call backend to process payment
-        const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/pay-helper`, {
+        const response = await fetch(`https://taskearn-production-production.up.railway.app/api/tasks/${taskId}/pay-helper`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

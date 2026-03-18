@@ -3595,27 +3595,6 @@ def cleanup_old_tasks():
         return 0
 
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint - also runs cleanup"""
-    try:
-        # Run cleanup
-        cleanup_old_tasks()
-        
-        with get_db() as (cursor, conn):
-            cursor.execute("SELECT 1")
-            db_ok = True
-    except:
-        db_ok = False
-    
-    return jsonify({
-        'success': True,
-        'status': 'healthy',
-        'database': 'ok' if db_ok else 'error',
-        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
-    }), 200
-
-
 # ========================================
 # RUN SERVER
 # ========================================

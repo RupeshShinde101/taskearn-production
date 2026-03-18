@@ -2066,46 +2066,67 @@ function acceptTask(taskId) {
 
     const task = tasks.find(t => t.id === taskId);
     if (task && currentUser) {
-        task.status = 'accepted';
-        task.acceptedBy = currentUser;
-        task.acceptedAt = new Date().toISOString();
-        myAcceptedTasks.push(task);
+        // Call backend API to accept task in database
+        const token = localStorage.getItem('taskearn_token');
+        fetch('https://taskearn-production-production.up.railway.app/api/tasks/' + taskId + '/accept', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                // Update local state after successful backend save
+                task.status = 'accepted';
+                task.acceptedBy = currentUser;
+                task.acceptedAt = new Date().toISOString();
+                myAcceptedTasks.push(task);
 
-        // Save to user storage (serialize for localStorage)
-        updateUserData(currentUser.id, {
-            acceptedTasks: serializeTasks(myAcceptedTasks)
+                // Save to user storage (serialize for localStorage)
+                updateUserData(currentUser.id, {
+                    acceptedTasks: serializeTasks(myAcceptedTasks)
+                });
+
+                // Save current task to localStorage for Task In Progress page
+                const taskLocation = task.location || {};
+                localStorage.setItem('currentTask', JSON.stringify({
+                    id: task.id,
+                    title: task.title,
+                    price: task.price,
+                    location: {
+                        lat: parseFloat(taskLocation.lat) || 19.0760,
+                        lng: parseFloat(taskLocation.lng) || 72.8777
+                    },
+                    category: task.category,
+                    description: task.description,
+                    providerId: task.postedBy?.id,
+                    providerName: task.postedBy?.name,
+                    providerPhone: task.postedBy?.phone,
+                    providerRating: task.postedBy?.rating,
+                    startTime: Date.now()
+                }));
+
+                // 🔔 Notify the task poster (in-app + email)
+                notifyTaskPoster(task, currentUser);
+
+                showToast('✅ Task accepted: ' + task.title);
+                closeModal('taskDetailModal');
+                clearRoute();
+                
+                // Redirect to Task In Progress page after short delay
+                setTimeout(() => {
+                    window.location.href = 'task-in-progress.html?taskId=' + task.id;
+                }, 500);
+            } else {
+                showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');
+            }
+        })
+        .catch(err => {
+            console.error('Error accepting task:', err);
+            showToast('❌ Error: ' + err.message, 'error');
         });
-
-        // Save current task to localStorage for Task In Progress page
-        const taskLocation = task.location || {};
-        localStorage.setItem('currentTask', JSON.stringify({
-            id: task.id,
-            title: task.title,
-            price: task.price,
-            location: {
-                lat: parseFloat(taskLocation.lat) || 19.0760,
-                lng: parseFloat(taskLocation.lng) || 72.8777
-            },
-            category: task.category,
-            description: task.description,
-            providerId: task.postedBy?.id,
-            providerName: task.postedBy?.name,
-            providerPhone: task.postedBy?.phone,
-            providerRating: task.postedBy?.rating,
-            startTime: Date.now()
-        }));
-
-        // 🔔 Notify the task poster (in-app + email)
-        notifyTaskPoster(task, currentUser);
-
-        showToast('✅ Task accepted: ' + task.title);
-        closeModal('taskDetailModal');
-        clearRoute();
-        
-        // Redirect to Task In Progress page after short delay
-        setTimeout(() => {
-            window.location.href = 'task-in-progress.html?taskId=' + task.id;
-        }, 500);
     }
 }
 

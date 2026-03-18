@@ -547,16 +547,10 @@
         // API URL
         const API_URL = 'https://taskearn-production-production.up.railway.app/api';
 
-        let map;
-        let userMarker;
-        let taskMarker;
-        let directionsService;
-        let directionsRenderer;
         let timerInterval;
 
         // Load task details from localStorage or API
         function loadTaskDetails() {
-            // First, try to get from localStorage (set by app.js when task was accepted)
             const savedTask = localStorage.getItem('currentTask');
             if (savedTask) {
                 try {
@@ -565,11 +559,6 @@
                         ...currentTask,
                         ...taskData
                     };
-                    // Ensure lat/lng are numbers, not strings
-                    if (currentTask.location) {
-                        currentTask.location.lat = parseFloat(currentTask.location.lat);
-                        currentTask.location.lng = parseFloat(currentTask.location.lng);
-                    }
                     console.log('✅ Loaded task from localStorage:', currentTask);
                 } catch (e) {
                     console.error('Error parsing saved task:', e);
@@ -577,97 +566,35 @@
             }
 
             // Update UI with task details
-            document.getElementById('taskTitle').textContent = currentTask.title;
-            document.getElementById('taskAmount').textContent = currentTask.amount;
-            document.getElementById('earningAmount').textContent = currentTask.amount;
-            document.getElementById('providerName').textContent = currentTask.providerName;
-            document.getElementById('providerPhone').textContent = currentTask.providerPhone;
+            document.getElementById('taskTitle').textContent = currentTask.title || '';
+            document.getElementById('taskAmount').textContent = currentTask.amount || currentTask.price || 0;
+            document.getElementById('earningAmount').textContent = currentTask.amount || currentTask.price || 0;
+            document.getElementById('providerName').textContent = currentTask.providerName || 'Provider';
+            document.getElementById('providerPhone').textContent = currentTask.providerPhone || 'N/A';
         }
 
         // Show location text
         function showLocation() {
             const locationDiv = document.getElementById('taskLocation');
             if (currentTask.location) {
-                locationDiv.textContent = currentTask.location.address || `Lat: ${currentTask.location.lat}, Lng: ${currentTask.location.lng}`;
+                if (typeof currentTask.location === 'string') {
+                    locationDiv.textContent = currentTask.location;
+                } else {
+                    locationDiv.textContent = currentTask.location.address || `Location available`;
+                }
             } else {
-                locationDiv.textContent = 'Location not available';
+                locationDiv.textContent = 'Location: On the way';
             }
 
             // Start timer
             startTimer();
-                    };
-
-                    // User location marker
-                    userMarker = new google.maps.Marker({
-                        position: currentTask.userLocation,
-                        map: map,
-                        title: 'Your Location',
-                        icon: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
-                    });
-
-                    // Calculate distance
-                    calculateDistance();
-                }, function(error) {
-                    console.warn('Geolocation error:', error);
-                    // Use default location if geolocation fails
-                    currentTask.userLocation = currentTask.location;
-                });
-            }
-        }
-
-        // Calculate distance
-        function calculateDistance() {
-            if (!currentTask.userLocation) return;
-
-            const R = 6371; // Earth radius in km
-            const lat1 = currentTask.userLocation.lat * Math.PI / 180;
-            const lat2 = currentTask.location.lat * Math.PI / 180;
-            const deltaLat = (currentTask.location.lat - currentTask.userLocation.lat) * Math.PI / 180;
-            const deltaLng = (currentTask.location.lng - currentTask.userLocation.lng) * Math.PI / 180;
-
-            const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
-                      Math.cos(lat1) * Math.cos(lat2) *
-                      Math.sin(deltaLng/2) * Math.sin(deltaLng/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            const distance = (R * c).toFixed(1);
-
-            document.getElementById('distance').textContent = distance + ' km';
-        }
-
-        // Navigate to task
-        function navigateToTask() {
-            if (!currentTask.userLocation) {
-                alert('Unable to get your location. Please enable location services.');
-                return;
-            }
-
-            const request = {
-                origin: currentTask.userLocation,
-                destination: currentTask.location,
-                travelMode: 'DRIVING'
-            };
-
-            directionsService.route(request, function(result, status) {
-                if (status === 'OK') {
-                    directionsRenderer.setDirections(result);
-                } else {
-                    alert('Unable to calculate route');
-                }
-            });
-        }
-
-        // My location button
-        function myLocation() {
-            if (currentTask.userLocation) {
-                map.setCenter(currentTask.userLocation);
-                map.setZoom(16);
-            }
         }
 
         // Start timer
         function startTimer() {
+            const startTime = currentTask.startTime || Date.now();
             timerInterval = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - currentTask.startTime) / 1000);
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
                 const minutes = Math.floor(elapsed / 60);
                 const seconds = elapsed % 60;
                 document.getElementById('timer').textContent = 
@@ -684,8 +611,8 @@
         // Call provider
         function callProvider() {
             const taskId = currentTask.id || '1';
-            const providerName = encodeURIComponent(currentTask.providerName);
-            const providerPhone = encodeURIComponent(currentTask.providerPhone);
+            const providerName = encodeURIComponent(currentTask.providerName || 'Provider');
+            const providerPhone = encodeURIComponent(currentTask.providerPhone || 'N/A');
             window.location.href = 'voice-call.html?taskId=' + taskId + 
                                   '&providerName=' + providerName + 
                                   '&providerPhone=' + providerPhone;
@@ -694,9 +621,9 @@
         // Complete task
         function completeTask() {
             // Call API to mark task as completed
-            const token = localStorage.getItem('authToken') || '';
+            const token = localStorage.getItem('taskearn_token') || '';
             
-            fetch(API_URL + '/tasks/' + currentTask.id + '/complete', {
+            fetch(API_BASE_URL + '/tasks/' + currentTask.id + '/complete', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -707,27 +634,21 @@
             .then(data => {
                 if (data.success) {
                     clearInterval(timerInterval);
-                    document.getElementById('modalAmount').textContent = data.amount || currentTask.amount;
+                    document.getElementById('modalAmount').textContent = data.taskAmount || currentTask.amount || 0;
                     document.getElementById('confirmModal').classList.add('active');
                 } else {
-                    alert('Error: ' + (data.message || 'Failed to complete task'));
+                    alert('⚠️ ' + (data.message || 'Failed to complete task'));
                 }
             })
             .catch(err => {
                 console.error('Error:', err);
-                // Fallback: Show modal anyway
-                clearInterval(timerInterval);
-                document.getElementById('modalAmount').textContent = currentTask.amount;
-                document.getElementById('confirmModal').classList.add('active');
+                alert('❌ Error: ' + err.message);
             });
         }
 
         // Proceed to payment
         function proceedToPayment() {
-            // Redirect to payment page with task details
-            window.location.href = 'payment-qr.html?taskId=' + currentTask.id + '&amount=' + currentTask.amount + 
-                                   '&taskName=' + encodeURIComponent(currentTask.title) + 
-                                   '&providerName=' + encodeURIComponent(currentTask.providerName);
+            window.history.back();
         }
 
         // Go back
@@ -741,7 +662,7 @@
         // Initialize on page load
         window.addEventListener('load', function() {
             loadTaskDetails();
-            initMap();
+            showLocation();
         });
     </script>
 </body>

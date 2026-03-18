@@ -15,6 +15,10 @@ class Config:
     # Secret key for JWT and sessions
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
+    # Log SECRET_KEY status for debugging
+    print(f"🔐 SECRET_KEY loaded: {'FROM ENVIRONMENT' if os.environ.get('SECRET_KEY') else 'USING DEFAULT DEV KEY'}")
+    print(f"   Key length: {len(SECRET_KEY)}, First 20 chars: {SECRET_KEY[:20]}...")
+    
     # JWT Settings
     JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 24))
     

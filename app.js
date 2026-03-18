@@ -4061,11 +4061,13 @@ function renderAvailableTasks() {
     if (!el) return;
 
     // Get available tasks (not posted by current user and not already accepted by them)
-    const availableTasksList = tasks.filter(t => 
-        t.status === 'active' && 
-        (!currentUser || t.postedBy.id !== currentUser.id) &&
-        (!myAcceptedTasks.find(at => at.id === t.id))
-    ).sort((a, b) => {
+    const availableTasksList = tasks.filter(t => {
+        const isExpired = getTimeLeft(t.expiresAt) === 'Expired';
+        return t.status === 'active' && 
+               !isExpired &&
+               (!currentUser || t.postedBy.id !== currentUser.id) &&
+               (!myAcceptedTasks.find(at => at.id === t.id));
+    }).sort((a, b) => {
         // Sort by distance (closest first)
         const distA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
         const distB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);

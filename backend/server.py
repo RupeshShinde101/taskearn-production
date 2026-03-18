@@ -329,54 +329,6 @@ def disconnect():
 
 
 # ========================================
-# FRONTEND ROUTES - Serve HTML files
-# ========================================
-
-@app.route('/')
-def index():
-    """Serve the main app"""
-    try:
-        # Try to serve index.html from parent directory
-        import os
-        index_path = os.path.join(os.path.dirname(__file__), '..', 'index.html')
-        if os.path.exists(index_path):
-            with open(index_path, 'r', encoding='utf-8') as f:
-                return f.read()
-    except:
-        pass
-    # Fallback
-    return jsonify({
-        'success': True,
-        'message': 'TaskEarn Backend API - Access /api/health or frontend files',
-        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
-    }), 200
-
-@app.route('/<path:filename>')
-def serve_static(filename):
-    """Serve static files (HTML, CSS, JS)"""
-    try:
-        import os
-        file_path = os.path.join(os.path.dirname(__file__), '..', filename)
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            # Set appropriate content type
-            if filename.endswith('.html'):
-                return content, 200, {'Content-Type': 'text/html; charset=utf-8'}
-            elif filename.endswith('.js'):
-                return content, 200, {'Content-Type': 'application/javascript; charset=utf-8'}
-            elif filename.endswith('.css'):
-                return content, 200, {'Content-Type': 'text/css; charset=utf-8'}
-            elif filename.endswith('.json'):
-                return content, 200, {'Content-Type': 'application/json; charset=utf-8'}
-            else:
-                return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
-    except Exception as e:
-        print(f"⚠️ Error serving {filename}: {e}")
-    return jsonify({'success': False, 'message': 'File not found'}), 404
-
-
-# ========================================
 # API ROUTES - AUTHENTICATION
 # ========================================
 

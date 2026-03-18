@@ -91,6 +91,9 @@ def init_postgres_db():
                 tasks_posted INTEGER DEFAULT 0,
                 tasks_completed INTEGER DEFAULT 0,
                 total_earnings DECIMAL(12,2) DEFAULT 0,
+                is_suspended BOOLEAN DEFAULT FALSE,
+                suspension_reason VARCHAR(255),
+                suspended_at TIMESTAMP,
                 joined_at TIMESTAMP NOT NULL,
                 last_login TIMESTAMP,
                 session_token VARCHAR(255)
@@ -357,6 +360,9 @@ def init_sqlite_db():
                 tasks_posted INTEGER DEFAULT 0,
                 tasks_completed INTEGER DEFAULT 0,
                 total_earnings REAL DEFAULT 0,
+                is_suspended BOOLEAN DEFAULT 0,
+                suspension_reason TEXT,
+                suspended_at TEXT,
                 joined_at TEXT NOT NULL,
                 last_login TEXT,
                 session_token TEXT

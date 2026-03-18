@@ -28,20 +28,33 @@
     </script>
     <link rel="stylesheet" href="styles.css">
     
-    <!-- Backend API Configuration -->
+    <!-- Backend API Configuration - INLINE MOBILE DETECTION (Cannot be cached) -->
     <script>
-        // Auto-detect environment and set API URL
-        // NOTE: Actual API URL is determined in api-client.js based on device type (mobile/desktop) and deployment location
+        // CRITICAL: This runs IMMEDIATELY before external scripts load
+        // This inline script CANNOT be cached by browsers
+        // Its sole purpose: Set window.API_BASE_URL based on device type
+        
         (function() {
-            console.log('🔗 Backend API will be configured by api-client.js');
-            console.log('🌍 Environment detection: PRODUCTION (Netlify Frontend)');
-            console.log('📱 Device detection: Mobile-aware proxy routing enabled');
+            // Detect if user is on mobile device
+            const userAgent = navigator.userAgent.toLowerCase();
+            const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
             
-            // When deploying to production on Netlify:
-            // 1. API URL is set in api-client.js
-            // 2. Mobile devices use: /.netlify/functions/api-proxy/api
-            // 3. Desktop devices use: https://taskearn-production-production.up.railway.app/api
-            // 4. Set BACKEND_URL environment variable in Netlify dashboard
+            console.log('📱 Device Detection (Inline Script):', isMobile ? 'MOBILE' : 'DESKTOP');
+            console.log('User-Agent:', userAgent.substring(0, 80) + '...');
+            
+            // Pre-set API URL before api-client.js loads
+            // This ensures api-client.js will respect this value
+            if (isMobile) {
+                // Force mobile to use proxy (bypasses ISP/carrier DNS blocking)
+                window.API_BASE_URL = '/.netlify/functions/api-proxy/api';
+                window.FORCE_MOBILE_PROXY = true;
+                console.log('✅ Pre-set for MOBILE: window.API_BASE_URL = /.netlify/functions/api-proxy/api');
+            } else {
+                // Desktop can attempt direct Railway connection (usually not blocked)
+                window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+                window.FORCE_MOBILE_PROXY = false;
+                console.log('✅ Pre-set for DESKTOP: window.API_BASE_URL = Railway direct');
+            }
         })();
     </script>
 </head>
@@ -1416,35 +1429,16 @@
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20260317_mobile_fix_1"></script>
+    <script src="api-client.js?v=20260317_mobile_fix_2"></script>
     
     <!-- Razorpay Payment Integration -->
-    <script src="razorpay.js?v=20260317_mobile_fix_1"></script>
+    <script src="razorpay.js?v=20260317_mobile_fix_2"></script>
     
-    <script src="app.js?v=20260317_mobile_fix_1"></script>
+    <script src="app.js?v=20260317_mobile_fix_2"></script>
     
-    <!-- CRITICAL: Force mobile to use proxy BEFORE scripts load -->
-    <script>
-        (function() {
-            const hostname = window.location.hostname;
-            const isNetlify = hostname.includes('netlify.app') || hostname.includes('taskearn');
-            const userAgent = (navigator.userAgent || '').toLowerCase();
-            const isMobile = /android|iphone|ipad|mobile/i.test(userAgent);
-            
-            console.log('%c⚡ CRITICAL MOBILE PROXY OVERRIDE', 'background: #ff6600; color: white; font-size: 14px; font-weight: bold; padding: 5px 10px; border-radius: 3px;');
-            console.log('Hostname:', hostname, '| Netlify?', isNetlify);
-            console.log('User-Agent:', userAgent.substring(0, 60));
-            console.log('Mobile?', isMobile);
-            
-            if (isMobile && isNetlify) {
-                console.log('%c✅ MOBILE ON NETLIFY - FORCING PROXY', 'background: #00cc00; color: white; font-size: 12px; font-weight: bold; padding: 3px 8px;');
-                window.FORCE_PROXY = true;
-            } else if (isMobile && !isNetlify) {
-                console.log('📱 Mobile but not on Netlify');
-            } else if (!isMobile && isNetlify) {
-                console.log('🖥️ Desktop on Netlify');
-            }
-        })();
-    </script>
+    <!-- CRITICAL: Mobile detection happens in HEAD section via inline script -->
+    <!-- That script runs FIRST and pre-sets window.API_BASE_URL before any external scripts load -->
+    
+
 </body>
 </html>

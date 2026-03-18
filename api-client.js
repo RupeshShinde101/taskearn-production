@@ -22,43 +22,41 @@ function isNetlifyDeployed() {
 }
 
 // API URL Configuration with fallback logic
-let API_BASE_URL = undefined;  // Start empty, will be set based on detection
+let API_BASE_URL = window.API_BASE_URL || undefined;  // Use pre-set value from HTML inline script
 let RAILWAY_CHECKED = false;
 let RAILWAY_AVAILABLE = false;
 let PROXY_CHECKED = false;
 let PROXY_AVAILABLE = false;
 const MOBILE = isMobileDevice();
 const ON_NETLIFY = isNetlifyDeployed();
+const FORCE_MOBILE_PROXY = window.FORCE_MOBILE_PROXY || false;
 
-console.log('🔍 Detecting environment...');
-console.log('📱 Device type:', MOBILE ? 'MOBILE 📱' : 'DESKTOP 🖥️');
-console.log('☁️ Deployment:', ON_NETLIFY ? 'NETLIFY ☁️' : 'LOCAL/OTHER');
-console.log('⚠️ Force Proxy Flag:', window.FORCE_PROXY ? '✅ YES' : '❌ NO');
+console.log('🔍 API Client Initialization');
+console.log('Pre-set API_BASE_URL from HTML:', window.API_BASE_URL);
+console.log('📱 Mobile device:', MOBILE);
+console.log('☁️ On Netlify:', ON_NETLIFY);
+console.log('🔒 Force mobile proxy:', FORCE_MOBILE_PROXY);
 
-// Set default API URL based on device and deployment
-// NOTE: This OVERRIDES any pre-set window.TASKEARN_API_URL
-if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    // Development: Use local backend
-    API_BASE_URL = 'http://localhost:5000/api';
-    console.log('🔧 Development Mode: Using local backend at', API_BASE_URL);
-} else if (window.FORCE_PROXY || (MOBILE && ON_NETLIFY)) {
-    // MOBILE + NETLIFY or FORCE_PROXY: MUST use proxy (carrier DNS blocking is common)
-    API_BASE_URL = '/.netlify/functions/api-proxy/api';
-    console.log('📱 MOBILE on Netlify → Using Netlify proxy relay ONLY');
-    console.log('   This bypasses ISP/carrier DNS blocking of Railway');
-} else if (!MOBILE && ON_NETLIFY) {
-    // DESKTOP + NETLIFY: Try Railway first (usually not blocked on desktop)
-    API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-    console.log('🖥️ DESKTOP on Netlify → Using Railway backend');
-} else {
-    // Fallback (shouldn't happen in production)
-    API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-    console.log('🌍 Fallback Mode: Using Railway backend');
+// If not pre-set by inline HTML script, determine it now
+if (!API_BASE_URL) {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        API_BASE_URL = 'http://localhost:5000/api';
+        console.log('🔧 Development: Using local backend');
+    } else if (MOBILE && ON_NETLIFY) {
+        API_BASE_URL = '/.netlify/functions/api-proxy/api';
+        console.log('📱 Mobile on Netlify: Using proxy');
+    } else if (ON_NETLIFY) {
+        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+        console.log('🖥️ Desktop on Netlify: Using Railway');
+    } else {
+        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
+        console.log('🌍 Fallback: Using Railway');
+    }
 }
 
 console.log('=====================================');
-console.log('✅ API_BASE_URL:', API_BASE_URL);
-console.log('✅ All requests will use this URL');
+console.log('✅ FINAL API_BASE_URL:', API_BASE_URL);
+console.log('✅ Mobile proxy enforced:', FORCE_MOBILE_PROXY);
 console.log('=====================================');
 
 // Try to determine if Railway is actually available (run in background, non-blocking)

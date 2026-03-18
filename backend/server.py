@@ -797,8 +797,17 @@ def create_task():
 @app.route('/api/tasks/<int:task_id>/accept', methods=['POST'])
 @require_auth
 def accept_task(task_id):
-    """Accept a task"""
+    """Accept a task - with suspension check"""
     with get_db() as (cursor, conn):
+        # Check if user is suspended
+        cursor.execute(f'SELECT is_suspended, suspension_reason FROM users WHERE id = {PH}', (request.user_id,))
+        user = cursor.fetchone()
+        if user:
+            user = dict_from_row(user)
+            if user.get('is_suspended'):
+                reason = user.get('suspension_reason', 'Account suspended')
+                return jsonify({'success': False, 'message': f'Cannot accept tasks: {reason}'}), 403
+        
         # Check if task exists and is active
         cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
         task = cursor.fetchone()
@@ -874,40 +883,103 @@ def get_task_details(task_id):
 @app.route('/api/tasks/<int:task_id>/complete', methods=['POST'])
 @require_auth
 def complete_task(task_id):
-    """Mark task as completed"""
-    with get_db() as (cursor, conn):
-        # Check if task exists and is accepted by current user
-        cursor.execute(f'''
-            SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
-        ''', (task_id, request.user_id, 'accepted'))
-        task = cursor.fetchone()
+    """Mark task as completed - REAL MONEY TRANSACTION"""
+    try:
+        with get_db() as (cursor, conn):
+            # Check if task exists and is accepted by current user (the helper)
+            cursor.execute(f'''
+                SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
+            ''', (task_id, request.user_id, 'accepted'))
+            task = cursor.fetchone()
+            
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found or not accepted by you'}), 404
+            
+            task = dict_from_row(task)
+            
+            # Mark task as completed
+            completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                UPDATE tasks SET status = 'completed', completed_at = {PH}
+                WHERE id = {PH}
+            ''', (completed_at, task_id))
+            
+            # Calculate earnings and commission
+            task_amount = float(task['price'])
+            commission = calculate_commission(task_amount)
+            net_earnings = task_amount - commission
+            
+            print(f"💰 Task {task_id} completed:")
+            print(f"   Task Amount: ₹{task_amount:.2f}")
+            print(f"   Commission ({COMMISSION_PERCENTAGE}%): ₹{commission:.2f}")
+            print(f"   Net Earnings: ₹{net_earnings:.2f}")
+            
+            # Get or create wallet
+            cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
+            wallet = cursor.fetchone()
+            
+            if not wallet:
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'''
+                    INSERT INTO wallets (user_id, balance, total_added, total_spent, total_earned, total_cashback, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, net_earnings, 0, 0, net_earnings, 0, now))
+                cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
+                wallet = cursor.fetchone()
+            
+            wallet_dict = dict_from_row(wallet)
+            old_balance = float(wallet_dict['balance'])
+            new_balance = old_balance + net_earnings
+            
+            # Update wallet balance - DEDUCT COMMISSION HERE
+            cursor.execute(f'''
+                UPDATE wallets 
+                SET balance = {PH}, 
+                    total_earned = total_earned + {PH},
+                    updated_at = {PH}
+                WHERE user_id = {PH}
+            ''', (new_balance, net_earnings, completed_at, request.user_id))
+            
+            # Record transaction
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions 
+                (wallet_id, user_id, type, amount, balance_after, description, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (wallet_dict['id'], request.user_id, 'credit', net_earnings, new_balance, 
+                  f'Earned from task (Commission ₹{commission:.2f} deducted)', completed_at))
+            
+            # Update user stats
+            cursor.execute(f'''
+                UPDATE users SET tasks_completed = tasks_completed + 1, 
+                                total_earnings = total_earnings + {PH}
+                WHERE id = {PH}
+            ''', (net_earnings, request.user_id))
+            
+            # Check for suspension
+            is_suspended = suspend_user_if_needed(request.user_id, cursor)
+            
+            print(f"📊 Wallet Updated:")
+            print(f"   Old Balance: ₹{old_balance:.2f}")
+            print(f"   New Balance: ₹{new_balance:.2f}")
+            if is_suspended:
+                print(f"   ⚠️ ACCOUNT SUSPENDED - Balance below threshold")
         
-        if not task:
-            return jsonify({'success': False, 'message': 'Task not found or not accepted by you'}), 404
-        
-        task = dict_from_row(task)
-        
-        # Complete task
-        completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        cursor.execute(f'''
-            UPDATE tasks SET status = 'completed', completed_at = {PH}
-            WHERE id = {PH}
-        ''', (completed_at, task_id))
-        
-        # Update completer's stats
-        cursor.execute(f'''
-            UPDATE users SET tasks_completed = tasks_completed + 1, 
-                            total_earnings = total_earnings + {PH}
-            WHERE id = {PH}
-        ''', (task['price'], request.user_id))
+        return jsonify({
+            'success': True,
+            'message': 'Task completed successfully',
+            'taskAmount': float(task['price']),
+            'commission': float(commission),
+            'netEarnings': float(net_earnings),
+            'newBalance': new_balance,
+            'isSuspended': is_suspended,
+            'taskId': task_id
+        }), 200
     
-    return jsonify({
-        'success': True,
-        'message': 'Task completed successfully',
-        'amount': float(task['price']),
-        'taskId': task_id,
-        'paymentRedirect': f'/payment-qr.html?taskId={task_id}&amount={task["price"]}'
-    })
+    except Exception as e:
+        print(f"❌ Error completing task: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Failed to complete task: {str(e)}'}), 500
 
 
 @app.route('/api/user/tasks', methods=['GET'])
@@ -1360,7 +1432,45 @@ def stop_tracking(task_id):
 
 
 # ========================================
-# WALLET API
+# COMMISSION SYSTEM
+# ========================================
+
+# Commission configuration
+COMMISSION_PERCENTAGE = 20  # 20% commission on helper earnings
+SUSPENSION_THRESHOLD = -500  # Suspend account if wallet balance < -500
+
+def calculate_commission(amount):
+    """Calculate commission on task amount"""
+    return (amount * COMMISSION_PERCENTAGE) / 100
+
+def suspend_user_if_needed(user_id, cursor):
+    """Check if user should be suspended and suspend if needed"""
+    try:
+        # Get user's wallet balance
+        cursor.execute(f'SELECT balance FROM wallets WHERE user_id = {PH}', (user_id,))
+        wallet = cursor.fetchone()
+        
+        if not wallet:
+            return False
+        
+        balance = float(wallet[0]) if isinstance(wallet[0], (int, float)) else float(wallet['balance'])
+        
+        # If balance is below threshold, suspend
+        if balance < SUSPENSION_THRESHOLD:
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            reason = f"Account suspended due to negative wallet balance (₹{balance:.2f}). Contact support to resolve."
+            cursor.execute(f'''
+                UPDATE users 
+                SET is_suspended = {PH}, suspension_reason = {PH}, suspended_at = {PH}
+                WHERE id = {PH}
+            ''', (True, reason, now, user_id))
+            print(f"⚠️ User {user_id} suspended. Wallet balance: ₹{balance:.2f}")
+            return True
+        return False
+    except Exception as e:
+        print(f"❌ Error checking suspension: {e}")
+        return False
+
 # ========================================
 
 def get_or_create_wallet(user_id):

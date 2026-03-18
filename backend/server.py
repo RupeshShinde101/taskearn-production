@@ -132,27 +132,8 @@ def verify_jwt_token(token):
         print(f"❌ Token expired: {e}")
         return None
     except jwt.InvalidTokenError as e:
-        print(f"❌ Invalid token with primary key: {e}")
-        print(f"   Attempting with fallback keys...")
-        
-        # Fallback: Try with other known keys (for token compatibility)
-        fallback_keys = [
-            'dev-secret-key-change-in-production',
-            'taskearn-secret-key-2024',
-            'TaskEarn2026$Prod@SecretKey#Railway!XkP9mN2vQ8wL5jR3yT6uI0oA4sD7fG1hJ',  # Production key from .env
-        ]
-        
-        for i, fallback_key in enumerate(fallback_keys):
-            try:
-                payload = jwt.decode(token, fallback_key, algorithms=['HS256'])
-                print(f"✅ Token valid with fallback key #{i+1}: {payload.get('email')}")
-                return payload
-            except jwt.InvalidTokenError:
-                continue
-        
-        print(f"❌ Token invalid with all keys")
-        print(f"   Token first 50 chars: {token[:50] if token else 'EMPTY'}")
-        print(f"   Current SECRET_KEY: {config.SECRET_KEY[:20]}...")
+        print(f"❌ Invalid token: {e}")
+        print(f"   Current SECRET_KEY: {config.SECRET_KEY[:30]}...")
         return None
 
 

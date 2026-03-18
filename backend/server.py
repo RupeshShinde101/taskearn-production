@@ -968,18 +968,24 @@ def pay_helper(task_id):
             cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (helper_id,))
             wallet = cursor.fetchone()
             
+            print(f"[DEBUG] Looking for helper wallet: user_id={helper_id}, found={wallet is not None}")
+            
             if not wallet:
                 # Create wallet if doesn't exist
+                print(f"[DEBUG] Creating wallet for helper {helper_id}")
                 cursor.execute(f'''
                     INSERT INTO wallets (user_id, balance, total_added, total_spent, total_earned, total_cashback, created_at)
                     VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                 ''', (helper_id, net_earnings, 0, 0, net_earnings, 0, now))
                 cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (helper_id,))
                 wallet = cursor.fetchone()
+                print(f"[DEBUG] Wallet created, new_id={dict_from_row(wallet)['id']}")
             
             wallet_dict = dict_from_row(wallet)
             old_balance = float(wallet_dict['balance'])
             new_balance = old_balance + net_earnings
+            
+            print(f"[DEBUG] Updating helper wallet: {old_balance} -> {new_balance}")
             
             # Update helper's wallet
             cursor.execute(f'''
@@ -996,17 +1002,23 @@ def pay_helper(task_id):
                 (wallet_id, user_id, type, amount, balance_after, description, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (wallet_dict['id'], helper_id, 'credit', net_earnings, new_balance, 
-                  f'Task payment received (Commission ₹{commission:.2f} deducted)', now))
+                  f'Task payment received (Commission {commission:.2f} deducted)', now))
+            
+            print(f"[DEBUG] Recorded transaction for helper")
             
             # Deduct from poster's wallet (if they want to pay from wallet)
             poster_wallet = None
             cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
             poster_wallet = cursor.fetchone()
             
+            print(f"[DEBUG] Looking for poster wallet: user_id={request.user_id}, found={poster_wallet is not None}")
+            
             if poster_wallet:
                 poster_wallet_dict = dict_from_row(poster_wallet)
                 poster_old_balance = float(poster_wallet_dict['balance'])
                 poster_new_balance = poster_old_balance - task_amount
+                
+                print(f"[DEBUG] Updating poster wallet: {poster_old_balance} -> {poster_new_balance}")
                 
                 cursor.execute(f'''
                     UPDATE wallets 
@@ -1023,11 +1035,32 @@ def pay_helper(task_id):
                     VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                 ''', (poster_wallet_dict['id'], request.user_id, 'debit', task_amount, poster_new_balance, 
                       f'Paid helper for task (Razorpay: {razorpay_payment_id[:10]}...)', now))
+                
+                print(f"[DEBUG] Recorded transaction for poster")
+            else:
+                print(f"[DEBUG] No poster wallet found - creating new one")
+                cursor.execute(f'''
+                    INSERT INTO wallets (user_id, balance, total_added, total_spent, total_earned, total_cashback, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, -task_amount, 0, task_amount, 0, 0, now))
+                cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
+                poster_wallet = cursor.fetchone()
+                poster_wallet_dict = dict_from_row(poster_wallet)
+                
+                cursor.execute(f'''
+                    INSERT INTO wallet_transactions 
+                    (wallet_id, user_id, type, amount, balance_after, description, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (poster_wallet_dict['id'], request.user_id, 'debit', task_amount, -task_amount, 
+                      f'Paid helper for task (Razorpay: {razorpay_payment_id[:10]}...)', now))
+                print(f"[DEBUG] Created poster wallet with initial balance {-task_amount}")
             
             # Update task status to paid
             cursor.execute(f'''
                 UPDATE tasks SET status = 'paid' WHERE id = {PH}
             ''', (task_id,))
+            
+            print(f"[DEBUG] Updated task {task_id} to paid status")
             
             # Check suspension for helper
             is_suspended = suspend_user_if_needed(helper_id, cursor)

@@ -699,41 +699,74 @@ def change_password():
 def get_tasks():
     """Get all active tasks (non-expired)"""
     import datetime
+    import sys
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
+    sys.stderr.write(f"\n[GET /api/tasks] Starting request at: {now}\n")
+    sys.stderr.flush()
+    
     with get_db() as (cursor, conn):
-        cursor.execute(f'''
+        # Now get the filtered results directly
+        sys.stderr.write(f"[GET /api/tasks] Executing LEFT JOIN query...\n")
+        sys.stderr.flush()
+        
+        query = f'''
             SELECT t.*, u.name as poster_name, u.rating as poster_rating, u.tasks_posted as poster_tasks
             FROM tasks t
-            JOIN users u ON t.posted_by = u.id
+            LEFT JOIN users u ON t.posted_by = u.id
             WHERE t.status = 'active' AND t.expires_at > {PH}
             ORDER BY t.posted_at DESC
-        ''', (now,))
+        '''
+        
+        sys.stderr.write(f"[GET /api/tasks] Query: {query}\n")
+        sys.stderr.write(f"[GET /api/tasks] Parameters: {(now,)}\n")
+        sys.stderr.flush()
+        
+        cursor.execute(query, (now,))
+        
         tasks = cursor.fetchall()
+        sys.stderr.write(f"[GET /api/tasks] cursor.fetchall() returned: {len(tasks)} tasks\n")
+        sys.stderr.flush()
     
     task_list = []
     for task in tasks:
-        task = dict_from_row(task)
-        task_list.append({
-            'id': task['id'],
-            'title': task['title'],
-            'description': task['description'],
-            'category': task['category'],
-            'location': {
-                'lat': task['location_lat'],
-                'lng': task['location_lng'],
-                'address': task['location_address']
-            },
-            'price': float(task['price']),
-            'postedBy': {
-                'name': task['poster_name'],
-                'rating': float(task['poster_rating']),
-                'tasksPosted': task['poster_tasks']
-            },
-            'postedAt': task['posted_at'],
-            'expiresAt': task['expires_at'],
-            'status': task['status']
-        })
+        try:
+            task = dict_from_row(task)
+            # Provide default values for user info if NULL from LEFT JOIN
+            poster_name = task.get('poster_name') or 'Anonymous'
+            poster_rating = float(task.get('poster_rating') or 5.0)
+            poster_tasks = int(task.get('poster_tasks') or 0)
+            sys.stderr.write(f"[GET /api/tasks] Processing task {task['id']}: {task['title']} (expires: {task['expires_at']})\n")
+            sys.stderr.flush()
+            
+            task_list.append({
+                'id': task['id'],
+                'title': task['title'],
+                'description': task['description'],
+                'category': task['category'],
+                'location': {
+                    'lat': task['location_lat'],
+                    'lng': task['location_lng'],
+                    'address': task['location_address']
+                },
+                'price': float(task['price']),
+                'postedBy': {
+                    'name': poster_name,
+                    'rating': poster_rating,
+                    'tasksPosted': poster_tasks
+                },
+                'postedAt': task['posted_at'],
+                'expiresAt': task['expires_at'],
+                'status': task['status']
+            })
+            sys.stderr.write(f"[GET /api/tasks] ✅ Task {task['id']} added to list\n")
+            sys.stderr.flush()
+        except Exception as e:
+            sys.stderr.write(f"[GET /api/tasks] ❌ Error processing task: {str(e)}\n")
+            sys.stderr.write(f"   Task dict: {task}\n")
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
     
     print(f"[GET /tasks] Found {len(task_list)} active, non-expired tasks")
     return jsonify({

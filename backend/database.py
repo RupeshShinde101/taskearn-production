@@ -5,6 +5,7 @@ Supports both SQLite (development) and PostgreSQL (production)
 
 import os
 import sqlite3
+import datetime
 from contextlib import contextmanager
 from config import get_config
 
@@ -389,6 +390,38 @@ def init_postgres_db():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS helper_level VARCHAR(20) DEFAULT 'bronze'
         ''')
         
+        # ========================================
+        # CREATE SYSTEM/COMPANY USER
+        # ========================================
+        # Ensure a company user with id '1' exists for the platform wallet
+        try:
+            cursor.execute('SELECT id FROM users WHERE id = %s', ('1',))
+            company_user = cursor.fetchone()
+            
+            if not company_user:
+                print("[DB] Creating system company user...")
+                cursor.execute('''
+                    INSERT INTO users (
+                        id, name, email, password_hash, rating, 
+                        tasks_posted, tasks_completed, joined_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    '1',  # user_id
+                    'TaskEarn System',
+                    'system@taskearn.com',
+                    'SYSTEM_ACCOUNT_NO_PASSWORD',
+                    5.0,
+                    0,
+                    0,
+                    datetime.datetime.now(datetime.timezone.utc).isoformat()
+                ))
+                print("[DB] ✅ System user created successfully")
+            else:
+                print("[DB] System user already exists")
+        except Exception as e:
+            print(f"[DB] ⚠️  System user creation warning: {e}")
+            # Don't fail if user already exists or has a unique constraint issue
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -705,8 +738,38 @@ def init_sqlite_db():
                 created_at TEXT NOT NULL
             )
         ''')
-        
-        print("[DB] ✅ SQLite database initialized successfully")
+                # ========================================
+        # CREATE SYSTEM/COMPANY USER
+        # ========================================
+        # Ensure a company user with id '1' exists for the platform wallet
+        try:
+            cursor.execute('SELECT id FROM users WHERE id = ?', ('1',))
+            company_user = cursor.fetchone()
+            
+            if not company_user:
+                print("[DB] Creating system company user...")
+                cursor.execute('''
+                    INSERT INTO users (
+                        id, name, email, password_hash, rating, 
+                        tasks_posted, tasks_completed, joined_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    '1',  # user_id
+                    'TaskEarn System',
+                    'system@taskearn.com',
+                    'SYSTEM_ACCOUNT_NO_PASSWORD',
+                    5.0,
+                    0,
+                    0,
+                    datetime.datetime.now(datetime.timezone.utc).isoformat()
+                ))
+                print("[DB] ✅ System user created successfully")
+            else:
+                print("[DB] System user already exists")
+        except Exception as e:
+            print(f"[DB] ⚠️  System user creation warning: {e}")
+            # Don't fail if user already exists or has a unique constraint issue
+                print("[DB] ✅ SQLite database initialized successfully")
 
 
 def init_db():

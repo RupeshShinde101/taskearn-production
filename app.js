@@ -2567,6 +2567,22 @@ function showTaskCompletionModal(task, result) {
                 
                 <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
                 
+                <div style="text-align: left; margin-bottom: 15px;">
+                    <div style="font-size: 12px; color: #999; margin-bottom: 8px; font-weight: 600;">Platform Income:</div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #888;">
+                        <span>Helper Commission & Fee:</span>
+                        <span>₹${(result?.platformBreakdown?.helperCommission || 0).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; color: #888;">
+                        <span>Poster Fee:</span>
+                        <span>₹${(result?.platformBreakdown?.posterFee || 0).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); color: #888;">
+                        <span>Total Platform Income:</span>
+                        <span style="color: #fbbf24;">₹${(result?.platformIncome || 0).toFixed(2)}</span>
+                    </div>
+                </div>
+                
                 <div style="text-align: left;">
                     <div style="display: flex; justify-content: space-between; font-size: 14px; margin-top: 10px; color: #888;">
                         <span>Your New Wallet Balance:</span>
@@ -2577,7 +2593,7 @@ function showTaskCompletionModal(task, result) {
             
             <p style="color: #888; font-size: 14px;">
                 ✅ Commissions and platform fees have been deducted.<br>
-                Your earnings are now reflected in your wallet.
+                Your earnings and platform income are now recorded.
             </p>
         </div>
     `;

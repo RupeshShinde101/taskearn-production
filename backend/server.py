@@ -1025,6 +1025,52 @@ def complete_task(task_id):
                 f'task-{task_id}', task_id, now
             ))
             
+            # Credit company/platform wallet with all deducted amounts
+            # Helper commission + fee (12%) + Poster fee (5%) = Total platform income
+            total_platform_income = helper_total_deduction + poster_deduction
+            
+            company_wallet = get_or_create_wallet(1)  # Company account ID = 1
+            company_current_balance = float(company_wallet.get('balance', 0))
+            company_new_balance = company_current_balance + total_platform_income
+            
+            cursor.execute(f'''
+                UPDATE wallets
+                SET balance = {PH}
+                WHERE user_id = {PH}
+            ''', (company_new_balance, 1))
+            
+            # Record company income from helper commission
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after,
+                    description, reference_id, task_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                company_wallet.get('id'), 1, 'commission',
+                helper_total_deduction, company_new_balance - poster_deduction,
+                f'Helper Commission (12%) and Platform Fee from task #{task_id}',
+                f'task-commission-{task_id}', task_id, now
+            ))
+            
+            # Record company income from poster fee
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after,
+                    description, reference_id, task_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                company_wallet.get('id'), 1, 'platform_fee',
+                poster_deduction, company_new_balance,
+                f'Posting Fee (5%) from task #{task_id}',
+                f'task-poster-fee-{task_id}', task_id, now
+            ))
+            
+            print(f"💰 PLATFORM INCOME RECORDED")
+            print(f"   Helper Commission (12%): ₹{helper_total_deduction:.2f}")
+            print(f"   Poster Fee (5%): ₹{poster_deduction:.2f}")
+            print(f"   Total Platform Income: ₹{total_platform_income:.2f}")
+            print(f"   Company balance: ₹{company_current_balance:.2f} → ₹{company_new_balance:.2f}")
+            
             # Get helper name for notification
             cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,))
             helper_user_row = cursor.fetchone()
@@ -1058,6 +1104,11 @@ def complete_task(task_id):
                 'helperNewBalance': helper_new_balance,
                 'posterDeduction': poster_deduction,
                 'posterNewBalance': poster_new_balance,
+                'platformIncome': total_platform_income,
+                'platformBreakdown': {
+                    'helperCommission': helper_total_deduction,
+                    'posterFee': poster_deduction
+                },
                 'taskId': task_id
             }), 200
     

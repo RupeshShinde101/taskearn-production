@@ -12,7 +12,7 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from socketio import Server, ASGIApp
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -3868,16 +3868,39 @@ def admin_dashboard():
     """Serve admin dashboard HTML"""
     try:
         import os
-        # Try to serve from root directory
-        dashboard_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'admin-dashboard.html')
-        if os.path.exists(dashboard_path):
-            with open(dashboard_path, 'r', encoding='utf-8') as f:
-                return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+        
+        # Get the parent directory of the backend folder
+        backend_dir = os.path.dirname(__file__)  # /app/backend or backend/
+        root_dir = os.path.dirname(backend_dir)  # /app or .
+        dashboard_file = os.path.join(root_dir, 'admin-dashboard.html')
+        
+        # Log paths for debugging
+        print(f"📂 Backend dir: {backend_dir}")
+        print(f"📂 Root dir: {root_dir}")
+        print(f"📂 Dashboard file: {dashboard_file}")
+        print(f"📂 File exists: {os.path.exists(dashboard_file)}")
+        
+        if os.path.exists(dashboard_file):
+            return send_file(dashboard_file, mimetype='text/html')
         else:
-            return jsonify({'error': 'Admin dashboard file not found'}), 404
+            # Fallback: try current working directory
+            cwd_dashboard = os.path.join(os.getcwd(), 'admin-dashboard.html')
+            print(f"📂 CWD Dashboard: {cwd_dashboard}")
+            print(f"📂 CWD exists: {os.path.exists(cwd_dashboard)}")
+            
+            if os.path.exists(cwd_dashboard):
+                return send_file(cwd_dashboard, mimetype='text/html')
+            else:
+                return jsonify({
+                    'error': 'Admin dashboard file not found',
+                    'tried_paths': [dashboard_file, cwd_dashboard],
+                    'cwd': os.getcwd()
+                }), 404
     except Exception as e:
         print(f"❌ Error serving admin dashboard: {e}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'type': type(e).__name__}), 500
 
 
 @app.route('/admin-dashboard', methods=['GET'])
@@ -4405,6 +4428,49 @@ try:
     initialize_bank_details()
 except Exception as e:
     print(f"⚠️  Bank details init failed: {e}")
+
+
+# ========================================
+# STATIC FILE SERVING (Must come AFTER all API routes)
+# ========================================
+
+@app.route('/<path:filename>', methods=['GET'])
+def serve_static_files(filename):
+    """Serve static files from root directory (fallback for frontend files)"""
+    try:
+        import os
+        
+        # List of files that can be served from root
+        allowed_files = ['admin-dashboard.html', 'index.html', 'styles.css', 'app.js', 'chat.html', 'help.html']
+        
+        if filename not in allowed_files:
+            return jsonify({'error': f'File {filename} not available'}), 404
+        
+        root_dir = os.path.dirname(os.path.dirname(__file__))
+        file_path = os.path.join(root_dir, filename)
+        
+        print(f"📂 Serving {filename} from {file_path}")
+        
+        if os.path.exists(file_path):
+            # Determine mimetype
+            if filename.endswith('.html'):
+                mimetype = 'text/html'
+            elif filename.endswith('.css'):
+                mimetype = 'text/css'
+            elif filename.endswith('.js'):
+                mimetype = 'application/javascript'
+            else:
+                mimetype = 'application/octet-stream'
+                
+            return send_file(file_path, mimetype=mimetype)
+        else:
+            print(f"❌ File not found: {file_path}")
+            return jsonify({'error': f'File not found: {filename}'}), 404
+    except Exception as e:
+        print(f"❌ Error serving static file {filename}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 # ========================================

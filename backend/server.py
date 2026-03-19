@@ -4521,6 +4521,148 @@ def get_bank_details():
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 
+# ========================================
+# RAZORPAY PAYOUTS INTEGRATION
+# ========================================
+
+def create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_holder_name):
+    """Create a payout using Razorpay Payouts API"""
+    try:
+        import requests
+        
+        if not config.RAZORPAY_KEY_ID or not config.RAZORPAY_KEY_SECRET:
+            print("⚠️  Razorpay keys not configured")
+            return {
+                'success': False,
+                'message': 'Razorpay keys not configured',
+                'payout_id': None
+            }
+        
+        # Razorpay Payouts API endpoint
+        url = 'https://api.razorpay.com/v1/payouts'
+        
+        # Create fund account first (for bank transfer)
+        contact_url = 'https://api.razorpay.com/v1/contacts'
+        fund_account_url = 'https://api.razorpay.com/v1/fund_accounts'
+        
+        auth = (config.RAZORPAY_KEY_ID, config.RAZORPAY_KEY_SECRET)
+        
+        # Step 1: Create or get contact
+        contact_data = {
+            'type': 'vendor',
+            'name': account_holder_name,
+            'email': 'admin@taskearn.com',
+            'contact_email': 'admin@taskearn.com',
+            'notes': {
+                'project': 'TaskEarn Platform Payout'
+            }
+        }
+        
+        print(f"📨 Creating Razorpay contact for payout...")
+        contact_response = requests.post(contact_url, json=contact_data, auth=auth, timeout=10)
+        
+        if contact_response.status_code != 200:
+            print(f"⚠️  Contact creation: {contact_response.status_code} - {contact_response.text}")
+            # Continue anyway, sometimes contact already exists
+        
+        contact = contact_response.json() if contact_response.status_code == 200 else {}
+        contact_id = contact.get('id', 'contact_0000000000000')
+        
+        print(f"✅ Contact ID: {contact_id}")
+        
+        # Step 2: Create fund account (bank account)
+        fund_account_data = {
+            'contact_id': contact_id,
+            'account_type': 'bank_account',
+            'bank_account': {
+                'name': account_holder_name,
+                'notes': {
+                    'project': 'TaskEarn Platform'
+                },
+                'ifsc': ifsc_code,
+                'account_number': account_number
+            }
+        }
+        
+        print(f"📨 Creating fund account: {account_number[-4:]} ({ifsc_code})...")
+        fund_response = requests.post(fund_account_url, json=fund_account_data, auth=auth, timeout=10)
+        
+        if fund_response.status_code not in [200, 201]:
+            print(f"❌ Fund account creation failed: {fund_response.status_code}")
+            print(f"   Response: {fund_response.text}")
+            return {
+                'success': False,
+                'message': f'Fund account creation failed: {fund_response.text}',
+                'payout_id': None
+            }
+        
+        fund_account = fund_response.json()
+        fund_account_id = fund_account.get('id')
+        
+        print(f"✅ Fund Account ID: {fund_account_id}")
+        
+        # Step 3: Create actual payout
+        payout_data = {
+            'account_number': fund_account_id,
+            'fund_account_id': fund_account_id,
+            'amount': int(amount_in_paise),  # Amount in paise
+            'currency': 'INR',
+            'mode': 'NEFT',  # NEFT, RTGS, IMPS
+            'purpose': 'settlement',
+            'description': f'TaskEarn Settlement - ₹{amount_in_paise/100:.2f}',
+            'notes': {
+                'project': 'TaskEarn',
+                'type': 'platform_settlement'
+            }
+        }
+        
+        print(f"💸 Creating payout of ₹{amount_in_paise/100:.2f}...")
+        payout_response = requests.post(url, json=payout_data, auth=auth, timeout=10)
+        
+        if payout_response.status_code not in [200, 201]:
+            print(f"❌ Payout creation failed: {payout_response.status_code}")
+            print(f"   Response: {payout_response.text}")
+            return {
+                'success': False,
+                'message': f'Payout failed: {payout_response.text}',
+                'payout_id': None
+            }
+        
+        payout = payout_response.json()
+        payout_id = payout.get('id')
+        
+        print(f"✅ PAYOUT CREATED SUCCESSFULLY!")
+        print(f"   Payout ID: {payout_id}")
+        print(f"   Amount: ₹{amount_in_paise/100:.2f}")
+        print(f"   Bank: {ifsc_code} {account_number[-4:]}")
+        print(f"   Status: {payout.get('status')}")
+        
+        return {
+            'success': True,
+            'message': 'Payout created successfully',
+            'payout_id': payout_id,
+            'payout_status': payout.get('status'),
+            'amount': amount_in_paise / 100
+        }
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Network error creating payout: {e}")
+        return {
+            'success': False,
+            'message': f'Network error: {str(e)}',
+            'payout_id': None
+        }
+    except Exception as e:
+        print(f"❌ Error creating Razorpay payout: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'payout_id': None
+        }
+
+
 @app.route('/api/admin/process-settlement', methods=['POST'])
 @require_auth
 def process_settlement():
@@ -4602,22 +4744,55 @@ def process_settlement():
             print(f"   Amount to Transfer: ₹{total_income:.2f}")
             print(f"   Company Balance Before: ₹{company_balance:.2f}")
             
-            # For now, just create the settlement record
-            # In production, you would call Razorpay Payouts API here
-            # For testing, the settlement will be marked as 'pending' until manually approved
+            # NOW: Call Razorpay Payouts API to transfer money to bank account
+            amount_in_paise = int(total_income * 100)  # Convert rupees to paise
+            payout_result = create_razorpay_payout(
+                amount_in_paise,
+                bank_details_dict['account_number'],
+                bank_details_dict['ifsc_code'],
+                bank_details_dict.get('account_holder_name', 'TaskEarn Platform')
+            )
+            
+            # Update settlement record with payout result
+            payout_id = payout_result.get('payout_id', 'RAZORPAY_PAYOUT_FAILED')
+            payout_status = 'completed' if payout_result['success'] else 'failed'
+            
+            if payout_result['success']:
+                print(f"✅ RAZORPAY PAYOUT SUCCESSFUL!")
+                print(f"   Payout ID: {payout_id}")
+                print(f"   Destination: {bank_details_dict['ifsc_code']} {bank_details_dict['account_number'][-4:]}")
+            else:
+                print(f"❌ RAZORPAY PAYOUT FAILED")
+                print(f"   Reason: {payout_result.get('message', 'Unknown error')}")
+            
+            # Update the settlement record with payout info
+            now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute(f'''
+                UPDATE platform_settlements 
+                SET razorpay_payout_id = {PH}, 
+                    status = {PH},
+                    processed_at = {PH},
+                    updated_at = {PH}
+                WHERE settlement_date = {PH}
+                ORDER BY id DESC LIMIT 1
+            ''', (payout_id, payout_status, now_str, now_str, settlement_date))
             
             return jsonify({
-                'success': True,
-                'message': 'Settlement initiated successfully',
+                'success': payout_result['success'],
+                'message': payout_result.get('message', 'Settlement processed'),
+                'settlement_status': 'completed' if payout_result['success'] else 'failed',
                 'period_start': yesterday_str,
                 'period_end': now_str,
                 'total_income': total_income,
                 'helper_commission': helper_commission,
                 'poster_fees': poster_fees,
-                'amount_to_settle': total_income,
+                'amount_settled': total_income,
                 'company_balance': company_balance,
-                'bank_account_last4': bank_details_dict['account_number'][-4:] if bank_details_dict else 'XXXX'
-            }), 200
+                'bank_account_last4': bank_details_dict['account_number'][-4:] if bank_details_dict else 'XXXX',
+                'razorpay_payout_id': payout_id,
+                'payout_status': payout_result.get('payout_status', 'pending'),
+                'payout_message': payout_result.get('message', '')
+            }), 200 if payout_result['success'] else 400
     
     except Exception as e:
         print(f"❌ Error processing settlement: {e}")

@@ -2477,11 +2477,10 @@ async function completeTask(taskId) {
             if (result && result.success) {
                 // Show commission breakdown
                 const breakdown = `
-                    💼 Task Payment Processed:
+                    💼 Task Completion Processed:
                     Task Amount: ₹${result.taskAmount}
-                    Commission (20%): -₹${result.commission}
-                    Your Earnings: ₹${result.netEarnings}
-                    New Balance: ₹${result.newBalance}
+                    Your Deductions: -₹${result.helperDeduction} (10% commission + 2% fee)
+                    Your New Balance: ₹${result.helperNewBalance}
                 `;
                 
                 console.log(breakdown);
@@ -2503,12 +2502,7 @@ async function completeTask(taskId) {
                 });
                 
                 // Show success with payment details
-                showToast(`✅ Task completed! You earned ₹${result.netEarnings} (after 20% commission)`);
-                
-                // Check if suspended
-                if (result.isSuspended) {
-                    showToast('⚠️ Your wallet balance is below -₹500. Your account has been suspended.', 'error');
-                }
+                showToast(`✅ Task completed! ₹${result.helperDeduction} deducted (10% commission + 2% fee)`);
                 
                 // Show completion modal with payment info
                 showTaskCompletionModal(task, result);
@@ -2539,32 +2533,39 @@ async function completeTask(taskId) {
 }
 
 // Show task completion modal
-function showTaskCompletionModal(task) {
-    const platformFee = Math.ceil(task.price * 0.10); // 10% platform fee
-    const totalPayable = task.price + platformFee;
-    
+function showTaskCompletionModal(task, result) {
     const content = `
         <div style="text-align: center; padding: 20px;">
             <div style="font-size: 60px; margin-bottom: 20px;">🎉</div>
             <h2 style="color: #4ade80; margin-bottom: 15px;">Task Completed!</h2>
-            <p style="margin-bottom: 20px;">Your task completion has been submitted.</p>
+            <p style="margin-bottom: 20px;">Task completion processed and fees deducted from your wallet.</p>
             
             <div style="background: rgba(74, 222, 128, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
                 <h3 style="margin-bottom: 15px;">${task.title}</h3>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                     <span>Task Amount:</span>
-                    <span>₹${task.price}</span>
+                    <span>₹${(result?.taskAmount || task.price).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; color: #ff6b6b;">
+                    <span>Deductions (10% + 2%):</span>
+                    <span>-₹${(result?.helperDeduction || 0).toFixed(2)}</span>
                 </div>
                 <hr style="border-color: rgba(255,255,255,0.1); margin: 10px 0;">
-                <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 600;">
-                    <span>You'll Receive:</span>
-                    <span style="color: #4ade80;">₹${task.price}</span>
+                <div style="display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 15px;">
+                    <span>Your New Balance:</span>
+                    <span style="color: #4ade80;">₹${(result?.helperNewBalance || 0).toFixed(2)}</span>
                 </div>
+                ${(result?.posterNewBalance !== undefined) ? `
+                <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
+                    <span>Poster Charge (5%):</span>
+                    <span>-₹${(result?.posterDeduction || 0).toFixed(2)}</span>
+                </div>
+                ` : ''}
             </div>
             
             <p style="color: #888; font-size: 14px;">
-                The task poster will be notified to complete the payment.<br>
-                You'll receive the amount in your wallet once payment is confirmed.
+                Fees have been automatically deducted from your wallet.<br>
+                The task has been marked as completed.
             </p>
         </div>
     `;
@@ -3877,6 +3878,12 @@ async function handleLogin(event) {
                 });
                 
                 showToast('✅ Welcome back, ' + currentUser.name);
+                
+                // Check wallet balance and show warning if low
+                if (currentUser.walletLow) {
+                    showToast('⚠️ ' + (currentUser.walletWarning || 'Your wallet balance is low. Please top up.'), 'warning');
+                }
+                
                 closeModal('loginModal');
                 document.getElementById('loginEmail').value = '';
                 document.getElementById('loginPassword').value = '';
@@ -3966,6 +3973,12 @@ async function handleSignup(event) {
                 myCompletedTasks = [];
                 
                 showToast('🎉 Welcome to TaskEarn! Your ID: ' + currentUser.id);
+                
+                // Check wallet balance and show warning if low
+                if (currentUser.walletLow) {
+                    showToast('⚠️ ' + (currentUser.walletWarning || 'Your wallet balance is low. Please top up.'), 'warning');
+                }
+                
                 closeModal('signupModal');
                 
                 // Clear form
@@ -4288,6 +4301,21 @@ function viewTaskForPayment(taskId, notificationId) {
 
 function renderDashboard() {
     updateAuthenticationStatus(); // Update auth status indicator
+    
+    // Show wallet low warning if applicable
+    if (currentUser && currentUser.walletLow) {
+        const walletWarningEl = document.getElementById('walletLowWarning');
+        if (walletWarningEl) {
+            walletWarningEl.innerHTML = `
+                <div class="alert alert-warning" style="margin-bottom: 15px; padding: 12px; border-radius: 6px; background-color: #fff3cd; border-left: 4px solid #ffc107; display: flex; justify-content: space-between; align-items: center;">
+                    <span><i class="fas fa-exclamation-triangle"></i> Wallet balance is low (₹${currentUser.wallet || 0}). <a href="#" onclick="openWalletModal(); return false;" style="text-decoration: underline; font-weight: bold;">Top up now</a></span>
+                    <button type="button" class="close" onclick="this.parentElement.style.display='none';" style="background: none; border: none; cursor: pointer; font-size: 20px;">&times;</button>
+                </div>
+            `;
+            walletWarningEl.style.display = 'block';
+        }
+    }
+    
     renderNotifications(); // Render notifications first
     renderAvailableTasks();
     renderPostedTasks();

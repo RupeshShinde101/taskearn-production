@@ -174,6 +174,12 @@ def user_to_response(user):
     """Convert user dict to safe response (no password)"""
     if not user:
         return None
+    
+    # Get wallet balance
+    wallet = get_or_create_wallet(user['id'])
+    wallet_balance = float(wallet.get('balance', 0))
+    wallet_low = wallet_balance < 100
+    
     return {
         'id': user['id'],
         'name': user['name'],
@@ -185,7 +191,10 @@ def user_to_response(user):
         'tasksCompleted': user.get('tasks_completed', 0),
         'totalEarnings': float(user.get('total_earnings', 0)),
         'joinedAt': user.get('joined_at'),
-        'lastLogin': user.get('last_login')
+        'lastLogin': user.get('last_login'),
+        'wallet': wallet_balance,
+        'walletLow': wallet_low,
+        'walletWarning': 'Please top up your wallet (below ₹100)' if wallet_low else None
     }
 
 
@@ -924,7 +933,7 @@ def get_task_details(task_id):
 @app.route('/api/tasks/<int:task_id>/complete', methods=['POST'])
 @require_auth
 def complete_task(task_id):
-    """Mark task as completed - waiting for payment from task poster"""
+    """Mark task as completed and deduct commissions/fees from wallets"""
     try:
         print(f"\n📋 Completing task {task_id} for user {request.user_id}")
         with get_db() as (cursor, conn):
@@ -938,48 +947,111 @@ def complete_task(task_id):
                 return jsonify({'success': False, 'message': 'Task not found or not accepted by you'}), 404
             
             task = dict_from_row(task)
+            task_amount = float(task['price'])
+            poster_id = task['posted_by']
+            helper_id = request.user_id
             
-            # Mark task as completed (awaiting payment)
+            # Mark task as completed
             completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cursor.execute(f'''
                 UPDATE tasks SET status = 'completed', completed_at = {PH}
                 WHERE id = {PH}
             ''', (completed_at, task_id))
             
+            # Calculate deductions
+            # Helper: 10% commission + 2% transaction/platform fee = 12% total
+            helper_commission = task_amount * 0.10
+            helper_fee = task_amount * 0.02
+            helper_total_deduction = helper_commission + helper_fee
+            
+            # Poster: 5%
+            poster_deduction = task_amount * 0.05
+            
+            print(f"\n💳 WALLET DEDUCTIONS FOR TASK COMPLETION")
+            print(f"   Task Amount: ₹{task_amount:.2f}")
+            print(f"   Helper ({helper_id}):")
+            print(f"     - Commission (10%): ₹{helper_commission:.2f}")
+            print(f"     - Transaction Fee (2%): ₹{helper_fee:.2f}")
+            print(f"     - Total Deduction: ₹{helper_total_deduction:.2f}")
+            print(f"   Poster ({poster_id}):")
+            print(f"     - Deduction (5%): ₹{poster_deduction:.2f}")
+            
+            # Deduct from helper's wallet
+            helper_wallet = get_or_create_wallet(helper_id)
+            helper_current_balance = float(helper_wallet.get('balance', 0))
+            helper_new_balance = helper_current_balance - helper_total_deduction
+            
+            cursor.execute(f'''
+                UPDATE wallets
+                SET balance = {PH}
+                WHERE user_id = {PH}
+            ''', (helper_new_balance, helper_id))
+            
+            # Record helper deduction transaction
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after,
+                    description, reference_id, task_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                helper_wallet.get('id'), helper_id, 'deduction',
+                -helper_total_deduction, helper_new_balance,
+                f'Commission (10%) + Transaction Fee (2%) for task #{task_id}',
+                f'task-{task_id}', task_id, now
+            ))
+            
+            # Deduct from poster's wallet
+            poster_wallet = get_or_create_wallet(poster_id)
+            poster_current_balance = float(poster_wallet.get('balance', 0))
+            poster_new_balance = poster_current_balance - poster_deduction
+            
+            cursor.execute(f'''
+                UPDATE wallets
+                SET balance = {PH}
+                WHERE user_id = {PH}
+            ''', (poster_new_balance, poster_id))
+            
+            # Record poster deduction transaction
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after,
+                    description, reference_id, task_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                poster_wallet.get('id'), poster_id, 'deduction',
+                -poster_deduction, poster_new_balance,
+                f'Posting Fee (5%) for task completion',
+                f'task-{task_id}', task_id, now
+            ))
+            
             # Get helper name for notification
-            helper_user = dict_from_row(cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (request.user_id,)).fetchone())
+            helper_user = dict_from_row(cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,)).fetchone())
             helper_name = helper_user['name'] if helper_user else 'a helper'
             
-            # Get poster info for notification
-            poster_id = task['posted_by']
-            
-            # Create notification for poster to pay
-            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            # Create notification for poster
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (poster_id, task_id, 'task_completed', 
-                  f'Task Ready for Payment',
-                  f'Your task "{task["title"]}" has been completed by {helper_name}. Amount: ₹{task["price"]}. Please pay to complete the transaction.',
+                  f'Task Completed - Fees Deducted',
+                  f'Task "{task["title"]}" completed by {helper_name}. ₹{poster_deduction:.2f} (5%) deducted from your wallet.',
                   'unread', now))
             
-            # Calculate earnings and commission for reference
-            task_amount = float(task['price'])
-            commission = calculate_commission(task_amount)
-            net_earnings = task_amount - commission
+            conn.commit()
             
-            print(f"✅ Task {task_id} marked completed (awaiting payment)")
-            print(f"   Task Amount: ₹{task_amount:.2f}")
-            print(f"   Commission ({COMMISSION_PERCENTAGE}%): ₹{commission:.2f}")
-            print(f"   Helper will receive: ₹{net_earnings:.2f}")
-            print(f"   📬 Notification sent to poster {poster_id}")
+            print(f"✅ Task {task_id} completed - Deductions processed")
+            print(f"   Helper balance: ₹{helper_current_balance:.2f} → ₹{helper_new_balance:.2f}")
+            print(f"   Poster balance: ₹{poster_current_balance:.2f} → ₹{poster_new_balance:.2f}")
             
             return jsonify({
                 'success': True,
-                'message': 'Task marked complete - awaiting payment from task poster',
-                'taskAmount': float(task['price']),
-                'commission': commission,
-                'netEarnings': net_earnings,
+                'message': 'Task marked complete - Commissions and fees deducted',
+                'taskAmount': task_amount,
+                'helperDeduction': helper_total_deduction,
+                'helperNewBalance': helper_new_balance,
+                'posterDeduction': poster_deduction,
+                'posterNewBalance': poster_new_balance,
                 'taskId': task_id
             }), 200
     
@@ -2899,14 +2971,99 @@ def verify_payment():
             if not task:
                 return jsonify({'success': False, 'message': 'Task not found'}), 404
             
-            # Calculate split: Helper gets 90%, Company gets 10%
-            platform_fee = amount * 0.10
-            helper_amount = amount - platform_fee
+            task_amount = float(amount)
+            poster_id = task.get('posted_by')
             
-            print(f"\n✅ REAL PAYMENT VERIFIED AND PROCESSING:")
-            print(f"   Amount: ₹{amount}")
-            print(f"   Helper ({helper_id}): ₹{helper_amount} (90%)")
-            print(f"   Company: ₹{platform_fee} (10%)")
+            # CHECK: If task amount > 1000, use wallet auto-payment instead of Razorpay
+            if task_amount > 1000:
+                print(f"\n💰 AUTO-PAYMENT TRIGGERED (Task > ₹1000)")
+                print(f"   Task Amount: ₹{task_amount:.2f}")
+                
+                # Get poster's wallet
+                poster_wallet = get_or_create_wallet(poster_id)
+                poster_balance = float(poster_wallet.get('balance', 0))
+                
+                print(f"   Poster balance: ₹{poster_balance:.2f}")
+                
+                # Auto-deduct from poster's wallet (even if negative)
+                new_poster_balance = poster_balance - task_amount
+                
+                cursor.execute(f'''
+                    UPDATE wallets
+                    SET balance = {PH}
+                    WHERE user_id = {PH}
+                ''', (new_poster_balance, poster_id))
+                
+                # Record payment deduction
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'''
+                    INSERT INTO wallet_transactions (
+                        wallet_id, user_id, type, amount, balance_after,
+                        description, reference_id, task_id, created_at
+                    ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (
+                    poster_wallet.get('id'), poster_id, 'payment',
+                    -task_amount, new_poster_balance,
+                    f'Auto-payment for task (> ₹1000)',
+                    f'task-{task_id}', task_id, now
+                ))
+                
+                # Credit helper's wallet
+                helper_wallet = get_or_create_wallet(helper_id)
+                helper_balance = float(helper_wallet.get('balance', 0)) + task_amount
+                
+                cursor.execute(f'''
+                    UPDATE wallets
+                    SET balance = {PH}, total_earned = total_earned + {PH}
+                    WHERE user_id = {PH}
+                ''', (helper_balance, task_amount, helper_id))
+                
+                # Record earned transaction for helper
+                cursor.execute(f'''
+                    INSERT INTO wallet_transactions (
+                        wallet_id, user_id, type, amount, balance_after,
+                        description, reference_id, task_id, created_at
+                    ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (
+                    helper_wallet.get('id'), helper_id, 'earned',
+                    task_amount, helper_balance,
+                    f'Earned from auto-payment (task > ₹1000)',
+                    f'task-{task_id}', task_id, now
+                ))
+                
+                # Mark task as paid
+                cursor.execute(f'''
+                    UPDATE tasks
+                    SET status = {PH}, paid_at = {PH}
+                    WHERE id = {PH}
+                ''', ('paid', now, task_id))
+                
+                conn.commit()
+                
+                print(f"✅ AUTO-PAYMENT PROCESSED")
+                print(f"   Poster: ₹{poster_balance:.2f} → ₹{new_poster_balance:.2f}")
+                print(f"   Helper: ₹{float(helper_wallet.get('balance', 0)) - task_amount:.2f} → ₹{helper_balance:.2f}")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Auto-payment processed (wallet deduction)',
+                    'paymentMethod': 'wallet',
+                    'taskId': task_id,
+                    'amount': task_amount,
+                    'posterNewBalance': new_poster_balance,
+                    'helperNewBalance': helper_balance
+                }), 200
+            
+            # NORMAL RAZORPAY PAYMENT (Task <= 1000)
+            print(f"\n✅ RAZORPAY PAYMENT VERIFIED")
+            print(f"   Amount: ₹{task_amount:.2f}")
+            
+            # Calculate split: Helper gets 90%, Company gets 10%
+            platform_fee = task_amount * 0.10
+            helper_amount = task_amount - platform_fee
+            
+            print(f"   Helper ({helper_id}): ₹{helper_amount:.2f} (90%)")
+            print(f"   Company: ₹{platform_fee:.2f} (10%)")
             
             # Update/Create payment record
             cursor.execute(f'''
@@ -2921,8 +3078,8 @@ def verify_payment():
                     verified_at = {PH},
                     platform_fee = {PH}
             ''', (
-                task_id, task.get('posted_by'), helper_id,
-                amount, 'INR', 'paid', order_id, payment_id,
+                task_id, poster_id, helper_id,
+                task_amount, 'INR', 'paid', order_id, payment_id,
                 datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 platform_fee,
                 datetime.datetime.now(datetime.timezone.utc).isoformat(),

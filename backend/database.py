@@ -769,7 +769,8 @@ def init_sqlite_db():
         except Exception as e:
             print(f"[DB] ⚠️  System user creation warning: {e}")
             # Don't fail if user already exists or has a unique constraint issue
-                print("[DB] ✅ SQLite database initialized successfully")
+        
+        print("[DB] ✅ SQLite database initialized successfully")
 
 
 def init_db():

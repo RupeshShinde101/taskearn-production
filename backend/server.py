@@ -699,80 +699,81 @@ def change_password():
 def get_tasks():
     """Get all active tasks (non-expired)"""
     import datetime
-    import sys
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
-    sys.stderr.write(f"\n[GET /api/tasks] Starting request at: {now}\n")
-    sys.stderr.flush()
+    print(f"\n[GET /api/tasks] Fetching tasks at {now}")
     
-    with get_db() as (cursor, conn):
-        # Now get the filtered results directly
-        sys.stderr.write(f"[GET /api/tasks] Executing LEFT JOIN query...\n")
-        sys.stderr.flush()
-        
-        query = f'''
-            SELECT t.*, u.name as poster_name, u.rating as poster_rating, u.tasks_posted as poster_tasks
-            FROM tasks t
-            LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.status = 'active' AND t.expires_at > {PH}
-            ORDER BY t.posted_at DESC
-        '''
-        
-        sys.stderr.write(f"[GET /api/tasks] Query: {query}\n")
-        sys.stderr.write(f"[GET /api/tasks] Parameters: {(now,)}\n")
-        sys.stderr.flush()
-        
-        cursor.execute(query, (now,))
-        
-        tasks = cursor.fetchall()
-        sys.stderr.write(f"[GET /api/tasks] cursor.fetchall() returned: {len(tasks)} tasks\n")
-        sys.stderr.flush()
-    
-    task_list = []
-    for task in tasks:
-        try:
-            task = dict_from_row(task)
-            # Provide default values for user info if NULL from LEFT JOIN
-            poster_name = task.get('poster_name') or 'Anonymous'
-            poster_rating = float(task.get('poster_rating') or 5.0)
-            poster_tasks = int(task.get('poster_tasks') or 0)
-            sys.stderr.write(f"[GET /api/tasks] Processing task {task['id']}: {task['title']} (expires: {task['expires_at']})\n")
-            sys.stderr.flush()
+    try:
+        with get_db() as (cursor, conn):
+            # Simple query without LEFT JOIN first
+            cursor.execute(f'''
+                SELECT id, title, description, category, location_lat, location_lng, 
+                       location_address, price, posted_by, posted_at, expires_at, status
+                FROM tasks
+                WHERE status = 'active' AND expires_at > {PH}
+                ORDER BY posted_at DESC
+            ''', (now,))
             
-            task_list.append({
-                'id': task['id'],
-                'title': task['title'],
-                'description': task['description'],
-                'category': task['category'],
-                'location': {
-                    'lat': task['location_lat'],
-                    'lng': task['location_lng'],
-                    'address': task['location_address']
-                },
-                'price': float(task['price']),
-                'postedBy': {
-                    'name': poster_name,
-                    'rating': poster_rating,
-                    'tasksPosted': poster_tasks
-                },
-                'postedAt': task['posted_at'],
-                'expiresAt': task['expires_at'],
-                'status': task['status']
-            })
-            sys.stderr.write(f"[GET /api/tasks] ✅ Task {task['id']} added to list\n")
-            sys.stderr.flush()
-        except Exception as e:
-            sys.stderr.write(f"[GET /api/tasks] ❌ Error processing task: {str(e)}\n")
-            sys.stderr.write(f"   Task dict: {task}\n")
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            sys.stderr.flush()
-    
-    print(f"[GET /tasks] Found {len(task_list)} active, non-expired tasks")
-    return jsonify({
-        'success': True,
-        'tasks': task_list
-    })
+            rows = cursor.fetchall()
+            print(f"[GET /api/tasks] Found {len(rows)} active tasks")
+            
+            task_list = []
+            for task in rows:
+                task = dict_from_row(task)
+                
+                # Get poster info separately
+                poster_name = 'Anonymous'
+                poster_rating = 5.0
+                poster_tasks = 0
+                
+                try:
+                    poster_id = task.get('posted_by')
+                    if poster_id:
+                        cursor.execute(f'SELECT name, rating, tasks_posted FROM users WHERE id = {PH}', (poster_id,))
+                        user_row = cursor.fetchone()
+                        if user_row:
+                            user = dict_from_row(user_row)
+                            poster_name = user.get('name', 'Anonymous')
+                            poster_rating = float(user.get('rating', 5.0))
+                            poster_tasks = int(user.get('tasks_posted', 0))
+                except:
+                    pass  # Use defaults if user not found
+                
+                task_list.append({
+                    'id': task['id'],
+                    'title': task['title'],
+                    'description': task['description'],
+                    'category': task['category'],
+                    'location': {
+                        'lat': task['location_lat'],
+                        'lng': task['location_lng'],
+                        'address': task['location_address']
+                    },
+                    'price': float(task['price']),
+                    'postedBy': {
+                        'name': poster_name,
+                        'rating': poster_rating,
+                        'tasksPosted': poster_tasks
+                    },
+                    'postedAt': task['posted_at'],
+                    'expiresAt': task['expires_at'],
+                    'status': task['status']
+                })
+        
+        print(f"[GET /api/tasks] Returning {len(task_list)} tasks to client")
+        return jsonify({
+            'success': True,
+            'tasks': task_list
+        })
+        
+    except Exception as e:
+        print(f"[GET /api/tasks] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching tasks: {str(e)}'
+        }), 500
 
 
 @app.route('/api/tasks', methods=['POST'])

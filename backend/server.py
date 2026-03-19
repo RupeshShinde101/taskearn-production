@@ -1026,7 +1026,9 @@ def complete_task(task_id):
             ))
             
             # Get helper name for notification
-            helper_user = dict_from_row(cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,)).fetchone())
+            cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,))
+            helper_user_row = cursor.fetchone()
+            helper_user = dict_from_row(helper_user_row) if helper_user_row else None
             helper_name = helper_user['name'] if helper_user else 'a helper'
             
             # Create notification for poster

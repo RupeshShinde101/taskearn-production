@@ -3863,6 +3863,29 @@ def health_check():
     })
 
 
+@app.route('/admin-dashboard.html', methods=['GET'])
+def admin_dashboard():
+    """Serve admin dashboard HTML"""
+    try:
+        import os
+        # Try to serve from root directory
+        dashboard_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'admin-dashboard.html')
+        if os.path.exists(dashboard_path):
+            with open(dashboard_path, 'r', encoding='utf-8') as f:
+                return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+        else:
+            return jsonify({'error': 'Admin dashboard file not found'}), 404
+    except Exception as e:
+        print(f"❌ Error serving admin dashboard: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin-dashboard', methods=['GET'])
+def admin_dashboard_redirect():
+    """Redirect to admin dashboard"""
+    return admin_dashboard()
+
+
 @app.route('/api/diagnostic', methods=['GET'])
 def diagnostic():
     """Diagnostic endpoint for debugging deployment issues"""

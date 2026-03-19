@@ -1027,6 +1027,50 @@ async function loadTasksFromServer() {
                 console.log('📊 Server tasks after parsing:', serverTasks.length);
                 tasks = serverTasks;
                 
+                // ✅ FIX: Sync myPostedTasks with server data to get latest status
+                if (currentUser && myPostedTasks.length > 0) {
+                    console.log('🔄 Syncing posted tasks with server data...');
+                    myPostedTasks = myPostedTasks.map(postedTask => {
+                        const serverTask = serverTasks.find(t => t.id === postedTask.id);
+                        if (serverTask) {
+                            // Update with latest data from server
+                            const updated = {
+                                ...postedTask,
+                                status: serverTask.status,
+                                acceptedBy: serverTask.acceptedBy,
+                                postedAt: serverTask.postedAt,
+                                expiresAt: serverTask.expiresAt
+                            };
+                            console.log(`   Task ${postedTask.id}: ${postedTask.status} → ${serverTask.status}`);
+                            return updated;
+                        }
+                        return postedTask;
+                    });
+                    
+                    // Save updated posted tasks
+                    updateUserData(currentUser.id, {
+                        postedTasks: serializeTasks(myPostedTasks)
+                    });
+                    
+                    // Check for tasks awaiting payment
+                    const tasksAwaitingPayment = myPostedTasks.filter(t => t.status === 'completed');
+                    if (tasksAwaitingPayment.length > 0) {
+                        console.log('💰 Tasks awaiting your payment:', tasksAwaitingPayment.length);
+                        showToast(`💰 ${tasksAwaitingPayment.length} task(s) completed and awaiting your payment!`, 5000);
+                        
+                        // ✅ FIX: Auto-switch to dashboard to show payment button
+                        setTimeout(() => {
+                            const dashboardTab = document.querySelector('.tab-btn[onclick*="dashboard"]');
+                            if (dashboardTab) {
+                                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                                dashboardTab.classList.add('active');
+                                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                                document.getElementById('dashboardTasks')?.classList.add('active');
+                            }
+                        }, 500);
+                    }
+                }
+                
                 console.log('✅ Loaded', serverTasks.length, 'tasks from server');
                 console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
@@ -1168,6 +1212,47 @@ async function loadTasksFromServer() {
     }
 }
 
+// Refresh wallet balance from server
+async function refreshWalletBalance() {
+    if (!currentUser) return false;
+    
+    try {
+        console.log('💰 Refreshing wallet balance from server...');
+        
+        if (typeof WalletAPI !== 'undefined' && WalletAPI.get) {
+            const result = await WalletAPI.get();
+            
+            if (result && result.success && result.wallet) {
+                const walletData = result.wallet;
+                console.log('✅ Wallet updated:', walletData);
+                
+                // Update currentUser wallet
+                currentUser.wallet = walletData.balance;
+                
+                // Save updated user data
+                updateUserData(currentUser.id, {
+                    wallet: walletData.balance
+                });
+                
+                // Update UI if wallet display exists
+                const walletDisplay = document.querySelector('[data-wallet-balance]');
+                if (walletDisplay) {
+                    walletDisplay.textContent = `₹${walletData.balance.toFixed(2)}`;
+                    walletDisplay.setAttribute('data-wallet-balance', walletData.balance.toFixed(2));
+                }
+                
+                return true;
+            } else {
+                console.warn('❌ Failed to get wallet:', result);
+                return false;
+            }
+        }
+    } catch (error) {
+        console.warn('⚠️ Error refreshing wallet:', error);
+        return false;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
     try {
         console.log('🚀 TaskEarn Starting...');
@@ -1284,6 +1369,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         setInterval(() => {
             try {
                 loadTasksFromServer().catch(e => console.warn('⚠️ Auto-refresh failed:', e.message));
+                // Also refresh wallet balance
+                refreshWalletBalance().catch(e => console.warn('⚠️ Wallet refresh failed:', e.message));
             } catch (e) {
                 console.warn('⚠️ Task refresh failed:', e.message);
             }
@@ -2428,6 +2515,11 @@ async function completeTask(taskId) {
                 
                 renderDashboard();
                 
+                // Refresh wallet balance from server
+                setTimeout(() => {
+                    refreshWalletBalance();
+                }, 500);
+                
                 // Update profile after completing task
                 setTimeout(() => {
                     if (currentUser) {
@@ -2684,40 +2776,83 @@ async function payHelperForTask(taskId) {
     const task = myPostedTasks.find(t => t.id === taskId);
     
     if (!task || task.status !== 'completed') {
-        showToast('❌ Task not ready for payment');
+        showToast('Task not ready for payment');
         return;
     }
 
     const taskAmount = task.price;
-    const commission = Math.floor(taskAmount * 0.20);
-    const helperAmount = taskAmount - commission;
+    const posterCommission = taskAmount * 0.10;  // 10% commission from poster
+    const helperCommission = taskAmount * 0.10;  // 10% commission from helper
+    const totalCost = taskAmount + posterCommission;  // Poster pays task + their 10% commission
+    const helperNetReceives = taskAmount - helperCommission;  // Helper gets task amount then commission deducted
+    const currentBalance = currentUser.wallet || 0;
 
-    // Simple payment confirmation
-    const paymentMethod = confirm(`Pay ₹${taskAmount}?\n\n✅ Helper gets: ₹${helperAmount}\n💼 Commission: ₹${commission}\n\nClick OK to PAY`);
+    console.log('💰 Payment Details:');
+    console.log(`   Task Amount: ₹${taskAmount}`);
+    console.log(`   Poster Commission (10%): ₹${posterCommission.toFixed(2)}`);
+    console.log(`   Helper Commission (10%): ₹${helperCommission.toFixed(2)}`);
+    console.log(`   Total Cost (for you): ₹${totalCost.toFixed(2)}`);
+    console.log(`   Helper receives initially: ₹${taskAmount.toFixed(2)}`);
+    console.log(`   Helper gets after commission: ₹${helperNetReceives.toFixed(2)}`);
+    console.log(`   Your wallet balance: ₹${currentBalance.toFixed(2)}`);
+
+    // Check wallet balance
+    if (currentBalance < totalCost) {
+        const amountNeeded = totalCost - currentBalance;
+        showToast(
+            `❌ Insufficient Wallet Balance\n\n` +
+            `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
+            `Amount Needed: ₹${totalCost.toFixed(2)}\n` +
+            `Need ₹${amountNeeded.toFixed(2)} more to proceed`,
+            5000
+        );
+        return;
+    }
+
+    // Confirm payment dialog
+    const confirmed = confirm(
+        `💰 Complete Payment\n\n` +
+        `Task Amount: ₹${taskAmount}\n` +
+        `Poster Commission (10%): ₹${posterCommission.toFixed(2)}\n` +
+        `Helper Commission (10%): ₹${helperCommission.toFixed(2)}\n` +
+        `Total Cost (for you): ₹${totalCost.toFixed(2)}\n\n` +
+        `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
+        `Balance After: ₹${(currentBalance - totalCost).toFixed(2)}\n\n` +
+        `Helper receives (after commission): ₹${helperNetReceives.toFixed(2)}\n\n` +
+        `Click OK to pay from your wallet`
+    );
     
-    if (!paymentMethod) {
-        showToast('⚠️ Payment cancelled');
+    if (!confirmed) {
+        showToast('Payment cancelled');
         return;
     }
 
     try {
-        // Call backend to process payment
-        const response = await fetch(`https://taskearn-production-production.up.railway.app/api/tasks/${taskId}/pay-helper`, {
+        console.log('📤 Sending payment request...');
+        
+        const response = await fetch(API_BASE_URL + `/tasks/${taskId}/pay-helper`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
             },
             body: JSON.stringify({
-                razorpay_payment_id: `pay_sim_${Date.now()}`,  // Simulated payment ID
                 taskId: taskId
             })
         });
 
         const result = await response.json();
+        console.log('📥 Payment response:', result);
 
         if (result.success) {
-            showToast(`✅ Payment successful!\n₹${helperAmount} → Helper's wallet`);
+            showToast(
+                `✅ Payment Successful!\n\n` +
+                `Task Amount: ₹${result.amount.toFixed(2)}\n` +
+                `Helper Commission (10%): ₹${result.helperCommission.toFixed(2)}\n` +
+                `Helper receives (net): ₹${result.helperReceives.toFixed(2)}\n\n` +
+                `Your new balance: ₹${result.posterNewBalance.toFixed(2)}`,
+                6000
+            );
             
             // Update task status
             task.status = 'paid';
@@ -2725,13 +2860,21 @@ async function payHelperForTask(taskId) {
                 postedTasks: serializeTasks(myPostedTasks)
             });
             
+            // Refresh dashboard
             renderDashboard();
+            
+            // Refresh from server and wallet balance
+            setTimeout(() => {
+                loadTasksFromServer();
+                refreshWalletBalance();
+            }, 1000);
         } else {
             showToast(`❌ Payment failed: ${result.message}`);
+            console.error('Payment error:', result.message);
         }
     } catch (error) {
         console.error('❌ Payment error:', error);
-        showToast('❌ Payment error: ' + error.message);
+        showToast('Payment error: ' + error.message);
     }
 }
 
@@ -3739,8 +3882,14 @@ async function handleLogin(event) {
                 document.getElementById('loginPassword').value = '';
                 
                 updateNavForUser();
-                renderDashboard();
-                loadTasksFromServer();
+                
+                // ✅ FIX: Load tasks from server FIRST, then render UI
+                // This ensures the marketplace shows newly posted tasks from other accounts
+                const tasksLoaded = await loadTasksFromServer();
+                
+                // Render dashboard after tasks are fully loaded
+                setTimeout(() => renderDashboard(), 100);
+                
                 return;
             } else {
                 showToast('❌ ' + (result.message || 'Login failed'));
@@ -3828,8 +3977,14 @@ async function handleSignup(event) {
                 document.getElementById('signupDOB').value = '';
                 
                 updateNavForUser();
-                renderDashboard();
-                loadTasksFromServer();
+                
+                // ✅ FIX: Load tasks from server FIRST, then render UI
+                // This ensures new users see all available tasks in the marketplace
+                const tasksLoaded = await loadTasksFromServer();
+                
+                // Render dashboard after tasks are fully loaded
+                setTimeout(() => renderDashboard(), 100);
+                
                 return;
             } else {
                 showToast('❌ ' + result.message);
@@ -4024,6 +4179,7 @@ function openUserProfile() {
 function logout() {
     clearCurrentSession();
     currentUser = null;
+    tasks = [];  // ✅ FIX: Clear all tasks to prevent showing previous account's data
     myPostedTasks = [];
     myAcceptedTasks = [];
     myCompletedTasks = [];
@@ -4069,8 +4225,70 @@ function switchTab(tab) {
     renderDashboard();
 }
 
+// Load and display notifications
+async function renderNotifications() {
+    try {
+        const result = await NotificationsAPI.getAll();
+        if (result && result.success && result.notifications) {
+            const notifications = result.notifications;
+            const notificationEl = document.getElementById('notifications-panel');
+            
+            if (!notificationEl) return;
+            
+            // Filter only unread notifications
+            const unreadNotifications = notifications.filter(n => n.status === 'unread');
+            
+            if (unreadNotifications.length === 0) {
+                notificationEl.innerHTML = '<div class="notification-empty">No pending notifications</div>';
+                return;
+            }
+            
+            // Display notifications
+            notificationEl.innerHTML = unreadNotifications.map(n => `
+                <div class="notification-item" style="border-left: 4px solid #fbbf24; padding: 15px; margin-bottom: 10px; background: rgba(251, 191, 36, 0.1); border-radius: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                        <div>
+                            <h4 style="margin: 0 0 5px 0; color: #fbbf24;">⏰ ${n.title}</h4>
+                            <p style="margin: 0; color: #666; font-size: 14px;">${n.message}</p>
+                        </div>
+                        <button onclick="dismissNotification(${n.id})" style="background: none; border: none; color: #999; cursor: pointer; font-size: 18px;">×</button>
+                    </div>
+                    <button onclick="viewTaskForPayment(${n.task_id}, ${n.id})" class="btn btn-warning" style="width: 100%;">
+                        💳 Pay Now
+                    </button>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Error rendering notifications:', error);
+    }
+}
+
+// Dismiss notification
+async function dismissNotification(notificationId) {
+    try {
+        await NotificationsAPI.delete(notificationId);
+        renderNotifications(); // Refresh notifications list
+    } catch (error) {
+        console.error('Error dismissing notification:', error);
+    }
+}
+
+// View task and show payment modal
+function viewTaskForPayment(taskId, notificationId) {
+    const task = myPostedTasks.find(t => t.id === taskId);
+    if (task) {
+        // Mark notification as read
+        NotificationsAPI.markAsRead(notificationId).catch(console.error);
+        
+        // Show payment modal
+        payHelperForTask(taskId);
+    }
+}
+
 function renderDashboard() {
     updateAuthenticationStatus(); // Update auth status indicator
+    renderNotifications(); // Render notifications first
     renderAvailableTasks();
     renderPostedTasks();
     renderAcceptedTasks();
@@ -4177,22 +4395,30 @@ function renderPostedTasks() {
         if (t.status === 'active') {
             actionButtons = `<div class="task-actions"><button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button><button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button></div>`;
         } else if (t.status === 'completed' || t.status === 'pending_payment') {
+            // 10% commission from both users
+            const commission = taskAmount * 0.10;
+            const helperReceives = taskAmount - commission;
+            const totalCost = taskAmount + commission;  // What poster pays
+            
             actionButtons = `
                 <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-top: 10px;">
                     <p style="color: #fbbf24; margin-bottom: 8px; font-size: 14px;">
-                        <i class="fas fa-check-circle"></i> ✅ Helper completed this task!
+                        <i class="fas fa-check-circle"></i> Helper completed this task!
                     </p>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
                         <span>Task Amount:</span><span>₹${taskAmount}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #888;">
-                        <span>Helper receives (80%):</span><span>₹${helperAmount}</span>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #10b981;">
+                        <span>Helper receives (90%):</span><span>₹${helperReceives.toFixed(2)}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #f59e0b;">
-                        <span>Commission (20%):</span><span>₹${commission}</span>
+                        <span>Total Commission (20%):</span><span>₹${(commission * 2).toFixed(2)}</span>
                     </div>
-                    <button class="btn btn-success" style="width: 100%; margin-top: 12px;" onclick="payHelperForTask(${t.id})" title="Pay the helper via Razorpay">
-                        <i class="fas fa-credit-card"></i> Pay ₹${taskAmount} Now
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 12px; color: #888; border-top: 1px solid #e5e7eb; padding-top: 8px;">
+                        <span>Total you pay:</span><span style="font-weight: 600;">₹${totalCost.toFixed(2)}</span>
+                    </div>
+                    <button class="btn btn-success" style="width: 100%;" onclick="payHelperForTask(${t.id})" title="Pay from your wallet">
+                        <i class="fas fa-credit-card"></i> Pay ₹${totalCost.toFixed(2)} Now
                     </button>
                 </div>
             `;
@@ -4200,7 +4426,7 @@ function renderPostedTasks() {
             actionButtons = `
                 <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; border-radius: 8px; padding: 12px; margin-top: 10px;">
                     <p style="color: #4ade80; margin: 0;">
-                        <i class="fas fa-check-circle"></i> Payment completed - ₹${taskAmount} sent to ${t.helperName || 'helper'}
+                        <i class="fas fa-check-circle"></i> Payment completed
                     </p>
                 </div>
             `;

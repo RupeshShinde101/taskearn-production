@@ -319,6 +319,28 @@ def init_postgres_db():
             )
         ''')
         
+        # Notifications table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL REFERENCES users(id),
+                task_id INTEGER REFERENCES tasks(id),
+                notification_type VARCHAR(50) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                message TEXT,
+                status VARCHAR(20) DEFAULT 'unread',
+                data TEXT,
+                created_at TIMESTAMP NOT NULL,
+                read_at TIMESTAMP
+            )
+        ''')
+        
+        # Create index for faster notification queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_notifications_user_status 
+            ON notifications(user_id, status)
+        ''')
+        
         # Add referral_code to users
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20) UNIQUE
@@ -588,6 +610,30 @@ def init_sqlite_db():
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
+        ''')
+        
+        # Notifications table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                task_id INTEGER,
+                notification_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT,
+                status TEXT DEFAULT 'unread',
+                data TEXT,
+                created_at TEXT NOT NULL,
+                read_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (task_id) REFERENCES tasks(id)
+            )
+        ''')
+        
+        # Create index for faster notification queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_notifications_user_status 
+            ON notifications(user_id, status)
         ''')
         
         print("[DB] ✅ SQLite database initialized successfully")

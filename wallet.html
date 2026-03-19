@@ -1217,7 +1217,8 @@
                     },
                     handler: function(response) {
                         console.log('[WALLET] Payment successful:', response.razorpay_payment_id);
-                        verifyWalletPayment(response, orderId, amount);
+                        // Pass amount * 100 (paise) to verify function
+                        verifyWalletPayment(response, orderId, amount * 100);
                     },
                     theme: {
                         color: '#6366f1'
@@ -1249,7 +1250,12 @@
             try {
                 const token = localStorage.getItem('taskearn_token');
                 
+                // amount is now in paise (amount * 100), convert to rupees for display
+                const amountInRupees = amount / 100;
+                
                 console.log('[WALLET] Verifying payment...');
+                console.log('[WALLET] Amount (paise):', amount);
+                console.log('[WALLET] Amount (rupees):', amountInRupees);
                 
                 const verifyResponse = await fetch(window.TASKEARN_API_URL + '/payments/wallet-topup-verify', {
                     method: 'POST',
@@ -1261,7 +1267,7 @@
                         orderId: orderId,
                         paymentId: response.razorpay_payment_id,
                         signature: response.razorpay_signature,
-                        amount: amount
+                        amount: amount  // Send paise to backend (which divides by 100)
                     })
                 });
                 
@@ -1269,11 +1275,11 @@
                 
                 if (verifyData.success) {
                     console.log('[WALLET] ✅ Payment verified and wallet credited');
-                    showToast('✅ ₹' + amount + ' added to wallet successfully!');
+                    showToast('✅ ₹' + amountInRupees.toFixed(2) + ' added to wallet successfully!');
                     
                     // Update local wallet
                     const user = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
-                    user.wallet = verifyData.newBalance || (user.wallet || 0) + amount;
+                    user.wallet = verifyData.newBalance || (user.wallet || 0) + amountInRupees;
                     localStorage.setItem('taskearn_user', JSON.stringify(user));
                     
                     // Update in app.js if available

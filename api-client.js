@@ -564,10 +564,28 @@ const TasksAPI = {
     
     // Create task
     async create(taskData) {
+        console.log('🚀 TasksAPI.create() called');
+        console.log('   Method: POST');
+        console.log('   Endpoint: /tasks');
+        console.log('   Data:', JSON.stringify(taskData, null, 2));
+        
         const result = await apiRequest('/tasks', {
             method: 'POST',
             body: JSON.stringify(taskData)
         });
+        
+        console.log('📥 TasksAPI.create() response:', JSON.stringify(result, null, 2));
+        console.log('   success:', result.success);
+        console.log('   status:', result.status);
+        console.log('   data:', result.data);
+        
+        if (!result.success || !result.data) {
+            console.error('❌ TasksAPI.create failed:');
+            console.error('   Response success:', result.success);
+            console.error('   Response status:', result.status);
+            console.error('   Response data:', result.data);
+        }
+        
         return result.data;
     },
     
@@ -798,6 +816,42 @@ const HelperAPI = {
 };
 
 // ========================================
+// NOTIFICATIONS API
+// ========================================
+
+const NotificationsAPI = {
+    // Get all notifications
+    async getAll() {
+        const result = await apiRequest('/notifications', { method: 'GET' });
+        return result.data;
+    },
+    
+    // Mark notification as read
+    async markAsRead(notificationId) {
+        const result = await apiRequest(`/notifications/${notificationId}/read`, {
+            method: 'POST'
+        });
+        return result.data;
+    },
+    
+    // Delete notification
+    async delete(notificationId) {
+        const result = await apiRequest(`/notifications/${notificationId}`, {
+            method: 'DELETE'
+        });
+        return result.data;
+    },
+    
+    // Clear task notifications
+    async clearTaskNotifications(taskId) {
+        const result = await apiRequest(`/notifications/clear-task/${taskId}`, {
+            method: 'POST'
+        });
+        return result.data;
+    }
+};
+
+// ========================================
 // HEALTH CHECK
 // ========================================
 
@@ -817,6 +871,7 @@ window.RatingsAPI = RatingsAPI;
 window.ReferralAPI = ReferralAPI;
 window.SosAPI = SosAPI;
 window.HelperAPI = HelperAPI;
+window.NotificationsAPI = NotificationsAPI;
 window.checkBackendHealth = checkBackendHealth;
 
 // Log backend status on load

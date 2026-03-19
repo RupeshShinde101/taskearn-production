@@ -688,15 +688,18 @@ def change_password():
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
-    """Get all active tasks"""
+    """Get all active tasks (non-expired)"""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    
     with get_db() as (cursor, conn):
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT t.*, u.name as poster_name, u.rating as poster_rating, u.tasks_posted as poster_tasks
             FROM tasks t
             JOIN users u ON t.posted_by = u.id
-            WHERE t.status = 'active'
+            WHERE t.status = 'active' AND t.expires_at > {PH}
             ORDER BY t.posted_at DESC
-        ''')
+        ''', (now,))
         tasks = cursor.fetchall()
     
     task_list = []
@@ -723,6 +726,7 @@ def get_tasks():
             'status': task['status']
         })
     
+    print(f"[GET /tasks] Found {len(task_list)} active, non-expired tasks")
     return jsonify({
         'success': True,
         'tasks': task_list
@@ -734,15 +738,25 @@ def get_tasks():
 def create_task():
     """Create a new task"""
     try:
+        print('='*60)
+        print('🚀 POST /api/tasks - Task creation endpoint called')
+        print(f'   User ID: {request.user_id}')
+        
         data = request.get_json()
+        print(f'   Raw request data: {data}')
         
         required = ['title', 'description', 'category', 'price']
         for field in required:
             if not data.get(field):
                 print(f"⚠️ Task creation failed: missing required field '{field}'")
+                print(f'   Available fields: {list(data.keys())}')
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
         
-        print(f"📝 Creating task: '{data.get('title')}' by user {request.user_id}")
+        print(f"📝 Creating task: '{data.get('title')}'")
+        print(f"   Category: {data.get('category')}")
+        print(f"   Description: {data.get('description')}")
+        print(f"   Price: {data.get('price')}")
+        print(f"   Location: {data.get('location')}")
         
         with get_db() as (cursor, conn):
             posted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -750,7 +764,11 @@ def create_task():
             
             location = data.get('location', {})
             
+            print(f"   Posted at: {posted_at}")
+            print(f"   Expires at: {expires_at}")
+            
             # Insert task
+            print('   Executing INSERT query...')
             cursor.execute(f'''
                 INSERT INTO tasks (title, description, category, location_lat, location_lng, 
                                   location_address, price, posted_by, posted_at, expires_at, status)
@@ -767,41 +785,56 @@ def create_task():
                 posted_at,
                 expires_at
             ))
+            print('   ✅ INSERT query executed successfully')
             
             # Get the inserted task ID
+            print('   Getting inserted task ID...')
             try:
                 if config.USE_POSTGRES:
                     cursor.execute('SELECT lastval() AS id')
                     result = cursor.fetchone()
                     task_id = result['id'] if result else None
+                    print(f"   PostgreSQL lastval() result: {result}")
                 else:
                     cursor.execute('SELECT last_insert_rowid() AS id')
                     result = cursor.fetchone()
                     task_id = result[0] if result else None
+                    print(f"   SQLite last_insert_rowid() result: {result}")
             except Exception as id_error:
                 print(f"❌ Error getting task ID: {id_error}")
+                import traceback
+                traceback.print_exc()
                 task_id = None
+            
+            print(f"   Extracted task_id: {task_id}")
             
             if not task_id:
                 print("❌ Failed to get task ID after insertion")
                 return jsonify({'success': False, 'message': 'Failed to create task'}), 500
             
             # Update user's tasks_posted count
+            print('   Updating user tasks_posted count...')
             cursor.execute(f'UPDATE users SET tasks_posted = tasks_posted + 1 WHERE id = {PH}', 
                            (request.user_id,))
+            print('   ✅ User stats updated')
             
             print(f"✅ Task created successfully with ID: {task_id}")
         
-        return jsonify({
+        response = {
             'success': True,
             'message': 'Task created successfully',
             'taskId': task_id
-        }), 201
+        }
+        print(f'   Returning response: {response}')
+        print('='*60)
+        return jsonify(response), 201
     
     except Exception as e:
         print(f"❌ Task creation error: {str(e)}")
+        print(f"   Error type: {type(e).__name__}")
         import traceback
         traceback.print_exc()
+        print('='*60)
         return jsonify({'success': False, 'message': f'Task creation failed: {str(e)}'}), 500
 
 
@@ -913,6 +946,23 @@ def complete_task(task_id):
                 WHERE id = {PH}
             ''', (completed_at, task_id))
             
+            # Get helper name for notification
+            helper_user = dict_from_row(cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (request.user_id,)).fetchone())
+            helper_name = helper_user['name'] if helper_user else 'a helper'
+            
+            # Get poster info for notification
+            poster_id = task['posted_by']
+            
+            # Create notification for poster to pay
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (poster_id, task_id, 'task_completed', 
+                  f'Task Ready for Payment',
+                  f'Your task "{task["title"]}" has been completed by {helper_name}. Amount: ₹{task["price"]}. Please pay to complete the transaction.',
+                  'unread', now))
+            
             # Calculate earnings and commission for reference
             task_amount = float(task['price'])
             commission = calculate_commission(task_amount)
@@ -922,6 +972,7 @@ def complete_task(task_id):
             print(f"   Task Amount: ₹{task_amount:.2f}")
             print(f"   Commission ({COMMISSION_PERCENTAGE}%): ₹{commission:.2f}")
             print(f"   Helper will receive: ₹{net_earnings:.2f}")
+            print(f"   📬 Notification sent to poster {poster_id}")
             
             return jsonify({
                 'success': True,
@@ -1018,182 +1069,212 @@ def create_payment_order(task_id):
 @app.route('/api/tasks/<int:task_id>/pay-helper', methods=['POST'])
 @require_auth
 def pay_helper(task_id):
-    """Task poster pays the helper - collects payment and credits helper's wallet"""
+    """
+    Simple payment flow:
+    - Task poster pays helper from wallet
+    - 10% commission deducted from both users
+    - Remaining amount goes to helper
+    """
+    print(f"\n{'='*60}")
+    print(f"💰 Payment Processing: Task {task_id}")
+    print(f"Poster (payer): {request.user_id}")
+    print('='*60)
+    
     try:
-        data = request.get_json()
-        razorpay_payment_id = data.get('razorpay_payment_id')
-        razorpay_order_id = data.get('razorpay_order_id')
-        razorpay_signature = data.get('razorpay_signature')
-        
-        if not razorpay_payment_id:
-            return jsonify({'success': False, 'message': 'Payment ID required'}), 400
-        
-        # Verify Razorpay signature if provided
-        if razorpay_order_id and razorpay_signature and config.RAZORPAY_KEY_SECRET:
-            try:
-                import hmac
-                import hashlib
-                expected_sig = hmac.new(
-                    config.RAZORPAY_KEY_SECRET.encode(),
-                    f"{razorpay_order_id}|{razorpay_payment_id}".encode(),
-                    hashlib.sha256
-                ).hexdigest()
-                
-                if expected_sig != razorpay_signature:
-                    print(f"❌ Razorpay signature mismatch!")
-                    return jsonify({'success': False, 'message': 'Payment verification failed'}), 400
-                print(f"✅ Razorpay signature verified for payment {razorpay_payment_id}")
-            except Exception as sig_error:
-                print(f"⚠️  Could not verify signature: {sig_error}")
-                # Don't fail - might be in test mode
-        
         with get_db() as (cursor, conn):
             # Get task details
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH}', (task_id,))
             task = cursor.fetchone()
             
             if not task:
+                print(f"❌ Task {task_id} not found")
                 return jsonify({'success': False, 'message': 'Task not found'}), 404
             
             task = dict_from_row(task)
+            print(f"📋 Task: {task['title']}")
+            print(f"   Status: {task['status']}")
+            print(f"   Posted by: {task['posted_by']}")
+            print(f"   Accepted by: {task['accepted_by']}")
             
             # Verify task is completed
             if task['status'] != 'completed':
-                return jsonify({'success': False, 'message': 'Task not completed yet'}), 400
+                print(f"❌ Task not completed (status: {task['status']})")
+                return jsonify({'success': False, 'message': 'Task must be completed first'}), 400
             
             # Verify the poster is the one paying
             if task['posted_by'] != request.user_id:
+                print(f"❌ Only task poster can pay (poster: {task['posted_by']}, requester: {request.user_id})")
                 return jsonify({'success': False, 'message': 'Only task poster can pay'}), 403
             
-            # Calculate commission and earnings
-            task_amount = float(task['price'])
-            commission = calculate_commission(task_amount)
-            net_earnings = task_amount - commission
-            
             helper_id = task['accepted_by']
+            task_amount = float(task['price'])
+            
+            # Calculate with 10% commission from both users
+            commission_rate = 0.10
+            poster_commission = task_amount * commission_rate
+            helper_commission = task_amount * commission_rate
+            
+            print(f"\n💵 Payment Breakdown:")
+            print(f"   Task Amount: ₹{task_amount}")
+            print(f"   Commission from Poster (10%): ₹{poster_commission:.2f}")
+            print(f"   Commission from Helper (10%): ₹{helper_commission:.2f}")
+            print(f"   Helper receives: ₹{task_amount}")
+            print(f"   Poster pays: ₹{task_amount + poster_commission}")
+            
+            # Get poster wallet
+            cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
+            poster_wallet = cursor.fetchone()
+            
+            if not poster_wallet:
+                print(f"❌ Poster wallet not found")
+                return jsonify({'success': False, 'message': 'Poster wallet not found'}), 404
+            
+            poster_wallet = dict_from_row(poster_wallet)
+            poster_balance = float(poster_wallet['balance'])
+            
+            print(f"\n👤 Poster Wallet:")
+            print(f"   Current balance: ₹{poster_balance}")
+            print(f"   Required: ₹{task_amount}")
+            
+            # Check if poster has sufficient balance
+            if poster_balance < task_amount:
+                print(f"❌ Insufficient balance in poster wallet")
+                return jsonify({
+                    'success': False, 
+                    'message': f'Insufficient balance. Need ₹{task_amount}, have ₹{poster_balance}'
+                }), 400
+            
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
-            # Credit helper's wallet
+            # Deduct from poster wallet (full amount + commission)
+            new_poster_balance = poster_balance - task_amount - poster_commission
+            cursor.execute(f'''
+                UPDATE wallets 
+                SET balance = {PH}, 
+                    total_spent = total_spent + {PH},
+                    updated_at = {PH}
+                WHERE user_id = {PH}
+            ''', (new_poster_balance, task_amount + poster_commission, now, request.user_id))
+            
+            # Record poster transaction
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions 
+                (wallet_id, user_id, type, amount, balance_after, description, task_id, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (poster_wallet['id'], request.user_id, 'debit', 
+                  task_amount + poster_commission, new_poster_balance,
+                  f'Paid ₹{task_amount} to helper + ₹{poster_commission:.2f} commission',
+                  task_id, now))
+            
+            print(f"   New balance after payment: ₹{new_poster_balance}")
+            
+            # Get or create helper wallet
             cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (helper_id,))
-            wallet = cursor.fetchone()
+            helper_wallet = cursor.fetchone()
             
-            print(f"[DEBUG] Looking for helper wallet: user_id={helper_id}, found={wallet is not None}")
-            
-            if not wallet:
-                # Create wallet if doesn't exist
-                print(f"[DEBUG] Creating wallet for helper {helper_id}")
+            if not helper_wallet:
+                print(f"   Creating wallet for helper...")
                 cursor.execute(f'''
                     INSERT INTO wallets (user_id, balance, total_added, total_spent, total_earned, total_cashback, created_at)
                     VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                ''', (helper_id, net_earnings, 0, 0, net_earnings, 0, now))
+                ''', (helper_id, 0, 0, 0, 0, 0, now))
                 cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (helper_id,))
-                wallet = cursor.fetchone()
-                print(f"[DEBUG] Wallet created, new_id={dict_from_row(wallet)['id']}")
+                helper_wallet = cursor.fetchone()
             
-            wallet_dict = dict_from_row(wallet)
-            old_balance = float(wallet_dict['balance'])
-            new_balance = old_balance + net_earnings
+            helper_wallet = dict_from_row(helper_wallet)
+            helper_balance = float(helper_wallet['balance'])
             
-            print(f"[DEBUG] Updating helper wallet: {old_balance} -> {new_balance}")
+            # Helper receives FULL task amount first
+            helper_receives = task_amount
+            new_balance_after_earning = helper_balance + helper_receives
             
-            # Update helper's wallet
+            print(f"\n👥 Helper Wallet:")
+            print(f"   Current balance: ₹{helper_balance}")
+            print(f"   Receiving (full amount): ₹{helper_receives:.2f}")
+            
+            # Credit helper with full task amount
             cursor.execute(f'''
                 UPDATE wallets 
                 SET balance = {PH}, 
                     total_earned = total_earned + {PH},
                     updated_at = {PH}
                 WHERE user_id = {PH}
-            ''', (new_balance, net_earnings, now, helper_id))
+            ''', (new_balance_after_earning, helper_receives, now, helper_id))
             
-            # Record transaction for helper
+            # Record earning transaction
             cursor.execute(f'''
                 INSERT INTO wallet_transactions 
-                (wallet_id, user_id, type, amount, balance_after, description, created_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (wallet_dict['id'], helper_id, 'credit', net_earnings, new_balance, 
-                  f'Task payment received (Commission {commission:.2f} deducted)', now))
+                (wallet_id, user_id, type, amount, balance_after, description, task_id, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (helper_wallet['id'], helper_id, 'credit',
+                  helper_receives, new_balance_after_earning,
+                  f'Task payment received: ₹{helper_receives}',
+                  task_id, now))
             
-            print(f"[DEBUG] Recorded transaction for helper")
+            print(f"   Balance after earning: ₹{new_balance_after_earning}")
             
-            # Deduct from poster's wallet (if they want to pay from wallet)
-            poster_wallet = None
-            cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
-            poster_wallet = cursor.fetchone()
-            
-            print(f"[DEBUG] Looking for poster wallet: user_id={request.user_id}, found={poster_wallet is not None}")
-            
-            if poster_wallet:
-                poster_wallet_dict = dict_from_row(poster_wallet)
-                poster_old_balance = float(poster_wallet_dict['balance'])
-                poster_new_balance = poster_old_balance - task_amount
-                
-                print(f"[DEBUG] Updating poster wallet: {poster_old_balance} -> {poster_new_balance}")
-                
-                cursor.execute(f'''
-                    UPDATE wallets 
-                    SET balance = {PH}, 
-                        total_spent = total_spent + {PH},
-                        updated_at = {PH}
-                    WHERE user_id = {PH}
-                ''', (poster_new_balance, task_amount, now, request.user_id))
-                
-                # Record transaction for poster
-                cursor.execute(f'''
-                    INSERT INTO wallet_transactions 
-                    (wallet_id, user_id, type, amount, balance_after, description, created_at)
-                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                ''', (poster_wallet_dict['id'], request.user_id, 'debit', task_amount, poster_new_balance, 
-                      f'Paid helper for task (Razorpay: {razorpay_payment_id[:10]}...)', now))
-                
-                print(f"[DEBUG] Recorded transaction for poster")
-            else:
-                print(f"[DEBUG] No poster wallet found - creating new one")
-                cursor.execute(f'''
-                    INSERT INTO wallets (user_id, balance, total_added, total_spent, total_earned, total_cashback, created_at)
-                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                ''', (request.user_id, -task_amount, 0, task_amount, 0, 0, now))
-                cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
-                poster_wallet = cursor.fetchone()
-                poster_wallet_dict = dict_from_row(poster_wallet)
-                
-                cursor.execute(f'''
-                    INSERT INTO wallet_transactions 
-                    (wallet_id, user_id, type, amount, balance_after, description, created_at)
-                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                ''', (poster_wallet_dict['id'], request.user_id, 'debit', task_amount, -task_amount, 
-                      f'Paid helper for task (Razorpay: {razorpay_payment_id[:10]}...)', now))
-                print(f"[DEBUG] Created poster wallet with initial balance {-task_amount}")
-            
-            # Update task status to paid
+            # Now deduct commission from helper's wallet (can go negative)
+            new_helper_balance = new_balance_after_earning - helper_commission
             cursor.execute(f'''
-                UPDATE tasks SET status = 'paid' WHERE id = {PH}
-            ''', (task_id,))
+                UPDATE wallets 
+                SET balance = {PH}, 
+                    total_spent = total_spent + {PH},
+                    updated_at = {PH}
+                WHERE user_id = {PH}
+            ''', (new_helper_balance, helper_commission, now, helper_id))
             
-            print(f"[DEBUG] Updated task {task_id} to paid status")
+            # Record commission deduction transaction
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions 
+                (wallet_id, user_id, type, amount, balance_after, description, task_id, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (helper_wallet['id'], helper_id, 'debit',
+                  helper_commission, new_helper_balance,
+                  f'Commission deducted (10%): ₹{helper_commission:.2f}',
+                  task_id, now))
             
-            # Check suspension for helper
-            is_suspended = suspend_user_if_needed(helper_id, cursor)
+            print(f"   Commission deducted: ₹{helper_commission:.2f}")
+            print(f"   Final balance: ₹{new_helper_balance}")
             
-            print(f"💰 Payment processed for task {task_id}")
-            print(f"   Helper ID: {helper_id}")
-            print(f"   Amount paid: ₹{task_amount:.2f}")
-            print(f"   Helper receives: ₹{net_earnings:.2f}")
-            print(f"   Commission: ₹{commission:.2f}")
-        
-        return jsonify({
-            'success': True,
-            'message': 'Payment successful - helper has been credited',
-            'taskAmount': task_amount,
-            'commission': commission,
-            'helperEarnings': net_earnings,
-            'isSuspended': is_suspended,
-            'taskId': task_id
-        }), 200
+            # Mark task as PAID
+            cursor.execute(f'''
+                UPDATE tasks 
+                SET status = 'paid', paid_at = {PH}
+                WHERE id = {PH}
+            ''', (now, task_id))
+            
+            print(f"\n✅ Payment Complete!")
+            print(f"   Task status: completed → paid")
+            print(f"   Poster paid: ₹{task_amount + poster_commission:.2f}")
+            print(f"   Helper received (gross): ₹{task_amount:.2f}")
+            print(f"   Helper net (after commission): ₹{new_helper_balance - (helper_balance + task_amount - task_amount):.2f}")
+            print('='*60 + "\n")
+            
+            # Clear notification for poster about pending payment
+            cursor.execute(f'''
+                DELETE FROM notifications 
+                WHERE task_id = {PH} AND user_id = {PH} AND notification_type = {PH}
+            ''', (task_id, request.user_id, 'task_completed'))
+            
+            print(f"📬 Notification cleared for task {task_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Payment successful',
+                'taskId': task_id,
+                'amount': task_amount,
+                'helperReceives': task_amount - helper_commission,  # Net amount after commission
+                'posterCommission': poster_commission,
+                'helperCommission': helper_commission,
+                'posterNewBalance': new_poster_balance,
+                'helperNewBalance': new_helper_balance
+            }), 200
     
     except Exception as e:
         print(f"❌ Payment error: {e}")
         import traceback
         traceback.print_exc()
+        print('='*60 + "\n")
         return jsonify({'success': False, 'message': f'Payment failed: {str(e)}'}), 500
 
 
@@ -1704,7 +1785,9 @@ def get_or_create_wallet(user_id):
             cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (user_id,))
             wallet = cursor.fetchone()
         
-        return dict_from_row(wallet)
+        wallet_dict = dict_from_row(wallet)
+        print(f"[DEBUG] get_or_create_wallet for {user_id}: {wallet_dict}")
+        return wallet_dict
 
 
 @app.route('/api/wallet/debug', methods=['GET'])
@@ -1715,20 +1798,30 @@ def debug_wallet():
         with get_db() as (cursor, conn):
             # Get wallet directly from database
             cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
-            wallet = dict_from_row(cursor.fetchone())
+            wallet_row = cursor.fetchone()
             
-            if not wallet:
+            if not wallet_row:
                 return jsonify({'success': False, 'message': 'Wallet not found'}), 404
+            
+            wallet = dict_from_row(wallet_row)
             
             # Get recent transactions
             cursor.execute(f'''
-                SELECT type, amount, balance_after, description, created_at
+                SELECT id, type, amount, balance_after, description, created_at
                 FROM wallet_transactions 
                 WHERE user_id = {PH}
                 ORDER BY created_at DESC 
-                LIMIT 10
+                LIMIT 20
             ''', (request.user_id,))
             transactions = [dict_from_row(row) for row in cursor.fetchall()]
+        
+        print(f"\n[DEBUG WALLET] Wallet info for user {request.user_id}:")
+        print(f"  Wallet ID: {wallet.get('id')}")
+        print(f"  Balance: ₹{wallet.get('balance')}")
+        print(f"  Total Added: ₹{wallet.get('total_added')}")
+        print(f"  Total Spent: ₹{wallet.get('total_spent')}")
+        print(f"  Total Earned: ₹{wallet.get('total_earned')}")
+        print(f"  Recent Transactions: {len(transactions)}")
         
         return jsonify({
             'success': True,
@@ -1738,6 +1831,8 @@ def debug_wallet():
         
     except Exception as e:
         print(f"❌ Error in debug endpoint: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -1788,27 +1883,30 @@ def add_money_to_wallet():
     wallet = get_or_create_wallet(request.user_id)
     new_balance = float(wallet['balance']) + total_credit
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    wallet_id = wallet.get('id')
     
     with get_db() as (cursor, conn):
         # Update wallet
         cursor.execute(f'''
             UPDATE wallets 
-            SET balance = {PH}, total_added = total_added + {PH}, total_cashback = total_cashback + {PH}, updated_at = {PH}
+            SET balance = {PH}, total_added = total_added + {PH}, total_cashback = total_cashback + {PH}
             WHERE user_id = {PH}
-        ''', (new_balance, amount, cashback, now, request.user_id))
+        ''', (new_balance, amount, cashback, request.user_id))
         
         # Add transaction record
         cursor.execute(f'''
             INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, reference_id, created_at)
             VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (wallet['id'], request.user_id, 'credit', amount, new_balance, 'Added money to wallet', payment_id, now))
+        ''', (wallet_id, request.user_id, 'credit', amount, new_balance, 'Added money to wallet', payment_id, now))
         
         # Add cashback transaction if applicable
         if cashback > 0:
             cursor.execute(f'''
                 INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (wallet['id'], request.user_id, 'cashback', cashback, new_balance, f'2% cashback on ₹{amount}', now))
+            ''', (wallet_id, request.user_id, 'cashback', cashback, new_balance, f'2% cashback on ₹{amount}', now))
+        
+        conn.commit()
     
     return jsonify({
         'success': True,
@@ -3126,9 +3224,18 @@ def create_wallet_topup_order():
             return jsonify({'success': False, 'message': 'Payment gateway not configured'}), 503
         
         data = request.get_json()
-        amount = int(data.get('amount', 0))  # In paise
+        amount = int(data.get('amount', 0))  # Should be in paise
         
-        print(f"  Amount: {amount} paise (₹{amount/100})")
+        print(f"  Amount (raw): {amount}")
+        
+        # DEFENSIVE: Auto-detect if amount is in rupees vs paise
+        # Minimum is ₹10 = 1000 paise
+        # If amount < 1000 and >= 10, it's likely in rupees (from frontend not multiplying)
+        if amount < 1000 and amount >= 10:
+            print(f"⚠️  [WALLET] Amount appears to be in rupees, converting: {amount}₹ → {amount * 100} paise")
+            amount = amount * 100
+        
+        print(f"  Amount (after conversion): {amount} paise (₹{amount/100})")
         
         if amount < 1000:  # Minimum ₹10
             return jsonify({'success': False, 'message': 'Minimum top-up is ₹10'}), 400
@@ -3198,7 +3305,16 @@ def verify_wallet_topup():
         print(f"\n[WALLET] ===== WALLET TOP-UP VERIFICATION =====")
         print(f"[WALLET] Order ID: {order_id}")
         print(f"[WALLET] Payment ID: {payment_id}")
-        print(f"[WALLET] Amount: ₹{amount/100}")
+        print(f"[WALLET] Amount (raw): {amount}")
+        
+        # DEFENSIVE: Auto-detect if amount is in rupees vs paise
+        # Minimum is ₹10 = 1000 paise
+        # If amount < 1000, it's likely in rupees (from old buggy code)
+        if amount < 1000 and amount >= 10:
+            print(f"⚠️  [WALLET] Amount appears to be in rupees, converting: {amount}₹ → {amount * 100} paise")
+            amount = amount * 100
+        
+        print(f"[WALLET] Amount (after conversion): {amount} paise = ₹{amount/100}")
         print(f"[WALLET] User: {request.user_id}")
         
         if not all([payment_id, order_id, amount]) or amount <= 0:
@@ -3260,27 +3376,40 @@ def verify_wallet_topup():
             # Update wallet balance
             cursor.execute(f'''
                 UPDATE wallets
-                SET balance = {PH}, total_added = total_added + {PH}, updated_at = NOW()
+                SET balance = {PH}, total_added = total_added + {PH}
                 WHERE user_id = {PH}
             ''', (new_balance, credit_amount, request.user_id))
             
+            # Get wallet ID for transaction record
+            wallet_id = wallet.get('id')
+            if not wallet_id:
+                print(f"❌ [WALLET] Wallet ID not found! Wallet dict: {wallet}")
+                # Try to fetch it again
+                cursor.execute(f'SELECT id FROM wallets WHERE user_id = {PH}', (request.user_id,))
+                wallet_row = cursor.fetchone()
+                if wallet_row:
+                    wallet_id = dict_from_row(wallet_row).get('id')
+                    print(f"[WALLET] Fetched wallet_id: {wallet_id}")
+            
             # Record transaction
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cursor.execute(f'''
                 INSERT INTO wallet_transactions (
                     wallet_id, user_id, type, amount, balance_after,
-                    description, created_at
-                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    description, reference_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (
-                wallet.get('id'), request.user_id, 'razorpay_topup',
+                wallet_id, request.user_id, 'razorpay_topup',
                 credit_amount, new_balance,
-                f'Razorpay verified wallet top-up - ₹{credit_amount}',
-                datetime.datetime.now(datetime.timezone.utc).isoformat()
+                f'Razorpay wallet top-up - ₹{credit_amount:.2f}',
+                payment_id, now
             ))
             
             conn.commit()
         
         print(f"✅ [WALLET] Wallet credited successfully: ₹{credit_amount}")
         print(f"[WALLET] New balance: ₹{new_balance}")
+        print(f"[WALLET] Transaction recorded with ID: {wallet_id}")
         
         return jsonify({
             'success': True,
@@ -3599,6 +3728,105 @@ def cleanup_old_tasks():
     except Exception as e:
         print(f"⚠️  Cleanup error: {e}")
         return 0
+
+
+# ========================================
+# NOTIFICATIONS API
+# ========================================
+
+@app.route('/api/notifications', methods=['GET'])
+@require_auth
+def get_notifications():
+    """Get notifications for current user"""
+    try:
+        with get_db() as (cursor, conn):
+            # Get unread notifications
+            cursor.execute(f'''
+                SELECT n.*, t.title as task_title
+                FROM notifications n
+                LEFT JOIN tasks t ON n.task_id = t.id
+                WHERE n.user_id = {PH}
+                ORDER BY n.created_at DESC
+                LIMIT 50
+            ''', (request.user_id,))
+            
+            rows = cursor.fetchall()
+            notifications = [dict_from_row(row) for row in rows]
+            
+            return jsonify({
+                'success': True,
+                'notifications': notifications,
+                'count': len(notifications)
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error fetching notifications: {e}")
+        return jsonify({'success': False, 'message': f'Error fetching notifications: {str(e)}'}), 500
+
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+@require_auth
+def mark_notification_read(notification_id):
+    """Mark notification as read"""
+    try:
+        with get_db() as (cursor, conn):
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                UPDATE notifications 
+                SET status = 'read', read_at = {PH}
+                WHERE id = {PH} AND user_id = {PH}
+            ''', (now, notification_id, request.user_id))
+            
+            return jsonify({
+                'success': True,
+                'message': 'Notification marked as read'
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error marking notification as read: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/notifications/<int:notification_id>', methods=['DELETE'])
+@require_auth
+def delete_notification(notification_id):
+    """Delete notification"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                DELETE FROM notifications 
+                WHERE id = {PH} AND user_id = {PH}
+            ''', (notification_id, request.user_id))
+            
+            return jsonify({
+                'success': True,
+                'message': 'Notification deleted'
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error deleting notification: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/notifications/clear-task/<int:task_id>', methods=['POST'])
+@require_auth
+def clear_task_notifications(task_id):
+    """Clear notifications for a completed task"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                DELETE FROM notifications 
+                WHERE task_id = {PH} AND user_id = {PH}
+            ''', (task_id, request.user_id))
+            
+            return jsonify({
+                'success': True,
+                'message': 'Task notifications cleared'
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error clearing notifications: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 
 # ========================================

@@ -1029,7 +1029,7 @@ def complete_task(task_id):
             # Helper commission + fee (12%) + Poster fee (5%) = Total platform income
             total_platform_income = helper_total_deduction + poster_deduction
             
-            company_wallet = get_or_create_wallet(1)  # Company account ID = 1
+            company_wallet = get_or_create_wallet('1')  # Company account ID = 1
             company_current_balance = float(company_wallet.get('balance', 0))
             company_new_balance = company_current_balance + total_platform_income
             
@@ -1037,7 +1037,7 @@ def complete_task(task_id):
                 UPDATE wallets
                 SET balance = {PH}
                 WHERE user_id = {PH}
-            ''', (company_new_balance, 1))
+            ''', (company_new_balance, '1'))
             
             # Record company income from helper commission
             cursor.execute(f'''
@@ -1046,7 +1046,7 @@ def complete_task(task_id):
                     description, reference_id, task_id, created_at
                 ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (
-                company_wallet.get('id'), 1, 'commission',
+                company_wallet.get('id'), '1', 'commission',
                 helper_total_deduction, company_new_balance - poster_deduction,
                 f'Helper Commission (12%) and Platform Fee from task #{task_id}',
                 f'task-commission-{task_id}', task_id, now
@@ -1059,7 +1059,7 @@ def complete_task(task_id):
                     description, reference_id, task_id, created_at
                 ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (
-                company_wallet.get('id'), 1, 'platform_fee',
+                company_wallet.get('id'), '1', 'platform_fee',
                 poster_deduction, company_new_balance,
                 f'Posting Fee (5%) from task #{task_id}',
                 f'task-poster-fee-{task_id}', task_id, now
@@ -3181,7 +3181,7 @@ def verify_payment():
             ))
             
             # Credit company account (10% commission)
-            company_wallet = get_or_create_wallet(1)  # Company ID
+            company_wallet = get_or_create_wallet('1')  # Company ID
             company_balance = float(company_wallet.get('balance', 0)) + platform_fee
             
             cursor.execute(f'''
@@ -4703,9 +4703,9 @@ def process_settlement():
                     SUM(CASE WHEN transaction_type = 'commission' THEN amount ELSE 0 END) as helper_commission,
                     SUM(CASE WHEN transaction_type = 'platform_fee' THEN amount ELSE 0 END) as poster_fees
                 FROM wallet_transactions
-                WHERE user_id = 1 AND created_at >= {PH}
+                WHERE user_id = {PH} AND created_at >= {PH}
                 AND transaction_type IN ('commission', 'platform_fee')
-            ''', (yesterday_str,))
+            ''', ('1', yesterday_str,))
             
             income_summary = cursor.fetchone()
             helper_commission = float(income_summary[0] or 0) if income_summary else 0

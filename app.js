@@ -2502,7 +2502,7 @@ async function completeTask(taskId) {
                 });
                 
                 // Show success with payment details
-                showToast(`✅ Task completed! ₹${result.helperDeduction} deducted (10% commission + 2% fee)`);
+                showToast(`✅ Task completed! You earned ₹${result.helperNetEarnings || 0} (after 10% commission + 2% fee)`);
                 
                 // Show completion modal with payment info
                 showTaskCompletionModal(task, result);
@@ -2538,34 +2538,46 @@ function showTaskCompletionModal(task, result) {
         <div style="text-align: center; padding: 20px;">
             <div style="font-size: 60px; margin-bottom: 20px;">🎉</div>
             <h2 style="color: #4ade80; margin-bottom: 15px;">Task Completed!</h2>
-            <p style="margin-bottom: 20px;">Task completion processed and fees deducted from your wallet.</p>
+            <p style="margin-bottom: 20px;">Task completion processed with fees deducted.</p>
             
             <div style="background: rgba(74, 222, 128, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
                 <h3 style="margin-bottom: 15px;">${task.title}</h3>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                    <span>Task Amount:</span>
-                    <span>₹${(result?.taskAmount || task.price).toFixed(2)}</span>
+                
+                <div style="text-align: left; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #999;">Task Amount:</span>
+                        <span style="font-weight: 600;">₹${(result?.taskAmount || task.price).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #999;">Commission (10%):</span>
+                        <span style="color: #ff6b6b;">-₹${((result?.taskAmount || task.price) * 0.10).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                        <span style="color: #999;">Platform Fee (2%):</span>
+                        <span style="color: #ff6b6b;">-₹${((result?.taskAmount || task.price) * 0.02).toFixed(2)}</span>
+                    </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; color: #ff6b6b;">
-                    <span>Deductions (10% + 2%):</span>
-                    <span>-₹${(result?.helperDeduction || 0).toFixed(2)}</span>
+                
+                <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
+                
+                <div style="display: flex; justify-content: space-between; font-size: 20px; font-weight: 700; margin-bottom: 15px; background: rgba(74, 222, 128, 0.2); padding: 12px; border-radius: 8px;">
+                    <span style="color: #fff;">You Earn:</span>
+                    <span style="color: #4ade80;">₹${(result?.helperNetEarnings || 0).toFixed(2)}</span>
                 </div>
-                <hr style="border-color: rgba(255,255,255,0.1); margin: 10px 0;">
-                <div style="display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 15px;">
-                    <span>Your New Balance:</span>
-                    <span style="color: #4ade80;">₹${(result?.helperNewBalance || 0).toFixed(2)}</span>
+                
+                <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
+                
+                <div style="text-align: left;">
+                    <div style="display: flex; justify-content: space-between; font-size: 14px; margin-top: 10px; color: #888;">
+                        <span>Your New Wallet Balance:</span>
+                        <span style="font-weight: 600; color: #4ade80;">₹${(result?.helperNewBalance || 0).toFixed(2)}</span>
+                    </div>
                 </div>
-                ${(result?.posterNewBalance !== undefined) ? `
-                <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
-                    <span>Poster Charge (5%):</span>
-                    <span>-₹${(result?.posterDeduction || 0).toFixed(2)}</span>
-                </div>
-                ` : ''}
             </div>
             
             <p style="color: #888; font-size: 14px;">
-                Fees have been automatically deducted from your wallet.<br>
-                The task has been marked as completed.
+                ✅ Commissions and platform fees have been deducted.<br>
+                Your earnings are now reflected in your wallet.
             </p>
         </div>
     `;

@@ -1046,11 +1046,15 @@ def complete_task(task_id):
             print(f"   Helper balance: ₹{helper_current_balance:.2f} → ₹{helper_new_balance:.2f}")
             print(f"   Poster balance: ₹{poster_current_balance:.2f} → ₹{poster_new_balance:.2f}")
             
+            # Calculate helper's net earnings (what they actually earn after fees)
+            helper_net_earnings = task_amount - helper_total_deduction
+            
             return jsonify({
                 'success': True,
                 'message': 'Task marked complete - Commissions and fees deducted',
                 'taskAmount': task_amount,
                 'helperDeduction': helper_total_deduction,
+                'helperNetEarnings': helper_net_earnings,
                 'helperNewBalance': helper_new_balance,
                 'posterDeduction': poster_deduction,
                 'posterNewBalance': poster_new_balance,

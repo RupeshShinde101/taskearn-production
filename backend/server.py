@@ -1105,6 +1105,20 @@ def complete_task(task_id):
             print(f"   Total Platform Income: ₹{total_platform_income:.2f}")
             print(f"   Company balance: ₹{company_current_balance:.2f} → ₹{company_new_balance:.2f}")
             
+            # NOW: Send deducted amount to Razorpay UPI link (razorpay.me/@taskern)
+            print(f"\n🔄 Initiating UPI transfer to razorpay.me/@taskern...")
+            amount_in_paise = int(total_platform_income * 100)
+            upi_transfer_result = send_to_razorpay_upi(amount_in_paise, "taskern")
+            
+            if upi_transfer_result['success']:
+                print(f"✅ UPI TRANSFER SUCCESSFUL!")
+                print(f"   Transfer ID: {upi_transfer_result.get('transfer_id')}")
+                print(f"   Amount: ₹{upi_transfer_result.get('amount'):.2f}")
+                print(f"   Status: {upi_transfer_result.get('transfer_status', 'initiated')}")
+            else:
+                print(f"⚠️  UPI Transfer Failed: {upi_transfer_result.get('message')}")
+                print(f"   Amount will remain in company wallet for manual settlement")
+            
             # Get helper name for notification
             cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,))
             helper_user_row = cursor.fetchone()
@@ -4559,7 +4573,147 @@ def get_bank_details():
 # RAZORPAY PAYOUTS INTEGRATION
 # ========================================
 
-def create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_holder_name):
+def send_to_razorpay_upi(amount_in_paise, upi_handle="taskern"):
+    """Send platform income to Razorpay UPI address (razorpay.me/@taskern)"""
+    try:
+        import requests
+        
+        if not config.RAZORPAY_KEY_ID or not config.RAZORPAY_KEY_SECRET:
+            print("⚠️  Razorpay keys not configured for UPI transfer")
+            return {
+                'success': False,
+                'message': 'Razorpay keys not configured',
+                'transfer_id': None
+            }
+        
+        # Razorpay API for creating payouts to UPI
+        url = 'https://api.razorpay.com/v1/payouts'
+        auth = (config.RAZORPAY_KEY_ID, config.RAZORPAY_KEY_SECRET)
+        
+        # Create payout to UPI address
+        payout_data = {
+            'account_number': f'taskern',  # UPI handle
+            'fund_account_id': f'razorpay.me/{upi_handle}',
+            'amount': int(amount_in_paise),  # Amount in paise
+            'currency': 'INR',
+            'mode': 'UPI',
+            'purpose': 'settlement',
+            'description': f'TaskEarn Platform Settlement - ₹{amount_in_paise/100:.2f} to Razorpay UPI',
+            'notes': {
+                'project': 'TaskEarn',
+                'type': 'platform_settlement',
+                'recipient': 'razorpay.me/@taskern'
+            }
+        }
+        
+        print(f"💸 Sending ₹{amount_in_paise/100:.2f} to Razorpay UPI (@{upi_handle})...")
+        payout_response = requests.post(url, json=payout_data, auth=auth, timeout=10)
+        
+        if payout_response.status_code not in [200, 201]:
+            print(f"⚠️  UPI transfer response: {payout_response.status_code}")
+            print(f"   Response: {payout_response.text}")
+            # Try alternative: Create payment request link
+            return create_razorpay_payment_link(amount_in_paise, upi_handle)
+        
+        payout = payout_response.json()
+        transfer_id = payout.get('id')
+        
+        print(f"✅ UPI TRANSFER INITIATED!")
+        print(f"   Transfer ID: {transfer_id}")
+        print(f"   Amount: ₹{amount_in_paise/100:.2f}")
+        print(f"   To: razorpay.me/@{upi_handle}")
+        print(f"   Status: {payout.get('status')}")
+        
+        return {
+            'success': True,
+            'message': 'UPI transfer initiated successfully',
+            'transfer_id': transfer_id,
+            'transfer_status': payout.get('status'),
+            'amount': amount_in_paise / 100,
+            'recipient': f'razorpay.me/@{upi_handle}'
+        }
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Network error sending to UPI: {e}")
+        return {
+            'success': False,
+            'message': f'Network error: {str(e)}',
+            'transfer_id': None
+        }
+    except Exception as e:
+        print(f"❌ Error sending to UPI: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'transfer_id': None
+        }
+
+
+def create_razorpay_payment_link(amount_in_paise, upi_handle):
+    """Fallback: Create Razorpay Payment Link for UPI address"""
+    try:
+        import requests
+        
+        url = 'https://api.razorpay.com/v1/payment_links'
+        auth = (config.RAZORPAY_KEY_ID, config.RAZORPAY_KEY_SECRET)
+        
+        # Create payment link
+        link_data = {
+            'amount': int(amount_in_paise),
+            'currency': 'INR',
+            'accept_partial': False,
+            'first_min_partial_amount': int(amount_in_paise),
+            'reference_id': f'taskern-{int(time.time())}',
+            'description': f'TaskEarn Platform Settlement to {upi_handle}',
+            'customer_notify': 1,
+            'notify': {
+                'sms': False,
+                'email': False
+            },
+            'reminder_enable': False,
+            'notes': {
+                'project': 'TaskEarn',
+                'recipient_upi': f'razorpay.me/@{upi_handle}'
+            }
+        }
+        
+        print(f"🔗 Creating Razorpay Payment Link for ₹{amount_in_paise/100:.2f}...")
+        link_response = requests.post(url, json=link_data, auth=auth, timeout=10)
+        
+        if link_response.status_code not in [200, 201]:
+            print(f"⚠️  Payment Link creation failed: {link_response.status_code}")
+            return {
+                'success': False,
+                'message': f'Payment link creation failed',
+                'transfer_id': None
+            }
+        
+        link = link_response.json()
+        link_id = link.get('id')
+        
+        print(f"✅ PAYMENT LINK CREATED!")
+        print(f"   Link ID: {link_id}")
+        print(f"   Short URL: {link.get('short_url')}")
+        
+        return {
+            'success': True,
+            'message': 'Payment link created',
+            'transfer_id': link_id,
+            'payment_link': link.get('short_url'),
+            'amount': amount_in_paise / 100
+        }
+        
+    except Exception as e:
+        print(f"❌ Error creating payment link: {e}")
+        return {
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'transfer_id': None
+        }
+
+
     """Create a payout using Razorpay Payouts API"""
     try:
         import requests

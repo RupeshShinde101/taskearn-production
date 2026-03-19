@@ -12,7 +12,7 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from socketio import Server, ASGIApp
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -3866,41 +3866,378 @@ def health_check():
 @app.route('/admin-dashboard.html', methods=['GET'])
 def admin_dashboard():
     """Serve admin dashboard HTML"""
-    try:
-        import os
+    # Return HTML directly without trying to load a file
+    html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - TaskEarn</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         
-        # Get the parent directory of the backend folder
-        backend_dir = os.path.dirname(__file__)  # /app/backend or backend/
-        root_dir = os.path.dirname(backend_dir)  # /app or .
-        dashboard_file = os.path.join(root_dir, 'admin-dashboard.html')
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
         
-        # Log paths for debugging
-        print(f"📂 Backend dir: {backend_dir}")
-        print(f"📂 Root dir: {root_dir}")
-        print(f"📂 Dashboard file: {dashboard_file}")
-        print(f"📂 File exists: {os.path.exists(dashboard_file)}")
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
         
-        if os.path.exists(dashboard_file):
-            return send_file(dashboard_file, mimetype='text/html')
-        else:
-            # Fallback: try current working directory
-            cwd_dashboard = os.path.join(os.getcwd(), 'admin-dashboard.html')
-            print(f"📂 CWD Dashboard: {cwd_dashboard}")
-            print(f"📂 CWD exists: {os.path.exists(cwd_dashboard)}")
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        h1 {
+            font-size: 32px;
+            color: #4ade80;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .logout-btn {
+            background: #ff6b6b;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .logout-btn:hover {
+            background: #ff5252;
+            transform: translateY(-2px);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(74, 222, 128, 0.3);
+            transform: translateY(-5px);
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #4ade80;
+            margin-bottom: 5px;
+        }
+        
+        .stat-subtext {
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .section h2 {
+            font-size: 24px;
+            margin-bottom: 25px;
+            color: #4ade80;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: #ddd;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #4ade80;
+            box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.1);
+        }
+        
+        input::placeholder {
+            color: #777;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn-primary {
+            background: #4ade80;
+            color: #000;
+            width: 100%;
+        }
+        
+        .btn-primary:hover {
+            background: #22c55e;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(74, 222, 128, 0.3);
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .alert.success {
+            background: rgba(74, 222, 128, 0.2);
+            border-left: 4px solid #4ade80;
+            color: #4ade80;
+            display: block;
+        }
+        
+        .alert.error {
+            background: rgba(255, 107, 107, 0.2);
+            border-left: 4px solid #ff6b6b;
+            color: #ff6b6b;
+            display: block;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        th {
+            background: rgba(255, 255, 255, 0.05);
+            font-weight: 700;
+            color: #aaa;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-initiated {
+            background: rgba(96, 165, 250, 0.2);
+            color: #60a5fa;
+        }
+        
+        .status-completed {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(74, 222, 128, 0.2);
+            border-top: 3px solid #4ade80;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏢 Admin Dashboard</h1>
+            <div class="user-info">
+                <span id="userEmail">Loading...</span>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </header>
+        
+        <div class="stats-grid" id="statsGrid">
+            <div class="loading"></div>
+        </div>
+        
+        <div class="section">
+            <h2>💰 Platform Statistics</h2>
+            <div id="statsContent">Loading statistics...</div>
+        </div>
+        
+        <div class="section">
+            <h2>📊 Settlement Status</h2>
+            <div id="settlementContent">Loading settlement data...</div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE_URL = window.location.origin;
+        let authToken = localStorage.getItem('authToken');
+        
+        if (!authToken) {
+            alert('Please login first!');
+            window.location.href = '/index.html';
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+        });
+        
+        function getUserEmail() {
+            try {
+                const parts = authToken.split('.');
+                if (parts.length !== 3) return 'Admin User';
+                const payload = JSON.parse(atob(parts[1]));
+                return payload.email || 'Admin User';
+            } catch (e) {
+                return 'Admin User';
+            }
+        }
+        
+        document.getElementById('userEmail').textContent = getUserEmail();
+        
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/settlement-stats`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderStats(data);
+                } else {
+                    document.getElementById('statsGrid').innerHTML = 
+                        '<div style="color: red;">Error: ' + data.message + '</div>';
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                document.getElementById('statsGrid').innerHTML = 
+                    '<div style="color: red;">Error: ' + error.message + '</div>';
+            }
+        }
+        
+        function renderStats(data) {
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">💳 Current Balance</div>
+                    <div class="stat-value">₹${data.current_balance.toFixed(2)}</div>
+                    <div class="stat-subtext">Available for settlement</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">💸 Total Settled</div>
+                    <div class="stat-value">₹${data.total_settled.toFixed(2)}</div>
+                    <div class="stat-subtext">${data.settlement_count} settlements</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">📈 Income (30 Days)</div>
+                    <div class="stat-value">₹${data.income_30d.toFixed(2)}</div>
+                    <div class="stat-subtext">Helper + Poster fees</div>
+                </div>
+            `;
             
-            if os.path.exists(cwd_dashboard):
-                return send_file(cwd_dashboard, mimetype='text/html')
-            else:
-                return jsonify({
-                    'error': 'Admin dashboard file not found',
-                    'tried_paths': [dashboard_file, cwd_dashboard],
-                    'cwd': os.getcwd()
-                }), 404
-    except Exception as e:
-        print(f"❌ Error serving admin dashboard: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e), 'type': type(e).__name__}), 500
+            document.getElementById('statsContent').innerHTML = `
+                <p><strong>Current Balance:</strong> ₹${data.current_balance.toFixed(2)}</p>
+                <p><strong>30-Day Income:</strong> ₹${data.income_30d.toFixed(2)}</p>
+                <p><strong>Helper Commission (30D):</strong> ₹${data.commission_30d.toFixed(2)}</p>
+                <p><strong>Poster Fees (30D):</strong> ₹${data.fees_30d.toFixed(2)}</p>
+            `;
+        }
+        
+        function logout() {
+            localStorage.removeItem('authToken');
+            window.location.href = '/index.html';
+        }
+    </script>
+</body>
+</html>'''
+    
+    return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 
 @app.route('/admin-dashboard', methods=['GET'])
@@ -4434,43 +4771,8 @@ except Exception as e:
 # STATIC FILE SERVING (Must come AFTER all API routes)
 # ========================================
 
-@app.route('/<path:filename>', methods=['GET'])
-def serve_static_files(filename):
-    """Serve static files from root directory (fallback for frontend files)"""
-    try:
-        import os
-        
-        # List of files that can be served from root
-        allowed_files = ['admin-dashboard.html', 'index.html', 'styles.css', 'app.js', 'chat.html', 'help.html']
-        
-        if filename not in allowed_files:
-            return jsonify({'error': f'File {filename} not available'}), 404
-        
-        root_dir = os.path.dirname(os.path.dirname(__file__))
-        file_path = os.path.join(root_dir, filename)
-        
-        print(f"📂 Serving {filename} from {file_path}")
-        
-        if os.path.exists(file_path):
-            # Determine mimetype
-            if filename.endswith('.html'):
-                mimetype = 'text/html'
-            elif filename.endswith('.css'):
-                mimetype = 'text/css'
-            elif filename.endswith('.js'):
-                mimetype = 'application/javascript'
-            else:
-                mimetype = 'application/octet-stream'
-                
-            return send_file(file_path, mimetype=mimetype)
-        else:
-            print(f"❌ File not found: {file_path}")
-            return jsonify({'error': f'File not found: {filename}'}), 404
-    except Exception as e:
-        print(f"❌ Error serving static file {filename}: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+# Note: Admin dashboard is served directly via /admin-dashboard.html route
+# Other static files should be served by frontend server or CDN
 
 
 # ========================================

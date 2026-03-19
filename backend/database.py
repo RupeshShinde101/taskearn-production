@@ -341,6 +341,41 @@ def init_postgres_db():
             ON notifications(user_id, status)
         ''')
         
+        # Platform settlements table - tracks payouts to company bank account
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS platform_settlements (
+                id SERIAL PRIMARY KEY,
+                settlement_date DATE NOT NULL,
+                period_start TIMESTAMP NOT NULL,
+                period_end TIMESTAMP NOT NULL,
+                total_income DECIMAL(12,2) NOT NULL,
+                helper_commission DECIMAL(12,2) NOT NULL,
+                poster_fees DECIMAL(12,2) NOT NULL,
+                amount_settled DECIMAL(12,2) NOT NULL,
+                razorpay_payout_id VARCHAR(255),
+                status VARCHAR(20) DEFAULT 'pending',
+                bank_account_last4 VARCHAR(4),
+                notes TEXT,
+                processed_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP
+            )
+        ''')
+        
+        # Company bank details table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS company_bank_details (
+                id SERIAL PRIMARY KEY,
+                account_number VARCHAR(50) NOT NULL,
+                ifsc_code VARCHAR(20) NOT NULL,
+                account_holder_name VARCHAR(100),
+                bank_name VARCHAR(100),
+                is_active BOOLEAN DEFAULT TRUE,
+                updated_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP NOT NULL
+            )
+        ''')
+        
         # Add referral_code to users
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20) UNIQUE
@@ -634,6 +669,41 @@ def init_sqlite_db():
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_notifications_user_status 
             ON notifications(user_id, status)
+        ''')
+        
+        # Platform settlements table - tracks payouts to company bank account
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS platform_settlements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                settlement_date TEXT NOT NULL,
+                period_start TEXT NOT NULL,
+                period_end TEXT NOT NULL,
+                total_income DECIMAL NOT NULL,
+                helper_commission DECIMAL NOT NULL,
+                poster_fees DECIMAL NOT NULL,
+                amount_settled DECIMAL NOT NULL,
+                razorpay_payout_id TEXT,
+                status TEXT DEFAULT 'pending',
+                bank_account_last4 TEXT,
+                notes TEXT,
+                processed_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT
+            )
+        ''')
+        
+        # Company bank details table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS company_bank_details (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_number TEXT NOT NULL,
+                ifsc_code TEXT NOT NULL,
+                account_holder_name TEXT,
+                bank_name TEXT,
+                is_active INTEGER DEFAULT 1,
+                updated_at TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
         ''')
         
         print("[DB] ✅ SQLite database initialized successfully")

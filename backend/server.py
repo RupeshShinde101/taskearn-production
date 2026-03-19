@@ -4044,6 +4044,347 @@ def clear_task_notifications(task_id):
 
 
 # ========================================
+# PLATFORM SETTLEMENTS (Bank Payouts)
+# ========================================
+
+@app.route('/api/admin/bank-details', methods=['POST'])
+@require_auth
+def update_bank_details():
+    """Update company bank details for settlements"""
+    try:
+        # Only admin can update bank details (user_id = 1)
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        data = request.get_json()
+        account_number = data.get('account_number', '').strip()
+        ifsc_code = data.get('ifsc_code', '').strip()
+        account_holder_name = data.get('account_holder_name', 'TaskEarn Platform').strip()
+        bank_name = data.get('bank_name', '').strip()
+        
+        if not account_number or not ifsc_code:
+            return jsonify({'success': False, 'message': 'Account number and IFSC code required'}), 400
+        
+        with get_db() as (cursor, conn):
+            # Check if bank details exist
+            cursor.execute('SELECT id FROM company_bank_details LIMIT 1')
+            existing = cursor.fetchone()
+            
+            now = datetime.datetime.now()
+            now_str = now.strftime('%Y-%m-%d %H:%M:%S')
+            
+            if existing:
+                # Update existing
+                cursor.execute(f'''
+                    UPDATE company_bank_details 
+                    SET account_number = {PH}, 
+                        ifsc_code = {PH}, 
+                        account_holder_name = {PH},
+                        bank_name = {PH},
+                        updated_at = {PH}
+                    WHERE id = {PH}
+                ''', (account_number, ifsc_code, account_holder_name, bank_name, now_str, existing['id'] if isinstance(existing, dict) else existing[0]))
+            else:
+                # Insert new
+                cursor.execute(f'''
+                    INSERT INTO company_bank_details 
+                    (account_number, ifsc_code, account_holder_name, bank_name, is_active, created_at, updated_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, 1, {PH}, {PH})
+                ''', (account_number, ifsc_code, account_holder_name, bank_name, now_str, now_str))
+            
+            return jsonify({
+                'success': True,
+                'message': 'Bank details updated successfully',
+                'account_last4': account_number[-4:] if len(account_number) >= 4 else account_number
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error updating bank details: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/admin/bank-details', methods=['GET'])
+@require_auth
+def get_bank_details():
+    """Get company bank details (masked)"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        with get_db() as (cursor, conn):
+            cursor.execute('SELECT * FROM company_bank_details WHERE is_active = 1 LIMIT 1')
+            details = cursor.fetchone()
+            
+            if not details:
+                return jsonify({'success': False, 'message': 'No bank details configured'}), 404
+            
+            details_dict = dict_from_row(details)
+            # Mask account number
+            account_number = details_dict['account_number']
+            masked_account = '*' * (len(account_number) - 4) + account_number[-4:]
+            
+            return jsonify({
+                'success': True,
+                'account_number': masked_account,
+                'account_last4': account_number[-4:],
+                'ifsc_code': details_dict['ifsc_code'],
+                'account_holder_name': details_dict.get('account_holder_name', 'TaskEarn Platform'),
+                'bank_name': details_dict.get('bank_name', ''),
+                'is_active': details_dict['is_active']
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error getting bank details: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/admin/process-settlement', methods=['POST'])
+@require_auth
+def process_settlement():
+    """Process platform settlement - transfer to bank account"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        with get_db() as (cursor, conn):
+            # Get bank details
+            cursor.execute('SELECT * FROM company_bank_details WHERE is_active = 1 LIMIT 1')
+            bank_details = cursor.fetchone()
+            
+            if not bank_details:
+                return jsonify({'success': False, 'message': 'Bank details not configured'}), 400
+            
+            # Get company wallet
+            cursor.execute(f'SELECT balance FROM wallets WHERE user_id = {PH} LIMIT 1', ('1',))
+            wallet = cursor.fetchone()
+            company_balance = float(wallet[0]) if wallet else 0
+            
+            if company_balance <= 0:
+                return jsonify({
+                    'success': False, 
+                    'message': 'No funds to settle',
+                    'balance': company_balance
+                }), 400
+            
+            # Get settlement summary for this period (24 hours or custom period)
+            now = datetime.datetime.now()
+            yesterday = now - datetime.timedelta(days=1)
+            yesterday_str = yesterday.strftime('%Y-%m-%d %H:%M:%S')
+            now_str = now.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Get income transactions from last 24 hours
+            cursor.execute(f'''
+                SELECT 
+                    SUM(CASE WHEN transaction_type = 'commission' THEN amount ELSE 0 END) as helper_commission,
+                    SUM(CASE WHEN transaction_type = 'platform_fee' THEN amount ELSE 0 END) as poster_fees
+                FROM wallet_transactions
+                WHERE user_id = 1 AND created_at >= {PH}
+                AND transaction_type IN ('commission', 'platform_fee')
+            ''', (yesterday_str,))
+            
+            income_summary = cursor.fetchone()
+            helper_commission = float(income_summary[0] or 0) if income_summary else 0
+            poster_fees = float(income_summary[1] or 0) if income_summary else 0
+            total_income = helper_commission + poster_fees
+            
+            # Create settlement record
+            settlement_date = now.strftime('%Y-%m-%d')
+            settlement_date_str = now.strftime('%Y-%m-%d %H:%M:%S')
+            bank_details_dict = dict_from_row(bank_details)
+            
+            cursor.execute(f'''
+                INSERT INTO platform_settlements
+                (settlement_date, period_start, period_end, total_income, helper_commission, 
+                 poster_fees, amount_settled, razorpay_payout_id, status, bank_account_last4, created_at, updated_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                settlement_date,
+                yesterday_str,
+                now_str,
+                total_income,
+                helper_commission,
+                poster_fees,
+                total_income,
+                'RAZORPAY_PAYOUT_PENDING',  # Will be updated when actually processed
+                'initiated',
+                bank_details_dict['account_number'][-4:] if bank_details_dict else 'XXXX',
+                settlement_date_str,
+                settlement_date_str
+            ))
+            
+            print(f"💰 SETTLEMENT INITIATED")
+            print(f"   Period: {yesterday_str} to {now_str}")
+            print(f"   Helper Commission: ₹{helper_commission:.2f}")
+            print(f"   Poster Fees: ₹{poster_fees:.2f}")
+            print(f"   Amount to Transfer: ₹{total_income:.2f}")
+            print(f"   Company Balance Before: ₹{company_balance:.2f}")
+            
+            # For now, just create the settlement record
+            # In production, you would call Razorpay Payouts API here
+            # For testing, the settlement will be marked as 'pending' until manually approved
+            
+            return jsonify({
+                'success': True,
+                'message': 'Settlement initiated successfully',
+                'period_start': yesterday_str,
+                'period_end': now_str,
+                'total_income': total_income,
+                'helper_commission': helper_commission,
+                'poster_fees': poster_fees,
+                'amount_to_settle': total_income,
+                'company_balance': company_balance,
+                'bank_account_last4': bank_details_dict['account_number'][-4:] if bank_details_dict else 'XXXX'
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error processing settlement: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/admin/settlements', methods=['GET'])
+@require_auth
+def get_settlements():
+    """Get settlement history"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        limit = request.args.get('limit', 30, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        
+        with get_db() as (cursor, conn):
+            # Get total count
+            cursor.execute('SELECT COUNT(*) as total FROM platform_settlements')
+            total = cursor.fetchone()[0]
+            
+            # Get settlements
+            cursor.execute(f'''
+                SELECT * FROM platform_settlements
+                ORDER BY settlement_date DESC, id DESC
+                LIMIT {PH} OFFSET {PH}
+            ''', (limit, offset))
+            
+            settlements = []
+            for row in cursor.fetchall():
+                settlement = dict_from_row(row)
+                settlements.append({
+                    'id': settlement['id'],
+                    'date': settlement['settlement_date'],
+                    'period_start': settlement['period_start'],
+                    'period_end': settlement['period_end'],
+                    'total_income': float(settlement['total_income']),
+                    'helper_commission': float(settlement['helper_commission']),
+                    'poster_fees': float(settlement['poster_fees']),
+                    'amount_settled': float(settlement['amount_settled']),
+                    'status': settlement['status'],
+                    'bank_account_last4': settlement['bank_account_last4'],
+                    'razorpay_payout_id': settlement['razorpay_payout_id'],
+                    'processed_at': settlement['processed_at'],
+                    'created_at': settlement['created_at']
+                })
+            
+            return jsonify({
+                'success': True,
+                'settlements': settlements,
+                'total': total,
+                'limit': limit,
+                'offset': offset
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error getting settlements: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/admin/settlement-stats', methods=['GET'])
+@require_auth
+def get_settlement_stats():
+    """Get settlement statistics"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        with get_db() as (cursor, conn):
+            # Get company wallet balance
+            cursor.execute(f'SELECT balance FROM wallets WHERE user_id = {PH}', ('1',))
+            wallet = cursor.fetchone()
+            current_balance = float(wallet[0]) if wallet else 0
+            
+            # Get total settled amount
+            cursor.execute('''
+                SELECT SUM(amount_settled) as total_settled, COUNT(*) as settlement_count
+                FROM platform_settlements
+                WHERE status IN ('completed', 'initiated')
+            ''')
+            result = cursor.fetchone()
+            total_settled = float(result[0] or 0) if result else 0
+            settlement_count = result[1] if result else 0
+            
+            # Get stats for last 30 days
+            thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+            cursor.execute(f'''
+                SELECT 
+                    SUM(total_income) as income_30d,
+                    SUM(helper_commission) as commission_30d,
+                    SUM(poster_fees) as fees_30d
+                FROM platform_settlements
+                WHERE settlement_date >= {PH}
+            ''', (thirty_days_ago,))
+            
+            stats_30d = cursor.fetchone()
+            income_30d = float(stats_30d[0] or 0) if stats_30d else 0
+            commission_30d = float(stats_30d[1] or 0) if stats_30d else 0
+            fees_30d = float(stats_30d[2] or 0) if stats_30d else 0
+            
+            return jsonify({
+                'success': True,
+                'current_balance': current_balance,
+                'total_settled': total_settled,
+                'settlement_count': settlement_count,
+                'income_30d': income_30d,
+                'commission_30d': commission_30d,
+                'fees_30d': fees_30d,
+                'ready_for_settlement': current_balance
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error getting settlement stats: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+# ========================================
+# BANK DETAILS INITIALIZATION
+# ========================================
+def initialize_bank_details():
+    """Initialize company bank details if not already set"""
+    try:
+        with get_db() as (cursor, conn):
+            # Check if bank details already exist
+            cursor.execute('SELECT id FROM company_bank_details WHERE is_active = 1 LIMIT 1')
+            existing = cursor.fetchone()
+            
+            if not existing:
+                # Initialize with provided bank details
+                now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                cursor.execute(f'''
+                    INSERT INTO company_bank_details
+                    (account_number, ifsc_code, account_holder_name, bank_name, is_active, created_at, updated_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, 1, {PH}, {PH})
+                ''', ('2549449456', 'KKBK0001764', 'TaskEarn Platform', 'Kotak Bank', now, now))
+                print("💾 Bank details initialized: KKBK0001764 ****9456")
+            else:
+                print("✅ Bank details already configured")
+    except Exception as e:
+        print(f"⚠️  Could not initialize bank details: {e}")
+
+# Initialize bank details on startup
+try:
+    initialize_bank_details()
+except Exception as e:
+    print(f"⚠️  Bank details init failed: {e}")
+
+
+# ========================================
 # RUN SERVER
 # ========================================
 

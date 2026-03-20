@@ -3647,8 +3647,8 @@ function openPaymentReceptionModal(taskId) {
         return;
     }
 
-    // Calculate with service charge included
-    const sCharge = getServiceCharge(task.category) || 0;
+    // Calculate with service charge included - USE ACTUAL STORED VALUE
+    const sCharge = task.service_charge || getServiceCharge(task.category) || 0;
     const taskAmount = task.price;
     const totalAmount = taskAmount + sCharge;
     const helperCommission = totalAmount * 0.12; // 12% commission
@@ -3727,8 +3727,8 @@ function initiatePaymentReception(taskId, method) {
         return;
     }
 
-    // Calculate with service charge included
-    const sCharge = getServiceCharge(task.category) || 0;
+    // Calculate with service charge included - USE ACTUAL STORED VALUE
+    const sCharge = task.service_charge || getServiceCharge(task.category) || 0;
     const taskAmount = task.price;
     const totalAmount = taskAmount + sCharge;
     const helperReceives = totalAmount * 0.88; // 88% after 12% commission
@@ -3921,21 +3921,41 @@ function processPaymentDetails(event, taskId, helperReceives, platformFee, metho
  * Show cash payment settlement options
  */
 function showCashPaymentOptions(task, helperReceives, platformFee) {
+    // Recalculate breakdown using actual task price and service charge
+    const actualServiceCharge = task.service_charge || getServiceCharge(task.category) || 0;
+    const taskPrice = task.price || 0;
+    const totalTaskValue = taskPrice + actualServiceCharge;
+    const helperCommission = totalTaskValue * 0.12;
+    const posterFee = totalTaskValue * 0.05;
+    
     const content = `
         <div style="padding: 20px;">
             <h3 style="color: #fff;">💵 Cash Payment Settlement</h3>
 
             <div style="background: rgba(30, 30, 40, 0.9); border: 2px solid rgba(251, 191, 36, 0.5); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
-                <h4 style="margin-top: 0; color: #fbbf24;"><i class="fas fa-warning-circle"></i> Important</h4>
-                <p style="font-size: 14px; margin: 10px 0 0 0; color: #fff;">For cash payments, you will receive:</p>
+                <h4 style="margin-top: 0; color: #fbbf24;">📋 Your Earnings Breakdown</h4>
                 <div style="background: rgba(50, 50, 60, 0.8); border-radius: 8px; padding: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1);">
-                    <div style="display: flex; justify-content: space-between;">
-                        <span style="color: #fff;">Cash Amount</span>
-                        <span style="font-weight: 700; color: #fff;">₹${helperReceives}</span>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #ccc;">Task Amount:</span>
+                        <span style="color: #fff;">₹${taskPrice.toFixed(2)}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; opacity: 0.9; font-size: 12px; margin-top: 5px;">
-                        <span style="color: #ccc;">Platform Commission (10%)</span>
-                        <span style="color: #fbbf24;">-₹${platformFee} (to company)</span>
+                    ${actualServiceCharge > 0 ? `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #ccc;">Service Charge:</span>
+                        <span style="color: #fbbf24;">+₹${actualServiceCharge.toFixed(2)}</span>
+                    </div>
+                    ` : ''}
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); font-weight: 600;">
+                        <span style="color: #fff;">Total Value:</span>
+                        <span style="color: #fbbf24;">₹${totalTaskValue.toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #ccc;">Commission (12%):</span>
+                        <span style="color: #ff6b6b;">-₹${helperCommission.toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); font-weight: 700; font-size: 16px;">
+                        <span style="color: #4ade80;">You Receive:</span>
+                        <span style="color: #4ade80;">₹${helperReceives.toFixed(2)}</span>
                     </div>
                 </div>
             </div>

@@ -36,8 +36,12 @@ def get_postgres_connection():
 
 def get_sqlite_connection():
     """Get SQLite connection"""
-    conn = sqlite3.connect(config.SQLITE_DATABASE)
+    conn = sqlite3.connect(config.SQLITE_DATABASE, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # Enable WAL mode to help with concurrent access
+    conn.execute("PRAGMA journal_mode=WAL")
+    # Increase timeout for locked database
+    conn.execute("PRAGMA busy_timeout=5000")  
     return conn
 
 
@@ -112,6 +116,7 @@ def init_postgres_db():
                 location_lng DECIMAL(11,8),
                 location_address TEXT,
                 price DECIMAL(10,2) NOT NULL,
+                service_charge DECIMAL(10,2) DEFAULT 0,
                 posted_by VARCHAR(50) NOT NULL REFERENCES users(id),
                 posted_at TIMESTAMP NOT NULL,
                 expires_at TIMESTAMP,
@@ -470,6 +475,7 @@ def init_sqlite_db():
                 location_lng REAL,
                 location_address TEXT,
                 price REAL NOT NULL,
+                service_charge REAL DEFAULT 0,
                 posted_by TEXT NOT NULL,
                 posted_at TEXT NOT NULL,
                 expires_at TEXT,

@@ -2181,17 +2181,20 @@ function acceptTask(taskId) {
                 localStorage.setItem('currentTask', JSON.stringify({
                     id: task.id,
                     title: task.title,
+                    description: task.description,
+                    category: task.category,
                     price: task.price,
+                    service_charge: task.service_charge || 0,
                     location: {
                         lat: parseFloat(taskLocation.lat) || 19.0760,
                         lng: parseFloat(taskLocation.lng) || 72.8777
                     },
-                    category: task.category,
-                    description: task.description,
                     providerId: task.postedBy?.id,
                     providerName: task.postedBy?.name,
                     providerPhone: task.postedBy?.phone,
                     providerRating: task.postedBy?.rating,
+                    expiresAt: task.expiresAt,
+                    postedAt: task.postedAt,
                     startTime: Date.now()
                 }));
 
@@ -2471,23 +2474,35 @@ async function completeTask(taskId) {
     const task = myAcceptedTasks.find(t => t.id === taskId);
     if (task && currentUser) {
         try {
-            // Call backend API to complete task
+            // Call backend API to complete task - IMMEDIATE WALLET DEDUCTION
             const result = await TasksAPI.complete(taskId);
             
             if (result && result.success) {
-                console.log('✅ Task completed successfully');
+                console.log('✅ Task completed and payment processed!');
                 console.log('Task status:', result.status);
-                console.log('Amount waiting for poster payment: ₹' + result.taskAmount);
+                console.log('💰 Payment Details:', {
+                    helperEarnings: result.helperEarnings,
+                    helperNewBalance: result.helperNewBalance,
+                    posterNewBalance: result.posterNewBalance
+                });
                 
-                // Mark task as completed (waiting for poster payment)
-                task.status = 'completed';
+                // Mark task as paid (payment was done immediately)
+                task.status = 'paid';
                 task.completedAt = new Date().toISOString();
+                task.paidAt = new Date().toISOString();
                 task.helperId = currentUser.id;
                 task.helperName = currentUser.name;
+                task.paymentProcessed = true;
                 
                 // Move from accepted to completed
                 myAcceptedTasks = myAcceptedTasks.filter(t => t.id !== taskId);
                 myCompletedTasks.push(task);
+                
+                // Update current user's wallet balance
+                if (currentUser && result.helperNewBalance !== undefined) {
+                    currentUser.wallet = result.helperNewBalance;
+                    localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
+                }
                 
                 // Update task in storage
                 updateUserData(currentUser.id, {
@@ -2495,13 +2510,16 @@ async function completeTask(taskId) {
                     completedTasks: serializeTasks(myCompletedTasks)
                 });
                 
-                // Show success message
-                showToast(`✅ Task marked as completed! Waiting for poster to make payment...`);
+                // Show success message with earnings confirmation
+                showToast(`✅ Task completed! You earned ₹${result.helperEarnings.toFixed(2)} (New balance: ₹${result.helperNewBalance.toFixed(2)})`);
                 
-                // Show completion modal with waiting message
-                showTaskCompletedAwaitingPayment(task, result);
+                // Show completion modal with payment confirmation
+                showTaskCompletedPaymentSuccess(task, result);
                 
                 renderDashboard();
+                
+                // Refresh wallet balance
+                refreshWalletBalance();
                 
                 // Refresh tasks from server to sync
                 setTimeout(() => {
@@ -2509,7 +2527,58 @@ async function completeTask(taskId) {
                 }, 1000);
                 
             } else {
-                showToast(`❌ Error completing task: ${result?.message || 'Unknown error'}`, 'error');
+                // Show error message with specifics
+                const errorMsg = result?.message || 'Unknown error';
+                
+                // Check if it's insufficient balance error
+                if (result?.shortfall !== undefined) {
+                    const shortfallAmount = result.shortfall;
+                    const errorContent = `
+                        <div style="text-align: center; padding: 20px;">
+                            <div style="font-size: 60px; margin-bottom: 20px;">💸</div>
+                            <h2 style="color: #ff6b6b; margin-bottom: 15px;">Cannot Complete Task</h2>
+                            <p style="margin-bottom: 20px; font-size: 14px; color: #999;">The task poster doesn't have enough wallet balance.</p>
+                            
+                            <div style="background: rgba(255, 107, 107, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px; text-align: left;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                                    <span style="color: #999;">Task Price:</span>
+                                    <span style="font-weight: 600;">₹${(result.required - (result.required * 0.05)).toFixed(2)}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                                    <span style="color: #999;">Platform Fee (5%):</span>
+                                    <span style="font-weight: 600;">₹${((result.required - (result.required * 0.05)) * 0.05).toFixed(2)}</span>
+                                </div>
+                                <hr style="border-color: rgba(255,255,255,0.2); margin: 12px 0;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 15px; font-weight: 600;">
+                                    <span>Total Required:</span>
+                                    <span style="color: #ff6b6b;">₹${(result.required).toFixed(2)}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                                    <span style="color: #999;">Poster's Balance:</span>
+                                    <span style="font-weight: 600;">₹${(result.available).toFixed(2)}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 12px; background: rgba(255, 107, 107, 0.2); border-radius: 8px;">
+                                    <span style="color: #ff6b6b; font-weight: 600;">Shortfall:</span>
+                                    <span style="color: #ff6b6b; font-weight: 700; font-size: 18px;">₹${shortfallAmount.toFixed(2)}</span>
+                                </div>
+                            </div>
+                            
+                            <p style="color: #888; font-size: 13px; margin-bottom: 15px;">
+                                ⚠️ The task poster needs to add <strong>₹${shortfallAmount.toFixed(2)}</strong> to their wallet to complete this task.
+                            </p>
+                            
+                            <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal');">
+                                Understand
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('taskSuccessContent').innerHTML = errorContent;
+                    openModal('taskSuccessModal');
+                    showToast(`❌ Task cannot be completed: Poster needs ₹${shortfallAmount.toFixed(2)} more in their wallet`, 5000);
+                } else {
+                    showToast(`❌ Cannot complete task: ${errorMsg}`, 'error');
+                    console.error('Task completion failed:', result);
+                }
             }
         } catch (error) {
             console.error('Error completing task:', error);
@@ -2522,6 +2591,20 @@ async function completeTask(taskId) {
 
 // Show task completion modal - waiting for poster payment
 function showTaskCompletedAwaitingPayment(task, result) {
+    // Use backend values with service charge included
+    const taskAmount = result?.taskAmount || task.price;
+    const serviceCharge = result?.serviceCharge || 0;
+    const totalAmount = result?.totalAmount || (taskAmount + serviceCharge);
+    const helperCommission = result?.helperCommission || (totalAmount * 0.12);
+    const helperEarnings = result?.helperEarnings || (totalAmount * 0.88);
+    
+    console.log('💰 Task Completion Details:');
+    console.log('  Base Price: ₹' + taskAmount);
+    console.log('  Service Charge: ₹' + serviceCharge);
+    console.log('  Total Amount: ₹' + totalAmount);
+    console.log('  Helper Commission (12%): ₹' + helperCommission.toFixed(2));
+    console.log('  Helper Earnings: ₹' + helperEarnings.toFixed(2));
+    
     const content = `
         <div style="text-align: center; padding: 20px;">
             <div style="font-size: 60px; margin-bottom: 20px;">⏳</div>
@@ -2533,25 +2616,38 @@ function showTaskCompletedAwaitingPayment(task, result) {
                 
                 <div style="text-align: left; margin-bottom: 15px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
-                        <span style="color: #999;">Task Amount:</span>
-                        <span style="font-weight: 600; font-size: 16px;">₹${(result?.taskAmount || task.price).toFixed(2)}</span>
+                        <span style="color: #999;">Base Task Price:</span>
+                        <span style="font-weight: 600; font-size: 16px;">₹${taskAmount.toFixed(2)}</span>
                     </div>
+                    ${serviceCharge > 0 ? `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                        <span style="color: #999;">Service Charge:</span>
+                        <span style="font-weight: 600; font-size: 14px; color: #fbbf24;">+₹${serviceCharge.toFixed(2)}</span>
+                    </div>
+                    ` : ''}
                     <div style="display: flex; justify-content: space-between; margin-bottom: 12px; padding: 10px; background: rgba(251, 191, 36, 0.2); border-radius: 8px;">
-                        <span style="color: #fbbf24; font-weight: 600;">Your Commission (12%):</span>
-                        <span style="color: #fbbf24; font-weight: 600;">-₹${((result?.taskAmount || task.price) * 0.12).toFixed(2)}</span>
+                        <span style="font-weight: 600;">Total Task Value:</span>
+                        <span style="font-weight: 600; color: #fbbf24;">₹${totalAmount.toFixed(2)}</span>
                     </div>
                 </div>
                 
                 <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
                 
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px; padding: 10px; background: rgba(251, 191, 36, 0.2); border-radius: 8px;">
+                    <span style="color: #fbbf24; font-weight: 600;">Your Commission (12%):</span>
+                    <span style="color: #fbbf24; font-weight: 600;">-₹${helperCommission.toFixed(2)}</span>
+                </div>
+                
+                <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
+                
                 <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; margin-bottom: 15px; background: rgba(74, 222, 128, 0.2); padding: 12px; border-radius: 8px;">
-                    <span style="color: #fff;">You Will Earn:</span>
-                    <span style="color: #4ade80;">₹${((result?.taskAmount || task.price) * 0.88).toFixed(2)}</span>
+                    <span style="color: #fff;">✨ You Will Earn:</span>
+                    <span style="color: #4ade80;">₹${helperEarnings.toFixed(2)}</span>
                 </div>
                 
                 <div style="background: #1f2937; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
                     <p style="font-size: 12px; color: #999; margin: 0;">
-                        <i class="fas fa-info-circle"></i> Payment will be credited once the task poster pays.
+                        <i class="fas fa-info-circle"></i> Including service charge in your earnings!
                     </p>
                 </div>
             </div>
@@ -2633,6 +2729,110 @@ function showTaskCompletionModal(task, result) {
                 ✅ Commissions and platform fees have been deducted.<br>
                 Your earnings and platform income are now recorded.
             </p>
+        </div>
+    `;
+    
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    openModal('taskSuccessModal');
+}
+
+/**
+ * Show task completion success modal with immediate payment confirmation
+ * Shows both helper earnings and poster deduction
+ */
+function showTaskCompletedPaymentSuccess(task, result) {
+    const taskAmount = result?.taskAmount || task.price;
+    const serviceCharge = result?.serviceCharge || 0;
+    const totalAmount = result?.totalAmount || (taskAmount + serviceCharge);
+    const helperEarnings = result?.helperEarnings || 0;
+    const helperCommission = result?.helperCommission || 0;
+    const posterFee = result?.posterFee || 0;
+    const helperNewBalance = result?.helperNewBalance || 0;
+    const posterNewBalance = result?.posterNewBalance || 0;
+    
+    const content = `
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 60px; margin-bottom: 20px;">✅</div>
+            <h2 style="color: #4ade80; margin-bottom: 15px;">Payment Successful!</h2>
+            <p style="margin-bottom: 20px; font-size: 14px; color: #999;">Task completed and payment processed immediately.</p>
+            
+            <div style="background: rgba(74, 222, 128, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px;">${task.title}</h3>
+                
+                <div style="text-align: left; margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #999;">Base Task Price:</span>
+                        <span style="font-weight: 600;">₹${taskAmount.toFixed(2)}</span>
+                    </div>
+                    ${serviceCharge > 0 ? `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #999;">Service Charge:</span>
+                        <span style="font-weight: 600; color: #fbbf24;">+₹${serviceCharge.toFixed(2)}</span>
+                    </div>
+                    ` : ''}
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; padding: 10px; background: rgba(251, 191, 36, 0.2); border-radius: 8px;">
+                        <span style="font-weight: 600;">Total Amount:</span>
+                        <span style="font-weight: 600; color: #fbbf24;">₹${totalAmount.toFixed(2)}</span>
+                    </div>
+                </div>
+                
+                <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
+                
+                <div style="text-align: left; margin-bottom: 15px;">
+                    <div style="font-size: 13px; font-weight: 600; color: #4ade80; margin-bottom: 10px;">YOUR EARNINGS</div>
+                    
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #999;">Commission Deduction (12%):</span>
+                        <span style="color: #ff6b6b;">-₹${helperCommission.toFixed(2)}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; padding: 10px; background: rgba(74, 222, 128, 0.2); border-radius: 8px;">
+                        <span style="font-weight: 600; color: #4ade80;">You Earn:</span>
+                        <span style="font-weight: 700; font-size: 18px; color: #4ade80;">+₹${helperEarnings.toFixed(2)}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                        <span style="color: #999;">New Wallet Balance:</span>
+                        <span style="font-weight: 600; color: #4ade80;">₹${helperNewBalance.toFixed(2)}</span>
+                    </div>
+                </div>
+                
+                <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
+                
+                <div style="text-align: left;">
+                    <div style="font-size: 13px; font-weight: 600; color: #fbbf24; margin-bottom: 10px;">POSTER'S PAYMENT</div>
+                    
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #999;">Task Amount:</span>
+                        <span style="font-weight: 600;">-₹${totalAmount.toFixed(2)}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                        <span style="color: #999;">Platform Fee (5%):</span>
+                        <span style="font-weight: 600; color: #ff6b6b;">-₹${posterFee.toFixed(2)}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; padding: 10px; background: rgba(255, 107, 107, 0.2); border-radius: 8px;">
+                        <span style="font-weight: 600; color: #ff6b6b;">Total Deducted:</span>
+                        <span style="font-weight: 700; font-size: 18px; color: #ff6b6b;">-₹${(totalAmount + posterFee).toFixed(2)}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #999;">Poster's New Balance:</span>
+                        <span style="font-weight: 600;">₹${posterNewBalance.toFixed(2)}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="background: #1f2937; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+                <p style="font-size: 12px; color: #4ade80; margin: 0;">
+                    <i class="fas fa-check-circle"></i> Payment processed automatically!
+                </p>
+            </div>
+            
+            <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard();">
+                <i class="fas fa-arrow-right"></i> Back to Dashboard
+            </button>
         </div>
     `;
     
@@ -2874,16 +3074,20 @@ async function payHelperForTask(taskId) {
     }
 
     const taskAmount = task.price;
-    const helperCommission = taskAmount * 0.12;  // 12% (10% + 2%)
-    const posterFee = taskAmount * 0.05;  // 5%
-    const totalCost = taskAmount + posterFee;  // Poster pays task + fee
-    const helperNetReceives = taskAmount - helperCommission;  // Helper gets after commission
+    const serviceCharge = task.service_charge || 0;  // Include service charge!
+    const totalTaskValue = taskAmount + serviceCharge;  // Full amount
+    const helperCommission = totalTaskValue * 0.12;  // 12% of TOTAL
+    const posterFee = totalTaskValue * 0.05;  // 5% of TOTAL
+    const totalCost = totalTaskValue + posterFee;  // Poster pays total + fee
+    const helperNetReceives = totalTaskValue - helperCommission;  // Helper gets after commission
     const currentBalance = currentUser.wallet || 0;
 
     console.log('💰 Payment Details:');
-    console.log(`   Task Amount: ₹${taskAmount}`);
-    console.log(`   Helper Commission (12%): ₹${helperCommission.toFixed(2)}`);
-    console.log(`   Your Fee (5%): ₹${posterFee.toFixed(2)}`);
+    console.log(`   Task Amount (Base): ₹${taskAmount}`);
+    console.log(`   Service Charge: ₹${serviceCharge}`);
+    console.log(`   Total Task Value: ₹${totalTaskValue}`);
+    console.log(`   Helper Commission (12% of total): ₹${helperCommission.toFixed(2)}`);
+    console.log(`   Your Fee (5% of total): ₹${posterFee.toFixed(2)}`);
     console.log(`   Total Cost (for you): ₹${totalCost.toFixed(2)}`);
     console.log(`   Helper receives (after commission): ₹${helperNetReceives.toFixed(2)}`);
     console.log(`   Your wallet balance: ₹${currentBalance.toFixed(2)}`);
@@ -2905,7 +3109,9 @@ async function payHelperForTask(taskId) {
     const confirmed = confirm(
         `💰 Complete Payment\n\n` +
         `Task: ${task.title}\n` +
-        `Task Amount: ₹${taskAmount}\n` +
+        `Base Amount: ₹${taskAmount}\n` +
+        `Service Charge: ₹${serviceCharge.toFixed(2)}\n` +
+        `Total Task Value: ₹${totalTaskValue.toFixed(2)}\n` +
         `Your Fee (5%): ₹${posterFee.toFixed(2)}\n` +
         `Total Cost: ₹${totalCost.toFixed(2)}\n\n` +
         `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
@@ -2939,11 +3145,13 @@ async function payHelperForTask(taskId) {
         if (result.success) {
             showToast(
                 `✅ Payment Successful!\n\n` +
-                `Task Amount: ₹${result.amount}\n` +
-                `Helper Commission (12%): ₹${result.helperCommission.toFixed(2)}\n` +
+                `Base Amount: ₹${result.amount}\n` +
+                `Service Charge: ₹${result.serviceCharge.toFixed(2)}\n` +
+                `Total Task Value: ₹${result.totalTaskValue.toFixed(2)}\n` +
+                `Helper Commission (12%): -₹${result.helperCommission.toFixed(2)}\n` +
                 `Your Fee (5%): ₹${result.posterFee.toFixed(2)}\n\n` +
                 `Your New Balance: ₹${result.posterNewBalance.toFixed(2)}\n` +
-                `Helper Receives: ₹${(result.amount - result.helperCommission).toFixed(2)}`,
+                `Helper Receives: ₹${result.helperEarnings.toFixed(2)}`,
                 6000
             );
             
@@ -2997,8 +3205,14 @@ function payForCompletedTask(taskId) {
         return;
     }
     
+    // Calculate with service charge included
+    const sCharge = task.service_charge || getServiceCharge(task.category) || 0;
+    const totalAmount = task.price + sCharge;
+    const platformFee = Math.ceil(totalAmount * 0.05); // 5% posting fee
+    const totalDebit = totalAmount + platformFee;
+    
     // Confirm payment dialog
-    if (!confirm(`Confirm payment of ₹${task.price + Math.ceil(task.price * 0.10)} for task: "${task.title}"?\n\n✓ Helper will receive: ₹${task.price}\n✓ Platform fee (10%): ₹${Math.ceil(task.price * 0.10)}`)) {
+    if (!confirm(`Confirm payment of ₹${totalDebit} for task: "${task.title}"?\n\n✓ Helper will receive: ₹${(totalAmount * 0.88).toFixed(2)}\n✓ Platform fee (5%): ₹${platformFee}`)) {
         return;
     }
     
@@ -3214,10 +3428,15 @@ function openPaymentReceptionModal(taskId) {
         return;
     }
 
-    const helperEarnings = task.price; // Helper gets 100% of task price (commission deducted from poster)
-    const platformFee = Math.ceil(task.price * 0.10); // 10% platform commission
-    const totalFromPoster = task.price + platformFee; // What poster pays
-    const helperReceives = task.price; // What helper gets
+    // Calculate with service charge included
+    const sCharge = getServiceCharge(task.category) || 0;
+    const taskAmount = task.price;
+    const totalAmount = taskAmount + sCharge;
+    const helperCommission = totalAmount * 0.12; // 12% commission
+    const helperEarnings = totalAmount * 0.88; // Helper gets 88% of total
+    const posterFee = totalAmount * 0.05; // 5% posting fee
+    const totalFromPoster = totalAmount + posterFee; // What poster pays
+    const helperReceives = helperEarnings; // What helper gets after commission
 
     const content = `
         <div style="padding: 20px;">
@@ -3230,16 +3449,24 @@ function openPaymentReceptionModal(taskId) {
             <div style="background: rgba(30, 30, 40, 0.9); border: 2px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 15px; margin-bottom: 20px; color: #fff;">
                 <h4 style="margin-top: 0; color: #fff;">📋 Payment Breakdown</h4>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <span>Task Amount</span>
-                    <span style="font-weight: 600; color: #fff;">₹${task.price}</span>
+                    <span>Task Amount (Base)</span>
+                    <span style="font-weight: 600; color: #fff;">₹${taskAmount.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span>Service Charge</span>
+                    <span style="font-weight: 600; color: #fbbf24;">+₹${sCharge.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 700; color: #fff;">
+                    <span>Total Task Value</span>
+                    <span>₹${totalAmount.toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding: 8px 0;">
-                    <span style="color: #fff;">Platform Commission (10%)</span>
-                    <span style="color: #fbbf24; font-weight: 600;">-₹${platformFee}</span>
+                    <span style="color: #fff;">Commission Deducted (12%)</span>
+                    <span style="color: #fbbf24; font-weight: 600;">-₹${helperCommission.toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 2px solid rgba(255,255,255,0.2); font-weight: 700; font-size: 16px;">
                     <span style="color: #fff;">You Receive</span>
-                    <span style="color: #4ade80;">₹${helperReceives}</span>
+                    <span style="color: #4ade80;">₹${helperReceives.toFixed(2)}</span>
                 </div>
             </div>
 
@@ -3281,8 +3508,12 @@ function initiatePaymentReception(taskId, method) {
         return;
     }
 
-    const helperReceives = task.price;
-    const platformFee = Math.ceil(task.price * 0.10);
+    // Calculate with service charge included
+    const sCharge = getServiceCharge(task.category) || 0;
+    const taskAmount = task.price;
+    const totalAmount = taskAmount + sCharge;
+    const helperReceives = totalAmount * 0.88; // 88% after 12% commission
+    const platformFee = Math.ceil(totalAmount * 0.05); // 5% posting fee
 
     if (method === 'digital') {
         showDigitalPaymentOptions(task, helperReceives, platformFee);
@@ -4520,10 +4751,12 @@ function renderPostedTasks() {
     }
 
     el.innerHTML = myPostedTasks.map(t => {
-        // Payment system: Poster pays full amount, 80% goes to helper (20% is commission), 0% to company (commission model)
+        // Payment system: Helper gets 88% of total (price + service_charge), 12% deducted as commission & fees
+        const sCharge = getServiceCharge(t.category) || 0;
         const taskAmount = t.price;
-        const commission = Math.floor(taskAmount * 0.20);
-        const helperAmount = taskAmount - commission;
+        const totalValue = taskAmount + sCharge;
+        const commission = totalValue * 0.12;  // Helper commission + transaction fee
+        const helperAmount = totalValue * 0.88;  // Helper net earning
         
         let actionButtons = '';
         if (t.status === 'active') {
@@ -4608,7 +4841,7 @@ function renderAcceptedTasks() {
                 <p style="color: #fbbf24; margin-bottom: 8px;">
                     <i class="fas fa-clock"></i> Waiting for task poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${t.price - Math.floor(t.price * 0.20)} (after commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${((t.price || 0) + (t.service_charge || 0)) * 0.88} (after 12% commission)</p>
             </div>`;
         } else if (t.status === 'paid') {
             // Payment received

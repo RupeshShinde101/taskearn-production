@@ -566,12 +566,68 @@
             }
 
             // Update UI with task details
-            document.getElementById('taskTitle').textContent = currentTask.title || '';
-            document.getElementById('taskAmount').textContent = currentTask.amount || currentTask.price || 0;
-            document.getElementById('earningAmount').textContent = currentTask.amount || currentTask.price || 0;
-            document.getElementById('modalAmount').textContent = currentTask.amount || currentTask.price || 0;
-            document.getElementById('providerName').textContent = currentTask.providerName || 'Provider';
-            document.getElementById('providerPhone').textContent = currentTask.providerPhone || 'N/A';
+            document.getElementById('taskTitle').textContent = currentTask.title || 'Task';
+            
+            // Calculate total amount including service charge
+            const taskAmount = currentTask.amount || currentTask.price || 0;
+            const serviceCharge = currentTask.service_charge || currentTask.serviceCharge || 0;
+            const totalAmount = parseFloat(taskAmount) + parseFloat(serviceCharge);
+            const earningAmount = totalAmount * 0.88;  // 12% commission deduction
+            
+            console.log('Task Amount Calculation:');
+            console.log('  Base Price: ' + taskAmount);
+            console.log('  Service Charge: ' + serviceCharge);
+            console.log('  Total: ' + totalAmount);
+            console.log('  Earning (88%): ' + earningAmount.toFixed(2));
+            
+            document.getElementById('taskAmount').textContent = totalAmount.toFixed(2);
+            document.getElementById('earningAmount').textContent = earningAmount.toFixed(2);
+            document.getElementById('modalAmount').textContent = totalAmount.toFixed(2);
+            
+            // Update provider details
+            const providerPhone = currentTask.providerPhone || currentTask.postedBy?.phone || 'N/A';
+            const providerName = currentTask.providerName || currentTask.postedBy?.name || 'Provider';
+            document.getElementById('providerName').textContent = providerName;
+            document.getElementById('providerPhone').textContent = providerPhone;
+            
+            // Calculate and update distance
+            if (currentTask.location && currentTask.userLocation) {
+                const dist = calculateDistance(currentTask.location.lat, currentTask.location.lng, 
+                                             currentTask.userLocation.lat, currentTask.userLocation.lng);
+                document.getElementById('distance').textContent = dist.toFixed(1) + ' km';
+            } else {
+                document.getElementById('distance').textContent = currentTask.distance || 'On the way';
+            }
+            
+            // Calculate and update deadline
+            if (currentTask.expiresAt) {
+                const deadline = new Date(currentTask.expiresAt);
+                const now = new Date();
+                const hours = Math.floor((deadline - now) / (1000 * 60 * 60));
+                const minutes = Math.floor(((deadline - now) % (1000 * 60 * 60)) / (1000 * 60));
+                
+                if (hours > 0 || minutes > 0) {
+                    document.getElementById('deadline').textContent = hours + 'h ' + minutes + 'm left';
+                } else {
+                    document.getElementById('deadline').textContent = 'Expiring soon';
+                }
+            } else if (currentTask.deadline) {
+                document.getElementById('deadline').textContent = currentTask.deadline;
+            } else {
+                document.getElementById('deadline').textContent = 'No deadline';
+            }
+        }
+        
+        // Calculate distance between two coordinates using Haversine formula
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of Earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
         }
 
         // Show location text
@@ -653,7 +709,11 @@
             document.getElementById('confirmModal').classList.remove('active');
             
             // Show message explaining the payment process
-            alert('✅ Task marked as completed!\n\nThe task poster will now pay you. You will receive ₹' + (currentTask.price - Math.floor(currentTask.price * 0.20)) + ' in your wallet once they confirm payment.\n\nPlease wait for payment confirmation.');
+            const basePrice = currentTask.price || 0;
+            const sCharge = currentTask.service_charge || currentTask.serviceCharge || 0;
+            const totalValue = parseFloat(basePrice) + parseFloat(sCharge);
+            const helperEarning = totalValue * 0.88;
+            alert('✅ Task marked as completed!\n\nTask Amount: ₹' + totalValue.toFixed(2) + '\nYour Commission (12%): -₹' + (totalValue * 0.12).toFixed(2) + '\n\nYou will receive ₹' + helperEarning.toFixed(2) + ' in your wallet once the poster confirms payment.\n\nPlease wait for payment confirmation.');
             
             // Go back to dashboard
             window.location.href = 'index.html?tab=accepted-tasks';

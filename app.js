@@ -2471,21 +2471,15 @@ async function completeTask(taskId) {
     const task = myAcceptedTasks.find(t => t.id === taskId);
     if (task && currentUser) {
         try {
-            // Call backend API to complete task and process commission
+            // Call backend API to complete task
             const result = await TasksAPI.complete(taskId);
             
             if (result && result.success) {
-                // Show commission breakdown
-                const breakdown = `
-                    💼 Task Completion Processed:
-                    Task Amount: ₹${result.taskAmount}
-                    Your Deductions: -₹${result.helperDeduction} (10% commission + 2% fee)
-                    Your New Balance: ₹${result.helperNewBalance}
-                `;
+                console.log('✅ Task completed successfully');
+                console.log('Task status:', result.status);
+                console.log('Amount waiting for poster payment: ₹' + result.taskAmount);
                 
-                console.log(breakdown);
-                
-                // Mark task as completed
+                // Mark task as completed (waiting for poster payment)
                 task.status = 'completed';
                 task.completedAt = new Date().toISOString();
                 task.helperId = currentUser.id;
@@ -2495,33 +2489,27 @@ async function completeTask(taskId) {
                 myAcceptedTasks = myAcceptedTasks.filter(t => t.id !== taskId);
                 myCompletedTasks.push(task);
                 
-                // Update task in accepted tasks
+                // Update task in storage
                 updateUserData(currentUser.id, {
                     acceptedTasks: serializeTasks(myAcceptedTasks),
                     completedTasks: serializeTasks(myCompletedTasks)
                 });
                 
-                // Show success with payment details
-                showToast(`✅ Task completed! You earned ₹${result.helperNetEarnings || 0} (after 10% commission + 2% fee)`);
+                // Show success message
+                showToast(`✅ Task marked as completed! Waiting for poster to make payment...`);
                 
-                // Show completion modal with payment info
-                showTaskCompletionModal(task, result);
+                // Show completion modal with waiting message
+                showTaskCompletedAwaitingPayment(task, result);
                 
                 renderDashboard();
                 
-                // Refresh wallet balance from server
+                // Refresh tasks from server to sync
                 setTimeout(() => {
-                    refreshWalletBalance();
-                }, 500);
+                    loadTasksFromServer();
+                }, 1000);
                 
-                // Update profile after completing task
-                setTimeout(() => {
-                    if (currentUser) {
-                        openUserProfile();
-                    }
-                }, 500);
             } else {
-                showToast(`❌ Error completing task: ${result.message}`, 'error');
+                showToast(`❌ Error completing task: ${result?.message || 'Unknown error'}`, 'error');
             }
         } catch (error) {
             console.error('Error completing task:', error);
@@ -2530,6 +2518,56 @@ async function completeTask(taskId) {
     } else {
         showToast('❌ Task not found', 'error');
     }
+}
+
+// Show task completion modal - waiting for poster payment
+function showTaskCompletedAwaitingPayment(task, result) {
+    const content = `
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 60px; margin-bottom: 20px;">⏳</div>
+            <h2 style="color: #fbbf24; margin-bottom: 15px;">Task Completed!</h2>
+            <p style="margin-bottom: 20px; font-size: 14px; color: #999;">Work is done. Waiting for task poster to make payment...</p>
+            
+            <div style="background: rgba(251, 191, 36, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px;">${task.title}</h3>
+                
+                <div style="text-align: left; margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                        <span style="color: #999;">Task Amount:</span>
+                        <span style="font-weight: 600; font-size: 16px;">₹${(result?.taskAmount || task.price).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px; padding: 10px; background: rgba(251, 191, 36, 0.2); border-radius: 8px;">
+                        <span style="color: #fbbf24; font-weight: 600;">Your Commission (12%):</span>
+                        <span style="color: #fbbf24; font-weight: 600;">-₹${((result?.taskAmount || task.price) * 0.12).toFixed(2)}</span>
+                    </div>
+                </div>
+                
+                <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
+                
+                <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; margin-bottom: 15px; background: rgba(74, 222, 128, 0.2); padding: 12px; border-radius: 8px;">
+                    <span style="color: #fff;">You Will Earn:</span>
+                    <span style="color: #4ade80;">₹${((result?.taskAmount || task.price) * 0.88).toFixed(2)}</span>
+                </div>
+                
+                <div style="background: #1f2937; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+                    <p style="font-size: 12px; color: #999; margin: 0;">
+                        <i class="fas fa-info-circle"></i> Payment will be credited once the task poster pays.
+                    </p>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); setTimeout(() => loadTasksFromServer(), 500);">
+                <i class="fas fa-refresh"></i> Refresh Status
+            </button>
+            
+            <button class="btn btn-outline btn-block" onclick="closeModal('taskSuccessModal')">
+                <i class="fas fa-times"></i> Close
+            </button>
+        </div>
+    `;
+    
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    openModal('taskSuccessModal');
 }
 
 // Show task completion modal
@@ -2802,27 +2840,52 @@ function showPaymentSuccessModal(task, totalPayable, platformFee) {
  * Calls backend /api/tasks/<id>/pay-helper endpoint
  */
 async function payHelperForTask(taskId) {
+    // First, refresh tasks from server to ensure we have latest status
+    console.log('📡 Refreshing task status from server...');
+    await loadTasksFromServer();
+    
+    // Find task in myPostedTasks after refresh
     const task = myPostedTasks.find(t => t.id === taskId);
     
-    if (!task || task.status !== 'completed') {
-        showToast('Task not ready for payment');
+    if (!task) {
+        showToast('❌ Task not found');
+        return;
+    }
+    
+    if (task.status !== 'completed') {
+        console.error('Task status mismatch:', {
+            taskId: task.id,
+            status: task.status,
+            expectedStatus: 'completed'
+        });
+        showToast(`❌ Task status is '${task.status}', but must be 'completed' to pay. Trying to refresh...`);
+        
+        // Auto-refresh and retry
+        setTimeout(() => {
+            loadTasksFromServer().then(() => {
+                const refreshedTask = myPostedTasks.find(t => t.id === taskId);
+                if (refreshedTask && refreshedTask.status === 'completed') {
+                    showToast('✅ Task status updated. Please try payment again.');
+                    payHelperForTask(taskId);
+                }
+            });
+        }, 2000);
         return;
     }
 
     const taskAmount = task.price;
-    const posterCommission = taskAmount * 0.10;  // 10% commission from poster
-    const helperCommission = taskAmount * 0.10;  // 10% commission from helper
-    const totalCost = taskAmount + posterCommission;  // Poster pays task + their 10% commission
-    const helperNetReceives = taskAmount - helperCommission;  // Helper gets task amount then commission deducted
+    const helperCommission = taskAmount * 0.12;  // 12% (10% + 2%)
+    const posterFee = taskAmount * 0.05;  // 5%
+    const totalCost = taskAmount + posterFee;  // Poster pays task + fee
+    const helperNetReceives = taskAmount - helperCommission;  // Helper gets after commission
     const currentBalance = currentUser.wallet || 0;
 
     console.log('💰 Payment Details:');
     console.log(`   Task Amount: ₹${taskAmount}`);
-    console.log(`   Poster Commission (10%): ₹${posterCommission.toFixed(2)}`);
-    console.log(`   Helper Commission (10%): ₹${helperCommission.toFixed(2)}`);
+    console.log(`   Helper Commission (12%): ₹${helperCommission.toFixed(2)}`);
+    console.log(`   Your Fee (5%): ₹${posterFee.toFixed(2)}`);
     console.log(`   Total Cost (for you): ₹${totalCost.toFixed(2)}`);
-    console.log(`   Helper receives initially: ₹${taskAmount.toFixed(2)}`);
-    console.log(`   Helper gets after commission: ₹${helperNetReceives.toFixed(2)}`);
+    console.log(`   Helper receives (after commission): ₹${helperNetReceives.toFixed(2)}`);
     console.log(`   Your wallet balance: ₹${currentBalance.toFixed(2)}`);
 
     // Check wallet balance
@@ -2841,13 +2904,13 @@ async function payHelperForTask(taskId) {
     // Confirm payment dialog
     const confirmed = confirm(
         `💰 Complete Payment\n\n` +
+        `Task: ${task.title}\n` +
         `Task Amount: ₹${taskAmount}\n` +
-        `Poster Commission (10%): ₹${posterCommission.toFixed(2)}\n` +
-        `Helper Commission (10%): ₹${helperCommission.toFixed(2)}\n` +
-        `Total Cost (for you): ₹${totalCost.toFixed(2)}\n\n` +
+        `Your Fee (5%): ₹${posterFee.toFixed(2)}\n` +
+        `Total Cost: ₹${totalCost.toFixed(2)}\n\n` +
         `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
         `Balance After: ₹${(currentBalance - totalCost).toFixed(2)}\n\n` +
-        `Helper receives (after commission): ₹${helperNetReceives.toFixed(2)}\n\n` +
+        `Helper receives (after 12% commission): ₹${helperNetReceives.toFixed(2)}\n\n` +
         `Click OK to pay from your wallet`
     );
     
@@ -2876,12 +2939,19 @@ async function payHelperForTask(taskId) {
         if (result.success) {
             showToast(
                 `✅ Payment Successful!\n\n` +
-                `Task Amount: ₹${result.amount.toFixed(2)}\n` +
-                `Helper Commission (10%): ₹${result.helperCommission.toFixed(2)}\n` +
-                `Helper receives (net): ₹${result.helperReceives.toFixed(2)}\n\n` +
-                `Your new balance: ₹${result.posterNewBalance.toFixed(2)}`,
+                `Task Amount: ₹${result.amount}\n` +
+                `Helper Commission (12%): ₹${result.helperCommission.toFixed(2)}\n` +
+                `Your Fee (5%): ₹${result.posterFee.toFixed(2)}\n\n` +
+                `Your New Balance: ₹${result.posterNewBalance.toFixed(2)}\n` +
+                `Helper Receives: ₹${(result.amount - result.helperCommission).toFixed(2)}`,
                 6000
             );
+            
+            // Update current user balance
+            if (currentUser) {
+                currentUser.wallet = result.posterNewBalance;
+                localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
+            }
             
             // Update task status
             task.status = 'paid';
@@ -2896,7 +2966,15 @@ async function payHelperForTask(taskId) {
             setTimeout(() => {
                 loadTasksFromServer();
                 refreshWalletBalance();
+                openUserProfile();
             }, 1000);
+            
+            // Show UPI transfer status
+            if (result.upiTransferStatus) {
+                setTimeout(() => {
+                    showToast(`📤 Platform income (₹${result.platformIncome.toFixed(2)}) transferred to razorpay.me/@taskern`, 3000);
+                }, 2000);
+            }
         } else {
             showToast(`❌ Payment failed: ${result.message}`);
             console.error('Payment error:', result.message);

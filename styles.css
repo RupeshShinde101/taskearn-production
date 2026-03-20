@@ -398,6 +398,33 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
     font-size: 0.75rem;
     color: var(--gray-light);
     margin-top: 4px;
+    display: block;
+}
+
+/* Notification Action Button */
+.notification-action-btn {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+}
+
+.notification-action-btn:hover {
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    transform: translateY(-2px);
+}
+
+.notification-action-btn:active {
+    transform: translateY(0);
 }
 
 .no-notifications {

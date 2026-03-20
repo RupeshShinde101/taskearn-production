@@ -1249,18 +1249,28 @@ def complete_task(task_id):
             helper_user = dict_from_row(helper_user_row) if helper_user_row else None
             helper_name = helper_user['name'] if helper_user else 'a helper'
             
-            # Create notification for poster about payment
+            # Create notification for poster about payment with action button
+            import json
+            action_data = json.dumps({
+                'type': 'payment',
+                'label': 'Pay Now',
+                'taskId': task_id,
+                'amount': total_poster_cost,
+                'timestamp': now
+            })
+            
             cursor.execute(f'''
-                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, created_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (poster_id, task_id, 'payment_completed', 
-                  f'Payment Completed',
-                  f'Your payment of ₹{total_poster_cost:.2f} for task "{task["title"]}" has been processed.',
-                  'unread', now))
+                  f'💳 Payment Due',
+                  f'✓ {helper_name} completed "{task["title"]}" (₹{total_task_value:.2f}). Commission: ₹{total_poster_cost:.2f}',
+                  'unread', action_data, now))
             
             conn.commit()
             
             print(f"\n✅ TASK COMPLETION SUCCESSFUL!")
+            print(f"   Notification created for poster with 'Pay Now' action")
             print(f"   Task status: accepted → paid")
             print(f"   Helper earning: ₹{(total_task_value - helper_total_deduction):.2f}")
             print(f"   Helper final balance: ₹{helper_new_balance:.2f}")

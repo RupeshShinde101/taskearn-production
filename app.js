@@ -768,6 +768,54 @@ function loadNotifications() {
     return saved ? JSON.parse(saved) : [];
 }
 
+/**
+ * Fetch notifications from backend and sync with localStorage
+ * This also parses any JSON action data from the notifications
+ */
+async function syncNotificationsFromServer() {
+    if (!currentUser) return [];
+    
+    try {
+        const response = await fetch(API_BASE_URL + '/notifications', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+            }
+        });
+        
+        if (!response.ok) return loadNotifications(); // Fallback to local
+        
+        const result = await response.json();
+        
+        if (result.success && result.notifications) {
+            // Parse action data from JSON strings
+            const processedNotifications = result.notifications.map(n => {
+                try {
+                    if (n.data && typeof n.data === 'string') {
+                        n.action = JSON.parse(n.data);
+                    } else if (typeof n.data === 'object') {
+                        n.action = n.data;
+                    }
+                } catch (e) {
+                    console.warn('Could not parse notification action data:', e);
+                }
+                return n;
+            });
+            
+            // Save to localStorage
+            localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(processedNotifications));
+            notifications = processedNotifications;
+            updateNotificationUI();
+            
+            return processedNotifications;
+        }
+    } catch (error) {
+        console.warn('Could not sync notifications from server:', error.message);
+    }
+    
+    return loadNotifications(); // Fallback to local
+}
+
 function saveNotifications() {
     if (!currentUser) return;
     localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(notifications));
@@ -813,18 +861,29 @@ function updateNotificationUI() {
                 </div>
             `;
         } else {
-            list.innerHTML = notifications.slice(0, 20).map(n => `
-                <div class="notification-item ${n.read ? '' : 'unread'}" onclick="markAsRead(${n.id})">
-                    <div class="notification-icon ${n.type || 'info'}">
-                        <i class="fas ${getNotificationIcon(n.type)}"></i>
+            list.innerHTML = notifications.slice(0, 20).map(n => {
+                // Check if notification has action buttons
+                const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task');
+                const actionButton = hasActions ? `
+                    <button class="notification-action-btn" onclick="handleNotificationAction(${n.id}, '${n.action.type}', ${n.taskId || 'null'})">
+                        ${n.action.label || (n.action.type === 'payment' ? 'Pay Now' : 'View')}
+                    </button>
+                ` : '';
+                
+                return `
+                    <div class="notification-item ${n.read ? '' : 'unread'}" onclick="markAsRead(${n.id})">
+                        <div class="notification-icon ${n.type || 'info'}">
+                            <i class="fas ${getNotificationIcon(n.type)}"></i>
+                        </div>
+                        <div class="notification-content">
+                            <h5>${escapeHtml(n.title)}</h5>
+                            <p>${escapeHtml(n.message)}</p>
+                            <span class="notification-time">${getTimeAgo(n.createdAt)}</span>
+                            ${actionButton}
+                        </div>
                     </div>
-                    <div class="notification-content">
-                        <h5>${escapeHtml(n.title)}</h5>
-                        <p>${escapeHtml(n.message)}</p>
-                        <span class="notification-time">${getTimeAgo(n.createdAt)}</span>
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
     }
 }
@@ -878,6 +937,164 @@ function clearAllNotifications() {
     saveNotifications();
     updateNotificationUI();
     showToast('All notifications cleared');
+}
+
+/**
+ * Handle notification action buttons (e.g., "Pay Now" on payment notifications)
+ */
+async function handleNotificationAction(notificationId, actionType, taskId) {
+    const notification = notifications.find(n => n.id === notificationId);
+    
+    if (!notification) {
+        showToast('❌ Notification not found');
+        return;
+    }
+    
+    if (actionType === 'payment' && taskId) {
+        // Handle payment action
+        console.log(`💳 Processing payment for task ${taskId} from notification`);
+        await processPaymentFromNotification(taskId, notification);
+    } else if (actionType === 'task' && taskId) {
+        // Handle task action - navigate to task
+        console.log(`📋 Opening task ${taskId}`);
+        const section = currentUserRole === 'poster' ? 'myTasks' : 'browseTasks';
+        showSection(section);
+        setTimeout(() => {
+            const taskElement = document.querySelector(`[data-task-id="${taskId}"]`);
+            if (taskElement) taskElement.scrollIntoView({ behavior: 'smooth' });
+        }, 500);
+    }
+    
+    // Mark notification as read
+    markAsRead(notificationId);
+}
+
+/**
+ * Process payment when poster clicks "Pay Now" from notification
+ * Deducts commission from poster's wallet and updates balance display
+ */
+async function processPaymentFromNotification(taskId, notification) {
+    try {
+        // Find task in myPostedTasks
+        const task = myPostedTasks.find(t => t.id === taskId);
+        
+        if (!task) {
+            console.error('Task not found:', taskId);
+            showToast('❌ Task not found');
+            return;
+        }
+        
+        // Calculate amounts
+        const taskAmount = task.price || 0;
+        const serviceCharge = task.service_charge || 0;
+        const totalTaskValue = taskAmount + serviceCharge;
+        
+        // Commission breakdown
+        const helperCommission = totalTaskValue * 0.12;  // 12% helper commission
+        const posterFee = totalTaskValue * 0.05;         // 5% posting fee
+        const totalCost = totalTaskValue + posterFee;    // Total amount to deduct from poster
+        
+        // Get current balance
+        const currentBalance = currentUser.wallet || 0;
+        
+        console.log('💳 Payment Details:');
+        console.log(`   Task: "${task.title}"`);
+        console.log(`   Base Amount: ₹${taskAmount.toFixed(2)}`);
+        console.log(`   Service Charge: ₹${serviceCharge.toFixed(2)}`);
+        console.log(`   Total Task Value: ₹${totalTaskValue.toFixed(2)}`);
+        console.log(`   Helper Commission (12%): ₹${helperCommission.toFixed(2)}`);
+        console.log(`   Your Posting Fee (5%): ₹${posterFee.toFixed(2)}`);
+        console.log(`   Total Cost: ₹${totalCost.toFixed(2)}`);
+        console.log(`   Current Wallet Balance: ₹${currentBalance.toFixed(2)}`);
+        
+        // Check balance
+        if (currentBalance < totalCost) {
+            const shortfall = totalCost - currentBalance;
+            showToast(
+                `❌ Insufficient Balance!\n\n` +
+                `Cost: ₹${totalCost.toFixed(2)}\n` +
+                `Balance: ₹${currentBalance.toFixed(2)}\n` +
+                `Need: ₹${shortfall.toFixed(2)} more`,
+                5000
+            );
+            return;
+        }
+        
+        // Confirm payment
+        const confirmed = confirm(
+            `💰 Confirm Payment\n\n` +
+            `Task: "${task.title}"\n\n` +
+            `Base Amount: ₹${taskAmount.toFixed(2)}\n` +
+            `Service Charge: ₹${serviceCharge.toFixed(2)}\n` +
+            `Total Task Value: ₹${totalTaskValue.toFixed(2)}\n\n` +
+            `Commission Breakdown:\n` +
+            `• Helper Commission (12%): ₹${helperCommission.toFixed(2)}\n` +
+            `• Your Posting Fee (5%): ₹${posterFee.toFixed(2)}\n\n` +
+            `Total Cost: ₹${totalCost.toFixed(2)}\n\n` +
+            `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
+            `After Payment: ₹${(currentBalance - totalCost).toFixed(2)}\n\n` +
+            `Click OK to deduct from wallet`
+        );
+        
+        if (!confirmed) {
+            showToast('Payment cancelled');
+            return;
+        }
+        
+        // Call backend to process payment
+        console.log('📤 Sending payment request...');
+        const response = await fetch(API_BASE_URL + `/tasks/${taskId}/complete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+            },
+            body: JSON.stringify({ processPayment: true })
+        });
+        
+        const result = await response.json();
+        console.log('📥 Payment response:', result);
+        
+        if (result.success) {
+            // Show success with amount details
+            const newBalance = result.posterNewBalance || (currentBalance - totalCost);
+            
+            showToast(
+                `✅ Payment Successful!\n\n` +
+                `Commission Deducted: ₹${totalCost.toFixed(2)}\n\n` +
+                `Breakdown:\n` +
+                `• Helper Gets: ₹${result.helperEarnings ? result.helperEarnings.toFixed(2) : (totalTaskValue - helperCommission).toFixed(2)}\n` +
+                `• Platform Fee: ₹${posterFee.toFixed(2)}\n\n` +
+                `Your Wallet Balance\n` +
+                `← ₹${currentBalance.toFixed(2)}\n` +
+                `→ ₹${newBalance.toFixed(2)}`,
+                6000
+            );
+            
+            // Update local user data
+            if (currentUser) {
+                currentUser.wallet = newBalance;
+                localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
+            }
+            
+            // Update task and UI
+            task.status = 'paid';
+            renderDashboard();
+            updateNotificationUI();
+            
+            // Refresh from server
+            setTimeout(() => {
+                loadTasksFromServer();
+                refreshWalletBalance();
+            }, 1000);
+        } else {
+            showToast(`❌ Payment failed: ${result.message || 'Unknown error'}`);
+        }
+        
+    } catch (error) {
+        console.error('❌ Payment error:', error);
+        showToast(`❌ Payment error: ${error.message}`);
+    }
 }
 
 // Send email notification for task acceptance
@@ -1371,6 +1588,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                 loadTasksFromServer().catch(e => console.warn('⚠️ Auto-refresh failed:', e.message));
                 // Also refresh wallet balance
                 refreshWalletBalance().catch(e => console.warn('⚠️ Wallet refresh failed:', e.message));
+                // And sync notifications
+                syncNotificationsFromServer().catch(e => console.warn('⚠️ Notification sync failed:', e.message));
             } catch (e) {
                 console.warn('⚠️ Task refresh failed:', e.message);
             }
@@ -4413,6 +4632,11 @@ function updateNavForUser() {
         // Load and display notifications
         notifications = loadNotifications();
         updateNotificationUI();
+        
+        // Sync notifications from server in background
+        setTimeout(() => {
+            syncNotificationsFromServer().catch(err => console.log('Notification sync failed:', err));
+        }, 500);
     } else {
         // Reset mobile menu for logged-out user
         if (mobileMenu) {

@@ -395,6 +395,25 @@ def init_postgres_db():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS helper_level VARCHAR(20) DEFAULT 'bronze'
         ''')
         
+        # Ensure service_charge column exists in tasks table (migration)
+        print("[DB] Adding service_charge column to tasks table if missing...")
+        try:
+            cursor.execute('''
+                ALTER TABLE tasks ADD COLUMN IF NOT EXISTS service_charge DECIMAL(10,2) DEFAULT 0
+            ''')
+            print("[DB] ✅ service_charge column added or already exists")
+        except Exception as e:
+            print(f"[DB] ⚠️  Could not add service_charge column: {e}")
+        
+        # Ensure paid_at column exists (for tracking when task was paid)
+        try:
+            cursor.execute('''
+                ALTER TABLE tasks ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP
+            ''')
+            print("[DB] ✅ paid_at column added or already exists")
+        except Exception as e:
+            print(f"[DB] ⚠️  Could not add paid_at column: {e}")
+        
         # ========================================
         # CREATE SYSTEM/COMPANY USER
         # ========================================
@@ -744,6 +763,29 @@ def init_sqlite_db():
                 created_at TEXT NOT NULL
             )
         ''')
+        
+        # SQLite migrations - add missing columns to existing tables
+        print("[DB] Applying SQLite migrations...")
+        try:
+            cursor.execute('PRAGMA table_info(tasks)')
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'service_charge' not in columns:
+                print("[DB] Adding service_charge column to tasks...")
+                cursor.execute('ALTER TABLE tasks ADD COLUMN service_charge REAL DEFAULT 0')
+                print("[DB] ✅ service_charge column added")
+            else:
+                print("[DB] ✅ service_charge column already exists")
+                
+            if 'paid_at' not in columns:
+                print("[DB] Adding paid_at column to tasks...")
+                cursor.execute('ALTER TABLE tasks ADD COLUMN paid_at TEXT')
+                print("[DB] ✅ paid_at column added")
+            else:
+                print("[DB] ✅ paid_at column already exists")
+        except Exception as e:
+            print(f"[DB] ⚠️  SQLite migration error: {e}")
+        
                 # ========================================
         # CREATE SYSTEM/COMPANY USER
         # ========================================

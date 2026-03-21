@@ -1211,7 +1211,7 @@ function updateMapMarkers() {
                     <h4>${task.title}</h4>
                     <p>${task.description}</p>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 10px;">
-                        <span class="task-price" style="font-size: 16px; font-weight: 600; color: #667eea;">₹${task.price + getServiceCharge(task.category)}</span>
+                        <span class="task-price" style="font-size: 16px; font-weight: 600; color: #667eea;">₹${parseFloat(task.price) + parseFloat(task.service_charge || 0)}</span>
                         <button onclick="openTaskDetail(${task.id})" style="padding: 6px 12px; background: #0ea5e9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">View Details</button>
                     </div>
                 </div>
@@ -2095,8 +2095,9 @@ function showRouteTo(task) {
 
 function showDistancePanel(km, mins, task) {
     const panel = document.getElementById('distanceInfo');
-    const serviceCharge = getServiceCharge(task.category);
-    const totalEarnings = task.price + serviceCharge;
+    // Use service_charge from task object (set at creation), fallback to calculation
+    const serviceCharge = task.service_charge !== undefined ? parseFloat(task.service_charge) : getServiceCharge(task.category);
+    const totalEarnings = parseFloat(task.price) + serviceCharge;
     const chargeInfo = getServiceChargeInfo(task.category);
     
     if (panel) {
@@ -2105,8 +2106,8 @@ function showDistancePanel(km, mins, task) {
             <div class="distance-value">${km} km</div>
             <div class="eta">~${mins} min drive</div>
             <div class="price-info">
-                <div class="total-price">Earn: <strong>₹${totalEarnings}</strong></div>
-                <small style="color:#10b981;">₹${task.price} + ₹${serviceCharge} (${chargeInfo.level})</small>
+                <div class="total-price">Earn: <strong>₹${totalEarnings.toFixed(0)}</strong></div>
+                <small style="color:#10b981;">₹${parseFloat(task.price).toFixed(0)} + ₹${serviceCharge.toFixed(0)} (${chargeInfo.level})</small>
             </div>
             <button class="directions-btn" onclick="openGoogleMaps(${task.location.lat}, ${task.location.lng})">
                 <i class="fas fa-directions"></i> Navigate

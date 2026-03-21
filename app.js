@@ -2316,6 +2316,9 @@ function openTaskDetail(taskId) {
                 <i class="fas fa-times"></i> Close
             </button>
             ${!isOwner ? `
+            <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'")}')" title="Get directions to task location">
+                <i class="fas fa-map-marker-alt"></i> Navigate
+            </button>
             <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="contactTaskProvider(${task.id}, '${task.postedBy.name.replace(/'/g, "\\'")}')" title="Message the task provider">
                 <i class="fas fa-comment-dots"></i> Contact Provider
             </button>
@@ -2361,6 +2364,56 @@ function generateStars(rating) {
 // ========================================
 // TASK ACTIONS
 // ========================================
+
+function navigateToTask(lat, lng, taskTitle) {
+    if (!lat || !lng) {
+        showToast('Location not available');
+        return;
+    }
+
+    const label = encodeURIComponent(taskTitle || 'Task Location');
+
+    // Detect if mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    if (isMobile) {
+        // For mobile, try to open native maps app
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const isAndroid = /Android/i.test(navigator.userAgent);
+
+        if (isIOS) {
+            // iOS: Use Apple Maps or Google Maps
+            const appleUrl = `maps://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
+            const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+            
+            // Try Apple Maps first on iOS
+            window.location.href = appleUrl;
+            
+            // Fallback to Google Maps after 1 second
+            setTimeout(() => {
+                window.location.href = googleUrl;
+            }, 1000);
+        } else if (isAndroid) {
+            // Android: Use Google Maps or Waze
+            const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+            const wazeUrl = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+            
+            // Try Waze first, fallback to Google Maps
+            window.location.href = wazeUrl;
+            
+            setTimeout(() => {
+                window.location.href = googleUrl;
+            }, 1000);
+        }
+    } else {
+        // Desktop: Open Google Maps in new window
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+        window.open(mapsUrl, '_blank');
+    }
+
+    // Close modal after opening navigation
+    closeModal('taskDetailModal');
+}
 
 function acceptTask(taskId) {
     if (!currentUser) {
@@ -5494,6 +5547,7 @@ window.handleLogin = handleLogin;
 window.handleSignup = handleSignup;
 window.handleTaskSubmit = handleTaskSubmit;
 window.openTaskDetail = openTaskDetail;
+window.navigateToTask = navigateToTask;
 window.acceptTask = acceptTask;
 window.cancelTask = cancelTask;
 window.deleteTask = deleteTask;

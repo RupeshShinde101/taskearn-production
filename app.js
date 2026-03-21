@@ -1960,13 +1960,15 @@ function addTaskMarkers() {
         // Popup content
         const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
         const timeLeft = getTimeLeft(task.expiresAt);
+        const serviceCharge = getServiceCharge(task.category);
+        const totalValue = task.price + serviceCharge;
 
         marker.bindPopup(`
             <div style="min-width:200px;padding:5px;">
                 <h4 style="margin:0 0 8px 0;font-size:14px;">${task.title}</h4>
                 <p style="margin:0 0 10px 0;font-size:12px;color:#666;">${task.description.substring(0, 60)}...</p>
                 <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-                    <span style="color:#10b981;font-weight:700;">₹${task.price}</span>
+                    <span style="color:#10b981;font-weight:700;">₹${totalValue}</span>
                     <span style="color:#666;font-size:12px;">📍 ${dist.toFixed(1)} km</span>
                 </div>
                 <div style="color:#f59e0b;font-size:12px;margin-bottom:10px;">⏱️ ${timeLeft} left</div>

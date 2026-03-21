@@ -471,6 +471,8 @@
         }
 
         function initializeSocket() {
+            console.log('🔌 Initializing Socket with:', { SOCKET_BASE_URL, taskId, token: token ? 'present' : 'missing' });
+            
             socket = io(SOCKET_BASE_URL, {
                 auth: {
                     token: token,
@@ -478,10 +480,13 @@
                 },
                 transports: ['websocket', 'polling'],
                 reconnection: true,
-                reconnectionAttempts: 10
+                reconnectionAttempts: 10,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000
             });
 
             socket.on('connect', () => {
+                console.log('✅ Socket connected:', socket.id);
                 setConnectionStatus(true);
                 socket.emit('join_task', {
                     taskId: taskId,
@@ -489,12 +494,19 @@
                 });
             });
 
-            socket.on('disconnect', () => {
+            socket.on('disconnect', (reason) => {
+                console.warn('🔌 Socket disconnected:', reason);
                 setConnectionStatus(false);
             });
 
             socket.on('connect_error', (err) => {
-                console.warn('Socket connection error:', err.message);
+                console.error('❌ Socket connection error:', err);
+                setConnectionStatus(false);
+                startPollingFallback();
+            });
+
+            socket.on('error', (err) => {
+                console.error('❌ Socket error:', err);
                 setConnectionStatus(false);
             });
 
@@ -515,19 +527,42 @@
 
         async function loadChatHistory() {
             try {
+                console.log('📥 Loading chat history for task:', taskId);
                 const response = await fetch(API_BASE_URL + '/chat/' + taskId + '/messages', {
                     headers: { 'Authorization': 'Bearer ' + token }
                 });
+                
+                if (!response.ok) {
+                    console.error('❌ API response not OK:', response.status, response.statusText);
+                    const text = await response.text();
+                    console.error('Response body:', text.substring(0, 200));
+                    return;
+                }
+                
                 const data = await response.json();
-                if (!data.success || !Array.isArray(data.messages)) return;
+                if (!data.success || !Array.isArray(data.messages)) {
+                    console.warn('⚠️  Response missing messages array:', data);
+                    return;
+                }
 
                 const container = document.getElementById('messagesContainer');
                 container.innerHTML = '<div class="system-message">👋 Chat initialized - Messages are live</div>';
                 renderedMessageKeys.clear();
 
+                console.log(`📨 Found ${data.messages.length} messages`);
                 data.messages.forEach(msg => {
                     displayMessage(
                         msg.user_name || 'User',
+                        msg.message,
+                        msg.timestamp,
+                        msg.user_id === currentUser.id,
+                        msg.user_id
+                    );
+                });
+            } catch (error) {
+                console.error('❌ Error loading chat history:', error);
+            }
+        }
                         msg.message || '',
                         msg.timestamp || new Date().toISOString(),
                         msg.user_id === currentUser.id,

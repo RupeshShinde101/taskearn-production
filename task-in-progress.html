@@ -178,88 +178,6 @@
             font-size: 14px;
         }
 
-        /* Action Buttons */
-        .action-buttons {
-            display: flex;
-            gap: 10px;
-            padding: 0 20px;
-            margin-bottom: 15px;
-        }
-
-        .action-btn {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .btn-contact {
-            background: #2196F3;
-            color: white;
-        }
-
-        .btn-contact:hover {
-            background: #1976D2;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
-        }
-
-        .btn-call {
-            background: #4caf50;
-            color: white;
-        }
-
-        .btn-call:hover {
-            background: #388e3c;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
-        }
-
-        /* Chat Section */
-        .chat-section {
-            border: 1px solid #eee;
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 15px;
-            background: #fafafa;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .chat-header {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 14px;
-        }
-
-        .chat-message {
-            background: white;
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            font-size: 13px;
-            border-left: 3px solid #2196F3;
-        }
-
-        .chat-message.provider {
-            border-left-color: #667eea;
-        }
-
-        .chat-time {
-            color: #999;
-            font-size: 11px;
-            margin-top: 5px;
-        }
-
         /* Complete Task Button */
         .complete-section {
             padding: 20px;
@@ -293,24 +211,12 @@
         }
 
         /* Timer/Progress */
-        .progress-info {
-            background: #fff3e0;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            font-size: 13px;
-            text-align: center;
-            color: #f57c00;
-        }
-
         .progress-timer {
             font-size: 24px;
             font-weight: 700;
         }
 
         /* Modal */
-        .modal {
-            display: none;
             position: fixed;
             top: 0;
             left: 0;
@@ -436,18 +342,6 @@
                         <span class="info-label">Task:</span>
                         <span class="info-value" id="taskTitle">Grocery Shopping</span>
                     </div>
-                    <div class="info-row">
-                        <span class="info-label">Amount:</span>
-                        <span class="info-value">₹<span id="taskAmount">500</span></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Distance:</span>
-                        <span class="info-value" id="distance">2.5 km</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Deadline:</span>
-                        <span class="info-value" id="deadline">2:30 PM</span>
-                    </div>
                 </div>
 
                 <!-- Task Provider -->
@@ -464,38 +358,7 @@
                     </div>
                 </div>
 
-                <!-- Action Buttons -->
-                <div class="action-buttons">
-                    <button class="action-btn btn-contact" onclick="openChat()">
-                        <i class="fas fa-comment"></i>
-                        Chat
-                    </button>
-                    <button class="action-btn btn-call" onclick="callProvider()">
-                        <i class="fas fa-phone"></i>
-                        Call
-                    </button>
-                </div>
 
-                <!-- Chat Section -->
-                <div class="chat-section">
-                    <div class="chat-header">Recent Messages</div>
-                    <div id="chatMessages">
-                        <div class="chat-message provider">
-                            <strong>Provider:</strong> Please reach on time
-                            <div class="chat-time">2:10 PM</div>
-                        </div>
-                        <div class="chat-message">
-                            <strong>You:</strong> On my way!
-                            <div class="chat-time">2:12 PM</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Progress Info -->
-                <div class="progress-info">
-                    <i class="fas fa-info-circle"></i>
-                    You're on track! Complete this task to earn ₹<span id="earningAmount">500</span>
-                </div>
             </div>
 
             <!-- Complete Section -->
@@ -516,11 +379,11 @@
             </div>
             <div class="modal-title">Task Completed!</div>
             <div class="modal-text">
-                Great job! You earned ₹<span id="modalAmount">500</span>
+                Great job! Your task has been completed successfully.
             </div>
             <div class="modal-buttons">
                 <button class="modal-btn modal-btn-confirm" onclick="proceedToPayment()">
-                    Proceed to Payment
+                    Continue
                 </button>
             </div>
         </div>
@@ -568,54 +431,11 @@
             // Update UI with task details
             document.getElementById('taskTitle').textContent = currentTask.title || 'Task';
             
-            // Calculate total amount including service charge
-            const taskAmount = currentTask.amount || currentTask.price || 0;
-            const serviceCharge = currentTask.service_charge || currentTask.serviceCharge || 0;
-            const totalAmount = parseFloat(taskAmount) + parseFloat(serviceCharge);
-            const earningAmount = totalAmount * 0.88;  // 12% commission deduction
-            
-            console.log('Task Amount Calculation:');
-            console.log('  Base Price: ' + taskAmount);
-            console.log('  Service Charge: ' + serviceCharge);
-            console.log('  Total: ' + totalAmount);
-            console.log('  Earning (88%): ' + earningAmount.toFixed(2));
-            
-            document.getElementById('taskAmount').textContent = totalAmount.toFixed(2);
-            document.getElementById('earningAmount').textContent = earningAmount.toFixed(2);
-            document.getElementById('modalAmount').textContent = totalAmount.toFixed(2);
-            
             // Update provider details
             const providerPhone = currentTask.providerPhone || currentTask.postedBy?.phone || 'N/A';
             const providerName = currentTask.providerName || currentTask.postedBy?.name || 'Provider';
             document.getElementById('providerName').textContent = providerName;
             document.getElementById('providerPhone').textContent = providerPhone;
-            
-            // Calculate and update distance
-            if (currentTask.location && currentTask.userLocation) {
-                const dist = calculateDistance(currentTask.location.lat, currentTask.location.lng, 
-                                             currentTask.userLocation.lat, currentTask.userLocation.lng);
-                document.getElementById('distance').textContent = dist.toFixed(1) + ' km';
-            } else {
-                document.getElementById('distance').textContent = currentTask.distance || 'On the way';
-            }
-            
-            // Calculate and update deadline
-            if (currentTask.expiresAt) {
-                const deadline = new Date(currentTask.expiresAt);
-                const now = new Date();
-                const hours = Math.floor((deadline - now) / (1000 * 60 * 60));
-                const minutes = Math.floor(((deadline - now) % (1000 * 60 * 60)) / (1000 * 60));
-                
-                if (hours > 0 || minutes > 0) {
-                    document.getElementById('deadline').textContent = hours + 'h ' + minutes + 'm left';
-                } else {
-                    document.getElementById('deadline').textContent = 'Expiring soon';
-                }
-            } else if (currentTask.deadline) {
-                document.getElementById('deadline').textContent = currentTask.deadline;
-            } else {
-                document.getElementById('deadline').textContent = 'No deadline';
-            }
         }
         
         // Calculate distance between two coordinates using Haversine formula
@@ -659,21 +479,7 @@
             }, 1000);
         }
 
-        // Open chat
-        function openChat() {
-            const taskId = currentTask.id || '1';
-            window.location.href = 'chat.html?taskId=' + taskId;
-        }
 
-        // Call provider
-        function callProvider() {
-            const taskId = currentTask.id || '1';
-            const providerName = encodeURIComponent(currentTask.providerName || 'Provider');
-            const providerPhone = encodeURIComponent(currentTask.providerPhone || 'N/A');
-            window.location.href = 'voice-call.html?taskId=' + taskId + 
-                                  '&providerName=' + providerName + 
-                                  '&providerPhone=' + providerPhone;
-        }
 
         // Complete task
         function completeTask() {
@@ -691,7 +497,6 @@
             .then(data => {
                 if (data.success) {
                     clearInterval(timerInterval);
-                    document.getElementById('modalAmount').textContent = data.taskAmount || currentTask.amount || 0;
                     document.getElementById('confirmModal').classList.add('active');
                 } else {
                     alert('⚠️ ' + (data.message || 'Failed to complete task'));
@@ -708,14 +513,7 @@
             // Close modal and go back to dashboard
             document.getElementById('confirmModal').classList.remove('active');
             
-            // Show message explaining the payment process
-            const basePrice = currentTask.price || 0;
-            const sCharge = currentTask.service_charge || currentTask.serviceCharge || 0;
-            const totalValue = parseFloat(basePrice) + parseFloat(sCharge);
-            const helperEarning = totalValue * 0.88;
-            alert('✅ Task marked as completed!\n\nTask Amount: ₹' + totalValue.toFixed(2) + '\nYour Commission (12%): -₹' + (totalValue * 0.12).toFixed(2) + '\n\nYou will receive ₹' + helperEarning.toFixed(2) + ' in your wallet once the poster confirms payment.\n\nPlease wait for payment confirmation.');
-            
-            // Go back to dashboard
+            // Go back to accepted tasks
             window.location.href = 'index.html?tab=accepted-tasks';
         }
 

@@ -2614,7 +2614,17 @@ def get_chat_messages(task_id):
             WHERE task_id = {PH}
             ORDER BY timestamp ASC
         ''', (task_id,))
-        messages = [dict_from_row(row) for row in cursor.fetchall()]
+        messages = []
+        for row in cursor.fetchall():
+            msg = dict_from_row(row)
+            # Convert timestamp to ISO format string for JSON serialization
+            if msg and 'timestamp' in msg:
+                ts = msg['timestamp']
+                if hasattr(ts, 'isoformat'):
+                    msg['timestamp'] = ts.isoformat()
+                elif isinstance(ts, str):
+                    msg['timestamp'] = ts
+            messages.append(msg)
     
     return jsonify({
         'success': True,

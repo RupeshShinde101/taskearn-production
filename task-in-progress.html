@@ -6,8 +6,8 @@
     <title>Task In Progress - TaskEarn</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Google Maps -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBn5QNUkJFwv8lfWKf4KXJQfKYqbLVDNOE"></script>
+    <!-- Leaflet.js - Free OpenStreetMap (No API Key Required) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * {
             margin: 0;
@@ -28,20 +28,41 @@
 
         /* Map Section - 60% */
         .location-section {
+            flex: 1;
             background: #f5f5f5;
-            padding: 20px;
-            border-bottom: 1px solid #ddd;
-            font-size: 14px;
-            line-height: 1.6;
+            position: relative;
+            display: flex;
+            flex-direction: column;
         }
 
-        .location-section strong {
+        #map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .location-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            font-size: 14px;
+            line-height: 1.6;
+            max-width: 300px;
+            z-index: 10;
+        }
+
+        .location-info strong {
             color: #333;
             display: block;
             margin-bottom: 8px;
         }
 
         .map-btn {
+            position: absolute;
             width: 50px;
             height: 50px;
             border-radius: 50%;
@@ -55,11 +76,17 @@
             align-items: center;
             justify-content: center;
             transition: all 0.3s;
+            z-index: 10;
         }
 
         .map-btn:hover {
             background: #f0f0f0;
             transform: scale(1.1);
+        }
+
+        .map-btn-locate {
+            bottom: 100px;
+            right: 20px;
         }
 
         /* Task Details Section - 40% */
@@ -299,7 +326,7 @@
                 flex-direction: column;
             }
 
-            .map-section {
+            .location-section {
                 height: 60%;
             }
 
@@ -307,15 +334,34 @@
                 width: 100%;
                 height: 40%;
             }
+
+            .map-btn-locate {
+                bottom: 100px;
+                right: 10px;
+            }
+
+            .location-info {
+                bottom: 10px;
+                left: 10px;
+                max-width: calc(100% - 20px);
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Location Section -->
+        <!-- Map Section -->
         <div class="location-section">
-            <strong>📍 Task Location:</strong>
-            <div id="taskLocation">Loading location...</div>
+            <div id="map"></div>
+            <!-- Location Info Overlay -->
+            <div class="location-info">
+                <strong>📍 Task Location:</strong>
+                <div id="taskLocation">Loading location...</div>
+            </div>
+            <!-- Center on location button -->
+            <button class="map-btn map-btn-locate" onclick="centerMapOnTask()" title="Center on Task">
+                <i class="fas fa-location-dot"></i>
+            </button>
         </div>
 
         <!-- Task Details Section -->
@@ -438,32 +484,10 @@
             document.getElementById('providerPhone').textContent = providerPhone;
         }
         
-        // Calculate distance between two coordinates using Haversine formula
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371; // Radius of Earth in km
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c;
-        }
-
-        // Show location text
+        // Show location and start timer
         function showLocation() {
-            const locationDiv = document.getElementById('taskLocation');
-            if (currentTask.location) {
-                if (typeof currentTask.location === 'string') {
-                    locationDiv.textContent = currentTask.location;
-                } else {
-                    locationDiv.textContent = currentTask.location.address || `Location available`;
-                }
-            } else {
-                locationDiv.textContent = 'Location: On the way';
-            }
-
-            // Start timer
+            // Location display is now handled by initializeMap()
+            // Just start the timer
             startTimer();
         }
 
@@ -529,7 +553,88 @@
         window.addEventListener('load', function() {
             loadTaskDetails();
             showLocation();
+            initializeMap();
         });
     </script>
-</body>
-</html>
+
+    <!-- Leaflet.js - Free OpenStreetMap (No API Key Required!) -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Global map variable
+        let map;
+        let taskMarker;
+
+        // Initialize Leaflet map
+        function initializeMap() {
+            try {
+                // Create map centered on task location or default
+                const mapCenter = currentTask.location || { lat: 28.6139, lng: 77.2090 }; // Delhi default
+                
+                map = L.map('map', {
+                    center: [mapCenter.lat, mapCenter.lng],
+                    zoom: 14,
+                    zoomControl: true
+                });
+
+                // Add OpenStreetMap tiles
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap',
+                    maxZoom: 19
+                }).addTo(map);
+
+                // Add task location marker
+                if (currentTask.location) {
+                    taskMarker = L.marker([currentTask.location.lat, currentTask.location.lng], {
+                        icon: L.icon({
+                            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                            iconSize: [25, 41],
+                            iconAnchor: [12, 41],
+                            popupAnchor: [1, -34],
+                            shadowSize: [41, 41]
+                        })
+                    }).addTo(map);
+
+                    // Add popup to marker
+                    const taskTitle = currentTask.title || 'Task Location';
+                    taskMarker.bindPopup(`<strong>${taskTitle}</strong><br/>Task location`);
+
+                    // Display location address
+                    displayLocationInfo();
+                }
+
+                console.log('✅ Map initialized successfully');
+            } catch (error) {
+                console.error('❌ Map error:', error);
+            }
+        }
+
+        // Display location information
+        function displayLocationInfo() {
+            const locationDiv = document.getElementById('taskLocation');
+            if (currentTask.location) {
+                if (typeof currentTask.location === 'string') {
+                    locationDiv.textContent = currentTask.location;
+                } else if (currentTask.location.address) {
+                    locationDiv.textContent = currentTask.location.address;
+                } else {
+                    locationDiv.innerHTML = `
+                        <div>Latitude: ${currentTask.location.lat.toFixed(4)}</div>
+                        <div>Longitude: ${currentTask.location.lng.toFixed(4)}</div>
+                    `;
+                }
+            } else {
+                locationDiv.textContent = 'Location available on map';
+            }
+        }
+
+        // Center map on task location
+        function centerMapOnTask() {
+            if (map && currentTask.location) {
+                map.setView([currentTask.location.lat, currentTask.location.lng], 14);
+                if (taskMarker) {
+                    taskMarker.openPopup();
+                }
+            }
+        }
+    </script>

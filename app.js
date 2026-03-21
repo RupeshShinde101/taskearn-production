@@ -1210,7 +1210,10 @@ function updateMapMarkers() {
                 <div class="task-popup">
                     <h4>${task.title}</h4>
                     <p>${task.description}</p>
-                    <span class="task-price">₹${task.price}</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 10px;">
+                        <span class="task-price" style="font-size: 16px; font-weight: 600; color: #667eea;">₹${task.price + getServiceCharge(task.category)}</span>
+                        <button onclick="openTaskDetail(${task.id})" style="padding: 6px 12px; background: #0ea5e9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">View Details</button>
+                    </div>
                 </div>
             `);
             

@@ -2321,18 +2321,18 @@ function openTaskDetail(taskId) {
         ` : ''}
         
         <div class="task-detail-actions">
-            <button class="btn btn-outline" onclick="closeModal('taskDetailModal'); clearRoute();">
+            <button class="btn btn-outline" onclick="closeModal('taskDetailModal'); clearRoute();" style="flex: 1; padding: 12px; margin: 5px;">
                 <i class="fas fa-times"></i> Close
             </button>
             ${!isOwner ? `
-            <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
+            <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
                 <i class="fas fa-map-marker-alt"></i> Navigate
             </button>
-            <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="contactTaskProvider(${task.id}, '${task.postedBy.name.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Message the task provider">
-                <i class="fas fa-comment-dots"></i> Contact Provider
+            <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="contactTaskProvider(${task.id}, '${task.postedBy.name.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Message the task provider">
+                <i class="fas fa-comment-dots"></i> Contact
             </button>
-            <button class="btn btn-primary" onclick="acceptTask(${task.id})">
-                <i class="fas fa-check"></i> Accept Task
+            <button class="btn btn-primary" style="flex: 1; padding: 12px; margin: 5px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="acceptTask(${task.id})">
+                <i class="fas fa-check"></i> Accept
             </button>
             ` : ''}
         </div>

@@ -2490,7 +2490,7 @@ function acceptTask(taskId) {
                 
                 // Redirect to Task In Progress page after short delay
                 setTimeout(() => {
-                    window.location.href = 'task-in-progress.html?taskId=' + task.id;
+                    window.location.href = 'task-in-progress.html?taskId=' + task.id + '&v=20260321_map_controls';
                 }, 500);
             } else {
                 showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');

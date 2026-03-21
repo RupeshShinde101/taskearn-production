@@ -2597,39 +2597,45 @@ def cancel_withdrawal(withdrawal_id):
 @require_auth
 def get_chat_messages(task_id):
     """Get chat messages for a task"""
-    with get_db() as (cursor, conn):
-        # Verify user is part of this task
-        cursor.execute(f'''
-            SELECT * FROM tasks WHERE id = {PH} AND (posted_by = {PH} OR accepted_by = {PH})
-        ''', (task_id, request.user_id, request.user_id))
-        task = cursor.fetchone()
+    try:
+        with get_db() as (cursor, conn):
+            # Verify user is part of this task
+            cursor.execute(f'''
+                SELECT * FROM tasks WHERE id = {PH} AND (posted_by = {PH} OR accepted_by = {PH})
+            ''', (task_id, request.user_id, request.user_id))
+            task = cursor.fetchone()
+            
+            if not task:
+                return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+            
+            # Get messages
+            cursor.execute(f'''
+                SELECT id, task_id, user_id, user_name, message, timestamp
+                FROM chat_messages
+                WHERE task_id = {PH}
+                ORDER BY timestamp ASC
+            ''', (task_id,))
+            messages = []
+            for row in cursor.fetchall():
+                msg = dict_from_row(row)
+                # Convert timestamp to ISO format string for JSON serialization
+                if msg and 'timestamp' in msg:
+                    ts = msg['timestamp']
+                    if hasattr(ts, 'isoformat'):
+                        msg['timestamp'] = ts.isoformat()
+                    elif isinstance(ts, str):
+                        msg['timestamp'] = ts
+                messages.append(msg)
         
-        if not task:
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-        
-        # Get messages
-        cursor.execute(f'''
-            SELECT id, task_id, user_id, user_name, message, timestamp
-            FROM chat_messages
-            WHERE task_id = {PH}
-            ORDER BY timestamp ASC
-        ''', (task_id,))
-        messages = []
-        for row in cursor.fetchall():
-            msg = dict_from_row(row)
-            # Convert timestamp to ISO format string for JSON serialization
-            if msg and 'timestamp' in msg:
-                ts = msg['timestamp']
-                if hasattr(ts, 'isoformat'):
-                    msg['timestamp'] = ts.isoformat()
-                elif isinstance(ts, str):
-                    msg['timestamp'] = ts
-            messages.append(msg)
-    
-    return jsonify({
-        'success': True,
-        'messages': messages
-    })
+        return jsonify({
+            'success': True,
+            'messages': messages
+        })
+    except Exception as e:
+        print(f"❌ Error in get_chat_messages: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'message': f'Error loading messages: {str(e)}'}), 500
 
 
 @app.route('/api/chat/<int:task_id>/send', methods=['POST'])

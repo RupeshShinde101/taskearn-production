@@ -37,11 +37,16 @@ app = Flask(__name__)
 
 # Socket.IO for real-time chat
 socketio = Server(
-    async_mode='threading',
+    async_mode='eventlet',
     cors_allowed_origins='*',
     ping_timeout=60,
-    ping_interval=25
+    ping_interval=25,
+    engineio_logger=False,
+    logger=False
 )
+
+# Attach Socket.IO to Flask app
+socketio.attach(app)
 
 # CORS configuration - Allow all origins for development
 CORS(app, 

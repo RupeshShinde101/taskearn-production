@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Start the TaskEarn Flask backend on port 5000"""
+"""Start the TaskEarn Flask backend on port 5000 with Socket.IO support"""
 import sys
 import os
 import socket
@@ -7,7 +7,7 @@ import socket
 # Add backend to path
 sys.path.insert(0, os.path.dirname(__file__))
 
-from server import app
+from server import app, socketio
 from database import init_db
 
 def get_local_ip():
@@ -54,20 +54,23 @@ if __name__ == '__main__':
     
     print(f"\n⚙️  Environment:")
     print(f"   Debug Mode:  False")
-    print(f"   WSGI Ready:  Yes (production-capable)")
+    print(f"   WebSocket:   Enabled with eventlet")
     print(f"   Port:        {port}")
     print(f"   Host:        0.0.0.0\n")
     
-    # Run Flask directly (gunicorn will handle it in production)
+    # Run Flask with Socket.IO using socketio.run()
     try:
         print("="*70)
         print("✨ Server is running and ready for requests...")
+        print("   WebSocket endpoint: ws://0.0.0.0:{port}/socket.io/")
         print("="*70 + "\n")
-        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
+        socketio.run(app, host='0.0.0.0', port=port, debug=False)
     except KeyboardInterrupt:
         print("\n\n⛔ Server stopped by user")
         sys.exit(0)
     except Exception as e:
         print(f"\n❌ Server error: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 

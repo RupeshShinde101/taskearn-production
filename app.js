@@ -1206,17 +1206,6 @@ function updateMapMarkers() {
                 })
             }).addTo(map);
             
-            marker.bindPopup(`
-                <div class="task-popup">
-                    <h4>${task.title}</h4>
-                    <p>${task.description}</p>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 10px;">
-                        <span class="task-price" style="font-size: 16px; font-weight: 600; color: #667eea;">₹${parseFloat(task.price) + parseFloat(task.service_charge || 0)}</span>
-                        <button onclick="openTaskDetail(${task.id})" style="padding: 6px 12px; background: #0ea5e9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">View Details</button>
-                    </div>
-                </div>
-            `);
-            
             taskMarkers.push(marker);
         }
     });
@@ -1959,25 +1948,6 @@ function addTaskMarkers() {
     tasks.filter(t => t.status === 'active').forEach(task => {
         const icon = getTaskIcon(task.category);
         const marker = L.marker([task.location.lat, task.location.lng], { icon }).addTo(map);
-
-        // Popup content
-        const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
-        const timeLeft = getTimeLeft(task.expiresAt);
-        const serviceCharge = getServiceCharge(task.category);
-        const totalValue = task.price + serviceCharge;
-
-        marker.bindPopup(`
-            <div style="min-width:200px;padding:5px;">
-                <h4 style="margin:0 0 8px 0;font-size:14px;">${task.title}</h4>
-                <p style="margin:0 0 10px 0;font-size:12px;color:#666;">${task.description.substring(0, 60)}...</p>
-                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-                    <span style="color:#10b981;font-weight:700;">₹${totalValue}</span>
-                    <span style="color:#666;font-size:12px;">📍 ${dist.toFixed(1)} km</span>
-                </div>
-                <div style="color:#f59e0b;font-size:12px;margin-bottom:10px;">⏱️ ${timeLeft} left</div>
-                <button onclick="openTaskDetail(${task.id})" style="width:100%;padding:8px;background:linear-gradient(135deg,#6366f1,#0ea5e9);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">View Details</button>
-            </div>
-        `, { maxWidth: 280 });
 
         marker.on('click', function() {
             selectedTask = task;

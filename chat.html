@@ -77,6 +77,10 @@
             transform: scale(1.1);
         }
 
+        .header-btn.hidden {
+            display: none;
+        }
+
         /* Status indicator */
         .status-indicator {
             display: inline-block;
@@ -322,9 +326,15 @@
         <div class="chat-header">
             <div class="header-title">
                 <h2 id="taskTitle">Task Chat</h2>
-                <p>Connected <span class="status-indicator" id="statusIndicator"></span></p>
+                <p id="chatSubtitle">Connecting... <span class="status-indicator" id="statusIndicator"></span></p>
             </div>
             <div class="header-buttons">
+                <button class="header-btn hidden" id="callBtn" title="Call">
+                    <i class="fas fa-phone"></i>
+                </button>
+                <button class="header-btn hidden" id="trackBtn" title="Track Live Location">
+                    <i class="fas fa-location-crosshairs"></i>
+                </button>
                 <button class="header-btn" onclick="goBack()" title="Back">
                     <i class="fas fa-arrow-left"></i>
                 </button>
@@ -355,41 +365,124 @@
     </div>
 
     <script>
-        // Configuration
-        const API_URL = 'https://taskearn-production-production.up.railway.app';
-        
-        // Get URL parameters
+        const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            ? 'http://localhost:5000/api'
+            : 'https://taskearn-production-production.up.railway.app/api';
+        const SOCKET_BASE_URL = API_BASE_URL.replace('/api', '');
+
         const urlParams = new URLSearchParams(window.location.search);
-        const taskId = urlParams.get('taskId') || urlParams.get('task') || '1';
-        
-        // User info from localStorage
-        let currentUser = {
-            id: localStorage.getItem('userId') || 'user_' + Math.random().toString(36).substr(2, 9),
-            name: localStorage.getItem('userName') || 'User'
-        };
+        const taskId = parseInt(urlParams.get('taskId') || urlParams.get('task') || '0', 10);
 
         let socket = null;
+        let pollInterval = null;
+        let token = localStorage.getItem('taskearn_token') || '';
+        let currentUser = null;
+        let renderedMessageKeys = new Set();
 
-        // Initialize Socket.IO connection
-        function initializeChat() {
-            const token = localStorage.getItem('authToken') || '';
-            
-            socket = io(API_URL, {
+        function getCurrentUserFromStorage() {
+            try {
+                const raw = localStorage.getItem('taskearn_user') || localStorage.getItem('taskearn_current_user');
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function fetchCurrentUser() {
+            if (!token) return null;
+            try {
+                const response = await fetch(API_BASE_URL + '/auth/me', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await response.json();
+                if (data.success && data.user) {
+                    localStorage.setItem('taskearn_user', JSON.stringify(data.user));
+                    return data.user;
+                }
+            } catch (e) {
+                console.warn('Could not fetch current user:', e.message);
+            }
+            return null;
+        }
+
+        async function initializeChat() {
+            if (!taskId) {
+                showSystemMessage('Invalid task. Please open chat from a task card.');
+                document.getElementById('messageInput').disabled = true;
+                return;
+            }
+
+            if (!token) {
+                alert('Please login to use chat.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            currentUser = getCurrentUserFromStorage() || await fetchCurrentUser();
+            if (!currentUser || !currentUser.id) {
+                alert('Session expired. Please login again.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            await loadTaskContext();
+            initializeSocket();
+            await loadChatHistory();
+            startPollingFallback();
+        }
+
+        async function loadTaskContext() {
+            try {
+                const response = await fetch(API_BASE_URL + '/tracking/' + taskId, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await response.json();
+                if (!data.success || !data.tracking) return;
+
+                const tracking = data.tracking;
+                document.getElementById('taskTitle').textContent = tracking.title || ('Task #' + taskId);
+
+                const isPoster = tracking.posterId === currentUser.id;
+                const otherParty = isPoster ? tracking.helper : tracking.poster;
+                const subtitle = otherParty ? `Chat with ${otherParty.name}` : 'Task chat active';
+                document.getElementById('chatSubtitle').innerHTML = `${escapeHtml(subtitle)} <span class="status-indicator" id="statusIndicator"></span>`;
+
+                const callBtn = document.getElementById('callBtn');
+                const trackBtn = document.getElementById('trackBtn');
+
+                if (otherParty && otherParty.phone) {
+                    callBtn.classList.remove('hidden');
+                    callBtn.onclick = function () {
+                        window.location.href = 'tel:' + otherParty.phone;
+                    };
+                }
+
+                trackBtn.classList.remove('hidden');
+                trackBtn.onclick = function () {
+                    if (isPoster) {
+                        window.location.href = 'poster-live-tracking.html?task=' + taskId;
+                    } else {
+                        window.location.href = 'task-in-progress.html?taskId=' + taskId;
+                    }
+                };
+            } catch (e) {
+                console.warn('Could not load task context:', e.message);
+            }
+        }
+
+        function initializeSocket() {
+            socket = io(SOCKET_BASE_URL, {
                 auth: {
                     token: token,
-                    taskId: taskId,
-                    userId: currentUser.id,
-                    userName: currentUser.name
+                    taskId: String(taskId)
                 },
                 transports: ['websocket', 'polling'],
-                reconnection: true
+                reconnection: true,
+                reconnectionAttempts: 10
             });
 
-            // Connection events
             socket.on('connect', () => {
-                console.log('✅ Connected to chat');
-                document.getElementById('statusIndicator').classList.remove('offline');
-                
+                setConnectionStatus(true);
                 socket.emit('join_task', {
                     taskId: taskId,
                     token: token
@@ -397,54 +490,75 @@
             });
 
             socket.on('disconnect', () => {
-                console.log('❌ Disconnected');
-                document.getElementById('statusIndicator').classList.add('offline');
+                setConnectionStatus(false);
             });
 
-            // Chat events
+            socket.on('connect_error', (err) => {
+                console.warn('Socket connection error:', err.message);
+                setConnectionStatus(false);
+            });
+
             socket.on('new_message', (data) => {
-                displayMessage(data.userName, data.message, data.timestamp, data.userId === currentUser.id);
+                displayMessage(data.userName || 'User', data.message, data.timestamp, data.userId === currentUser.id, data.userId);
             });
 
             socket.on('user_joined', () => {
                 showSystemMessage('User joined the chat');
             });
-
-            // Load history
-            loadChatHistory();
         }
 
-        // Load chat history
-        function loadChatHistory() {
-            const token = localStorage.getItem('authToken') || '';
-            
-            fetch(API_URL + '/api/chat/' + taskId + '/messages', {
-                headers: { 'Authorization': 'Bearer ' + token }
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success && data.messages) {
-                    const container = document.getElementById('messagesContainer');
-                    const systemMsg = container.querySelector('.system-message');
-                    container.innerHTML = '';
-                    if (systemMsg) container.appendChild(systemMsg);
-                    
-                    data.messages.forEach(msg => {
-                        displayMessage(msg.user_name || 'User', msg.message, msg.timestamp, msg.user_id === currentUser.id);
-                    });
+        function setConnectionStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            if (!indicator) return;
+            indicator.classList.toggle('offline', !connected);
+        }
+
+        async function loadChatHistory() {
+            try {
+                const response = await fetch(API_BASE_URL + '/chat/' + taskId + '/messages', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await response.json();
+                if (!data.success || !Array.isArray(data.messages)) return;
+
+                const container = document.getElementById('messagesContainer');
+                container.innerHTML = '<div class="system-message">👋 Chat initialized - Messages are live</div>';
+                renderedMessageKeys.clear();
+
+                data.messages.forEach(msg => {
+                    displayMessage(
+                        msg.user_name || 'User',
+                        msg.message || '',
+                        msg.timestamp || new Date().toISOString(),
+                        msg.user_id === currentUser.id,
+                        msg.user_id
+                    );
+                });
+            } catch (err) {
+                console.error('Error loading chat:', err);
+            }
+        }
+
+        function startPollingFallback() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(() => {
+                if (!socket || !socket.connected) {
+                    loadChatHistory();
                 }
-            })
-            .catch(err => console.error('Error loading chat:', err));
+            }, 5000);
         }
 
-        // Display message
-        function displayMessage(name, text, timestamp, isSent) {
+        function displayMessage(name, text, timestamp, isSent, userId) {
+            const key = `${userId || name}|${timestamp}|${text}`;
+            if (renderedMessageKeys.has(key)) return;
+            renderedMessageKeys.add(key);
+
             const container = document.getElementById('messagesContainer');
             const msgDiv = document.createElement('div');
             msgDiv.className = 'message ' + (isSent ? 'sent' : 'received');
-            
+
             const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
+
             msgDiv.innerHTML = `
                 <div>
                     <div class="message-sender">${escapeHtml(name)}</div>
@@ -452,30 +566,59 @@
                     <div class="message-time">${time}</div>
                 </div>
             `;
-            
+
             container.appendChild(msgDiv);
             container.scrollTop = container.scrollHeight;
         }
 
-        // Send message
-        function sendMessage() {
+        async function sendMessage() {
             const input = document.getElementById('messageInput');
             const message = input.value.trim();
-            
+
             if (!message) return;
-            
+
+            input.value = '';
+
             if (socket && socket.connected) {
                 socket.emit('send_message', {
                     message: message,
                     taskId: taskId,
-                    token: localStorage.getItem('authToken') || '',
-                    userName: currentUser.name
+                    token: token,
+                    userName: currentUser.name || 'User'
                 });
-                input.value = '';
+                return;
+            }
+
+            await sendMessageViaRest(message);
+        }
+
+        async function sendMessageViaRest(message) {
+            try {
+                const response = await fetch(API_BASE_URL + '/chat/' + taskId + '/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+                const data = await response.json();
+                if (data.success && data.message) {
+                    displayMessage(
+                        data.message.userName || currentUser.name || 'User',
+                        data.message.message,
+                        data.message.timestamp || new Date().toISOString(),
+                        true,
+                        currentUser.id
+                    );
+                } else {
+                    showSystemMessage('Failed to send message');
+                }
+            } catch (err) {
+                showSystemMessage('Network error while sending message');
             }
         }
 
-        // Handle Enter key
         function handleEnter(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -483,7 +626,6 @@
             }
         }
 
-        // Show system message
         function showSystemMessage(text) {
             const container = document.getElementById('messagesContainer');
             const sysMsg = document.createElement('div');
@@ -493,23 +635,33 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // Go back
         function goBack() {
-            if (socket) socket.disconnect();
-            window.history.back();
+            cleanupChat();
+            if (window.history.length > 1) {
+                window.history.back();
+            } else {
+                window.location.href = 'index.html';
+            }
         }
 
-        // Utilities
+        function cleanupChat() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+
         function escapeHtml(text) {
             const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-            return text.replace(/[&<>"']/g, m => map[m]);
+            return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
-        // Initialize
         window.addEventListener('load', initializeChat);
-        window.addEventListener('beforeunload', () => {
-            if (socket) socket.disconnect();
-        });
+        window.addEventListener('beforeunload', cleanupChat);
     </script>
 </body>
 </html>

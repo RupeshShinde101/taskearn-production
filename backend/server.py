@@ -264,6 +264,20 @@ def require_auth(f):
 # Track active chat connections per task
 task_users = {}  # {task_id: {user_id: sid}}
 
+def can_access_task_chat(task_id, user_id):
+    """Check whether user belongs to the task (poster or accepted helper)."""
+    try:
+        task_id_int = int(task_id)
+    except Exception:
+        return False
+
+    with get_db() as (cursor, conn):
+        cursor.execute(f'''
+            SELECT id FROM tasks
+            WHERE id = {PH} AND (posted_by = {PH} OR accepted_by = {PH})
+        ''', (task_id_int, user_id, user_id))
+        return cursor.fetchone() is not None
+
 @socketio.event
 def connect(auth):
     """User connected to chat"""
@@ -280,6 +294,11 @@ def connect(auth):
             return False
         
         user_id = payload['user_id']
+
+        # Ensure user belongs to this task's chat
+        if not can_access_task_chat(task_id, user_id):
+            print(f"❌ Unauthorized socket chat access: user={user_id}, task={task_id}")
+            return False
         
         # Track user in task chat
         if task_id not in task_users:
@@ -310,6 +329,9 @@ def join_task(data):
         return
     
     user_id = payload['user_id']
+    if not can_access_task_chat(task_id, user_id):
+        return
+
     room = f'task_{task_id}'
     socketio.enter_room(request.sid, room)
     
@@ -333,6 +355,9 @@ def send_message(data):
         return
     
     user_id = payload['user_id']
+    if not can_access_task_chat(task_id, user_id):
+        return
+
     user_name = data.get('userName', 'User')
     
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -946,6 +971,33 @@ def accept_task(task_id):
                 UPDATE tasks SET status = 'accepted', accepted_by = {PH}, accepted_at = {PH}
                 WHERE id = {PH}
             ''', (request.user_id, accepted_at, task_id))
+
+            # Create notification for poster with direct tracking action
+            cursor.execute(f'SELECT name, phone FROM users WHERE id = {PH}', (request.user_id,))
+            helper_row = cursor.fetchone()
+            helper = dict_from_row(helper_row) if helper_row else {}
+            helper_name = helper.get('name') or 'A helper'
+
+            action_data = json.dumps({
+                'type': 'tracking',
+                'label': 'Track Helper',
+                'taskId': task_id,
+                'url': f'poster-live-tracking.html?task={task_id}'
+            })
+
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                task['posted_by'],
+                task_id,
+                'task_accepted',
+                'Task Accepted! 🎉',
+                f'{helper_name} accepted your task "{task.get("title", "Task")}". Open live tracking to see contact and location.',
+                'unread',
+                action_data,
+                accepted_at
+            ))
         
         return jsonify({
             'success': True,

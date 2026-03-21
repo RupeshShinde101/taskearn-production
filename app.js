@@ -799,6 +799,13 @@ async function syncNotificationsFromServer() {
                 } catch (e) {
                     console.warn('Could not parse notification action data:', e);
                 }
+
+                // Normalize backend/local key shapes.
+                n.taskId = n.taskId || n.task_id || n.action?.taskId || null;
+                n.createdAt = n.createdAt || n.created_at || new Date().toISOString();
+                if (typeof n.read !== 'boolean') {
+                    n.read = n.status === 'read';
+                }
                 return n;
             });
             
@@ -806,6 +813,7 @@ async function syncNotificationsFromServer() {
             localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(processedNotifications));
             notifications = processedNotifications;
             updateNotificationUI();
+            autoRedirectToAcceptedTaskTracking(processedNotifications);
             
             return processedNotifications;
         }
@@ -814,6 +822,31 @@ async function syncNotificationsFromServer() {
     }
     
     return loadNotifications(); // Fallback to local
+}
+
+function autoRedirectToAcceptedTaskTracking(notificationList) {
+    if (!currentUser || !Array.isArray(notificationList)) return;
+    if (window.location.pathname.endsWith('/poster-live-tracking.html') || window.location.pathname.endsWith('poster-live-tracking.html')) return;
+
+    const target = notificationList.find(n => {
+        const action = n.action || {};
+        const taskRef = n.taskId || n.task_id || action.taskId || n.id;
+        const alreadyRedirectedKey = `taskearn_tracking_redirect_${currentUser.id}_${taskRef}`;
+        const isUnread = n.status === 'unread' || n.read === false || n.read == null;
+        return action.type === 'tracking' && action.url && isUnread && !sessionStorage.getItem(alreadyRedirectedKey);
+    });
+
+    if (!target) return;
+
+    const action = target.action || {};
+    const taskRef = target.taskId || target.task_id || action.taskId || target.id;
+    const alreadyRedirectedKey = `taskearn_tracking_redirect_${currentUser.id}_${taskRef}`;
+    sessionStorage.setItem(alreadyRedirectedKey, '1');
+
+    showToast('📍 Task accepted. Opening live helper tracking...');
+    setTimeout(() => {
+        window.location.href = action.url;
+    }, 400);
 }
 
 function saveNotifications() {
@@ -863,10 +896,13 @@ function updateNotificationUI() {
         } else {
             list.innerHTML = notifications.slice(0, 20).map(n => {
                 // Check if notification has action buttons
-                const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task');
+                const actionType = n.action?.type;
+                const notifTaskId = n.taskId || n.task_id || (n.action && n.action.taskId) || null;
+                const hasActions = n.action && (actionType === 'payment' || actionType === 'task' || actionType === 'tracking');
+                const defaultLabel = actionType === 'payment' ? 'Pay Now' : (actionType === 'tracking' ? 'Track Helper' : 'View');
                 const actionButton = hasActions ? `
-                    <button class="notification-action-btn" onclick="handleNotificationAction(${n.id}, '${n.action.type}', ${n.taskId || 'null'})">
-                        ${n.action.label || (n.action.type === 'payment' ? 'Pay Now' : 'View')}
+                    <button class="notification-action-btn" onclick="handleNotificationAction(${n.id}, '${actionType}', ${notifTaskId || 'null'})">
+                        ${n.action.label || defaultLabel}
                     </button>
                 ` : '';
                 
@@ -954,6 +990,12 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
         // Handle payment action
         console.log(`💳 Processing payment for task ${taskId} from notification`);
         await processPaymentFromNotification(taskId, notification);
+    } else if (actionType === 'tracking') {
+        const trackingUrl = notification.action?.url || (taskId ? `poster-live-tracking.html?task=${taskId}` : null);
+        if (trackingUrl) {
+            window.location.href = trackingUrl;
+            return;
+        }
     } else if (actionType === 'task' && taskId) {
         // Handle task action - navigate to task
         console.log(`📋 Opening task ${taskId}`);
@@ -1161,6 +1203,12 @@ function notifyTaskPoster(task, acceptedBy) {
             title: 'Task Accepted! 🎉',
             message: `${acceptedBy.name} has accepted your task "${task.title}". Budget: ₹${task.price}`,
             taskId: task.id,
+            action: {
+                type: 'tracking',
+                label: 'Track Helper',
+                taskId: task.id,
+                url: `poster-live-tracking.html?task=${task.id}`
+            },
             read: false,
             createdAt: new Date().toISOString()
         });
@@ -1671,7 +1719,7 @@ function notifyTaskAccepted(task, helperName) {
     showLocalNotification(
         '🎉 Task Accepted!',
         `${helperName} has accepted your task: ${task.title}`,
-        { tag: 'task-accepted', url: `chat.html?task=${task.id}` }
+        { tag: 'task-accepted', url: `poster-live-tracking.html?task=${task.id}` }
     );
 }
 

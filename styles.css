@@ -3159,9 +3159,11 @@ section {
     transition: all 0.3s ease;
     pointer-events: none;
     min-width: 200px;
+    display: none;
 }
 
 .distance-info.show {
+    display: block;
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;

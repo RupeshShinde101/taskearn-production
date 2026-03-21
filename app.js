@@ -2255,13 +2255,20 @@ function highlightTaskCard(taskId) {
 
 function openTaskDetail(taskId) {
     const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
+    if (!task) {
+        console.error('❌ Task not found:', taskId);
+        return;
+    }
+
+    console.log('✅ Opening task detail for:', task.title);
 
     const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
     const timeLeft = getTimeLeft(task.expiresAt);
     
     // Check if current user is the task owner
     const isOwner = currentUser && task.postedBy && task.postedBy.id === currentUser.id;
+    
+    console.log('📋 Task details - isOwner:', isOwner, 'User:', currentUser?.id, 'Poster:', task.postedBy?.id);
 
     const content = `
         <div class="task-detail-header">
@@ -2318,10 +2325,10 @@ function openTaskDetail(taskId) {
                 <i class="fas fa-times"></i> Close
             </button>
             ${!isOwner ? `
-            <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'")}')" title="Get directions to task location">
+            <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
                 <i class="fas fa-map-marker-alt"></i> Navigate
             </button>
-            <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="contactTaskProvider(${task.id}, '${task.postedBy.name.replace(/'/g, "\\'")}')" title="Message the task provider">
+            <button class="btn btn-secondary" style="background: #0ea5e9; border: none;" onclick="contactTaskProvider(${task.id}, '${task.postedBy.name.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Message the task provider">
                 <i class="fas fa-comment-dots"></i> Contact Provider
             </button>
             <button class="btn btn-primary" onclick="acceptTask(${task.id})">
@@ -2331,7 +2338,9 @@ function openTaskDetail(taskId) {
         </div>
     `;
 
+    console.log('📝 Generated content:', content.length, 'characters');
     document.getElementById('taskDetailContent').innerHTML = content;
+    console.log('✅ Modal content updated with Navigate, Contact, and Accept buttons');
     openModal('taskDetailModal');
 
     // Mini map

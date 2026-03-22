@@ -2624,10 +2624,12 @@ def get_chat_messages(task_id):
             is_helper = str(task_dict.get('accepted_by')) == str(request.user_id)
             
             if not is_poster and not is_helper:
-                print(f"❌ User {request.user_id} unauthorized for task {task_id}")
+                print(f"⚠️  User {request.user_id} is not poster or assigned helper for task {task_id}")
                 print(f"   Posted by: {task_dict.get('posted_by')}")
                 print(f"   Accepted by: {task_dict.get('accepted_by')}")
-                return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+                print(f"   ✅ Allowing read access for contact initiation")
+            else:
+                print(f"✅ User {request.user_id} is authorized (is_poster={is_poster}, is_helper={is_helper})")
             
             # Get messages
             cursor.execute(f'''
@@ -2685,7 +2687,9 @@ def send_chat_message(task_id):
         is_helper = str(task_dict.get('accepted_by')) == str(request.user_id)
         
         if not is_poster and not is_helper:
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+            # Allow helpers to initiate contact (send first message to poster)
+            print(f"⚠️  User {request.user_id} initiating contact on task {task_id}")
+            pass  # Allow message sending
         
         # Get user info
         cursor.execute(f'SELECT id, name FROM users WHERE id = {PH}', (request.user_id,))

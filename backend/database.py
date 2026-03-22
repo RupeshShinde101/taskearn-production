@@ -829,29 +829,51 @@ def run_migrations():
     """Run database migrations to upgrade schema"""
     try:
         with get_db() as (cursor, conn):
-            # Migration: Add user_id column to chat_messages if it doesn't exist
+            # Migration: Add missing columns to chat_messages
             if config.USE_POSTGRES and POSTGRES_AVAILABLE:
-                # Check if column exists in PostgreSQL
+                # Check which columns exist in PostgreSQL
                 cursor.execute(f"""
                     SELECT column_name FROM information_schema.columns 
-                    WHERE table_name='chat_messages' AND column_name='user_id'
+                    WHERE table_name='chat_messages'
                 """)
-                if not cursor.fetchone():
+                existing_columns = set(row[0] for row in cursor.fetchall())
+                
+                # Add user_id if missing
+                if 'user_id' not in existing_columns:
                     print("[MIGRATION] Adding user_id column to chat_messages...")
                     cursor.execute("""
                         ALTER TABLE chat_messages ADD COLUMN user_id VARCHAR(50)
                     """)
-                    print("[MIGRATION] ✅ Successfully added user_id column")
+                    print("[MIGRATION] ✅ Added user_id column")
+                
+                # Add user_name if missing
+                if 'user_name' not in existing_columns:
+                    print("[MIGRATION] Adding user_name column to chat_messages...")
+                    cursor.execute("""
+                        ALTER TABLE chat_messages ADD COLUMN user_name VARCHAR(255)
+                    """)
+                    print("[MIGRATION] ✅ Added user_name column")
             else:
-                # Check if column exists in SQLite
+                # Check which columns exist in SQLite
                 cursor.execute("PRAGMA table_info(chat_messages)")
-                columns = [row[1] for row in cursor.fetchall()]
-                if 'user_id' not in columns:
+                columns_info = cursor.fetchall()
+                existing_columns = set(row[1] for row in columns_info)
+                
+                # Add user_id if missing
+                if 'user_id' not in existing_columns:
                     print("[MIGRATION] Adding user_id column to chat_messages...")
                     cursor.execute("""
                         ALTER TABLE chat_messages ADD COLUMN user_id TEXT
                     """)
-                    print("[MIGRATION] ✅ Successfully added user_id column")
+                    print("[MIGRATION] ✅ Added user_id column")
+                
+                # Add user_name if missing
+                if 'user_name' not in existing_columns:
+                    print("[MIGRATION] Adding user_name column to chat_messages...")
+                    cursor.execute("""
+                        ALTER TABLE chat_messages ADD COLUMN user_name TEXT
+                    """)
+                    print("[MIGRATION] ✅ Added user_name column")
     except Exception as e:
         print(f"[MIGRATION] Warning: {e}")
         # Migrations might fail if table doesn't exist yet, that's OK

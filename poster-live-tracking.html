@@ -64,7 +64,6 @@
                 </div>
                 <div class="btn-row">
                     <button class="btn success" id="callBtn"><i class="fas fa-phone"></i> Call</button>
-                    <button class="btn primary" id="chatBtn"><i class="fas fa-comment"></i> Chat</button>
                 </div>
             </div>
 
@@ -114,7 +113,6 @@
             const helperPhone = document.getElementById('helperPhone');
             const helperAvatar = document.getElementById('helperAvatar');
             const callBtn = document.getElementById('callBtn');
-            const chatBtn = document.getElementById('chatBtn');
 
             if (helper && helper.id) {
                 helperName.textContent = helper.name || 'Helper';
@@ -130,10 +128,6 @@
                 helperAvatar.textContent = '?';
                 callBtn.disabled = true;
             }
-
-            chatBtn.onclick = function () {
-                window.location.href = 'chat.html?taskId=' + taskId;
-            };
         }
 
         function updateSidebar(tracking) {

@@ -227,22 +227,7 @@ def init_postgres_db():
                 referred_rewarded BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP NOT NULL
             )
-        ''')
-        
-        # Chat messages table (group chat per task)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id SERIAL PRIMARY KEY,
-                task_id INTEGER NOT NULL,
-                user_id VARCHAR(50) NOT NULL,
-                user_name VARCHAR(255),
-                message TEXT NOT NULL,
-                timestamp TIMESTAMP NOT NULL,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        
+        ''')        
         # Task proofs table (photo proof)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS task_proofs (
@@ -621,20 +606,7 @@ def init_sqlite_db():
             )
         ''')
         
-        # Chat messages table (group chat per task)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                user_name TEXT,
-                message TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        
+
         # Task proofs table (photo proof)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS task_proofs (
@@ -821,72 +793,6 @@ def init_sqlite_db():
         print("[DB] ✅ SQLite database initialized successfully")
 
 
-# ========================================
-# DATABASE MIGRATIONS
-# ========================================
-
-def run_migrations():
-    """Run database migrations to upgrade schema"""
-    try:
-        with get_db() as (cursor, conn):
-            # Migration: Add missing columns to chat_messages
-            if config.USE_POSTGRES and POSTGRES_AVAILABLE:
-                print("[MIGRATION] Checking PostgreSQL chat_messages table...")
-                # Check which columns exist in PostgreSQL
-                cursor.execute(f"""
-                    SELECT column_name FROM information_schema.columns 
-                    WHERE table_name='chat_messages'
-                """)
-                existing_columns = set(row[0] for row in cursor.fetchall())
-                print(f"[MIGRATION] Existing columns: {existing_columns}")
-                
-                # Define required columns with types
-                required_columns = {
-                    'user_id': 'VARCHAR(50)',
-                    'user_name': 'VARCHAR(255)'
-                }
-                
-                for col_name, col_type in required_columns.items():
-                    if col_name not in existing_columns:
-                        print(f"[MIGRATION] Adding {col_name} column to chat_messages...")
-                        try:
-                            cursor.execute(f"""
-                                ALTER TABLE chat_messages ADD COLUMN {col_name} {col_type}
-                            """)
-                            print(f"[MIGRATION] ✅ Successfully added {col_name}")
-                        except Exception as col_error:
-                            print(f"[MIGRATION] ⚠️  Could not add {col_name}: {col_error}")
-            else:
-                # SQLite
-                print("[MIGRATION] Checking SQLite chat_messages table...")
-                cursor.execute("PRAGMA table_info(chat_messages)")
-                columns_info = cursor.fetchall()
-                existing_columns = set(row[1] for row in columns_info)
-                print(f"[MIGRATION] Existing columns: {existing_columns}")
-                
-                # Define required columns with types
-                required_columns = {
-                    'user_id': 'TEXT',
-                    'user_name': 'TEXT'
-                }
-                
-                for col_name, col_type in required_columns.items():
-                    if col_name not in existing_columns:
-                        print(f"[MIGRATION] Adding {col_name} column to chat_messages...")
-                        try:
-                            cursor.execute(f"""
-                                ALTER TABLE chat_messages ADD COLUMN {col_name} {col_type}
-                            """)
-                            print(f"[MIGRATION] ✅ Successfully added {col_name}")
-                        except Exception as col_error:
-                            print(f"[MIGRATION] ⚠️  Could not add {col_name}: {col_error}")
-    except Exception as e:
-        print(f"[MIGRATION] ⚠️  Migration warning: {e}")
-        import traceback
-        print(traceback.format_exc())
-        # Don't crash, just log the warning
-
-
 def init_db():
     """Initialize database based on configuration"""
     try:
@@ -896,10 +802,6 @@ def init_db():
         else:
             print("[DB] Initializing SQLite database...")
             init_sqlite_db()
-        
-        # Run migrations
-        print("[DB] Running migrations...")
-        run_migrations()
     except Exception as e:
         print(f"[DB] ⚠️  Database initialization warning: {e}")
         # Don't crash the app, just log the warning

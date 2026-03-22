@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Start the TaskEarn Flask backend on port 5000 with Socket.IO support"""
+"""Start the TaskEarn Flask backend on port 5000"""
 import sys
 import os
 import socket
@@ -7,7 +7,7 @@ import socket
 # Add backend to path
 sys.path.insert(0, os.path.dirname(__file__))
 
-from server import app, socketio
+from server import app
 from database import init_db
 
 def get_local_ip():
@@ -50,21 +50,19 @@ if __name__ == '__main__':
     print(f"   /api/tasks               - Task management")
     print(f"   /api/wallet              - Wallet operations")
     print(f"   /api/payments/verify     - Payment verification")
-    print(f"   /api/chat/<task_id>      - Chat messages")
+    print(f"   /api/phone-call          - Phone calling feature")
     
     print(f"\n⚙️  Environment:")
     print(f"   Debug Mode:  False")
-    print(f"   WebSocket:   Enabled with eventlet")
     print(f"   Port:        {port}")
     print(f"   Host:        0.0.0.0\n")
     
-    # Run Flask with Socket.IO using socketio.run()
+    # Run Flask app
     try:
         print("="*70)
         print("✨ Server is running and ready for requests...")
-        print("   WebSocket endpoint: ws://0.0.0.0:{port}/socket.io/")
         print("="*70 + "\n")
-        socketio.run(app, host='0.0.0.0', port=port, debug=False)
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
     except KeyboardInterrupt:
         print("\n\n⛔ Server stopped by user")
         sys.exit(0)

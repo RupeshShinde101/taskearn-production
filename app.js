@@ -1723,14 +1723,6 @@ function notifyTaskAccepted(task, helperName) {
     );
 }
 
-function notifyNewMessage(senderName, taskTitle) {
-    showLocalNotification(
-        '💬 New Message',
-        `${senderName}: New message about ${taskTitle}`,
-        { tag: 'new-message', url: 'chat.html' }
-    );
-}
-
 function notifyTaskCompleted(task) {
     showLocalNotification(
         '✅ Task Completed!',
@@ -2350,9 +2342,6 @@ function openTaskDetail(taskId) {
             <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
                 <i class="fas fa-map-marker-alt"></i> Navigate
             </button>
-            <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="contactTaskProvider(${task.id}, '${task.postedBy.name.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Message the task provider">
-                <i class="fas fa-comment-dots"></i> Contact
-            </button>
             <button class="btn btn-primary" style="flex: 1; padding: 12px; margin: 5px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="acceptTask(${task.id})">
                 <i class="fas fa-check"></i> Accept
             </button>
@@ -2522,22 +2511,6 @@ function acceptTask(taskId) {
             console.error('Error accepting task:', err);
             showToast('❌ Error: ' + err.message, 'error');
         });
-    }
-}
-
-function contactTaskProvider(taskId, providerName) {
-    if (!currentUser) {
-        showToast('Please login first to contact provider');
-        closeModal('taskDetailModal');
-        openModal('loginModal');
-        return;
-    }
-
-    const task = tasks.find(t => t.id === taskId);
-    if (task && task.postedBy) {
-        // Redirect to chat page with provider ID
-        const providerId = task.postedBy.id;
-        window.location.href = `chat.html?provider=${providerId}&task=${taskId}&taskTitle=${encodeURIComponent(task.title)}`;
     }
 }
 
@@ -5049,9 +5022,6 @@ function renderAvailableTasks() {
                     <span class="available-task-price">₹${totalEarnings}</span>
                 </div>
                 <div class="available-task-actions">
-                    <button class="btn btn-secondary" style="flex: 1; background: #0ea5e9; border: none; font-size: 13px;" onclick="contactTaskProvider(${t.id}, '${t.postedBy.name.replace(/'/g, "\\'")}')" title="Message provider for details">
-                        <i class="fas fa-comment-dots"></i> Contact
-                    </button>
                     <button class="btn btn-primary" style="flex: 1; font-size: 13px;" onclick="acceptTaskFromBrowse(${t.id})">
                         <i class="fas fa-check"></i> Accept
                     </button>

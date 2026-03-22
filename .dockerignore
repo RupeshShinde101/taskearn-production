@@ -24,7 +24,6 @@ taskearn.db
 # Frontend - EXPLICITLY EXCLUDE
 index.html
 wallet.html
-chat.html
 help.html
 privacy.html
 safety.html

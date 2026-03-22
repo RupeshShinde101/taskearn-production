@@ -672,33 +672,6 @@ const WalletAPI = {
 };
 
 // ========================================
-// CHAT API
-// ========================================
-
-const ChatAPI = {
-    // Get messages for a task
-    async getMessages(taskId) {
-        const result = await apiRequest(`/chat/${taskId}/messages`, { method: 'GET' });
-        return result.data;
-    },
-    
-    // Send message
-    async send(taskId, message, type = 'text') {
-        const result = await apiRequest(`/chat/${taskId}/send`, {
-            method: 'POST',
-            body: JSON.stringify({ message, type })
-        });
-        return result.data;
-    },
-    
-    // Get unread count
-    async getUnreadCount() {
-        const result = await apiRequest('/chat/unread', { method: 'GET' });
-        return result.data;
-    }
-};
-
-// ========================================
 // PROOF & DELIVERY API
 // ========================================
 

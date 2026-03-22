@@ -352,11 +352,34 @@ def login():
     token = generate_jwt_token(user['id'], email)
     user = get_user_by_id(user['id'])
     
+    # ✅ FIX: Load user's tasks on login
+    with get_db() as (cursor, conn):
+        # Posted tasks
+        cursor.execute(f'''
+            SELECT * FROM tasks WHERE posted_by = {PH} ORDER BY posted_at DESC
+        ''', (user['id'],))
+        posted_tasks = [dict_from_row(t) for t in cursor.fetchall()]
+        
+        # Accepted tasks
+        cursor.execute(f'''
+            SELECT * FROM tasks WHERE accepted_by = {PH} AND status = 'accepted' ORDER BY accepted_at DESC
+        ''', (user['id'],))
+        accepted_tasks = [dict_from_row(t) for t in cursor.fetchall()]
+        
+        # Completed tasks awaiting payment
+        cursor.execute(f'''
+            SELECT * FROM tasks WHERE accepted_by = {PH} AND status = 'completed' ORDER BY completed_at DESC
+        ''', (user['id'],))
+        completed_tasks = [dict_from_row(t) for t in cursor.fetchall()]
+    
     return jsonify({
         'success': True,
         'message': 'Login successful',
         'token': token,
-        'user': user_to_response(user)
+        'user': user_to_response(user),
+        'postedTasks': posted_tasks,
+        'acceptedTasks': accepted_tasks,
+        'completedTasks': completed_tasks
     })
 
 

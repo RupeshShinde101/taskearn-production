@@ -1454,8 +1454,8 @@ async function loadTasksFromServer() {
                             console.log('📋 User posted tasks:', userTasksResult.postedTasks.length);
                             myPostedTasks = userTasksResult.postedTasks.map(t => ({
                                 ...t,
-                                postedAt: new Date(t.postedAt),
-                                expiresAt: new Date(t.expiresAt)
+                                postedAt: new Date(t.posted_at),
+                                expiresAt: new Date(t.expires_at)
                             }));
                             console.log(`✅ Updated myPostedTasks: ${myPostedTasks.length} tasks`);
                         }
@@ -1465,9 +1465,9 @@ async function loadTasksFromServer() {
                             console.log('📋 User accepted tasks:', userTasksResult.acceptedTasks.length);
                             myAcceptedTasks = userTasksResult.acceptedTasks.map(t => ({
                                 ...t,
-                                postedAt: new Date(t.postedAt),
-                                expiresAt: new Date(t.expiresAt),
-                                acceptedAt: t.acceptedAt ? new Date(t.acceptedAt) : new Date()
+                                postedAt: new Date(t.posted_at),
+                                expiresAt: new Date(t.expires_at),
+                                acceptedAt: t.accepted_at ? new Date(t.accepted_at) : new Date()
                             }));
                             console.log(`✅ Updated myAcceptedTasks: ${myAcceptedTasks.length} tasks`);
                         }

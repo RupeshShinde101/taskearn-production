@@ -1200,6 +1200,78 @@ def complete_task(task_id):
         return jsonify({'success': False, 'message': f'Failed to complete task: {str(e)}'}), 500
 
 
+@app.route('/api/tasks/<int:task_id>/undo-accept', methods=['POST'])
+@require_auth
+def undo_accept_task(task_id):
+    """
+    Mark task as undone - revert task status from accepted back to active
+    Helper withdraws from task, making it available again
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"↩️  Undoing Task Acceptance {task_id}")
+        print(f"Helper: {request.user_id}")
+        print('='*60)
+        
+        with get_db() as (cursor, conn):
+            # Check if task exists and is accepted by current user
+            cursor.execute(f'''
+                SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
+            ''', (task_id, request.user_id, 'accepted'))
+            task = cursor.fetchone()
+            
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found or not accepted by you'}), 404
+            
+            task = dict_from_row(task)
+            
+            # Revert task status from accepted to active
+            cursor.execute(f'''
+                UPDATE tasks SET status = 'active', accepted_by = NULL, accepted_at = NULL
+                WHERE id = {PH}
+            ''', (task_id,))
+            
+            # Create notification for poster that helper withdrew
+            helper_name = None
+            cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (request.user_id,))
+            helper_row = cursor.fetchone()
+            if helper_row:
+                helper = dict_from_row(helper_row)
+                helper_name = helper.get('name', 'A helper')
+            
+            if helper_name:
+                action_data = json.dumps({
+                    'type': 'view',
+                    'taskId': task_id
+                })
+                
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (
+                    task['posted_by'],
+                    task_id,
+                    'task_undone',
+                    '⚠️ Helper Withdrew',
+                    f'{helper_name} withdrew from your task "{task.get("title", "Task")}". It is now available again.',
+                    'unread',
+                    action_data,
+                    datetime.datetime.now(datetime.timezone.utc).isoformat()
+                ))
+            
+            print(f"✅ Task reverted to active status")
+            return jsonify({
+                'success': True,
+                'message': 'Task marked as undone. It is now available for other helpers.'
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error undoing task acceptance: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Failed to undo task: {str(e)}'}), 500
+
+
 @app.route('/api/tasks/<int:task_id>/create-payment-order', methods=['POST'])
 @require_auth
 def create_payment_order(task_id):

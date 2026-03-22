@@ -279,6 +279,34 @@
             transform: translateY(0);
         }
 
+        .undo-section {
+            padding: 10px 20px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .btn-undo {
+            width: 100%;
+            padding: 12px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-undo:hover {
+            background: #d32f2f;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
+        }
+
         /* Timer/Progress */
         .progress-timer {
             font-size: 24px;
@@ -469,6 +497,14 @@
                     Mark Task Completed
                 </button>
             </div>
+
+            <!-- Undo Section -->
+            <div class="undo-section">
+                <button class="btn-undo" onclick="markTaskUndone()">
+                    <i class="fas fa-undo"></i>
+                    Mark Task Undone
+                </button>
+            </div>
         </div>
     </div>
 
@@ -579,9 +615,87 @@
                 if (data.success) {
                     stopLiveLocationSharing();
                     clearInterval(timerInterval);
+                    
+                    // Update localStorage: Remove from acceptedTasks and add to completedTasks
+                    try {
+                        let currentUser = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+                        
+                        // Initialize arrays if not present
+                        if (!currentUser.acceptedTasks) currentUser.acceptedTasks = [];
+                        if (!currentUser.completedTasks) currentUser.completedTasks = [];
+                        
+                        // Remove task from accepted
+                        currentUser.acceptedTasks = currentUser.acceptedTasks.filter(t => t.id !== currentTask.id);
+                        
+                        // Update task status and add to completed
+                        currentTask.status = 'paid';
+                        currentTask.completedAt = new Date().toISOString();
+                        currentUser.completedTasks.push(currentTask);
+                        
+                        // Update localStorage with modified user object
+                        localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
+                        
+                        console.log('✅ Task completed and localStorage updated');
+                    } catch (e) {
+                        console.error('Error updating localStorage:', e);
+                    }
+                    
                     document.getElementById('confirmModal').classList.add('active');
                 } else {
                     alert('⚠️ ' + (data.message || 'Failed to complete task'));
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                alert('❌ Error: ' + err.message);
+            });
+        }
+
+        // Mark task as undone (return to available)
+        function markTaskUndone() {
+            if (!confirm('Are you sure you want to mark this task as undone? It will be removed from your accepted tasks.')) {
+                return;
+            }
+
+            const token = localStorage.getItem('taskearn_token') || '';
+            
+            fetch(API_URL + '/tasks/' + currentTask.id + '/undo-accept', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    stopLiveLocationSharing();
+                    clearInterval(timerInterval);
+                    
+                    // Update localStorage: Remove from acceptedTasks
+                    try {
+                        let currentUser = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+                        
+                        // Initialize array if not present
+                        if (!currentUser.acceptedTasks) currentUser.acceptedTasks = [];
+                        
+                        // Remove task from accepted
+                        currentUser.acceptedTasks = currentUser.acceptedTasks.filter(t => t.id !== currentTask.id);
+                        
+                        // Update localStorage with modified user object
+                        localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
+                        
+                        console.log('✅ Task marked as undone');
+                    } catch (e) {
+                        console.error('Error updating localStorage:', e);
+                    }
+                    
+                    alert('✅ Task marked as undone. Returning to dashboard...');
+                    
+                    // Go back to dashboard
+                    window.location.href = 'index.html?tab=accepted-tasks';
+                } else {
+                    alert('⚠️ ' + (data.message || 'Failed to mark task as undone'));
                 }
             })
             .catch(err => {
@@ -599,13 +713,18 @@
             window.location.href = 'index.html?tab=accepted-tasks';
         }
 
-        // Go back
+        // Go back (keep task in accepted status if not completed)
         function goBack() {
-            if (confirm('Cancel task? This cannot be undone.')) {
-                stopLiveLocationSharing();
-                clearInterval(timerInterval);
-                window.history.back();
+            // Confirm before leaving
+            if (!confirm('Return to dashboard? Your task will stay in your accepted tasks and you can continue later.')) {
+                return;
             }
+            
+            stopLiveLocationSharing();
+            clearInterval(timerInterval);
+            
+            // Go back to accepted tasks tab
+            window.location.href = 'index.html?tab=accepted-tasks';
         }
 
         // Initialize on page load

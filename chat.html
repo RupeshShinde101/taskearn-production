@@ -563,16 +563,6 @@
                 console.error('❌ Error loading chat history:', error);
             }
         }
-                        msg.message || '',
-                        msg.timestamp || new Date().toISOString(),
-                        msg.user_id === currentUser.id,
-                        msg.user_id
-                    );
-                });
-            } catch (err) {
-                console.error('Error loading chat:', err);
-            }
-        }
 
         function startPollingFallback() {
             if (pollInterval) clearInterval(pollInterval);

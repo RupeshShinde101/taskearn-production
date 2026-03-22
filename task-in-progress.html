@@ -553,6 +553,8 @@
         let map = null;
         let taskMarker = null;
         let userMarker = null; // ✅ NEW: Helper's location marker
+        let providerMarker = null; // ✅ NEW: Provider/task poster location marker
+        let providerLocationPollingId = null; // ✅ NEW: Provider location polling interval
 
         // Load task details from localStorage or API
         function loadTaskDetails() {
@@ -749,12 +751,17 @@
                     console.log('🌍 Starting location sharing...');
                     startLiveLocationSharing();
                     showLocation();
+                    
+                    // ✅ NEW: Start polling provider location
+                    console.log('👤 Starting provider location polling...');
+                    startProviderLocationPolling();
                 }, 500);
             }, 100);
         });
 
         window.addEventListener('beforeunload', function() {
             stopLiveLocationSharing();
+            stopProviderLocationPolling();  // ✅ NEW: Stop provider polling on page close
         });
 
     </script>
@@ -946,6 +953,80 @@
             });
         }
 
+        // ✅ NEW: Fetch and display provider location on map
+        function fetchAndDisplayProviderLocation() {
+            const token = localStorage.getItem('taskearn_token') || '';
+            if (!token || !currentTask?.id) return;
+            
+            fetch(API_URL + '/tracking/' + currentTask.id + '/location', {
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.providerLocation && map) {
+                    const providerLoc = data.providerLocation;
+                    
+                    // Remove old provider marker if exists
+                    if (providerMarker) {
+                        map.removeLayer(providerMarker);
+                    }
+                    
+                    // Add provider marker (orange/yellow color)
+                    providerMarker = L.marker([providerLoc.lat, providerLoc.lng], {
+                        icon: L.icon({
+                            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
+                            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                            iconSize: [25, 41],
+                            iconAnchor: [12, 41],
+                            popupAnchor: [1, -34],
+                            shadowSize: [41, 41]
+                        })
+                    }).addTo(map);
+                    
+                    const providerName = currentTask.providerName || 'Task Provider';
+                    providerMarker.bindPopup(`<strong>${providerName}</strong><br/>Provider Location`);
+                    
+                    console.log(`📍 Provider location updated: ${providerLoc.lat.toFixed(4)}, ${providerLoc.lng.toFixed(4)}`);
+                }
+            })
+            .catch((err) => {
+                console.warn('Failed to fetch provider location:', err.message);
+            });
+        }
+
+        // ✅ NEW: Start polling provider location
+        function startProviderLocationPolling() {
+            if (providerLocationPollingId) return; // Already polling
+            
+            // Fetch immediately
+            fetchAndDisplayProviderLocation();
+            
+            // Then poll every 3 seconds
+            providerLocationPollingId = setInterval(() => {
+                fetchAndDisplayProviderLocation();
+            }, 3000);
+            
+            console.log('✅ Provider location polling started');
+        }
+
+        // ✅ NEW: Stop polling provider location
+        function stopProviderLocationPolling() {
+            if (providerLocationPollingId) {
+                clearInterval(providerLocationPollingId);
+                providerLocationPollingId = null;
+                console.log('✅ Provider location polling stopped');
+            }
+            
+            // Remove provider marker from map
+            if (map && providerMarker) {
+                map.removeLayer(providerMarker);
+                providerMarker = null;
+            }
+        }
+
         function stopLiveLocationSharing() {
             if (locationWatchId && navigator.geolocation) {
                 navigator.geolocation.clearWatch(locationWatchId);
@@ -958,6 +1039,9 @@
                 map.removeLayer(userMarker);
                 userMarker = null;
             }
+            
+            // ✅ NEW: Stop polling provider location
+            stopProviderLocationPolling();
 
             const token = localStorage.getItem('taskearn_token') || '';
             if (!token || !currentTask?.id) return;

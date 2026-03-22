@@ -1950,7 +1950,7 @@ def get_tracking_info(task_id):
 @app.route('/api/tracking/<int:task_id>/location', methods=['GET'])
 @require_auth
 def get_helper_location(task_id):
-    """Get latest helper location for a task"""
+    """Get latest helper location and provider location for a task"""
     with get_db() as (cursor, conn):
         # Verify authorization
         cursor.execute(f'''
@@ -1982,7 +1982,7 @@ def get_helper_location(task_id):
                 'message': 'Waiting for helper to accept'
             })
         
-        # Get latest location
+        # Get latest helper location
         cursor.execute(f'''
             SELECT latitude, longitude, accuracy, heading, speed, recorded_at
             FROM location_tracking
@@ -1999,6 +1999,27 @@ def get_helper_location(task_id):
             })
         
         loc = dict_from_row(loc)
+        
+        # ✅ NEW: Get latest provider/poster location
+        provider_location = None
+        cursor.execute(f'''
+            SELECT latitude, longitude, accuracy, heading, speed, recorded_at
+            FROM location_tracking
+            WHERE task_id = {PH} AND user_id = {PH} AND is_active = {PH}
+            ORDER BY recorded_at DESC LIMIT 1
+        ''', (task_id, task['posted_by'], True if config.USE_POSTGRES else 1))
+        provider_loc = cursor.fetchone()
+        
+        if provider_loc:
+            provider_loc = dict_from_row(provider_loc)
+            provider_location = {
+                'lat': float(provider_loc['latitude']),
+                'lng': float(provider_loc['longitude']),
+                'accuracy': float(provider_loc['accuracy']) if provider_loc['accuracy'] else None,
+                'heading': float(provider_loc['heading']) if provider_loc['heading'] else None,
+                'speed': float(provider_loc['speed']) if provider_loc['speed'] else None,
+                'timestamp': provider_loc['recorded_at']
+            }
         
         # Calculate ETA
         eta = "Calculating..."
@@ -2028,6 +2049,7 @@ def get_helper_location(task_id):
                 'speed': float(loc['speed']) if loc['speed'] else None,
                 'timestamp': loc['recorded_at']
             },
+            'providerLocation': provider_location,  # ✅ NEW: Include provider location
             'eta': eta,
             'distance': distance
         })

@@ -821,6 +821,42 @@ def init_sqlite_db():
         print("[DB] ✅ SQLite database initialized successfully")
 
 
+# ========================================
+# DATABASE MIGRATIONS
+# ========================================
+
+def run_migrations():
+    """Run database migrations to upgrade schema"""
+    try:
+        with get_db() as (cursor, conn):
+            # Migration: Add user_id column to chat_messages if it doesn't exist
+            if config.USE_POSTGRES and POSTGRES_AVAILABLE:
+                # Check if column exists in PostgreSQL
+                cursor.execute(f"""
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name='chat_messages' AND column_name='user_id'
+                """)
+                if not cursor.fetchone():
+                    print("[MIGRATION] Adding user_id column to chat_messages...")
+                    cursor.execute("""
+                        ALTER TABLE chat_messages ADD COLUMN user_id VARCHAR(50)
+                    """)
+                    print("[MIGRATION] ✅ Successfully added user_id column")
+            else:
+                # Check if column exists in SQLite
+                cursor.execute("PRAGMA table_info(chat_messages)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'user_id' not in columns:
+                    print("[MIGRATION] Adding user_id column to chat_messages...")
+                    cursor.execute("""
+                        ALTER TABLE chat_messages ADD COLUMN user_id TEXT
+                    """)
+                    print("[MIGRATION] ✅ Successfully added user_id column")
+    except Exception as e:
+        print(f"[MIGRATION] Warning: {e}")
+        # Migrations might fail if table doesn't exist yet, that's OK
+
+
 def init_db():
     """Initialize database based on configuration"""
     try:
@@ -830,6 +866,10 @@ def init_db():
         else:
             print("[DB] Initializing SQLite database...")
             init_sqlite_db()
+        
+        # Run migrations
+        print("[DB] Running migrations...")
+        run_migrations()
     except Exception as e:
         print(f"[DB] ⚠️  Database initialization warning: {e}")
         # Don't crash the app, just log the warning

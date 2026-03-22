@@ -831,52 +831,60 @@ def run_migrations():
         with get_db() as (cursor, conn):
             # Migration: Add missing columns to chat_messages
             if config.USE_POSTGRES and POSTGRES_AVAILABLE:
+                print("[MIGRATION] Checking PostgreSQL chat_messages table...")
                 # Check which columns exist in PostgreSQL
                 cursor.execute(f"""
                     SELECT column_name FROM information_schema.columns 
                     WHERE table_name='chat_messages'
                 """)
                 existing_columns = set(row[0] for row in cursor.fetchall())
+                print(f"[MIGRATION] Existing columns: {existing_columns}")
                 
-                # Add user_id if missing
-                if 'user_id' not in existing_columns:
-                    print("[MIGRATION] Adding user_id column to chat_messages...")
-                    cursor.execute("""
-                        ALTER TABLE chat_messages ADD COLUMN user_id VARCHAR(50)
-                    """)
-                    print("[MIGRATION] ✅ Added user_id column")
+                # Define required columns with types
+                required_columns = {
+                    'user_id': 'VARCHAR(50)',
+                    'user_name': 'VARCHAR(255)'
+                }
                 
-                # Add user_name if missing
-                if 'user_name' not in existing_columns:
-                    print("[MIGRATION] Adding user_name column to chat_messages...")
-                    cursor.execute("""
-                        ALTER TABLE chat_messages ADD COLUMN user_name VARCHAR(255)
-                    """)
-                    print("[MIGRATION] ✅ Added user_name column")
+                for col_name, col_type in required_columns.items():
+                    if col_name not in existing_columns:
+                        print(f"[MIGRATION] Adding {col_name} column to chat_messages...")
+                        try:
+                            cursor.execute(f"""
+                                ALTER TABLE chat_messages ADD COLUMN {col_name} {col_type}
+                            """)
+                            print(f"[MIGRATION] ✅ Successfully added {col_name}")
+                        except Exception as col_error:
+                            print(f"[MIGRATION] ⚠️  Could not add {col_name}: {col_error}")
             else:
-                # Check which columns exist in SQLite
+                # SQLite
+                print("[MIGRATION] Checking SQLite chat_messages table...")
                 cursor.execute("PRAGMA table_info(chat_messages)")
                 columns_info = cursor.fetchall()
                 existing_columns = set(row[1] for row in columns_info)
+                print(f"[MIGRATION] Existing columns: {existing_columns}")
                 
-                # Add user_id if missing
-                if 'user_id' not in existing_columns:
-                    print("[MIGRATION] Adding user_id column to chat_messages...")
-                    cursor.execute("""
-                        ALTER TABLE chat_messages ADD COLUMN user_id TEXT
-                    """)
-                    print("[MIGRATION] ✅ Added user_id column")
+                # Define required columns with types
+                required_columns = {
+                    'user_id': 'TEXT',
+                    'user_name': 'TEXT'
+                }
                 
-                # Add user_name if missing
-                if 'user_name' not in existing_columns:
-                    print("[MIGRATION] Adding user_name column to chat_messages...")
-                    cursor.execute("""
-                        ALTER TABLE chat_messages ADD COLUMN user_name TEXT
-                    """)
-                    print("[MIGRATION] ✅ Added user_name column")
+                for col_name, col_type in required_columns.items():
+                    if col_name not in existing_columns:
+                        print(f"[MIGRATION] Adding {col_name} column to chat_messages...")
+                        try:
+                            cursor.execute(f"""
+                                ALTER TABLE chat_messages ADD COLUMN {col_name} {col_type}
+                            """)
+                            print(f"[MIGRATION] ✅ Successfully added {col_name}")
+                        except Exception as col_error:
+                            print(f"[MIGRATION] ⚠️  Could not add {col_name}: {col_error}")
     except Exception as e:
-        print(f"[MIGRATION] Warning: {e}")
-        # Migrations might fail if table doesn't exist yet, that's OK
+        print(f"[MIGRATION] ⚠️  Migration warning: {e}")
+        import traceback
+        print(traceback.format_exc())
+        # Don't crash, just log the warning
 
 
 def init_db():

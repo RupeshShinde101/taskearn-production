@@ -833,7 +833,17 @@ function autoRedirectToAcceptedTaskTracking(notificationList) {
         const taskRef = n.taskId || n.task_id || action.taskId || n.id;
         const alreadyRedirectedKey = `taskearn_tracking_redirect_${currentUser.id}_${taskRef}`;
         const isUnread = n.status === 'unread' || n.read === false || n.read == null;
-        return action.type === 'tracking' && action.url && isUnread && !sessionStorage.getItem(alreadyRedirectedKey);
+        
+        // ✅ FIX: Only redirect if:
+        // 1. Task is still in myPostedTasks with status='accepted'
+        // 2. AND task is NOT in the active tasks list (which means it's accepted)
+        const taskInPosted = myPostedTasks.find(t => t.id === taskRef && t.status === 'accepted');
+        const taskNoLongerAccepted = tasks.find(t => t.id === taskRef && t.status === 'active');
+        
+        // Only redirect if task is accepted AND not back in the active list
+        const shouldRedirect = taskInPosted && !taskNoLongerAccepted;
+        
+        return action.type === 'tracking' && action.url && isUnread && !sessionStorage.getItem(alreadyRedirectedKey) && shouldRedirect;
     });
 
     if (!target) return;
@@ -852,6 +862,37 @@ function autoRedirectToAcceptedTaskTracking(notificationList) {
 function saveNotifications() {
     if (!currentUser) return;
     localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(notifications));
+}
+
+// ✅ NEW: Clean up stale tracking notifications for tasks that are no longer accepted
+function cleanupStaleTrackingNotifications() {
+    if (!currentUser) return;
+    
+    const notificationsBeforeCleanup = notifications.length;
+    
+    // Remove or mark as read tracking notifications for tasks that are no longer accepted
+    notifications = notifications.map(n => {
+        const action = n.action || {};
+        const taskRef = n.taskId || n.task_id || action.taskId || n.id;
+        
+        if (action.type === 'tracking') {
+            // Check if this task is still accepted
+            const taskInPosted = myPostedTasks.find(t => t.id === taskRef && t.status === 'accepted');
+            const taskNoLongerAccepted = tasks.find(t => t.id === taskRef && t.status === 'active');
+            
+            // If task is back in active list or not in posted tasks, mark as read
+            if (!taskInPosted || taskNoLongerAccepted) {
+                console.log(`🧹 Cleaning up stale tracking notification for task ${taskRef}`);
+                return { ...n, read: true, status: 'read' };
+            }
+        }
+        return n;
+    });
+    
+    if (notifications.length !== notificationsBeforeCleanup) {
+        console.log('🧹 Cleaned up stale tracking notifications');
+        saveNotifications();
+    }
 }
 
 function addNotification(notification) {
@@ -991,6 +1032,18 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
         console.log(`💳 Processing payment for task ${taskId} from notification`);
         await processPaymentFromNotification(taskId, notification);
     } else if (actionType === 'tracking') {
+        // ✅ FIX: Validate that task is still accepted before redirecting
+        const taskInPosted = myPostedTasks.find(t => t.id === taskId && t.status === 'accepted');
+        const taskNoLongerAccepted = tasks.find(t => t.id === taskId && t.status === 'active');
+        
+        // Only redirect if task is still accepted
+        if (!taskInPosted || taskNoLongerAccepted) {
+            console.warn(`⚠️ Cannot redirect to tracking: Task ${taskId} is no longer accepted`);
+            showToast('❌ This task is no longer being tracked. It may have been marked as undone.', 'error');
+            markAsRead(notificationId);
+            return;
+        }
+        
         const trackingUrl = notification.action?.url || (taskId ? `poster-live-tracking.html?task=${taskId}` : null);
         if (trackingUrl) {
             window.location.href = trackingUrl;
@@ -1266,10 +1319,53 @@ async function loadTasksFromServer() {
         console.log('🔑 API Token exists:', !!localStorage.getItem('taskearn_token'));
         console.log('🌐 API URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : window.TASKEARN_API_URL);
         
+        // ✅ CRITICAL FIX: Restore myAcceptedTasks from localStorage before loading server data
+        // This ensures accepted tasks persist when navigating between pages
+        if (currentUser && (!myAcceptedTasks || myAcceptedTasks.length === 0)) {
+            console.log('🔄 Restoring accepted tasks from session...');
+            try {
+                // Try both storage keys for compatibility
+                let savedUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || 'null');
+                if (!savedUser) {
+                    savedUser = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+                }
+                if (savedUser && savedUser.acceptedTasks) {
+                    myAcceptedTasks = deserializeTasks(savedUser.acceptedTasks);
+                    console.log(`✅ Restored ${myAcceptedTasks.length} accepted task(s) from storage`);
+                }
+            } catch (e) {
+                console.error('⚠️ Could not restore accepted tasks:', e);
+            }
+        }
+        
         if (typeof TasksAPI !== 'undefined' && TasksAPI.getAll) {
             console.log('🚀 Calling TasksAPI.getAll...');
             const result = await TasksAPI.getAll();
             console.log('📥 Raw server response:', JSON.stringify(result, null, 2));
+            
+            // ⚠️ TEMPORARY: Disable getUserTasks to prevent redirect loop issues
+            // Will be re-enabled after proper validation
+            let userTasksResult = null;
+            // Commenting out until we have better error handling:
+            /*
+            const hasAuthToken = !!localStorage.getItem('taskearn_token');
+            if (typeof TasksAPI.getUserTasks === 'function' && currentUser && hasAuthToken) {
+                console.log('🚀 Calling TasksAPI.getUserTasks for user:', currentUser.id);
+                try {
+                    userTasksResult = await TasksAPI.getUserTasks();
+                    console.log('📥 User tasks response received');
+                    if (userTasksResult && userTasksResult.success && userTasksResult.postedTasks) {
+                        console.log('📋 User posted tasks:', userTasksResult.postedTasks.length);
+                    } else if (!userTasksResult.success) {
+                        console.warn('⚠️ User tasks endpoint returned success=false:', userTasksResult.message);
+                        userTasksResult = null;
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Could not load user tasks:', e.message);
+                    userTasksResult = null;
+                }
+            }
+            */
             
             if (result.success && result.tasks) {
                 console.log('✅ Tasks received:', result.tasks.length);
@@ -1285,7 +1381,9 @@ async function loadTasksFromServer() {
                 tasks = serverTasks;
                 
                 // ✅ FIX: Sync myPostedTasks with server data to get latest status
+                // For now, we'll just sync with the server tasks (active tasks list)
                 if (currentUser && myPostedTasks.length > 0) {
+                    // Fallback: Sync with server tasks
                     console.log('🔄 Syncing posted tasks with server data...');
                     myPostedTasks = myPostedTasks.map(postedTask => {
                         const serverTask = serverTasks.find(t => t.id === postedTask.id);
@@ -1332,6 +1430,11 @@ async function loadTasksFromServer() {
                 console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
                 updateMapMarkers();
+                
+                // ✅ NEW: Clean up stale tracking notifications
+                cleanupStaleTrackingNotifications();
+                updateNotificationUI(); // Refresh notification UI after cleanup
+                
                 return true;
             } else if (result.offline) {
                 // Offline mode - use cached data
@@ -1634,6 +1737,52 @@ document.addEventListener('DOMContentLoaded', async function() {
                 console.warn('⚠️ Task refresh failed:', e.message);
             }
         }, 30000);
+        
+        // ✅ FIX: Handle page visibility changes to refresh tasks when returning from other pages
+        // This ensures accepted tasks are properly restored when navigating back to dashboard
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && currentUser) {
+                console.log('📱 Page became visible - refreshing tasks...');
+                
+                // Restore accepted tasks from localStorage
+                try {
+                    // Try both storage keys for compatibility
+                    let savedUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || 'null');
+                    if (!savedUser) {
+                        savedUser = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+                    }
+                    if (savedUser && savedUser.acceptedTasks && Array.isArray(savedUser.acceptedTasks)) {
+                        const restoredTasks = deserializeTasks(savedUser.acceptedTasks);
+                        if (restoredTasks.length > myAcceptedTasks.length) {
+                            console.log(`✅ Restored ${restoredTasks.length} accepted tasks (was ${myAcceptedTasks.length})`);
+                            myAcceptedTasks = restoredTasks;
+                            renderDashboard();
+                        }
+                    }
+                } catch (e) {
+                    console.error('⚠️ Could not restore accepted tasks on visibility change:', e);
+                }
+                
+                // ✅ NEW: Also restore posted tasks from localStorage
+                try {
+                    let savedUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || 'null');
+                    if (!savedUser) {
+                        savedUser = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+                    }
+                    if (savedUser && savedUser.postedTasks && Array.isArray(savedUser.postedTasks)) {
+                        const restoredPostedTasks = deserializeTasks(savedUser.postedTasks);
+                        if (restoredPostedTasks.length > 0 && (!myPostedTasks || restoredPostedTasks.length > myPostedTasks.length)) {
+                            console.log(`✅ Restored ${restoredPostedTasks.length} posted task(s) (was ${myPostedTasks ? myPostedTasks.length : 0})`);
+                            myPostedTasks = restoredPostedTasks;
+                            // Re-render dashboard to show updated posted tasks
+                            setTimeout(() => renderDashboard(), 100);
+                        }
+                    }
+                } catch (e) {
+                    console.error('⚠️ Could not restore posted tasks on visibility change:', e);
+                }
+            }
+        });
         
         console.log('✅ TaskEarn Ready!');
     } catch (error) {
@@ -4942,6 +5091,44 @@ function viewTaskForPayment(taskId, notificationId) {
 function renderDashboard() {
     updateAuthenticationStatus(); // Update auth status indicator
     
+    // ✅ CRITICAL FIX: Restore accepted tasks from localStorage if missing
+    // This ensures tasks persist when navigating between pages
+    if (currentUser && (!myAcceptedTasks || myAcceptedTasks.length === 0)) {
+        console.log('🔄 Restoring accepted tasks from localStorage...');
+        try {
+            // Try both storage keys for compatibility
+            let savedUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || 'null');
+            if (!savedUser) {
+                savedUser = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+            }
+            if (savedUser && savedUser.acceptedTasks && Array.isArray(savedUser.acceptedTasks)) {
+                myAcceptedTasks = deserializeTasks(savedUser.acceptedTasks);
+                console.log(`✅ Restored ${myAcceptedTasks.length} accepted task(s)`);
+            }
+        } catch (e) {
+            console.error('⚠️ Error restoring accepted tasks:', e);
+        }
+    }
+    
+    // ✅ FIX: Restore posted tasks from localStorage if missing
+    // This ensures poster's tasks remain visible regardless of status
+    if (currentUser && (!myPostedTasks || myPostedTasks.length === 0)) {
+        console.log('🔄 Restoring posted tasks from localStorage...');
+        try {
+            // Try both storage keys for compatibility
+            let savedUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || 'null');
+            if (!savedUser) {
+                savedUser = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+            }
+            if (savedUser && savedUser.postedTasks && Array.isArray(savedUser.postedTasks)) {
+                myPostedTasks = deserializeTasks(savedUser.postedTasks);
+                console.log(`✅ Restored ${myPostedTasks.length} posted task(s)`);
+            }
+        } catch (e) {
+            console.error('⚠️ Error restoring posted tasks:', e);
+        }
+    }
+    
     // Show wallet low warning if applicable
     if (currentUser && currentUser.walletLow) {
         const walletWarningEl = document.getElementById('walletLowWarning');
@@ -4955,6 +5142,9 @@ function renderDashboard() {
             walletWarningEl.style.display = 'block';
         }
     }
+    
+    // ✅ NEW: Clean up stale tracking notifications before rendering
+    cleanupStaleTrackingNotifications();
     
     renderNotifications(); // Render notifications first
     renderAvailableTasks();
@@ -5168,7 +5358,7 @@ function renderAcceptedTasks() {
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
                 <h4>${t.title}</h4>
-                <div class="task-meta"><span>₹${totalValue}</span><span>${t.location.address}</span></div>
+                <div class="task-meta"><span>₹${totalValue}</span><span>${t.location?.address || 'Location not specified'}</span></div>
                 ${actionHTML}
             </div>
         `;
@@ -5177,28 +5367,38 @@ function renderAcceptedTasks() {
 
 // Navigate to task in progress page
 function openTaskInProgress(taskId) {
-    const task = myAcceptedTasks.find(t => t.id === taskId);
-    if (!task) {
-        showToast('⚠️ Task not found', 'error');
+    if (!taskId) {
+        showToast('⚠️ Invalid task ID', 'error');
         return;
     }
     
-    // Save task details to localStorage
-    localStorage.setItem('currentTask', JSON.stringify({
+    const task = myAcceptedTasks.find(t => t.id === taskId);
+    if (!task) {
+        showToast('⚠️ Task not found in accepted tasks', 'error');
+        console.error('Task not found:', taskId, 'Available tasks:', myAcceptedTasks.map(t => t.id));
+        return;
+    }
+    
+    // Save complete task details to localStorage
+    const taskData = {
         id: task.id,
         title: task.title,
         description: task.description,
         category: task.category,
         price: task.price,
         service_charge: getServiceCharge(task.category),
-        location: task.location,
-        postedBy: task.postedBy,
-        providerPhone: task.postedBy?.phone || task.phone,
-        providerName: task.postedBy?.name || task.name,
-        status: task.status,
-        acceptedAt: task.acceptedAt,
+        location: task.location || {},
+        postedBy: task.postedBy || {},
+        providerPhone: task.postedBy?.phone || task.phone || '',
+        providerName: task.postedBy?.name || task.name || 'Provider',
+        status: task.status || 'accepted',
+        acceptedAt: task.acceptedAt || new Date().toISOString(),
+        acceptedBy: task.acceptedBy,
         startTime: Date.now()
-    }));
+    };
+    
+    console.log('📝 Saving task to localStorage:', taskData);
+    localStorage.setItem('currentTask', JSON.stringify(taskData));
     
     // Redirect to task in progress page
     window.location.href = 'task-in-progress.html?taskId=' + taskId + '&v=' + Date.now();

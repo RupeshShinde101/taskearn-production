@@ -692,8 +692,8 @@
                     
                     alert('✅ Task marked as undone. Returning to dashboard...');
                     
-                    // Go back to dashboard
-                    window.location.href = 'index.html?tab=accepted-tasks';
+                    // ✅ FIX: Redirect to main index.html (not the accepted tasks tab to avoid loops)
+                    window.location.href = 'index.html';
                 } else {
                     alert('⚠️ ' + (data.message || 'Failed to mark task as undone'));
                 }

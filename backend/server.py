@@ -1230,6 +1230,7 @@ def undo_accept_task(task_id):
                 UPDATE tasks SET status = 'active', accepted_by = NULL, accepted_at = NULL
                 WHERE id = {PH}
             ''', (task_id,))
+            conn.commit()  # ✅ CRITICAL: Commit the transaction
             
             # Create notification for poster that helper withdrew
             helper_name = None

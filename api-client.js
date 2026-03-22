@@ -562,6 +562,14 @@ const TasksAPI = {
         return result.data;
     },
     
+    // ✅ NEW: Get user's tasks (posted, accepted, completed)
+    async getUserTasks() {
+        const result = await apiRequest('/user/tasks', {
+            method: 'GET'
+        });
+        return result.data;
+    },
+    
     // Create task
     async create(taskData) {
         console.log('🚀 TasksAPI.create() called');

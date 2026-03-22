@@ -188,6 +188,15 @@
                 headers: { 'Authorization': 'Bearer ' + token }
             });
             const data = await response.json();
+            
+            // ✅ FIX: Check if task is still accepted (status must be 'accepted')
+            if (data.success && data.tracking && data.tracking.status !== 'accepted') {
+                console.warn('⚠️ Task status is no longer "accepted". It may have been marked as undone.');
+                alert('⚠️ This task is no longer being tracked. The helper may have marked it as undone.');
+                window.location.href = 'index.html';
+                return;
+            }
+            
             if (!data.success || !data.tracking) {
                 alert(data.message || 'Unable to load tracking data.');
                 window.location.href = 'index.html';

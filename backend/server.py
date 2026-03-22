@@ -2603,14 +2603,30 @@ def cancel_withdrawal(withdrawal_id):
 def get_chat_messages(task_id):
     """Get chat messages for a task"""
     try:
+        print(f"📨 Fetching chat for task {task_id}, user {request.user_id}")
         with get_db() as (cursor, conn):
             # Verify user is part of this task
             cursor.execute(f'''
-                SELECT * FROM tasks WHERE id = {PH} AND (posted_by = {PH} OR accepted_by = {PH})
-            ''', (task_id, request.user_id, request.user_id))
+                SELECT * FROM tasks WHERE id = {PH}
+            ''', (task_id,))
             task = cursor.fetchone()
             
             if not task:
+                print(f"❌ Task {task_id} not found")
+                return jsonify({'success': False, 'message': 'Task not found'}), 404
+            
+            task_dict = dict_from_row(task)
+            print(f"📋 Task {task_id}: posted_by={task_dict.get('posted_by')}, accepted_by={task_dict.get('accepted_by')}")
+            print(f"👤 Current user_id: {request.user_id} (type: {type(request.user_id).__name__})")
+            
+            # Check if user is poster or helper
+            is_poster = str(task_dict.get('posted_by')) == str(request.user_id)
+            is_helper = str(task_dict.get('accepted_by')) == str(request.user_id)
+            
+            if not is_poster and not is_helper:
+                print(f"❌ User {request.user_id} unauthorized for task {task_id}")
+                print(f"   Posted by: {task_dict.get('posted_by')}")
+                print(f"   Accepted by: {task_dict.get('accepted_by')}")
                 return jsonify({'success': False, 'message': 'Unauthorized'}), 403
             
             # Get messages
@@ -2656,11 +2672,19 @@ def send_chat_message(task_id):
     with get_db() as (cursor, conn):
         # Verify user is part of this task
         cursor.execute(f'''
-            SELECT * FROM tasks WHERE id = {PH} AND (posted_by = {PH} OR accepted_by = {PH})
-        ''', (task_id, request.user_id, request.user_id))
+            SELECT * FROM tasks WHERE id = {PH}
+        ''', (task_id,))
         task = cursor.fetchone()
         
         if not task:
+            return jsonify({'success': False, 'message': 'Task not found'}), 404
+        
+        task_dict = dict_from_row(task)
+        # Check if user is poster or helper (convert to strings to handle type mismatches)
+        is_poster = str(task_dict.get('posted_by')) == str(request.user_id)
+        is_helper = str(task_dict.get('accepted_by')) == str(request.user_id)
+        
+        if not is_poster and not is_helper:
             return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         # Get user info

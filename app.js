@@ -5444,6 +5444,8 @@ function openTaskInProgress(taskId) {
     }
     
     // Save complete task details to localStorage
+    // ✅ CRITICAL FIX: Ensure location object has proper lat/lng structure
+    const taskLocation = task.location || {};
     const taskData = {
         id: task.id,
         title: task.title,
@@ -5451,7 +5453,11 @@ function openTaskInProgress(taskId) {
         category: task.category,
         price: task.price,
         service_charge: getServiceCharge(task.category),
-        location: task.location || {},
+        location: {
+            lat: parseFloat(taskLocation.lat) || parseFloat(taskLocation.latitude) || 19.0760,
+            lng: parseFloat(taskLocation.lng) || parseFloat(taskLocation.longitude) || 72.8777,
+            address: taskLocation.address || ''
+        },
         postedBy: task.postedBy || {},
         providerPhone: task.postedBy?.phone || task.phone || '',
         providerName: task.postedBy?.name || task.name || 'Provider',

@@ -1089,15 +1089,48 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
             return;
         }
     } else if (actionType === 'task' && taskId) {
-        // Handle task action - navigate to task
-        console.log(`📋 Opening task ${taskId}`);
-        const section = currentUserRole === 'poster' ? 'myTasks' : 'browseTasks';
-        showSection(section);
-        setTimeout(() => {
-            const taskElement = document.querySelector(`[data-task-id="${taskId}"]`);
-            if (taskElement) taskElement.scrollIntoView({ behavior: 'smooth' });
-        }, 500);
-    }
+        // ✅ CRITICAL FIX: Handle task action - redirect to task-in-progress page
+        // This is for helper accepting a task - should go directly to task-in-progress
+        console.log(`📋 Helper starting task ${taskId} from notification`);
+        
+        // Get the task from accepted tasks
+        const task = myAcceptedTasks.find(t => t.id === taskId);
+        if (!task) {
+            showToast('❌ Task not found in your accepted tasks', 'error');
+            return;
+        }
+        
+        // Save task to localStorage for task-in-progress page
+        const taskLocation = task.location || {};
+        const taskData = {
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            category: task.category,
+            price: task.price,
+            service_charge: getServiceCharge(task.category),
+            location: {
+                lat: parseFloat(taskLocation.lat) || parseFloat(taskLocation.latitude) || 19.0760,
+                lng: parseFloat(taskLocation.lng) || parseFloat(taskLocation.longitude) || 72.8777,
+                address: taskLocation.address || ''
+            },
+            postedBy: task.postedBy || {},
+            providerPhone: task.postedBy?.phone || task.phone || '',
+            providerName: task.postedBy?.name || task.name || 'Provider',
+            status: task.status || 'accepted',
+            acceptedAt: task.acceptedAt || new Date().toISOString(),
+            acceptedBy: task.acceptedBy,
+            startTime: Date.now()
+        };
+        
+        console.log('📝 Saving task to localStorage:', taskData);
+        localStorage.setItem('currentTask', JSON.stringify(taskData));
+        
+        // Use URL from notification action if available, otherwise construct it
+        const taskUrl = notification.action?.url || `task-in-progress.html?task=${taskId}`;
+        console.log(`🚀 Redirecting to: ${taskUrl}`);
+        window.location.href = taskUrl;
+        return;
     
     // Mark notification as read
     markAsRead(notificationId);

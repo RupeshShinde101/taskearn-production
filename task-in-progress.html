@@ -697,8 +697,11 @@
                     
                     alert('✅ Task marked as undone. Returning to dashboard...');
                     
-                    // ✅ FIX: Redirect to main index.html (not the accepted tasks tab to avoid loops)
-                    window.location.href = 'index.html';
+                    // ✅ FIX: Redirect to main index.html immediately after alert
+                    // Use setTimeout to ensure redirect happens after alert is dismissed
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 500);
                 } else {
                     alert('⚠️ ' + (data.message || 'Failed to mark task as undone'));
                 }

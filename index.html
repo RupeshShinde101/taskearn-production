@@ -1442,6 +1442,49 @@
     
     <script src="app.js?v=20260322_chat_tracking_flow"></script>
     
+    <!-- ✅ CRITICAL: Global Function Wrappers -->
+    <!-- Ensure these functions are available even if there's a timing issue -->
+    <script>
+        // Provide fallback functions if they're not defined
+        if (typeof window.openModal === 'undefined') {
+            window.openModal = function(id) {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.classList.add('active');
+                    document.body.style.overflow = 'hidden';
+                }
+            };
+        }
+        
+        if (typeof window.closeModal === 'undefined') {
+            window.closeModal = function(id) {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.classList.remove('active');
+                    document.body.style.overflow = '';
+                }
+            };
+        }
+        
+        if (typeof window.toggleMobileMenu === 'undefined') {
+            window.toggleMobileMenu = function() {
+                const mobileMenu = document.getElementById('mobileMenu');
+                if (mobileMenu) {
+                    mobileMenu.classList.toggle('active');
+                }
+            };
+        }
+        
+        if (typeof window.switchModal === 'undefined') {
+            window.switchModal = function(from, to) {
+                window.closeModal(from);
+                setTimeout(() => window.openModal(to), 200);
+            };
+        }
+        
+        console.log('✅ Global function wrappers initialized');
+    </script>
+    
     <!-- CRITICAL: Mobile detection happens in HEAD section via inline script -->
     <!-- That script runs FIRST and pre-sets window.API_BASE_URL before any external scripts load -->
     

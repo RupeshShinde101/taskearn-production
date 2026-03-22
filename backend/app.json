@@ -5,7 +5,7 @@
     "python": "3.11"
   },
   "scripts": {
-    "start": "gunicorn server:app --bind 0.0.0.0:$PORT"
+    "start": "python run.py"
   },
   "env": {
     "FLASK_ENV": "production",

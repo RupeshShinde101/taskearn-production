@@ -952,7 +952,30 @@ function updateNotificationUI() {
     const mobileBadge = document.getElementById('mobileBadge');
     const list = document.getElementById('notificationList');
     
-    const unreadCount = notifications.filter(n => !n.read).length;
+    // ✅ NEW: Filter notifications by user role
+    // Helpers should only see task_accepted notifications with action.type='task'
+    // Posters should only see tracking and payment notifications
+    let displayNotifications = notifications;
+    if (currentUser) {
+        displayNotifications = notifications.filter(n => {
+            // For helpers: show only task_accepted with action.type='task'
+            if (n.notification_type === 'task_accepted' && n.action?.type === 'task') {
+                return true;
+            }
+            // For posters: show tracking and payment notifications
+            if (n.action?.type === 'tracking' || n.action?.type === 'payment') {
+                return true;
+            }
+            // Show general notifications
+            if (n.notification_type === 'task_completed' || n.notification_type === 'payment_received') {
+                return true;
+            }
+            // Filter out task_accepted from helpers' views
+            return n.notification_type !== 'task_accepted';
+        });
+    }
+    
+    const unreadCount = displayNotifications.filter(n => !n.read).length;
     
     // Update badges
     if (badge) {
@@ -974,7 +997,7 @@ function updateNotificationUI() {
                 </div>
             `;
         } else {
-            list.innerHTML = notifications.slice(0, 20).map(n => {
+            list.innerHTML = displayNotifications.slice(0, 20).map(n => {
                 // Check if notification has action buttons
                 const actionType = n.action?.type;
                 const notifTaskId = n.taskId || n.task_id || (n.action && n.action.taskId) || null;

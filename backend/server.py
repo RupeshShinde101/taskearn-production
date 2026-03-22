@@ -14,7 +14,7 @@ if sys.platform == 'win32':
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from socketio import Server, ASGIApp
+from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
@@ -35,18 +35,18 @@ from database import init_db, get_db, dict_from_row, get_placeholder
 config = get_config()
 app = Flask(__name__)
 
-# Socket.IO for real-time chat
-socketio = Server(
+# Socket.IO for real-time chat with eventlet for async WebSocket support
+socketio = SocketIO(
+    cors_allowed_origins=['*'],
     async_mode='eventlet',
-    cors_allowed_origins='*',
     ping_timeout=60,
     ping_interval=25,
     engineio_logger=False,
     logger=False
 )
 
-# Attach Socket.IO to Flask app
-socketio.attach(app)
+# Initialize Socket.IO with Flask app
+socketio.init_app(app)
 
 # CORS configuration - Allow all origins for development
 CORS(app, 

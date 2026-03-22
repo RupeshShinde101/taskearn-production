@@ -448,11 +448,15 @@
                     </div>
                 </div>
 
-                <!-- Navigation Button -->
+                <!-- Navigation & Call Buttons -->
                 <div class="navigation-section">
                     <button class="btn-navigate" onclick="openNavigation()" title="Navigate to task location">
                         <i class="fas fa-map-marker-alt"></i>
                         Navigate
+                    </button>
+                    <button class="btn-navigate" onclick="callProvider()" title="Call the provider" style="background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);">
+                        <i class="fas fa-phone"></i>
+                        Call
                     </button>
                 </div>
 
@@ -813,5 +817,26 @@
                 const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
                 window.open(mapsUrl, '_blank');
             }
+        }
+
+        // Call the provider
+        function callProvider() {
+            const providerPhone = currentTask.providerPhone || currentTask.postedBy?.phone;
+            
+            if (!providerPhone) {
+                alert('⚠️ Provider phone number not available');
+                return;
+            }
+
+            // Extract only digits from phone number
+            const phoneNumber = providerPhone.replace(/\D/g, '');
+            
+            if (!phoneNumber) {
+                alert('⚠️ Invalid phone number');
+                return;
+            }
+
+            // Initiate call
+            window.location.href = 'tel:+91' + phoneNumber;
         }
     </script>

@@ -732,10 +732,25 @@
 
         // Initialize on page load
         window.addEventListener('load', function() {
+            console.log('🚀 Page loaded - initializing task in progress...');
+            
+            // Order is critical:
+            // 1. Load task details from localStorage first
             loadTaskDetails();
-            showLocation();
-            initializeMap();
-            startLiveLocationSharing();
+            
+            // 2. Initialize map before starting location sharing
+            // This ensures map variable is ready when GPS updates come in
+            setTimeout(() => {
+                console.log('📍 Initializing map...');
+                initializeMap();
+                
+                // 3. Only start location sharing AFTER map is ready
+                setTimeout(() => {
+                    console.log('🌍 Starting location sharing...');
+                    startLiveLocationSharing();
+                    showLocation();
+                }, 500);
+            }, 100);
         });
 
         window.addEventListener('beforeunload', function() {

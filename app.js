@@ -809,6 +809,31 @@ async function syncNotificationsFromServer() {
                 return n;
             });
             
+            // ✅ CRITICAL FIX: When task acceptance notification arrives, sync posted tasks
+            // This ensures myPostedTasks has the accepted task with correct status
+            const hasTaskAcceptanceNotif = processedNotifications.some(n => 
+                n.notification_type === 'task_accepted' && n.action?.type === 'tracking'
+            );
+            if (hasTaskAcceptanceNotif && typeof TasksAPI !== 'undefined' && TasksAPI.getUserTasks) {
+                console.log('📡 Task acceptance detected - syncing user tasks...');
+                try {
+                    const userTasksResult = await TasksAPI.getUserTasks();
+                    if (userTasksResult && userTasksResult.success && userTasksResult.postedTasks) {
+                        myPostedTasks = userTasksResult.postedTasks.map(t => ({
+                            ...t,
+                            postedAt: new Date(t.postedAt),
+                            expiresAt: new Date(t.expiresAt)
+                        }));
+                        console.log(`✅ Synced myPostedTasks: ${myPostedTasks.length} tasks`);
+                        updateUserData(currentUser.id, {
+                            postedTasks: serializeTasks(myPostedTasks)
+                        });
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Could not sync user tasks on notification:', e.message);
+                }
+            }
+            
             // Save to localStorage
             localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(processedNotifications));
             notifications = processedNotifications;
@@ -1343,11 +1368,9 @@ async function loadTasksFromServer() {
             const result = await TasksAPI.getAll();
             console.log('📥 Raw server response:', JSON.stringify(result, null, 2));
             
-            // ⚠️ TEMPORARY: Disable getUserTasks to prevent redirect loop issues
-            // Will be re-enabled after proper validation
+            // ✅ CRITICAL FIX: Fetch user's tasks to sync myPostedTasks
+            // This ensures accepted tasks show up with correct status for redirect logic
             let userTasksResult = null;
-            // Commenting out until we have better error handling:
-            /*
             const hasAuthToken = !!localStorage.getItem('taskearn_token');
             if (typeof TasksAPI.getUserTasks === 'function' && currentUser && hasAuthToken) {
                 console.log('🚀 Calling TasksAPI.getUserTasks for user:', currentUser.id);
@@ -1356,6 +1379,18 @@ async function loadTasksFromServer() {
                     console.log('📥 User tasks response received');
                     if (userTasksResult && userTasksResult.success && userTasksResult.postedTasks) {
                         console.log('📋 User posted tasks:', userTasksResult.postedTasks.length);
+                        // ✅ CRITICAL: Update myPostedTasks with current status from server
+                        // This includes tasks with status='accepted' (task acceptance detection)
+                        myPostedTasks = userTasksResult.postedTasks.map(t => ({
+                            ...t,
+                            postedAt: new Date(t.postedAt),
+                            expiresAt: new Date(t.expiresAt)
+                        }));
+                        console.log(`✅ Updated myPostedTasks: ${myPostedTasks.length} tasks`);
+                        // Save to localStorage for persistence
+                        updateUserData(currentUser.id, {
+                            postedTasks: serializeTasks(myPostedTasks)
+                        });
                     } else if (!userTasksResult.success) {
                         console.warn('⚠️ User tasks endpoint returned success=false:', userTasksResult.message);
                         userTasksResult = null;
@@ -1365,7 +1400,6 @@ async function loadTasksFromServer() {
                     userTasksResult = null;
                 }
             }
-            */
             
             if (result.success && result.tasks) {
                 console.log('✅ Tasks received:', result.tasks.length);

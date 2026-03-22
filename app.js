@@ -5133,6 +5133,10 @@ function renderAcceptedTasks() {
         let statusHTML = 'In Progress';
         let statusColor = 'pending';
         
+        // Calculate total value (price + service charge)
+        const serviceCharge = getServiceCharge(t.category);
+        const totalValue = (t.price || 0) + serviceCharge;
+        
         if (t.status === 'completed' || t.status === 'pending_payment') {
             // Task completed, waiting for payment from poster
             statusHTML = '⏳ Awaiting Payment';
@@ -5141,7 +5145,7 @@ function renderAcceptedTasks() {
                 <p style="color: #fbbf24; margin-bottom: 8px;">
                     <i class="fas fa-clock"></i> Waiting for task poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${((t.price || 0) + (t.service_charge || 0)) * 0.88} (after 12% commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${totalValue * 0.88} (after 12% commission)</p>
             </div>`;
         } else if (t.status === 'paid') {
             // Payment received
@@ -5149,26 +5153,55 @@ function renderAcceptedTasks() {
             statusColor = 'success';
             actionHTML = `<div style="background: rgba(74, 222, 128, 0.1); border-radius: 8px; padding: 12px; margin-top: 10px;">
                 <p style="color: #4ade80; margin: 0;">
-                    <i class="fas fa-check-circle"></i> Payment received - ₹${t.price} added to your wallet
+                    <i class="fas fa-check-circle"></i> Payment received - ₹${totalValue} added to your wallet
                 </p>
             </div>`;
         } else {
-            // Still in progress
-            actionHTML = `<div class="task-actions"><button class="btn btn-success" onclick="completeTask(${t.id})">Mark Complete</button></div>`;
+            // Still in progress - redirect to task in progress page
+            actionHTML = `<div class="task-actions"><button class="btn btn-success" onclick="openTaskInProgress(${t.id})">Continue Task</button></div>`;
         }
         
         return `
-            <div class="my-task-card">
+            <div class="my-task-card" onclick="openTaskInProgress(${t.id})" style="cursor: pointer; transition: all 0.3s;">
                 <div class="my-task-card-header">
                     <span class="task-category">${formatCategory(t.category)}</span>
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
                 <h4>${t.title}</h4>
-                <div class="task-meta"><span>₹${t.price}</span><span>${t.location.address}</span></div>
+                <div class="task-meta"><span>₹${totalValue}</span><span>${t.location.address}</span></div>
                 ${actionHTML}
             </div>
         `;
     }).join('');
+}
+
+// Navigate to task in progress page
+function openTaskInProgress(taskId) {
+    const task = myAcceptedTasks.find(t => t.id === taskId);
+    if (!task) {
+        showToast('⚠️ Task not found', 'error');
+        return;
+    }
+    
+    // Save task details to localStorage
+    localStorage.setItem('currentTask', JSON.stringify({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        category: task.category,
+        price: task.price,
+        service_charge: getServiceCharge(task.category),
+        location: task.location,
+        postedBy: task.postedBy,
+        providerPhone: task.postedBy?.phone || task.phone,
+        providerName: task.postedBy?.name || task.name,
+        status: task.status,
+        acceptedAt: task.acceptedAt,
+        startTime: Date.now()
+    }));
+    
+    // Redirect to task in progress page
+    window.location.href = 'task-in-progress.html?taskId=' + taskId + '&v=' + Date.now();
 }
 
 function renderCompletedTasks() {

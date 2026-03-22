@@ -809,24 +809,38 @@ async function syncNotificationsFromServer() {
                 return n;
             });
             
-            // ✅ CRITICAL FIX: When task acceptance notification arrives, sync posted tasks
-            // This ensures myPostedTasks has the accepted task with correct status
+            // ✅ CRITICAL FIX: When task acceptance notification arrives, sync user tasks
+            // This ensures both myPostedTasks (poster) and myAcceptedTasks (helper) are up-to-date
             const hasTaskAcceptanceNotif = processedNotifications.some(n => 
-                n.notification_type === 'task_accepted' && n.action?.type === 'tracking'
+                n.notification_type === 'task_accepted'  // Works for BOTH poster and helper notifications
             );
             if (hasTaskAcceptanceNotif && typeof TasksAPI !== 'undefined' && TasksAPI.getUserTasks) {
-                console.log('📡 Task acceptance detected - syncing user tasks...');
+                console.log('📡 Task acceptance detected - syncing user tasks for helper and poster...');
                 try {
                     const userTasksResult = await TasksAPI.getUserTasks();
-                    if (userTasksResult && userTasksResult.success && userTasksResult.postedTasks) {
-                        myPostedTasks = userTasksResult.postedTasks.map(t => ({
-                            ...t,
-                            postedAt: new Date(t.postedAt),
-                            expiresAt: new Date(t.expiresAt)
-                        }));
-                        console.log(`✅ Synced myPostedTasks: ${myPostedTasks.length} tasks`);
+                    if (userTasksResult && userTasksResult.success) {
+                        // Update postedTasks for poster accounts
+                        if (userTasksResult.postedTasks) {
+                            myPostedTasks = userTasksResult.postedTasks.map(t => ({
+                                ...t,
+                                postedAt: new Date(t.postedAt),
+                                expiresAt: new Date(t.expiresAt)
+                            }));
+                            console.log(`✅ Synced myPostedTasks: ${myPostedTasks.length} tasks`);
+                        }
+                        // Update acceptedTasks for helper accounts
+                        if (userTasksResult.acceptedTasks) {
+                            myAcceptedTasks = userTasksResult.acceptedTasks.map(t => ({
+                                ...t,
+                                postedAt: new Date(t.postedAt),
+                                expiresAt: new Date(t.expiresAt),
+                                acceptedAt: t.acceptedAt ? new Date(t.acceptedAt) : new Date()
+                            }));
+                            console.log(`✅ Synced myAcceptedTasks: ${myAcceptedTasks.length} tasks`);
+                        }
                         updateUserData(currentUser.id, {
-                            postedTasks: serializeTasks(myPostedTasks)
+                            postedTasks: serializeTasks(myPostedTasks),
+                            acceptedTasks: serializeTasks(myAcceptedTasks)
                         });
                     }
                 } catch (e) {
@@ -1377,19 +1391,35 @@ async function loadTasksFromServer() {
                 try {
                     userTasksResult = await TasksAPI.getUserTasks();
                     console.log('📥 User tasks response received');
-                    if (userTasksResult && userTasksResult.success && userTasksResult.postedTasks) {
-                        console.log('📋 User posted tasks:', userTasksResult.postedTasks.length);
+                    if (userTasksResult && userTasksResult.success) {
                         // ✅ CRITICAL: Update myPostedTasks with current status from server
                         // This includes tasks with status='accepted' (task acceptance detection)
-                        myPostedTasks = userTasksResult.postedTasks.map(t => ({
-                            ...t,
-                            postedAt: new Date(t.postedAt),
-                            expiresAt: new Date(t.expiresAt)
-                        }));
-                        console.log(`✅ Updated myPostedTasks: ${myPostedTasks.length} tasks`);
+                        if (userTasksResult.postedTasks) {
+                            console.log('📋 User posted tasks:', userTasksResult.postedTasks.length);
+                            myPostedTasks = userTasksResult.postedTasks.map(t => ({
+                                ...t,
+                                postedAt: new Date(t.postedAt),
+                                expiresAt: new Date(t.expiresAt)
+                            }));
+                            console.log(`✅ Updated myPostedTasks: ${myPostedTasks.length} tasks`);
+                        }
+                        
+                        // ✅ CRITICAL FIX: Also sync acceptedTasks for helper account
+                        if (userTasksResult.acceptedTasks) {
+                            console.log('📋 User accepted tasks:', userTasksResult.acceptedTasks.length);
+                            myAcceptedTasks = userTasksResult.acceptedTasks.map(t => ({
+                                ...t,
+                                postedAt: new Date(t.postedAt),
+                                expiresAt: new Date(t.expiresAt),
+                                acceptedAt: t.acceptedAt ? new Date(t.acceptedAt) : new Date()
+                            }));
+                            console.log(`✅ Updated myAcceptedTasks: ${myAcceptedTasks.length} tasks`);
+                        }
+                        
                         // Save to localStorage for persistence
                         updateUserData(currentUser.id, {
-                            postedTasks: serializeTasks(myPostedTasks)
+                            postedTasks: serializeTasks(myPostedTasks),
+                            acceptedTasks: serializeTasks(myAcceptedTasks)
                         });
                     } else if (!userTasksResult.success) {
                         console.warn('⚠️ User tasks endpoint returned success=false:', userTasksResult.message);

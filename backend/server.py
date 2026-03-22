@@ -867,6 +867,38 @@ def accept_task(task_id):
                 action_data,
                 accepted_at
             ))
+            
+            # ✅ NEW: Create notification for helper when they accept a task
+            poster_name = None
+            cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (task['posted_by'],))
+            poster_row = cursor.fetchone()
+            if poster_row:
+                poster_data = dict_from_row(poster_row)
+                poster_name = poster_data.get('name', 'A user')
+            
+            helper_action_data = json.dumps({
+                'type': 'task',
+                'label': 'Start Working',
+                'taskId': task_id,
+                'url': f'task-in-progress.html?task={task_id}'
+            })
+            
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                request.user_id,
+                task_id,
+                'task_accepted',
+                '✅ Task Accepted!',
+                f'You successfully accepted the task "{task.get("title", "Task")}" from {poster_name}. Budget: ₹{task.get("price", 0)}',
+                'unread',
+                helper_action_data,
+                accepted_at
+            ))
+            
+            # Commit all changes
+            conn.commit()
         
         return jsonify({
             'success': True,
@@ -1282,6 +1314,28 @@ def undo_accept_task(task_id):
                     action_data,
                     datetime.datetime.now(datetime.timezone.utc).isoformat()
                 ))
+            
+            # ✅ NEW: Create notification for helper confirming withdrawal
+            helper_action_data = json.dumps({
+                'type': 'view',
+                'taskId': task_id
+            })
+            
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                request.user_id,
+                task_id,
+                'task_undone',
+                '✅ Task Unmarked',
+                f'You have withdrawn from the task "{task.get("title", "Task")}". It is now available for other helpers.',
+                'unread',
+                helper_action_data,
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
+            ))
+                # ✅ CRITICAL: Commit the notification insertion
+                conn.commit()
             
             print(f"✅ Task reverted to active status")
             return jsonify({

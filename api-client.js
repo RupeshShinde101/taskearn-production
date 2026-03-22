@@ -76,9 +76,9 @@ async function checkRailwayHealth() {
     const railwayURL = 'https://taskearn-production-production.up.railway.app/api';
     
     try {
-        // Quick health check for Railway (non-blocking, 5 second timeout)
+        // Quick health check for Railway (non-blocking, 10 second timeout)
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         
         const response = await fetch(railwayURL + '/health', {
             method: 'GET',
@@ -221,14 +221,20 @@ async function apiRequest(endpoint, options = {}) {
         console.log('📦 Headers:', headers);
         if (options.body) console.log('📄 Body:', options.body);
         
+        // Add timeout to prevent requests from hanging indefinitely
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for API requests
+        
         const fetchOptions = {
             ...options,
             headers,
             mode: 'cors',
-            credentials: 'omit'
+            credentials: 'omit',
+            signal: controller.signal  // ✅ Add abort signal for timeout
         };
         
         const response = await fetch(url, fetchOptions);
+        clearTimeout(timeoutId);
         
         console.log('📥 Response status:', response.status, response.statusText);
         console.log('📥 Response type:', response.type);
@@ -264,6 +270,12 @@ async function apiRequest(endpoint, options = {}) {
         console.error('❌ Error type:', error.name);
         console.error('❌ Error message:', error.message);
         console.error('❌ URL was:', url);
+        
+        // Handle timeout errors specifically
+        if (error.name === 'AbortError') {
+            console.error('⏱️ Request timeout after 30 seconds');
+            return { success: false, status: 408, data: { message: 'Request timeout: Server took too long to respond' } };
+        }
         
         // Handle network errors
         const isNetworkError = error.message.includes('Failed to fetch') || 

@@ -4803,7 +4803,12 @@ async function handleLogin(event) {
                 
                 return;
             } else {
-                showToast('❌ ' + (result.message || 'Login failed'));
+                // Show specific error message for timeouts
+                if (result.status === 408) {
+                    showToast('⏱️ ' + (result.data?.message || 'Server is taking too long to respond. Please try again.'));
+                } else {
+                    showToast('❌ ' + (result.message || result.data?.message || 'Login failed'));
+                }
                 return;
             }
         } else {
@@ -4812,7 +4817,15 @@ async function handleLogin(event) {
         }
     } catch (error) {
         console.error('Login error:', error);
-        showToast('❌ Login failed.');
+        
+        // Better error messaging
+        if (error.name === 'AbortError') {
+            showToast('⏱️ Request timeout: Server is not responding. Please try again.');
+        } else if (error.message.includes('Failed to fetch')) {
+            showToast('🌐 Network error. Check your internet connection.');
+        } else {
+            showToast('❌ Login failed. Please try again.');
+        }
     } finally {
         if (loginBtn) {
             loginBtn.disabled = false;

@@ -2631,16 +2631,37 @@ def get_chat_messages(task_id):
             else:
                 print(f"✅ User {request.user_id} is authorized (is_poster={is_poster}, is_helper={is_helper})")
             
-            # Get messages
-            cursor.execute(f'''
-                SELECT id, task_id, user_id, user_name, message, timestamp
-                FROM chat_messages
-                WHERE task_id = {PH}
-                ORDER BY timestamp ASC
-            ''', (task_id,))
+            # Get messages - try full schema first, fallback to minimal
+            try:
+                cursor.execute(f'''
+                    SELECT id, task_id, user_id, user_name, message, timestamp
+                    FROM chat_messages
+                    WHERE task_id = {PH}
+                    ORDER BY timestamp ASC
+                ''', (task_id,))
+            except Exception as query_error:
+                print(f"⚠️  Full query failed, trying minimal query: {query_error}")
+                # Fallback: query only columns that exist
+                try:
+                    cursor.execute(f'''
+                        SELECT id, task_id, message, timestamp
+                        FROM chat_messages
+                        WHERE task_id = {PH}
+                        ORDER BY timestamp ASC
+                    ''', (task_id,))
+                except Exception as fallback_error:
+                    print(f"❌ Both queries failed: {fallback_error}")
+                    raise
+            
             messages = []
             for row in cursor.fetchall():
                 msg = dict_from_row(row)
+                # Add missing fields with defaults if not in database
+                if not msg.get('user_id'):
+                    msg['user_id'] = 'unknown'
+                if not msg.get('user_name'):
+                    msg['user_name'] = 'User'
+                
                 # Convert timestamp to ISO format string for JSON serialization
                 if msg and 'timestamp' in msg:
                     ts = msg['timestamp']

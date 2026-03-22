@@ -444,14 +444,25 @@ const AuthAPI = {
             console.log('🎯 Setting auth token...');
             setAuthToken(result.data.token);
             saveUserToStorage(result.data.user);
+            // ✅ FIXED: Return full response with status and data preserved
+            return {
+                success: true,
+                status: result.status,
+                ...result.data  // Spread backend response (user, postedTasks, etc)
+            };
         } else if (result.success && result.data) {
             console.log('⚠️ Success but no token:', result.data);
         } else if (!result.success) {
             console.log('❌ Login failed:', result.data?.message || result.data);
         }
         
-        // Return the actual response data from backend
-        return result.data || { success: false, message: 'No response data' };
+        // ✅ FIXED: Return structured response with status for error handling
+        return {
+            success: result.success || false,
+            status: result.status,
+            message: result.data?.message || 'Login failed',
+            data: result.data
+        };
     },
     
     // Get current user

@@ -1334,8 +1334,8 @@ def undo_accept_task(task_id):
                 helper_action_data,
                 datetime.datetime.now(datetime.timezone.utc).isoformat()
             ))
-                # ✅ CRITICAL: Commit the notification insertion
-                conn.commit()
+            # ✅ CRITICAL: Commit the notification insertion
+            conn.commit()
             
             print(f"✅ Task reverted to active status")
             return jsonify({

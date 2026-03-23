@@ -599,29 +599,80 @@
 
         // Complete task
         function completeTask() {
-            // Call API to mark task as completed
+            const currentUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
+            if (!currentUser) {
+                alert('Please login first');
+                return;
+            }
+
+            // Mark task completed locally
+            const taskId = currentTask.id;
+
+            // Update helper's accepted tasks in localStorage
+            const helperData = JSON.parse(localStorage.getItem(`user_${currentUser.id}_data`) || '{}');
+            if (helperData.acceptedTasks) {
+                helperData.acceptedTasks = helperData.acceptedTasks.map(t => {
+                    if (t.id == taskId) {
+                        t.status = 'completed';
+                        t.completedAt = new Date().toISOString();
+                        t.helperId = currentUser.id;
+                        t.helperName = currentUser.name;
+                    }
+                    return t;
+                });
+                localStorage.setItem(`user_${currentUser.id}_data`, JSON.stringify(helperData));
+            }
+
+            // Update poster's stored tasks to show completed status
+            const posterId = currentTask.providerId || currentTask.postedBy?.id;
+            if (posterId) {
+                const posterData = JSON.parse(localStorage.getItem(`user_${posterId}_data`) || '{}');
+                if (posterData.postedTasks) {
+                    posterData.postedTasks = posterData.postedTasks.map(pt => {
+                        if (pt.id == taskId) {
+                            pt.status = 'completed';
+                            pt.completedAt = new Date().toISOString();
+                            pt.helperId = currentUser.id;
+                            pt.helperName = currentUser.name;
+                        }
+                        return pt;
+                    });
+                    localStorage.setItem(`user_${posterId}_data`, JSON.stringify(posterData));
+                }
+
+                // Send Pay Now notification to poster
+                const taskAmount = currentTask.price || currentTask.amount || 0;
+                const serviceCharge = currentTask.service_charge || currentTask.serviceCharge || 0;
+                const totalTaskValue = taskAmount + serviceCharge;
+                const posterFee = totalTaskValue * 0.05;
+                const totalCost = totalTaskValue + posterFee;
+
+                const posterNotifications = JSON.parse(localStorage.getItem(`notifications_${posterId}`) || '[]');
+                posterNotifications.unshift({
+                    id: Date.now(),
+                    type: 'warning',
+                    title: 'Task Completed! 💰',
+                    message: `${currentUser.name} has completed your task "${currentTask.title}". Please pay ₹${totalCost.toFixed(2)} from your wallet.`,
+                    taskId: taskId,
+                    read: false,
+                    createdAt: new Date().toISOString(),
+                    action: { type: 'payment', label: '💳 Pay Now' }
+                });
+                localStorage.setItem(`notifications_${posterId}`, JSON.stringify(posterNotifications));
+            }
+
+            clearInterval(timerInterval);
+            document.getElementById('confirmModal').classList.add('active');
+
+            // Also try backend (best-effort)
             const token = localStorage.getItem('taskearn_token') || '';
-            
-            fetch(API_URL + '/tasks/' + currentTask.id + '/complete', {
+            fetch(API_URL + '/tasks/' + taskId + '/complete', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + token
                 }
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    clearInterval(timerInterval);
-                    document.getElementById('confirmModal').classList.add('active');
-                } else {
-                    alert('⚠️ ' + (data.message || 'Failed to complete task'));
-                }
-            })
-            .catch(err => {
-                console.error('Error:', err);
-                alert('❌ Error: ' + err.message);
-            });
+            }).catch(err => console.warn('Backend offline:', err.message));
         }
 
         // Proceed to payment

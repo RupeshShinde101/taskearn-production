@@ -717,8 +717,15 @@ function serializeTask(task) {
         postedBy: task.postedBy ? {
             id: task.postedBy.id,
             name: task.postedBy.name,
+            phone: task.postedBy.phone || null,
             rating: task.postedBy.rating,
             tasksPosted: task.postedBy.tasksPosted
+        } : null,
+        acceptedBy: task.acceptedBy ? {
+            id: task.acceptedBy.id,
+            name: task.acceptedBy.name,
+            phone: task.acceptedBy.phone || null,
+            rating: task.acceptedBy.rating
         } : null,
         postedAt: task.postedAt instanceof Date ? task.postedAt.toISOString() : task.postedAt,
         expiresAt: task.expiresAt instanceof Date ? task.expiresAt.toISOString() : task.expiresAt,
@@ -867,12 +874,26 @@ function updateNotificationUI() {
         } else {
             list.innerHTML = notifications.slice(0, 20).map(n => {
                 // Check if notification has action buttons
-                const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task');
-                const actionButton = hasActions ? `
-                    <button class="notification-action-btn" onclick="handleNotificationAction(${n.id}, '${n.action.type}', ${n.taskId || 'null'})">
-                        ${n.action.label || (n.action.type === 'payment' ? 'Pay Now' : 'View')}
-                    </button>
-                ` : '';
+                const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task' || n.action.type === 'track');
+                let actionButton = '';
+                if (hasActions) {
+                    if (n.action.type === 'track') {
+                        actionButton = `
+                            <div style="display: flex; gap: 6px; margin-top: 6px;">
+                                <button class="notification-action-btn" onclick="handleNotificationAction(${n.id}, 'track', ${n.taskId || 'null'})" style="flex: 1;">
+                                    📍 Track Helper
+                                </button>
+                                ${n.helperPhone ? `<a href="tel:${n.helperPhone}" class="notification-action-btn" style="flex: 1; text-align: center; text-decoration: none;">📞 Call</a>` : ''}
+                            </div>
+                        `;
+                    } else {
+                        actionButton = `
+                            <button class="notification-action-btn" onclick="handleNotificationAction(${n.id}, '${n.action.type}', ${n.taskId || 'null'})">
+                                ${n.action.label || (n.action.type === 'payment' ? 'Pay Now' : 'View')}
+                            </button>
+                        `;
+                    }
+                }
                 
                 return `
                     <div class="notification-item ${n.read ? '' : 'unread'}" onclick="markAsRead(${n.id})">
@@ -958,6 +979,9 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
         // Handle payment action
         console.log(`💳 Processing payment for task ${taskId} from notification`);
         await processPaymentFromNotification(taskId, notification);
+    } else if (actionType === 'track' && taskId) {
+        // Handle track helper action
+        window.location.href = 'task-in-progress.html?taskId=' + taskId;
     } else if (actionType === 'task' && taskId) {
         // Handle task action - navigate to task
         console.log(`📋 Opening task ${taskId}`);
@@ -1166,7 +1190,10 @@ function notifyTaskPoster(task, acceptedBy) {
             message: `${acceptedBy.name} has accepted your task "${task.title}". Budget: ₹${task.price}`,
             taskId: task.id,
             read: false,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            action: { type: 'track', label: '📍 Track Helper' },
+            helperName: acceptedBy.name,
+            helperPhone: acceptedBy.phone || null
         });
         localStorage.setItem(`notifications_${posterUser.id}`, JSON.stringify(posterNotifications));
         
@@ -2434,6 +2461,28 @@ function acceptTask(taskId) {
                 updateUserData(currentUser.id, {
                     acceptedTasks: serializeTasks(myAcceptedTasks)
                 });
+
+                // Update poster's stored tasks so they see accepted status + helper info
+                if (task.postedBy && task.postedBy.id) {
+                    const posterData = JSON.parse(localStorage.getItem(`user_${task.postedBy.id}_data`) || '{}');
+                    if (posterData.postedTasks) {
+                        const posterTasks = posterData.postedTasks.map(pt => {
+                            if (pt.id === taskId) {
+                                pt.status = 'accepted';
+                                pt.acceptedBy = {
+                                    id: currentUser.id,
+                                    name: currentUser.name,
+                                    phone: currentUser.phone || null,
+                                    rating: currentUser.rating
+                                };
+                                pt.acceptedAt = new Date().toISOString();
+                            }
+                            return pt;
+                        });
+                        posterData.postedTasks = posterTasks;
+                        localStorage.setItem(`user_${task.postedBy.id}_data`, JSON.stringify(posterData));
+                    }
+                }
 
                 // Save current task to localStorage for Task In Progress page
                 const taskLocation = task.location || {};
@@ -5030,6 +5079,22 @@ function renderPostedTasks() {
         let actionButtons = '';
         if (t.status === 'active') {
             actionButtons = `<div class="task-actions"><button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button><button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button></div>`;
+        } else if (t.status === 'accepted') {
+            const helperName = t.acceptedBy?.name || 'Helper';
+            const helperPhone = t.acceptedBy?.phone;
+            actionButtons = `
+                <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid #3b82f6; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                    <p style="color: #3b82f6; margin-bottom: 10px; font-size: 14px; font-weight: 600;">
+                        <i class="fas fa-user-check"></i> ${escapeHtml(helperName)} accepted your task
+                    </p>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary" style="flex: 1; font-size: 13px; padding: 8px;" onclick="window.location.href='task-in-progress.html?taskId=${t.id}'">
+                            <i class="fas fa-map-marker-alt"></i> Track Helper
+                        </button>
+                        ${helperPhone ? `<a href="tel:${helperPhone}" class="btn btn-success" style="flex: 1; font-size: 13px; padding: 8px; text-decoration: none; text-align: center;"><i class="fas fa-phone"></i> Call Helper</a>` : ''}
+                    </div>
+                </div>
+            `;
         } else if (t.status === 'completed' || t.status === 'pending_payment') {
             // 10% commission from both users
             const commission = taskAmount * 0.10;
@@ -5069,9 +5134,11 @@ function renderPostedTasks() {
         }
         
         const statusColor = (t.status === 'completed' || t.status === 'pending_payment') ? 'style="background: #fbbf24; color: #000;"' : 
-                           t.status === 'paid' ? 'style="background: #4ade80; color: #000;"' : '';
+                           t.status === 'paid' ? 'style="background: #4ade80; color: #000;"' :
+                           t.status === 'accepted' ? 'style="background: #3b82f6; color: #fff;"' : '';
         const statusText = (t.status === 'completed' || t.status === 'pending_payment') ? '⏳ Awaiting Payment' : 
-                          t.status === 'paid' ? '✅ Paid' : t.status;
+                          t.status === 'paid' ? '✅ Paid' :
+                          t.status === 'accepted' ? '👤 Helper Assigned' : t.status;
         
         return `
             <div class="my-task-card">
@@ -5122,8 +5189,12 @@ function renderAcceptedTasks() {
                 </p>
             </div>`;
         } else {
-            // Still in progress
-            actionHTML = `<div class="task-actions"><button class="btn btn-success" onclick="completeTask(${t.id})">Mark Complete</button></div>`;
+            // Still in progress - show call poster + mark complete
+            const posterPhone = t.postedBy?.phone;
+            actionHTML = `<div class="task-actions" style="display: flex; gap: 8px;">
+                ${posterPhone ? `<a href="tel:${posterPhone}" class="btn btn-primary" style="flex: 1; text-decoration: none; text-align: center;"><i class="fas fa-phone"></i> Call Poster</a>` : ''}
+                <button class="btn btn-success" style="flex: 1;" onclick="completeTask(${t.id})"><i class="fas fa-check"></i> Mark Complete</button>
+            </div>`;
         }
         
         return `

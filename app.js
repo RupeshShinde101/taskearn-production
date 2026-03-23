@@ -712,7 +712,10 @@ function serializeTask(task) {
         category: task.category,
         location: task.location,
         price: task.price,
+        serviceCharge: task.serviceCharge || 0,
+        totalPaid: task.totalPaid || 0,
         postedBy: task.postedBy ? {
+            id: task.postedBy.id,
             name: task.postedBy.name,
             rating: task.postedBy.rating,
             tasksPosted: task.postedBy.tasksPosted
@@ -721,7 +724,8 @@ function serializeTask(task) {
         expiresAt: task.expiresAt instanceof Date ? task.expiresAt.toISOString() : task.expiresAt,
         acceptedAt: task.acceptedAt || null,
         completedAt: task.completedAt || null,
-        status: task.status
+        status: task.status,
+        localOnly: task.localOnly || false
     };
 }
 
@@ -1580,8 +1584,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 loadTasksFromServer().catch(e => console.warn('⚠️ Auto-refresh failed:', e.message));
                 // Also refresh wallet balance
                 refreshWalletBalance().catch(e => console.warn('⚠️ Wallet refresh failed:', e.message));
-                // And sync notifications
-                syncNotificationsFromServer().catch(e => console.warn('⚠️ Notification sync failed:', e.message));
             } catch (e) {
                 console.warn('⚠️ Task refresh failed:', e.message);
             }
@@ -4336,7 +4338,7 @@ async function handleTaskSubmit(event) {
                 showToast('✅ Task posted successfully!');
             } else {
                 serverSaveError = result.message;
-                console.error('⚠️ Server save failed:', result.message);
+                console.warn('⚠️ Server save failed:', result.message);
                 if (result.message && result.message.includes('token')) {
                     showToast('❌ Session expired. Please login again.');
                     setTimeout(() => {
@@ -4344,34 +4346,24 @@ async function handleTaskSubmit(event) {
                         openModal('loginModal');
                     }, 2000);
                     return;
-                } else {
-                    showToast('❌ Failed to post task: ' + result.message);
-                    return;
                 }
+                // Continue with local save even if server fails
+                showToast('⚠️ Saved locally. Will sync when backend is online.');
             }
-        } else {
-            showToast('❌ Backend API not available. Please try again later.');
-            return;
         }
     } catch (error) {
-        console.error('❌ Error saving task to server:', error);
-        showToast('❌ Network error. Please check your connection and try again.');
-        return;
-    }
-
-    // Only create task if server save was successful
-    if (!serverTaskId) {
-        showToast('❌ Failed to post task. Please try again.');
-        return;
+        console.warn('⚠️ Server unavailable, saving task locally:', error.message);
+        showToast('⚠️ Saved locally. Will sync when backend is online.');
     }
 
     const newTask = {
-        id: serverTaskId,
+        id: serverTaskId || Date.now(),
         ...taskData,
         postedBy: currentUser,
         postedAt: new Date(),
         expiresAt: new Date(Date.now() + 12 * 3600000),
-        status: 'active'
+        status: 'active',
+        localOnly: !serverTaskId
     };
 
     tasks.unshift(newTask);
@@ -4635,8 +4627,6 @@ async function handleSignup(event) {
 
 function updateNavForUser() {
     const nav = document.querySelector('.nav-buttons');
-    const notificationWrapper = document.getElementById('notificationWrapper');
-    const mobileNotificationItem = document.getElementById('mobileNotificationItem');
     const mobileMenu = document.getElementById('mobileMenu');
     
     if (nav && currentUser) {
@@ -4679,22 +4669,7 @@ function updateNavForUser() {
             }
         }
         
-        // Show notification bell when logged in
-        if (notificationWrapper) {
-            notificationWrapper.style.display = 'block';
-        }
-        if (mobileNotificationItem) {
-            mobileNotificationItem.style.display = 'block';
-        }
-        
-        // Load and display notifications
-        notifications = loadNotifications();
-        updateNotificationUI();
-        
-        // Sync notifications from server in background
-        setTimeout(() => {
-            syncNotificationsFromServer().catch(err => console.log('Notification sync failed:', err));
-        }, 500);
+
     } else {
         // Reset mobile menu for logged-out user
         if (mobileMenu) {
@@ -4718,12 +4693,6 @@ function updateNavForUser() {
         }
         
         // Hide notification bell when logged out
-        if (notificationWrapper) {
-            notificationWrapper.style.display = 'none';
-        }
-        if (mobileNotificationItem) {
-            mobileNotificationItem.style.display = 'none';
-        }
     }
 }
 
@@ -4824,12 +4793,6 @@ function logout() {
             <button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button>
         `;
     }
-    
-    // Hide notification bell
-    const notificationWrapper = document.getElementById('notificationWrapper');
-    const mobileNotificationItem = document.getElementById('mobileNotificationItem');
-    if (notificationWrapper) notificationWrapper.style.display = 'none';
-    if (mobileNotificationItem) mobileNotificationItem.style.display = 'none';
     
     updateAuthenticationStatus(); // Update auth status
     renderDashboard();

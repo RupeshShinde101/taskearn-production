@@ -800,26 +800,52 @@ async function syncNotificationsFromServer() {
         const result = await response.json();
         
         if (result.success && result.notifications) {
-            // Parse action data from JSON strings
-            const processedNotifications = result.notifications.map(n => {
+            // Convert server format to UI format
+            const serverNotifications = result.notifications.map(n => {
+                // Parse action data from JSON strings
+                let action = null;
                 try {
                     if (n.data && typeof n.data === 'string') {
-                        n.action = JSON.parse(n.data);
-                    } else if (typeof n.data === 'object') {
-                        n.action = n.data;
+                        action = JSON.parse(n.data);
+                    } else if (n.data && typeof n.data === 'object') {
+                        action = n.data;
                     }
                 } catch (e) {
                     console.warn('Could not parse notification action data:', e);
                 }
-                return n;
+                
+                // Map notification_type to UI type
+                let uiType = 'info';
+                if (n.notification_type === 'task_completed') uiType = 'warning';
+                else if (n.notification_type === 'payment_received' || n.notification_type === 'payment_done') uiType = 'success';
+                else if (n.notification_type === 'payment_completed') uiType = 'warning';
+                
+                return {
+                    id: n.id,
+                    type: uiType,
+                    title: n.title || 'Notification',
+                    message: n.message || '',
+                    taskId: n.task_id,
+                    read: n.status === 'read',
+                    createdAt: n.created_at,
+                    action: action
+                };
             });
             
+            // Merge with local notifications (keep local ones that don't exist on server)
+            const localNotifications = loadNotifications();
+            const serverIds = new Set(serverNotifications.map(n => n.id));
+            const localOnlyNotifications = localNotifications.filter(n => !serverIds.has(n.id));
+            
+            // Combine: server notifications first, then local-only ones
+            const merged = [...serverNotifications, ...localOnlyNotifications];
+            
             // Save to localStorage
-            localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(processedNotifications));
-            notifications = processedNotifications;
+            localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
+            notifications = merged;
             updateNotificationUI();
             
-            return processedNotifications;
+            return merged;
         }
     } catch (error) {
         console.warn('Could not sync notifications from server:', error.message);
@@ -1055,13 +1081,13 @@ async function processPaymentFromNotification(taskId, notification) {
         
         // Call backend to process payment
         console.log('📤 Sending payment request...');
-        const response = await fetch(API_BASE_URL + `/tasks/${taskId}/complete`, {
+        const response = await fetch(API_BASE_URL + `/tasks/${taskId}/pay-helper`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
             },
-            body: JSON.stringify({ processPayment: true })
+            body: JSON.stringify({ taskId: taskId })
         });
         
         const result = await response.json();
@@ -1303,6 +1329,30 @@ async function loadTasksFromServer() {
                             }
                         }, 500);
                     }
+                }
+                
+                // ✅ Also sync myAcceptedTasks with server data (helper sees 'paid' status)
+                if (currentUser && myAcceptedTasks.length > 0) {
+                    console.log('🔄 Syncing accepted tasks with server data...');
+                    myAcceptedTasks = myAcceptedTasks.map(acceptedTask => {
+                        const serverTask = serverTasks.find(t => t.id === acceptedTask.id);
+                        if (serverTask) {
+                            const updated = {
+                                ...acceptedTask,
+                                status: serverTask.status,
+                                paidAt: serverTask.paidAt || acceptedTask.paidAt
+                            };
+                            if (acceptedTask.status !== serverTask.status) {
+                                console.log(`   Accepted Task ${acceptedTask.id}: ${acceptedTask.status} → ${serverTask.status}`);
+                            }
+                            return updated;
+                        }
+                        return acceptedTask;
+                    });
+                    
+                    updateUserData(currentUser.id, {
+                        acceptedTasks: serializeTasks(myAcceptedTasks)
+                    });
                 }
                 
                 console.log('✅ Loaded', serverTasks.length, 'tasks from server');
@@ -2771,15 +2821,27 @@ async function completeTask(taskId) {
             }
         }
 
-        // Send notification to poster: "Task completed, Pay Now"
+        // Send notification to poster locally
         notifyPosterTaskCompleted(task, currentUser);
 
         showToast('✅ Task marked as completed! Waiting for poster to pay.');
         renderDashboard();
 
-        // Also try backend (best-effort)
+        // Call backend to mark completed + create server-side notification for poster
         try {
-            await TasksAPI.complete(taskId);
+            const response = await fetch(API_BASE_URL + `/tasks/${taskId}/complete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+                }
+            });
+            const result = await response.json();
+            if (result.success) {
+                console.log('✅ Backend: Task marked completed, poster notified');
+            } else {
+                console.warn('Backend complete failed:', result.message);
+            }
         } catch (e) {
             console.warn('Backend offline, task completed locally:', e.message);
         }
@@ -3080,6 +3142,9 @@ async function payHelperForTask(taskId) {
             
             // Refresh dashboard
             renderDashboard();
+            
+            // Sync notifications from server (clears Pay Now, shows Payment Done)
+            syncNotificationsFromServer();
             
             // Refresh from server and wallet balance
             setTimeout(() => {
@@ -4132,9 +4197,10 @@ function updateNavForUser() {
             mobileNotificationItem.style.display = 'block';
         }
         
-        // Load and display notifications
+        // Load and display notifications (local first, then sync from server)
         notifications = loadNotifications();
         updateNotificationUI();
+        syncNotificationsFromServer();
 
     } else {
         // Reset mobile menu for logged-out user
@@ -4380,6 +4446,9 @@ function renderDashboard() {
     renderPostedTasks();
     renderAcceptedTasks();
     renderCompletedTasks();
+    
+    // Sync notifications from server (non-blocking) so poster sees Pay Now from helper
+    syncNotificationsFromServer();
     
     // Check if helper has any recently paid tasks to show pop-up
     setTimeout(() => checkAndShowPaymentReceived(), 500);
@@ -4861,6 +4930,13 @@ function startTaskTimers() {
         renderTasks();
         addTaskMarkers();
     }, 60000);
+
+    // Sync notifications from server every 30 seconds
+    setInterval(() => {
+        if (currentUser) {
+            syncNotificationsFromServer();
+        }
+    }, 30000);
 }
 
 // ========================================

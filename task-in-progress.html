@@ -650,7 +650,7 @@
                     localStorage.setItem(`user_${posterId}_data`, JSON.stringify(posterData));
                 }
 
-                // Also update taskearn_users[posterId] (used by renderPostedTasks on login)
+                // Also update taskearn_users[posterId]
                 const allUsers = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
                 if (allUsers[posterId] && allUsers[posterId].postedTasks) {
                     allUsers[posterId].postedTasks = allUsers[posterId].postedTasks.map(pt => {
@@ -665,7 +665,7 @@
                     localStorage.setItem('taskearn_users', JSON.stringify(allUsers));
                 }
 
-                // Send Pay Now notification to poster
+                // Send Pay Now notification to poster (local)
                 const taskAmount = currentTask.price || currentTask.amount || 0;
                 const serviceCharge = currentTask.service_charge || currentTask.serviceCharge || 0;
                 const totalTaskValue = taskAmount + serviceCharge;
@@ -689,13 +689,19 @@
             clearInterval(timerInterval);
             document.getElementById('confirmModal').classList.add('active');
 
-            // Also try backend (best-effort)
+            // Call backend to mark completed + create server-side notification for poster
             const token = localStorage.getItem('taskearn_token') || '';
             fetch(API_URL + '/tasks/' + taskId + '/complete', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + token
+                }
+            }).then(res => res.json()).then(result => {
+                if (result.success) {
+                    console.log('✅ Backend: Task marked completed, poster notified');
+                } else {
+                    console.warn('Backend complete failed:', result.message);
                 }
             }).catch(err => console.warn('Backend offline:', err.message));
         }

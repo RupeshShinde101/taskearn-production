@@ -650,6 +650,21 @@
                     localStorage.setItem(`user_${posterId}_data`, JSON.stringify(posterData));
                 }
 
+                // Also update taskearn_users[posterId] (used by renderPostedTasks on login)
+                const allUsers = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
+                if (allUsers[posterId] && allUsers[posterId].postedTasks) {
+                    allUsers[posterId].postedTasks = allUsers[posterId].postedTasks.map(pt => {
+                        if (pt.id == taskId) {
+                            pt.status = 'completed';
+                            pt.completedAt = new Date().toISOString();
+                            pt.helperId = currentUser.id;
+                            pt.helperName = currentUser.name;
+                        }
+                        return pt;
+                    });
+                    localStorage.setItem('taskearn_users', JSON.stringify(allUsers));
+                }
+
                 // Send Pay Now notification to poster
                 const taskAmount = currentTask.price || currentTask.amount || 0;
                 const serviceCharge = currentTask.service_charge || currentTask.serviceCharge || 0;

@@ -464,18 +464,26 @@ async function registerUser(userData) {
 // Update user data
 async function updateUserData(userId, updates) {
     const users = await getStoredUsersAsync();
-    if (users[userId]) {
-        users[userId] = { ...users[userId], ...updates };
-        await saveUsersAsync(users);
-        
-        // Update current user if logged in
+    // Create user entry if it doesn't exist yet (e.g., registered via backend API)
+    if (!users[userId]) {
+        users[userId] = { id: userId };
+        // Copy basic info from currentUser if this is the logged-in user
         if (currentUser && currentUser.id === userId) {
-            currentUser = users[userId];
-            saveCurrentSession(currentUser);
+            users[userId].name = currentUser.name;
+            users[userId].email = currentUser.email;
+            users[userId].phone = currentUser.phone;
+            users[userId].wallet = currentUser.wallet || 0;
         }
-        return users[userId];
     }
-    return null;
+    users[userId] = { ...users[userId], ...updates };
+    await saveUsersAsync(users);
+    
+    // Update current user if logged in
+    if (currentUser && currentUser.id === userId) {
+        currentUser = users[userId];
+        saveCurrentSession(currentUser);
+    }
+    return users[userId];
 }
 
 // Save current session (both localStorage AND IndexedDB)
@@ -1060,22 +1068,10 @@ async function processPaymentFromNotification(taskId, notification) {
         console.log('📥 Payment response:', result);
         
         if (result.success) {
-            // Show success with amount details
-            const newBalance = result.posterNewBalance || (currentBalance - totalCost);
-            
-            showToast(
-                `✅ Payment Successful!\n\n` +
-                `Commission Deducted: ₹${totalCost.toFixed(2)}\n\n` +
-                `Breakdown:\n` +
-                `• Helper Gets: ₹${result.helperEarnings ? result.helperEarnings.toFixed(2) : (totalTaskValue - helperCommission).toFixed(2)}\n` +
-                `• Platform Fee: ₹${posterFee.toFixed(2)}\n\n` +
-                `Your Wallet Balance\n` +
-                `← ₹${currentBalance.toFixed(2)}\n` +
-                `→ ₹${newBalance.toFixed(2)}`,
-                6000
-            );
-            
             // Update local user data
+            const newBalance = result.posterNewBalance || (currentBalance - totalCost);
+            const helperEarnings = result.helperEarnings || (totalTaskValue - helperCommission);
+            
             if (currentUser) {
                 currentUser.wallet = newBalance;
                 localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
@@ -1083,6 +1079,10 @@ async function processPaymentFromNotification(taskId, notification) {
             
             // Update task and UI
             task.status = 'paid';
+            
+            // Show payment done pop-up for poster
+            showPaymentDonePopup(task, totalCost, helperEarnings, newBalance);
+            
             renderDashboard();
             updateNotificationUI();
             
@@ -1104,29 +1104,9 @@ async function processPaymentFromNotification(taskId, notification) {
         currentUser.wallet = newBalance;
         localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
 
-        // Credit helper's wallet
+        // Credit helper's wallet locally
         const helperId = task.acceptedBy?.id || task.helperId;
-        if (helperId) {
-            const users = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
-            if (users[helperId]) {
-                const helperWallet = users[helperId].wallet || 0;
-                users[helperId].wallet = helperWallet + helperNetReceives;
-                localStorage.setItem('taskearn_users', JSON.stringify(users));
-
-                // Notify helper about payment
-                const helperNotifications = JSON.parse(localStorage.getItem(`notifications_${helperId}`) || '[]');
-                helperNotifications.unshift({
-                    id: Date.now(),
-                    type: 'success',
-                    title: 'Payment Received! 💰',
-                    message: `You received ₹${helperNetReceives.toFixed(2)} for completing "${task.title}".`,
-                    taskId: task.id,
-                    read: false,
-                    createdAt: new Date().toISOString()
-                });
-                localStorage.setItem(`notifications_${helperId}`, JSON.stringify(helperNotifications));
-            }
-        }
+        creditHelperWalletLocal(helperId, helperNetReceives, task);
 
         task.status = 'paid';
         task.paidAt = new Date().toISOString();
@@ -1134,12 +1114,8 @@ async function processPaymentFromNotification(taskId, notification) {
             postedTasks: serializeTasks(myPostedTasks)
         });
 
-        showToast(
-            `✅ Payment Successful!\n` +
-            `Paid: ₹${totalCost.toFixed(2)}\n` +
-            `Helper receives: ₹${helperNetReceives.toFixed(2)}\n` +
-            `Your balance: ₹${newBalance.toFixed(2)}`
-        );
+        // Show payment done pop-up for poster
+        showPaymentDonePopup(task, totalCost, helperNetReceives, newBalance);
 
         renderDashboard();
         updateNotificationUI();
@@ -2764,6 +2740,7 @@ async function completeTask(taskId) {
         // Update poster's stored tasks to show completed status
         const posterId = task.postedBy?.id;
         if (posterId) {
+            // Update user_${posterId}_data (used by task-in-progress.html)
             const posterData = JSON.parse(localStorage.getItem(`user_${posterId}_data`) || '{}');
             if (posterData.postedTasks) {
                 posterData.postedTasks = posterData.postedTasks.map(pt => {
@@ -2776,6 +2753,21 @@ async function completeTask(taskId) {
                     return pt;
                 });
                 localStorage.setItem(`user_${posterId}_data`, JSON.stringify(posterData));
+            }
+
+            // Also update taskearn_users[posterId] (used by renderPostedTasks on login)
+            const allUsers = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
+            if (allUsers[posterId] && allUsers[posterId].postedTasks) {
+                allUsers[posterId].postedTasks = allUsers[posterId].postedTasks.map(pt => {
+                    if (pt.id === taskId || pt.id == taskId) {
+                        pt.status = 'completed';
+                        pt.completedAt = task.completedAt;
+                        pt.helperId = currentUser.id;
+                        pt.helperName = currentUser.name;
+                    }
+                    return pt;
+                });
+                localStorage.setItem('taskearn_users', JSON.stringify(allUsers));
             }
         }
 
@@ -2798,42 +2790,171 @@ async function completeTask(taskId) {
 
 // Notify poster that helper completed the task - with Pay Now button
 function notifyPosterTaskCompleted(task, helper) {
-    const users = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
     const posterId = task.postedBy?.id;
-    const posterEmail = task.postedBy?.email;
-
-    let posterUser = null;
-    if (posterId && users[posterId]) {
-        posterUser = users[posterId];
-    } else if (posterEmail) {
-        for (const uid in users) {
-            if (users[uid].email === posterEmail) {
-                posterUser = users[uid];
-                break;
-            }
-        }
+    if (!posterId || posterId === helper.id) {
+        console.warn('⚠️ Cannot notify poster: no poster ID or poster is helper');
+        return;
     }
 
-    if (posterUser && posterUser.id !== helper.id) {
-        const taskAmount = task.price || 0;
-        const serviceCharge = task.service_charge || task.serviceCharge || 0;
-        const totalTaskValue = taskAmount + serviceCharge;
-        const posterFee = totalTaskValue * 0.05;
-        const totalCost = totalTaskValue + posterFee;
+    const taskAmount = task.price || 0;
+    const serviceCharge = task.service_charge || task.serviceCharge || 0;
+    const totalTaskValue = taskAmount + serviceCharge;
+    const posterFee = totalTaskValue * 0.05;
+    const totalCost = totalTaskValue + posterFee;
 
-        const posterNotifications = JSON.parse(localStorage.getItem(`notifications_${posterUser.id}`) || '[]');
-        posterNotifications.unshift({
-            id: Date.now(),
-            type: 'warning',
-            title: 'Task Completed! 💰',
-            message: `${helper.name} has completed your task "${task.title}". Please pay ₹${totalCost.toFixed(2)} from your wallet.`,
-            taskId: task.id,
-            read: false,
-            createdAt: new Date().toISOString(),
-            action: { type: 'payment', label: '💳 Pay Now' }
+    // Write notification directly using poster ID (works regardless of taskearn_users)
+    const posterNotifications = JSON.parse(localStorage.getItem(`notifications_${posterId}`) || '[]');
+    posterNotifications.unshift({
+        id: Date.now(),
+        type: 'warning',
+        title: 'Task Completed! 💰',
+        message: `${helper.name} has completed your task "${task.title}". Please pay ₹${totalCost.toFixed(2)} from your wallet.`,
+        taskId: task.id,
+        read: false,
+        createdAt: new Date().toISOString(),
+        action: { type: 'payment', label: '💳 Pay Now' }
+    });
+    localStorage.setItem(`notifications_${posterId}`, JSON.stringify(posterNotifications));
+    console.log('✅ Pay Now notification sent to poster ID:', posterId);
+}
+
+/**
+ * Credit helper's wallet locally and send "Payment Received" notification
+ * Used by both processPaymentFromNotification and payHelperForTask local fallbacks
+ */
+function creditHelperWalletLocal(helperId, amount, task) {
+    if (!helperId) return;
+
+    // Update helper's wallet in taskearn_users (if exists)
+    const users = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
+    if (users[helperId]) {
+        users[helperId].wallet = (users[helperId].wallet || 0) + amount;
+        localStorage.setItem('taskearn_users', JSON.stringify(users));
+    }
+
+    // Also update helper's user_data wallet
+    const helperData = JSON.parse(localStorage.getItem(`user_${helperId}_data`) || '{}');
+    helperData.wallet = (helperData.wallet || 0) + amount;
+    localStorage.setItem(`user_${helperId}_data`, JSON.stringify(helperData));
+
+    // Send "Payment Received" notification to helper
+    const helperNotifications = JSON.parse(localStorage.getItem(`notifications_${helperId}`) || '[]');
+    helperNotifications.unshift({
+        id: Date.now(),
+        type: 'success',
+        title: 'Payment Received! 💰',
+        message: `You received ₹${amount.toFixed(2)} for completing "${task.title}".`,
+        taskId: task.id,
+        read: false,
+        createdAt: new Date().toISOString()
+    });
+    localStorage.setItem(`notifications_${helperId}`, JSON.stringify(helperNotifications));
+
+    // Update helper's accepted tasks to 'paid' status
+    if (helperData.acceptedTasks) {
+        helperData.acceptedTasks = helperData.acceptedTasks.map(t => {
+            if (t.id === task.id || t.id == task.id) {
+                t.status = 'paid';
+                t.paidAt = new Date().toISOString();
+            }
+            return t;
         });
-        localStorage.setItem(`notifications_${posterUser.id}`, JSON.stringify(posterNotifications));
-        console.log('✅ Pay Now notification sent to poster:', posterUser.name);
+        localStorage.setItem(`user_${helperId}_data`, JSON.stringify(helperData));
+    }
+
+    console.log(`✅ Credited ₹${amount.toFixed(2)} to helper ${helperId}'s wallet`);
+}
+
+/**
+ * Show "Payment Done" pop-up for the poster after paying
+ */
+function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
+    const content = `
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 60px; margin-bottom: 15px;">✅</div>
+            <h2 style="color: #4ade80; margin-bottom: 10px;">Payment Done!</h2>
+            <p style="color: #888; margin-bottom: 20px;">Your payment has been processed successfully.</p>
+            
+            <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; border-radius: 12px; padding: 20px; margin-bottom: 20px; text-align: left;">
+                <h4 style="margin-bottom: 15px;">${escapeHtml(task.title)}</h4>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: #999;">Total Paid:</span>
+                    <span style="font-weight: 600; color: #ef4444;">-₹${totalPaid.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: #999;">Helper Receives:</span>
+                    <span style="font-weight: 600; color: #4ade80;">₹${helperReceives.toFixed(2)}</span>
+                </div>
+                <hr style="border-color: rgba(255,255,255,0.1); margin: 12px 0;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="font-weight: 600;">Your New Balance:</span>
+                    <span style="font-weight: 700; color: #fbbf24;">₹${newBalance.toFixed(2)}</span>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard();">
+                <i class="fas fa-check"></i> Done
+            </button>
+        </div>
+    `;
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    openModal('taskSuccessModal');
+}
+
+/**
+ * Show "Payment Received" pop-up for the helper
+ * Called when helper logs in and checks for paid tasks
+ */
+function checkAndShowPaymentReceived() {
+    if (!currentUser) return;
+    
+    // Check if any accepted tasks were recently paid
+    const paidKey = `payment_shown_${currentUser.id}`;
+    const shownPayments = JSON.parse(localStorage.getItem(paidKey) || '[]');
+    
+    for (const task of myAcceptedTasks) {
+        if (task.status === 'paid' && !shownPayments.includes(task.id)) {
+            const taskAmount = task.price || 0;
+            const serviceCharge = task.service_charge || task.serviceCharge || 0;
+            const totalTaskValue = taskAmount + serviceCharge;
+            const helperEarnings = totalTaskValue * 0.88;
+            
+            const content = `
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 60px; margin-bottom: 15px;">💰</div>
+                    <h2 style="color: #4ade80; margin-bottom: 10px;">Payment Received!</h2>
+                    <p style="color: #888; margin-bottom: 20px;">You've been paid for completing a task!</p>
+                    
+                    <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; border-radius: 12px; padding: 20px; margin-bottom: 20px; text-align: left;">
+                        <h4 style="margin-bottom: 15px;">${escapeHtml(task.title)}</h4>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="color: #999;">Task Amount:</span>
+                            <span style="font-weight: 600;">₹${totalTaskValue.toFixed(2)}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="color: #999;">Commission (12%):</span>
+                            <span style="font-weight: 600; color: #ef4444;">-₹${(totalTaskValue * 0.12).toFixed(2)}</span>
+                        </div>
+                        <hr style="border-color: rgba(255,255,255,0.1); margin: 12px 0;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="font-weight: 600;">You Received:</span>
+                            <span style="font-weight: 700; font-size: 18px; color: #4ade80;">+₹${helperEarnings.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard();">
+                        <i class="fas fa-check"></i> Great!
+                    </button>
+                </div>
+            `;
+            document.getElementById('taskSuccessContent').innerHTML = content;
+            openModal('taskSuccessModal');
+            
+            // Mark this payment as shown
+            shownPayments.push(task.id);
+            localStorage.setItem(paidKey, JSON.stringify(shownPayments));
+            break; // Show one at a time
+        }
     }
 }
 
@@ -2942,18 +3063,6 @@ async function payHelperForTask(taskId) {
         console.log('📥 Payment response:', result);
 
         if (result.success) {
-            showToast(
-                `✅ Payment Successful!\n\n` +
-                `Base Amount: ₹${result.amount}\n` +
-                `Service Charge: ₹${result.serviceCharge.toFixed(2)}\n` +
-                `Total Task Value: ₹${result.totalTaskValue.toFixed(2)}\n` +
-                `Helper Commission (12%): -₹${result.helperCommission.toFixed(2)}\n` +
-                `Your Fee (5%): ₹${result.posterFee.toFixed(2)}\n\n` +
-                `Your New Balance: ₹${result.posterNewBalance.toFixed(2)}\n` +
-                `Helper Receives: ₹${result.helperEarnings.toFixed(2)}`,
-                6000
-            );
-            
             // Update current user balance
             if (currentUser) {
                 currentUser.wallet = result.posterNewBalance;
@@ -2965,6 +3074,9 @@ async function payHelperForTask(taskId) {
             updateUserData(currentUser.id, {
                 postedTasks: serializeTasks(myPostedTasks)
             });
+            
+            // Show payment done pop-up for poster
+            showPaymentDonePopup(task, totalCost, result.helperEarnings || helperNetReceives, result.posterNewBalance);
             
             // Refresh dashboard
             renderDashboard();
@@ -2994,29 +3106,9 @@ async function payHelperForTask(taskId) {
         currentUser.wallet = newPosterBalance;
         localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
 
-        // Credit helper's wallet
+        // Credit helper's wallet locally
         const helperId = task.acceptedBy?.id || task.helperId;
-        if (helperId) {
-            const users = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
-            if (users[helperId]) {
-                const helperWallet = users[helperId].wallet || 0;
-                users[helperId].wallet = helperWallet + helperNetReceives;
-                localStorage.setItem('taskearn_users', JSON.stringify(users));
-
-                // Notify helper about payment received
-                const helperNotifications = JSON.parse(localStorage.getItem(`notifications_${helperId}`) || '[]');
-                helperNotifications.unshift({
-                    id: Date.now(),
-                    type: 'success',
-                    title: 'Payment Received! 💰',
-                    message: `You received ₹${helperNetReceives.toFixed(2)} for completing "${task.title}".`,
-                    taskId: task.id,
-                    read: false,
-                    createdAt: new Date().toISOString()
-                });
-                localStorage.setItem(`notifications_${helperId}`, JSON.stringify(helperNotifications));
-            }
-        }
+        creditHelperWalletLocal(helperId, helperNetReceives, task);
 
         // Mark task as paid
         task.status = 'paid';
@@ -3025,12 +3117,8 @@ async function payHelperForTask(taskId) {
             postedTasks: serializeTasks(myPostedTasks)
         });
 
-        showToast(
-            `✅ Payment Successful!\n` +
-            `Paid: ₹${totalCost.toFixed(2)}\n` +
-            `Helper receives: ₹${helperNetReceives.toFixed(2)}\n` +
-            `Your balance: ₹${newPosterBalance.toFixed(2)}`
-        );
+        // Show payment done pop-up for poster
+        showPaymentDonePopup(task, totalCost, helperNetReceives, newPosterBalance);
 
         renderDashboard();
         updateNotificationUI();
@@ -4292,6 +4380,9 @@ function renderDashboard() {
     renderPostedTasks();
     renderAcceptedTasks();
     renderCompletedTasks();
+    
+    // Check if helper has any recently paid tasks to show pop-up
+    setTimeout(() => checkAndShowPaymentReceived(), 500);
 }
 
 function renderAvailableTasks() {

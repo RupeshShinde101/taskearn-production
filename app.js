@@ -260,7 +260,7 @@ function showNotification(message, type = 'info', duration = 5000) {
 // Initialize IndexedDB on load
 initIndexedDB().then(dbAvailable => {
     if (!STORAGE_AVAILABLE && !dbAvailable) {
-        alert('⚠️ Warning: Your browser cannot save data. Please:\n\n1. Use http://localhost:8080 (not file://)\n2. Disable private/incognito mode\n3. Allow cookies and site data\n\nYour account will NOT be saved!');
+        alert('⚠️ Warning: Your browser cannot save data. Please:\n\n1. Use https://taskearn.netlify.app (not file://)\n2. Disable private/incognito mode\n3. Allow cookies and site data\n\nYour account will NOT be saved!');
     }
 });
 
@@ -1772,7 +1772,7 @@ function getUserLocation() {
     }
 
     // Check if we're on HTTPS or localhost (required for GPS)
-    const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const isSecure = location.protocol === 'https:';
     
     if (!isSecure) {
         console.log('⚠️ GPS requires HTTPS');

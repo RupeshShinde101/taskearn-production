@@ -25,12 +25,7 @@
         
         // Auto-detect environment and set API URL
         (function() {
-            const hostname = window.location.hostname;
-            if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-                window.TASKEARN_API_URL = 'https://taskearn-production-production.up.railway.app/api';
-            } else {
-                window.TASKEARN_API_URL = 'http://localhost:5000/api';
-            }
+            window.TASKEARN_API_URL = 'https://taskearn-production-production.up.railway.app/api';
         })();
     </script>
     <style>

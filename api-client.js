@@ -39,18 +39,12 @@ console.log('🔒 Force mobile proxy:', FORCE_MOBILE_PROXY);
 
 // If not pre-set by inline HTML script, determine it now
 if (!API_BASE_URL) {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        API_BASE_URL = 'http://localhost:5000/api';
-        console.log('🔧 Development: Using local backend');
-    } else if (MOBILE && ON_NETLIFY) {
+    if (MOBILE && ON_NETLIFY) {
         API_BASE_URL = '/.netlify/functions/api-proxy/api';
         console.log('📱 Mobile on Netlify: Using proxy');
-    } else if (ON_NETLIFY) {
-        API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        console.log('🖥️ Desktop on Netlify: Using Railway');
     } else {
         API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        console.log('🌍 Fallback: Using Railway');
+        console.log('🌍 Using Railway production server');
     }
 }
 

@@ -197,7 +197,7 @@ async function addMoneyToWallet(amount, onSuccess, onError) {
         let keyId = RAZORPAY_KEY_ID;
         
         try {
-            const orderResponse = await fetch(`${window.TASKEARN_API_URL || 'http://localhost:5000/api'}/wallet/create-order`, {
+            const orderResponse = await fetch(`${window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api'}/wallet/create-order`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -239,7 +239,7 @@ async function addMoneyToWallet(amount, onSuccess, onError) {
                 
                 // Try to verify with backend
                 try {
-                    const verifyResponse = await fetch(`${window.TASKEARN_API_URL || 'http://localhost:5000/api'}/wallet/verify-payment`, {
+                    const verifyResponse = await fetch(`${window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api'}/wallet/verify-payment`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',

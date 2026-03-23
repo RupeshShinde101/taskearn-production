@@ -3,7 +3,7 @@
   "VERSION": "1.0.0",
   "ENVIRONMENTS": {
     "development": {
-      "API_URL": "http://localhost:5000/api",
+      "API_URL": "https://taskearn-production-production.up.railway.app/api",
       "DEBUG": true
     },
     "production": {

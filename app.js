@@ -4935,7 +4935,6 @@ function renderDashboard() {
         }
     }
     
-    renderNotifications(); // Render notifications first
     renderAvailableTasks();
     renderPostedTasks();
     renderAcceptedTasks();

@@ -4749,7 +4749,7 @@ def get_bank_details():
             return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
-            cursor.execute('SELECT * FROM company_bank_details WHERE is_active = 1 LIMIT 1')
+            cursor.execute('SELECT * FROM company_bank_details WHERE is_active = TRUE LIMIT 1')
             details = cursor.fetchone()
             
             if not details:
@@ -5067,7 +5067,7 @@ def process_settlement():
         
         with get_db() as (cursor, conn):
             # Get bank details
-            cursor.execute('SELECT * FROM company_bank_details WHERE is_active = 1 LIMIT 1')
+            cursor.execute('SELECT * FROM company_bank_details WHERE is_active = TRUE LIMIT 1')
             bank_details = cursor.fetchone()
             
             if not bank_details:
@@ -5312,7 +5312,7 @@ def initialize_bank_details():
     try:
         with get_db() as (cursor, conn):
             # Check if bank details already exist
-            cursor.execute('SELECT id FROM company_bank_details WHERE is_active = 1 LIMIT 1')
+            cursor.execute('SELECT id FROM company_bank_details WHERE is_active = TRUE LIMIT 1')
             existing = cursor.fetchone()
             
             if not existing:
@@ -5321,7 +5321,7 @@ def initialize_bank_details():
                 cursor.execute(f'''
                     INSERT INTO company_bank_details
                     (account_number, ifsc_code, account_holder_name, bank_name, is_active, created_at, updated_at)
-                    VALUES ({PH}, {PH}, {PH}, {PH}, 1, {PH}, {PH})
+                    VALUES ({PH}, {PH}, {PH}, {PH}, TRUE, {PH}, {PH})
                 ''', ('2549449456', 'KKBK0001764', 'TaskEarn Platform', 'Kotak Bank', now, now))
                 print("💾 Bank details initialized: KKBK0001764 ****9456")
             else:

@@ -247,6 +247,38 @@
             font-size: 16px;
         }
 
+        .btn-call-poster {
+            flex: 1;
+            padding: 12px;
+            background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+
+        .btn-call-poster:hover {
+            background: linear-gradient(135deg, #388E3C 0%, #2E7D32 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn-call-poster:active {
+            transform: translateY(0);
+        }
+
+        .btn-call-poster i {
+            font-size: 16px;
+        }
+
         /* Complete Task Button */
         .complete-section {
             padding: 20px;
@@ -446,12 +478,16 @@
                     </div>
                 </div>
 
-                <!-- Navigation Button -->
+                <!-- Navigation & Call Buttons -->
                 <div class="navigation-section">
                     <button class="btn-navigate" onclick="openNavigation()" title="Navigate to task location">
                         <i class="fas fa-map-marker-alt"></i>
                         Navigate
                     </button>
+                    <a id="callPosterBtn" class="btn-call-poster" href="tel:" title="Call task poster" style="display:none;">
+                        <i class="fas fa-phone"></i>
+                        Call Poster
+                    </a>
                 </div>
 
             </div>
@@ -531,6 +567,13 @@
             const providerName = currentTask.providerName || currentTask.postedBy?.name || 'Provider';
             document.getElementById('providerName').textContent = providerName;
             document.getElementById('providerPhone').textContent = providerPhone;
+
+            // Show Call Poster button if phone number is available
+            const callBtn = document.getElementById('callPosterBtn');
+            if (providerPhone && providerPhone !== 'N/A') {
+                callBtn.href = 'tel:' + providerPhone.replace(/\s+/g, '');
+                callBtn.style.display = 'flex';
+            }
         }
         
         // Show location and start timer

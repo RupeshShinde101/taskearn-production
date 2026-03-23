@@ -4627,6 +4627,8 @@ async function handleSignup(event) {
 
 function updateNavForUser() {
     const nav = document.querySelector('.nav-buttons');
+    const notificationWrapper = document.getElementById('notificationWrapper');
+    const mobileNotificationItem = document.getElementById('mobileNotificationItem');
     const mobileMenu = document.getElementById('mobileMenu');
     
     if (nav && currentUser) {
@@ -4669,6 +4671,17 @@ function updateNavForUser() {
             }
         }
         
+        // Show notification bell when logged in
+        if (notificationWrapper) {
+            notificationWrapper.style.display = 'block';
+        }
+        if (mobileNotificationItem) {
+            mobileNotificationItem.style.display = 'block';
+        }
+        
+        // Load and display notifications
+        notifications = loadNotifications();
+        updateNotificationUI();
 
     } else {
         // Reset mobile menu for logged-out user
@@ -4693,6 +4706,12 @@ function updateNavForUser() {
         }
         
         // Hide notification bell when logged out
+        if (notificationWrapper) {
+            notificationWrapper.style.display = 'none';
+        }
+        if (mobileNotificationItem) {
+            mobileNotificationItem.style.display = 'none';
+        }
     }
 }
 
@@ -4793,6 +4812,12 @@ function logout() {
             <button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button>
         `;
     }
+    
+    // Hide notification bell
+    const notificationWrapper = document.getElementById('notificationWrapper');
+    const mobileNotificationItem = document.getElementById('mobileNotificationItem');
+    if (notificationWrapper) notificationWrapper.style.display = 'none';
+    if (mobileNotificationItem) mobileNotificationItem.style.display = 'none';
     
     updateAuthenticationStatus(); // Update auth status
     renderDashboard();

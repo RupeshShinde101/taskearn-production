@@ -1508,9 +1508,20 @@
         }
         
         // Withdrawal Functions
-        function openWithdrawalModal() {
-            const wallet = getLocalWallet();
-            document.getElementById('availableBalance').textContent = wallet.balance.toFixed(2);
+        async function openWithdrawalModal() {
+            // Fetch real balance from server
+            try {
+                const result = await WalletAPI.get();
+                if (result && result.success) {
+                    updateWalletUI(result.wallet);
+                    document.getElementById('availableBalance').textContent = parseFloat(result.wallet.balance).toFixed(2);
+                } else {
+                    // Fallback to displayed balance
+                    document.getElementById('availableBalance').textContent = document.getElementById('walletBalance').textContent;
+                }
+            } catch (e) {
+                document.getElementById('availableBalance').textContent = document.getElementById('walletBalance').textContent;
+            }
             document.getElementById('withdrawalModal').classList.add('active');
         }
         
@@ -1554,9 +1565,10 @@
                 return;
             }
             
-            const wallet = getLocalWallet();
-            if (wallet.balance < amount) {
-                showWithdrawalError(`Insufficient balance. Available: ₹${wallet.balance.toFixed(2)}`);
+            // Use the server-fetched balance displayed in UI, not stale localStorage
+            const displayedBalance = parseFloat(document.getElementById('availableBalance').textContent) || 0;
+            if (displayedBalance < amount) {
+                showWithdrawalError(`Insufficient balance. Available: ₹${displayedBalance.toFixed(2)}`);
                 return;
             }
             

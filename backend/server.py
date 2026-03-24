@@ -2277,8 +2277,8 @@ def request_withdrawal():
             WHERE user_id = {PH}
         ''', (new_balance, amount, now, request.user_id))
         
-        # Store full account number securely for admin processing
-        # Display masked version to users in API responses
+        # Store full account number for admin processing
+        # Masked version shown to users in API responses
         cursor.execute(f'''
             INSERT INTO withdrawal_requests 
             (user_id, amount, bank_name, account_holder_name, account_number, ifsc_code, status, requested_at, created_at, updated_at)
@@ -2299,60 +2299,17 @@ def request_withdrawal():
         
         conn.commit()
     
-    # Try automatic Razorpay payout (requires RazorpayX)
-    payout_success = False
-    payout_id = None
-    amount_in_paise = int(amount * 100)
-    
-    try:
-        payout_result = create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_holder)
-        if payout_result.get('success'):
-            payout_success = True
-            payout_id = payout_result.get('payout_id', '')
-            payout_status = payout_result.get('payout_status', 'processing')
-            
-            with get_db() as (cursor, conn):
-                cursor.execute(f'''
-                    UPDATE withdrawal_requests 
-                    SET status = {PH}, transaction_id = {PH}, updated_at = {PH}
-                    WHERE id = {PH}
-                ''', (payout_status, payout_id, now, withdrawal_id))
-                
-                cursor.execute(f'''
-                    UPDATE wallet_transactions 
-                    SET status = {PH}, reference_id = {PH}
-                    WHERE user_id = {PH} AND reference_id = {PH}
-                ''', (payout_status, payout_id, request.user_id, f'WD-{withdrawal_id}'))
-                
-                conn.commit()
-            
-            print(f"✅ AUTO PAYOUT INITIATED: {payout_id}")
-        else:
-            print(f"⚠️  Auto payout not available: {payout_result.get('message', 'RazorpayX not configured')}")
-            print(f"   Withdrawal queued for manual admin processing")
-    except Exception as e:
-        print(f"⚠️  Auto payout skipped: {str(e)}")
-        print(f"   Withdrawal queued for manual admin processing")
-    
     print(f"   New balance: ₹{new_balance:.2f}")
     print(f"   Withdrawal ID: {withdrawal_id}")
+    print(f"   Status: pending (admin will process)")
     print('='*60 + "\n")
     
-    if payout_success:
-        return jsonify({
-            'success': True,
-            'message': f'₹{amount:.2f} withdrawal initiated! Amount will be deposited to your bank account.',
-            'newBalance': new_balance,
-            'withdrawalId': withdrawal_id
-        })
-    else:
-        # Withdrawal is pending admin approval — money already deducted
-        return jsonify({
-            'success': True,
-            'message': f'₹{amount:.2f} withdrawal request submitted! Your bank details are verified and amount will be transferred within 24 hours.',
-            'newBalance': new_balance,
-            'withdrawalId': withdrawal_id
-        })
+    return jsonify({
+        'success': True,
+        'message': f'₹{amount:.2f} withdrawal request submitted! Amount will be transferred to your bank account within 24 hours.',
+        'newBalance': new_balance,
+        'withdrawalId': withdrawal_id
+    })
 
 
 @app.route('/api/wallet/withdrawals', methods=['GET'])

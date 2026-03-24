@@ -836,6 +836,14 @@ const NotificationsAPI = {
         return result.data;
     },
     
+    // Clear all notifications
+    async clearAll() {
+        const result = await apiRequest('/notifications/clear-all', {
+            method: 'DELETE'
+        });
+        return result.data;
+    },
+
     // Clear task notifications
     async clearTaskNotifications(taskId) {
         const result = await apiRequest(`/notifications/clear-task/${taskId}`, {

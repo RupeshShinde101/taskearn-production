@@ -961,19 +961,29 @@ function toggleNotifications() {
     }
 }
 
-function markAsRead(notifId) {
+async function markAsRead(notifId) {
     const notif = notifications.find(n => n.id === notifId);
     if (notif) {
         notif.read = true;
         saveNotifications();
         updateNotificationUI();
+        try {
+            await NotificationsAPI.markAsRead(notifId);
+        } catch (e) {
+            console.warn('Could not mark notification as read on server:', e.message);
+        }
     }
 }
 
-function clearAllNotifications() {
+async function clearAllNotifications() {
     notifications = [];
     saveNotifications();
     updateNotificationUI();
+    try {
+        await NotificationsAPI.clearAll();
+    } catch (e) {
+        console.warn('Could not clear notifications on server:', e.message);
+    }
     showToast('All notifications cleared');
 }
 

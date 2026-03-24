@@ -4519,6 +4519,26 @@ def delete_notification(notification_id):
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 
+@app.route('/api/notifications/clear-all', methods=['DELETE'])
+@require_auth
+def clear_all_notifications():
+    """Delete all notifications for current user"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'DELETE FROM notifications WHERE user_id = {PH}', (request.user_id,))
+            deleted = cursor.rowcount
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': f'{deleted} notifications cleared'
+            }), 200
+    
+    except Exception as e:
+        print(f"❌ Error clearing all notifications: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
 @app.route('/api/notifications/clear-task/<int:task_id>', methods=['POST'])
 @require_auth
 def clear_task_notifications(task_id):

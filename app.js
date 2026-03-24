@@ -4147,6 +4147,7 @@ function updateNavForUser() {
     const nav = document.querySelector('.nav-buttons');
     const notificationWrapper = document.getElementById('notificationWrapper');
     const mobileNotificationItem = document.getElementById('mobileNotificationItem');
+    const mobileWalletItem = document.getElementById('mobileWalletItem');
     const mobileMenu = document.getElementById('mobileMenu');
     
     if (nav && currentUser) {
@@ -4196,6 +4197,9 @@ function updateNavForUser() {
         if (mobileNotificationItem) {
             mobileNotificationItem.style.display = 'block';
         }
+        if (mobileWalletItem) {
+            mobileWalletItem.style.display = 'block';
+        }
         
         // Load and display notifications (local first, then sync from server)
         notifications = loadNotifications();
@@ -4230,6 +4234,9 @@ function updateNavForUser() {
         }
         if (mobileNotificationItem) {
             mobileNotificationItem.style.display = 'none';
+        }
+        if (mobileWalletItem) {
+            mobileWalletItem.style.display = 'none';
         }
     }
 }
@@ -4337,6 +4344,8 @@ function logout() {
     const mobileNotificationItem = document.getElementById('mobileNotificationItem');
     if (notificationWrapper) notificationWrapper.style.display = 'none';
     if (mobileNotificationItem) mobileNotificationItem.style.display = 'none';
+    const mobileWalletItem = document.getElementById('mobileWalletItem');
+    if (mobileWalletItem) mobileWalletItem.style.display = 'none';
     
     updateAuthenticationStatus(); // Update auth status
     renderDashboard();

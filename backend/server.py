@@ -2222,7 +2222,7 @@ def get_transactions():
 @app.route('/api/wallet/withdraw', methods=['POST'])
 @require_auth
 def request_withdrawal():
-    """Request withdrawal from wallet to bank account"""
+    """Process withdrawal from wallet to user's bank account via Razorpay Payouts"""
     data = request.get_json()
     amount = float(data.get('amount', 0))
     bank_name = data.get('bankName', '').strip()
@@ -2237,48 +2237,126 @@ def request_withdrawal():
     if not all([bank_name, account_holder, account_number, ifsc_code]):
         return jsonify({'success': False, 'message': 'All bank details are required'}), 400
     
-    if not ifsc_code or len(ifsc_code) != 11:
+    if len(ifsc_code) != 11:
         return jsonify({'success': False, 'message': 'Invalid IFSC code (must be 11 characters)'}), 400
+    
+    # Validate account number (9-18 digits only)
+    if not account_number.isdigit() or len(account_number) < 9 or len(account_number) > 18:
+        return jsonify({'success': False, 'message': 'Invalid account number (must be 9-18 digits)'}), 400
+    
+    # Validate IFSC format: 4 letters + 0 + 6 alphanumeric
+    import re
+    if not re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', ifsc_code):
+        return jsonify({'success': False, 'message': 'Invalid IFSC code format'}), 400
     
     # Check wallet balance
     wallet = get_or_create_wallet(request.user_id)
-    if float(wallet['balance']) < amount:
-        return jsonify({'success': False, 'message': 'Insufficient balance for withdrawal'}), 400
+    balance = float(wallet['balance'])
+    if balance < amount:
+        return jsonify({'success': False, 'message': f'Insufficient balance. Available: ₹{balance:.2f}'}), 400
     
-    # Process withdrawal
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    masked_account = '****' + account_number[-4:]
+    
+    print(f"\n{'='*60}")
+    print(f"💸 WITHDRAWAL REQUEST")
+    print(f"   User: {request.user_id}")
+    print(f"   Amount: ₹{amount:.2f}")
+    print(f"   Bank: {bank_name}")
+    print(f"   Account: {masked_account}")
+    print(f"   IFSC: {ifsc_code}")
+    print(f"   Balance: ₹{balance:.2f}")
+    print('='*60)
     
     with get_db() as (cursor, conn):
-        # Create withdrawal request
-        cursor.execute(f'''
-            INSERT INTO withdrawal_requests 
-            (user_id, amount, bank_name, account_holder_name, account_number, ifsc_code, status, requested_at, created_at, updated_at)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (request.user_id, amount, bank_name, account_holder, account_number, ifsc_code, 'pending', now, now, now))
-        
-        # Deduct from wallet (mark as processing)
-        new_balance = float(wallet['balance']) - amount
+        # Deduct from wallet first
+        new_balance = balance - amount
         cursor.execute(f'''
             UPDATE wallets 
             SET balance = {PH}, total_spent = total_spent + {PH}, updated_at = {PH}
             WHERE user_id = {PH}
         ''', (new_balance, amount, now, request.user_id))
         
-        # Add transaction record
+        # Create withdrawal request record
         cursor.execute(f'''
-            INSERT INTO wallet_transactions 
-            (wallet_id, user_id, type, amount, balance_after, description, created_at, status)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (wallet['id'], request.user_id, 'withdrawal', amount, new_balance, f'Withdrawal to {bank_name}', now, 'pending'))
+            INSERT INTO withdrawal_requests 
+            (user_id, amount, bank_name, account_holder_name, account_number, ifsc_code, status, requested_at, created_at, updated_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            RETURNING id
+        ''', (request.user_id, amount, bank_name, account_holder, masked_account, ifsc_code, 'processing', now, now, now))
+        withdrawal_row = cursor.fetchone()
+        withdrawal_id = dict_from_row(withdrawal_row)['id'] if withdrawal_row else None
         
         conn.commit()
     
-    return jsonify({
-        'success': True,
-        'message': f'Withdrawal request of ₹{amount} submitted. It will be processed within 2-3 business days.',
-        'newBalance': new_balance,
-        'requestId': 'REQ_' + ''.join([str(ord(c) % 10) for c in now[:10]])
-    })
+    # Process Razorpay payout
+    amount_in_paise = int(amount * 100)
+    payout_result = create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_holder)
+    
+    with get_db() as (cursor, conn):
+        if payout_result.get('success'):
+            payout_id = payout_result.get('payout_id', '')
+            payout_status = payout_result.get('payout_status', 'processing')
+            
+            # Update withdrawal record with payout details
+            cursor.execute(f'''
+                UPDATE withdrawal_requests 
+                SET status = {PH}, transaction_id = {PH}, updated_at = {PH}
+                WHERE id = {PH}
+            ''', (payout_status, payout_id, now, withdrawal_id))
+            
+            # Add successful transaction record
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions 
+                (wallet_id, user_id, type, amount, balance_after, description, reference_id, created_at, status)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (wallet['id'], request.user_id, 'withdrawal', amount, new_balance,
+                  f'Withdrawal to {bank_name} ({masked_account})',
+                  payout_id, now, payout_status))
+            
+            conn.commit()
+            
+            print(f"✅ PAYOUT INITIATED: {payout_id}")
+            print(f"   Status: {payout_status}")
+            print(f"   New balance: ₹{new_balance:.2f}")
+            print('='*60 + "\n")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Withdrawal of ₹{amount:.2f} initiated! Amount will be deposited to your bank account.',
+                'newBalance': new_balance,
+                'withdrawalId': withdrawal_id,
+                'payoutId': payout_id,
+                'payoutStatus': payout_status
+            })
+        else:
+            # Payout failed — refund the wallet
+            print(f"❌ PAYOUT FAILED: {payout_result.get('message')}")
+            
+            refund_balance = new_balance + amount
+            cursor.execute(f'''
+                UPDATE wallets 
+                SET balance = {PH}, total_spent = total_spent - {PH}, updated_at = {PH}
+                WHERE user_id = {PH}
+            ''', (refund_balance, amount, now, request.user_id))
+            
+            cursor.execute(f'''
+                UPDATE withdrawal_requests 
+                SET status = {PH}, rejection_reason = {PH}, updated_at = {PH}
+                WHERE id = {PH}
+            ''', ('failed', payout_result.get('message', 'Payout failed'), now, withdrawal_id))
+            
+            conn.commit()
+            
+            print(f"   Refunded ₹{amount:.2f} to wallet")
+            print(f"   Balance restored: ₹{refund_balance:.2f}")
+            print('='*60 + "\n")
+            
+            return jsonify({
+                'success': False,
+                'message': f'Withdrawal failed: {payout_result.get("message", "Bank transfer could not be processed")}. Amount refunded to wallet.',
+                'newBalance': refund_balance
+            }), 500
 
 
 @app.route('/api/wallet/withdrawals', methods=['GET'])
@@ -4743,6 +4821,7 @@ def create_razorpay_payment_link(amount_in_paise, upi_handle):
         }
 
 
+def create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_holder_name):
     """Create a payout using Razorpay Payouts API"""
     try:
         import requests

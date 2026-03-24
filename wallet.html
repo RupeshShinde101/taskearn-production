@@ -880,22 +880,29 @@
 
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; font-size: 12px; color: rgba(255,255,255,0.7);">Account Number *</label>
-                    <input type="text" id="accountNumber" placeholder="Enter account number" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff;">
+                    <input type="text" id="accountNumber" placeholder="Enter account number" inputmode="numeric" pattern="[0-9]*" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff;">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: rgba(255,255,255,0.7);">Confirm Account Number *</label>
+                    <input type="text" id="confirmAccountNumber" placeholder="Re-enter account number" inputmode="numeric" pattern="[0-9]*" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff;">
                 </div>
 
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; font-size: 12px; color: rgba(255,255,255,0.7);">IFSC Code *</label>
-                    <input type="text" id="ifscCode" placeholder="11-character IFSC" maxlength="11" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff;">
+                    <input type="text" id="ifscCode" placeholder="11-character IFSC" maxlength="11" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; text-transform: uppercase;">
                 </div>
             </div>
 
             <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 12px;">
                 <i class="fas fa-info-circle" style="color: #4ade80; margin-right: 5px;"></i>
-                Transfer will be processed within 2-3 business days
+                Amount will be deposited directly to your bank account via NEFT/IMPS.
             </div>
 
-            <button class="add-money-btn" onclick="processWithdrawal()">
-                <i class="fas fa-bank"></i> Request Withdrawal
+            <div id="withdrawalError" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 15px; font-size: 12px; color: #f87171;"></div>
+
+            <button class="add-money-btn" id="withdrawBtn" onclick="processWithdrawal()">
+                <i class="fas fa-bank"></i> Withdraw to Bank
             </button>
         </div>
     </div>
@@ -1517,50 +1524,86 @@
             document.getElementById('bankName').value = '';
             document.getElementById('accountHolder').value = '';
             document.getElementById('accountNumber').value = '';
+            document.getElementById('confirmAccountNumber').value = '';
             document.getElementById('ifscCode').value = '';
+            document.getElementById('withdrawalError').style.display = 'none';
+            const btn = document.getElementById('withdrawBtn');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-bank"></i> Withdraw to Bank';
+        }
+        
+        function showWithdrawalError(msg) {
+            const el = document.getElementById('withdrawalError');
+            el.textContent = msg;
+            el.style.display = 'block';
         }
         
         async function processWithdrawal() {
+            document.getElementById('withdrawalError').style.display = 'none';
+            
             const amount = parseFloat(document.getElementById('withdrawAmount').value);
             const bankName = document.getElementById('bankName').value.trim();
             const accountHolder = document.getElementById('accountHolder').value.trim();
             const accountNumber = document.getElementById('accountNumber').value.trim();
+            const confirmAccountNumber = document.getElementById('confirmAccountNumber').value.trim();
             const ifscCode = document.getElementById('ifscCode').value.trim().toUpperCase();
             
             // Validation
             if (!amount || amount < 100) {
-                showToast('❌ Minimum withdrawal is ₹100');
+                showWithdrawalError('Minimum withdrawal amount is ₹100');
+                return;
+            }
+            
+            const wallet = getLocalWallet();
+            if (wallet.balance < amount) {
+                showWithdrawalError(`Insufficient balance. Available: ₹${wallet.balance.toFixed(2)}`);
                 return;
             }
             
             if (!bankName) {
-                showToast('❌ Please enter bank name');
+                showWithdrawalError('Please enter your bank name');
                 return;
             }
             
-            if (!accountHolder) {
-                showToast('❌ Please enter account holder name');
+            if (!accountHolder || accountHolder.length < 3) {
+                showWithdrawalError('Please enter account holder name (min 3 characters)');
                 return;
             }
             
-            if (!accountNumber || accountNumber.length < 9) {
-                showToast('❌ Please enter valid account number');
+            if (!accountNumber || !/^\d{9,18}$/.test(accountNumber)) {
+                showWithdrawalError('Account number must be 9-18 digits');
                 return;
             }
             
-            if (!ifscCode || ifscCode.length !== 11) {
-                showToast('❌ IFSC code must be 11 characters');
+            if (accountNumber !== confirmAccountNumber) {
+                showWithdrawalError('Account numbers do not match');
                 return;
             }
             
-            // Check balance
-            const wallet = getLocalWallet();
-            if (wallet.balance < amount) {
-                showToast('❌ Insufficient balance');
+            if (!ifscCode || !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
+                showWithdrawalError('Invalid IFSC code format (e.g., HDFC0001234)');
                 return;
             }
             
-            // Try API first
+            // Confirm with user
+            const confirmed = confirm(
+                `Confirm Withdrawal\n\n` +
+                `Amount: ₹${amount.toFixed(2)}\n` +
+                `Bank: ${bankName}\n` +
+                `Account: ****${accountNumber.slice(-4)}\n` +
+                `IFSC: ${ifscCode}\n` +
+                `Account Holder: ${accountHolder}\n\n` +
+                `This amount will be deposited to your bank account.\n` +
+                `Click OK to proceed.`
+            );
+            
+            if (!confirmed) return;
+            
+            // Disable button during processing
+            const btn = document.getElementById('withdrawBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            
             try {
                 const result = await WalletAPI.withdraw({
                     amount: amount,
@@ -1571,49 +1614,22 @@
                 });
                 
                 if (result && result.success) {
-                    showToast('✅ Withdrawal request submitted! Processing in 2-3 business days.');
+                    showToast('✅ ' + result.message);
                     closeWithdrawalModal();
                     loadWallet();
-                    return;
+                } else {
+                    showWithdrawalError(result?.message || 'Withdrawal failed. Please try again.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-bank"></i> Withdraw to Bank';
+                    // Reload wallet in case balance was refunded
+                    loadWallet();
                 }
             } catch (e) {
-                console.log('API not available, using local withdrawal');
+                console.error('Withdrawal error:', e);
+                showWithdrawalError('Could not process withdrawal. Please check your internet connection and try again.');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-bank"></i> Withdraw to Bank';
             }
-            
-            // Local withdrawal (offline mode)
-            wallet.balance -= amount;
-            
-            // Create withdrawal record
-            const withdrawal = {
-                id: Date.now(),
-                amount: amount,
-                bankName: bankName,
-                accountHolder: accountHolder,
-                accountNumber: '****' + accountNumber.slice(-4),
-                ifscCode: ifscCode,
-                status: 'pending',
-                date: new Date().toISOString()
-            };
-            
-            if (!wallet.withdrawals) {
-                wallet.withdrawals = [];
-            }
-            wallet.withdrawals.push(withdrawal);
-            
-            // Add transaction record
-            wallet.transactions.unshift({
-                id: Date.now(),
-                type: 'withdrawal',
-                amount: amount,
-                description: `Withdrawal to ${bankName}`,
-                status: 'pending',
-                date: new Date().toISOString()
-            });
-            
-            saveLocalWallet(wallet);
-            showToast('✅ Withdrawal request submitted! Processing in 2-3 business days.');
-            closeWithdrawalModal();
-            loadWalletLocal();
         }
         
         // Toast

@@ -1032,28 +1032,31 @@ async function processPaymentFromNotification(taskId, notification) {
             return;
         }
         
-        // Calculate amounts
+        // Calculate amounts for display
         const taskAmount = task.price || 0;
         const serviceCharge = task.service_charge || 0;
         const totalTaskValue = taskAmount + serviceCharge;
+        const posterFee = totalTaskValue * 0.05;
+        const totalCost = totalTaskValue + posterFee;
+        const helperCommission = totalTaskValue * 0.12;
         
-        // Commission breakdown
-        const helperCommission = totalTaskValue * 0.12;  // 12% helper commission
-        const posterFee = totalTaskValue * 0.05;         // 5% posting fee
-        const totalCost = totalTaskValue + posterFee;    // Total amount to deduct from poster
-        
-        // Get current balance
-        const currentBalance = currentUser.wallet || 0;
+        // Fetch real balance from server (not stale cache)
+        let currentBalance = 0;
+        try {
+            const walletData = await WalletAPI.get();
+            if (walletData && walletData.success !== false) {
+                currentBalance = walletData.balance || walletData.wallet?.balance || 0;
+            }
+        } catch (e) {
+            console.warn('Could not fetch wallet balance:', e.message);
+            showToast('❌ Could not check wallet balance. Please try again.');
+            return;
+        }
         
         console.log('💳 Payment Details:');
         console.log(`   Task: "${task.title}"`);
-        console.log(`   Base Amount: ₹${taskAmount.toFixed(2)}`);
-        console.log(`   Service Charge: ₹${serviceCharge.toFixed(2)}`);
-        console.log(`   Total Task Value: ₹${totalTaskValue.toFixed(2)}`);
-        console.log(`   Helper Commission (12%): ₹${helperCommission.toFixed(2)}`);
-        console.log(`   Your Posting Fee (5%): ₹${posterFee.toFixed(2)}`);
         console.log(`   Total Cost: ₹${totalCost.toFixed(2)}`);
-        console.log(`   Current Wallet Balance: ₹${currentBalance.toFixed(2)}`);
+        console.log(`   Wallet Balance: ₹${currentBalance.toFixed(2)}`);
         
         // Check balance
         if (currentBalance < totalCost) {
@@ -1072,16 +1075,12 @@ async function processPaymentFromNotification(taskId, notification) {
         const confirmed = confirm(
             `💰 Confirm Payment\n\n` +
             `Task: "${task.title}"\n\n` +
-            `Base Amount: ₹${taskAmount.toFixed(2)}\n` +
-            `Service Charge: ₹${serviceCharge.toFixed(2)}\n` +
-            `Total Task Value: ₹${totalTaskValue.toFixed(2)}\n\n` +
-            `Commission Breakdown:\n` +
-            `• Helper Commission (12%): ₹${helperCommission.toFixed(2)}\n` +
-            `• Your Posting Fee (5%): ₹${posterFee.toFixed(2)}\n\n` +
+            `Total Task Value: ₹${totalTaskValue.toFixed(2)}\n` +
+            `Your Posting Fee (5%): ₹${posterFee.toFixed(2)}\n\n` +
             `Total Cost: ₹${totalCost.toFixed(2)}\n\n` +
             `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
             `After Payment: ₹${(currentBalance - totalCost).toFixed(2)}\n\n` +
-            `Click OK to deduct from wallet`
+            `Click OK to pay from wallet`
         );
         
         if (!confirmed) {
@@ -1090,6 +1089,7 @@ async function processPaymentFromNotification(taskId, notification) {
         }
         
         // Call backend to process payment
+        showToast('⏳ Processing payment...', 3000);
         console.log('📤 Sending payment request...');
         const response = await fetch(API_BASE_URL + `/tasks/${taskId}/pay-helper`, {
             method: 'POST',
@@ -1104,7 +1104,6 @@ async function processPaymentFromNotification(taskId, notification) {
         console.log('📥 Payment response:', result);
         
         if (result.success) {
-            // Update local user data
             const newBalance = result.posterNewBalance || (currentBalance - totalCost);
             const helperEarnings = result.helperEarnings || (totalTaskValue - helperCommission);
             
@@ -1113,48 +1112,24 @@ async function processPaymentFromNotification(taskId, notification) {
                 localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
             }
             
-            // Update task and UI
             task.status = 'paid';
             
-            // Show payment done pop-up for poster
             showPaymentDonePopup(task, totalCost, helperEarnings, newBalance);
             
             renderDashboard();
             updateNotificationUI();
             
-            // Refresh from server
             setTimeout(() => {
                 loadTasksFromServer();
                 refreshWalletBalance();
             }, 1000);
         } else {
-            showToast(`❌ Payment failed: ${result.message || 'Unknown error'}`);
+            showToast(`❌ Payment failed: ${result.message || 'Unknown error'}`, 5000);
         }
         
     } catch (error) {
-        console.warn('Backend offline, processing payment locally:', error.message);
-
-        // LOCAL WALLET TRANSFER FALLBACK
-        const helperNetReceives = totalTaskValue - helperCommission;
-        const newBalance = currentBalance - totalCost;
-        currentUser.wallet = newBalance;
-        localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
-
-        // Credit helper's wallet locally
-        const helperId = task.acceptedBy?.id || task.helperId;
-        creditHelperWalletLocal(helperId, helperNetReceives, task);
-
-        task.status = 'paid';
-        task.paidAt = new Date().toISOString();
-        updateUserData(currentUser.id, {
-            postedTasks: serializeTasks(myPostedTasks)
-        });
-
-        // Show payment done pop-up for poster
-        showPaymentDonePopup(task, totalCost, helperNetReceives, newBalance);
-
-        renderDashboard();
-        updateNotificationUI();
+        console.error('Payment error:', error);
+        showToast('❌ Payment failed. Please check your connection and try again.', 5000);
     }
 }
 
@@ -2891,53 +2866,6 @@ function notifyPosterTaskCompleted(task, helper) {
 }
 
 /**
- * Credit helper's wallet locally and send "Payment Received" notification
- * Used by both processPaymentFromNotification and payHelperForTask local fallbacks
- */
-function creditHelperWalletLocal(helperId, amount, task) {
-    if (!helperId) return;
-
-    // Update helper's wallet in taskearn_users (if exists)
-    const users = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
-    if (users[helperId]) {
-        users[helperId].wallet = (users[helperId].wallet || 0) + amount;
-        localStorage.setItem('taskearn_users', JSON.stringify(users));
-    }
-
-    // Also update helper's user_data wallet
-    const helperData = JSON.parse(localStorage.getItem(`user_${helperId}_data`) || '{}');
-    helperData.wallet = (helperData.wallet || 0) + amount;
-    localStorage.setItem(`user_${helperId}_data`, JSON.stringify(helperData));
-
-    // Send "Payment Received" notification to helper
-    const helperNotifications = JSON.parse(localStorage.getItem(`notifications_${helperId}`) || '[]');
-    helperNotifications.unshift({
-        id: Date.now(),
-        type: 'success',
-        title: 'Payment Received! 💰',
-        message: `You received ₹${amount.toFixed(2)} for completing "${task.title}".`,
-        taskId: task.id,
-        read: false,
-        createdAt: new Date().toISOString()
-    });
-    localStorage.setItem(`notifications_${helperId}`, JSON.stringify(helperNotifications));
-
-    // Update helper's accepted tasks to 'paid' status
-    if (helperData.acceptedTasks) {
-        helperData.acceptedTasks = helperData.acceptedTasks.map(t => {
-            if (t.id === task.id || t.id == task.id) {
-                t.status = 'paid';
-                t.paidAt = new Date().toISOString();
-            }
-            return t;
-        });
-        localStorage.setItem(`user_${helperId}_data`, JSON.stringify(helperData));
-    }
-
-    console.log(`✅ Credited ₹${amount.toFixed(2)} to helper ${helperId}'s wallet`);
-}
-
-/**
  * Show "Payment Done" pop-up for the poster after paying
  */
 function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
@@ -3066,13 +2994,22 @@ async function payHelperForTask(taskId) {
     }
 
     const taskAmount = task.price;
-    const serviceCharge = task.service_charge || 0;  // Include service charge!
-    const totalTaskValue = taskAmount + serviceCharge;  // Full amount
-    const helperCommission = totalTaskValue * 0.12;  // 12% of TOTAL
-    const posterFee = totalTaskValue * 0.05;  // 5% of TOTAL
-    const totalCost = totalTaskValue + posterFee;  // Poster pays total + fee
-    const helperNetReceives = totalTaskValue - helperCommission;  // Helper gets after commission
-    const currentBalance = currentUser.wallet || 0;
+    const serviceCharge = task.service_charge || 0;
+    const totalTaskValue = taskAmount + serviceCharge;
+    const helperCommission = totalTaskValue * 0.12;
+    const posterFee = totalTaskValue * 0.05;
+    const totalCost = totalTaskValue + posterFee;
+    const helperNetReceives = totalTaskValue - helperCommission;
+
+    // Fetch real wallet balance from server
+    let currentBalance = 0;
+    try {
+        const walletData = await WalletAPI.get();
+        currentBalance = walletData.balance || 0;
+    } catch (err) {
+        showToast('❌ Could not fetch wallet balance. Please try again.');
+        return;
+    }
 
     console.log('💰 Payment Details:');
     console.log(`   Task Amount (Base): ₹${taskAmount}`);
@@ -3174,29 +3111,8 @@ async function payHelperForTask(taskId) {
             console.error('Payment error:', result.message);
         }
     } catch (error) {
-        console.warn('Backend offline, processing payment locally:', error.message);
-
-        // LOCAL WALLET TRANSFER FALLBACK
-        const newPosterBalance = currentBalance - totalCost;
-        currentUser.wallet = newPosterBalance;
-        localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
-
-        // Credit helper's wallet locally
-        const helperId = task.acceptedBy?.id || task.helperId;
-        creditHelperWalletLocal(helperId, helperNetReceives, task);
-
-        // Mark task as paid
-        task.status = 'paid';
-        task.paidAt = new Date().toISOString();
-        updateUserData(currentUser.id, {
-            postedTasks: serializeTasks(myPostedTasks)
-        });
-
-        // Show payment done pop-up for poster
-        showPaymentDonePopup(task, totalCost, helperNetReceives, newPosterBalance);
-
-        renderDashboard();
-        updateNotificationUI();
+        console.error('Payment failed:', error.message);
+        showToast('❌ Payment failed. Please check your connection and try again.');
     }
 }
 

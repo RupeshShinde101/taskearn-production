@@ -1246,81 +1246,32 @@ def pay_helper(task_id):
             print(f"   Helper Total Deduction: ₹{helper_total_deduction:.2f}")
             print(f"   Poster Fee (5% of total): ₹{poster_deduction:.2f}")
             
-            # ===== HELPER WALLET OPERATIONS =====
-            helper_wallet = get_or_create_wallet(helper_id)
-            helper_balance = float(helper_wallet.get('balance', 0))
-            
-            print(f"\n👥 Helper Wallet Operations:")
-            print(f"   Current balance: ₹{helper_balance:.2f}")
-            print(f"   Adding task earning (full amount): +₹{total_task_value:.2f}")
-            
-            # Credit helper with FULL TASK VALUE (price + service charge)
-            helper_balance_after_credit = helper_balance + total_task_value
-            
-            # Deduct commission and fees
-            helper_new_balance = helper_balance_after_credit - helper_total_deduction
-            
-            print(f"   Deducting commission (12%): -₹{helper_total_deduction:.2f}")
-            print(f"   Final balance: ₹{helper_new_balance:.2f}")
-            print(f"   ✨ Helper Net Earning: ₹{(total_task_value - helper_total_deduction):.2f}")
-            
-            # Update helper wallet
-            cursor.execute(f'''
-                UPDATE wallets
-                SET balance = {PH}, total_earned = total_earned + {PH}, updated_at = {PH}
-                WHERE user_id = {PH}
-            ''', (helper_new_balance, total_task_value, now, helper_id))
-            
-            # Record helper earning transaction
-            cursor.execute(f'''
-                INSERT INTO wallet_transactions (
-                    wallet_id, user_id, type, amount, balance_after,
-                    description, reference_id, task_id, created_at
-                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (
-                helper_wallet.get('id'), helper_id, 'credit',
-                total_task_value, helper_balance_after_credit,
-                f'Task payment received (INCLUDING service charge): ₹{total_task_value:.2f}',
-                f'task-earning-{task_id}', task_id, now
-            ))
-            
-            # Record helper commission deduction
-            cursor.execute(f'''
-                INSERT INTO wallet_transactions (
-                    wallet_id, user_id, type, amount, balance_after,
-                    description, reference_id, task_id, created_at
-                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (
-                helper_wallet.get('id'), helper_id, 'deduction',
-                -helper_total_deduction, helper_new_balance,
-                f'Commission (10%) + Transaction Fee (2%): ₹{helper_total_deduction:.2f}',
-                f'task-commission-{task_id}', task_id, now
-            ))
-            
-            # ===== POSTER WALLET OPERATIONS =====
+            # ===== CHECK POSTER BALANCE FIRST =====
             poster_wallet = get_or_create_wallet(request.user_id)
             poster_balance = float(poster_wallet.get('balance', 0))
-            
-            # Deduct poster fee, but also need to afford the FULL TASK VALUE
             total_poster_cost = total_task_value + poster_deduction
             
-            print(f"\n👤 Poster Wallet Operations:")
+            print(f"\n👤 Poster Balance Check:")
             print(f"   Current balance: ₹{poster_balance:.2f}")
-            print(f"   Deducting full task value: -₹{total_task_value:.2f}")
-            print(f"   Deducting poster fee (5%): -₹{poster_deduction:.2f}")
-            print(f"   Total deduction: -₹{total_poster_cost:.2f}")
+            print(f"   Total cost: ₹{total_poster_cost:.2f}")
             
-            # Check if poster has sufficient balance
             if poster_balance < total_poster_cost:
-                print(f"❌ Insufficient balance in poster wallet")
+                print(f"❌ Insufficient balance! Need ₹{total_poster_cost:.2f}, have ₹{poster_balance:.2f}")
+                print('='*60 + "\n")
                 return jsonify({
                     'success': False, 
                     'message': f'Insufficient balance. Need ₹{total_poster_cost:.2f}, have ₹{poster_balance:.2f}'
                 }), 400
             
+            # ===== POSTER WALLET OPERATIONS (deduct first) =====
             poster_new_balance = poster_balance - total_poster_cost
             
-            # Update poster wallet
+            print(f"\n👤 Poster Wallet Operations:")
+            print(f"   Deducting full task value: -₹{total_task_value:.2f}")
+            print(f"   Deducting poster fee (5%): -₹{poster_deduction:.2f}")
+            print(f"   Total deduction: -₹{total_poster_cost:.2f}")
+            print(f"   Final balance: ₹{poster_new_balance:.2f}")
+            
             cursor.execute(f'''
                 UPDATE wallets
                 SET balance = {PH}, total_spent = total_spent + {PH}, updated_at = {PH}
@@ -1353,7 +1304,51 @@ def pay_helper(task_id):
                 f'task-fee-{task_id}', task_id, now
             ))
             
-            print(f"   Final balance: ₹{poster_new_balance:.2f}")
+            # ===== HELPER WALLET OPERATIONS (credit after poster deducted) =====
+            helper_wallet = get_or_create_wallet(helper_id)
+            helper_balance = float(helper_wallet.get('balance', 0))
+            
+            helper_balance_after_credit = helper_balance + total_task_value
+            helper_new_balance = helper_balance_after_credit - helper_total_deduction
+            
+            print(f"\n👥 Helper Wallet Operations:")
+            print(f"   Current balance: ₹{helper_balance:.2f}")
+            print(f"   Adding task earning: +₹{total_task_value:.2f}")
+            print(f"   Deducting commission (12%): -₹{helper_total_deduction:.2f}")
+            print(f"   Final balance: ₹{helper_new_balance:.2f}")
+            print(f"   ✨ Helper Net Earning: ₹{(total_task_value - helper_total_deduction):.2f}")
+            
+            cursor.execute(f'''
+                UPDATE wallets
+                SET balance = {PH}, total_earned = total_earned + {PH}, updated_at = {PH}
+                WHERE user_id = {PH}
+            ''', (helper_new_balance, total_task_value, now, helper_id))
+            
+            # Record helper earning transaction
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after,
+                    description, reference_id, task_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                helper_wallet.get('id'), helper_id, 'credit',
+                total_task_value, helper_balance_after_credit,
+                f'Task payment received (INCLUDING service charge): ₹{total_task_value:.2f}',
+                f'task-earning-{task_id}', task_id, now
+            ))
+            
+            # Record helper commission deduction
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (
+                    wallet_id, user_id, type, amount, balance_after,
+                    description, reference_id, task_id, created_at
+                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (
+                helper_wallet.get('id'), helper_id, 'deduction',
+                -helper_total_deduction, helper_new_balance,
+                f'Commission (10%) + Transaction Fee (2%): ₹{helper_total_deduction:.2f}',
+                f'task-commission-{task_id}', task_id, now
+            ))
             
             # ===== COMPANY WALLET OPERATIONS =====
             # Company receives: Helper commission (12%) + Poster fee (5%)

@@ -127,6 +127,11 @@
             <li><a href="#home" onclick="toggleMobileMenu()">Home</a></li>
             <li><a href="#upload-task" onclick="toggleMobileMenu()">Post Task</a></li>
             <li><a href="#find-tasks" onclick="toggleMobileMenu()">Find Tasks</a></li>
+            <li class="mobile-wallet-item" id="mobileWalletItem" style="display: none;">
+                <a href="wallet.html" onclick="toggleMobileMenu();">
+                    <i class="fas fa-wallet"></i> Wallet
+                </a>
+            </li>
             <li class="mobile-notification-item" id="mobileNotificationItem" style="display: none;">
                 <a href="#" onclick="toggleNotifications(); toggleMobileMenu();">
                     <i class="fas fa-bell"></i> Notifications <span class="mobile-badge" id="mobileBadge">0</span>
@@ -1440,7 +1445,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260317_mobile_fix_2"></script>
     
-    <script src="app.js?v=20260321_1745_mapctrls"></script>
+    <script src="app.js?v=20260322_chat_tracking_flow"></script>
     
     <!-- CRITICAL: Mobile detection happens in HEAD section via inline script -->
     <!-- That script runs FIRST and pre-sets window.API_BASE_URL before any external scripts load -->

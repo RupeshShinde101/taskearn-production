@@ -4824,140 +4824,133 @@ def create_razorpay_payment_link(amount_in_paise, upi_handle):
 
 
 def create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_holder_name):
-    """Create a payout using Razorpay Payouts API"""
+    """Create a payout using RazorpayX Payouts API
+    
+    Flow: Create Contact → Create Fund Account → Create Payout
+    Requires: RazorpayX activated, RAZORPAYX_ACCOUNT_NUMBER env var set
+    """
     try:
         import requests
         
         if not config.RAZORPAY_KEY_ID or not config.RAZORPAY_KEY_SECRET:
-            print("⚠️  Razorpay keys not configured")
-            return {
-                'success': False,
-                'message': 'Razorpay keys not configured',
-                'payout_id': None
-            }
+            return {'success': False, 'message': 'Razorpay keys not configured', 'payout_id': None}
         
-        # Razorpay Payouts API endpoint
-        url = 'https://api.razorpay.com/v1/payouts'
-        
-        # Create fund account first (for bank transfer)
-        contact_url = 'https://api.razorpay.com/v1/contacts'
-        fund_account_url = 'https://api.razorpay.com/v1/fund_accounts'
+        if not config.RAZORPAYX_ACCOUNT_NUMBER:
+            return {'success': False, 'message': 'RazorpayX account number not configured. Set RAZORPAYX_ACCOUNT_NUMBER env var.', 'payout_id': None}
         
         auth = (config.RAZORPAY_KEY_ID, config.RAZORPAY_KEY_SECRET)
+        headers = {'Content-Type': 'application/json'}
         
-        # Step 1: Create or get contact
+        # Step 1: Create contact
         contact_data = {
-            'type': 'vendor',
             'name': account_holder_name,
-            'email': 'admin@taskearn.com',
-            'contact_email': 'admin@taskearn.com',
+            'type': 'customer',
+            'reference_id': f'taskearn_{account_number[-4:]}_{int(time.time())}',
             'notes': {
-                'project': 'TaskEarn Platform Payout'
+                'platform': 'TaskEarn'
             }
         }
         
-        print(f"📨 Creating Razorpay contact for payout...")
-        contact_response = requests.post(contact_url, json=contact_data, auth=auth, timeout=10)
+        print(f"📨 Step 1: Creating RazorpayX contact...")
+        contact_resp = requests.post(
+            'https://api.razorpay.com/v1/contacts',
+            json=contact_data, auth=auth, headers=headers, timeout=15
+        )
         
-        if contact_response.status_code != 200:
-            print(f"⚠️  Contact creation: {contact_response.status_code} - {contact_response.text}")
-            # Continue anyway, sometimes contact already exists
+        if contact_resp.status_code not in [200, 201]:
+            error_msg = contact_resp.text
+            print(f"❌ Contact creation failed: {contact_resp.status_code} - {error_msg}")
+            return {'success': False, 'message': f'Contact creation failed: {error_msg}', 'payout_id': None}
         
-        contact = contact_response.json() if contact_response.status_code == 200 else {}
-        contact_id = contact.get('id', 'contact_0000000000000')
+        contact_id = contact_resp.json().get('id')
+        if not contact_id:
+            return {'success': False, 'message': 'Contact created but no ID returned', 'payout_id': None}
         
-        print(f"✅ Contact ID: {contact_id}")
+        print(f"✅ Contact created: {contact_id}")
         
-        # Step 2: Create fund account (bank account)
-        fund_account_data = {
+        # Step 2: Create fund account (bank account linked to contact)
+        fund_data = {
             'contact_id': contact_id,
             'account_type': 'bank_account',
             'bank_account': {
                 'name': account_holder_name,
-                'notes': {
-                    'project': 'TaskEarn Platform'
-                },
                 'ifsc': ifsc_code,
                 'account_number': account_number
             }
         }
         
-        print(f"📨 Creating fund account: {account_number[-4:]} ({ifsc_code})...")
-        fund_response = requests.post(fund_account_url, json=fund_account_data, auth=auth, timeout=10)
+        print(f"📨 Step 2: Creating fund account for ****{account_number[-4:]} ({ifsc_code})...")
+        fund_resp = requests.post(
+            'https://api.razorpay.com/v1/fund_accounts',
+            json=fund_data, auth=auth, headers=headers, timeout=15
+        )
         
-        if fund_response.status_code not in [200, 201]:
-            print(f"❌ Fund account creation failed: {fund_response.status_code}")
-            print(f"   Response: {fund_response.text}")
-            return {
-                'success': False,
-                'message': f'Fund account creation failed: {fund_response.text}',
-                'payout_id': None
-            }
+        if fund_resp.status_code not in [200, 201]:
+            error_msg = fund_resp.text
+            print(f"❌ Fund account creation failed: {fund_resp.status_code} - {error_msg}")
+            return {'success': False, 'message': f'Fund account creation failed: {error_msg}', 'payout_id': None}
         
-        fund_account = fund_response.json()
-        fund_account_id = fund_account.get('id')
+        fund_account_id = fund_resp.json().get('id')
+        if not fund_account_id:
+            return {'success': False, 'message': 'Fund account created but no ID returned', 'payout_id': None}
         
-        print(f"✅ Fund Account ID: {fund_account_id}")
+        print(f"✅ Fund account created: {fund_account_id}")
         
-        # Step 3: Create actual payout
+        # Step 3: Create payout
         payout_data = {
-            'account_number': fund_account_id,
+            'account_number': config.RAZORPAYX_ACCOUNT_NUMBER,  # YOUR RazorpayX business account number
             'fund_account_id': fund_account_id,
-            'amount': int(amount_in_paise),  # Amount in paise
+            'amount': int(amount_in_paise),
             'currency': 'INR',
-            'mode': 'NEFT',  # NEFT, RTGS, IMPS
-            'purpose': 'settlement',
-            'description': f'TaskEarn Settlement - ₹{amount_in_paise/100:.2f}',
+            'mode': 'IMPS',  # IMPS for faster transfer (instant), NEFT for batched
+            'purpose': 'payout',
+            'queue_if_low_balance': True,
+            'reference_id': f'wd_{int(time.time())}',
+            'narration': f'TaskEarn Withdrawal',
             'notes': {
-                'project': 'TaskEarn',
-                'type': 'platform_settlement'
+                'platform': 'TaskEarn',
+                'type': 'user_withdrawal'
             }
         }
         
-        print(f"💸 Creating payout of ₹{amount_in_paise/100:.2f}...")
-        payout_response = requests.post(url, json=payout_data, auth=auth, timeout=10)
+        print(f"💸 Step 3: Creating payout of ₹{amount_in_paise/100:.2f}...")
+        payout_resp = requests.post(
+            'https://api.razorpay.com/v1/payouts',
+            json=payout_data, auth=auth, headers=headers, timeout=15
+        )
         
-        if payout_response.status_code not in [200, 201]:
-            print(f"❌ Payout creation failed: {payout_response.status_code}")
-            print(f"   Response: {payout_response.text}")
-            return {
-                'success': False,
-                'message': f'Payout failed: {payout_response.text}',
-                'payout_id': None
-            }
+        if payout_resp.status_code not in [200, 201]:
+            error_msg = payout_resp.text
+            print(f"❌ Payout creation failed: {payout_resp.status_code} - {error_msg}")
+            return {'success': False, 'message': f'Payout failed: {error_msg}', 'payout_id': None}
         
-        payout = payout_response.json()
+        payout = payout_resp.json()
         payout_id = payout.get('id')
+        payout_status = payout.get('status', 'processing')
         
         print(f"✅ PAYOUT CREATED SUCCESSFULLY!")
         print(f"   Payout ID: {payout_id}")
         print(f"   Amount: ₹{amount_in_paise/100:.2f}")
-        print(f"   Bank: {ifsc_code} {account_number[-4:]}")
-        print(f"   Status: {payout.get('status')}")
+        print(f"   Bank: {ifsc_code} ****{account_number[-4:]}")
+        print(f"   Status: {payout_status}")
+        print(f"   Mode: IMPS")
         
         return {
             'success': True,
             'message': 'Payout created successfully',
             'payout_id': payout_id,
-            'payout_status': payout.get('status'),
+            'payout_status': payout_status,
             'amount': amount_in_paise / 100
         }
         
     except requests.exceptions.RequestException as e:
         print(f"❌ Network error creating payout: {e}")
-        return {
-            'success': False,
-            'message': f'Network error: {str(e)}',
-            'payout_id': None
-        }
+        return {'success': False, 'message': f'Network error: {str(e)}', 'payout_id': None}
     except Exception as e:
         print(f"❌ Error creating Razorpay payout: {e}")
         import traceback
         traceback.print_exc()
-        return {
-            'success': False,
-            'message': f'Error: {str(e)}',
-            'payout_id': None
+        return {'success': False, 'message': f'Error: {str(e)}', 'payout_id': None}
         }
 
 

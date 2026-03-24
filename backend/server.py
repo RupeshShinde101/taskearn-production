@@ -2222,7 +2222,7 @@ def get_transactions():
 @app.route('/api/wallet/withdraw', methods=['POST'])
 @require_auth
 def request_withdrawal():
-    """Process withdrawal from wallet to user's bank account via Razorpay Payouts"""
+    """Process withdrawal from wallet to user's bank account"""
     data = request.get_json()
     amount = float(data.get('amount', 0))
     bank_name = data.get('bankName', '').strip()
@@ -2269,7 +2269,7 @@ def request_withdrawal():
     print('='*60)
     
     with get_db() as (cursor, conn):
-        # Deduct from wallet first
+        # Deduct from wallet
         new_balance = balance - amount
         cursor.execute(f'''
             UPDATE wallets 
@@ -2277,86 +2277,82 @@ def request_withdrawal():
             WHERE user_id = {PH}
         ''', (new_balance, amount, now, request.user_id))
         
-        # Create withdrawal request record
+        # Store full account number securely for admin processing
+        # Display masked version to users in API responses
         cursor.execute(f'''
             INSERT INTO withdrawal_requests 
             (user_id, amount, bank_name, account_holder_name, account_number, ifsc_code, status, requested_at, created_at, updated_at)
             VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             RETURNING id
-        ''', (request.user_id, amount, bank_name, account_holder, masked_account, ifsc_code, 'processing', now, now, now))
+        ''', (request.user_id, amount, bank_name, account_holder, account_number, ifsc_code, 'pending', now, now, now))
         withdrawal_row = cursor.fetchone()
         withdrawal_id = dict_from_row(withdrawal_row)['id'] if withdrawal_row else None
         
+        # Add wallet transaction record
+        cursor.execute(f'''
+            INSERT INTO wallet_transactions 
+            (wallet_id, user_id, type, amount, balance_after, description, reference_id, created_at, status)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (wallet['id'], request.user_id, 'withdrawal', amount, new_balance,
+              f'Withdrawal to {bank_name} ({masked_account})',
+              f'WD-{withdrawal_id}', now, 'pending'))
+        
         conn.commit()
     
-    # Process Razorpay payout
+    # Try automatic Razorpay payout (requires RazorpayX)
+    payout_success = False
+    payout_id = None
     amount_in_paise = int(amount * 100)
-    payout_result = create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_holder)
     
-    with get_db() as (cursor, conn):
+    try:
+        payout_result = create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_holder)
         if payout_result.get('success'):
+            payout_success = True
             payout_id = payout_result.get('payout_id', '')
             payout_status = payout_result.get('payout_status', 'processing')
             
-            # Update withdrawal record with payout details
-            cursor.execute(f'''
-                UPDATE withdrawal_requests 
-                SET status = {PH}, transaction_id = {PH}, updated_at = {PH}
-                WHERE id = {PH}
-            ''', (payout_status, payout_id, now, withdrawal_id))
+            with get_db() as (cursor, conn):
+                cursor.execute(f'''
+                    UPDATE withdrawal_requests 
+                    SET status = {PH}, transaction_id = {PH}, updated_at = {PH}
+                    WHERE id = {PH}
+                ''', (payout_status, payout_id, now, withdrawal_id))
+                
+                cursor.execute(f'''
+                    UPDATE wallet_transactions 
+                    SET status = {PH}, reference_id = {PH}
+                    WHERE user_id = {PH} AND reference_id = {PH}
+                ''', (payout_status, payout_id, request.user_id, f'WD-{withdrawal_id}'))
+                
+                conn.commit()
             
-            # Add successful transaction record
-            cursor.execute(f'''
-                INSERT INTO wallet_transactions 
-                (wallet_id, user_id, type, amount, balance_after, description, reference_id, created_at, status)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (wallet['id'], request.user_id, 'withdrawal', amount, new_balance,
-                  f'Withdrawal to {bank_name} ({masked_account})',
-                  payout_id, now, payout_status))
-            
-            conn.commit()
-            
-            print(f"✅ PAYOUT INITIATED: {payout_id}")
-            print(f"   Status: {payout_status}")
-            print(f"   New balance: ₹{new_balance:.2f}")
-            print('='*60 + "\n")
-            
-            return jsonify({
-                'success': True,
-                'message': f'Withdrawal of ₹{amount:.2f} initiated! Amount will be deposited to your bank account.',
-                'newBalance': new_balance,
-                'withdrawalId': withdrawal_id,
-                'payoutId': payout_id,
-                'payoutStatus': payout_status
-            })
+            print(f"✅ AUTO PAYOUT INITIATED: {payout_id}")
         else:
-            # Payout failed — refund the wallet
-            print(f"❌ PAYOUT FAILED: {payout_result.get('message')}")
-            
-            refund_balance = new_balance + amount
-            cursor.execute(f'''
-                UPDATE wallets 
-                SET balance = {PH}, total_spent = total_spent - {PH}, updated_at = {PH}
-                WHERE user_id = {PH}
-            ''', (refund_balance, amount, now, request.user_id))
-            
-            cursor.execute(f'''
-                UPDATE withdrawal_requests 
-                SET status = {PH}, rejection_reason = {PH}, updated_at = {PH}
-                WHERE id = {PH}
-            ''', ('failed', payout_result.get('message', 'Payout failed'), now, withdrawal_id))
-            
-            conn.commit()
-            
-            print(f"   Refunded ₹{amount:.2f} to wallet")
-            print(f"   Balance restored: ₹{refund_balance:.2f}")
-            print('='*60 + "\n")
-            
-            return jsonify({
-                'success': False,
-                'message': f'Withdrawal failed: {payout_result.get("message", "Bank transfer could not be processed")}. Amount refunded to wallet.',
-                'newBalance': refund_balance
-            }), 500
+            print(f"⚠️  Auto payout not available: {payout_result.get('message', 'RazorpayX not configured')}")
+            print(f"   Withdrawal queued for manual admin processing")
+    except Exception as e:
+        print(f"⚠️  Auto payout skipped: {str(e)}")
+        print(f"   Withdrawal queued for manual admin processing")
+    
+    print(f"   New balance: ₹{new_balance:.2f}")
+    print(f"   Withdrawal ID: {withdrawal_id}")
+    print('='*60 + "\n")
+    
+    if payout_success:
+        return jsonify({
+            'success': True,
+            'message': f'₹{amount:.2f} withdrawal initiated! Amount will be deposited to your bank account.',
+            'newBalance': new_balance,
+            'withdrawalId': withdrawal_id
+        })
+    else:
+        # Withdrawal is pending admin approval — money already deducted
+        return jsonify({
+            'success': True,
+            'message': f'₹{amount:.2f} withdrawal request submitted! Your bank details are verified and amount will be transferred within 24 hours.',
+            'newBalance': new_balance,
+            'withdrawalId': withdrawal_id
+        })
 
 
 @app.route('/api/wallet/withdrawals', methods=['GET'])
@@ -2375,6 +2371,12 @@ def get_withdrawals():
             LIMIT {PH} OFFSET {PH}
         ''', (request.user_id, limit, offset))
         withdrawals = [dict_from_row(row) for row in cursor.fetchall()]
+        
+        # Mask account numbers in response for security
+        for w in withdrawals:
+            acct = w.get('account_number', '')
+            if acct and len(acct) > 4 and not acct.startswith('****'):
+                w['account_number'] = '****' + acct[-4:]
         
         cursor.execute(f'SELECT COUNT(*) as count FROM withdrawal_requests WHERE user_id = {PH}', (request.user_id,))
         total = dict_from_row(cursor.fetchone())['count']

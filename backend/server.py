@@ -4908,7 +4908,6 @@ def create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_h
         import traceback
         traceback.print_exc()
         return {'success': False, 'message': f'Error: {str(e)}', 'payout_id': None}
-        }
 
 
 @app.route('/api/admin/process-settlement', methods=['POST'])

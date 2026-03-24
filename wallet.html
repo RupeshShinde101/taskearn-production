@@ -352,28 +352,28 @@
         
         .modal-content {
             background: #1a1a2e;
-            border-radius: 20px;
-            padding: 30px;
+            border-radius: 16px;
+            padding: 20px;
             width: 90%;
-            max-width: 450px;
+            max-width: 380px;
             position: relative;
         }
         
         .modal-close {
             position: absolute;
-            top: 15px;
-            right: 15px;
+            top: 12px;
+            right: 12px;
             background: none;
             border: none;
             color: rgba(255, 255, 255, 0.5);
-            font-size: 24px;
+            font-size: 20px;
             cursor: pointer;
         }
         
         .modal-title {
-            font-size: 24px;
+            font-size: 18px;
             font-weight: 600;
-            margin-bottom: 25px;
+            margin-bottom: 15px;
             text-align: center;
         }
         
@@ -857,49 +857,49 @@
             </button>
             <div class="modal-title">Withdraw Funds</div>
             
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-size: 14px;">Amount (Min: ₹100)</label>
-                <input type="number" class="amount-input" id="withdrawAmount" placeholder="₹0" min="100" style="font-size: 32px;">
-                <div style="font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 5px;">Available Balance: ₹<span id="availableBalance">0</span></div>
+            <div style="margin-bottom: 12px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 12px;">Amount (Min: ₹100)</label>
+                <input type="number" class="amount-input" id="withdrawAmount" placeholder="₹0" min="100" style="font-size: 24px; padding: 8px;">
+                <div style="font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 4px;">Available Balance: ₹<span id="availableBalance">0</span></div>
             </div>
 
-            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; margin-bottom: 20px;">
-                <h3 style="font-size: 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 5px;">
+            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px; margin-bottom: 12px;">
+                <h3 style="font-size: 13px; margin-bottom: 10px; display: flex; align-items: center; gap: 5px;">
                     <i class="fas fa-university"></i> Bank Details
                 </h3>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: rgba(255,255,255,0.7);">Bank Name *</label>
-                    <input type="text" id="bankName" placeholder="e.g., HDFC Bank" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff;">
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 3px; font-size: 11px; color: rgba(255,255,255,0.7);">Bank Name *</label>
+                    <input type="text" id="bankName" placeholder="e.g., HDFC Bank" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; font-size: 13px;">
                 </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: rgba(255,255,255,0.7);">Account Holder Name *</label>
-                    <input type="text" id="accountHolder" placeholder="Your name as per bank" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff;">
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 3px; font-size: 11px; color: rgba(255,255,255,0.7);">Account Holder Name *</label>
+                    <input type="text" id="accountHolder" placeholder="Your name as per bank" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; font-size: 13px;">
                 </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: rgba(255,255,255,0.7);">Account Number *</label>
-                    <input type="text" id="accountNumber" placeholder="Enter account number" inputmode="numeric" pattern="[0-9]*" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff;">
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 3px; font-size: 11px; color: rgba(255,255,255,0.7);">Account Number *</label>
+                    <input type="text" id="accountNumber" placeholder="Enter account number" inputmode="numeric" pattern="[0-9]*" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; font-size: 13px;">
                 </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: rgba(255,255,255,0.7);">Confirm Account Number *</label>
-                    <input type="text" id="confirmAccountNumber" placeholder="Re-enter account number" inputmode="numeric" pattern="[0-9]*" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff;">
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 3px; font-size: 11px; color: rgba(255,255,255,0.7);">Confirm Account Number *</label>
+                    <input type="text" id="confirmAccountNumber" placeholder="Re-enter account number" inputmode="numeric" pattern="[0-9]*" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; font-size: 13px;">
                 </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: rgba(255,255,255,0.7);">IFSC Code *</label>
-                    <input type="text" id="ifscCode" placeholder="11-character IFSC" maxlength="11" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; text-transform: uppercase;">
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 3px; font-size: 11px; color: rgba(255,255,255,0.7);">IFSC Code *</label>
+                    <input type="text" id="ifscCode" placeholder="11-character IFSC" maxlength="11" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; font-size: 13px; text-transform: uppercase;">
                 </div>
             </div>
 
-            <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 12px;">
+            <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; font-size: 11px;">
                 <i class="fas fa-info-circle" style="color: #4ade80; margin-right: 5px;"></i>
                 Amount will be deposited directly to your bank account via NEFT/IMPS.
             </div>
 
-            <div id="withdrawalError" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 15px; font-size: 12px; color: #f87171;"></div>
+            <div id="withdrawalError" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-size: 11px; color: #f87171;"></div>
 
             <button class="add-money-btn" id="withdrawBtn" onclick="processWithdrawal()">
                 <i class="fas fa-bank"></i> Withdraw to Bank

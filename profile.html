@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - TaskEarn</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script>
+        function loadRazorpayScript() { if (typeof Razorpay !== 'undefined') return; var s = document.createElement('script'); s.src = 'https://checkout.razorpay.com/v1/checkout.js'; s.async = true; document.head.appendChild(s); }
+        if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', loadRazorpayScript); } else { loadRazorpayScript(); }
+    </script>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        (function() { var ua = navigator.userAgent.toLowerCase(); var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua); if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; } else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; } })();
+    </script>
+</head>
+<body class="has-tab-bar">
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo"><a href="index.html" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:8px;"><i class="fas fa-tasks"></i><span>Task<span class="highlight">Earn</span></span></a></div>
+            <ul class="nav-links"><li><a href="index.html">Home</a></li><li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li></ul>
+            <div class="notification-wrapper" id="notificationWrapper" style="display: none;">
+                <button class="notification-bell" onclick="toggleNotifications()"><i class="fas fa-bell"></i><span class="notification-badge" id="notificationBadge">0</span></button>
+                <div class="notification-dropdown" id="notificationDropdown"><div class="notification-header"><h4>Notifications</h4><button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button></div><div class="notification-list" id="notificationList"><div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div></div></div>
+            </div>
+            <div class="nav-buttons"><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></div>
+            <div class="hamburger" onclick="toggleMobileMenu()"><span></span><span></span><span></span></div>
+        </div>
+    </nav>
+    <div class="mobile-menu" id="mobileMenu">
+        <ul>
+            <li><a href="index.html" onclick="toggleMobileMenu()">Home</a></li>
+            <li><a href="browse.html" onclick="toggleMobileMenu()">Browse Tasks</a></li>
+            <li class="mobile-wallet-item" id="mobileWalletItem" style="display: none;"><a href="wallet.html" onclick="toggleMobileMenu();"><i class="fas fa-wallet"></i> Wallet</a></li>
+            <li class="mobile-notification-item" id="mobileNotificationItem" style="display: none;"><a href="#" onclick="toggleNotifications(); toggleMobileMenu();"><i class="fas fa-bell"></i> Notifications <span class="mobile-badge" id="mobileBadge">0</span></a></li>
+            <li><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button></li>
+            <li><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></li>
+        </ul>
+    </div>
+
+    <!-- Profile Page Content -->
+    <div class="profile-page">
+        <div class="container">
+
+            <!-- Profile Cover & Avatar -->
+            <div class="profile-cover">
+                <div class="profile-cover-bg"></div>
+                <div class="profile-avatar-section">
+                    <div class="profile-avatar-wrapper" id="profileAvatarWrapper" onclick="triggerPhotoUpload()">
+                        <div class="profile-avatar-img" id="profileAvatarImg">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="profile-avatar-overlay">
+                            <i class="fas fa-camera"></i>
+                        </div>
+                        <input type="file" id="profilePhotoInput" accept="image/*" style="display:none;" onchange="handleProfilePhoto(event)">
+                    </div>
+                    <div class="profile-name-section">
+                        <h1 id="profileDisplayName">Loading...</h1>
+                        <span class="profile-member-badge" id="profileMemberSince"><i class="fas fa-calendar-alt"></i> Member since ...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="profile-stats-row">
+                <div class="profile-stat-item">
+                    <div class="profile-stat-value" id="statRating">5.0</div>
+                    <div class="profile-stat-icon"><i class="fas fa-star"></i></div>
+                    <div class="profile-stat-label">Rating</div>
+                </div>
+                <div class="profile-stat-item">
+                    <div class="profile-stat-value" id="statCompleted">0</div>
+                    <div class="profile-stat-icon"><i class="fas fa-check-circle"></i></div>
+                    <div class="profile-stat-label">Completed</div>
+                </div>
+                <div class="profile-stat-item">
+                    <div class="profile-stat-value" id="statPosted">0</div>
+                    <div class="profile-stat-icon"><i class="fas fa-clipboard-list"></i></div>
+                    <div class="profile-stat-label">Posted</div>
+                </div>
+                <div class="profile-stat-item">
+                    <div class="profile-stat-value" id="statEarnings">₹0</div>
+                    <div class="profile-stat-icon"><i class="fas fa-rupee-sign"></i></div>
+                    <div class="profile-stat-label">Earned</div>
+                </div>
+            </div>
+
+            <!-- Profile Settings Cards -->
+            <div class="profile-settings">
+
+                <!-- Personal Info Card -->
+                <div class="profile-card">
+                    <div class="profile-card-header">
+                        <div class="profile-card-title"><i class="fas fa-user-circle"></i> Personal Information</div>
+                        <button class="profile-edit-btn" id="editPersonalBtn" onclick="toggleEditPersonal()"><i class="fas fa-pen"></i> Edit</button>
+                    </div>
+                    <div class="profile-card-body" id="personalInfoView">
+                        <div class="profile-field">
+                            <div class="profile-field-label">Full Name</div>
+                            <div class="profile-field-value" id="fieldName">—</div>
+                        </div>
+                        <div class="profile-field">
+                            <div class="profile-field-label">Email Address</div>
+                            <div class="profile-field-value" id="fieldEmail">—</div>
+                        </div>
+                        <div class="profile-field">
+                            <div class="profile-field-label">Phone Number</div>
+                            <div class="profile-field-value" id="fieldPhone">—</div>
+                        </div>
+                        <div class="profile-field">
+                            <div class="profile-field-label">Date of Birth</div>
+                            <div class="profile-field-value" id="fieldDOB">—</div>
+                        </div>
+                    </div>
+                    <!-- Edit Form (hidden by default) -->
+                    <div class="profile-card-body profile-edit-form" id="personalInfoEdit" style="display:none;">
+                        <div class="profile-field-edit">
+                            <label for="editName">Full Name</label>
+                            <input type="text" id="editName" placeholder="Your full name">
+                        </div>
+                        <div class="profile-field-edit">
+                            <label for="editEmail">Email Address</label>
+                            <input type="email" id="editEmail" placeholder="your@email.com">
+                        </div>
+                        <div class="profile-field-edit">
+                            <label for="editPhone">Phone Number</label>
+                            <input type="tel" id="editPhone" placeholder="+91 98765 43210">
+                        </div>
+                        <div class="profile-edit-actions">
+                            <button class="btn btn-outline" onclick="cancelEditPersonal()"><i class="fas fa-times"></i> Cancel</button>
+                            <button class="btn btn-primary" onclick="savePersonalInfo()"><i class="fas fa-check"></i> Save Changes</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Security Card -->
+                <div class="profile-card">
+                    <div class="profile-card-header">
+                        <div class="profile-card-title"><i class="fas fa-shield-alt"></i> Security</div>
+                    </div>
+                    <div class="profile-card-body">
+                        <div class="profile-field">
+                            <div class="profile-field-label">Password</div>
+                            <div class="profile-field-value">••••••••</div>
+                        </div>
+                        <button class="btn btn-outline btn-block" onclick="toggleChangePassword()" id="changePwdToggle" style="margin-top:12px;"><i class="fas fa-key"></i> Change Password</button>
+                        <div id="changePasswordForm" style="display:none; margin-top:16px;">
+                            <div class="profile-field-edit">
+                                <label for="currentPassword">Current Password</label>
+                                <input type="password" id="currentPassword" placeholder="Enter current password">
+                            </div>
+                            <div class="profile-field-edit">
+                                <label for="newPassword2">New Password</label>
+                                <input type="password" id="newPassword2" placeholder="Enter new password">
+                            </div>
+                            <div class="profile-field-edit">
+                                <label for="confirmPassword2">Confirm New Password</label>
+                                <input type="password" id="confirmPassword2" placeholder="Confirm new password">
+                            </div>
+                            <div class="profile-edit-actions">
+                                <button class="btn btn-outline" onclick="toggleChangePassword()"><i class="fas fa-times"></i> Cancel</button>
+                                <button class="btn btn-primary" onclick="saveNewPassword()"><i class="fas fa-lock"></i> Update Password</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Account Actions Card -->
+                <div class="profile-card">
+                    <div class="profile-card-header">
+                        <div class="profile-card-title"><i class="fas fa-cog"></i> Account</div>
+                    </div>
+                    <div class="profile-card-body">
+                        <div class="profile-field" style="cursor:pointer;" onclick="window.location.href='wallet.html'">
+                            <div class="profile-field-label">Wallet Balance</div>
+                            <div class="profile-field-value" id="fieldWallet" style="color:var(--success);font-weight:700;">₹0</div>
+                        </div>
+                        <div class="profile-field">
+                            <div class="profile-field-label">User ID</div>
+                            <div class="profile-field-value profile-uid" id="fieldUserId">—</div>
+                        </div>
+                        <button class="btn btn-danger btn-block" onclick="handleLogout()" style="margin-top: 16px;"><i class="fas fa-sign-out-alt"></i> Logout</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('loginModal')"><i class="fas fa-times"></i></button>
+            <h2><i class="fas fa-sign-in-alt"></i> Welcome Back</h2>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group"><label for="loginEmail">Email Address</label><input type="email" id="loginEmail" placeholder="your@email.com" required></div>
+                <div class="form-group"><label for="loginPassword">Password</label><input type="password" id="loginPassword" placeholder="Enter password" required></div>
+                <div class="form-options"><label class="checkbox-label"><input type="checkbox"> Remember me</label><a href="#" class="forgot-link" onclick="openForgotPassword()">Forgot Password?</a></div>
+                <button type="submit" class="btn btn-primary btn-block">Login</button>
+            </form>
+            <div class="modal-footer"><p>Don't have an account? <a href="#" onclick="switchModal('loginModal', 'signupModal')">Sign Up</a></p></div>
+        </div>
+    </div>
+
+    <!-- Sign Up Modal -->
+    <div class="modal" id="signupModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('signupModal')"><i class="fas fa-times"></i></button>
+            <h2><i class="fas fa-user-plus"></i> Create Account</h2>
+            <form id="signupForm" onsubmit="handleSignup(event)">
+                <div class="form-row"><div class="form-group"><label for="signupFirstName">First Name</label><input type="text" id="signupFirstName" placeholder="John" required></div><div class="form-group"><label for="signupLastName">Last Name</label><input type="text" id="signupLastName" placeholder="Doe" required></div></div>
+                <div class="form-group"><label for="signupEmail">Email Address</label><input type="email" id="signupEmail" placeholder="your@email.com" required></div>
+                <div class="form-group"><label for="signupPhone">Phone Number</label><input type="tel" id="signupPhone" placeholder="+91 98765 43210" required></div>
+                <div class="form-group"><label for="signupDOB">Date of Birth</label><input type="date" id="signupDOB" required><small>You must be 16 or older</small></div>
+                <div class="form-group"><label for="signupPassword">Password</label><input type="password" id="signupPassword" placeholder="Create a strong password" required></div>
+                <div class="form-group"><label class="checkbox-label"><input type="checkbox" required> I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label></div>
+                <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+            </form>
+            <div class="modal-footer"><p>Already have an account? <a href="#" onclick="switchModal('signupModal', 'loginModal')">Login</a></p></div>
+        </div>
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div class="modal" id="forgotPasswordModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('forgotPasswordModal'); resetForgotPassword();"><i class="fas fa-times"></i></button>
+            <div id="forgotStep1" class="forgot-step active"><div class="forgot-icon"><i class="fas fa-lock"></i></div><h2>Forgot Password?</h2><p class="forgot-subtitle">Enter your registered email address to recover your account</p><form onsubmit="findAccount(event)"><div class="form-group"><label for="forgotEmail">Email Address</label><input type="email" id="forgotEmail" placeholder="your@email.com" required></div><button type="submit" class="btn btn-primary btn-block"><i class="fas fa-search"></i> Find Account</button></form><div class="modal-footer"><p>Remember your password? <a href="#" onclick="switchModal('forgotPasswordModal', 'loginModal')">Login</a></p></div></div>
+            <div id="forgotStep2" class="forgot-step"><div class="forgot-icon success"><i class="fas fa-user-check"></i></div><h2>Account Found!</h2><p class="forgot-subtitle">We'll send a verification code to your registered email</p><div class="account-preview" id="accountPreview"></div><div class="verification-options"><button class="verification-option" onclick="sendOTP('email')" id="emailOTPBtn"><i class="fas fa-envelope"></i><div class="option-info"><span class="option-title">Send OTP via Email</span><span class="option-value" id="maskedEmail">***@***.com</span></div><i class="fas fa-chevron-right"></i></button></div><button class="btn btn-outline btn-block" onclick="goToForgotStep(1)"><i class="fas fa-arrow-left"></i> Back</button></div>
+            <div id="forgotStep3" class="forgot-step"><div class="forgot-icon"><i class="fas fa-shield-alt"></i></div><h2>Verify OTP</h2><p class="forgot-subtitle" id="otpSentMessage">Enter the 6-digit code sent to your email</p><form onsubmit="verifyOTP(event)"><div class="otp-input-container"><input type="text" class="otp-input" maxlength="1" data-index="0" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="1" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="2" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="3" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="4" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="5" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"></div><div class="otp-timer"><span id="otpTimer">Resend OTP in <strong>60s</strong></span><button type="button" class="resend-btn" id="resendBtn" onclick="resendOTP()" disabled>Resend OTP</button></div><button type="submit" class="btn btn-primary btn-block"><i class="fas fa-check"></i> Verify Code</button></form><button class="btn btn-outline btn-block" onclick="goToForgotStep(2)"><i class="fas fa-arrow-left"></i> Back</button></div>
+            <div id="forgotStep4" class="forgot-step"><div class="forgot-icon success"><i class="fas fa-check-circle"></i></div><h2>Verified!</h2><p class="forgot-subtitle">Create a new password for your account</p><form onsubmit="resetPassword(event)"><div class="form-group"><label for="newPassword">New Password</label><div class="password-input-wrapper"><input type="password" id="newPassword" placeholder="Enter new password" required minlength="6"><button type="button" class="toggle-password" onclick="togglePasswordVisibility('newPassword')"><i class="fas fa-eye"></i></button></div><div class="password-strength" id="passwordStrength"></div></div><div class="form-group"><label for="confirmNewPassword">Confirm Password</label><div class="password-input-wrapper"><input type="password" id="confirmNewPassword" placeholder="Confirm new password" required minlength="6"><button type="button" class="toggle-password" onclick="togglePasswordVisibility('confirmNewPassword')"><i class="fas fa-eye"></i></button></div></div><button type="submit" class="btn btn-primary btn-block"><i class="fas fa-save"></i> Reset Password</button></form></div>
+            <div id="forgotStep5" class="forgot-step"><div class="forgot-icon success animate-success"><i class="fas fa-check-circle"></i></div><h2>Password Reset!</h2><p class="forgot-subtitle">Your password has been successfully changed.</p><button class="btn btn-primary btn-block" onclick="closeModal('forgotPasswordModal'); resetForgotPassword(); openModal('loginModal');"><i class="fas fa-sign-in-alt"></i> Login Now</button></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMessage">Action completed successfully!</span></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script src="api-client.js?v=20250326_profile"></script>
+    <script src="shared.js?v=20250326_profile"></script>
+    <script src="razorpay.js?v=20250326_profile"></script>
+    <script src="app.js?v=20250326_profile"></script>
+</body>
+</html>

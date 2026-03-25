@@ -215,6 +215,7 @@ def user_to_response(user):
         'email': user['email'],
         'phone': user.get('phone'),
         'dob': user.get('dob'),
+        'profilePhoto': user.get('profile_photo'),
         'rating': float(user.get('rating', 5.0)),
         'tasksPosted': user.get('tasks_posted', 0),
         'tasksCompleted': user.get('tasks_completed', 0),
@@ -665,8 +666,23 @@ def update_profile():
     """Update user profile"""
     data = request.get_json()
     
-    allowed_fields = ['name', 'phone']
+    allowed_fields = ['name', 'phone', 'email', 'profile_photo']
     updates = {k: v for k, v in data.items() if k in allowed_fields}
+    
+    # Validate email uniqueness if changing email
+    if 'email' in updates:
+        new_email = updates['email'].strip().lower()
+        if not new_email or '@' not in new_email:
+            return jsonify({'success': False, 'message': 'Invalid email address'}), 400
+        existing = get_user_by_email(new_email)
+        if existing and existing['id'] != request.user_id:
+            return jsonify({'success': False, 'message': 'Email already in use'}), 400
+        updates['email'] = new_email
+    
+    # Limit profile photo size (max 500KB base64)
+    if 'profile_photo' in updates and updates['profile_photo']:
+        if len(updates['profile_photo']) > 700000:
+            return jsonify({'success': False, 'message': 'Photo too large. Max 500KB.'}), 400
     
     if not updates:
         return jsonify({'success': False, 'message': 'No valid fields to update'}), 400

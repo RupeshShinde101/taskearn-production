@@ -3531,7 +3531,7 @@ function updateNavForUser() {
     if (nav && currentUser) {
         nav.innerHTML = `
             <div class="user-menu">
-                <button class="btn btn-outline" onclick="openUserProfile()">
+                <button class="btn btn-outline" onclick="window.location.href='profile.html'">
                     <i class="fas fa-user"></i> ${currentUser.name}
                 </button>
                 <button class="btn btn-primary" onclick="logout()">Logout</button>
@@ -3553,7 +3553,7 @@ function updateNavForUser() {
                 // Add user profile and logout for mobile
                 const profileLi = document.createElement('li');
                 profileLi.className = 'mobile-profile-item';
-                profileLi.innerHTML = `<a href="#" onclick="openUserProfile(); toggleMobileMenu();"><i class="fas fa-user-circle"></i> ${currentUser.name}</a>`;
+                profileLi.innerHTML = `<a href="profile.html" onclick="toggleMobileMenu();"><i class="fas fa-user-circle"></i> ${currentUser.name}</a>`;
                 mobileMenuList.appendChild(profileLi);
                 
                 const dashboardLi = document.createElement('li');
@@ -3699,6 +3699,212 @@ function openUserProfile() {
     document.getElementById('profileContent').innerHTML = content;
     openModal('profileModal');
 }
+
+// ========================================
+// PROFILE PAGE FUNCTIONS
+// ========================================
+
+function loadProfilePage() {
+    if (!currentUser) return;
+    
+    // Avatar
+    var avatarImg = document.getElementById('profileAvatarImg');
+    if (avatarImg) {
+        if (currentUser.profilePhoto) {
+            avatarImg.innerHTML = '<img src="' + currentUser.profilePhoto + '" alt="Profile">';
+        } else {
+            avatarImg.innerHTML = '<i class="fas fa-user"></i>';
+        }
+    }
+    
+    // Name & badge
+    var nameEl = document.getElementById('profileDisplayName');
+    if (nameEl) nameEl.textContent = currentUser.name || 'User';
+    
+    var sinceEl = document.getElementById('profileMemberSince');
+    if (sinceEl && currentUser.joinedAt) {
+        sinceEl.innerHTML = '<i class="fas fa-calendar-alt"></i> Member since ' +
+            new Date(currentUser.joinedAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long' });
+    }
+    
+    // Stats
+    var sr = document.getElementById('statRating');
+    if (sr) sr.textContent = (currentUser.rating || 5.0).toFixed(1);
+    var sc = document.getElementById('statCompleted');
+    if (sc) sc.textContent = currentUser.tasksCompleted || 0;
+    var sp = document.getElementById('statPosted');
+    if (sp) sp.textContent = currentUser.tasksPosted || 0;
+    var se = document.getElementById('statEarnings');
+    if (se) se.textContent = '₹' + (currentUser.totalEarnings || 0);
+    
+    // Fields
+    var fn = document.getElementById('fieldName');
+    if (fn) fn.textContent = currentUser.name || '—';
+    var fe = document.getElementById('fieldEmail');
+    if (fe) fe.textContent = currentUser.email || '—';
+    var fp = document.getElementById('fieldPhone');
+    if (fp) fp.textContent = currentUser.phone || 'Not provided';
+    var fd = document.getElementById('fieldDOB');
+    if (fd) fd.textContent = currentUser.dob ? new Date(currentUser.dob).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not provided';
+    var fw = document.getElementById('fieldWallet');
+    if (fw) fw.textContent = '₹' + (currentUser.wallet || 0);
+    var fid = document.getElementById('fieldUserId');
+    if (fid) fid.textContent = currentUser.id || '—';
+}
+
+function triggerPhotoUpload() {
+    var inp = document.getElementById('profilePhotoInput');
+    if (inp) inp.click();
+}
+
+async function handleProfilePhoto(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+    
+    if (!file.type.startsWith('image/')) {
+        showToast('Please select an image file', 'error');
+        return;
+    }
+    if (file.size > 500 * 1024) {
+        showToast('Photo must be under 500KB', 'error');
+        return;
+    }
+    
+    var reader = new FileReader();
+    reader.onload = async function(e) {
+        var base64 = e.target.result;
+        try {
+            var result = await UserAPI.updateProfile({ profile_photo: base64 });
+            if (result.success) {
+                currentUser.profilePhoto = base64;
+                saveUserToStorage(currentUser);
+                loadProfilePage();
+                showToast('Profile photo updated!', 'success');
+            } else {
+                showToast(result.message || 'Failed to update photo', 'error');
+            }
+        } catch (err) {
+            showToast('Error uploading photo', 'error');
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+function toggleEditPersonal() {
+    var view = document.getElementById('personalInfoView');
+    var edit = document.getElementById('personalInfoEdit');
+    var btn = document.getElementById('editPersonalBtn');
+    if (!view || !edit) return;
+    
+    var showing = edit.style.display !== 'none';
+    if (showing) {
+        cancelEditPersonal();
+    } else {
+        view.style.display = 'none';
+        edit.style.display = 'block';
+        btn.innerHTML = '<i class="fas fa-times"></i> Cancel';
+        btn.style.color = 'var(--danger)';
+        btn.style.borderColor = 'var(--danger)';
+        // Populate fields
+        document.getElementById('editName').value = currentUser.name || '';
+        document.getElementById('editEmail').value = currentUser.email || '';
+        document.getElementById('editPhone').value = currentUser.phone || '';
+    }
+}
+
+function cancelEditPersonal() {
+    var view = document.getElementById('personalInfoView');
+    var edit = document.getElementById('personalInfoEdit');
+    var btn = document.getElementById('editPersonalBtn');
+    if (view) view.style.display = 'block';
+    if (edit) edit.style.display = 'none';
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-pen"></i> Edit';
+        btn.style.color = '';
+        btn.style.borderColor = '';
+    }
+}
+
+async function savePersonalInfo() {
+    var name = document.getElementById('editName').value.trim();
+    var email = document.getElementById('editEmail').value.trim();
+    var phone = document.getElementById('editPhone').value.trim();
+    
+    if (!name) { showToast('Name is required', 'error'); return; }
+    if (!email || email.indexOf('@') === -1) { showToast('Valid email is required', 'error'); return; }
+    
+    var updates = {};
+    if (name !== currentUser.name) updates.name = name;
+    if (email !== currentUser.email) updates.email = email;
+    if (phone !== (currentUser.phone || '')) updates.phone = phone;
+    
+    if (Object.keys(updates).length === 0) {
+        showToast('No changes to save', 'info');
+        cancelEditPersonal();
+        return;
+    }
+    
+    try {
+        var result = await UserAPI.updateProfile(updates);
+        if (result.success) {
+            if (result.user) {
+                currentUser = result.user;
+                saveUserToStorage(currentUser);
+            }
+            loadProfilePage();
+            cancelEditPersonal();
+            showToast('Profile updated successfully!', 'success');
+        } else {
+            showToast(result.message || 'Failed to update', 'error');
+        }
+    } catch (err) {
+        showToast('Error saving changes', 'error');
+    }
+}
+
+function toggleChangePassword() {
+    var form = document.getElementById('changePasswordForm');
+    if (!form) return;
+    var visible = form.style.display !== 'none';
+    form.style.display = visible ? 'none' : 'block';
+    if (!visible) {
+        document.getElementById('currentPassword').value = '';
+        document.getElementById('newPassword2').value = '';
+        document.getElementById('confirmPassword2').value = '';
+    }
+}
+
+async function saveNewPassword() {
+    var current = document.getElementById('currentPassword').value;
+    var newPwd = document.getElementById('newPassword2').value;
+    var confirm = document.getElementById('confirmPassword2').value;
+    
+    if (!current) { showToast('Enter current password', 'error'); return; }
+    if (!newPwd || newPwd.length < 6) { showToast('New password must be at least 6 characters', 'error'); return; }
+    if (newPwd !== confirm) { showToast('Passwords do not match', 'error'); return; }
+    
+    try {
+        var result = await UserAPI.changePassword(current, newPwd);
+        if (result.success) {
+            showToast('Password changed successfully!', 'success');
+            toggleChangePassword();
+        } else {
+            showToast(result.message || 'Failed to change password', 'error');
+        }
+    } catch (err) {
+        showToast('Error changing password', 'error');
+    }
+}
+
+// Initialize profile page if on profile.html
+(function() {
+    var page = (window.location.pathname.split('/').pop() || '').toLowerCase();
+    if (page === 'profile.html') {
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() { loadProfilePage(); }, 300);
+        });
+    }
+})();
 
 function logout() {
     clearCurrentSession();
@@ -4394,10 +4600,19 @@ window.zoomOut = zoomOut;
 window.toggleMapType = toggleMapType;
 window.toggleTracking = toggleTracking;
 window.logout = logout;
+window.handleLogout = handleLogout;
 window.onTaskCardClick = onTaskCardClick;
 window.openGoogleMaps = openGoogleMaps;
 window.clearRoute = clearRoute;
 window.openUserProfile = openUserProfile;
+window.loadProfilePage = loadProfilePage;
+window.triggerPhotoUpload = triggerPhotoUpload;
+window.handleProfilePhoto = handleProfilePhoto;
+window.toggleEditPersonal = toggleEditPersonal;
+window.cancelEditPersonal = cancelEditPersonal;
+window.savePersonalInfo = savePersonalInfo;
+window.toggleChangePassword = toggleChangePassword;
+window.saveNewPassword = saveNewPassword;
 window.toggleNotifications = toggleNotifications;
 window.markAsRead = markAsRead;
 window.clearAllNotifications = clearAllNotifications;

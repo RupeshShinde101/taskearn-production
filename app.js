@@ -1204,8 +1204,10 @@ async function loadTasksFromServer() {
                                     return pt;
                                 });
                                 
-                                // Add any DB tasks not in local list
+                                // Add any DB tasks not in local list (skip paid/expired)
                                 dbPosted.forEach(dbTask => {
+                                    if (dbTask.status === 'paid') return;
+                                    if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
                                     if (!myPostedTasks.find(pt => pt.id === dbTask.id)) {
                                         myPostedTasks.push({
                                             id: dbTask.id,
@@ -1227,6 +1229,13 @@ async function loadTasksFromServer() {
                                             }
                                         });
                                     }
+                                });
+                                
+                                // Remove paid and expired-active tasks from myPostedTasks
+                                myPostedTasks = myPostedTasks.filter(t => {
+                                    if (t.status === 'paid') return false;
+                                    if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+                                    return true;
                                 });
                                 
                                 updateUserData(currentUser.id, {
@@ -1259,8 +1268,9 @@ async function loadTasksFromServer() {
                                     return at;
                                 });
                                 
-                                // Add any DB tasks not in local list
+                                // Add any DB tasks not in local list (skip paid)
                                 dbAccepted.forEach(dbTask => {
+                                    if (dbTask.status === 'paid') return;
                                     if (!myAcceptedTasks.find(at => at.id === dbTask.id)) {
                                         myAcceptedTasks.push({
                                             id: dbTask.id,
@@ -1276,6 +1286,9 @@ async function loadTasksFromServer() {
                                         });
                                     }
                                 });
+                                
+                                // Remove paid tasks from myAcceptedTasks
+                                myAcceptedTasks = myAcceptedTasks.filter(t => t.status !== 'paid');
                                 
                                 updateUserData(currentUser.id, {
                                     acceptedTasks: serializeTasks(myAcceptedTasks)
@@ -3079,12 +3092,14 @@ async function executePayment(taskId) {
                 localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
             }
 
-            task.status = 'paid';
+            // Remove paid task from myPostedTasks
+            const paidTask = { ...task, status: 'paid' };
+            myPostedTasks = myPostedTasks.filter(t => t.id !== taskId);
             updateUserData(currentUser.id, {
                 postedTasks: serializeTasks(myPostedTasks)
             });
 
-            showPaymentDonePopup(task, totalCost, result.helperEarnings || helperNetReceives, result.posterNewBalance);
+            showPaymentDonePopup(paidTask, totalCost, result.helperEarnings || helperNetReceives, result.posterNewBalance);
 
             renderDashboard();
             updateNotificationUI();
@@ -3931,8 +3946,6 @@ function renderPostedTasks() {
                     </button>
                 </div>
             `;
-        } else if (t.status === 'paid') {
-            actionButtons = '';
         }
         
         const statusColor = (t.status === 'completed' || t.status === 'pending_payment') ? 'style="background: #fbbf24; color: #000;"' : '';
@@ -3956,13 +3969,19 @@ function renderAcceptedTasks() {
     const el = document.getElementById('myAcceptedTasks');
     if (!el) return;
 
-    if (myAcceptedTasks.length === 0) {
+    // Filter out paid tasks
+    const visibleAcceptedTasks = myAcceptedTasks.filter(t => {
+        if (t.status === 'paid') return false;
+        return true;
+    });
+
+    if (visibleAcceptedTasks.length === 0) {
         el.innerHTML = '<div class="empty-state"><i class="fas fa-handshake"></i><h3>No accepted tasks</h3><button class="btn btn-primary" onclick="scrollToSection(\'find-tasks\')">Find Tasks</button></div>';
         return;
     }
 
-    el.innerHTML = myAcceptedTasks.map(t => {
-        // ✅ Show different UI based on task status
+    el.innerHTML = visibleAcceptedTasks.map(t => {
+        // Show different UI based on task status
         let actionHTML = '';
         let statusHTML = 'In Progress';
         let statusColor = 'pending';
@@ -3976,15 +3995,6 @@ function renderAcceptedTasks() {
                     <i class="fas fa-clock"></i> Waiting for task poster to pay...
                 </p>
                 <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${((t.price || 0) + (t.service_charge || 0)) * 0.88} (after 12% commission)</p>
-            </div>`;
-        } else if (t.status === 'paid') {
-            // Payment received
-            statusHTML = '✅ Paid';
-            statusColor = 'success';
-            actionHTML = `<div style="background: rgba(74, 222, 128, 0.1); border-radius: 8px; padding: 12px; margin-top: 10px;">
-                <p style="color: #4ade80; margin: 0;">
-                    <i class="fas fa-check-circle"></i> Payment received - ₹${t.price} added to your wallet
-                </p>
             </div>`;
         } else {
             // Still in progress

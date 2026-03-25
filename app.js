@@ -1022,117 +1022,12 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
  * Deducts commission from poster's wallet and updates balance display
  */
 async function processPaymentFromNotification(taskId, notification) {
-    try {
-        // Find task in myPostedTasks
-        const task = myPostedTasks.find(t => t.id === taskId);
-        
-        if (!task) {
-            console.error('Task not found:', taskId);
-            showToast('❌ Task not found');
-            return;
-        }
-        
-        // Calculate amounts for display
-        const taskAmount = task.price || 0;
-        const serviceCharge = task.service_charge || 0;
-        const totalTaskValue = taskAmount + serviceCharge;
-        const posterFee = totalTaskValue * 0.05;
-        const totalCost = totalTaskValue + posterFee;
-        const helperCommission = totalTaskValue * 0.12;
-        
-        // Fetch real balance from server (not stale cache)
-        let currentBalance = 0;
-        try {
-            const walletData = await WalletAPI.get();
-            if (walletData && walletData.success !== false) {
-                currentBalance = walletData.balance || walletData.wallet?.balance || 0;
-            }
-        } catch (e) {
-            console.warn('Could not fetch wallet balance:', e.message);
-            showToast('❌ Could not check wallet balance. Please try again.');
-            return;
-        }
-        
-        console.log('💳 Payment Details:');
-        console.log(`   Task: "${task.title}"`);
-        console.log(`   Total Cost: ₹${totalCost.toFixed(2)}`);
-        console.log(`   Wallet Balance: ₹${currentBalance.toFixed(2)}`);
-        
-        // Check balance
-        if (currentBalance < totalCost) {
-            const shortfall = totalCost - currentBalance;
-            showToast(
-                `❌ Insufficient Balance!\n\n` +
-                `Cost: ₹${totalCost.toFixed(2)}\n` +
-                `Balance: ₹${currentBalance.toFixed(2)}\n` +
-                `Need: ₹${shortfall.toFixed(2)} more`,
-                5000
-            );
-            return;
-        }
-        
-        // Confirm payment
-        const confirmed = confirm(
-            `💰 Confirm Payment\n\n` +
-            `Task: "${task.title}"\n\n` +
-            `Budget: ₹${taskAmount}\n` +
-            `Service Charge: ₹${serviceCharge.toFixed(2)}\n` +
-            `Task Value: ₹${totalTaskValue.toFixed(2)}\n` +
-            `Your Posting Fee (5%): ₹${posterFee.toFixed(2)}\n\n` +
-            `Total Cost: ₹${totalCost.toFixed(2)}\n\n` +
-            `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
-            `After Payment: ₹${(currentBalance - totalCost).toFixed(2)}\n\n` +
-            `Click OK to pay from wallet`
-        );
-        
-        if (!confirmed) {
-            showToast('Payment cancelled');
-            return;
-        }
-        
-        // Call backend to process payment
-        showToast('⏳ Processing payment...', 3000);
-        console.log('📤 Sending payment request...');
-        const response = await fetch(API_BASE_URL + `/tasks/${taskId}/pay-helper`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
-            },
-            body: JSON.stringify({ taskId: taskId })
-        });
-        
-        const result = await response.json();
-        console.log('📥 Payment response:', result);
-        
-        if (result.success) {
-            const newBalance = result.posterNewBalance || (currentBalance - totalCost);
-            const helperEarnings = result.helperEarnings || (totalTaskValue - helperCommission);
-            
-            if (currentUser) {
-                currentUser.wallet = newBalance;
-                localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
-            }
-            
-            task.status = 'paid';
-            
-            showPaymentDonePopup(task, totalCost, helperEarnings, newBalance);
-            
-            renderDashboard();
-            updateNotificationUI();
-            
-            setTimeout(() => {
-                loadTasksFromServer();
-                refreshWalletBalance();
-            }, 1000);
-        } else {
-            showToast(`❌ Payment failed: ${result.message || 'Unknown error'}`, 5000);
-        }
-        
-    } catch (error) {
-        console.error('Payment error:', error);
-        showToast('❌ Payment failed. Please check your connection and try again.', 5000);
+    // Mark notification as read
+    if (notification?.id) {
+        markAsRead(notification.id);
     }
+    // Unified payment flow
+    await showPaymentInvoice(taskId);
 }
 
 // Send email notification for task acceptance
@@ -2978,40 +2873,40 @@ function checkAndShowPaymentReceived() {
 
 /**
  * Pay the helper for a completed task
- * Called when task poster clicks "Pay Now" on completed task with 'completed' status
- * Calls backend /api/tasks/<id>/pay-helper endpoint
+ * Called when task poster clicks "Pay Now" on completed task
  */
 async function payHelperForTask(taskId) {
-    // Find task in myPostedTasks
+    await showPaymentInvoice(taskId);
+}
+
+/**
+ * Show styled payment invoice modal with full price breakdown
+ * Fetches real balance, validates, and shows approval UI
+ */
+async function showPaymentInvoice(taskId) {
     const task = myPostedTasks.find(t => t.id === taskId);
-    
+
     if (!task) {
         showToast('❌ Task not found');
         return;
     }
-    
-    if (task.status !== 'completed') {
-        console.error('Task status mismatch:', {
-            taskId: task.id,
-            status: task.status,
-            expectedStatus: 'completed'
-        });
-        showToast(`❌ Task status is '${task.status}', but must be 'completed' to pay. Trying to refresh...`);
-        
+
+    if (task.status !== 'completed' && task.status !== 'pending_payment') {
+        showToast(`❌ Task status is '${task.status}', payment requires 'completed' status.`);
         // Auto-refresh and retry
         setTimeout(() => {
             loadTasksFromServer().then(() => {
-                const refreshedTask = myPostedTasks.find(t => t.id === taskId);
-                if (refreshedTask && refreshedTask.status === 'completed') {
-                    showToast('✅ Task status updated. Please try payment again.');
-                    payHelperForTask(taskId);
+                const refreshed = myPostedTasks.find(t => t.id === taskId);
+                if (refreshed && (refreshed.status === 'completed' || refreshed.status === 'pending_payment')) {
+                    showToast('✅ Task status updated. Please try again.');
                 }
             });
         }, 2000);
         return;
     }
 
-    const taskAmount = task.price;
+    // Calculate all amounts
+    const taskAmount = task.price || 0;
     const serviceCharge = task.service_charge || 0;
     const totalTaskValue = taskAmount + serviceCharge;
     const helperCommission = totalTaskValue * 0.12;
@@ -3023,113 +2918,186 @@ async function payHelperForTask(taskId) {
     let currentBalance = 0;
     try {
         const walletData = await WalletAPI.get();
-        currentBalance = walletData.balance || 0;
-    } catch (err) {
+        if (walletData && walletData.success !== false) {
+            currentBalance = walletData.balance || walletData.wallet?.balance || 0;
+        }
+    } catch (e) {
         showToast('❌ Could not fetch wallet balance. Please try again.');
         return;
     }
 
-    console.log('💰 Payment Details:');
-    console.log(`   Task Amount (Base): ₹${taskAmount}`);
-    console.log(`   Service Charge: ₹${serviceCharge}`);
-    console.log(`   Total Task Value: ₹${totalTaskValue}`);
-    console.log(`   Helper Commission (12% of total): ₹${helperCommission.toFixed(2)}`);
-    console.log(`   Your Fee (5% of total): ₹${posterFee.toFixed(2)}`);
-    console.log(`   Total Cost (for you): ₹${totalCost.toFixed(2)}`);
-    console.log(`   Helper receives (after commission): ₹${helperNetReceives.toFixed(2)}`);
-    console.log(`   Your wallet balance: ₹${currentBalance.toFixed(2)}`);
+    const balanceAfter = currentBalance - totalCost;
+    const insufficient = currentBalance < totalCost;
+    const shortfall = totalCost - currentBalance;
 
-    // Check wallet balance
-    if (currentBalance < totalCost) {
-        const amountNeeded = totalCost - currentBalance;
-        showToast(
-            `❌ Insufficient Wallet Balance\n\n` +
-            `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
-            `Amount Needed: ₹${totalCost.toFixed(2)}\n` +
-            `Need ₹${amountNeeded.toFixed(2)} more to proceed`,
-            5000
-        );
+    // Build styled invoice modal content
+    const content = `
+        <div style="padding: 20px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 50px; margin-bottom: 10px;">🧾</div>
+                <h2 style="color: #fff; margin: 0 0 5px 0;">Payment Invoice</h2>
+                <p style="color: #888; margin: 0; font-size: 14px;">Review the breakdown before paying</p>
+            </div>
+
+            <div style="background: rgba(30, 30, 40, 0.9); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 18px; margin-bottom: 16px;">
+                <h4 style="margin: 0 0 12px 0; color: #a78bfa; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+                    <i class="fas fa-tasks"></i> Task Details
+                </h4>
+                <div style="font-weight: 600; font-size: 16px; color: #fff; margin-bottom: 4px;">${escapeHtml(task.title)}</div>
+                <div style="font-size: 13px; color: #888;">${formatCategory(task.category || '')}</div>
+            </div>
+
+            <div style="background: rgba(30, 30, 40, 0.9); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 18px; margin-bottom: 16px;">
+                <h4 style="margin: 0 0 14px 0; color: #a78bfa; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+                    <i class="fas fa-receipt"></i> Price Breakdown
+                </h4>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                    <span style="color: #ccc;">Budget (Task Price)</span>
+                    <span style="color: #fff; font-weight: 600;">₹${taskAmount.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                    <span style="color: #ccc;">Service Charge</span>
+                    <span style="color: #fbbf24; font-weight: 600;">${serviceCharge > 0 ? '+₹' + serviceCharge.toFixed(2) : '₹0.00'}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 700;">
+                    <span style="color: #fff;">Task Value</span>
+                    <span style="color: #fff;">₹${totalTaskValue.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                    <span style="color: #ccc;">Posting Fee (5%)</span>
+                    <span style="color: #fbbf24; font-weight: 600;">+₹${posterFee.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 12px 0 0 0; border-top: 2px solid rgba(139, 92, 246, 0.4); font-size: 18px; font-weight: 800;">
+                    <span style="color: #fff;">Total to Pay</span>
+                    <span style="color: #ef4444;">₹${totalCost.toFixed(2)}</span>
+                </div>
+            </div>
+
+            <div style="background: rgba(30, 30, 40, 0.9); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 18px; margin-bottom: 16px;">
+                <h4 style="margin: 0 0 14px 0; color: #a78bfa; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+                    <i class="fas fa-wallet"></i> Wallet
+                </h4>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: #ccc;">Current Balance</span>
+                    <span style="color: ${insufficient ? '#ef4444' : '#4ade80'}; font-weight: 600;">₹${currentBalance.toFixed(2)}</span>
+                </div>
+                ${insufficient ? `
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #ef4444;">Shortfall</span>
+                    <span style="color: #ef4444; font-weight: 700;">₹${shortfall.toFixed(2)}</span>
+                </div>` : `
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #ccc;">After Payment</span>
+                    <span style="color: #fbbf24; font-weight: 600;">₹${balanceAfter.toFixed(2)}</span>
+                </div>`}
+            </div>
+
+            <div style="background: rgba(74, 222, 128, 0.05); border: 1px solid rgba(74, 222, 128, 0.2); border-radius: 10px; padding: 14px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #4ade80; font-size: 13px;"><i class="fas fa-user"></i> Helper Receives (after 12% commission)</span>
+                    <span style="color: #4ade80; font-weight: 700;">₹${helperNetReceives.toFixed(2)}</span>
+                </div>
+            </div>
+
+            ${insufficient ? `
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 10px; padding: 14px; margin-bottom: 16px; text-align: center;">
+                <p style="color: #ef4444; margin: 0; font-weight: 600;">
+                    <i class="fas fa-exclamation-triangle"></i> Insufficient Balance
+                </p>
+                <p style="color: #999; margin: 5px 0 0 0; font-size: 13px;">Add ₹${shortfall.toFixed(2)} to your wallet to proceed</p>
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn btn-secondary" style="flex: 1; padding: 14px; font-size: 15px; border-radius: 10px; background: #333; border: 1px solid #555;" onclick="closeModal('taskSuccessModal');">
+                    Close
+                </button>
+                <button class="btn btn-primary" style="flex: 1; padding: 14px; font-size: 15px; border-radius: 10px;" onclick="closeModal('taskSuccessModal'); showSection('wallet');">
+                    <i class="fas fa-plus"></i> Add Money
+                </button>
+            </div>
+            ` : `
+            <div style="display: flex; gap: 12px;">
+                <button class="btn btn-secondary" style="flex: 1; padding: 14px; font-size: 15px; border-radius: 10px; background: #333; border: 1px solid #555;" onclick="closeModal('taskSuccessModal');">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button class="btn btn-success" style="flex: 1; padding: 14px; font-size: 15px; border-radius: 10px;" id="invoicePayBtn" onclick="executePayment(${taskId});">
+                    <i class="fas fa-check-circle"></i> Approve & Pay
+                </button>
+            </div>
+            `}
+        </div>
+    `;
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    openModal('taskSuccessModal');
+}
+
+/**
+ * Execute the actual payment after poster approves the invoice
+ */
+async function executePayment(taskId) {
+    const task = myPostedTasks.find(t => t.id === taskId);
+    if (!task) {
+        showToast('❌ Task not found');
+        closeModal('taskSuccessModal');
         return;
     }
 
-    // Confirm payment dialog
-    const confirmed = confirm(
-        `💰 Complete Payment\n\n` +
-        `Task: ${task.title}\n` +
-        `Budget: ₹${taskAmount}\n` +
-        `Service Charge: ₹${serviceCharge.toFixed(2)}\n` +
-        `Task Value: ₹${totalTaskValue.toFixed(2)}\n` +
-        `Your Posting Fee (5%): ₹${posterFee.toFixed(2)}\n` +
-        `Total Cost: ₹${totalCost.toFixed(2)}\n\n` +
-        `Current Balance: ₹${currentBalance.toFixed(2)}\n` +
-        `Balance After: ₹${(currentBalance - totalCost).toFixed(2)}\n\n` +
-        `Helper receives (after 12% commission): ₹${helperNetReceives.toFixed(2)}\n\n` +
-        `Click OK to pay from your wallet`
-    );
-    
-    if (!confirmed) {
-        showToast('Payment cancelled');
-        return;
+    // Disable button to prevent double-click
+    const payBtn = document.getElementById('invoicePayBtn');
+    if (payBtn) {
+        payBtn.disabled = true;
+        payBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
     }
+
+    const taskAmount = task.price || 0;
+    const serviceCharge = task.service_charge || 0;
+    const totalTaskValue = taskAmount + serviceCharge;
+    const helperCommission = totalTaskValue * 0.12;
+    const posterFee = totalTaskValue * 0.05;
+    const totalCost = totalTaskValue + posterFee;
+    const helperNetReceives = totalTaskValue - helperCommission;
 
     try {
         console.log('📤 Sending payment request...');
-        
         const response = await fetch(API_BASE_URL + `/tasks/${taskId}/pay-helper`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
             },
-            body: JSON.stringify({
-                taskId: taskId
-            })
+            body: JSON.stringify({ taskId: taskId })
         });
 
         const result = await response.json();
         console.log('📥 Payment response:', result);
 
         if (result.success) {
-            // Update current user balance
             if (currentUser) {
                 currentUser.wallet = result.posterNewBalance;
                 localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
             }
-            
-            // Update task status
+
             task.status = 'paid';
             updateUserData(currentUser.id, {
                 postedTasks: serializeTasks(myPostedTasks)
             });
-            
-            // Show payment done pop-up for poster
+
             showPaymentDonePopup(task, totalCost, result.helperEarnings || helperNetReceives, result.posterNewBalance);
-            
-            // Refresh dashboard
+
             renderDashboard();
-            
-            // Sync notifications from server (clears Pay Now, shows Payment Done)
+            updateNotificationUI();
             syncNotificationsFromServer();
-            
-            // Refresh from server and wallet balance
+
             setTimeout(() => {
                 loadTasksFromServer();
                 refreshWalletBalance();
-                openUserProfile();
             }, 1000);
-            
-            // Show UPI transfer status
-            if (result.upiTransferStatus) {
-                setTimeout(() => {
-                    showToast(`📤 Platform income (₹${result.platformIncome.toFixed(2)}) transferred to razorpay.me/@taskern`, 3000);
-                }, 2000);
-            }
         } else {
-            showToast(`❌ Payment failed: ${result.message}`);
-            console.error('Payment error:', result.message);
+            closeModal('taskSuccessModal');
+            showToast(`❌ Payment failed: ${result.message || 'Unknown error'}`, 5000);
         }
     } catch (error) {
         console.error('Payment failed:', error.message);
+        closeModal('taskSuccessModal');
         showToast('❌ Payment failed. Please check your connection and try again.');
     }
 }

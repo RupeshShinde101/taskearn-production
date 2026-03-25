@@ -679,10 +679,10 @@ def update_profile():
             return jsonify({'success': False, 'message': 'Email already in use'}), 400
         updates['email'] = new_email
     
-    # Limit profile photo size (max 500KB base64)
+    # Limit profile photo size (max ~2MB base64 after client compression)
     if 'profile_photo' in updates and updates['profile_photo']:
-        if len(updates['profile_photo']) > 700000:
-            return jsonify({'success': False, 'message': 'Photo too large. Max 500KB.'}), 400
+        if len(updates['profile_photo']) > 2800000:
+            return jsonify({'success': False, 'message': 'Photo too large. Max 2MB.'}), 400
     
     if not updates:
         return jsonify({'success': False, 'message': 'No valid fields to update'}), 400

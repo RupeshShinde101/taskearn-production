@@ -3898,50 +3898,79 @@ async function handleProfilePhoto(event) {
         showToast('Please select an image file', 'error');
         return;
     }
-    if (file.size > 500 * 1024) {
-        showToast('Photo must be under 500KB', 'error');
+    if (file.size > 2 * 1024 * 1024) {
+        showToast('Photo must be under 2MB', 'error');
         return;
     }
     
-    var reader = new FileReader();
-    reader.onerror = function() {
-        showToast('Could not read image file', 'error');
-    };
-    reader.onload = async function(e) {
-        var base64 = e.target.result;
-        var oldPhoto = currentUser ? currentUser.profilePhoto : null;
-        
-        // Optimistic UI update — show new photo immediately
-        currentUser.profilePhoto = base64;
-        _photoJustUploaded = true;
-        renderProfileUI();
-        
-        try {
-            var result = await UserAPI.updateProfile({ profile_photo: base64 });
-            if (result.success) {
-                // Merge server response into currentUser
-                if (result.user) {
-                    Object.assign(currentUser, result.user);
-                }
-                saveUserToStorage(currentUser);
-                showToast('Profile photo updated!', 'success');
-            } else {
-                // Server rejected — revert
-                currentUser.profilePhoto = oldPhoto;
-                renderProfileUI();
-                showToast(result.message || 'Failed to update photo', 'error');
-            }
-        } catch (err) {
-            console.error('Photo upload error:', err);
-            // Keep the new photo in memory even if localStorage failed
-            // (server already saved it if the API call succeeded)
-            showToast('Photo saved but local cache may be stale', 'warning');
-        }
-        // Reset file input so the same file can be re-selected
+    showToast('Processing photo...', 'info');
+    
+    try {
+        var base64 = await compressProfileImage(file, 800, 0.8);
+    } catch (compressErr) {
+        console.error('Image compression failed:', compressErr);
+        showToast('Could not process image. Try a different photo.', 'error');
         var inp = document.getElementById('profilePhotoInput');
         if (inp) inp.value = '';
-    };
-    reader.readAsDataURL(file);
+        return;
+    }
+    
+    var oldPhoto = currentUser ? currentUser.profilePhoto : null;
+    
+    // Optimistic UI update — show new photo immediately
+    currentUser.profilePhoto = base64;
+    _photoJustUploaded = true;
+    renderProfileUI();
+    
+    try {
+        var result = await UserAPI.updateProfile({ profile_photo: base64 });
+        if (result.success) {
+            if (result.user) {
+                Object.assign(currentUser, result.user);
+            }
+            saveUserToStorage(currentUser);
+            showToast('Profile photo updated!', 'success');
+        } else {
+            currentUser.profilePhoto = oldPhoto;
+            renderProfileUI();
+            showToast(result.message || 'Failed to update photo', 'error');
+        }
+    } catch (err) {
+        console.error('Photo upload error:', err);
+        showToast('Photo saved but local cache may be stale', 'warning');
+    }
+    var inp = document.getElementById('profilePhotoInput');
+    if (inp) inp.value = '';
+}
+
+// Compress and resize image using canvas. Returns a base64 data URI (JPEG).
+function compressProfileImage(file, maxSize, quality) {
+    return new Promise(function(resolve, reject) {
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+        img.onload = function() {
+            URL.revokeObjectURL(url);
+            var w = img.width;
+            var h = img.height;
+            // Scale down if larger than maxSize
+            if (w > maxSize || h > maxSize) {
+                if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+                else { w = Math.round(w * maxSize / h); h = maxSize; }
+            }
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            var result = canvas.toDataURL('image/jpeg', quality);
+            resolve(result);
+        };
+        img.onerror = function() {
+            URL.revokeObjectURL(url);
+            reject(new Error('Failed to load image'));
+        };
+        img.src = url;
+    });
 }
 
 function toggleEditPersonal() {

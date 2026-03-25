@@ -373,9 +373,12 @@ function clearAuthToken() {
 }
 
 function saveUserToStorage(user) {
-    localStorage.setItem('taskearn_user', JSON.stringify(user));
-    // Also save to taskearn_current_user for consistency across all pages
-    localStorage.setItem('taskearn_current_user', JSON.stringify(user));
+    try {
+        localStorage.setItem('taskearn_user', JSON.stringify(user));
+        localStorage.setItem('taskearn_current_user', JSON.stringify(user));
+    } catch (e) {
+        console.warn('⚠️ localStorage save failed (quota?):', e.message);
+    }
 }
 
 function getUserFromStorage() {

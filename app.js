@@ -3815,6 +3815,8 @@ function openUserProfile() {
 // PROFILE PAGE FUNCTIONS
 // ========================================
 
+var _photoJustUploaded = false;
+
 function loadProfilePage() {
     if (!currentUser) return;
     
@@ -3822,6 +3824,8 @@ function loadProfilePage() {
     renderProfileUI();
     
     // Fetch fresh user data from server to ensure profile is up to date
+    // Skip if photo was just uploaded to avoid overwriting optimistic preview
+    if (_photoJustUploaded) { _photoJustUploaded = false; return; }
     if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
         AuthAPI.getCurrentUser().then(function(result) {
             if (result && result.success && result.user) {
@@ -3887,7 +3891,7 @@ function triggerPhotoUpload() {
 }
 
 async function handleProfilePhoto(event) {
-    var file = event.target.files[0];
+    var file = event.target ? event.target.files[0] : (event.files ? event.files[0] : null);
     if (!file) return;
     
     if (!file.type.startsWith('image/')) {
@@ -3900,25 +3904,38 @@ async function handleProfilePhoto(event) {
     }
     
     var reader = new FileReader();
+    reader.onerror = function() {
+        showToast('Could not read image file', 'error');
+    };
     reader.onload = async function(e) {
         var base64 = e.target.result;
+        var oldPhoto = currentUser ? currentUser.profilePhoto : null;
+        
+        // Optimistic UI update — show new photo immediately
+        currentUser.profilePhoto = base64;
+        _photoJustUploaded = true;
+        renderProfileUI();
+        
         try {
             var result = await UserAPI.updateProfile({ profile_photo: base64 });
             if (result.success) {
+                // Merge server response into currentUser
                 if (result.user) {
-                    currentUser = result.user;
-                    saveUserToStorage(currentUser);
-                } else {
-                    currentUser.profilePhoto = base64;
-                    saveUserToStorage(currentUser);
+                    Object.assign(currentUser, result.user);
                 }
-                renderProfileUI();
+                saveUserToStorage(currentUser);
                 showToast('Profile photo updated!', 'success');
             } else {
+                // Server rejected — revert
+                currentUser.profilePhoto = oldPhoto;
+                renderProfileUI();
                 showToast(result.message || 'Failed to update photo', 'error');
             }
         } catch (err) {
-            showToast('Error uploading photo', 'error');
+            console.error('Photo upload error:', err);
+            // Keep the new photo in memory even if localStorage failed
+            // (server already saved it if the API call succeeded)
+            showToast('Photo saved but local cache may be stale', 'warning');
         }
         // Reset file input so the same file can be re-selected
         var inp = document.getElementById('profilePhotoInput');
@@ -4037,9 +4054,22 @@ async function saveNewPassword() {
 (function() {
     var page = (window.location.pathname.split('/').pop() || '').toLowerCase();
     if (page === 'profile.html') {
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() { loadProfilePage(); }, 300);
-        });
+        function initProfile() {
+            setTimeout(function() {
+                loadProfilePage();
+                // Bind file input via JS for better mobile reliability
+                var inp = document.getElementById('profilePhotoInput');
+                if (inp && !inp._bound) {
+                    inp._bound = true;
+                    inp.addEventListener('change', handleProfilePhoto);
+                }
+            }, 300);
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initProfile);
+        } else {
+            initProfile();
+        }
     }
 })();
 

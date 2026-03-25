@@ -467,20 +467,14 @@ async function updateUserData(userId, updates) {
     // Create user entry if it doesn't exist yet (e.g., registered via backend API)
     if (!users[userId]) {
         users[userId] = { id: userId };
-        // Copy basic info from currentUser if this is the logged-in user
-        if (currentUser && currentUser.id === userId) {
-            users[userId].name = currentUser.name;
-            users[userId].email = currentUser.email;
-            users[userId].phone = currentUser.phone;
-            users[userId].wallet = currentUser.wallet || 0;
-        }
     }
     users[userId] = { ...users[userId], ...updates };
     await saveUsersAsync(users);
     
-    // Update current user if logged in
+    // Update current user if logged in — merge updates into existing currentUser
+    // instead of replacing it, to preserve fields like profilePhoto
     if (currentUser && currentUser.id === userId) {
-        currentUser = users[userId];
+        Object.assign(currentUser, updates);
         saveCurrentSession(currentUser);
     }
     return users[userId];
@@ -3824,6 +3818,24 @@ function openUserProfile() {
 function loadProfilePage() {
     if (!currentUser) return;
     
+    // Render from currentUser immediately, then refresh from server
+    renderProfileUI();
+    
+    // Fetch fresh user data from server to ensure profile is up to date
+    if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
+        AuthAPI.getCurrentUser().then(function(result) {
+            if (result && result.success && result.user) {
+                Object.assign(currentUser, result.user);
+                saveUserToStorage(currentUser);
+                renderProfileUI();
+            }
+        }).catch(function() { /* use cached data */ });
+    }
+}
+
+function renderProfileUI() {
+    if (!currentUser) return;
+    
     // Avatar
     var avatarImg = document.getElementById('profileAvatarImg');
     if (avatarImg) {
@@ -3893,8 +3905,13 @@ async function handleProfilePhoto(event) {
         try {
             var result = await UserAPI.updateProfile({ profile_photo: base64 });
             if (result.success) {
-                currentUser.profilePhoto = base64;
-                saveUserToStorage(currentUser);
+                if (result.user) {
+                    currentUser = result.user;
+                    saveUserToStorage(currentUser);
+                } else {
+                    currentUser.profilePhoto = base64;
+                    saveUserToStorage(currentUser);
+                }
                 loadProfilePage();
                 showToast('Profile photo updated!', 'success');
             } else {

@@ -2892,13 +2892,6 @@ function checkAndShowPaymentReceived() {
 }
 
 /**
- * Pay the helper for a completed task
- * Called when task poster clicks "Pay Now" on completed task
- */
-async function payHelperForTask(taskId) {
-    await showPaymentInvoice(taskId);
-}
-
 /**
  * Show styled payment invoice modal with full price breakdown
  * Fetches real balance, validates, and shows approval UI
@@ -3791,8 +3784,8 @@ function viewTaskForPayment(taskId, notificationId) {
         // Mark notification as read
         NotificationsAPI.markAsRead(notificationId).catch(console.error);
         
-        // Show payment modal
-        payHelperForTask(taskId);
+        // Show payment invoice modal
+        showPaymentInvoice(taskId);
     }
 }
 
@@ -3907,10 +3900,10 @@ function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    // Filter out expired-active and paid tasks
+    // Show only active (non-expired) posted tasks — payment is handled via notifications
     const visiblePostedTasks = myPostedTasks.filter(t => {
-        if (t.status === 'paid') return false;
-        if (t.status === 'active' && getTimeLeft(t.expiresAt) === 'Expired') return false;
+        if (t.status !== 'active') return false;
+        if (getTimeLeft(t.expiresAt) === 'Expired') return false;
         return true;
     });
 
@@ -3920,61 +3913,18 @@ function renderPostedTasks() {
     }
 
     el.innerHTML = visiblePostedTasks.map(t => {
-        const taskAmount = t.price;
-        
-        let actionButtons = '';
-        if (t.status === 'active') {
-            actionButtons = `<div class="task-actions"><button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button><button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button></div>`;
-        } else if (t.status === 'completed' || t.status === 'pending_payment') {
-            const svcCharge = t.service_charge || 0;
-            const totalTaskVal = taskAmount + svcCharge;
-            const helperCommission = totalTaskVal * 0.12;
-            const posterFee = totalTaskVal * 0.05;
-            const totalCost = totalTaskVal + posterFee;
-            const helperReceives = totalTaskVal - helperCommission;
-            
-            actionButtons = `
-                <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-top: 10px;">
-                    <p style="color: #fbbf24; margin-bottom: 8px; font-size: 14px;">
-                        <i class="fas fa-check-circle"></i> Helper completed this task!
-                    </p>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                        <span>Budget:</span><span>₹${taskAmount}</span>
-                    </div>
-                    ${svcCharge > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #fbbf24;">
-                        <span>Service Charge:</span><span>+₹${svcCharge.toFixed(2)}</span>
-                    </div>` : ''}
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                        <span>Task Value:</span><span>₹${totalTaskVal.toFixed(2)}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #f59e0b;">
-                        <span>Posting Fee (5%):</span><span>+₹${posterFee.toFixed(2)}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #10b981;">
-                        <span>Helper receives (88%):</span><span>₹${helperReceives.toFixed(2)}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 13px; color: #fff; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; font-weight: 600;">
-                        <span>Total you pay:</span><span>₹${totalCost.toFixed(2)}</span>
-                    </div>
-                    <button class="btn btn-success" style="width: 100%;" onclick="payHelperForTask(${t.id})" title="Pay from your wallet">
-                        <i class="fas fa-credit-card"></i> Pay ₹${totalCost.toFixed(2)} Now
-                    </button>
-                </div>
-            `;
-        }
-        
-        const statusColor = (t.status === 'completed' || t.status === 'pending_payment') ? 'style="background: #fbbf24; color: #000;"' : '';
-        const statusText = (t.status === 'completed' || t.status === 'pending_payment') ? '⏳ Awaiting Payment' : t.status;
-        
         return `
             <div class="my-task-card">
                 <div class="my-task-card-header">
                     <span class="task-category">${formatCategory(t.category)}</span>
-                    <span class="task-status ${t.status}" ${statusColor}>${statusText}</span>
+                    <span class="task-status ${t.status}">${t.status}</span>
                 </div>
                 <h4>${t.title}</h4>
                 <div class="task-meta"><span>₹${t.price}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
-                ${actionButtons}
+                <div class="task-actions">
+                    <button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button>
+                    <button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
+                </div>
             </div>
         `;
     }).join('');

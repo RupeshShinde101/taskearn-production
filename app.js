@@ -3046,7 +3046,7 @@ async function showPaymentInvoice(taskId) {
                 <button class="btn btn-secondary" style="flex: 1; padding: 14px; font-size: 15px; border-radius: 10px; background: #333; border: 1px solid #555;" onclick="closeModal('taskSuccessModal');">
                     Close
                 </button>
-                <button class="btn btn-primary" style="flex: 1; padding: 14px; font-size: 15px; border-radius: 10px;" onclick="closeModal('taskSuccessModal'); showSection('wallet');">
+                <button class="btn btn-primary" style="flex: 1; padding: 14px; font-size: 15px; border-radius: 10px;" onclick="closeModal('taskSuccessModal'); window.location.href='wallet.html';">
                     <i class="fas fa-plus"></i> Add Money
                 </button>
             </div>

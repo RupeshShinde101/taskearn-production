@@ -1484,29 +1484,22 @@ def pay_helper(task_id):
 def get_user_tasks():
     """Get current user's tasks"""
     with get_db() as (cursor, conn):
-        # Posted tasks
+        # Posted tasks - ALL statuses
         cursor.execute(f'''
             SELECT * FROM tasks WHERE posted_by = {PH} ORDER BY posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
         
-        # Accepted tasks
+        # Accepted tasks - ALL statuses (accepted, completed, paid)
         cursor.execute(f'''
-            SELECT * FROM tasks WHERE accepted_by = {PH} AND status = 'accepted' ORDER BY accepted_at DESC
+            SELECT * FROM tasks WHERE accepted_by = {PH} AND status IN ('accepted', 'completed', 'paid') ORDER BY accepted_at DESC
         ''', (request.user_id,))
         accepted = [dict_from_row(t) for t in cursor.fetchall()]
-        
-        # Completed tasks
-        cursor.execute(f'''
-            SELECT * FROM tasks WHERE accepted_by = {PH} AND status = 'completed' ORDER BY completed_at DESC
-        ''', (request.user_id,))
-        completed = [dict_from_row(t) for t in cursor.fetchall()]
     
     return jsonify({
         'success': True,
         'postedTasks': posted,
-        'acceptedTasks': accepted,
-        'completedTasks': completed
+        'acceptedTasks': accepted
     })
 
 

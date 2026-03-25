@@ -1127,8 +1127,8 @@ function updateMapMarkers() {
     taskMarkers.forEach(marker => marker.remove());
     taskMarkers = [];
     
-    // Add markers for active tasks
-    tasks.filter(t => t.status === 'active').forEach(task => {
+    // Add markers for active, non-expired tasks
+    tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired').forEach(task => {
         if (task.location && task.location.lat && task.location.lng) {
             const marker = L.marker([task.location.lat, task.location.lng], {
                 icon: L.divIcon({
@@ -1941,8 +1941,8 @@ function addTaskMarkers() {
     });
     taskMarkers = [];
 
-    // Add markers for active tasks
-    tasks.filter(t => t.status === 'active').forEach(task => {
+    // Add markers for active, non-expired tasks
+    tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired').forEach(task => {
         const icon = getTaskIcon(task.category);
         const marker = L.marker([task.location.lat, task.location.lng], { icon }).addTo(map);
 
@@ -2150,9 +2150,11 @@ function renderTasks(filtered = null) {
     const container = document.getElementById('tasksList');
     if (!container) return;
 
-    // Filter: Show only active tasks (hide completed, paid, cancelled)
+    // Filter: Show only active, non-expired tasks
     let list = filtered || tasks.filter(t => {
-        return t.status === 'active' || t.status === 'pending_payment';
+        if (t.status !== 'active') return false;
+        if (getTimeLeft(t.expiresAt) === 'Expired') return false;
+        return true;
     });
 
     // Sort by distance
@@ -2202,7 +2204,7 @@ function onTaskCardClick(taskId) {
     map.setView([task.location.lat, task.location.lng], 15);
 
     // Open popup
-    const idx = tasks.filter(t => t.status === 'active').findIndex(t => t.id === taskId);
+    const idx = tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired').findIndex(t => t.id === taskId);
     if (idx >= 0 && taskMarkers[idx]) {
         taskMarkers[idx].openPopup();
     }
@@ -3870,12 +3872,19 @@ function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    if (myPostedTasks.length === 0) {
+    // Filter out expired-active and paid tasks
+    const visiblePostedTasks = myPostedTasks.filter(t => {
+        if (t.status === 'paid') return false;
+        if (t.status === 'active' && getTimeLeft(t.expiresAt) === 'Expired') return false;
+        return true;
+    });
+
+    if (visiblePostedTasks.length === 0) {
         el.innerHTML = '<div class="empty-state"><i class="fas fa-clipboard-list"></i><h3>No posted tasks</h3><button class="btn btn-primary" onclick="openModal(\'postTaskModal\')">Post a Task</button></div>';
         return;
     }
 
-    el.innerHTML = myPostedTasks.map(t => {
+    el.innerHTML = visiblePostedTasks.map(t => {
         // Payment system: Helper gets 88% of total (price + service_charge), 12% deducted as commission & fees
         const sCharge = getServiceCharge(t.category) || 0;
         const taskAmount = t.price;
@@ -3923,19 +3932,11 @@ function renderPostedTasks() {
                 </div>
             `;
         } else if (t.status === 'paid') {
-            actionButtons = `
-                <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; border-radius: 8px; padding: 12px; margin-top: 10px;">
-                    <p style="color: #4ade80; margin: 0;">
-                        <i class="fas fa-check-circle"></i> Payment completed
-                    </p>
-                </div>
-            `;
+            actionButtons = '';
         }
         
-        const statusColor = (t.status === 'completed' || t.status === 'pending_payment') ? 'style="background: #fbbf24; color: #000;"' : 
-                           t.status === 'paid' ? 'style="background: #4ade80; color: #000;"' : '';
-        const statusText = (t.status === 'completed' || t.status === 'pending_payment') ? '⏳ Awaiting Payment' : 
-                          t.status === 'paid' ? '✅ Paid' : t.status;
+        const statusColor = (t.status === 'completed' || t.status === 'pending_payment') ? 'style="background: #fbbf24; color: #000;"' : '';
+        const statusText = (t.status === 'completed' || t.status === 'pending_payment') ? '⏳ Awaiting Payment' : t.status;
         
         return `
             <div class="my-task-card">
@@ -4040,6 +4041,7 @@ function applyFilters() {
 
     const filtered = tasks.filter(t => {
         if (t.status !== 'active') return false;
+        if (getTimeLeft(t.expiresAt) === 'Expired') return false;
         const d = getDistance(userLocation.lat, userLocation.lng, t.location.lat, t.location.lng);
         if (cat !== 'all' && t.category !== cat) return false;
         if (d > dist) return false;

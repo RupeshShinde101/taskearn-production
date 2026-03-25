@@ -2516,22 +2516,38 @@ function cancelTask(taskId) {
     }
 }
 
-function deleteTask(taskId) {
-    if (confirm('Delete this task?') && currentUser) {
-        tasks = tasks.filter(t => t.id !== taskId);
-        myPostedTasks = myPostedTasks.filter(t => t.id !== taskId);
+async function deleteTask(taskId) {
+    if (!confirm('Delete this task?') || !currentUser) return;
 
-        // Update storage
-        updateUserData(currentUser.id, {
-            postedTasks: serializeTasks(myPostedTasks)
-        });
-
-        showToast('Task deleted');
-        closeModal('taskDetailModal');
-        renderTasks();
-        addTaskMarkers();
-        renderDashboard();
+    // Call backend API to delete from database
+    try {
+        const token = localStorage.getItem('taskearn_token');
+        if (token && typeof TasksAPI !== 'undefined' && TasksAPI.delete) {
+            const result = await TasksAPI.delete(taskId);
+            if (!result || !result.success) {
+                showToast(`❌ ${result?.message || 'Could not delete task'}`, 'error');
+                return;
+            }
+        }
+    } catch (e) {
+        console.error('Delete API failed:', e.message);
+        showToast('❌ Network error. Please try again.');
+        return;
     }
+
+    // Remove from local arrays
+    tasks = tasks.filter(t => t.id !== taskId);
+    myPostedTasks = myPostedTasks.filter(t => t.id !== taskId);
+
+    updateUserData(currentUser.id, {
+        postedTasks: serializeTasks(myPostedTasks)
+    });
+
+    showToast('✅ Task deleted');
+    closeModal('taskDetailModal');
+    renderTasks();
+    addTaskMarkers();
+    renderDashboard();
 }
 
 // Edit Task Functions

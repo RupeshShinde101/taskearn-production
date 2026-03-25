@@ -958,6 +958,37 @@ def accept_task(task_id):
         return jsonify({'success': False, 'message': f'Error accepting task: {str(e)}'}), 500
 
 
+@app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
+@require_auth
+def delete_task(task_id):
+    """Delete a task (only poster can delete, only if not accepted)"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT posted_by, status FROM tasks WHERE id = {PH}', (task_id,))
+            task = cursor.fetchone()
+
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found'}), 404
+
+            task = dict_from_row(task)
+
+            if task['posted_by'] != request.user_id:
+                return jsonify({'success': False, 'message': 'Only the task poster can delete this task'}), 403
+
+            if task['status'] not in ('active',):
+                return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
+
+            cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
+
+        print(f"✅ Task {task_id} deleted by user {request.user_id}")
+        return jsonify({'success': True, 'message': 'Task deleted successfully'})
+    except Exception as e:
+        print(f"❌ Error in delete_task: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error deleting task: {str(e)}'}), 500
+
+
 @app.route('/api/tasks/<int:task_id>/details', methods=['GET'])
 @require_auth
 def get_task_details(task_id):

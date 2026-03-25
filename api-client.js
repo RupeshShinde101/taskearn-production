@@ -597,6 +597,14 @@ const TasksAPI = {
             method: 'POST'
         });
         return result.data;
+    },
+
+    // Delete task
+    async delete(taskId) {
+        const result = await apiRequest(`/tasks/${taskId}`, {
+            method: 'DELETE'
+        });
+        return result.data;
     }
 };
 

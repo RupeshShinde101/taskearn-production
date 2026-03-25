@@ -241,87 +241,42 @@
         </div>
     </section>
 
-    <!-- Categories Section -->
-    <section class="categories" id="categories">
+    <!-- My Tasks Section (Dashboard) -->
+    <section class="my-tasks" id="my-tasks">
         <div class="container">
             <div class="section-header">
-                <span class="section-badge">Services</span>
-                <h2>Popular Task Categories</h2>
-                <p>Find help for any task or offer your skills in these categories</p>
+                <span class="section-badge">Dashboard</span>
+                <h2>My Tasks</h2>
+                <p>Manage your posted tasks and track your earnings</p>
+                <div id="authStatus" style="display: none; margin-top: 10px; padding: 10px; background: #f0f9ff; border-radius: 8px; font-size: 14px;"></div>
             </div>
-            <div class="categories-grid">
-                <div class="category-card" onclick="filterByCategory('household')">
-                    <div class="category-icon household">
-                        <i class="fas fa-home"></i>
-                    </div>
-                    <h3>Household Chores</h3>
-                    <p>Laundry, Cleaning, Organizing</p>
-                    <span class="task-count">234 tasks</span>
-                </div>
-                <div class="category-card" onclick="filterByCategory('delivery')">
-                    <div class="category-icon delivery">
-                        <i class="fas fa-shipping-fast"></i>
-                    </div>
-                    <h3>Delivery Services</h3>
-                    <p>Parcels, Groceries, Medicines, Tiffin</p>
-                    <span class="task-count">189 tasks</span>
-                </div>
-                <div class="category-card" onclick="filterByCategory('tutoring')">
-                    <div class="category-icon tutoring">
-                        <i class="fas fa-graduation-cap"></i>
-                    </div>
-                    <h3>Online Tutoring</h3>
-                    <p>JEE, NEET, Board Exams, Languages</p>
-                    <span class="task-count">156 tasks</span>
-                </div>
-                <div class="category-card" onclick="filterByCategory('transport')">
-                    <div class="category-icon transport">
-                        <i class="fas fa-car"></i>
-                    </div>
-                    <h3>Pick & Drop</h3>
-                    <p>Railway Station, Airport, Events</p>
-                    <span class="task-count">98 tasks</span>
-                </div>
-                <div class="category-card" onclick="filterByCategory('vehicle')">
-                    <div class="category-icon vehicle">
-                        <i class="fas fa-car-side"></i>
-                    </div>
-                    <h3>Vehicle Services</h3>
-                    <p>Car Wash, Bike Wash, Detailing</p>
-                    <span class="task-count">87 tasks</span>
-                </div>
-                <div class="category-card" onclick="filterByCategory('repair')">
-                    <div class="category-icon repair">
-                        <i class="fas fa-tools"></i>
-                    </div>
-                    <h3>Repairs & Mechanical</h3>
-                    <p>Plumbing, Electrical, Appliances</p>
-                    <span class="task-count">145 tasks</span>
-                </div>
-                <div class="category-card" onclick="filterByCategory('photography')">
-                    <div class="category-icon photography">
-                        <i class="fas fa-camera"></i>
-                    </div>
-                    <h3>Photography</h3>
-                    <p>Weddings, Events, Pre-wedding</p>
-                    <span class="task-count">67 tasks</span>
-                </div>
-                <div class="category-card" onclick="filterByCategory('freelance')">
-                    <div class="category-icon freelance">
-                        <i class="fas fa-laptop-code"></i>
-                    </div>
-                    <h3>Freelance Services</h3>
-                    <p>Design, Writing, Development</p>
-                    <span class="task-count">312 tasks</span>
-                </div>
-                <div class="category-card" onclick="filterByCategory('waste')">
-                    <div class="category-icon waste">
-                        <i class="fas fa-recycle"></i>
-                    </div>
-                    <h3>Waste Collection</h3>
-                    <p>Garbage, Recycling, Junk Removal</p>
-                    <span class="task-count">45 tasks</span>
-                </div>
+            
+            <div id="walletLowWarning" style="display: none;"></div>
+            
+            <!-- Notifications Panel -->
+            <div id="notifications-panel" style="margin-bottom: 20px; max-height: 300px; overflow-y: auto;"></div>
+
+            <div class="dashboard-nav-grid">
+                <a href="browse.html" class="dashboard-nav-card">
+                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);"><i class="fas fa-search"></i></div>
+                    <div class="nav-card-info"><h3>Browse Tasks</h3><p>Find tasks nearby and start earning</p></div>
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                <a href="posted.html" class="dashboard-nav-card">
+                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #f093fb, #f5576c);"><i class="fas fa-upload"></i></div>
+                    <div class="nav-card-info"><h3>Posted Tasks</h3><p>Manage tasks you've posted</p></div>
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                <a href="accepted.html" class="dashboard-nav-card">
+                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #4facfe, #00f2fe);"><i class="fas fa-check-circle"></i></div>
+                    <div class="nav-card-info"><h3>Accepted Tasks</h3><p>Tasks you're working on</p></div>
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                <a href="completed.html" class="dashboard-nav-card">
+                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);"><i class="fas fa-trophy"></i></div>
+                    <div class="nav-card-info"><h3>Completed</h3><p>Your task history and earnings</p></div>
+                    <i class="fas fa-chevron-right"></i>
+                </a>
             </div>
         </div>
     </section>
@@ -463,42 +418,87 @@
         </div>
     </section>
 
-    <!-- My Tasks Section (Dashboard) -->
-    <section class="my-tasks" id="my-tasks">
+    <!-- Categories Section -->
+    <section class="categories" id="categories">
         <div class="container">
             <div class="section-header">
-                <span class="section-badge">Dashboard</span>
-                <h2>My Tasks</h2>
-                <p>Manage your posted tasks and track your earnings</p>
-                <div id="authStatus" style="display: none; margin-top: 10px; padding: 10px; background: #f0f9ff; border-radius: 8px; font-size: 14px;"></div>
+                <span class="section-badge">Services</span>
+                <h2>Popular Task Categories</h2>
+                <p>Find help for any task or offer your skills in these categories</p>
             </div>
-            
-            <div id="walletLowWarning" style="display: none;"></div>
-            
-            <!-- Notifications Panel -->
-            <div id="notifications-panel" style="margin-bottom: 20px; max-height: 300px; overflow-y: auto;"></div>
-
-            <div class="dashboard-nav-grid">
-                <a href="browse.html" class="dashboard-nav-card">
-                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);"><i class="fas fa-search"></i></div>
-                    <div class="nav-card-info"><h3>Browse Tasks</h3><p>Find tasks nearby and start earning</p></div>
-                    <i class="fas fa-chevron-right"></i>
-                </a>
-                <a href="posted.html" class="dashboard-nav-card">
-                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #f093fb, #f5576c);"><i class="fas fa-upload"></i></div>
-                    <div class="nav-card-info"><h3>Posted Tasks</h3><p>Manage tasks you've posted</p></div>
-                    <i class="fas fa-chevron-right"></i>
-                </a>
-                <a href="accepted.html" class="dashboard-nav-card">
-                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #4facfe, #00f2fe);"><i class="fas fa-check-circle"></i></div>
-                    <div class="nav-card-info"><h3>Accepted Tasks</h3><p>Tasks you're working on</p></div>
-                    <i class="fas fa-chevron-right"></i>
-                </a>
-                <a href="completed.html" class="dashboard-nav-card">
-                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);"><i class="fas fa-trophy"></i></div>
-                    <div class="nav-card-info"><h3>Completed</h3><p>Your task history and earnings</p></div>
-                    <i class="fas fa-chevron-right"></i>
-                </a>
+            <div class="categories-grid">
+                <div class="category-card" onclick="filterByCategory('household')">
+                    <div class="category-icon household">
+                        <i class="fas fa-home"></i>
+                    </div>
+                    <h3>Household Chores</h3>
+                    <p>Laundry, Cleaning, Organizing</p>
+                    <span class="task-count">234 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('delivery')">
+                    <div class="category-icon delivery">
+                        <i class="fas fa-shipping-fast"></i>
+                    </div>
+                    <h3>Delivery Services</h3>
+                    <p>Parcels, Groceries, Medicines, Tiffin</p>
+                    <span class="task-count">189 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('tutoring')">
+                    <div class="category-icon tutoring">
+                        <i class="fas fa-graduation-cap"></i>
+                    </div>
+                    <h3>Online Tutoring</h3>
+                    <p>JEE, NEET, Board Exams, Languages</p>
+                    <span class="task-count">156 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('transport')">
+                    <div class="category-icon transport">
+                        <i class="fas fa-car"></i>
+                    </div>
+                    <h3>Pick & Drop</h3>
+                    <p>Railway Station, Airport, Events</p>
+                    <span class="task-count">98 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('vehicle')">
+                    <div class="category-icon vehicle">
+                        <i class="fas fa-car-side"></i>
+                    </div>
+                    <h3>Vehicle Services</h3>
+                    <p>Car Wash, Bike Wash, Detailing</p>
+                    <span class="task-count">87 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('repair')">
+                    <div class="category-icon repair">
+                        <i class="fas fa-tools"></i>
+                    </div>
+                    <h3>Repairs & Mechanical</h3>
+                    <p>Plumbing, Electrical, Appliances</p>
+                    <span class="task-count">145 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('photography')">
+                    <div class="category-icon photography">
+                        <i class="fas fa-camera"></i>
+                    </div>
+                    <h3>Photography</h3>
+                    <p>Weddings, Events, Pre-wedding</p>
+                    <span class="task-count">67 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('freelance')">
+                    <div class="category-icon freelance">
+                        <i class="fas fa-laptop-code"></i>
+                    </div>
+                    <h3>Freelance Services</h3>
+                    <p>Design, Writing, Development</p>
+                    <span class="task-count">312 tasks</span>
+                </div>
+                <div class="category-card" onclick="filterByCategory('waste')">
+                    <div class="category-icon waste">
+                        <i class="fas fa-recycle"></i>
+                    </div>
+                    <h3>Waste Collection</h3>
+                    <p>Garbage, Recycling, Junk Removal</p>
+                    <span class="task-count">45 tasks</span>
+                </div>
             </div>
         </div>
     </section>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accepted Tasks - TaskEarn</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script>
+        function loadRazorpayScript() { if (typeof Razorpay !== 'undefined') return; var s = document.createElement('script'); s.src = 'https://checkout.razorpay.com/v1/checkout.js'; s.async = true; document.head.appendChild(s); }
+        if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', loadRazorpayScript); } else { loadRazorpayScript(); }
+    </script>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        (function() { var ua = navigator.userAgent.toLowerCase(); var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua); if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; } else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; } })();
+    </script>
+</head>
+<body class="has-tab-bar">
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo"><a href="index.html" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:8px;"><i class="fas fa-tasks"></i><span>Task<span class="highlight">Earn</span></span></a></div>
+            <ul class="nav-links"><li><a href="index.html">Home</a></li><li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li></ul>
+            <div class="notification-wrapper" id="notificationWrapper" style="display: none;">
+                <button class="notification-bell" onclick="toggleNotifications()"><i class="fas fa-bell"></i><span class="notification-badge" id="notificationBadge">0</span></button>
+                <div class="notification-dropdown" id="notificationDropdown"><div class="notification-header"><h4>Notifications</h4><button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button></div><div class="notification-list" id="notificationList"><div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div></div></div>
+            </div>
+            <div class="nav-buttons"><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></div>
+            <div class="hamburger" onclick="toggleMobileMenu()"><span></span><span></span><span></span></div>
+        </div>
+    </nav>
+    <div class="mobile-menu" id="mobileMenu">
+        <ul>
+            <li><a href="index.html" onclick="toggleMobileMenu()">Home</a></li>
+            <li><a href="browse.html" onclick="toggleMobileMenu()">Browse Tasks</a></li>
+            <li class="mobile-wallet-item" id="mobileWalletItem" style="display: none;"><a href="wallet.html" onclick="toggleMobileMenu();"><i class="fas fa-wallet"></i> Wallet</a></li>
+            <li class="mobile-notification-item" id="mobileNotificationItem" style="display: none;"><a href="#" onclick="toggleNotifications(); toggleMobileMenu();"><i class="fas fa-bell"></i> Notifications <span class="mobile-badge" id="mobileBadge">0</span></a></li>
+            <li><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button></li>
+            <li><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></li>
+        </ul>
+    </div>
+
+    <!-- Page Content -->
+    <div class="task-page-content">
+        <div class="container">
+            <div class="task-page-header">
+                <h2>My Tasks</h2>
+                <p>Manage your posted, accepted, and completed tasks</p>
+            </div>
+
+            <!-- Sub Navigation -->
+            <div class="page-sub-nav">
+                <a href="posted.html"><i class="fas fa-upload"></i> Posted</a>
+                <a href="accepted.html" class="active"><i class="fas fa-check-circle"></i> Accepted</a>
+                <a href="completed.html"><i class="fas fa-trophy"></i> Completed</a>
+            </div>
+
+            <!-- Accepted Tasks List -->
+            <div class="my-tasks-list" id="myAcceptedTasks">
+                <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><h3>Loading tasks...</h3></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('loginModal')"><i class="fas fa-times"></i></button>
+            <h2><i class="fas fa-sign-in-alt"></i> Welcome Back</h2>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group"><label for="loginEmail">Email Address</label><input type="email" id="loginEmail" placeholder="your@email.com" required></div>
+                <div class="form-group"><label for="loginPassword">Password</label><input type="password" id="loginPassword" placeholder="Enter password" required></div>
+                <div class="form-options"><label class="checkbox-label"><input type="checkbox"> Remember me</label><a href="#" class="forgot-link" onclick="openForgotPassword()">Forgot Password?</a></div>
+                <button type="submit" class="btn btn-primary btn-block">Login</button>
+            </form>
+            <div class="modal-footer"><p>Don't have an account? <a href="#" onclick="switchModal('loginModal', 'signupModal')">Sign Up</a></p></div>
+        </div>
+    </div>
+
+    <!-- Sign Up Modal -->
+    <div class="modal" id="signupModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('signupModal')"><i class="fas fa-times"></i></button>
+            <h2><i class="fas fa-user-plus"></i> Create Account</h2>
+            <form id="signupForm" onsubmit="handleSignup(event)">
+                <div class="form-row"><div class="form-group"><label for="signupFirstName">First Name</label><input type="text" id="signupFirstName" placeholder="John" required></div><div class="form-group"><label for="signupLastName">Last Name</label><input type="text" id="signupLastName" placeholder="Doe" required></div></div>
+                <div class="form-group"><label for="signupEmail">Email Address</label><input type="email" id="signupEmail" placeholder="your@email.com" required></div>
+                <div class="form-group"><label for="signupPhone">Phone Number</label><input type="tel" id="signupPhone" placeholder="+91 98765 43210" required></div>
+                <div class="form-group"><label for="signupDOB">Date of Birth</label><input type="date" id="signupDOB" required><small>You must be 16 or older</small></div>
+                <div class="form-group"><label for="signupPassword">Password</label><input type="password" id="signupPassword" placeholder="Create a strong password" required></div>
+                <div class="form-group"><label class="checkbox-label"><input type="checkbox" required> I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label></div>
+                <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+            </form>
+            <div class="modal-footer"><p>Already have an account? <a href="#" onclick="switchModal('signupModal', 'loginModal')">Login</a></p></div>
+        </div>
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div class="modal" id="forgotPasswordModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('forgotPasswordModal'); resetForgotPassword();"><i class="fas fa-times"></i></button>
+            <div id="forgotStep1" class="forgot-step active"><div class="forgot-icon"><i class="fas fa-lock"></i></div><h2>Forgot Password?</h2><p class="forgot-subtitle">Enter your registered email address to recover your account</p><form onsubmit="findAccount(event)"><div class="form-group"><label for="forgotEmail">Email Address</label><input type="email" id="forgotEmail" placeholder="your@email.com" required></div><button type="submit" class="btn btn-primary btn-block"><i class="fas fa-search"></i> Find Account</button></form><div class="modal-footer"><p>Remember your password? <a href="#" onclick="switchModal('forgotPasswordModal', 'loginModal')">Login</a></p></div></div>
+            <div id="forgotStep2" class="forgot-step"><div class="forgot-icon success"><i class="fas fa-user-check"></i></div><h2>Account Found!</h2><p class="forgot-subtitle">We'll send a verification code to your registered email</p><div class="account-preview" id="accountPreview"></div><div class="verification-options"><button class="verification-option" onclick="sendOTP('email')" id="emailOTPBtn"><i class="fas fa-envelope"></i><div class="option-info"><span class="option-title">Send OTP via Email</span><span class="option-value" id="maskedEmail">***@***.com</span></div><i class="fas fa-chevron-right"></i></button></div><button class="btn btn-outline btn-block" onclick="goToForgotStep(1)"><i class="fas fa-arrow-left"></i> Back</button></div>
+            <div id="forgotStep3" class="forgot-step"><div class="forgot-icon"><i class="fas fa-shield-alt"></i></div><h2>Verify OTP</h2><p class="forgot-subtitle" id="otpSentMessage">Enter the 6-digit code sent to your email</p><form onsubmit="verifyOTP(event)"><div class="otp-input-container"><input type="text" class="otp-input" maxlength="1" data-index="0" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="1" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="2" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="3" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="4" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"><input type="text" class="otp-input" maxlength="1" data-index="5" oninput="handleOTPInput(this)" onkeydown="handleOTPKeydown(event, this)"></div><div class="otp-timer"><span id="otpTimer">Resend OTP in <strong>60s</strong></span><button type="button" class="resend-btn" id="resendBtn" onclick="resendOTP()" disabled>Resend OTP</button></div><button type="submit" class="btn btn-primary btn-block"><i class="fas fa-check"></i> Verify Code</button></form><button class="btn btn-outline btn-block" onclick="goToForgotStep(2)"><i class="fas fa-arrow-left"></i> Back</button></div>
+            <div id="forgotStep4" class="forgot-step"><div class="forgot-icon success"><i class="fas fa-check-circle"></i></div><h2>Verified!</h2><p class="forgot-subtitle">Create a new password for your account</p><form onsubmit="resetPassword(event)"><div class="form-group"><label for="newPassword">New Password</label><div class="password-input-wrapper"><input type="password" id="newPassword" placeholder="Enter new password" required minlength="6"><button type="button" class="toggle-password" onclick="togglePasswordVisibility('newPassword')"><i class="fas fa-eye"></i></button></div><div class="password-strength" id="passwordStrength"></div></div><div class="form-group"><label for="confirmNewPassword">Confirm Password</label><div class="password-input-wrapper"><input type="password" id="confirmNewPassword" placeholder="Confirm new password" required minlength="6"><button type="button" class="toggle-password" onclick="togglePasswordVisibility('confirmNewPassword')"><i class="fas fa-eye"></i></button></div></div><button type="submit" class="btn btn-primary btn-block"><i class="fas fa-save"></i> Reset Password</button></form></div>
+            <div id="forgotStep5" class="forgot-step"><div class="forgot-icon success animate-success"><i class="fas fa-check-circle"></i></div><h2>Password Reset!</h2><p class="forgot-subtitle">Your password has been successfully changed.</p><button class="btn btn-primary btn-block" onclick="closeModal('forgotPasswordModal'); resetForgotPassword(); openModal('loginModal');"><i class="fas fa-sign-in-alt"></i> Login Now</button></div>
+        </div>
+    </div>
+
+    <!-- Post Task Modal -->
+    <div class="modal" id="postTaskModal">
+        <div class="modal-content modal-large">
+            <button class="modal-close" onclick="closeModal('postTaskModal')"><i class="fas fa-times"></i></button>
+            <h2><i class="fas fa-plus-circle"></i> Post a New Task</h2>
+            <form id="modalTaskForm" onsubmit="handleTaskSubmit(event)">
+                <div class="form-group"><label for="modalTaskTitle">Task Title</label><input type="text" id="modalTaskTitle" placeholder="What do you need help with?" required></div>
+                <div class="form-row"><div class="form-group"><label for="modalTaskCategory">Category</label><select id="modalTaskCategory" required><option value="">Select category</option><option value="household">Household Chores</option><option value="delivery">Delivery Services</option><option value="tutoring">Online Tutoring</option><option value="transport">Pick & Drop</option><option value="vehicle">Vehicle Services</option><option value="repair">Repairs & Mechanical</option><option value="photography">Photography</option><option value="freelance">Freelance Services</option><option value="waste">Waste Collection</option><option value="cleaning">Cleaning Services</option><option value="cooking">Cooking & Chef</option><option value="petcare">Pet Care</option><option value="gardening">Gardening & Lawn</option><option value="shopping">Shopping & Errands</option><option value="eventhelp">Event Help</option><option value="moving">Moving & Packing</option><option value="techsupport">Tech Support</option><option value="beauty">Beauty & Wellness</option><option value="laundry">Laundry & Ironing</option><option value="catering">Catering Services</option><option value="babysitting">Babysitting</option><option value="eldercare">Elder Care</option><option value="fitness">Fitness Training</option><option value="painting">Painting & Decor</option><option value="electrician">Electrician</option><option value="plumbing">Plumbing</option><option value="carpentry">Carpentry</option><option value="tailoring">Tailoring & Alterations</option><option value="other">Other</option></select></div><div class="form-group"><label for="modalTaskDate">When do you need this done?</label><input type="datetime-local" id="modalTaskDate" required></div></div>
+                <div class="form-group"><label for="modalTaskDescription">Description</label><textarea id="modalTaskDescription" rows="4" placeholder="Provide details about the task..." required></textarea></div>
+                <div class="form-group"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
+                <div class="form-group"><label>Task Budget (Min ₹50)</label><div class="budget-selector"><div class="budget-option" onclick="selectBudget(this, 50)">₹50</div><div class="budget-option" onclick="selectBudget(this, 100)">₹100</div><div class="budget-option" onclick="selectBudget(this, 200)">₹200</div><div class="budget-option" onclick="selectBudget(this, 500)">₹500</div><div class="budget-option" onclick="selectBudget(this, 1000)">₹1000</div><input type="number" id="customBudget" placeholder="Custom ₹" min="50"></div></div>
+                <div class="form-group"><label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label><div class="bonus-section"><p class="bonus-hint">Increase your budget to attract more taskers!</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="addBonus(50)">+₹50</button><button type="button" class="bonus-btn" onclick="addBonus(100)">+₹100</button><button type="button" class="bonus-btn" onclick="addBonus(200)">+₹200</button><button type="button" class="bonus-btn" onclick="addBonus(500)">+₹500</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">₹500</strong></div></div></div>
+                <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Service Charge</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹50</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">₹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row total"><span><strong>You Pay:</strong></span><span><strong id="totalPayable">₹100</strong></span></div><div class="charge-row" style="color:#10b981;font-size:13px;margin-top:5px;"><span>Worker Earns:</span><span><strong id="workerEarns">₹100</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity</p></div>
+                <div class="task-info-box"><i class="fas fa-info-circle"></i><div><strong>Task Visibility</strong><p>Your task will be visible to nearby taskers for 12 hours.</p></div></div>
+                <button type="submit" class="btn btn-primary btn-block btn-large"><i class="fas fa-paper-plane"></i> Post Task Now</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Task Posted Success Modal -->
+    <div class="modal" id="taskSuccessModal">
+        <div class="modal-content modal-success"><button class="modal-close" onclick="closeModal('taskSuccessModal')"><i class="fas fa-times"></i></button><div class="task-success-content" id="taskSuccessContent"></div></div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMessage">Action completed successfully!</span></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script src="api-client.js?v=20250326_multipage"></script>
+    <script src="shared.js?v=20250326_multipage"></script>
+    <script src="razorpay.js?v=20250326_multipage"></script>
+    <script src="app.js?v=20250326_multipage"></script>
+</body>
+</html>

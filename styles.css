@@ -4570,3 +4570,122 @@ section {
         font-size: 28px;
     }
 }
+
+/* ============================================ */
+/* BOTTOM TAB BAR                               */
+/* ============================================ */
+.bottom-tab-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #fff;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 6px 0;
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.08);
+    z-index: 999;
+    border-top: 1px solid #e5e7eb;
+}
+.bottom-tab-bar a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+    color: #9ca3af;
+    font-size: 10px;
+    font-weight: 500;
+    gap: 2px;
+    padding: 4px 12px;
+    transition: color 0.2s;
+}
+.bottom-tab-bar a i { font-size: 20px; }
+.bottom-tab-bar a.active,
+.bottom-tab-bar a:hover { color: #6c5ce7; }
+.bottom-tab-bar .tab-post-btn {
+    background: linear-gradient(135deg, #6c5ce7, #a855f7);
+    color: white !important;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: -24px;
+    box-shadow: 0 4px 15px rgba(108, 92, 231, 0.4);
+    padding: 0;
+}
+.bottom-tab-bar .tab-post-btn i { font-size: 24px; }
+.bottom-tab-bar .tab-post-btn span { display: none; }
+body.has-tab-bar { padding-bottom: 70px; }
+
+/* ============================================ */
+/* DASHBOARD NAVIGATION CARDS                   */
+/* ============================================ */
+.dashboard-nav-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+}
+.dashboard-nav-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 28px 16px;
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e5e7eb;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.dashboard-nav-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+}
+.dashboard-nav-card i {
+    font-size: 32px;
+    color: #6c5ce7;
+    margin-bottom: 12px;
+}
+.dashboard-nav-card h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+.dashboard-nav-card p { margin: 0; font-size: 13px; color: #6b7280; }
+@media (max-width: 480px) {
+    .dashboard-nav-grid { gap: 10px; }
+    .dashboard-nav-card { padding: 20px 12px; }
+    .dashboard-nav-card i { font-size: 26px; }
+    .dashboard-nav-card h3 { font-size: 14px; }
+}
+
+/* ============================================ */
+/* TASK PAGE SUB-NAVIGATION                     */
+/* ============================================ */
+.page-sub-nav {
+    display: flex;
+    background: #fff;
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 20px;
+    border: 1px solid #e5e7eb;
+}
+.page-sub-nav a {
+    flex: 1;
+    text-align: center;
+    padding: 10px 8px;
+    text-decoration: none;
+    color: #6b7280;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 10px;
+    transition: all 0.2s;
+}
+.page-sub-nav a.active { background: #6c5ce7; color: #fff; }
+.page-sub-nav a:hover:not(.active) { background: #f3f4f6; }
+.task-page-content { padding: 100px 0 20px; min-height: 60vh; }
+.task-page-header { text-align: center; margin-bottom: 24px; }
+.task-page-header h2 { font-size: 24px; font-weight: 700; margin: 0 0 4px; }
+.task-page-header p { color: #6b7280; margin: 0; }

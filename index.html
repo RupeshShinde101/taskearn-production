@@ -475,46 +475,30 @@
             
             <div id="walletLowWarning" style="display: none;"></div>
             
-            <div class="dashboard-tabs">
-                <button class="tab-btn active" onclick="switchTab('browse')">
-                    <i class="fas fa-search"></i> Browse Tasks
-                </button>
-                <button class="tab-btn" onclick="switchTab('posted')">
-                    <i class="fas fa-upload"></i> Posted Tasks
-                </button>
-                <button class="tab-btn" onclick="switchTab('accepted')">
-                    <i class="fas fa-check-circle"></i> Accepted Tasks
-                </button>
-                <button class="tab-btn" onclick="switchTab('completed')">
-                    <i class="fas fa-trophy"></i> Completed
-                </button>
-            </div>
-            
             <!-- Notifications Panel -->
-            <div id="notifications-panel" style="margin-bottom: 20px; max-height: 300px; overflow-y: auto;">
-            </div>
-            
-            <div class="dashboard-content" id="dashboardContent">
-                <div class="tab-content active" id="browseTasks">
-                    <div class="my-tasks-list" id="availableTasks">
-                        <!-- Available tasks nearby will appear here -->
-                    </div>
-                </div>
-                <div class="tab-content" id="postedTasks">
-                    <div class="my-tasks-list" id="myPostedTasks">
-                        <!-- User's posted tasks will appear here -->
-                    </div>
-                </div>
-                <div class="tab-content" id="acceptedTasks">
-                    <div class="my-tasks-list" id="myAcceptedTasks">
-                        <!-- Tasks user has accepted to do -->
-                    </div>
-                </div>
-                <div class="tab-content" id="completedTasks">
-                    <div class="my-tasks-list" id="myCompletedTasks">
-                        <!-- Completed tasks history -->
-                    </div>
-                </div>
+            <div id="notifications-panel" style="margin-bottom: 20px; max-height: 300px; overflow-y: auto;"></div>
+
+            <div class="dashboard-nav-grid">
+                <a href="browse.html" class="dashboard-nav-card">
+                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);"><i class="fas fa-search"></i></div>
+                    <div class="nav-card-info"><h3>Browse Tasks</h3><p>Find tasks nearby and start earning</p></div>
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                <a href="posted.html" class="dashboard-nav-card">
+                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #f093fb, #f5576c);"><i class="fas fa-upload"></i></div>
+                    <div class="nav-card-info"><h3>Posted Tasks</h3><p>Manage tasks you've posted</p></div>
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                <a href="accepted.html" class="dashboard-nav-card">
+                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #4facfe, #00f2fe);"><i class="fas fa-check-circle"></i></div>
+                    <div class="nav-card-info"><h3>Accepted Tasks</h3><p>Tasks you're working on</p></div>
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                <a href="completed.html" class="dashboard-nav-card">
+                    <div class="nav-card-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);"><i class="fas fa-trophy"></i></div>
+                    <div class="nav-card-info"><h3>Completed</h3><p>Your task history and earnings</p></div>
+                    <i class="fas fa-chevron-right"></i>
+                </a>
             </div>
         </div>
     </section>
@@ -1134,12 +1118,13 @@
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20250326_abandon_fix"></script>
+    <script src="api-client.js?v=20250326_multipage"></script>
+    <script src="shared.js?v=20250326_multipage"></script>
     
     <!-- Razorpay Payment Integration -->
-    <script src="razorpay.js?v=20250326_delete_fix"></script>
+    <script src="razorpay.js?v=20250326_multipage"></script>
     
-    <script src="app.js?v=20250326_abandon_fix"></script>
+    <script src="app.js?v=20250326_multipage"></script>
     
     <!-- CRITICAL: Mobile detection happens in HEAD section via inline script -->
     <!-- That script runs FIRST and pre-sets window.API_BASE_URL before any external scripts load -->

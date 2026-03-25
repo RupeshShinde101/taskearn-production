@@ -1,0 +1,41 @@
+// shared.js — Bottom Tab Bar + Global Modal Backdrop Handler
+(function() {
+    var page = (window.location.pathname.split('/').pop() || 'index.html').toLowerCase();
+
+    function initTabBar() {
+        // Skip on pages that already have their own nav (task-in-progress, tracking, admin, etc.)
+        if (['task-in-progress.html','tracking.html','admin.html','admin-dashboard.html','chat.html'].indexOf(page) !== -1) return;
+
+        var bar = document.createElement('nav');
+        bar.className = 'bottom-tab-bar';
+        bar.innerHTML =
+            '<a href="index.html" class="' + (page === 'index.html' || page === '' ? 'active' : '') + '"><i class="fas fa-home"></i><span>Home</span></a>' +
+            '<a href="browse.html" class="' + (page === 'browse.html' ? 'active' : '') + '"><i class="fas fa-search"></i><span>Browse</span></a>' +
+            '<a href="#" class="tab-post-btn" onclick="if(typeof openModal===\'function\')openModal(\'postTaskModal\');return false;"><i class="fas fa-plus"></i><span>Post</span></a>' +
+            '<a href="posted.html" class="' + (['posted.html','accepted.html','completed.html'].indexOf(page) !== -1 ? 'active' : '') + '"><i class="fas fa-tasks"></i><span>My Tasks</span></a>' +
+            '<a href="wallet.html" class="' + (page === 'wallet.html' ? 'active' : '') + '"><i class="fas fa-wallet"></i><span>Wallet</span></a>';
+        document.body.appendChild(bar);
+        document.body.classList.add('has-tab-bar');
+    }
+
+    // Global modal backdrop click handler (works for dynamically added modals too)
+    function initModalBackdrop() {
+        document.addEventListener('click', function(e) {
+            if (e.target.classList && e.target.classList.contains('modal') && e.target.classList.contains('active')) {
+                e.target.classList.remove('active');
+                document.body.style.overflow = '';
+                if (typeof clearRoute === 'function') clearRoute();
+            }
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            initTabBar();
+            initModalBackdrop();
+        });
+    } else {
+        initTabBar();
+        initModalBackdrop();
+    }
+})();

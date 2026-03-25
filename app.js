@@ -2497,23 +2497,30 @@ function acceptTask(taskId) {
     }
 }
 
-function cancelTask(taskId) {
-    const idx = myPostedTasks.findIndex(t => t.id === taskId);
-    if (idx >= 0 && currentUser) {
-        myPostedTasks[idx].status = 'cancelled';
-        tasks = tasks.filter(t => t.id !== taskId);
-        myPostedTasks = myPostedTasks.filter(t => t.id !== taskId);
+async function abandonTask(taskId) {
+    if (!confirm('Release this task? It will become available for other users.')) return;
+    if (!currentUser) return;
 
-        // Update storage
-        updateUserData(currentUser.id, {
-            postedTasks: serializeTasks(myPostedTasks)
-        });
-
-        showToast('Task cancelled');
-        renderTasks();
-        addTaskMarkers();
-        renderDashboard();
+    try {
+        const result = await TasksAPI.abandon(taskId);
+        if (!result || !result.success) {
+            showToast(`❌ ${result?.message || 'Could not release task'}`, 'error');
+            return;
+        }
+    } catch (e) {
+        showToast('❌ Network error. Please try again.', 'error');
+        console.error('Abandon task failed:', e.message);
+        return;
     }
+
+    // Backend succeeded — remove from local accepted tasks
+    myAcceptedTasks = myAcceptedTasks.filter(t => t.id !== taskId);
+    updateUserData(currentUser.id, {
+        acceptedTasks: serializeTasks(myAcceptedTasks)
+    });
+
+    showToast('✅ Task released. It is now available for others.');
+    renderDashboard();
 }
 
 async function deleteTask(taskId) {
@@ -3979,8 +3986,11 @@ function renderAcceptedTasks() {
                 <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${((t.price || 0) + (t.service_charge || 0)) * 0.88} (after 12% commission)</p>
             </div>`;
         } else {
-            // Still in progress
-            actionHTML = `<div class="task-actions"><button class="btn btn-success" onclick="completeTask(${t.id})">Mark Complete</button></div>`;
+            // Still in progress - show complete and release buttons
+            actionHTML = `<div class="task-actions" style="display:flex;gap:8px;">
+                <button class="btn btn-success" onclick="completeTask(${t.id})">Mark Complete</button>
+                <button class="btn" style="background:#ef4444;color:#fff;" onclick="abandonTask(${t.id})">Release Task</button>
+            </div>`;
         }
         
         return `

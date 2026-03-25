@@ -702,12 +702,46 @@
             window.location.href = 'index.html?tab=accepted-tasks';
         }
 
-        // Go back
-        function goBack() {
-            if (confirm('Cancel task? This cannot be undone.')) {
-                clearInterval(timerInterval);
-                window.history.back();
+        // Go back — abandon the task via API so it returns to active
+        async function goBack() {
+            if (!confirm('Release this task? It will become available for other users.')) return;
+
+            const taskId = currentTask.id;
+            const token = localStorage.getItem('taskearn_token') || '';
+
+            if (token && taskId) {
+                try {
+                    const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + token
+                        }
+                    });
+                    const result = await res.json();
+                    if (!result.success) {
+                        alert(result.message || 'Could not release task');
+                        return;
+                    }
+                } catch (err) {
+                    alert('Network error. Please try again.');
+                    console.error('Abandon failed:', err.message);
+                    return;
+                }
+
+                // Remove from local accepted tasks
+                const currentUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
+                if (currentUser) {
+                    const helperData = JSON.parse(localStorage.getItem(`user_${currentUser.id}_data`) || '{}');
+                    if (helperData.acceptedTasks) {
+                        helperData.acceptedTasks = helperData.acceptedTasks.filter(t => t.id != taskId);
+                        localStorage.setItem(`user_${currentUser.id}_data`, JSON.stringify(helperData));
+                    }
+                }
             }
+
+            clearInterval(timerInterval);
+            window.location.href = 'index.html';
         }
 
         // Initialize on page load

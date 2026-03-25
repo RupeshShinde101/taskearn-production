@@ -958,6 +958,34 @@ def accept_task(task_id):
         return jsonify({'success': False, 'message': f'Error accepting task: {str(e)}'}), 500
 
 
+@app.route('/api/tasks/<int:task_id>/abandon', methods=['POST'])
+@require_auth
+def abandon_task(task_id):
+    """Abandon an accepted task - reverts it back to active so others can accept it"""
+    try:
+        with get_db() as (cursor, conn):
+            # Check task exists and is accepted by the current user
+            cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}', (task_id, request.user_id, 'accepted'))
+            task = cursor.fetchone()
+
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found or not accepted by you'}), 404
+
+            # Revert task to active
+            cursor.execute(f'''
+                UPDATE tasks SET status = 'active', accepted_by = NULL, accepted_at = NULL
+                WHERE id = {PH}
+            ''', (task_id,))
+
+        print(f"✅ Task {task_id} abandoned by user {request.user_id} — reverted to active")
+        return jsonify({'success': True, 'message': 'Task released. It is now available for others.'})
+    except Exception as e:
+        print(f"❌ Error in abandon_task: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error abandoning task: {str(e)}'}), 500
+
+
 @app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
 @require_auth
 def delete_task(task_id):

@@ -599,6 +599,14 @@ const TasksAPI = {
         return result.data;
     },
 
+    // Abandon/release an accepted task back to active
+    async abandon(taskId) {
+        const result = await apiRequest(`/tasks/${taskId}/abandon`, {
+            method: 'POST'
+        });
+        return result.data;
+    },
+
     // Delete task
     async delete(taskId) {
         const result = await apiRequest(`/tasks/${taskId}`, {

@@ -25,7 +25,7 @@
             <ul class="nav-links"><li><a href="index.html">Home</a></li><li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li></ul>
             <div class="notification-wrapper" id="notificationWrapper" style="display: none;">
                 <button class="notification-bell" onclick="toggleNotifications()"><i class="fas fa-bell"></i><span class="notification-badge" id="notificationBadge">0</span></button>
-                <div class="notification-dropdown" id="notificationDropdown"><div class="notification-header"><h4>Notifications</h4><button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button></div><div class="notification-list" id="notificationList"><div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div></div></div>
+                <div class="notification-dropdown" id="notificationDropdown"><div class="notification-header"><h4>Notifications</h4><button onclick="event.stopPropagation(); clearAllNotifications()" class="clear-all-btn">Clear All</button></div><div class="notification-list" id="notificationList"><div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div></div></div>
             </div>
             <div class="nav-buttons"><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></div>
             <div class="hamburger" onclick="toggleMobileMenu()"><span></span><span></span><span></span></div>

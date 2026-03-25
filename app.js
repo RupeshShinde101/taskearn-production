@@ -977,20 +977,45 @@ function toggleNotifications() {
 // Close notification dropdown when clicking outside
 document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('notificationDropdown');
+    if (!dropdown || !dropdown.classList.contains('active')) return;
     const wrapper = document.getElementById('notificationWrapper');
-    if (dropdown && dropdown.classList.contains('active') && wrapper && !wrapper.contains(e.target)) {
-        dropdown.classList.remove('active');
-        const overlay = document.getElementById('notificationOverlay');
-        if (overlay) overlay.classList.remove('active');
-    }
+    // If the target was removed from DOM (e.g. by re-render), don't close
+    if (!document.body.contains(e.target)) return;
+    // If click is inside the wrapper, don't close
+    if (wrapper && wrapper.contains(e.target)) return;
+    // If click is inside the dropdown (mobile fixed positioning), don't close
+    if (dropdown.contains(e.target)) return;
+    // If click is on the overlay, toggleNotifications handles it
+    const overlay = document.getElementById('notificationOverlay');
+    if (overlay && overlay.contains(e.target)) return;
+    dropdown.classList.remove('active');
+    if (overlay) overlay.classList.remove('active');
 });
 
 async function markAsRead(notifId) {
     const notif = notifications.find(n => n.id === notifId);
-    if (notif) {
+    if (notif && !notif.read) {
         notif.read = true;
         saveNotifications();
-        updateNotificationUI();
+        // Update just the badge counts without re-rendering the list
+        const badge = document.getElementById('notificationBadge');
+        const mobileBadge = document.getElementById('mobileBadge');
+        const unreadCount = notifications.filter(n => !n.read).length;
+        if (badge) {
+            badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+            badge.style.display = unreadCount > 0 ? 'flex' : 'none';
+        }
+        if (mobileBadge) {
+            mobileBadge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+            mobileBadge.style.display = unreadCount > 0 ? 'inline' : 'none';
+        }
+        // Update the specific item's styling
+        const items = document.querySelectorAll('.notification-item.unread');
+        items.forEach(item => {
+            if (item.getAttribute('onclick')?.includes(notifId)) {
+                item.classList.remove('unread');
+            }
+        });
         try {
             await NotificationsAPI.markAsRead(notifId);
         } catch (e) {
@@ -1022,17 +1047,21 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
         return;
     }
 
-    // Close notification dropdown and overlay before showing any modal
-    const dropdown = document.getElementById('notificationDropdown');
-    if (dropdown) dropdown.classList.remove('active');
-    const overlay = document.getElementById('notificationOverlay');
-    if (overlay) overlay.classList.remove('active');
+    // Close notification dropdown and overlay before showing payment modal
+    function closeNotifDropdown() {
+        const dropdown = document.getElementById('notificationDropdown');
+        if (dropdown) dropdown.classList.remove('active');
+        const overlay = document.getElementById('notificationOverlay');
+        if (overlay) overlay.classList.remove('active');
+    }
     
     if (actionType === 'payment' && taskId) {
         console.log(`💳 Processing payment for task ${taskId} from notification`);
+        closeNotifDropdown();
         await processPaymentFromNotification(taskId, notification);
     } else if (actionType === 'task' && taskId) {
         console.log(`📋 Opening task ${taskId}`);
+        closeNotifDropdown();
         const section = currentUserRole === 'poster' ? 'myTasks' : 'browseTasks';
         showSection(section);
         setTimeout(() => {

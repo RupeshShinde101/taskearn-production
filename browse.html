@@ -51,7 +51,7 @@
                 <div class="notification-dropdown" id="notificationDropdown">
                     <div class="notification-header">
                         <h4>Notifications</h4>
-                        <button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button>
+                        <button onclick="event.stopPropagation(); clearAllNotifications()" class="clear-all-btn">Clear All</button>
                     </div>
                     <div class="notification-list" id="notificationList">
                         <div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div>

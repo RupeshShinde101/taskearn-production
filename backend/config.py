@@ -44,7 +44,7 @@ class Config:
     
     # Email Settings (SendGrid)
     SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
-    FROM_EMAIL = os.environ.get('FROM_EMAIL', 'noreply@taskearn.com')
+    FROM_EMAIL = os.environ.get('FROM_EMAIL', 'info@workmate4u.com')
     
     # App Settings
     APP_NAME = os.environ.get('APP_NAME', 'TaskEarn')

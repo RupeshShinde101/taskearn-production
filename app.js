@@ -1268,9 +1268,10 @@ async function loadTasksFromServer() {
                                     return at;
                                 });
                                 
-                                // Add any DB tasks not in local list (skip paid)
+                                // Add any DB tasks not in local list (skip paid and expired-accepted)
                                 dbAccepted.forEach(dbTask => {
                                     if (dbTask.status === 'paid') return;
+                                    if (dbTask.status === 'accepted' && new Date(dbTask.expires_at) <= new Date()) return;
                                     if (!myAcceptedTasks.find(at => at.id === dbTask.id)) {
                                         myAcceptedTasks.push({
                                             id: dbTask.id,
@@ -1281,14 +1282,24 @@ async function loadTasksFromServer() {
                                             service_charge: parseFloat(dbTask.service_charge || 0),
                                             status: dbTask.status,
                                             postedAt: new Date(dbTask.posted_at),
+                                            expiresAt: new Date(dbTask.expires_at),
                                             completedAt: dbTask.completed_at,
-                                            postedBy: { id: dbTask.posted_by }
+                                            postedBy: { id: dbTask.posted_by },
+                                            location: {
+                                                lat: dbTask.location_lat,
+                                                lng: dbTask.location_lng,
+                                                address: dbTask.location_address || ''
+                                            }
                                         });
                                     }
                                 });
                                 
-                                // Remove paid tasks from myAcceptedTasks
-                                myAcceptedTasks = myAcceptedTasks.filter(t => t.status !== 'paid');
+                                // Remove paid and expired-accepted tasks from myAcceptedTasks
+                                myAcceptedTasks = myAcceptedTasks.filter(t => {
+                                    if (t.status === 'paid') return false;
+                                    if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+                                    return true;
+                                });
                                 
                                 updateUserData(currentUser.id, {
                                     acceptedTasks: serializeTasks(myAcceptedTasks)
@@ -2727,6 +2738,15 @@ async function completeTask(taskId) {
         return;
     }
 
+    // Don't allow completing expired tasks
+    if (task.expiresAt && getTimeLeft(task.expiresAt) === 'Expired') {
+        showToast('❌ This task has expired and can no longer be completed.', 'error');
+        myAcceptedTasks = myAcceptedTasks.filter(t => t.id !== taskId);
+        updateUserData(currentUser.id, { acceptedTasks: serializeTasks(myAcceptedTasks) });
+        renderDashboard();
+        return;
+    }
+
     // Call backend FIRST to ensure DB status is updated
     try {
         const response = await fetch(API_BASE_URL + `/tasks/${taskId}/complete`, {
@@ -3900,12 +3920,7 @@ function renderPostedTasks() {
     }
 
     el.innerHTML = visiblePostedTasks.map(t => {
-        // Payment system: Helper gets 88% of total (price + service_charge), 12% deducted as commission & fees
-        const sCharge = getServiceCharge(t.category) || 0;
         const taskAmount = t.price;
-        const totalValue = taskAmount + sCharge;
-        const commission = totalValue * 0.12;  // Helper commission + transaction fee
-        const helperAmount = totalValue * 0.88;  // Helper net earning
         
         let actionButtons = '';
         if (t.status === 'active') {
@@ -3969,9 +3984,10 @@ function renderAcceptedTasks() {
     const el = document.getElementById('myAcceptedTasks');
     if (!el) return;
 
-    // Filter out paid tasks
+    // Filter out paid and expired-accepted tasks
     const visibleAcceptedTasks = myAcceptedTasks.filter(t => {
         if (t.status === 'paid') return false;
+        if (t.status === 'accepted' && getTimeLeft(t.expiresAt) === 'Expired') return false;
         return true;
     });
 
@@ -4008,7 +4024,7 @@ function renderAcceptedTasks() {
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
                 <h4>${t.title}</h4>
-                <div class="task-meta"><span>₹${t.price}</span><span>${t.location.address}</span></div>
+                <div class="task-meta"><span>₹${t.price}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
                 ${actionHTML}
             </div>
         `;
@@ -4281,7 +4297,18 @@ function startTaskTimers() {
                 t.status = 'expired';
             }
         });
+        // Remove expired-active posted tasks and expired-accepted tasks
+        myPostedTasks = myPostedTasks.filter(t => {
+            if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+            return true;
+        });
+        myAcceptedTasks = myAcceptedTasks.filter(t => {
+            if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+            return true;
+        });
         renderTasks();
+        renderPostedTasks();
+        renderAcceptedTasks();
         addTaskMarkers();
     }, 60000);
 

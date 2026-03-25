@@ -342,85 +342,15 @@
                         <li><i class="fas fa-check"></i> Secure payment protection</li>
                     </ul>
                 </div>
-                <div class="upload-form-container">
-                    <form class="upload-form" id="taskUploadForm">
-                        <h3><i class="fas fa-plus-circle"></i> Create New Task</h3>
-                        
-                        <div class="form-group">
-                            <label for="taskTitle">Task Title</label>
-                            <input type="text" id="taskTitle" placeholder="e.g., Need help with laundry" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="taskCategory">Category</label>
-                            <select id="taskCategory" required>
-                                <option value="">Select a category</option>
-                                <option value="household">Household Chores</option>
-                                <option value="delivery">Delivery Services</option>
-                                <option value="tutoring">Online Tutoring</option>
-                                <option value="transport">Pick & Drop</option>
-                                <option value="vehicle">Vehicle Services</option>
-                                <option value="repair">Repairs & Mechanical</option>
-                                <option value="photography">Photography</option>
-                                <option value="freelance">Freelance Services</option>
-                                <option value="waste">Waste Collection</option>
-                                <option value="cleaning">Cleaning Services</option>
-                                <option value="cooking">Cooking & Chef</option>
-                                <option value="petcare">Pet Care</option>
-                                <option value="gardening">Gardening & Lawn</option>
-                                <option value="shopping">Shopping & Errands</option>
-                                <option value="eventhelp">Event Help</option>
-                                <option value="moving">Moving & Packing</option>
-                                <option value="techsupport">Tech Support</option>
-                                <option value="beauty">Beauty & Wellness</option>
-                                <option value="laundry">Laundry & Ironing</option>
-                                <option value="catering">Catering Services</option>
-                                <option value="babysitting">Babysitting</option>
-                                <option value="eldercare">Elder Care</option>
-                                <option value="fitness">Fitness Training</option>
-                                <option value="painting">Painting & Decor</option>
-                                <option value="electrician">Electrician</option>
-                                <option value="plumbing">Plumbing</option>
-                                <option value="carpentry">Carpentry</option>
-                                <option value="tailoring">Tailoring & Alterations</option>
-                                <option value="other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="taskDescription">Description</label>
-                            <textarea id="taskDescription" rows="3" placeholder="Describe what you need done..." required></textarea>
-                        </div>
-                        
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="taskLocation">Location</label>
-                                <input type="text" id="taskLocation" placeholder="Enter address" required>
-                                <button type="button" class="location-btn" onclick="getCurrentLocation()">
-                                    <i class="fas fa-crosshairs"></i>
-                                </button>
-                            </div>
-                            <div class="form-group">
-                                <label for="taskDate">Date & Time</label>
-                                <input type="datetime-local" id="taskDate" required>
-                            </div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="taskBudget">Your Budget (₹)</label>
-                            <input type="number" id="taskBudget" placeholder="Suggested: ₹500" min="50" required>
-                            <small class="price-suggestion">Suggested price based on distance: <span id="suggestedPrice">₹500</span></small>
-                        </div>
-                        
-                        <div class="task-timer-info">
-                            <i class="fas fa-clock"></i>
-                            <span>This task will be visible for 12 hours after posting</span>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-primary btn-block">
-                            <i class="fas fa-paper-plane"></i> Post Task
+                <div class="upload-form-container" style="display: flex; align-items: center; justify-content: center;">
+                    <div style="text-align: center; padding: 40px 20px;">
+                        <i class="fas fa-plus-circle" style="font-size: 60px; color: #6c5ce7; margin-bottom: 20px;"></i>
+                        <h3 style="margin-bottom: 10px;">Create New Task</h3>
+                        <p style="color: #999; margin-bottom: 25px;">Post your task with budget, category, and location details</p>
+                        <button class="btn btn-primary btn-block" onclick="openModal('postTaskModal')">
+                            <i class="fas fa-paper-plane"></i> Post a Task
                         </button>
-                    </form>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1204,12 +1134,12 @@
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20250326_posted_only"></script>
+    <script src="api-client.js?v=20250326_upload_fix"></script>
     
     <!-- Razorpay Payment Integration -->
-    <script src="razorpay.js?v=20250326_posted_only"></script>
+    <script src="razorpay.js?v=20250326_upload_fix"></script>
     
-    <script src="app.js?v=20250326_posted_only"></script>
+    <script src="app.js?v=20250326_upload_fix"></script>
     
     <!-- CRITICAL: Mobile detection happens in HEAD section via inline script -->
     <!-- That script runs FIRST and pre-sets window.API_BASE_URL before any external scripts load -->

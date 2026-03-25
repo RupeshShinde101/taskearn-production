@@ -4323,44 +4323,6 @@ function setupEventListeners() {
         }
     };
 
-    // Upload form
-    const uploadForm = document.getElementById('taskUploadForm');
-    if (uploadForm) {
-        uploadForm.onsubmit = function(e) {
-            e.preventDefault();
-            if (!currentUser) {
-                showToast('Please login');
-                openModal('loginModal');
-                return;
-            }
-
-            const newTask = {
-                id: Date.now(),
-                title: document.getElementById('taskTitle').value,
-                category: document.getElementById('taskCategory').value,
-                description: document.getElementById('taskDescription').value,
-                location: {
-                    lat: userLocation.lat + (Math.random() - 0.5) * 0.02,
-                    lng: userLocation.lng + (Math.random() - 0.5) * 0.02,
-                    address: document.getElementById('taskLocation').value
-                },
-                price: parseInt(document.getElementById('taskBudget').value),
-                postedBy: currentUser,
-                postedAt: new Date(),
-                expiresAt: new Date(Date.now() + 12 * 3600000),
-                status: 'active'
-            };
-
-            tasks.unshift(newTask);
-            myPostedTasks.unshift(newTask);
-            showToast('Task posted!');
-            this.reset();
-            renderTasks();
-            addTaskMarkers();
-            renderDashboard();
-        };
-    }
-
     // Scroll effect
     window.onscroll = function() {
         const nav = document.querySelector('.navbar');

@@ -3912,7 +3912,7 @@ async function handleProfilePhoto(event) {
                     currentUser.profilePhoto = base64;
                     saveUserToStorage(currentUser);
                 }
-                loadProfilePage();
+                renderProfileUI();
                 showToast('Profile photo updated!', 'success');
             } else {
                 showToast(result.message || 'Failed to update photo', 'error');
@@ -3920,6 +3920,9 @@ async function handleProfilePhoto(event) {
         } catch (err) {
             showToast('Error uploading photo', 'error');
         }
+        // Reset file input so the same file can be re-selected
+        var inp = document.getElementById('profilePhotoInput');
+        if (inp) inp.value = '';
     };
     reader.readAsDataURL(file);
 }

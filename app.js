@@ -903,7 +903,7 @@ function updateNotificationUI() {
                 // Check if notification has action buttons
                 const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task');
                 const actionButton = hasActions ? `
-                    <button class="notification-action-btn" onclick="handleNotificationAction(${n.id}, '${n.action.type}', ${n.taskId || 'null'})">
+                    <button class="notification-action-btn" onclick="event.stopPropagation(); handleNotificationAction(${n.id}, '${n.action.type}', ${n.taskId || 'null'})">
                         ${n.action.label || (n.action.type === 'payment' ? 'Pay Now' : 'View')}
                     </button>
                 ` : '';
@@ -1021,13 +1021,17 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
         showToast('❌ Notification not found');
         return;
     }
+
+    // Close notification dropdown and overlay before showing any modal
+    const dropdown = document.getElementById('notificationDropdown');
+    if (dropdown) dropdown.classList.remove('active');
+    const overlay = document.getElementById('notificationOverlay');
+    if (overlay) overlay.classList.remove('active');
     
     if (actionType === 'payment' && taskId) {
-        // Handle payment action
         console.log(`💳 Processing payment for task ${taskId} from notification`);
         await processPaymentFromNotification(taskId, notification);
     } else if (actionType === 'task' && taskId) {
-        // Handle task action - navigate to task
         console.log(`📋 Opening task ${taskId}`);
         const section = currentUserRole === 'poster' ? 'myTasks' : 'browseTasks';
         showSection(section);
@@ -2936,7 +2940,33 @@ function checkAndShowPaymentReceived() {
  * Fetches real balance, validates, and shows approval UI
  */
 async function showPaymentInvoice(taskId) {
-    let task = myPostedTasks.find(t => t.id === taskId);
+    let task = myPostedTasks.find(t => t.id == taskId);
+
+    // If task not in local list, fetch from server
+    if (!task) {
+        try {
+            const userTasksResult = await UserAPI.getTasks();
+            if (userTasksResult && userTasksResult.success && userTasksResult.postedTasks) {
+                const dbTask = userTasksResult.postedTasks.find(t => t.id == taskId);
+                if (dbTask) {
+                    task = {
+                        id: dbTask.id,
+                        title: dbTask.title,
+                        description: dbTask.description,
+                        category: dbTask.category,
+                        price: parseFloat(dbTask.price),
+                        service_charge: parseFloat(dbTask.service_charge || 0),
+                        status: dbTask.status,
+                        acceptedBy: dbTask.accepted_by,
+                        completedAt: dbTask.completed_at
+                    };
+                    myPostedTasks.push(task);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not fetch task from server:', e.message);
+        }
+    }
 
     if (!task) {
         showToast('❌ Task not found');
@@ -3094,15 +3124,28 @@ async function showPaymentInvoice(taskId) {
             `}
         </div>
     `;
+    ensureTaskSuccessModal();
     document.getElementById('taskSuccessContent').innerHTML = content;
     openModal('taskSuccessModal');
+}
+
+/**
+ * Ensure taskSuccessModal exists in the DOM (some pages may not include it)
+ */
+function ensureTaskSuccessModal() {
+    if (!document.getElementById('taskSuccessModal')) {
+        document.body.insertAdjacentHTML('beforeend',
+            '<div class="modal" id="taskSuccessModal"><div class="modal-content modal-success">' +
+            '<button class="modal-close" onclick="closeModal(\'taskSuccessModal\')"><i class="fas fa-times"></i></button>' +
+            '<div class="task-success-content" id="taskSuccessContent"></div></div></div>');
+    }
 }
 
 /**
  * Execute the actual payment after poster approves the invoice
  */
 async function executePayment(taskId) {
-    const task = myPostedTasks.find(t => t.id === taskId);
+    const task = myPostedTasks.find(t => t.id == taskId);
     if (!task) {
         showToast('❌ Task not found');
         closeModal('taskSuccessModal');
@@ -3146,7 +3189,7 @@ async function executePayment(taskId) {
 
             // Remove paid task from myPostedTasks
             const paidTask = { ...task, status: 'paid' };
-            myPostedTasks = myPostedTasks.filter(t => t.id !== taskId);
+            myPostedTasks = myPostedTasks.filter(t => t.id != taskId);
             updateUserData(currentUser.id, {
                 postedTasks: serializeTasks(myPostedTasks)
             });
@@ -4492,6 +4535,9 @@ window.saveNewPassword = saveNewPassword;
 window.toggleNotifications = toggleNotifications;
 window.markAsRead = markAsRead;
 window.clearAllNotifications = clearAllNotifications;
+window.handleNotificationAction = handleNotificationAction;
+window.executePayment = executePayment;
+window.showPaymentInvoice = showPaymentInvoice;
 
 // Forgot Password Functions
 window.openForgotPassword = openForgotPassword;

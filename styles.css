@@ -449,11 +449,16 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.45);
-    z-index: 1000;
+    z-index: 1800;
 }
 
 .notification-overlay.active {
     display: block;
+}
+
+/* Dropdown when moved to body for proper stacking */
+body > .notification-dropdown {
+    z-index: 1801;
 }
 
 @media (max-width: 768px) {
@@ -468,7 +473,7 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
         max-height: 80vh;
         margin-top: 0;
         border-radius: 16px;
-        z-index: 1002;
+        z-index: 1801;
     }
 
     .notification-dropdown.active {

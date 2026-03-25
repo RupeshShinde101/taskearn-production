@@ -958,34 +958,50 @@ function toggleNotifications() {
     const dropdown = document.getElementById('notificationDropdown');
     if (!dropdown) return;
     const isOpen = dropdown.classList.toggle('active');
-    // Manage overlay for mobile
+    // Manage overlay for mobile — overlay closes dropdown on tap
     let overlay = document.getElementById('notificationOverlay');
     if (isOpen) {
         if (!overlay) {
             overlay = document.createElement('div');
             overlay.id = 'notificationOverlay';
             overlay.className = 'notification-overlay';
-            overlay.onclick = function() { toggleNotifications(); };
             document.body.appendChild(overlay);
         }
+        // Move dropdown to body so it's above overlay in stacking order
+        if (!dropdown.dataset.movedToBody) {
+            dropdown.dataset.originalParent = 'notificationWrapper';
+            document.body.appendChild(dropdown);
+            dropdown.dataset.movedToBody = 'true';
+        }
         overlay.classList.add('active');
-    } else if (overlay) {
-        overlay.classList.remove('active');
+        // Use mousedown so it fires before any click event
+        overlay.onmousedown = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleNotifications();
+        };
+        overlay.ontouchstart = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleNotifications();
+        };
+    } else {
+        if (overlay) overlay.classList.remove('active');
     }
 }
 
-// Close notification dropdown when clicking outside
+// Close notification dropdown when clicking outside (desktop fallback)
 document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('notificationDropdown');
     if (!dropdown || !dropdown.classList.contains('active')) return;
-    const wrapper = document.getElementById('notificationWrapper');
     // If the target was removed from DOM (e.g. by re-render), don't close
     if (!document.body.contains(e.target)) return;
-    // If click is inside the wrapper, don't close
-    if (wrapper && wrapper.contains(e.target)) return;
-    // If click is inside the dropdown (mobile fixed positioning), don't close
+    // If click is inside the dropdown, don't close
     if (dropdown.contains(e.target)) return;
-    // If click is on the overlay, toggleNotifications handles it
+    // If click is on the bell/wrapper, toggleNotifications handles it
+    const wrapper = document.getElementById('notificationWrapper');
+    if (wrapper && wrapper.contains(e.target)) return;
+    // If click is on the overlay, overlay handler handles it
     const overlay = document.getElementById('notificationOverlay');
     if (overlay && overlay.contains(e.target)) return;
     dropdown.classList.remove('active');

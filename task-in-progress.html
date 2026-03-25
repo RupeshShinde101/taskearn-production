@@ -398,18 +398,31 @@
 
         /* Responsive */
         @media (max-width: 768px) {
+            body {
+                overflow: auto;
+            }
+
             .container {
                 flex-direction: column;
+                height: auto;
+                min-height: 100vh;
             }
 
             .location-section {
-                height: 60%;
+                height: 45vh;
+                min-height: 45vh;
+                flex: none;
             }
 
             .details-section {
                 width: 100%;
-                height: 40%;
-                overflow-y: auto;
+                height: auto;
+                min-height: 55vh;
+                overflow-y: visible;
+            }
+
+            .details-content {
+                overflow-y: visible;
             }
 
             .complete-section {
@@ -417,6 +430,8 @@
                 bottom: 0;
                 background: white;
                 z-index: 10;
+                padding: 15px;
+                box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
             }
 
             .map-btn-locate {
@@ -608,102 +623,74 @@
 
 
         // Complete task
-        function completeTask() {
+        async function completeTask() {
             const currentUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
             if (!currentUser) {
                 alert('Please login first');
                 return;
             }
 
-            // Mark task completed locally
             const taskId = currentTask.id;
+            const token = localStorage.getItem('taskearn_token') || '';
 
-            // Update helper's accepted tasks in localStorage
+            if (!token) {
+                alert('Session expired. Please login again.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // Disable button to prevent double-click
+            const btn = document.querySelector('.btn-complete');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Completing...';
+            }
+
+            // Call backend to mark completed + notify poster
+            try {
+                const res = await fetch(API_URL + '/tasks/' + taskId + '/complete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+                const result = await res.json();
+
+                if (!result.success) {
+                    alert(result.message || 'Could not mark task as completed');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark Task Completed';
+                    }
+                    return;
+                }
+                console.log('✅ Backend: Task marked completed, poster notified');
+            } catch (err) {
+                alert('Network error. Please check connection and try again.');
+                console.error('Backend complete failed:', err.message);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark Task Completed';
+                }
+                return;
+            }
+
+            // Update local accepted tasks status
             const helperData = JSON.parse(localStorage.getItem(`user_${currentUser.id}_data`) || '{}');
             if (helperData.acceptedTasks) {
                 helperData.acceptedTasks = helperData.acceptedTasks.map(t => {
                     if (t.id == taskId) {
                         t.status = 'completed';
                         t.completedAt = new Date().toISOString();
-                        t.helperId = currentUser.id;
-                        t.helperName = currentUser.name;
                     }
                     return t;
                 });
                 localStorage.setItem(`user_${currentUser.id}_data`, JSON.stringify(helperData));
             }
 
-            // Update poster's stored tasks to show completed status
-            const posterId = currentTask.providerId || currentTask.postedBy?.id;
-            if (posterId) {
-                const posterData = JSON.parse(localStorage.getItem(`user_${posterId}_data`) || '{}');
-                if (posterData.postedTasks) {
-                    posterData.postedTasks = posterData.postedTasks.map(pt => {
-                        if (pt.id == taskId) {
-                            pt.status = 'completed';
-                            pt.completedAt = new Date().toISOString();
-                            pt.helperId = currentUser.id;
-                            pt.helperName = currentUser.name;
-                        }
-                        return pt;
-                    });
-                    localStorage.setItem(`user_${posterId}_data`, JSON.stringify(posterData));
-                }
-
-                // Also update taskearn_users[posterId]
-                const allUsers = JSON.parse(localStorage.getItem('taskearn_users') || '{}');
-                if (allUsers[posterId] && allUsers[posterId].postedTasks) {
-                    allUsers[posterId].postedTasks = allUsers[posterId].postedTasks.map(pt => {
-                        if (pt.id == taskId) {
-                            pt.status = 'completed';
-                            pt.completedAt = new Date().toISOString();
-                            pt.helperId = currentUser.id;
-                            pt.helperName = currentUser.name;
-                        }
-                        return pt;
-                    });
-                    localStorage.setItem('taskearn_users', JSON.stringify(allUsers));
-                }
-
-                // Send Pay Now notification to poster (local)
-                const taskAmount = currentTask.price || currentTask.amount || 0;
-                const serviceCharge = currentTask.service_charge || currentTask.serviceCharge || 0;
-                const totalTaskValue = taskAmount + serviceCharge;
-                const posterFee = totalTaskValue * 0.05;
-                const totalCost = totalTaskValue + posterFee;
-
-                const posterNotifications = JSON.parse(localStorage.getItem(`notifications_${posterId}`) || '[]');
-                posterNotifications.unshift({
-                    id: Date.now(),
-                    type: 'warning',
-                    title: 'Task Completed! 💰',
-                    message: `${currentUser.name} has completed your task "${currentTask.title}". Please pay ₹${totalCost.toFixed(2)} from your wallet.`,
-                    taskId: taskId,
-                    read: false,
-                    createdAt: new Date().toISOString(),
-                    action: { type: 'payment', label: '💳 Pay Now' }
-                });
-                localStorage.setItem(`notifications_${posterId}`, JSON.stringify(posterNotifications));
-            }
-
             clearInterval(timerInterval);
             document.getElementById('confirmModal').classList.add('active');
-
-            // Call backend to mark completed + create server-side notification for poster
-            const token = localStorage.getItem('taskearn_token') || '';
-            fetch(API_URL + '/tasks/' + taskId + '/complete', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                }
-            }).then(res => res.json()).then(result => {
-                if (result.success) {
-                    console.log('✅ Backend: Task marked completed, poster notified');
-                } else {
-                    console.warn('Backend complete failed:', result.message);
-                }
-            }).catch(err => console.warn('Backend offline:', err.message));
         }
 
         // Proceed to payment

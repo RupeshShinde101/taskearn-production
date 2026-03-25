@@ -1324,13 +1324,25 @@ async function loadTasksFromServer() {
                             }
                             
                             // Sync accepted tasks with real DB statuses
-                            if (userTasksResult.acceptedTasks && userTasksResult.acceptedTasks.length > 0) {
+                            if (userTasksResult.acceptedTasks) {
                                 const dbAccepted = userTasksResult.acceptedTasks;
                                 console.log('🔄 Syncing accepted tasks from DB:', dbAccepted.length);
                                 
                                 const dbAcceptedMap = {};
                                 dbAccepted.forEach(t => { dbAcceptedMap[t.id] = t; });
                                 
+                                // Remove local tasks that no longer exist in DB accepted list
+                                // (e.g., tasks that were abandoned/released)
+                                myAcceptedTasks = myAcceptedTasks.filter(at => {
+                                    const stillInDb = dbAcceptedMap[at.id];
+                                    if (!stillInDb) {
+                                        console.log(`   Accepted Task ${at.id}: removed (no longer in DB accepted list)`);
+                                        return false;
+                                    }
+                                    return true;
+                                });
+                                
+                                // Update remaining local tasks with DB data
                                 myAcceptedTasks = myAcceptedTasks.map(at => {
                                     const dbTask = dbAcceptedMap[at.id];
                                     if (dbTask) {
@@ -1352,7 +1364,7 @@ async function loadTasksFromServer() {
                                 dbAccepted.forEach(dbTask => {
                                     if (dbTask.status === 'paid') return;
                                     if (dbTask.status === 'accepted' && new Date(dbTask.expires_at) <= new Date()) return;
-                                    if (!myAcceptedTasks.find(at => at.id === dbTask.id)) {
+                                    if (!myAcceptedTasks.find(at => at.id == dbTask.id)) {
                                         myAcceptedTasks.push({
                                             id: dbTask.id,
                                             title: dbTask.title,
@@ -2586,10 +2598,14 @@ async function abandonTask(taskId) {
     }
 
     // Backend succeeded — remove from local accepted tasks
-    myAcceptedTasks = myAcceptedTasks.filter(t => t.id !== taskId);
-    updateUserData(currentUser.id, {
+    // Use loose equality (!=) to handle number/string ID mismatches
+    myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
+    await updateUserData(currentUser.id, {
         acceptedTasks: serializeTasks(myAcceptedTasks)
     });
+
+    // Also remove from the global active tasks list so it re-fetches fresh
+    tasks = tasks.filter(t => t.id != taskId);
 
     showToast('✅ Task released. It is now available for others.');
     renderDashboard();

@@ -266,18 +266,17 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
 }
 
 .notification-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
+    position: fixed;
+    top: 60px;
+    right: 16px;
     width: 350px;
     max-height: 450px;
     background: var(--white);
     border-radius: var(--radius);
     box-shadow: var(--shadow-xl);
-    z-index: 1001;
+    z-index: 1801;
     display: none;
     overflow: hidden;
-    margin-top: 10px;
 }
 
 .notification-dropdown.active {
@@ -454,11 +453,6 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
 
 .notification-overlay.active {
     display: block;
-}
-
-/* Dropdown when moved to body for proper stacking */
-body > .notification-dropdown {
-    z-index: 1801;
 }
 
 @media (max-width: 768px) {

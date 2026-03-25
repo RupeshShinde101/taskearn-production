@@ -957,8 +957,28 @@ function escapeHtml(text) {
 function toggleNotifications() {
     const dropdown = document.getElementById('notificationDropdown');
     if (!dropdown) return;
+
+    // Move dropdown to body once so it escapes any stacking context
+    if (!dropdown.dataset.movedToBody) {
+        document.body.appendChild(dropdown);
+        dropdown.dataset.movedToBody = 'true';
+    }
+
     const isOpen = dropdown.classList.toggle('active');
-    // Manage overlay for mobile — overlay closes dropdown on tap
+
+    // Position dropdown near the bell icon on desktop
+    if (isOpen) {
+        const bell = document.querySelector('.notification-bell');
+        if (bell && window.innerWidth > 768) {
+            const rect = bell.getBoundingClientRect();
+            dropdown.style.top = (rect.bottom + 8) + 'px';
+            dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+            dropdown.style.left = 'auto';
+            dropdown.style.transform = 'none';
+        }
+    }
+
+    // Manage overlay
     let overlay = document.getElementById('notificationOverlay');
     if (isOpen) {
         if (!overlay) {
@@ -967,14 +987,7 @@ function toggleNotifications() {
             overlay.className = 'notification-overlay';
             document.body.appendChild(overlay);
         }
-        // Move dropdown to body so it's above overlay in stacking order
-        if (!dropdown.dataset.movedToBody) {
-            dropdown.dataset.originalParent = 'notificationWrapper';
-            document.body.appendChild(dropdown);
-            dropdown.dataset.movedToBody = 'true';
-        }
         overlay.classList.add('active');
-        // Use mousedown so it fires before any click event
         overlay.onmousedown = function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -985,8 +998,8 @@ function toggleNotifications() {
             e.stopPropagation();
             toggleNotifications();
         };
-    } else {
-        if (overlay) overlay.classList.remove('active');
+    } else if (overlay) {
+        overlay.classList.remove('active');
     }
 }
 

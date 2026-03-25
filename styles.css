@@ -4582,13 +4582,17 @@ section {
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    display: flex;
+    display: none;
     justify-content: space-around;
     align-items: flex-end;
     padding: 8px 0 6px;
     padding-bottom: max(6px, env(safe-area-inset-bottom));
     box-shadow: 0 -1px 20px rgba(0, 0, 0, 0.06), 0 -1px 0 rgba(0, 0, 0, 0.04);
     z-index: 999;
+}
+@media (max-width: 768px) {
+    .bottom-tab-bar { display: flex; }
+    body.has-tab-bar { padding-bottom: 72px; }
 }
 .bottom-tab-bar a {
     display: flex;
@@ -4641,7 +4645,6 @@ section {
 .bottom-tab-bar .tab-post-btn::before { display: none; }
 .bottom-tab-bar .tab-post-btn i { font-size: 22px; }
 .bottom-tab-bar .tab-post-btn span { display: none; }
-body.has-tab-bar { padding-bottom: 72px; }
 
 /* ============================================ */
 /* DASHBOARD NAVIGATION CARDS                   */

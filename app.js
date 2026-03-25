@@ -956,10 +956,34 @@ function escapeHtml(text) {
 
 function toggleNotifications() {
     const dropdown = document.getElementById('notificationDropdown');
-    if (dropdown) {
-        dropdown.classList.toggle('active');
+    if (!dropdown) return;
+    const isOpen = dropdown.classList.toggle('active');
+    // Manage overlay for mobile
+    let overlay = document.getElementById('notificationOverlay');
+    if (isOpen) {
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'notificationOverlay';
+            overlay.className = 'notification-overlay';
+            overlay.onclick = function() { toggleNotifications(); };
+            document.body.appendChild(overlay);
+        }
+        overlay.classList.add('active');
+    } else if (overlay) {
+        overlay.classList.remove('active');
     }
 }
+
+// Close notification dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('notificationDropdown');
+    const wrapper = document.getElementById('notificationWrapper');
+    if (dropdown && dropdown.classList.contains('active') && wrapper && !wrapper.contains(e.target)) {
+        dropdown.classList.remove('active');
+        const overlay = document.getElementById('notificationOverlay');
+        if (overlay) overlay.classList.remove('active');
+    }
+});
 
 async function markAsRead(notifId) {
     const notif = notifications.find(n => n.id === notifId);
@@ -3947,67 +3971,6 @@ function switchTab(tab) {
     if (content) content.classList.add('active');
     
     renderDashboard();
-}
-
-// Load and display notifications
-async function renderNotifications() {
-    try {
-        const result = await NotificationsAPI.getAll();
-        if (result && result.success && result.notifications) {
-            const notifications = result.notifications;
-            const notificationEl = document.getElementById('notifications-panel');
-            
-            if (!notificationEl) return;
-            
-            // Filter only unread notifications
-            const unreadNotifications = notifications.filter(n => n.status === 'unread');
-            
-            if (unreadNotifications.length === 0) {
-                notificationEl.innerHTML = '<div class="notification-empty">No pending notifications</div>';
-                return;
-            }
-            
-            // Display notifications
-            notificationEl.innerHTML = unreadNotifications.map(n => `
-                <div class="notification-item" style="border-left: 4px solid #fbbf24; padding: 15px; margin-bottom: 10px; background: rgba(251, 191, 36, 0.1); border-radius: 6px;">
-                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
-                        <div>
-                            <h4 style="margin: 0 0 5px 0; color: #fbbf24;">⏰ ${n.title}</h4>
-                            <p style="margin: 0; color: #666; font-size: 14px;">${n.message}</p>
-                        </div>
-                        <button onclick="dismissNotification(${n.id})" style="background: none; border: none; color: #999; cursor: pointer; font-size: 18px;">×</button>
-                    </div>
-                    <button onclick="viewTaskForPayment(${n.task_id}, ${n.id})" class="btn btn-warning" style="width: 100%;">
-                        💳 Pay Now
-                    </button>
-                </div>
-            `).join('');
-        }
-    } catch (error) {
-        console.error('Error rendering notifications:', error);
-    }
-}
-
-// Dismiss notification
-async function dismissNotification(notificationId) {
-    try {
-        await NotificationsAPI.delete(notificationId);
-        renderNotifications(); // Refresh notifications list
-    } catch (error) {
-        console.error('Error dismissing notification:', error);
-    }
-}
-
-// View task and show payment modal
-function viewTaskForPayment(taskId, notificationId) {
-    const task = myPostedTasks.find(t => t.id === taskId);
-    if (task) {
-        // Mark notification as read
-        NotificationsAPI.markAsRead(notificationId).catch(console.error);
-        
-        // Show payment invoice modal
-        showPaymentInvoice(taskId);
-    }
 }
 
 function renderDashboard() {

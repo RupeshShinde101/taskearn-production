@@ -443,6 +443,52 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
     font-size: 0.9rem;
 }
 
+/* Mobile notification fullscreen overlay */
+.notification-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 1000;
+}
+
+.notification-overlay.active {
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .notification-dropdown {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        right: auto;
+        transform: translate(-50%, -50%);
+        width: calc(100vw - 32px);
+        max-width: 400px;
+        max-height: 80vh;
+        margin-top: 0;
+        border-radius: 16px;
+        z-index: 1002;
+    }
+
+    .notification-dropdown.active {
+        animation: notifFadeIn 0.25s ease;
+    }
+
+    .notification-list {
+        max-height: calc(80vh - 60px);
+    }
+
+    .notification-content p {
+        white-space: normal;
+    }
+
+    @keyframes notifFadeIn {
+        from { opacity: 0; transform: translate(-50%, -48%); }
+        to   { opacity: 1; transform: translate(-50%, -50%); }
+    }
+}
+
 /* Mobile notification badge */
 .mobile-badge {
     background: var(--danger);

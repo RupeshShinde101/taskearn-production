@@ -727,6 +727,8 @@ function serializeTask(task) {
         acceptedAt: task.acceptedAt || null,
         completedAt: task.completedAt || null,
         status: task.status,
+        earnedAmount: task.earnedAmount || 0,
+        service_charge: task.service_charge || 0,
         localOnly: task.localOnly || false
     };
 }
@@ -1386,6 +1388,20 @@ async function loadTasksFromServer() {
                                     }
                                 });
                                 
+                                // Move paid tasks to myCompletedTasks before removing
+                                const paidTasks = myAcceptedTasks.filter(t => t.status === 'paid');
+                                paidTasks.forEach(pt => {
+                                    if (!myCompletedTasks.find(ct => ct.id == pt.id)) {
+                                        const taskAmount = pt.price || 0;
+                                        const serviceCharge = pt.service_charge || pt.serviceCharge || 0;
+                                        pt.earnedAmount = (taskAmount + serviceCharge) * 0.88;
+                                        myCompletedTasks.push(pt);
+                                        currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
+                                        currentUser.totalEarnings = parseFloat(currentUser.totalEarnings || 0) + pt.earnedAmount;
+                                        currentUser.totalEarnings = Math.round(currentUser.totalEarnings * 100) / 100;
+                                    }
+                                });
+                                
                                 // Remove paid and expired-accepted tasks from myAcceptedTasks
                                 myAcceptedTasks = myAcceptedTasks.filter(t => {
                                     if (t.status === 'paid') return false;
@@ -1394,7 +1410,10 @@ async function loadTasksFromServer() {
                                 });
                                 
                                 updateUserData(currentUser.id, {
-                                    acceptedTasks: serializeTasks(myAcceptedTasks)
+                                    acceptedTasks: serializeTasks(myAcceptedTasks),
+                                    completedTasks: serializeTasks(myCompletedTasks),
+                                    tasksCompleted: currentUser.tasksCompleted,
+                                    totalEarnings: currentUser.totalEarnings
                                 });
                             }
                             
@@ -1792,31 +1811,6 @@ function showLocalNotification(title, body, options = {}) {
     } catch (e) {
         console.error('Error showing notification:', e);
     }
-}
-
-// Notification helpers for different events
-function notifyTaskAccepted(task, helperName) {
-    showLocalNotification(
-        '🎉 Task Accepted!',
-        `${helperName} has accepted your task: ${task.title}`,
-        { tag: 'task-accepted' }
-    );
-}
-
-function notifyTaskCompleted(task) {
-    showLocalNotification(
-        '✅ Task Completed!',
-        `Your task "${task.title}" has been completed. Please rate the helper.`,
-        { tag: 'task-completed' }
-    );
-}
-
-function notifyNearbyTask(task, distance) {
-    showLocalNotification(
-        '📍 New Task Nearby!',
-        `${task.title} - ₹${task.price} (${distance}km away)`,
-        { tag: 'nearby-task-' + task.id }
-    );
 }
 
 
@@ -2843,7 +2837,7 @@ function showTaskPostedSuccess(task) {
 }
 
 async function completeTask(taskId) {
-    const task = myAcceptedTasks.find(t => t.id === taskId);
+    const task = myAcceptedTasks.find(t => t.id == taskId);
     if (!task || !currentUser) {
         showToast('❌ Task not found', 'error');
         return;
@@ -2852,7 +2846,7 @@ async function completeTask(taskId) {
     // Don't allow completing expired tasks
     if (task.expiresAt && getTimeLeft(task.expiresAt) === 'Expired') {
         showToast('❌ This task has expired and can no longer be completed.', 'error');
-        myAcceptedTasks = myAcceptedTasks.filter(t => t.id !== taskId);
+        myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
         updateUserData(currentUser.id, { acceptedTasks: serializeTasks(myAcceptedTasks) });
         renderDashboard();
         return;
@@ -2963,6 +2957,27 @@ function checkAndShowPaymentReceived() {
             const totalTaskValue = taskAmount + serviceCharge;
             const helperEarnings = totalTaskValue * 0.88;
             
+            // Move paid task from accepted to completed
+            myAcceptedTasks = myAcceptedTasks.filter(t => t.id != task.id);
+            task.earnedAmount = helperEarnings;
+            myCompletedTasks.push(task);
+            
+            // Update profile stats
+            currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
+            currentUser.totalEarnings = parseFloat(currentUser.totalEarnings || 0) + helperEarnings;
+            currentUser.totalEarnings = Math.round(currentUser.totalEarnings * 100) / 100;
+            
+            // Persist everything
+            updateUserData(currentUser.id, {
+                acceptedTasks: serializeTasks(myAcceptedTasks),
+                completedTasks: serializeTasks(myCompletedTasks),
+                tasksCompleted: currentUser.tasksCompleted,
+                totalEarnings: currentUser.totalEarnings
+            });
+            
+            // Refresh wallet balance from server
+            refreshWalletBalance();
+            
             const content = `
                 <div style="text-align: center; padding: 20px;">
                     <div style="font-size: 60px; margin-bottom: 15px;">💰</div>
@@ -3002,7 +3017,6 @@ function checkAndShowPaymentReceived() {
     }
 }
 
-/**
 /**
  * Show styled payment invoice modal with full price breakdown
  * Fetches real balance, validates, and shows approval UI
@@ -3845,12 +3859,20 @@ function loadProfilePage() {
     if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
         AuthAPI.getCurrentUser().then(function(result) {
             if (result && result.success && result.user) {
+                // Preserve locally-computed earnings if server doesn't track them
+                var localEarnings = currentUser.totalEarnings;
+                var localCompleted = currentUser.tasksCompleted;
                 Object.assign(currentUser, result.user);
+                if (!currentUser.totalEarnings && localEarnings) currentUser.totalEarnings = localEarnings;
+                if (!currentUser.tasksCompleted && localCompleted) currentUser.tasksCompleted = localCompleted;
                 saveUserToStorage(currentUser);
                 renderProfileUI();
             }
         }).catch(function() { /* use cached data */ });
     }
+    
+    // Also refresh wallet balance
+    refreshWalletBalance().then(function() { renderProfileUI(); }).catch(function() {});
 }
 
 function renderProfileUI() {
@@ -3876,15 +3898,27 @@ function renderProfileUI() {
             new Date(currentUser.joinedAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long' });
     }
     
-    // Stats
+    // Stats — compute from actual data, fall back to stored values
+    var completedCount = myCompletedTasks.length || currentUser.tasksCompleted || 0;
+    var totalEarned = currentUser.totalEarnings || 0;
+    if (myCompletedTasks.length > 0 && !totalEarned) {
+        totalEarned = myCompletedTasks.reduce(function(sum, t) {
+            if (t.earnedAmount) return sum + t.earnedAmount;
+            var amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
+            return sum + (amt * 0.88);
+        }, 0);
+        totalEarned = Math.round(totalEarned * 100) / 100;
+    }
+    var postedCount = myPostedTasks.length || currentUser.tasksPosted || 0;
+    
     var sr = document.getElementById('statRating');
     if (sr) sr.textContent = (currentUser.rating || 5.0).toFixed(1);
     var sc = document.getElementById('statCompleted');
-    if (sc) sc.textContent = currentUser.tasksCompleted || 0;
+    if (sc) sc.textContent = completedCount;
     var sp = document.getElementById('statPosted');
-    if (sp) sp.textContent = currentUser.tasksPosted || 0;
+    if (sp) sp.textContent = postedCount;
     var se = document.getElementById('statEarnings');
-    if (se) se.textContent = '₹' + (currentUser.totalEarnings || 0);
+    if (se) se.textContent = '₹' + (typeof totalEarned === 'number' ? totalEarned.toFixed(2) : totalEarned);
     
     // Fields
     var fn = document.getElementById('fieldName');
@@ -4294,17 +4328,23 @@ function renderCompletedTasks() {
         return;
     }
 
-    // Calculate total with service charges based on category
-    const totalWithCharges = myCompletedTasks.reduce((s, t) => s + t.price + getServiceCharge(t.category), 0);
+    // Calculate total earned (after 12% commission)
+    const totalEarned = myCompletedTasks.reduce((s, t) => {
+        if (t.earnedAmount) return s + t.earnedAmount;
+        const amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
+        return s + (amt * 0.88);
+    }, 0);
+    
     el.innerHTML = `
         <div style="background:linear-gradient(135deg,#10b981,#34d399);color:white;padding:25px;border-radius:15px;text-align:center;margin-bottom:20px;">
             <h3 style="margin:0;">Total Earned</h3>
-            <p style="font-size:2.5rem;font-weight:800;margin:10px 0;">₹${totalWithCharges}</p>
-            <small style="opacity:0.9;">Includes service charges per task</small>
+            <p style="font-size:2.5rem;font-weight:800;margin:10px 0;">₹${totalEarned.toFixed(2)}</p>
+            <small style="opacity:0.9;">${myCompletedTasks.length} task${myCompletedTasks.length > 1 ? 's' : ''} completed (after 12% commission)</small>
         </div>
         ${myCompletedTasks.map(t => {
-            const sc = getServiceCharge(t.category);
-            return `<div class="my-task-card"><h4>${t.title}</h4><p>Earned: <strong style="color:#10b981;">₹${t.price + sc}</strong> <small>(₹${t.price} + ₹${sc} service)</small></p></div>`;
+            const amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
+            const earned = t.earnedAmount || (amt * 0.88);
+            return `<div class="my-task-card"><h4>${t.title}</h4><p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(Task ₹${amt.toFixed(2)} - 12% commission)</small></p></div>`;
         }).join('')}
     `;
 }

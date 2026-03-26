@@ -17,6 +17,7 @@ let selectedTask = null;
 let gpsWatchId = null;
 let isGPSActive = false;
 let modalTaskCoords = null; // Stores picked location for task posting
+let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
@@ -1610,6 +1611,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Push notifications failed:', e.message);
         }
         
+        // Check and clear expired suspension
+        checkAndClearSuspension();
+        
         // Debug: Show all stored users (using async version for full support)
         try {
             const allUsers = await getStoredUsersAsync();
@@ -2510,6 +2514,13 @@ async function acceptTask(taskId) {
         return;
     }
 
+    // Check if account is suspended
+    if (isAccountSuspended()) {
+        closeModal('taskDetailModal');
+        showSuspendedPopup();
+        return;
+    }
+
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
@@ -2564,34 +2575,208 @@ async function acceptTask(taskId) {
     }
 }
 
-async function abandonTask(taskId) {
-    if (!confirm('Release this task? It will become available for other users.')) return;
-    if (!currentUser) return;
+// ========================================
+// HELPER PENALTY & SUSPENSION SYSTEM
+// ========================================
 
+function getDailyReleaseCount() {
+    const today = new Date().toDateString();
+    const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
+    if (data.date !== today) return 0;
+    return data.count || 0;
+}
+
+function incrementDailyReleaseCount() {
+    const today = new Date().toDateString();
+    const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
+    if (data.date !== today) {
+        localStorage.setItem('taskearn_daily_releases', JSON.stringify({ date: today, count: 1 }));
+        return 1;
+    }
+    data.count = (data.count || 0) + 1;
+    localStorage.setItem('taskearn_daily_releases', JSON.stringify(data));
+    return data.count;
+}
+
+function isAccountSuspended() {
+    const until = localStorage.getItem('taskearn_suspended_until');
+    if (!until) return false;
+    if (Date.now() < parseInt(until)) return true;
+    // Suspension expired — clear it and notify
+    localStorage.removeItem('taskearn_suspended_until');
+    addNotification({
+        title: 'Account Restored',
+        message: 'Your account is back to normal. You can now accept tasks and withdraw funds.',
+        type: 'success'
+    });
+    return false;
+}
+
+function suspendAccount() {
+    const until = Date.now() + 48 * 60 * 60 * 1000; // 48 hours
+    localStorage.setItem('taskearn_suspended_until', until.toString());
+
+    // Show suspended modal
+    const untilDate = new Date(until);
+    const timeStr = untilDate.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+    const msgEl = document.getElementById('suspendedMessage');
+    const timeEl = document.getElementById('suspendedUntilTime');
+    if (msgEl) msgEl.textContent = 'Your account has been suspended for 48 hours because you released more than 3 tasks today.';
+    if (timeEl) timeEl.textContent = timeStr;
+    openModal('suspendedModal');
+
+    addNotification({
+        title: 'Account Suspended',
+        message: 'You released too many tasks today. Your account is suspended for 48 hours. You cannot accept tasks or withdraw funds.',
+        type: 'error'
+    });
+}
+
+function showSuspendedPopup() {
+    const until = parseInt(localStorage.getItem('taskearn_suspended_until') || '0');
+    const untilDate = new Date(until);
+    const timeStr = untilDate.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+    const timeEl = document.getElementById('suspendedUntilTime');
+    if (timeEl) timeEl.textContent = timeStr;
+    openModal('suspendedModal');
+}
+
+function checkAndClearSuspension() {
+    const until = localStorage.getItem('taskearn_suspended_until');
+    if (!until) return;
+    if (Date.now() >= parseInt(until)) {
+        localStorage.removeItem('taskearn_suspended_until');
+        addNotification({
+            title: 'Account Restored',
+            message: 'Your account is back to normal. You can now accept tasks and withdraw funds.',
+            type: 'success'
+        });
+    }
+}
+
+async function deductPenalty(taskValue) {
+    const penalty = Math.round(taskValue * 0.10);
+    try {
+        const result = await WalletAPI.pay(penalty, null, 'Task release penalty (10%)');
+        if (result && result.success) {
+            console.log('✅ Penalty deducted:', penalty);
+        } else {
+            // Server might reject if balance is insufficient — do local deduction
+            console.warn('Penalty API failed, updating locally:', result?.message);
+            const currentBalance = currentUser.wallet || 0;
+            const newBalance = currentBalance - penalty;
+            currentUser.wallet = newBalance;
+            await updateUserData(currentUser.id, { wallet: newBalance });
+        }
+    } catch (e) {
+        console.warn('Penalty deduction network error, updating locally:', e.message);
+        const currentBalance = currentUser.wallet || 0;
+        const newBalance = currentBalance - penalty;
+        currentUser.wallet = newBalance;
+        await updateUserData(currentUser.id, { wallet: newBalance });
+    }
+    await refreshWalletBalance();
+    return penalty;
+}
+
+// Show release penalty popup
+function penaltyContinueTask() {
+    closeModal('releasePenaltyModal');
+    const taskId = pendingReleaseTaskId;
+    pendingReleaseTaskId = null;
+    // Navigate to task-in-progress if the task is still active
+    const task = myAcceptedTasks.find(t => t.id == taskId);
+    if (task) {
+        window.location.href = 'task-in-progress.html?taskId=' + task.id;
+    }
+}
+
+async function penaltyConfirmRelease() {
+    const taskId = pendingReleaseTaskId;
+    if (!taskId || !currentUser) return;
+
+    const task = myAcceptedTasks.find(t => t.id == taskId) || tasks.find(t => t.id == taskId);
+    const taskValue = (task?.price || 0) + (task?.service_charge || 0);
+
+    closeModal('releasePenaltyModal');
+
+    // Deduct penalty
+    showToast('💸 Deducting penalty...');
+    const penalty = await deductPenalty(taskValue);
+
+    // Call backend to release
     try {
         const result = await TasksAPI.abandon(taskId);
         if (!result || !result.success) {
             showToast(`❌ ${result?.message || 'Could not release task'}`, 'error');
+            pendingReleaseTaskId = null;
             return;
         }
     } catch (e) {
         showToast('❌ Network error. Please try again.', 'error');
-        console.error('Abandon task failed:', e.message);
+        pendingReleaseTaskId = null;
         return;
     }
 
-    // Backend succeeded — remove from local accepted tasks
-    // Use loose equality (!=) to handle number/string ID mismatches
+    // Remove from local accepted tasks
     myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
     await updateUserData(currentUser.id, {
         acceptedTasks: serializeTasks(myAcceptedTasks)
     });
-
-    // Also remove from the global active tasks list so it re-fetches fresh
     tasks = tasks.filter(t => t.id != taskId);
 
-    showToast('✅ Task released. It is now available for others.');
+    // Increment daily release count and check suspension
+    const dailyCount = incrementDailyReleaseCount();
+    if (dailyCount > 3) {
+        suspendAccount();
+    }
+
+    showToast(`✅ Task released. ₹${penalty} penalty deducted from wallet.`);
+    pendingReleaseTaskId = null;
     renderDashboard();
+}
+
+async function abandonTask(taskId) {
+    if (!currentUser) return;
+
+    // Check if suspended
+    if (isAccountSuspended()) {
+        showSuspendedPopup();
+        return;
+    }
+
+    const task = myAcceptedTasks.find(t => t.id == taskId) || tasks.find(t => t.id == taskId);
+    if (!task) {
+        showToast('❌ Task not found');
+        return;
+    }
+
+    const taskValue = (task.price || 0) + (task.service_charge || 0);
+    const penalty = Math.round(taskValue * 0.10);
+    const currentBalance = currentUser.wallet || 0;
+    const walletAfter = currentBalance - penalty;
+    const dailyCount = getDailyReleaseCount();
+
+    // Populate penalty modal
+    const taskValEl = document.getElementById('penaltyTaskValue');
+    const penaltyEl = document.getElementById('penaltyAmount');
+    const walletAfterEl = document.getElementById('penaltyWalletAfter');
+    const dailyWarningEl = document.getElementById('penaltyDailyWarning');
+    const dailyCountEl = document.getElementById('penaltyDailyCount');
+
+    if (taskValEl) taskValEl.textContent = '₹' + taskValue;
+    if (penaltyEl) penaltyEl.textContent = '-₹' + penalty;
+    if (walletAfterEl) {
+        walletAfterEl.textContent = '₹' + walletAfter.toFixed(2);
+        walletAfterEl.style.color = walletAfter < 0 ? '#ef4444' : '#10b981';
+    }
+    if (dailyWarningEl && dailyCountEl) {
+        dailyCountEl.textContent = dailyCount;
+        dailyWarningEl.style.display = dailyCount >= 2 ? 'block' : 'none';
+    }
+
+    pendingReleaseTaskId = taskId;
+    openModal('releasePenaltyModal');
 }
 
 async function deleteTask(taskId) {
@@ -4766,6 +4951,8 @@ window.openTaskDetail = openTaskDetail;
 window.navigateToTask = navigateToTask;
 window.acceptTask = acceptTask;
 window.abandonTask = abandonTask;
+window.penaltyContinueTask = penaltyContinueTask;
+window.penaltyConfirmRelease = penaltyConfirmRelease;
 window.deleteTask = deleteTask;
 window.completeTask = completeTask;
 window.openEditTask = openEditTask;

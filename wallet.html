@@ -1510,6 +1510,13 @@
         
         // Withdrawal Functions
         async function openWithdrawalModal() {
+            // Check if account is suspended
+            const suspendedUntil = localStorage.getItem('taskearn_suspended_until');
+            if (suspendedUntil && Date.now() < parseInt(suspendedUntil)) {
+                const endTime = new Date(parseInt(suspendedUntil)).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+                alert('Your account is suspended until ' + endTime + '. You cannot withdraw during suspension.');
+                return;
+            }
             // Fetch real balance from server
             try {
                 const result = await WalletAPI.get();

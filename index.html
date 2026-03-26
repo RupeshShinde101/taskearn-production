@@ -1177,6 +1177,69 @@
         </div>
     </div>
 
+    <!-- Release Task Penalty Modal -->
+    <div class="modal" id="releasePenaltyModal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div style="text-align:center; padding: 20px 10px;">
+                <div style="width:64px;height:64px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                    <i class="fas fa-exclamation-triangle" style="font-size:28px;color:#ef4444;"></i>
+                </div>
+                <h3 style="margin-bottom:8px;color:#1e293b;">Release Task Penalty</h3>
+                <p style="color:#64748b;font-size:14px;margin-bottom:16px;" id="penaltyMessage">
+                    Releasing this task will deduct a 10% penalty from your wallet.
+                </p>
+                <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:20px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                        <span style="color:#64748b;font-size:13px;">Task Value</span>
+                        <span style="color:#1e293b;font-weight:600;" id="penaltyTaskValue">₹0</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                        <span style="color:#64748b;font-size:13px;">Penalty (10%)</span>
+                        <span style="color:#ef4444;font-weight:600;" id="penaltyAmount">-₹0</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;border-top:1px dashed #e2e8f0;padding-top:6px;">
+                        <span style="color:#64748b;font-size:13px;">Wallet After</span>
+                        <span style="font-weight:600;" id="penaltyWalletAfter">₹0</span>
+                    </div>
+                </div>
+                <div id="penaltyDailyWarning" style="display:none;background:rgba(251,191,36,0.1);border:1px solid #fbbf24;border-radius:8px;padding:10px;margin-bottom:16px;">
+                    <p style="color:#b45309;font-size:13px;margin:0;"><i class="fas fa-info-circle"></i> <span id="penaltyDailyCount">0</span>/3 daily releases used. Exceeding 3 will suspend your account for 48 hours.</p>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button class="btn" style="flex:1;background:#10b981;color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="penaltyContinueTask()">
+                        <i class="fas fa-arrow-left"></i> Continue Task
+                    </button>
+                    <button class="btn" style="flex:1;background:#ef4444;color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="penaltyConfirmRelease()">
+                        <i class="fas fa-ban"></i> Release Task
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Account Suspended Modal -->
+    <div class="modal" id="suspendedModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div style="text-align:center; padding: 20px 10px;">
+                <div style="width:64px;height:64px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                    <i class="fas fa-user-slash" style="font-size:28px;color:#ef4444;"></i>
+                </div>
+                <h3 style="margin-bottom:8px;color:#ef4444;">Account Suspended</h3>
+                <p style="color:#64748b;font-size:14px;margin-bottom:16px;" id="suspendedMessage">
+                    Your account has been suspended for 48 hours because you released more than 3 tasks today.
+                </p>
+                <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:20px;">
+                    <p style="color:#64748b;font-size:13px;margin:0 0 4px;">Suspension ends at</p>
+                    <p style="color:#1e293b;font-weight:700;font-size:18px;margin:0;" id="suspendedUntilTime">--</p>
+                </div>
+                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">During suspension you cannot accept tasks or withdraw funds.</p>
+                <button class="btn" style="width:100%;background:var(--primary-gradient);color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal('suspendedModal')">
+                    I Understand
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div class="toast" id="toast">
         <i class="fas fa-check-circle"></i>

@@ -546,6 +546,46 @@
         </div>
     </div>
 
+    <!-- Release Penalty Modal -->
+    <div id="releasePenaltyOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:none;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:16px;max-width:400px;width:90%;padding:24px;text-align:center;">
+            <div style="width:56px;height:56px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+                <i class="fas fa-exclamation-triangle" style="font-size:24px;color:#ef4444;"></i>
+            </div>
+            <h3 style="margin-bottom:8px;color:#1e293b;font-size:18px;">Release Task Penalty</h3>
+            <p style="color:#64748b;font-size:14px;margin-bottom:14px;">Releasing this task will deduct a <b>10% penalty</b> from your wallet.</p>
+            <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px;margin-bottom:16px;text-align:left;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Task Value</span><span style="color:#1e293b;font-weight:600;" id="tipTaskValue">₹0</span></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Penalty (10%)</span><span style="color:#ef4444;font-weight:600;" id="tipPenalty">-₹0</span></div>
+                <div style="display:flex;justify-content:space-between;border-top:1px dashed #e2e8f0;padding-top:4px;"><span style="color:#64748b;font-size:13px;">Wallet After</span><span style="font-weight:600;" id="tipWalletAfter">₹0</span></div>
+            </div>
+            <div id="tipDailyWarning" style="display:none;background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:8px;margin-bottom:14px;">
+                <p style="color:#b45309;font-size:12px;margin:0;"><i class="fas fa-info-circle"></i> <span id="tipDailyCount">0</span>/3 daily releases used.</p>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button onclick="closePenaltyModal()" style="flex:1;background:#10b981;color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;font-size:14px;">
+                    <i class="fas fa-arrow-left"></i> Continue Task
+                </button>
+                <button onclick="confirmRelease()" style="flex:1;background:#ef4444;color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;font-size:14px;">
+                    <i class="fas fa-ban"></i> Release Task
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Suspended Modal -->
+    <div id="suspendedOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10001;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:16px;max-width:380px;width:90%;padding:24px;text-align:center;">
+            <div style="width:56px;height:56px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+                <i class="fas fa-user-slash" style="font-size:24px;color:#ef4444;"></i>
+            </div>
+            <h3 style="color:#ef4444;margin-bottom:8px;">Account Suspended</h3>
+            <p style="color:#64748b;font-size:14px;margin-bottom:10px;">You released too many tasks. Suspended for 48 hours.</p>
+            <p style="color:#1e293b;font-weight:700;font-size:16px;margin-bottom:14px;" id="tipSuspendUntil">--</p>
+            <button onclick="document.getElementById('suspendedOverlay').style.display='none'" style="width:100%;background:#6C63FF;color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;">I Understand</button>
+        </div>
+    </div>
+
     <script>
         // Global variables
         let currentTask = {
@@ -703,21 +743,109 @@
             window.location.href = 'index.html?tab=accepted-tasks';
         }
 
-        // Go back — abandon the task via API so it returns to active
-        async function goBack() {
-            if (!confirm('Release this task? It will become available for other users.')) return;
+        // Helper: daily release tracking
+        function getDailyReleaseCount() {
+            const today = new Date().toDateString();
+            const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
+            if (data.date !== today) return 0;
+            return data.count || 0;
+        }
+        function incrementDailyReleaseCount() {
+            const today = new Date().toDateString();
+            const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
+            if (data.date !== today) {
+                localStorage.setItem('taskearn_daily_releases', JSON.stringify({ date: today, count: 1 }));
+                return 1;
+            }
+            data.count = (data.count || 0) + 1;
+            localStorage.setItem('taskearn_daily_releases', JSON.stringify(data));
+            return data.count;
+        }
+        function isAccountSuspended() {
+            const until = localStorage.getItem('taskearn_suspended_until');
+            if (!until) return false;
+            return Date.now() < parseInt(until);
+        }
+        function suspendAccount() {
+            const until = Date.now() + 48 * 60 * 60 * 1000;
+            localStorage.setItem('taskearn_suspended_until', until.toString());
+            const timeStr = new Date(until).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+            document.getElementById('tipSuspendUntil').textContent = 'Until: ' + timeStr;
+            document.getElementById('suspendedOverlay').style.display = 'flex';
+        }
+
+        function closePenaltyModal() {
+            document.getElementById('releasePenaltyOverlay').style.display = 'none';
+        }
+
+        // Go back — show penalty modal first
+        function goBack() {
+            if (isAccountSuspended()) {
+                const until = parseInt(localStorage.getItem('taskearn_suspended_until'));
+                document.getElementById('tipSuspendUntil').textContent = 'Until: ' + new Date(until).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+                document.getElementById('suspendedOverlay').style.display = 'flex';
+                return;
+            }
+
+            const taskValue = (currentTask.price || currentTask.amount || 0) + (currentTask.service_charge || 0);
+            const penalty = Math.round(taskValue * 0.10);
+            const user = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
+            const helperData = user ? JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}') : {};
+            const balance = parseFloat(helperData.wallet || 0);
+            const walletAfter = balance - penalty;
+            const dailyCount = getDailyReleaseCount();
+
+            document.getElementById('tipTaskValue').textContent = '₹' + taskValue;
+            document.getElementById('tipPenalty').textContent = '-₹' + penalty;
+            const afterEl = document.getElementById('tipWalletAfter');
+            afterEl.textContent = '₹' + walletAfter.toFixed(2);
+            afterEl.style.color = walletAfter < 0 ? '#ef4444' : '#10b981';
+
+            const warnEl = document.getElementById('tipDailyWarning');
+            if (dailyCount >= 2) {
+                warnEl.style.display = 'block';
+                document.getElementById('tipDailyCount').textContent = dailyCount;
+            } else {
+                warnEl.style.display = 'none';
+            }
+
+            document.getElementById('releasePenaltyOverlay').style.display = 'flex';
+        }
+
+        async function confirmRelease() {
+            document.getElementById('releasePenaltyOverlay').style.display = 'none';
 
             const taskId = currentTask.id;
             const token = localStorage.getItem('taskearn_token') || '';
+            const taskValue = (currentTask.price || currentTask.amount || 0) + (currentTask.service_charge || 0);
+            const penalty = Math.round(taskValue * 0.10);
 
+            // Deduct penalty from wallet
+            if (token) {
+                try {
+                    await fetch(API_URL + '/wallet/pay', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                        body: JSON.stringify({ amount: penalty, taskId: null, description: 'Task release penalty (10%)' })
+                    });
+                } catch (e) {
+                    console.warn('Penalty API failed, deducting locally:', e.message);
+                }
+            }
+            // Update local wallet balance (allow negative)
+            const user = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
+            if (user) {
+                const helperData = JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}');
+                helperData.wallet = (parseFloat(helperData.wallet) || 0) - penalty;
+                localStorage.setItem(`user_${user.id}_data`, JSON.stringify(helperData));
+            }
+
+            // Call backend to abandon task
             if (token && taskId) {
                 try {
                     const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + token
-                        }
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
                     });
                     const result = await res.json();
                     if (!result.success) {
@@ -726,22 +854,27 @@
                     }
                 } catch (err) {
                     alert('Network error. Please try again.');
-                    console.error('Abandon failed:', err.message);
                     return;
                 }
 
                 // Remove from local accepted tasks
-                const currentUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
-                if (currentUser) {
-                    const helperData = JSON.parse(localStorage.getItem(`user_${currentUser.id}_data`) || '{}');
+                if (user) {
+                    const helperData = JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}');
                     if (helperData.acceptedTasks) {
                         helperData.acceptedTasks = helperData.acceptedTasks.filter(t => t.id != taskId);
-                        localStorage.setItem(`user_${currentUser.id}_data`, JSON.stringify(helperData));
+                        localStorage.setItem(`user_${user.id}_data`, JSON.stringify(helperData));
                     }
                 }
             }
 
+            // Track daily release count + check suspension
+            const dailyCount = incrementDailyReleaseCount();
+            if (dailyCount > 3) {
+                suspendAccount();
+            }
+
             clearInterval(timerInterval);
+            alert('Task released. ₹' + penalty + ' penalty deducted from your wallet.');
             window.location.href = 'index.html';
         }
 

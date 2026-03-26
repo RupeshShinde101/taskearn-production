@@ -16,6 +16,7 @@ const MIN_TASK_PRICE = 50; // Minimum ₹50 per task
 let selectedTask = null;
 let gpsWatchId = null;
 let isGPSActive = false;
+let modalTaskCoords = null; // Stores picked location for task posting
 
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
@@ -2714,7 +2715,7 @@ function updateNewBudget() {
     }
 }
 
-function saveTaskEdit(event) {
+async function saveTaskEdit(event) {
     event.preventDefault();
     
     const taskId = parseInt(document.getElementById('editTaskId').value);
@@ -2736,6 +2737,17 @@ function saveTaskEdit(event) {
     const newDescription = document.getElementById('editTaskDescription').value.trim();
     const newLocation = document.getElementById('editTaskLocation').value.trim();
     const newPrice = editTaskState.originalBudget + editTaskState.budgetIncrease;
+
+    // Geocode if address changed
+    let newLat = task.location.lat;
+    let newLng = task.location.lng;
+    if (newLocation && newLocation !== task.location.address) {
+        const geo = await geocodeAddress(newLocation);
+        if (geo) {
+            newLat = geo.lat;
+            newLng = geo.lng;
+        }
+    }
     
     // Update in main tasks array
     const mainTask = tasks.find(t => t.id === taskId);
@@ -2743,7 +2755,7 @@ function saveTaskEdit(event) {
         mainTask.title = newTitle;
         mainTask.category = newCategory;
         mainTask.description = newDescription;
-        mainTask.location.address = newLocation;
+        mainTask.location = { lat: newLat, lng: newLng, address: newLocation };
         mainTask.price = newPrice;
     }
     
@@ -2753,7 +2765,7 @@ function saveTaskEdit(event) {
         postedTask.title = newTitle;
         postedTask.category = newCategory;
         postedTask.description = newDescription;
-        postedTask.location.address = newLocation;
+        postedTask.location = { lat: newLat, lng: newLng, address: newLocation };
         postedTask.price = newPrice;
     }
     
@@ -3327,19 +3339,46 @@ async function handleTaskSubmit(event) {
     const serviceCharge = getServiceCharge(category);
     const totalPayable = totalPrice + serviceCharge;
 
+    // Resolve task location coordinates
+    const addressText = document.getElementById('modalTaskLocation').value.trim();
+    let taskLat, taskLng;
+
+    if (modalTaskCoords) {
+        // User clicked "Use My Location" — use captured GPS coords
+        taskLat = modalTaskCoords.lat;
+        taskLng = modalTaskCoords.lng;
+    } else if (addressText) {
+        // User typed an address — geocode it
+        showToast('📍 Looking up location...');
+        const geo = await geocodeAddress(addressText);
+        if (geo) {
+            taskLat = geo.lat;
+            taskLng = geo.lng;
+        } else {
+            showToast('❌ Could not find that address. Please try a different address or use "My Location".');
+            return;
+        }
+    } else {
+        showToast('❌ Please enter a task location');
+        return;
+    }
+
     const taskData = {
         title: document.getElementById('modalTaskTitle').value,
         category: category,
         description: document.getElementById('modalTaskDescription').value,
         location: {
-            lat: userLocation.lat + (Math.random() - 0.5) * 0.02,
-            lng: userLocation.lng + (Math.random() - 0.5) * 0.02,
-            address: document.getElementById('modalTaskLocation').value
+            lat: taskLat,
+            lng: taskLng,
+            address: addressText
         },
         price: totalPrice,
         serviceCharge: serviceCharge,
         totalPaid: totalPayable
     };
+
+    // Reset for next post
+    modalTaskCoords = null;
 
     // Try to save to server first
     let serverTaskId = null;
@@ -4562,13 +4601,60 @@ function resetBonusOnModalOpen() {
 }
 
 function getCurrentLocation() {
-    document.getElementById('taskLocation').value = 'Current Location';
-    showToast('Location set');
+    getModalLocation();
 }
 
-function getModalLocation() {
-    document.getElementById('modalTaskLocation').value = 'Current Location';
-    showToast('Location set');
+async function getModalLocation() {
+    const input = document.getElementById('modalTaskLocation');
+    if (!input) return;
+
+    if (!navigator.geolocation) {
+        showToast('GPS not supported. Please type an address.');
+        return;
+    }
+
+    input.value = 'Locating...';
+    try {
+        const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true, timeout: 10000, maximumAge: 30000
+            });
+        });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        modalTaskCoords = { lat, lng };
+
+        // Reverse-geocode to get address text
+        try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`, {
+                headers: { 'Accept-Language': 'en' }
+            });
+            const data = await resp.json();
+            input.value = data.display_name || 'Current Location';
+        } catch {
+            input.value = 'Current Location';
+        }
+        showToast('📍 Location set from GPS');
+    } catch (err) {
+        console.warn('GPS error:', err.message);
+        input.value = '';
+        showToast('Could not get GPS. Please type an address.');
+    }
+}
+
+async function geocodeAddress(address) {
+    try {
+        const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=in`, {
+            headers: { 'Accept-Language': 'en' }
+        });
+        const results = await resp.json();
+        if (results && results.length > 0) {
+            return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+        }
+    } catch (e) {
+        console.warn('Geocoding failed:', e.message);
+    }
+    return null;
 }
 
 function setMinDateTime() {

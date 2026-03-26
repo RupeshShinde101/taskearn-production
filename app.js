@@ -4255,7 +4255,7 @@ function renderPostedTasks() {
                     <span class="task-status ${t.status}">${t.status}</span>
                 </div>
                 <h4>${t.title}</h4>
-                <div class="task-meta"><span>₹${t.price}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
+                <div class="task-meta"><span>₹${(t.price || 0) + (t.service_charge || t.serviceCharge || getServiceCharge(t.category))}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
                 <div class="task-actions">
                     <button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button>
                     <button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
@@ -4312,7 +4312,7 @@ function renderAcceptedTasks() {
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
                 <h4>${t.title}</h4>
-                <div class="task-meta"><span>₹${t.price}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
+                <div class="task-meta"><span>₹${(t.price || 0) + (t.service_charge || t.serviceCharge || getServiceCharge(t.category))}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
                 ${actionHTML}
             </div>
         `;

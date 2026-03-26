@@ -4488,6 +4488,9 @@ function renderAcceptedTasks() {
         return true;
     });
 
+    // Sort newest first
+    visibleAcceptedTasks.sort((a, b) => (b.id || 0) - (a.id || 0));
+
     if (visibleAcceptedTasks.length === 0) {
         el.innerHTML = '<div class="empty-state"><i class="fas fa-handshake"></i><h3>No accepted tasks</h3><button class="btn btn-primary" onclick="scrollToSection(\'find-tasks\')">Find Tasks</button></div>';
         return;

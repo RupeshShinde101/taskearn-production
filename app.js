@@ -1,5 +1,5 @@
 // ========================================
-// TaskEarn India - Task Marketplace
+// Workmate4u India - Task Marketplace
 // Using Leaflet + OpenStreetMap (100% Free)
 // Robust GPS with Fallback System
 // ========================================
@@ -1123,7 +1123,7 @@ async function sendTaskAcceptedEmail(taskPoster, task, acceptedBy) {
             to_email: taskPoster.email,
             to_name: taskPoster.name,
             otp_code: '', // Not used for this type
-            app_name: 'TaskEarn',
+            app_name: 'Workmate4u',
             // Custom fields - add these to your EmailJS template
             subject: `Your task "${task.title}" has been accepted!`,
             message: `Great news! ${acceptedBy.name} has accepted your task "${task.title}". You can now coordinate with them to get your task completed. Budget: ₹${task.price}`
@@ -1594,7 +1594,7 @@ async function refreshWalletBalance() {
 
 document.addEventListener('DOMContentLoaded', async function() {
     try {
-        console.log('🚀 TaskEarn Starting...');
+        console.log('🚀 Workmate4u Starting...');
         console.log('📦 localStorage available:', STORAGE_AVAILABLE);
         console.log('🔑 API Token:', localStorage.getItem('taskearn_token') ? 'EXISTS (✅)' : 'MISSING (❌)');
         console.log('🌐 Backend URL:', window.TASKEARN_API_URL);
@@ -1715,7 +1715,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }, 30000);
         
-        console.log('✅ TaskEarn Ready!');
+        console.log('✅ Workmate4u Ready!');
     } catch (error) {
         console.error('❌ CRITICAL ERROR during initialization:', error);
         console.error('Stack:', error.stack);
@@ -1756,7 +1756,7 @@ async function requestNotificationPermission() {
             console.log('🔔 Notification permission:', permission);
             
             if (permission === 'granted') {
-                showLocalNotification('TaskEarn', 'Notifications enabled! You\'ll be notified about task updates.');
+                showLocalNotification('Workmate4u', 'Notifications enabled! You\'ll be notified about task updates.');
             }
         } catch (e) {
             console.error('Error requesting notification permission:', e);
@@ -3562,7 +3562,7 @@ async function handleSignup(event) {
     const age = Math.floor((Date.now() - dobDate.getTime()) / (365.25 * 24 * 3600000));
 
     if (age < 16) {
-        showToast('You must be 16+ to use TaskEarn');
+        showToast('You must be 16+ to use Workmate4u');
         return;
     }
     
@@ -3601,7 +3601,7 @@ async function handleSignup(event) {
                 myAcceptedTasks = [];
                 myCompletedTasks = [];
                 
-                showToast('🎉 Welcome to TaskEarn! Your ID: ' + currentUser.id);
+                showToast('🎉 Welcome to Workmate4u! Your ID: ' + currentUser.id);
                 
                 // Check wallet balance and show warning if low
                 if (currentUser.walletLow) {
@@ -4717,7 +4717,7 @@ window.togglePasswordVisibility = togglePasswordVisibility;
 //    - {{to_email}} - recipient email
 //    - {{to_name}} - recipient name  
 //    - {{otp_code}} - the 6-digit OTP
-//    - {{app_name}} - TaskEarn
+//    - {{app_name}} - Workmate4u
 // 4. Copy your IDs below:
 
 const EMAILJS_CONFIG = {
@@ -4893,7 +4893,7 @@ async function sendOTP(method) {
                         to_email: forgotPasswordState.email,
                         to_name: user.name || 'User',
                         otp_code: otp,
-                        app_name: 'TaskEarn',
+                        app_name: 'Workmate4u',
                         validity: '10 minutes'
                     }
                 );
@@ -4973,7 +4973,7 @@ async function resendOTP() {
                             to_email: forgotPasswordState.email,
                             to_name: forgotPasswordState.user?.name || 'User',
                             otp_code: result.otp,
-                            app_name: 'TaskEarn',
+                            app_name: 'Workmate4u',
                             validity: '10 minutes'
                         }
                     );

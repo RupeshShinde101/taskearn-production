@@ -3,7 +3,7 @@
 // Check if everything is working on production
 // ========================================
 
-console.log('🚀 TaskEarn Production Deployment Check\n');
+console.log('🚀 Workmate4u Production Deployment Check\n');
 
 // ========================================
 // 1. Check Frontend URL

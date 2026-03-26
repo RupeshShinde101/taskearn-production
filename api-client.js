@@ -1,5 +1,5 @@
 // ========================================
-// TaskEarn API Client
+// Workmate4u API Client
 // Connect frontend to Python backend
 // ========================================
 

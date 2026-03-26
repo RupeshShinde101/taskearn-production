@@ -1,5 +1,5 @@
 /**
- * TaskEarn - Live GPS Tracking Module
+ * Workmate4u - Live GPS Tracking Module
  * Real-time location tracking using Mapbox
  * Production-ready multi-user service platform
  */
@@ -35,7 +35,7 @@ const TrackingConfig = {
 // TRACKING CLASS
 // ========================================
 
-class TaskEarnTracker {
+class Workmate4uTracker {
     constructor(options = {}) {
         this.mapContainer = options.mapContainer || 'trackingMap';
         
@@ -567,7 +567,7 @@ class TaskEarnTracker {
 // EXPORT FOR GLOBAL USE
 // ========================================
 
-window.TaskEarnTracker = TaskEarnTracker;
+window.Workmate4uTracker = Workmate4uTracker;
 window.TrackingConfig = TrackingConfig;
 
 // ========================================
@@ -716,4 +716,4 @@ window.formatDistance = formatDistance;
 window.formatDuration = formatDuration;
 window.getActiveTrackingTasks = getActiveTrackingTasks;
 
-console.log('🗺️ TaskEarn Tracking Module v2.0 - Production Ready');
+console.log('🗺️ Workmate4u Tracking Module v2.0 - Production Ready');

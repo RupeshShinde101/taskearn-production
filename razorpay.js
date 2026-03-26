@@ -1,5 +1,5 @@
 // ========================================
-// Razorpay Payment Integration for TaskEarn
+// Razorpay Payment Integration for Workmate4u
 // ========================================
 
 const RAZORPAY_KEY_ID = 'rzp_live_SRt7rogPTT3FuK'; // Live Key ID - Updated March 17
@@ -41,7 +41,7 @@ async function initiatePayment(task, user, onSuccess, onError) {
             key: orderData.keyId || RAZORPAY_KEY_ID,
             amount: orderData.amount,
             currency: orderData.currency || 'INR',
-            name: 'TaskEarn',
+            name: 'Workmate4u',
             description: `Payment for: ${task.title}`,
             order_id: orderData.orderId,
             handler: async function(response) {
@@ -230,7 +230,7 @@ async function addMoneyToWallet(amount, onSuccess, onError) {
             key: keyId,
             amount: amount * 100, // Razorpay expects amount in paise
             currency: 'INR',
-            name: 'TaskEarn',
+            name: 'Workmate4u',
             description: `Add ₹${amount} to Wallet`,
             order_id: orderId, // null for client-side only
             handler: async function(response) {

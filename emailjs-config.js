@@ -16,7 +16,7 @@
 // 1. Go to: Email Services → Add New Service
 // 2. Select "Gmail" (easiest) or your preferred provider
 // 3. Click "Connect Account" → Sign in with your Gmail
-// 4. Name it: "TaskEarn Email Service"
+// 4. Name it: "Workmate4u Email Service"
 // 5. Copy the SERVICE ID (e.g., "service_abc123")
 
 // ═══════════════════════════════════════════════════════════════════
@@ -24,14 +24,14 @@
 // ═══════════════════════════════════════════════════════════════════
 // 1. Go to: Email Templates → Create New Template
 // 2. Set Template Name: "OTP Template"
-// 3. Set Subject: "🔐 TaskEarn Password Reset OTP: {{otp_code}}"
+// 3. Set Subject: "🔐 Workmate4u Password Reset OTP: {{otp_code}}"
 // 4. Set Content (copy this exactly):
 /*
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    
    Hi {{to_name}},
    
-   You requested to reset your password for your TaskEarn account.
+   You requested to reset your password for your Workmate4u account.
    
    Your One-Time Password (OTP) is:
    

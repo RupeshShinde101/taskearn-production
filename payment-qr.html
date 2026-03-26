@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Complete Payment - TaskEarn</title>
+    <title>Complete Payment - Workmate4u</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -428,7 +428,7 @@
                     <i class="fas fa-qrcode"></i> Scan to Pay
                 </div>
                 <div class="qr-code">
-                    <img id="qrImage" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=upi://pay?pa=taskearnofficialtest@okaxis&pn=TaskEarn&am=500&tr=TaskEarn&tn=Task%20Payment" alt="UPI QR Code">
+                    <img id="qrImage" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=upi://pay?pa=taskearnofficialtest@okaxis&pn=Workmate4u&am=500&tr=Workmate4u&tn=Task%20Payment" alt="UPI QR Code">
                 </div>
                 <div class="qr-instruction">
                     Scan with Google Pay, PhonePe, BHIM, or any UPI app
@@ -550,7 +550,7 @@
                     }
                     
                     // Update QR Code with actual amount
-                    const upiString = `upi://pay?pa=taskearnofficialtest@okaxis&pn=TaskEarn&am=${taskData.amount || amount}&tr=TaskEarn_${taskData.id || taskId}&tn=Task%20Payment`;
+                    const upiString = `upi://pay?pa=taskearnofficialtest@okaxis&pn=Workmate4u&am=${taskData.amount || amount}&tr=Workmate4u_${taskData.id || taskId}&tn=Task%20Payment`;
                     document.getElementById('qrImage').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiString)}`;
                     
                     console.log('✅ Loaded task details from localStorage');
@@ -573,7 +573,7 @@
             document.getElementById('pName').textContent = provider;
 
             // Update QR Code with actual amount
-            const upiString = `upi://pay?pa=taskearnofficialtest@okaxis&pn=TaskEarn&am=${amountValue}&tr=TaskEarn_${taskId}&tn=Task%20Payment`;
+            const upiString = `upi://pay?pa=taskearnofficialtest@okaxis&pn=Workmate4u&am=${amountValue}&tr=Workmate4u_${taskId}&tn=Task%20Payment`;
             document.getElementById('qrImage').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiString)}`;
         }
 
@@ -656,7 +656,7 @@
                     key: 'rzp_live_SRt7rogPTT3FuK',
                     amount: orderData.amount,
                     currency: 'INR',
-                    name: 'TaskEarn',
+                    name: 'Workmate4u',
                     description: 'Task Payment - ' + taskName,
                     order_id: orderData.order_id,
                     handler: function(response) {

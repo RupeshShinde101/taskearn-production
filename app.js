@@ -11,8 +11,8 @@ let userCircle = null;
 let taskMarkers = [];
 let routeLayer = null;
 let currentUser = null;
-let selectedBudget = 50; // Default budget
-const MIN_TASK_PRICE = 50; // Minimum ₹50 per task
+let selectedBudget = 100; // Default budget
+const MIN_TASK_PRICE = 100; // Minimum ₹100 per task
 let selectedTask = null;
 let gpsWatchId = null;
 let isGPSActive = false;
@@ -3513,7 +3513,7 @@ async function handleTaskSubmit(event) {
     const customBudgetValue = parseInt(document.getElementById('customBudget').value) || 0;
     let baseBudget = customBudgetValue > 0 ? customBudgetValue : selectedBudget;
     
-    // Enforce minimum ₹50
+    // Enforce minimum ₹100
     if (baseBudget < MIN_TASK_PRICE) {
         baseBudget = MIN_TASK_PRICE;
         showToast('⚠️ Minimum task budget is ₹' + MIN_TASK_PRICE);
@@ -4730,7 +4730,7 @@ function updateTotalBudgetDisplay() {
     const customBudget = parseInt(document.getElementById('customBudget')?.value) || 0;
     let baseBudget = customBudget > 0 ? customBudget : selectedBudget;
     
-    // Enforce minimum ₹50
+    // Enforce minimum ₹100
     if (baseBudget < MIN_TASK_PRICE) {
         baseBudget = MIN_TASK_PRICE;
     }

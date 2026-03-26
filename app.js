@@ -1201,31 +1201,6 @@ document.addEventListener('click', function(e) {
 // INITIALIZATION
 // ========================================
 
-// Update map markers when tasks change
-function updateMapMarkers() {
-    if (!map) return;
-    
-    // Clear existing markers
-    taskMarkers.forEach(marker => marker.remove());
-    taskMarkers = [];
-    
-    // Add markers for active, non-expired tasks
-    tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired').forEach(task => {
-        if (task.location && task.location.lat && task.location.lng) {
-            const marker = L.marker([task.location.lat, task.location.lng], {
-                icon: L.divIcon({
-                    className: 'task-marker',
-                    html: `<div class="marker-pin" style="background: var(--primary-gradient)"><i class="fas fa-tasks"></i></div>`,
-                    iconSize: [30, 42],
-                    iconAnchor: [15, 42]
-                })
-            }).addTo(map);
-            
-            taskMarkers.push(marker);
-        }
-    });
-}
-
 // Load tasks from backend API (PRODUCTION ONLY - NO LOCAL FALLBACKS)
 async function loadTasksFromServer() {
     try {
@@ -1432,7 +1407,7 @@ async function loadTasksFromServer() {
                 console.log('✅ Loaded', serverTasks.length, 'tasks from server');
                 console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
-                updateMapMarkers();
+                addTaskMarkers();
                 return true;
             } else if (result.offline) {
                 // Offline mode - use cached data
@@ -1454,7 +1429,7 @@ async function loadTasksFromServer() {
                             alert('⚠️ Backend offline. Showing cached tasks.');
                         }
                         renderTasks();
-                        updateMapMarkers();
+                        addTaskMarkers();
                         return true;
                     } catch (e) {
                         console.error('Failed to parse cached tasks:', e);
@@ -1491,7 +1466,7 @@ async function loadTasksFromServer() {
                             console.warn('showNotification not available');
                         }
                         renderTasks();
-                        updateMapMarkers();
+                        addTaskMarkers();
                         return true;
                     } catch (e) {
                         console.error('Failed to parse cached tasks:', e);
@@ -1539,7 +1514,7 @@ async function loadTasksFromServer() {
                     console.warn('showNotification not available');
                 }
                 renderTasks();
-                updateMapMarkers();
+                addTaskMarkers();
                 return true;
             } catch (e) {
                 console.error('Failed to parse cached tasks:', e);
@@ -1820,6 +1795,12 @@ function showLocalNotification(title, body, options = {}) {
 
 function initializeMap() {
     try {
+        const container = document.getElementById('map');
+        if (!container) {
+            console.log('ℹ️ No #map container on this page, skipping map init');
+            return;
+        }
+
         // Create map
         map = L.map('map', {
             center: [userLocation.lat, userLocation.lng],
@@ -1833,6 +1814,11 @@ function initializeMap() {
             maxZoom: 19
         }).addTo(map);
 
+        // Fix tiles when container was hidden during init
+        setTimeout(() => {
+            if (map) map.invalidateSize();
+        }, 300);
+
         console.log('✅ Map initialized');
 
         // Add task markers
@@ -1843,7 +1829,6 @@ function initializeMap() {
 
     } catch (error) {
         console.error('❌ Map error:', error);
-        showToast('Map loading error. Please refresh.');
     }
 }
 
@@ -2045,6 +2030,8 @@ function placeUserMarker(location, accuracy = 100) {
 // ========================================
 
 function addTaskMarkers() {
+    if (!map) return;
+
     // Clear old markers
     taskMarkers.forEach(m => {
         if (map.hasLayer(m)) map.removeLayer(m);
@@ -2053,6 +2040,7 @@ function addTaskMarkers() {
 
     // Add markers for active, non-expired tasks
     tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired').forEach(task => {
+        if (!task.location || !task.location.lat || !task.location.lng) return;
         const icon = getTaskIcon(task.category);
         const marker = L.marker([task.location.lat, task.location.lng], { icon }).addTo(map);
 
@@ -4469,6 +4457,10 @@ function toggleMobileMenu() {
 
 function scrollToSection(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    // Refresh map tiles after scrolling to map section
+    if (map && (id === 'find-tasks' || id === 'map')) {
+        setTimeout(() => map.invalidateSize(), 400);
+    }
 }
 
 function showToast(msg) {

@@ -1,0 +1,49 @@
+# Workmate4u - Robots.txt
+# https://workmate4u.netlify.app
+
+User-agent: *
+Allow: /
+Allow: /index.html
+Allow: /help.html
+Allow: /privacy.html
+Allow: /safety.html
+Allow: /terms.html
+
+# Block internal/admin pages
+Disallow: /admin.html
+Disallow: /admin-dashboard.html
+Disallow: /api-diagnostic.html
+Disallow: /api-diagnostic-page.html
+Disallow: /debug-mobile.html
+Disallow: /status.html
+Disallow: /test-api.html
+Disallow: /quick-test.html
+
+# Block authenticated app pages
+Disallow: /browse.html
+Disallow: /accepted.html
+Disallow: /posted.html
+Disallow: /completed.html
+Disallow: /profile.html
+Disallow: /wallet.html
+Disallow: /chat.html
+Disallow: /task-in-progress.html
+Disallow: /poster-live-tracking.html
+Disallow: /tracking.html
+Disallow: /payment-qr.html
+Disallow: /voice-call.html
+
+# Block backend/build files
+Disallow: /backend/
+Disallow: /netlify/
+Disallow: /*.py$
+Disallow: /*.ps1$
+Disallow: /*.bat$
+Disallow: /*.md$
+Disallow: /*.sql$
+Disallow: /*.txt$
+Disallow: /*.json$
+Disallow: /*.toml$
+
+# Sitemap
+Sitemap: https://workmate4u.netlify.app/sitemap.xml

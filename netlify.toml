@@ -14,13 +14,24 @@
 [context.deploy-preview.environment]
   BACKEND_URL = "https://taskearn-production-production.up.railway.app"
 
+# Serve robots.txt and sitemap.xml directly
+[[redirects]]
+  from = "/robots.txt"
+  to = "/robots.txt"
+  status = 200
+
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/sitemap.xml"
+  status = 200
+
 # API and dynamic routes - SPA routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# CORS headers for all requests
+# SEO and security headers for all pages
 [[headers]]
   for = "/*"
   [headers.values]
@@ -28,6 +39,9 @@
     Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type, Authorization"
     Cache-Control = "public, max-age=3600"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
 
 # Caching for static assets
 [[headers]]

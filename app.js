@@ -2737,7 +2737,10 @@ async function penaltyConfirmRelease() {
 }
 
 async function abandonTask(taskId) {
-    if (!currentUser) return;
+    if (!currentUser) {
+        showToast('❌ Please login first');
+        return;
+    }
 
     // Check if suspended
     if (isAccountSuspended()) {
@@ -2756,6 +2759,16 @@ async function abandonTask(taskId) {
     const currentBalance = currentUser.wallet || 0;
     const walletAfter = currentBalance - penalty;
     const dailyCount = getDailyReleaseCount();
+
+    // Check if penalty modal exists on this page
+    const modalEl = document.getElementById('releasePenaltyModal');
+    if (!modalEl) {
+        // Fallback: use confirm dialog if modal HTML is missing on this page
+        if (!confirm(`Release this task?\n\nA 10% penalty of ₹${penalty} will be deducted from your wallet.\nWallet after: ₹${walletAfter.toFixed(2)}`)) return;
+        pendingReleaseTaskId = taskId;
+        await penaltyConfirmRelease();
+        return;
+    }
 
     // Populate penalty modal
     const taskValEl = document.getElementById('penaltyTaskValue');

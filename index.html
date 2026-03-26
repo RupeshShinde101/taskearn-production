@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +6,7 @@
     <title>Workmate4u - Post Tasks, Get Work Done & Earn Money Nearby</title>
 
     <!-- SEO Meta Tags -->
-    <meta name="description" content="Workmate4u is India's trusted local task marketplace. Post tasks or earn money by completing tasks nearby — delivery, cleaning, tutoring, repairs & more. Join thousands of users on Workmate4u.com today!">
+    <meta name="description" content="Workmate4u is India's trusted local task marketplace. Post tasks or earn money by completing tasks nearby â€” delivery, cleaning, tutoring, repairs & more. Join thousands of users on Workmate4u.com today!">
     <meta name="keywords" content="Workmate4u, Workmate4u.com, workmate 4u, work mate 4u, task marketplace India, earn money nearby, post tasks online, local tasks, gig work India, freelance tasks, delivery tasks, cleaning tasks, tutoring jobs, repair services, earn money online India">
     <meta name="author" content="Workmate4u">
     <meta name="robots" content="index, follow">
@@ -16,7 +16,7 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://workmate4u.netlify.app/">
     <meta property="og:title" content="Workmate4u - Post Tasks, Get Work Done & Earn Money Nearby">
-    <meta property="og:description" content="India's trusted local task marketplace. Post tasks or earn money completing tasks nearby — delivery, cleaning, tutoring, repairs & more.">
+    <meta property="og:description" content="India's trusted local task marketplace. Post tasks or earn money completing tasks nearby â€” delivery, cleaning, tutoring, repairs & more.">
     <meta property="og:image" content="https://workmate4u.netlify.app/og-image.svg">
     <meta property="og:site_name" content="Workmate4u">
     <meta property="og:locale" content="en_IN">
@@ -43,7 +43,7 @@
         "name": "Workmate4u",
         "alternateName": ["Workmate 4u", "Work Mate 4u", "Workmate4u.com"],
         "url": "https://workmate4u.netlify.app",
-        "description": "India's trusted local task marketplace. Post tasks or earn money by completing tasks nearby — delivery, cleaning, tutoring, repairs and more.",
+        "description": "India's trusted local task marketplace. Post tasks or earn money by completing tasks nearby â€” delivery, cleaning, tutoring, repairs and more.",
         "applicationCategory": "BusinessApplication",
         "operatingSystem": "Web",
         "offers": {
@@ -115,7 +115,7 @@
             const userAgent = navigator.userAgent.toLowerCase();
             const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
             
-            console.log('📱 Device Detection (Inline Script):', isMobile ? 'MOBILE' : 'DESKTOP');
+            console.log('ðŸ“± Device Detection (Inline Script):', isMobile ? 'MOBILE' : 'DESKTOP');
             console.log('User-Agent:', userAgent.substring(0, 80) + '...');
             
             // Pre-set API URL before api-client.js loads
@@ -124,12 +124,12 @@
                 // Force mobile to use proxy (bypasses ISP/carrier DNS blocking)
                 window.API_BASE_URL = '/.netlify/functions/api-proxy/api';
                 window.FORCE_MOBILE_PROXY = true;
-                console.log('✅ Pre-set for MOBILE: window.API_BASE_URL = /.netlify/functions/api-proxy/api');
+                console.log('âœ… Pre-set for MOBILE: window.API_BASE_URL = /.netlify/functions/api-proxy/api');
             } else {
                 // Desktop can attempt direct Railway connection (usually not blocked)
                 window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
                 window.FORCE_MOBILE_PROXY = false;
-                console.log('✅ Pre-set for DESKTOP: window.API_BASE_URL = Railway direct');
+                console.log('âœ… Pre-set for DESKTOP: window.API_BASE_URL = Railway direct');
             }
         })();
     </script>
@@ -222,7 +222,7 @@
     <section class="hero" id="home">
         <div class="hero-content">
             <div class="hero-text">
-                <span class="badge">🇮🇳 India's #1 Task Marketplace Platform</span>
+                <span class="badge">ðŸ‡®ðŸ‡³ India's #1 Task Marketplace Platform</span>
                 <h1>Get Your Tasks Done or <span class="highlight">Earn Money</span> Doing Tasks</h1>
                 <p>Connect with local helpers across India for everyday tasks - from laundry to tutoring, deliveries to repairs. Post a task or earn by helping others in your community.</p>
                 <div class="hero-buttons">
@@ -243,7 +243,7 @@
                         <p>Tasks Completed</p>
                     </div>
                     <div class="stat">
-                        <h3>₹2Cr+</h3>
+                        <h3>â‚¹2Cr+</h3>
                         <p>Earned by Taskers</p>
                     </div>
                 </div>
@@ -255,7 +255,7 @@
                 </div>
                 <div class="floating-card card-2">
                     <i class="fas fa-rupee-sign"></i>
-                    <span>+₹3,500 Earned</span>
+                    <span>+â‚¹3,500 Earned</span>
                 </div>
                 <div class="hero-illustration">
                     <i class="fas fa-hands-helping"></i>
@@ -446,9 +446,9 @@
                         <div class="filter-group">
                             <label>Budget Range</label>
                             <div class="budget-inputs">
-                                <input type="number" id="minBudget" placeholder="Min ₹">
+                                <input type="number" id="minBudget" placeholder="Min â‚¹">
                                 <span>-</span>
-                                <input type="number" id="maxBudget" placeholder="Max ₹">
+                                <input type="number" id="maxBudget" placeholder="Max â‚¹">
                             </div>
                         </div>
                         
@@ -593,14 +593,14 @@
                         <i class="fas fa-star"></i>
                         <i class="fas fa-star"></i>
                     </div>
-                    <p>"I've earned over ₹40,000 this month just helping with deliveries in my area. The map feature makes it so easy to find tasks nearby!"</p>
+                    <p>"I've earned over â‚¹40,000 this month just helping with deliveries in my area. The map feature makes it so easy to find tasks nearby!"</p>
                     <div class="testimonial-author">
                         <div class="author-avatar">
                             <i class="fas fa-user"></i>
                         </div>
                         <div class="author-info">
                             <h4>Rahul Sharma</h4>
-                            <span>Tasker • Delhi • 127 tasks completed</span>
+                            <span>Tasker â€¢ Delhi â€¢ 127 tasks completed</span>
                         </div>
                     </div>
                 </div>
@@ -619,7 +619,7 @@
                         </div>
                         <div class="author-info">
                             <h4>Priya Patel</h4>
-                            <span>Task Poster • Mumbai • 45 tasks posted</span>
+                            <span>Task Poster â€¢ Mumbai â€¢ 45 tasks posted</span>
                         </div>
                     </div>
                 </div>
@@ -638,7 +638,7 @@
                         </div>
                         <div class="author-info">
                             <h4>Arjun Reddy</h4>
-                            <span>Tasker • Bangalore • 89 tasks completed</span>
+                            <span>Tasker â€¢ Bangalore â€¢ 89 tasks completed</span>
                         </div>
                     </div>
                 </div>
@@ -987,13 +987,13 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>Task Budget (Min ₹100)</label>
+                    <label>Task Budget (Min â‚¹100)</label>
                     <div class="budget-selector">
-                        <div class="budget-option" onclick="selectBudget(this, 100)">₹100</div>
-                        <div class="budget-option" onclick="selectBudget(this, 200)">₹200</div>
-                        <div class="budget-option" onclick="selectBudget(this, 500)">₹500</div>
-                        <div class="budget-option" onclick="selectBudget(this, 1000)">₹1000</div>
-                        <input type="number" id="customBudget" placeholder="Custom ₹" min="100">
+                        <div class="budget-option" onclick="selectBudget(this, 100)">â‚¹100</div>
+                        <div class="budget-option" onclick="selectBudget(this, 200)">â‚¹200</div>
+                        <div class="budget-option" onclick="selectBudget(this, 500)">â‚¹500</div>
+                        <div class="budget-option" onclick="selectBudget(this, 1000)">â‚¹1000</div>
+                        <input type="number" id="customBudget" placeholder="Custom â‚¹" min="100">
                     </div>
                 </div>
                 
@@ -1002,14 +1002,14 @@
                     <div class="bonus-section">
                         <p class="bonus-hint">Increase your budget to attract more taskers and get faster responses!</p>
                         <div class="bonus-options">
-                            <button type="button" class="bonus-btn" onclick="addBonus(50)">+₹50</button>
-                            <button type="button" class="bonus-btn" onclick="addBonus(100)">+₹100</button>
-                            <button type="button" class="bonus-btn" onclick="addBonus(200)">+₹200</button>
-                            <button type="button" class="bonus-btn" onclick="addBonus(500)">+₹500</button>
+                            <button type="button" class="bonus-btn" onclick="addBonus(50)">+â‚¹50</button>
+                            <button type="button" class="bonus-btn" onclick="addBonus(100)">+â‚¹100</button>
+                            <button type="button" class="bonus-btn" onclick="addBonus(200)">+â‚¹200</button>
+                            <button type="button" class="bonus-btn" onclick="addBonus(500)">+â‚¹500</button>
                         </div>
                         <div class="total-budget-display">
                             <span>Task Budget:</span>
-                            <strong id="totalBudgetDisplay">₹500</strong>
+                            <strong id="totalBudgetDisplay">â‚¹500</strong>
                         </div>
                     </div>
                 </div>
@@ -1022,11 +1022,11 @@
                     <div class="charge-details">
                         <div class="charge-row">
                             <span>Task Budget:</span>
-                            <span id="displayTaskBudget">₹100</span>
+                            <span id="displayTaskBudget">â‚¹100</span>
                         </div>
                         <div class="charge-row" style="color: #10b981;">
                             <span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span>
-                            <span id="serviceChargeAmount">₹50</span>
+                            <span id="serviceChargeAmount">â‚¹50</span>
                         </div>
                         <div class="charge-row" style="font-size: 12px; color: #666;">
                             <span>Est. Time:</span>
@@ -1034,14 +1034,14 @@
                         </div>
                         <div class="charge-row total">
                             <span><strong>You Pay:</strong></span>
-                            <span><strong id="totalPayable">₹100</strong></span>
+                            <span><strong id="totalPayable">â‚¹100</strong></span>
                         </div>
                         <div class="charge-row" style="color: #10b981; font-size: 13px; margin-top: 5px;">
                             <span>Worker Earns:</span>
-                            <span><strong id="workerEarns">₹100</strong></span>
+                            <span><strong id="workerEarns">â‚¹100</strong></span>
                         </div>
                     </div>
-                    <p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity: Quick ₹30-35 | Medium ₹40-50 | Skilled ₹60-70 | Expert ₹70-80 | Professional ₹90-100</p>
+                    <p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity: Quick â‚¹30-35 | Medium â‚¹40-50 | Skilled â‚¹60-70 | Expert â‚¹70-80 | Professional â‚¹90-100</p>
                 </div>
                 
                 <div class="task-info-box">
@@ -1126,7 +1126,7 @@
                 <div class="form-group">
                     <label>Current Budget</label>
                     <div class="current-budget-display">
-                        <span id="editCurrentBudget">₹500</span>
+                        <span id="editCurrentBudget">â‚¹500</span>
                     </div>
                 </div>
                 
@@ -1135,11 +1135,11 @@
                     <div class="budget-increase-section">
                         <p class="increase-hint">Add more to your budget to attract more taskers!</p>
                         <div class="increase-options">
-                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 50)">+₹50</button>
-                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 100)">+₹100</button>
-                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 200)">+₹200</button>
-                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 500)">+₹500</button>
-                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 1000)">+₹1000</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 50)">+â‚¹50</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 100)">+â‚¹100</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 200)">+â‚¹200</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 500)">+â‚¹500</button>
+                            <button type="button" class="increase-btn" onclick="selectBudgetIncrease(this, 1000)">+â‚¹1000</button>
                         </div>
                         <div class="custom-increase">
                             <label>Or enter custom amount:</label>
@@ -1147,7 +1147,7 @@
                         </div>
                         <div class="new-budget-display">
                             <span>New Budget:</span>
-                            <strong id="editNewBudget">₹500</strong>
+                            <strong id="editNewBudget">â‚¹500</strong>
                         </div>
                     </div>
                 </div>
@@ -1190,15 +1190,15 @@
                 <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:20px;">
                     <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
                         <span style="color:#64748b;font-size:13px;">Task Value</span>
-                        <span style="color:#1e293b;font-weight:600;" id="penaltyTaskValue">₹0</span>
+                        <span style="color:#1e293b;font-weight:600;" id="penaltyTaskValue">â‚¹0</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
                         <span style="color:#64748b;font-size:13px;">Penalty (10%)</span>
-                        <span style="color:#ef4444;font-weight:600;" id="penaltyAmount">-₹0</span>
+                        <span style="color:#ef4444;font-weight:600;" id="penaltyAmount">-â‚¹0</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;border-top:1px dashed #e2e8f0;padding-top:6px;">
                         <span style="color:#64748b;font-size:13px;">Wallet After</span>
-                        <span style="font-weight:600;" id="penaltyWalletAfter">₹0</span>
+                        <span style="font-weight:600;" id="penaltyWalletAfter">â‚¹0</span>
                     </div>
                 </div>
                 <div id="penaltyDailyWarning" style="display:none;background:rgba(251,191,36,0.1);border:1px solid #fbbf24;border-radius:8px;padding:10px;margin-bottom:16px;">
@@ -1253,13 +1253,13 @@
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20260326_photofix"></script>
-    <script src="shared.js?v=20260326_photofix"></script>
+    <script src="api-client.js?v=20260326_penalty"></script>
+    <script src="shared.js?v=20260326_penalty"></script>
     
     <!-- Razorpay Payment Integration -->
-    <script src="razorpay.js?v=20260326_photofix"></script>
+    <script src="razorpay.js?v=20260326_penalty"></script>
     
-    <script src="app.js?v=20260326_photofix"></script>
+    <script src="app.js?v=20260326_penalty"></script>
     
     <!-- CRITICAL: Mobile detection happens in HEAD section via inline script -->
     <!-- That script runs FIRST and pre-sets window.API_BASE_URL before any external scripts load -->

@@ -209,20 +209,6 @@ def user_to_response(user):
     wallet_balance = float(wallet.get('balance', 0))
     wallet_low = wallet_balance < 100
     
-    # Calculate suspension status
-    suspended_until = user.get('suspended_until')
-    is_suspended = False
-    if suspended_until:
-        try:
-            until_dt = datetime.datetime.fromisoformat(suspended_until.replace('Z', '+00:00'))
-            now_dt = datetime.datetime.now(datetime.timezone.utc)
-            if until_dt > now_dt:
-                is_suspended = True
-            else:
-                suspended_until = None  # Expired
-        except Exception:
-            suspended_until = None
-    
     return {
         'id': user['id'],
         'name': user['name'],
@@ -238,9 +224,7 @@ def user_to_response(user):
         'lastLogin': user.get('last_login'),
         'wallet': wallet_balance,
         'walletLow': wallet_low,
-        'walletWarning': 'Please top up your wallet (below ₹100)' if wallet_low else None,
-        'isSuspended': is_suspended,
-        'suspendedUntil': suspended_until
+        'walletWarning': 'Please top up your wallet (below ₹100)' if wallet_low else None
     }
 
 
@@ -959,20 +943,6 @@ def accept_task(task_id):
     """Accept a task"""
     try:
         with get_db() as (cursor, conn):
-            # Check if user is suspended
-            cursor.execute(f'SELECT suspended_until FROM users WHERE id = {PH}', (request.user_id,))
-            user_row = cursor.fetchone()
-            if user_row:
-                user_data = dict_from_row(user_row) if not isinstance(user_row, dict) else user_row
-                sus_until = user_data.get('suspended_until')
-                if sus_until:
-                    try:
-                        until_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
-                        if until_dt > datetime.datetime.now(datetime.timezone.utc):
-                            return jsonify({'success': False, 'message': 'Your account is suspended. You cannot accept tasks until the suspension ends.', 'suspended_until': sus_until}), 403
-                    except Exception:
-                        pass
-            
             # Check if task exists and is active
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
             task = cursor.fetchone()
@@ -2248,77 +2218,6 @@ def pay_from_wallet():
         'success': True,
         'message': f'₹{amount} paid successfully',
         'newBalance': new_balance
-    })
-
-
-@app.route('/api/wallet/penalty', methods=['POST'])
-@require_auth
-def deduct_penalty_from_wallet():
-    """Deduct penalty from wallet - allows negative balance"""
-    data = request.get_json()
-    amount = float(data.get('amount', 0))
-    task_id = data.get('taskId')
-    description = data.get('description', 'Task release penalty')
-    
-    if amount <= 0:
-        return jsonify({'success': False, 'message': 'Invalid penalty amount'}), 400
-    
-    wallet = get_or_create_wallet(request.user_id)
-    
-    # Allow negative balance for penalties
-    new_balance = float(wallet['balance']) - amount
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    
-    with get_db() as (cursor, conn):
-        cursor.execute(f'''
-            UPDATE wallets 
-            SET balance = {PH}, total_spent = total_spent + {PH}, updated_at = {PH}
-            WHERE user_id = {PH}
-        ''', (new_balance, amount, now, request.user_id))
-        
-        cursor.execute(f'''
-            INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, task_id, created_at)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (wallet['id'], request.user_id, 'penalty', amount, new_balance, description, task_id, now))
-        
-        # Check if user needs wallet-based suspension
-        suspend_user_if_needed(request.user_id, cursor)
-    
-    return jsonify({
-        'success': True,
-        'message': f'₹{amount} penalty deducted',
-        'newBalance': new_balance
-    })
-
-
-@app.route('/api/user/suspend', methods=['POST'])
-@require_auth
-def suspend_user_account():
-    """Set or clear suspension on user account"""
-    data = request.get_json()
-    suspended_until = data.get('suspendedUntil')  # ISO timestamp or null to clear
-    reason = data.get('reason', 'Released too many tasks')
-    
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    
-    with get_db() as (cursor, conn):
-        if suspended_until:
-            cursor.execute(f'''
-                UPDATE users 
-                SET is_suspended = {PH}, suspension_reason = {PH}, suspended_at = {PH}, suspended_until = {PH}
-                WHERE id = {PH}
-            ''', (True, reason, now, suspended_until, request.user_id))
-        else:
-            cursor.execute(f'''
-                UPDATE users 
-                SET is_suspended = {PH}, suspension_reason = NULL, suspended_at = NULL, suspended_until = NULL
-                WHERE id = {PH}
-            ''', (False, request.user_id))
-    
-    return jsonify({
-        'success': True,
-        'message': 'Suspension updated',
-        'suspendedUntil': suspended_until
     })
 
 

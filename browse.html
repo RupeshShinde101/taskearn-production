@@ -7,7 +7,7 @@
     <meta name="description" content="Browse and find tasks near you on Workmate4u. Earn money by completing delivery, cleaning, tutoring and other tasks in your area.">
     <meta name="keywords" content="Workmate4u browse tasks, find tasks nearby, earn money tasks, Workmate4u.com">
     <meta name="robots" content="noindex, nofollow">
-    <link rel="canonical" href="https://www.workmate4u.com/browse.html">
+    <link rel="canonical" href="https://workmate4u.netlify.app/browse.html">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -90,7 +90,6 @@
                 <h2>Find Tasks Near You</h2>
                 <p>Browse available tasks on the map and start earning today</p>
             </div>
-
             <div class="tasks-wrapper">
                 <div class="tasks-sidebar">
                     <div class="tasks-filter">
@@ -141,9 +140,9 @@
                         <div class="filter-group">
                             <label>Budget Range</label>
                             <div class="budget-inputs">
-                                <input type="number" id="minBudget" placeholder="Min ?">
+                                <input type="number" id="minBudget" placeholder="Min ₹">
                                 <span>-</span>
-                                <input type="number" id="maxBudget" placeholder="Max ?">
+                                <input type="number" id="maxBudget" placeholder="Max ₹">
                             </div>
                         </div>
                         <button class="btn btn-primary btn-block" onclick="applyFilters()">
@@ -299,9 +298,9 @@
                 </div>
                 <div class="form-group"><label for="modalTaskDescription">Description</label><textarea id="modalTaskDescription" rows="4" placeholder="Provide details about the task, any special requirements, etc." required></textarea></div>
                 <div class="form-group"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
-                <div class="form-group"><label>Task Budget (Min ?100)</label><div class="budget-selector"><div class="budget-option" onclick="selectBudget(this, 100)">?100</div><div class="budget-option" onclick="selectBudget(this, 200)">?200</div><div class="budget-option" onclick="selectBudget(this, 500)">?500</div><div class="budget-option" onclick="selectBudget(this, 1000)">?1000</div><input type="number" id="customBudget" placeholder="Custom ?" min="100"></div></div>
-                <div class="form-group"><label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label><div class="bonus-section"><p class="bonus-hint">Increase your budget to attract more taskers and get faster responses!</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="addBonus(50)">+?50</button><button type="button" class="bonus-btn" onclick="addBonus(100)">+?100</button><button type="button" class="bonus-btn" onclick="addBonus(200)">+?200</button><button type="button" class="bonus-btn" onclick="addBonus(500)">+?500</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">?500</strong></div></div></div>
-                <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Service Charge</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">?100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">?50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row total"><span><strong>You Pay:</strong></span><span><strong id="totalPayable">?150</strong></span></div><div class="charge-row" style="color:#10b981;font-size:13px;margin-top:5px;"><span>Worker Earns:</span><span><strong id="workerEarns">?150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity</p></div>
+                <div class="form-group"><label>Task Budget (Min ₹100)</label><div class="budget-selector"><div class="budget-option" onclick="selectBudget(this, 100)">₹100</div><div class="budget-option" onclick="selectBudget(this, 200)">₹200</div><div class="budget-option" onclick="selectBudget(this, 500)">₹500</div><div class="budget-option" onclick="selectBudget(this, 1000)">₹1000</div><input type="number" id="customBudget" placeholder="Custom ₹" min="100"></div></div>
+                <div class="form-group"><label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label><div class="bonus-section"><p class="bonus-hint">Increase your budget to attract more taskers and get faster responses!</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="addBonus(50)">+₹50</button><button type="button" class="bonus-btn" onclick="addBonus(100)">+₹100</button><button type="button" class="bonus-btn" onclick="addBonus(200)">+₹200</button><button type="button" class="bonus-btn" onclick="addBonus(500)">+₹500</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">₹500</strong></div></div></div>
+                <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Service Charge</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">₹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row total"><span><strong>You Pay:</strong></span><span><strong id="totalPayable">₹150</strong></span></div><div class="charge-row" style="color:#10b981;font-size:13px;margin-top:5px;"><span>Worker Earns:</span><span><strong id="workerEarns">₹150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity</p></div>
                 <div class="task-info-box"><i class="fas fa-info-circle"></i><div><strong>Task Visibility</strong><p>Your task will be visible to nearby taskers for 12 hours.</p></div></div>
                 <button type="submit" class="btn btn-primary btn-block btn-large"><i class="fas fa-paper-plane"></i> Post Task Now</button>
             </form>
@@ -316,15 +315,52 @@
         </div>
     </div>
 
+    <!-- Account Suspended Modal -->
+    <div class="modal" id="suspendedModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div style="text-align:center; padding: 20px 10px;">
+                <div style="width:64px;height:64px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                    <i class="fas fa-user-slash" style="font-size:28px;color:#ef4444;"></i>
+                </div>
+                <h3 style="margin-bottom:8px;color:#ef4444;">Account Suspended</h3>
+                <p style="color:#64748b;font-size:14px;margin-bottom:12px;" id="suspendedMessage">Your account has been suspended for 48 hours because you released more than 3 tasks today.</p>
+                <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:8px;">
+                    <p style="color:#64748b;font-size:13px;margin:0 0 4px;">Suspension ends at</p>
+                    <p style="color:#1e293b;font-weight:700;font-size:18px;margin:0;" id="suspendedUntilTime">--</p>
+                </div>
+                <div style="background:rgba(239,68,68,0.05);border-radius:8px;padding:10px;margin-bottom:16px;">
+                    <div style="color:#64748b;font-size:12px;">Time Remaining</div>
+                    <div id="suspendedCountdown" style="font-size:22px;font-weight:800;color:#ef4444;font-family:monospace;">00:00:00</div>
+                </div>
+                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">During suspension you cannot accept tasks or withdraw funds.</p>
+                <button class="btn" style="width:100%;background:var(--primary-gradient);color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal('suspendedModal')">I Understand</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Account Unsuspended Modal -->
+    <div class="modal" id="unsuspendedModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div style="text-align:center; padding: 20px 10px;">
+                <div style="width:64px;height:64px;border-radius:50%;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                    <i class="fas fa-check-circle" style="font-size:28px;color:#10b981;"></i>
+                </div>
+                <h3 style="margin-bottom:8px;color:#10b981;">Account Restored!</h3>
+                <p style="color:#64748b;font-size:14px;margin-bottom:16px;">Your suspension has ended. You can now accept tasks and withdraw funds again.</p>
+                <button class="btn" style="width:100%;background:#10b981;color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal('unsuspendedModal')">Great, Let's Go!</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMessage">Action completed successfully!</span></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="api-client.js?v=20260327_suspension_v3"></script>
-    <script src="shared.js?v=20260327_suspension_v3"></script>
-    <script src="razorpay.js?v=20260327_suspension_v3"></script>
-    <script src="app.js?v=20260327_suspension_v3"></script>
+    <script src="api-client.js?v=20260326_penalty"></script>
+    <script src="shared.js?v=20260326_penalty"></script>
+    <script src="razorpay.js?v=20260326_penalty"></script>
+    <script src="app.js?v=20260326_penalty"></script>
 </body>
 </html>

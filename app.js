@@ -542,13 +542,9 @@ async function loadCurrentSessionAsync() {
         }
     }
     
-    // Fallback to IndexedDB only if localStorage had a session pointer
-    // (prevents ghost re-login after logout cleared localStorage)
+    // Fallback to IndexedDB
     if (!session) {
-        const hasToken = !!localStorage.getItem('taskearn_token');
-        if (hasToken) {
-            session = await loadFromIndexedDB(STORAGE_KEYS.CURRENT_USER);
-        }
+        session = await loadFromIndexedDB(STORAGE_KEYS.CURRENT_USER);
     }
     
     if (!session) {
@@ -569,30 +565,56 @@ async function loadCurrentSessionAsync() {
     }
 }
 
+// Sync version for backwards compatibility
+function loadCurrentSession() {
+    if (!STORAGE_AVAILABLE) return null;
+    try {
+        // FIRST: Check for API token session (from backend login)
+        const apiToken = localStorage.getItem('taskearn_token');
+        const apiUserStr = localStorage.getItem('taskearn_user');
+        if (apiToken && apiUserStr) {
+            const apiUser = JSON.parse(apiUserStr);
+            console.log('✅ Found API session for:', apiUser.name || apiUser.email);
+            return apiUser;
+        }
+        
+        // Check local session
+        const session = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+        console.log('🔍 Checking for saved session...');
+        if (session) {
+            const user = JSON.parse(session);
+            // Refresh user data from storage to get latest data
+            const users = getStoredUsers();
+            if (users[user.id]) {
+                console.log('✅ Found saved session for:', users[user.id].name);
+                return users[user.id];
+            } else {
+                console.log('⚠️ Session user not found in storage, clearing session');
+                clearCurrentSession();
+            }
+        } else {
+            console.log('ℹ️ No saved session found');
+        }
+        return null;
+    } catch (e) {
+        console.error('Error loading session:', e);
+        return null;
+    }
+}
+
 // Clear current session (logout only, keeps account data)
 function clearCurrentSession() {
-    // Clear localStorage session keys
+    if (!STORAGE_AVAILABLE) return;
     try {
+        // Clear local session
         localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+        // Clear API session (token + user)
         localStorage.removeItem('taskearn_token');
         localStorage.removeItem('taskearn_user');
-        localStorage.removeItem('taskearn_daily_releases');
-        localStorage.removeItem('currentTask');
+        console.log('✅ Session cleared (account data preserved)');
     } catch (e) {
-        console.error('Error clearing localStorage session:', e);
+        console.error('Error clearing session:', e);
     }
-    
-    // Clear IndexedDB session (prevents ghost re-login)
-    if (db) {
-        try {
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            store.delete(STORAGE_KEYS.CURRENT_USER);
-        } catch (e) {
-            console.error('Error clearing IndexedDB session:', e);
-        }
-    }
-    console.log('✅ Session fully cleared (localStorage + IndexedDB)');
 }
 
 // Validate login with secure password verification
@@ -1634,32 +1656,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                         }
                         console.warn('📢 User needs to re-login to migrate to backend');
                     }, 2000);
-                } else {
-                    // Restore suspension state from server if missing locally
-                    if (!localStorage.getItem('taskearn_suspended_until') && typeof AuthAPI !== 'undefined') {
-                        try {
-                            const meResult = await AuthAPI.getCurrentUser();
-                            if (meResult && meResult.success && meResult.user) {
-                                if (restoreSuspensionFromUser(meResult.user)) {
-                                    console.log('🔒 Suspension restored from server on session restore');
-                                    checkAndClearSuspension();
-                                }
-                                // Also sync wallet balance
-                                if (typeof meResult.user.wallet === 'number') {
-                                    currentUser.wallet = meResult.user.wallet;
-                                }
-                            }
-                        } catch (e) {
-                            console.warn('⚠️ Could not check suspension from server:', e.message);
-                        }
-                    }
                 }
                 
                 setTimeout(() => {
                     try {
                         updateNavForUser();
                         renderDashboard();
-                        checkAndClearSuspension();
                     } catch (e) {
                         console.warn('⚠️ Dashboard render failed:', e.message);
                     }
@@ -2299,7 +2301,7 @@ function renderTasks(filtered = null) {
 }
 
 function onTaskCardClick(taskId) {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find(t => t.id == taskId);
     if (!task) return;
 
     highlightTaskCard(taskId);
@@ -2335,7 +2337,7 @@ function highlightTaskCard(taskId) {
 // ========================================
 
 function openTaskDetail(taskId) {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find(t => t.id == taskId);
     if (!task) {
         console.error('❌ Task not found:', taskId);
         return;
@@ -2505,7 +2507,7 @@ function navigateToTask(lat, lng, taskTitle) {
 }
 
 async function acceptTask(taskId) {
-    console.log('🔄 acceptTask called with taskId:', taskId);
+    console.log('🎯 acceptTask called with taskId:', taskId, 'type:', typeof taskId);
 
     if (!currentUser) {
         showToast('Please login first');
@@ -2516,45 +2518,36 @@ async function acceptTask(taskId) {
 
     // Check if account is suspended
     if (isAccountSuspended()) {
-        showToast('⚠️ Your account is suspended', 'error');
         closeModal('taskDetailModal');
         showSuspendedPopup();
         return;
     }
 
-    // Find task — try both strict and loose equality for id type mismatch
-    var task = tasks.find(t => t.id === taskId) || tasks.find(t => String(t.id) === String(taskId));
+    // Use loose equality (==) to handle number/string ID mismatch
+    const task = tasks.find(t => t.id == taskId);
     if (!task) {
-        console.error('❌ Task not found in local array. taskId:', taskId, 'tasks count:', tasks.length);
-        showToast('❌ Task not found. Try refreshing the page.', 'error');
+        console.error('❌ Task not found in local tasks array. taskId:', taskId, 'Available IDs:', tasks.map(t => t.id));
+        showToast('❌ Task not found. Please refresh and try again.', 'error');
         return;
-    }
-
-    if (typeof TasksAPI === 'undefined' || !TasksAPI.accept) {
-        console.error('❌ TasksAPI not available');
-        showToast('❌ API not available. Please reload the page.', 'error');
-        return;
-    }
-
-    // Show loading state on accept button
-    var acceptBtn = document.querySelector('#taskDetailContent .btn-primary');
-    var originalBtnHtml = '';
-    if (acceptBtn) {
-        originalBtnHtml = acceptBtn.innerHTML;
-        acceptBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accepting...';
-        acceptBtn.disabled = true;
     }
 
     try {
+        console.log('📡 Calling TasksAPI.accept for task:', taskId);
         const data = await TasksAPI.accept(taskId);
-        console.log('📥 acceptTask API response:', data);
-        if (data && data.success) {
+        console.log('📥 Accept API response:', JSON.stringify(data));
+
+        // Check for success: backend may return {success: true} or just a valid HTTP 200 response
+        const isSuccess = data && (data.success === true || (data._httpSuccess && data.success !== false && !data.error));
+
+        if (isSuccess) {
             task.status = 'accepted';
             task.acceptedBy = currentUser;
             task.acceptedAt = new Date().toISOString();
             myAcceptedTasks.push(task);
 
-            try { updateUserData(currentUser.id, { acceptedTasks: serializeTasks(myAcceptedTasks) }); } catch (e) { console.warn('updateUserData failed:', e); }
+            updateUserData(currentUser.id, {
+                acceptedTasks: serializeTasks(myAcceptedTasks)
+            });
 
             const taskLocation = task.location || {};
             localStorage.setItem('currentTask', JSON.stringify({
@@ -2577,48 +2570,23 @@ async function acceptTask(taskId) {
                 startTime: Date.now()
             }));
 
-            try { notifyTaskPoster(task, currentUser); } catch (e) { console.warn('notifyTaskPoster failed:', e); }
+            notifyTaskPoster(task, currentUser);
 
             showToast('✅ Task accepted: ' + task.title);
             closeModal('taskDetailModal');
-            try { clearRoute(); } catch (e) { console.warn('clearRoute failed:', e); }
+            clearRoute();
 
-            // Redirect to task-in-progress page
-            window.location.href = 'task-in-progress.html?taskId=' + task.id;
+            console.log('🚀 Redirecting to task-in-progress.html for task:', task.id);
+            setTimeout(() => {
+                window.location.href = 'task-in-progress.html?taskId=' + task.id + '&v=20260321_map_controls';
+            }, 500);
         } else {
-            // Restore accept button
-            if (acceptBtn) { acceptBtn.innerHTML = originalBtnHtml; acceptBtn.disabled = false; }
-
-            // Check if server rejected due to suspension
-            if (data && data.message && data.message.toLowerCase().includes('suspended')) {
-                showToast('⚠️ Your account is suspended', 'error');
-                closeModal('taskDetailModal');
-                // Restore suspension state from server response or fetch it
-                if (data.suspended_until) {
-                    var untilMs = new Date(data.suspended_until).getTime();
-                    if (untilMs > Date.now()) {
-                        localStorage.setItem('taskearn_suspended_until', untilMs.toString());
-                    }
-                }
-                if (!getSuspensionEndTime() && typeof AuthAPI !== 'undefined') {
-                    try {
-                        const meResult = await AuthAPI.getCurrentUser();
-                        if (meResult && meResult.success && meResult.user) {
-                            restoreSuspensionFromUser(meResult.user);
-                        }
-                    } catch (e) { console.warn('Could not fetch suspension details:', e.message); }
-                }
-                checkAndClearSuspension();
-            } else {
-                var msg = (data && data.message) ? data.message : 'Unknown error';
-                showToast('❌ Failed to accept task: ' + msg, 'error');
-            }
+            console.error('❌ Accept API returned failure:', data);
+            showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');
         }
     } catch (err) {
-        console.error('Error accepting task:', err);
-        // Restore accept button
-        if (acceptBtn) { acceptBtn.innerHTML = originalBtnHtml; acceptBtn.disabled = false; }
-        showToast('❌ Error: ' + (err.message || 'Network error. Check your connection.'), 'error');
+        console.error('❌ Error accepting task:', err);
+        showToast('❌ Error: ' + err.message, 'error');
     }
 }
 
@@ -2627,20 +2595,6 @@ async function acceptTask(taskId) {
 // ========================================
 
 let suspensionTimerInterval = null;
-
-// Restore suspension from a user object (server response).
-// Returns true if suspension was actively restored.
-function restoreSuspensionFromUser(user) {
-    if (!user) return false;
-    if (user.isSuspended && user.suspendedUntil) {
-        var untilMs = new Date(user.suspendedUntil).getTime();
-        if (untilMs > Date.now()) {
-            localStorage.setItem('taskearn_suspended_until', untilMs.toString());
-            return true;
-        }
-    }
-    return false;
-}
 
 function getDailyReleaseCount() {
     const today = new Date().toDateString();
@@ -2669,21 +2623,16 @@ function getSuspensionEndTime() {
 function isAccountSuspended() {
     const until = getSuspensionEndTime();
     if (!until) return false;
-    return Date.now() < until;
+    if (Date.now() < until) return true;
+    // Suspension just expired — clear and notify
+    clearSuspension(true);
+    return false;
 }
 
 function clearSuspension(showPopup) {
     localStorage.removeItem('taskearn_suspended_until');
     stopSuspensionTimer();
     hideSuspensionBanner();
-
-    // Sync clearance to backend
-    if (typeof UserAPI !== 'undefined' && UserAPI.suspend) {
-        UserAPI.suspend(null, null).catch(e => {
-            console.warn('Could not sync suspension clearance to server:', e.message);
-        });
-    }
-
     if (showPopup) {
         showUnsuspendedPopup();
         addNotification({
@@ -2698,14 +2647,6 @@ function suspendAccount() {
     const until = Date.now() + 48 * 60 * 60 * 1000;
     localStorage.setItem('taskearn_suspended_until', until.toString());
 
-    // Sync suspension to backend
-    const untilISO = new Date(until).toISOString();
-    if (typeof UserAPI !== 'undefined' && UserAPI.suspend) {
-        UserAPI.suspend(untilISO, 'Released too many tasks today').catch(e => {
-            console.warn('Could not sync suspension to server:', e.message);
-        });
-    }
-
     showSuspendedPopup();
     startSuspensionTimer();
 
@@ -2717,21 +2658,17 @@ function suspendAccount() {
 }
 
 function showSuspendedPopup() {
-    ensureSuspensionElements();
     const until = getSuspensionEndTime();
+    if (!until) return;
+    const timeStr = new Date(until).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+    const remaining = formatCountdown(until - Date.now());
+
     const msgEl = document.getElementById('suspendedMessage');
     const timeEl = document.getElementById('suspendedUntilTime');
     const countdownEl = document.getElementById('suspendedCountdown');
     if (msgEl) msgEl.textContent = 'Your account has been suspended for 48 hours because you released more than 3 tasks today.';
-    if (until) {
-        const timeStr = new Date(until).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-        const remaining = formatCountdown(until - Date.now());
-        if (timeEl) timeEl.textContent = timeStr;
-        if (countdownEl) countdownEl.textContent = remaining;
-    } else {
-        if (timeEl) timeEl.textContent = 'Pending...';
-        if (countdownEl) countdownEl.textContent = '--:--:--';
-    }
+    if (timeEl) timeEl.textContent = timeStr;
+    if (countdownEl) countdownEl.textContent = remaining;
     openModal('suspendedModal');
 }
 
@@ -2755,13 +2692,10 @@ function formatCountdown(ms) {
 
 function startSuspensionTimer() {
     stopSuspensionTimer();
-    // Capture the end time once — don't re-read localStorage each tick
-    // This prevents premature clearing if localStorage is wiped by another code path
-    var cachedUntil = getSuspensionEndTime();
-    if (!cachedUntil || Date.now() >= cachedUntil) return;
     updateSuspensionDisplay();
     suspensionTimerInterval = setInterval(function() {
-        if (Date.now() >= cachedUntil) {
+        const until = getSuspensionEndTime();
+        if (!until || Date.now() >= until) {
             clearSuspension(true);
             renderDashboard();
             return;
@@ -2801,100 +2735,22 @@ function hideSuspensionBanner() {
     if (banner) banner.style.display = 'none';
 }
 
-// Ensure suspension HTML elements exist in the DOM (banner + modals).
-// Called once before any suspension operations — eliminates need for
-// hardcoding suspension HTML in every page.
-function ensureSuspensionElements() {
-    // Suspension banner — inject after the page header area if missing
-    if (!document.getElementById('suspensionBanner')) {
-        var target = document.querySelector('.task-page-content .container .task-page-header') ||
-                     document.querySelector('#my-tasks .container .section-header') ||
-                     document.querySelector('#find-tasks .container .section-header') ||
-                     document.querySelector('.profile-stats-row') ||
-                     document.querySelector('.container .section-header');
-        if (target) {
-            var banner = document.createElement('div');
-            banner.id = 'suspensionBanner';
-            banner.style.cssText = 'display:none;background:linear-gradient(135deg,#fef2f2,#fee2e2);border:1px solid #fca5a5;border-radius:14px;padding:16px 20px;margin-bottom:20px;text-align:center;';
-            banner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;">' +
-                '<i class="fas fa-user-slash" style="font-size:20px;color:#ef4444;"></i>' +
-                '<span style="font-weight:700;color:#ef4444;font-size:16px;">Account Suspended</span>' +
-                '</div>' +
-                '<p style="color:#64748b;font-size:13px;margin:0 0 12px;">You cannot accept tasks or withdraw funds during suspension.</p>' +
-                '<div style="background:rgba(239,68,68,0.1);border-radius:10px;padding:12px;display:inline-block;">' +
-                '<div style="color:#64748b;font-size:12px;margin-bottom:4px;">Time Remaining</div>' +
-                '<div id="suspensionBannerTimer" style="font-size:28px;font-weight:800;color:#ef4444;font-family:monospace;letter-spacing:2px;">00:00:00</div>' +
-                '</div>';
-            target.parentNode.insertBefore(banner, target.nextSibling);
-        }
-    }
-    // Suspended modal
-    if (!document.getElementById('suspendedModal')) {
-        var modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.id = 'suspendedModal';
-        modal.innerHTML = '<div class="modal-content" style="max-width:400px;">' +
-            '<div style="text-align:center;padding:20px 10px;">' +
-            '<div style="width:64px;height:64px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
-            '<i class="fas fa-user-slash" style="font-size:28px;color:#ef4444;"></i></div>' +
-            '<h3 style="margin-bottom:8px;color:#ef4444;">Account Suspended</h3>' +
-            '<p style="color:#64748b;font-size:14px;margin-bottom:12px;" id="suspendedMessage">Your account has been suspended for 48 hours because you released more than 3 tasks today.</p>' +
-            '<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:8px;">' +
-            '<p style="color:#64748b;font-size:13px;margin:0 0 4px;">Suspension ends at</p>' +
-            '<p style="color:#1e293b;font-weight:700;font-size:18px;margin:0;" id="suspendedUntilTime">--</p></div>' +
-            '<div style="background:rgba(239,68,68,0.05);border-radius:8px;padding:10px;margin-bottom:16px;">' +
-            '<div style="color:#64748b;font-size:12px;">Time Remaining</div>' +
-            '<div id="suspendedCountdown" style="font-size:22px;font-weight:800;color:#ef4444;font-family:monospace;">00:00:00</div></div>' +
-            '<p style="color:#64748b;font-size:13px;margin-bottom:16px;">During suspension you cannot accept tasks or withdraw funds.</p>' +
-            '<button class="btn" style="width:100%;background:var(--primary-gradient);color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal(\'suspendedModal\')">I Understand</button>' +
-            '</div></div>';
-        modal.addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('active'); document.body.style.overflow = ''; } });
-        document.body.appendChild(modal);
-    }
-    // Unsuspended modal
-    if (!document.getElementById('unsuspendedModal')) {
-        var modal2 = document.createElement('div');
-        modal2.className = 'modal';
-        modal2.id = 'unsuspendedModal';
-        modal2.innerHTML = '<div class="modal-content" style="max-width:400px;">' +
-            '<div style="text-align:center;padding:20px 10px;">' +
-            '<div style="width:64px;height:64px;border-radius:50%;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
-            '<i class="fas fa-check-circle" style="font-size:28px;color:#10b981;"></i></div>' +
-            '<h3 style="margin-bottom:8px;color:#10b981;">Account Restored!</h3>' +
-            '<p style="color:#64748b;font-size:14px;margin-bottom:16px;">Your suspension has ended. You can now accept tasks and withdraw funds again.</p>' +
-            '<button class="btn" style="width:100%;background:#10b981;color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal(\'unsuspendedModal\')">Great, Let\'s Go!</button>' +
-            '</div></div>';
-        modal2.addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('active'); document.body.style.overflow = ''; } });
-        document.body.appendChild(modal2);
-    }
-}
-
 function checkAndClearSuspension() {
-    ensureSuspensionElements();
     const until = getSuspensionEndTime();
     if (!until) return;
     if (Date.now() >= until) {
         clearSuspension(true);
     } else {
         startSuspensionTimer();
-        showSuspendedPopup();
     }
 }
 
 async function deductPenalty(taskValue) {
     const penalty = Math.round(taskValue * 0.10);
     try {
-        // Use penalty endpoint (allows negative balance) with fallback to pay
-        const hasPenaltyAPI = (typeof WalletAPI !== 'undefined' && WalletAPI.penalty);
-        const result = hasPenaltyAPI
-            ? await WalletAPI.penalty(penalty, null, 'Task release penalty (10%)')
-            : await WalletAPI.pay(penalty, null, 'Task release penalty (10%)');
+        const result = await WalletAPI.pay(penalty, null, 'Task release penalty (10%)');
         if (result && result.success) {
-            console.log('✅ Penalty deducted:', penalty, 'New balance:', result.newBalance);
-            if (typeof result.newBalance === 'number') {
-                currentUser.wallet = result.newBalance;
-                await updateUserData(currentUser.id, { wallet: result.newBalance });
-            }
+            console.log('✅ Penalty deducted:', penalty);
         } else {
             console.warn('Penalty API failed, updating locally:', result?.message);
             const newBalance = (currentUser.wallet || 0) - penalty;
@@ -3049,9 +2905,9 @@ let editTaskState = {
 
 function openEditTask(taskId) {
     // Search in both tasks array and myPostedTasks
-    let task = tasks.find(t => t.id === taskId);
+    let task = tasks.find(t => t.id == taskId);
     if (!task) {
-        task = myPostedTasks.find(t => t.id === taskId);
+        task = myPostedTasks.find(t => t.id == taskId);
     }
     
     if (!task) {
@@ -3133,9 +2989,9 @@ async function saveTaskEdit(event) {
     const taskId = parseInt(document.getElementById('editTaskId').value);
     
     // Search in both arrays
-    let task = tasks.find(t => t.id === taskId);
+    let task = tasks.find(t => t.id == taskId);
     if (!task) {
-        task = myPostedTasks.find(t => t.id === taskId);
+        task = myPostedTasks.find(t => t.id == taskId);
     }
     
     if (!task || !currentUser) {
@@ -3162,7 +3018,7 @@ async function saveTaskEdit(event) {
     }
     
     // Update in main tasks array
-    const mainTask = tasks.find(t => t.id === taskId);
+    const mainTask = tasks.find(t => t.id == taskId);
     if (mainTask) {
         mainTask.title = newTitle;
         mainTask.category = newCategory;
@@ -3172,7 +3028,7 @@ async function saveTaskEdit(event) {
     }
     
     // Update in myPostedTasks array
-    const postedTask = myPostedTasks.find(t => t.id === taskId);
+    const postedTask = myPostedTasks.find(t => t.id == taskId);
     if (postedTask) {
         postedTask.title = newTitle;
         postedTask.category = newCategory;
@@ -3473,7 +3329,7 @@ async function showPaymentInvoice(taskId) {
         try {
             const userTasksResult = await UserAPI.getTasks();
             if (userTasksResult && userTasksResult.success && userTasksResult.postedTasks) {
-                const dbTask = userTasksResult.postedTasks.find(t => t.id === taskId);
+                const dbTask = userTasksResult.postedTasks.find(t => t.id == taskId);
                 if (dbTask) {
                     // Update local task with real DB status
                     task.status = dbTask.status;
@@ -3928,9 +3784,6 @@ async function handleLogin(event) {
                 myAcceptedTasks = result.acceptedTasks || [];
                 myCompletedTasks = result.completedTasks || [];
                 
-                // Restore suspension state from server
-                restoreSuspensionFromUser(currentUser);
-                
                 // ✅ CRITICAL FIX: Also restore tasks from local storage if not provided by API
                 const allUsers = await getStoredUsersAsync();
                 if (currentUser && allUsers[currentUser.id]) {
@@ -3980,11 +3833,7 @@ async function handleLogin(event) {
                 const tasksLoaded = await loadTasksFromServer();
                 
                 // Render dashboard after tasks are fully loaded
-                setTimeout(() => {
-                    renderDashboard();
-                    // Show suspension popup and timer if account is suspended
-                    checkAndClearSuspension();
-                }, 100);
+                setTimeout(() => renderDashboard(), 100);
                 
                 return;
             } else {
@@ -4312,12 +4161,6 @@ function loadProfilePage() {
                 if (!currentUser.totalEarnings && localEarnings) currentUser.totalEarnings = localEarnings;
                 if (!currentUser.tasksCompleted && localCompleted) currentUser.tasksCompleted = localCompleted;
                 saveUserToStorage(currentUser);
-                
-                // Restore suspension from server if missing locally
-                if (!localStorage.getItem('taskearn_suspended_until')) {
-                    restoreSuspensionFromUser(result.user);
-                }
-                
                 renderProfileUI();
             }
         }).catch(function() { /* use cached data */ });
@@ -4387,17 +4230,10 @@ function renderProfileUI() {
     if (fid) fid.textContent = currentUser.id || '—';
 
     // Suspension banner
-    ensureSuspensionElements();
     if (isAccountSuspended()) {
         startSuspensionTimer();
     } else {
-        // Check if suspension just expired (localStorage still has value but it's past)
-        var suspEnd = getSuspensionEndTime();
-        if (suspEnd && Date.now() >= suspEnd) {
-            clearSuspension(true);
-        } else {
-            hideSuspensionBanner();
-        }
+        hideSuspensionBanner();
     }
 }
 
@@ -4619,25 +4455,33 @@ async function saveNewPassword() {
 })();
 
 function logout() {
-    // Call backend logout to invalidate token
-    if (typeof AuthAPI !== 'undefined' && AuthAPI.logout) {
-        AuthAPI.logout().catch(() => {});
-    }
-    
-    // Stop any running timers and clear suspension state (user-specific)
-    stopSuspensionTimer();
-    localStorage.removeItem('taskearn_suspended_until');
-    
     clearCurrentSession();
     currentUser = null;
-    tasks = [];
+    tasks = [];  // ✅ FIX: Clear all tasks to prevent showing previous account's data
     myPostedTasks = [];
     myAcceptedTasks = [];
     myCompletedTasks = [];
     notifications = [];
 
-    // Redirect to landing page for clean state
-    window.location.href = 'index.html';
+    const nav = document.querySelector('.nav-buttons');
+    if (nav) {
+        nav.innerHTML = `
+            <button class="btn btn-outline" onclick="openModal('loginModal')">Login</button>
+            <button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button>
+        `;
+    }
+    
+    // Hide notification bell
+    const notificationWrapper = document.getElementById('notificationWrapper');
+    const mobileNotificationItem = document.getElementById('mobileNotificationItem');
+    if (notificationWrapper) notificationWrapper.style.display = 'none';
+    if (mobileNotificationItem) mobileNotificationItem.style.display = 'none';
+    const mobileWalletItem = document.getElementById('mobileWalletItem');
+    if (mobileWalletItem) mobileWalletItem.style.display = 'none';
+    
+    updateAuthenticationStatus(); // Update auth status
+    renderDashboard();
+    showToast('Logged out successfully');
 }
 
 // Alias for handleLogout
@@ -4687,13 +4531,6 @@ function renderDashboard() {
     
     // Check if helper has any recently paid tasks to show pop-up
     setTimeout(() => checkAndShowPaymentReceived(), 500);
-
-    // Ensure suspension banner is visible after every render
-    ensureSuspensionElements();
-    if (isAccountSuspended()) {
-        updateSuspensionDisplay();
-        if (!suspensionTimerInterval) startSuspensionTimer();
-    }
 }
 
 function renderPostedTasks() {

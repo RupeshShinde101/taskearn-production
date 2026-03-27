@@ -1035,26 +1035,30 @@ def accept_task(task_id):
     """Accept a task"""
     try:
         # Server-side suspension check before opening main transaction
-        cursor_user = None
-        with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT suspended_until FROM users WHERE id = {PH}', (request.user_id,))
-            cursor_user = cursor.fetchone()
-        
-        if cursor_user:
-            user_dict = dict_from_row(cursor_user) if not isinstance(cursor_user, dict) else cursor_user
-            sus_until = user_dict.get('suspended_until')
-            if sus_until:
-                try:
-                    if isinstance(sus_until, str):
-                        sus_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
-                    else:
-                        sus_dt = sus_until
-                    if sus_dt.tzinfo is None:
-                        sus_dt = sus_dt.replace(tzinfo=datetime.timezone.utc)
-                    if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
-                        return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
-                except:
-                    pass
+        # Server-side suspension check (fail-safe if columns missing)
+        try:
+            cursor_user = None
+            with get_db() as (cursor, conn):
+                cursor.execute(f'SELECT suspended_until FROM users WHERE id = {PH}', (request.user_id,))
+                cursor_user = cursor.fetchone()
+            
+            if cursor_user:
+                user_dict = dict_from_row(cursor_user) if not isinstance(cursor_user, dict) else cursor_user
+                sus_until = user_dict.get('suspended_until')
+                if sus_until:
+                    try:
+                        if isinstance(sus_until, str):
+                            sus_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
+                        else:
+                            sus_dt = sus_until
+                        if sus_dt.tzinfo is None:
+                            sus_dt = sus_dt.replace(tzinfo=datetime.timezone.utc)
+                        if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
+                            return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
+                    except:
+                        pass
+        except Exception as sus_err:
+            print(f"⚠️ Suspension check failed (column may be missing): {sus_err}")
         
         # Check debt suspension
         wallet = get_or_create_wallet(request.user_id)
@@ -1112,40 +1116,44 @@ def abandon_task(task_id):
                 WHERE id = {PH}
             ''', (task_id,))
 
-        # Record release and check daily limit (separate transaction)
+        # Record release and check daily limit (separate transaction, fail-safe)
         today = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
         suspended = False
         suspended_until_iso = None
         daily_count = 0
 
-        with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT daily_releases, daily_release_date FROM users WHERE id = {PH}', (request.user_id,))
-            row = cursor.fetchone()
-            if row:
-                row_dict = dict_from_row(row) if not isinstance(row, dict) else row
-                current_count = int(row_dict.get('daily_releases', 0) or 0)
-                release_date = row_dict.get('daily_release_date', '')
-                if release_date != today:
-                    current_count = 0
-                daily_count = current_count + 1
+        try:
+            with get_db() as (cursor, conn):
+                cursor.execute(f'SELECT daily_releases, daily_release_date FROM users WHERE id = {PH}', (request.user_id,))
+                row = cursor.fetchone()
+                if row:
+                    row_dict = dict_from_row(row) if not isinstance(row, dict) else row
+                    current_count = int(row_dict.get('daily_releases', 0) or 0)
+                    release_date = row_dict.get('daily_release_date', '')
+                    if release_date != today:
+                        current_count = 0
+                    daily_count = current_count + 1
 
-                if daily_count > 3:
-                    until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48)
-                    suspended_until_iso = until.isoformat()
-                    cursor.execute(f'''
-                        UPDATE users SET daily_releases = {PH}, daily_release_date = {PH},
-                            suspended_until = {PH}, is_suspended = {PH}, suspension_reason = {PH},
-                            suspended_at = {PH}
-                        WHERE id = {PH}
-                    ''', (daily_count, today, suspended_until_iso, True, 'Too many task releases',
-                          datetime.datetime.now(datetime.timezone.utc).isoformat(), request.user_id))
-                    suspended = True
-                    print(f"⚠️ User {request.user_id} suspended until {suspended_until_iso} (released {daily_count} tasks today)")
-                else:
-                    cursor.execute(f'''
-                        UPDATE users SET daily_releases = {PH}, daily_release_date = {PH}
-                        WHERE id = {PH}
-                    ''', (daily_count, today, request.user_id))
+                    if daily_count > 3:
+                        until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48)
+                        suspended_until_iso = until.isoformat()
+                        cursor.execute(f'''
+                            UPDATE users SET daily_releases = {PH}, daily_release_date = {PH},
+                                suspended_until = {PH}, is_suspended = {PH}, suspension_reason = {PH},
+                                suspended_at = {PH}
+                            WHERE id = {PH}
+                        ''', (daily_count, today, suspended_until_iso, True, 'Too many task releases',
+                              datetime.datetime.now(datetime.timezone.utc).isoformat(), request.user_id))
+                        suspended = True
+                        print(f"⚠️ User {request.user_id} suspended until {suspended_until_iso} (released {daily_count} tasks today)")
+                    else:
+                        cursor.execute(f'''
+                            UPDATE users SET daily_releases = {PH}, daily_release_date = {PH}
+                            WHERE id = {PH}
+                        ''', (daily_count, today, request.user_id))
+        except Exception as release_err:
+            print(f"⚠️ Release counting failed (columns may be missing): {release_err}")
+            # Task was already reverted — don't fail the whole operation
 
         print(f"✅ Task {task_id} abandoned by user {request.user_id} — release #{daily_count} today")
         return jsonify({

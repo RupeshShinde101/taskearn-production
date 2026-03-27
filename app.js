@@ -1659,6 +1659,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     try {
                         updateNavForUser();
                         renderDashboard();
+                        checkAndClearSuspension();
                     } catch (e) {
                         console.warn('⚠️ Dashboard render failed:', e.message);
                     }
@@ -4658,6 +4659,13 @@ function renderDashboard() {
     
     // Check if helper has any recently paid tasks to show pop-up
     setTimeout(() => checkAndShowPaymentReceived(), 500);
+
+    // Ensure suspension banner is visible after every render
+    ensureSuspensionElements();
+    if (isAccountSuspended()) {
+        updateSuspensionDisplay();
+        if (!suspensionTimerInterval) startSuspensionTimer();
+    }
 }
 
 function renderPostedTasks() {

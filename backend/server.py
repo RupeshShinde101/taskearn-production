@@ -1089,31 +1089,34 @@ def create_task():
 def accept_task(task_id):
     """Accept a task"""
     try:
+        # Server-side suspension check before opening main transaction
+        cursor_user = None
         with get_db() as (cursor, conn):
-            # Server-side suspension check — blocks acceptance even if client cache is stale
-            cursor.execute(f'SELECT suspended_until, is_suspended FROM users WHERE id = {PH}', (request.user_id,))
-            user_row = cursor.fetchone()
-            if user_row:
-                user_dict = dict_from_row(user_row) if not isinstance(user_row, dict) else user_row
-                # Check timer suspension
-                sus_until = user_dict.get('suspended_until')
-                if sus_until:
-                    try:
-                        if isinstance(sus_until, str):
-                            sus_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
-                        else:
-                            sus_dt = sus_until
-                        if sus_dt.tzinfo is None:
-                            sus_dt = sus_dt.replace(tzinfo=datetime.timezone.utc)
-                        if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
-                            return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
-                    except:
-                        pass
-                # Check debt suspension
-                wallet = get_or_create_wallet(request.user_id)
-                if float(wallet.get('balance', 0)) <= -500:
-                    return jsonify({'success': False, 'message': 'Your wallet balance is below -₹500. Add money to restore task acceptance.'}), 403
+            cursor.execute(f'SELECT suspended_until FROM users WHERE id = {PH}', (request.user_id,))
+            cursor_user = cursor.fetchone()
+        
+        if cursor_user:
+            user_dict = dict_from_row(cursor_user) if not isinstance(cursor_user, dict) else cursor_user
+            sus_until = user_dict.get('suspended_until')
+            if sus_until:
+                try:
+                    if isinstance(sus_until, str):
+                        sus_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
+                    else:
+                        sus_dt = sus_until
+                    if sus_dt.tzinfo is None:
+                        sus_dt = sus_dt.replace(tzinfo=datetime.timezone.utc)
+                    if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
+                        return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
+                except:
+                    pass
+        
+        # Check debt suspension
+        wallet = get_or_create_wallet(request.user_id)
+        if float(wallet.get('balance', 0)) <= -500:
+            return jsonify({'success': False, 'message': 'Your wallet balance is below -₹500. Add money to restore task acceptance.'}), 403
 
+        with get_db() as (cursor, conn):
             # Check if task exists and is active
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
             task = cursor.fetchone()

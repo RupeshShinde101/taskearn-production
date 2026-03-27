@@ -79,8 +79,7 @@ let userLocation = { lat: 28.6139, lng: 77.2090 };
 
 const STORAGE_KEYS = {
     USERS: 'taskearn_users',
-    CURRENT_USER: 'taskearn_current_user',
-    USER_TASKS: 'taskearn_user_tasks'
+    CURRENT_USER: 'taskearn_current_user'
 };
 
 // IndexedDB for more reliable storage
@@ -622,6 +621,13 @@ function loadCurrentSession() {
 function clearCurrentSession() {
     if (!STORAGE_AVAILABLE) return;
     try {
+        // Get user ID before clearing for per-user key cleanup
+        let userId = null;
+        try {
+            const userData = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+            if (userData) userId = JSON.parse(userData).id;
+        } catch (e) {}
+
         // Clear auth keys
         localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
         localStorage.removeItem('taskearn_token');
@@ -630,6 +636,11 @@ function clearCurrentSession() {
         localStorage.removeItem('taskearn_suspended_until');
         localStorage.removeItem('taskearn_debt_suspended');
         localStorage.removeItem('taskearn_debt_amount');
+        // Clear per-user keys
+        if (userId) {
+            localStorage.removeItem(`notifications_${userId}`);
+            localStorage.removeItem(`payment_shown_${userId}`);
+        }
         // Clear IndexedDB session
         deleteFromIndexedDB(STORAGE_KEYS.CURRENT_USER);
         console.log('✅ Session fully cleared');
@@ -2582,19 +2593,14 @@ async function acceptTask(taskId) {
         const data = await TasksAPI.accept(taskId);
         console.log('📥 Accept API response:', JSON.stringify(data));
 
-        // Check for success: backend may return {success: true} or just a valid HTTP 200 response
-        const isSuccess = data && (data.success === true || (data._httpSuccess && data.success !== false && !data.error));
-
-        if (isSuccess) {
+        // Check for success
+        if (data && (data.success === true || data._httpSuccess === true)) {
             task.status = 'accepted';
             task.acceptedBy = currentUser;
             task.acceptedAt = new Date().toISOString();
             myAcceptedTasks.push(task);
 
-            updateUserData(currentUser.id, {
-                acceptedTasks: serializeTasks(myAcceptedTasks)
-            });
-
+            // Save task data for task-in-progress page
             const taskLocation = task.location || {};
             localStorage.setItem('currentTask', JSON.stringify({
                 id: task.id,
@@ -2616,19 +2622,24 @@ async function acceptTask(taskId) {
                 startTime: Date.now()
             }));
 
-            notifyTaskPoster(task, currentUser);
+            // Non-blocking updates (must not prevent redirect)
+            try {
+                updateUserData(currentUser.id, {
+                    acceptedTasks: serializeTasks(myAcceptedTasks)
+                }).catch(e => console.warn('updateUserData failed:', e));
+                notifyTaskPoster(task, currentUser);
+                closeModal('taskDetailModal');
+                clearRoute();
+            } catch (e) {
+                console.warn('Non-critical post-accept update failed:', e);
+            }
 
-            showToast('✅ Task accepted: ' + task.title);
-            closeModal('taskDetailModal');
-            clearRoute();
-
+            // Redirect to task-in-progress page
             console.log('🚀 Redirecting to task-in-progress.html for task:', task.id);
-            setTimeout(() => {
-                window.location.href = 'task-in-progress.html?taskId=' + task.id + '&v=20260321_map_controls';
-            }, 500);
+            window.location.href = 'task-in-progress.html?taskId=' + task.id;
         } else {
             console.error('❌ Accept API returned failure:', data);
-            showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');
+            showToast('❌ ' + (data.message || 'Failed to accept task'), 'error');
         }
     } catch (err) {
         console.error('❌ Error accepting task:', err);

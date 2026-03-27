@@ -3487,6 +3487,7 @@ section {
     transform: scale(1.15);
 }
 .profile-name-section {
+    padding-top: 52px;
     padding-bottom: 4px;
     min-width: 0;
 }
@@ -3692,6 +3693,7 @@ section {
         gap: 12px;
     }
     .profile-avatar-img { width: 84px; height: 84px; }
+    .profile-name-section { padding-top: 0; }
     .profile-name-section h1 { font-size: 20px; }
     .profile-stats-row {
         grid-template-columns: repeat(2, 1fr);

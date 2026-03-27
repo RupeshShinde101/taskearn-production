@@ -66,7 +66,7 @@
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    FRONTEND (Netlify)                   │
-│  workmate4u.netlify.app / workmate4u.com                │
+│  www.workmate4u.com / workmate4u.com                │
 ├─────────────────────────────────────────────────────────┤
 │ HTML Pages:                                             │
 │ • index.html - Main app (task browsing)                │
@@ -388,7 +388,7 @@ Redirect to wallet.html (success page)
 ## 📱 Deployed URLs
 
 ### Production
-- **Frontend:** https://workmate4u.com / workmate4u.netlify.app
+- **Frontend:** https://workmate4u.com / www.workmate4u.com
 - **Backend:** https://taskearn-production-production.up.railway.app
 - **API Docs:** https://taskearn-production-production.up.railway.app/api
 

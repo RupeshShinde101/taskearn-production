@@ -15,7 +15,7 @@ function isMobileDevice() {
 // Detect if we're on Netlify (production frontend)
 function isNetlifyDeployed() {
     const hostname = window.location.hostname;
-    const isNetlify = hostname.includes('netlify.app') || hostname.includes('taskearn');
+    const isNetlify = hostname.includes('netlify.app') || hostname.includes('workmate4u') || hostname.includes('taskearn');
     console.log('🌍 Current hostname:', hostname);
     console.log('☁️ Detected as Netlify:', isNetlify ? '✅ YES' : '❌ NO');
     return isNetlify;

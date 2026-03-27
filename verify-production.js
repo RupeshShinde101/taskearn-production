@@ -10,8 +10,8 @@ console.log('🚀 Workmate4u Production Deployment Check\n');
 // ========================================
 console.log('1️⃣  FRONTEND URL:');
 console.log(`   Current: ${window.location.href}`);
-console.log(`   Netlify: https://workmate4u.netlify.app`);
-console.log(`   Status: ${window.location.hostname.includes('netlify') || window.location.hostname === 'workmate4u.netlify.app' ? '✅ LIVE' : '⚠️ LOCAL'}\n`);
+console.log(`   Netlify: https://www.workmate4u.com`);
+console.log(`   Status: ${window.location.hostname.includes('netlify') || window.location.hostname === 'www.workmate4u.com' ? '✅ LIVE' : '⚠️ LOCAL'}\n`);
 
 // ========================================
 // 2. Check Backend API URL
@@ -79,7 +79,7 @@ console.log(`   ✅ Payments: Razorpay Live Mode`);
 console.log(`   ⏳ Socket.IO: Checking...\n`);
 
 console.log('🔗 Key URLs:');
-console.log('   Frontend: https://workmate4u.netlify.app');
+console.log('   Frontend: https://www.workmate4u.com');
 console.log('   Backend:  https://taskearn-production-production.up.railway.app');
 console.log('   GitHub:   https://github.com/RupeshShinde101/taskearn-production\n');
 

@@ -262,7 +262,7 @@ function showNotification(message, type = 'info', duration = 5000) {
 // Initialize IndexedDB on load
 initIndexedDB().then(dbAvailable => {
     if (!STORAGE_AVAILABLE && !dbAvailable) {
-        alert('⚠️ Warning: Your browser cannot save data. Please:\n\n1. Use https://taskearn.netlify.app (not file://)\n2. Disable private/incognito mode\n3. Allow cookies and site data\n\nYour account will NOT be saved!');
+        alert('⚠️ Warning: Your browser cannot save data. Please:\n\n1. Use https://www.workmate4u.com (not file://)\n2. Disable private/incognito mode\n3. Allow cookies and site data\n\nYour account will NOT be saved!');
     }
 });
 

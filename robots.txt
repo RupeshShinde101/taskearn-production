@@ -1,5 +1,5 @@
 # Workmate4u - Robots.txt
-# https://workmate4u.netlify.app
+# https://www.workmate4u.com
 
 User-agent: *
 Allow: /
@@ -46,4 +46,4 @@ Disallow: /*.json$
 Disallow: /*.toml$
 
 # Sitemap
-Sitemap: https://workmate4u.netlify.app/sitemap.xml
+Sitemap: https://www.workmate4u.com/sitemap.xml

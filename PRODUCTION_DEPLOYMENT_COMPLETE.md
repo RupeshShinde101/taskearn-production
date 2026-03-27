@@ -11,7 +11,7 @@
 ## 📍 Production URLs
 
 ### Frontend
-- **Main App:** https://workmate4u.netlify.app
+- **Main App:** https://www.workmate4u.com
 - **Status:** ✅ LIVE (Netlify)
 - **Auto-Deploy:** Yes (on every git push)
 
@@ -63,7 +63,7 @@ git push origin main
 ### 3. Verify Production
 ```bash
 # Option A: Use Browser Console
-# Visit: https://workmate4u.netlify.app
+# Visit: https://www.workmate4u.com
 # Open DevTools (F12) → Console
 # You should see: "✅ Production deployment script loaded successfully!"
 
@@ -92,7 +92,7 @@ git push origin main
 ```
 
 ### Issue 2: Netlify Frontend Not Updating
-**Symptoms:** Old code still showing on https://workmate4u.netlify.app
+**Symptoms:** Old code still showing on https://www.workmate4u.com
 
 **Solution:**
 ```bash
@@ -136,7 +136,7 @@ Phone: 9876543210
 ```
 
 ### Test Task Workflow
-1. **Register & Login** on https://workmate4u.netlify.app
+1. **Register & Login** on https://www.workmate4u.com
 2. **Switch to Helper Tab** → Click "+ Post Task"
 3. **Create a Sample Task:**
    - Title: "Test Delivery"
@@ -250,7 +250,7 @@ When you're ready to scale:
 
 1. ✅ Push latest code: `git push origin main`
 2. ✅ Wait 2-3 minutes for Railway deployment
-3. ✅ Verify on production: https://workmate4u.netlify.app
+3. ✅ Verify on production: https://www.workmate4u.com
 4. ✅ Test complete workflow end-to-end
 5. ✅ Monitor logs for any errors
 
@@ -266,4 +266,4 @@ When you're ready to scale:
 - ✅ Real-time Chat (Socket.IO)
 - ✅ Voice Calling (WebRTC)
 
-**Start using:** https://workmate4u.netlify.app
+**Start using:** https://www.workmate4u.com

@@ -12,7 +12,7 @@
 
 | Service | URL | Status |
 |---------|-----|--------|
-| **Frontend App** | https://workmate4u.netlify.app | ✅ LIVE |
+| **Frontend App** | https://www.workmate4u.com | ✅ LIVE |
 | **Backend API** | https://taskearn-production-production.up.railway.app | ✅ LIVE |
 | **Health Check** | https://taskearn-production-production.up.railway.app/api/health | ✅ LIVE |
 | **Database** | PostgreSQL on Railway | ✅ ACTIVE |
@@ -162,7 +162,7 @@
 
 | Link | Purpose |
 |------|---------|
-| https://workmate4u.netlify.app | **Main App** - Start here! |
+| https://www.workmate4u.com | **Main App** - Start here! |
 | https://taskearn-production-production.up.railway.app | Backend Server |
 | https://railway.app | Backend Dashboard |
 | https://app.netlify.com | Frontend Dashboard |
@@ -174,7 +174,7 @@
 ## 🧪 Testing Production System
 
 ### Test Task Workflow
-1. Open: https://workmate4u.netlify.app
+1. Open: https://www.workmate4u.com
 2. Register with email and phone
 3. Create a task with amount ₹100
 4. Accept task (use different browser)
@@ -228,7 +228,7 @@
 
 ## 🚀 Next Steps for Users
 
-1. **Access the App:** https://workmate4u.netlify.app
+1. **Access the App:** https://www.workmate4u.com
 2. **Create Account:** Register with email and phone
 3. **Choose Role:** Helper or Task Poster
 4. **Start Using:** Post tasks or find tasks to do
@@ -300,7 +300,7 @@ Your TaskEarn platform is now **LIVE ON PRODUCTION** with:
 - ✅ 24/7 uptime
 
 **Ready for Users:**
-- ✅ Share the link: https://workmate4u.netlify.app
+- ✅ Share the link: https://www.workmate4u.com
 - ✅ Users can start earning immediately
 - ✅ All money is real (no simulation)
 - ✅ All features are working
@@ -309,4 +309,4 @@ Your TaskEarn platform is now **LIVE ON PRODUCTION** with:
 
 **Start sharing with users now! 🚀**
 
-**App Link:** https://workmate4u.netlify.app
+**App Link:** https://www.workmate4u.com

@@ -25,7 +25,7 @@
 
 ### Frontend (Netlify)
 ```
-URL: https://workmate4u.netlify.app
+URL: https://www.workmate4u.com
 Status: ✅ LIVE & ACCESSIBLE WORLDWIDE
 Features:
   - Automatic deployment on git push
@@ -144,7 +144,7 @@ ddfc9c8 ← Add production live documentation - System ready for users
         ↓
 11. Netlify deploys to CDN
         ↓
-12. Frontend live on https://workmate4u.netlify.app
+12. Frontend live on https://www.workmate4u.com
         ↓
 13. Users access live app
         ↓
@@ -159,7 +159,7 @@ ddfc9c8 ← Add production live documentation - System ready for users
 
 **Step 1: Access App**
 ```
-Go to: https://workmate4u.netlify.app
+Go to: https://www.workmate4u.com
 ```
 
 **Step 2: Create Account**
@@ -218,7 +218,7 @@ Total time to production: 5 minutes max
 
 **Step 6: Verify on Production**
 ```
-Frontend: https://workmate4u.netlify.app
+Frontend: https://www.workmate4u.com
 Backend: https://taskearn-production-production.up.railway.app/api/health
 ```
 
@@ -356,7 +356,7 @@ Backend: https://taskearn-production-production.up.railway.app/api/health
 
 ### Next Steps:
 
-1. **Share the App:** https://workmate4u.netlify.app
+1. **Share the App:** https://www.workmate4u.com
 2. **Invite Users:** Ask friends/family to test
 3. **Monitor Logs:** Check Railway/Netlify dashboards
 4. **Gather Feedback:** See what users love/need
@@ -381,7 +381,7 @@ Your **TaskEarn Platform** is now:
 
 **App URL:**
 ```
-https://workmate4u.netlify.app
+https://www.workmate4u.com
 ```
 
 **Backend API:**

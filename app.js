@@ -576,7 +576,6 @@ function clearCurrentSession() {
         localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
         localStorage.removeItem('taskearn_token');
         localStorage.removeItem('taskearn_user');
-        localStorage.removeItem('taskearn_suspended_until');
         localStorage.removeItem('taskearn_daily_releases');
         localStorage.removeItem('currentTask');
     } catch (e) {
@@ -2570,7 +2569,7 @@ async function acceptTask(taskId) {
                 closeModal('taskDetailModal');
                 // Restore suspension state from server response or fetch it
                 if (data.suspended_until) {
-                    const untilMs = new Date(data.suspended_until).getTime();
+                    var untilMs = new Date(data.suspended_until).getTime();
                     if (untilMs > Date.now()) {
                         localStorage.setItem('taskearn_suspended_until', untilMs.toString());
                     }
@@ -2583,8 +2582,7 @@ async function acceptTask(taskId) {
                         }
                     } catch (e) { console.warn('Could not fetch suspension details:', e.message); }
                 }
-                showSuspendedPopup();
-                startSuspensionTimer();
+                checkAndClearSuspension();
             } else {
                 showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');
             }
@@ -2642,10 +2640,7 @@ function getSuspensionEndTime() {
 function isAccountSuspended() {
     const until = getSuspensionEndTime();
     if (!until) return false;
-    if (Date.now() < until) return true;
-    // Suspension just expired — clear and notify
-    clearSuspension(true);
-    return false;
+    return Date.now() < until;
 }
 
 function clearSuspension(showPopup) {
@@ -2730,10 +2725,13 @@ function formatCountdown(ms) {
 
 function startSuspensionTimer() {
     stopSuspensionTimer();
+    // Capture the end time once — don't re-read localStorage each tick
+    // This prevents premature clearing if localStorage is wiped by another code path
+    var cachedUntil = getSuspensionEndTime();
+    if (!cachedUntil || Date.now() >= cachedUntil) return;
     updateSuspensionDisplay();
     suspensionTimerInterval = setInterval(function() {
-        const until = getSuspensionEndTime();
-        if (!until || Date.now() >= until) {
+        if (Date.now() >= cachedUntil) {
             clearSuspension(true);
             renderDashboard();
             return;
@@ -4293,7 +4291,13 @@ function renderProfileUI() {
     if (isAccountSuspended()) {
         startSuspensionTimer();
     } else {
-        hideSuspensionBanner();
+        // Check if suspension just expired (localStorage still has value but it's past)
+        var suspEnd = getSuspensionEndTime();
+        if (suspEnd && Date.now() >= suspEnd) {
+            clearSuspension(true);
+        } else {
+            hideSuspensionBanner();
+        }
     }
 }
 
@@ -4520,8 +4524,9 @@ function logout() {
         AuthAPI.logout().catch(() => {});
     }
     
-    // Stop any running timers
+    // Stop any running timers and clear suspension state (user-specific)
     stopSuspensionTimer();
+    localStorage.removeItem('taskearn_suspended_until');
     
     clearCurrentSession();
     currentUser = null;

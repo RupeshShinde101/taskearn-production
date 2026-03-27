@@ -4679,6 +4679,9 @@ function formatCategory(cat) {
 function openModal(id) {
     document.getElementById(id)?.classList.add('active');
     document.body.style.overflow = 'hidden';
+    if (id === 'postTaskModal') {
+        resetBonusOnModalOpen();
+    }
 }
 
 function closeModal(id) {

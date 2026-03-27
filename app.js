@@ -2780,6 +2780,7 @@ function checkAndClearSuspension() {
         clearSuspension(true);
     } else {
         startSuspensionTimer();
+        showSuspendedPopup();
     }
 }
 

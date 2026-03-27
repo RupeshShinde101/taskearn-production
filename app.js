@@ -1671,8 +1671,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                     try {
                         updateNavForUser();
                         renderDashboard();
-                        // Sync debt suspension status from server
-                        syncDebtSuspensionFromServer();
+                        // Sync suspension status from server (both timer + debt)
+                        syncSuspensionFromServer();
                     } catch (e) {
                         console.warn('⚠️ Dashboard render failed:', e.message);
                     }
@@ -2611,44 +2611,45 @@ async function acceptTask(taskId) {
 
 let suspensionTimerInterval = null;
 
-function getDailyReleaseCount() {
-    const today = new Date().toDateString();
-    const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
-    if (data.date !== today) return 0;
-    return data.count || 0;
-}
-
-function incrementDailyReleaseCount() {
-    const today = new Date().toDateString();
-    const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
-    if (data.date !== today) {
-        localStorage.setItem('taskearn_daily_releases', JSON.stringify({ date: today, count: 1 }));
-        return 1;
-    }
-    data.count = (data.count || 0) + 1;
-    localStorage.setItem('taskearn_daily_releases', JSON.stringify(data));
-    return data.count;
-}
+// ========================================
+// SUSPENSION SYSTEM (server-driven, synced across devices)
+// ========================================
 
 function getSuspensionEndTime() {
+    // Read from localStorage cache (synced from server)
     const until = localStorage.getItem('taskearn_suspended_until');
     return until ? parseInt(until) : 0;
 }
 
-function isAccountSuspended() {
-    // Check timer-based suspension (48hr for too many releases)
+function isTimerSuspended() {
     const until = getSuspensionEndTime();
-    if (until) {
-        if (Date.now() < until) return true;
-        clearSuspension(true);
-    }
-    // Check debt-based suspension (negative wallet balance)
-    if (isDebtSuspended()) return true;
+    if (!until) return false;
+    if (Date.now() < until) return true;
+    // Expired — clear cache
+    localStorage.removeItem('taskearn_suspended_until');
     return false;
 }
 
 function isDebtSuspended() {
     return localStorage.getItem('taskearn_debt_suspended') === 'true';
+}
+
+function isAccountSuspended() {
+    if (isTimerSuspended()) return true;
+    if (isDebtSuspended()) return true;
+    return false;
+}
+
+function setTimerSuspension(suspendedUntilISO) {
+    // Cache server suspension time as ms timestamp
+    const ms = new Date(suspendedUntilISO).getTime();
+    if (ms > Date.now()) {
+        localStorage.setItem('taskearn_suspended_until', ms.toString());
+    }
+}
+
+function clearTimerSuspension() {
+    localStorage.removeItem('taskearn_suspended_until');
 }
 
 function setDebtSuspension(amount) {
@@ -2680,7 +2681,7 @@ function showDebtSuspendedPopup() {
 }
 
 function clearSuspension(showPopup) {
-    localStorage.removeItem('taskearn_suspended_until');
+    clearTimerSuspension();
     stopSuspensionTimer();
     hideSuspensionBanner();
     if (showPopup) {
@@ -2691,20 +2692,6 @@ function clearSuspension(showPopup) {
             type: 'success'
         });
     }
-}
-
-function suspendAccount() {
-    const until = Date.now() + 48 * 60 * 60 * 1000;
-    localStorage.setItem('taskearn_suspended_until', until.toString());
-
-    showSuspendedPopup();
-    startSuspensionTimer();
-
-    addNotification({
-        title: 'Account Suspended',
-        message: 'You released too many tasks today. Your account is suspended for 48 hours. You cannot accept tasks or withdraw funds.',
-        type: 'error'
-    });
 }
 
 function showSuspendedPopup() {
@@ -2767,15 +2754,12 @@ function updateSuspensionDisplay() {
     const remaining = until - Date.now();
     const formatted = formatCountdown(remaining);
 
-    // Update profile banner timer
     const bannerTimer = document.getElementById('suspensionBannerTimer');
     if (bannerTimer) bannerTimer.textContent = formatted;
 
-    // Update modal countdown
     const modalCountdown = document.getElementById('suspendedCountdown');
     if (modalCountdown) modalCountdown.textContent = formatted;
 
-    // Show banner if it exists
     const banner = document.getElementById('suspensionBanner');
     if (banner) banner.style.display = 'block';
 }
@@ -2795,22 +2779,59 @@ function checkAndClearSuspension() {
     }
 }
 
-async function syncDebtSuspensionFromServer() {
+function applySuspensionFromUser(userData) {
+    // Sync timer suspension from server response
+    if (userData.timerSuspended && userData.suspendedUntil) {
+        setTimerSuspension(userData.suspendedUntil);
+        startSuspensionTimer();
+    } else {
+        clearTimerSuspension();
+        stopSuspensionTimer();
+        hideSuspensionBanner();
+    }
+    // Sync debt suspension from server response
+    if (userData.debtSuspended) {
+        setDebtSuspension(userData.debtAmount || 0);
+    } else {
+        clearDebtSuspension();
+    }
+}
+
+async function syncSuspensionFromServer() {
     try {
         if (typeof AuthAPI === 'undefined' || !AuthAPI.me) return;
         const result = await AuthAPI.me();
         if (result && result.success && result.user) {
-            if (result.user.debtSuspended) {
-                setDebtSuspension(result.user.debtAmount || 0);
-                console.log('⚠️ Debt suspension synced from server. Amount:', result.user.debtAmount);
-            } else if (isDebtSuspended()) {
-                clearDebtSuspension();
-                console.log('✅ Debt suspension cleared from server sync');
-            }
+            applySuspensionFromUser(result.user);
+            console.log('✅ Suspension synced from server. Timer:', result.user.timerSuspended, 'Debt:', result.user.debtSuspended);
         }
     } catch (e) {
-        console.warn('⚠️ Could not sync debt suspension:', e.message);
+        console.warn('⚠️ Could not sync suspension from server:', e.message);
     }
+}
+
+async function recordTaskRelease() {
+    // Record release on server — server handles daily count and auto-suspension
+    try {
+        if (typeof UserAPI === 'undefined' || !UserAPI.recordRelease) return null;
+        const result = await UserAPI.recordRelease();
+        if (result && result.success) {
+            if (result.suspended && result.suspendedUntil) {
+                setTimerSuspension(result.suspendedUntil);
+                showSuspendedPopup();
+                startSuspensionTimer();
+                addNotification({
+                    title: 'Account Suspended',
+                    message: 'You released too many tasks today. Your account is suspended for 48 hours.',
+                    type: 'error'
+                });
+            }
+            return result;
+        }
+    } catch (e) {
+        console.warn('⚠️ Could not record release on server:', e.message);
+    }
+    return null;
 }
 
 async function deductPenalty(task) {
@@ -2892,13 +2913,10 @@ async function penaltyConfirmRelease() {
     });
     tasks = tasks.filter(t => t.id != taskId);
 
-    const dailyCount = incrementDailyReleaseCount();
-    if (dailyCount > 3) {
-        suspendAccount();
-    }
+    // Record release on server (handles daily count + auto-suspension)
+    await recordTaskRelease();
 
-    showToast('✅ Task released. ₹' + penalty + ' penalty deducted from wallet.');
-    pendingReleaseTaskId = null;
+    showToast('✅ Task released. ₹' + penalty + ' penalty deducted from wallet.'); pendingReleaseTaskId = null;
     renderDashboard();
 }
 
@@ -2929,7 +2947,7 @@ async function abandonTask(taskId) {
     const penalty = Math.round(taskValue * 0.10);
     const currentBalance = currentUser.wallet || 0;
     const walletAfter = currentBalance - penalty;
-    const dailyCount = getDailyReleaseCount();
+    const dailyCount = (currentUser && currentUser.dailyReleaseCount) || 0;
 
     const taskValEl = document.getElementById('penaltyTaskValue');
     const penaltyEl = document.getElementById('penaltyAmount');
@@ -3906,6 +3924,9 @@ async function handleLogin(event) {
                 });
                 
                 showToast('✅ Welcome back, ' + currentUser.name);
+                
+                // Sync suspension state from server login response
+                applySuspensionFromUser(currentUser);
                 
                 // Check wallet balance and show warning if low
                 if (currentUser.walletLow) {

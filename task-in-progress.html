@@ -780,29 +780,17 @@
             return charges[category] || 50;
         }
 
-        // Helper: shared suspension utilities (same localStorage as app.js)
-        function getDailyReleaseCount() {
-            const today = new Date().toDateString();
-            const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
-            if (data.date !== today) return 0;
-            return data.count || 0;
-        }
-        function incrementDailyReleaseCount() {
-            const today = new Date().toDateString();
-            const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
-            if (data.date !== today) {
-                localStorage.setItem('taskearn_daily_releases', JSON.stringify({ date: today, count: 1 }));
-                return 1;
-            }
-            data.count = (data.count || 0) + 1;
-            localStorage.setItem('taskearn_daily_releases', JSON.stringify(data));
-            return data.count;
-        }
+        // Helper: shared suspension utilities (reads localStorage cache synced from server)
         function isAccountSuspended() {
-            const until = localStorage.getItem('taskearn_suspended_until');
-            if (until && Date.now() < parseInt(until)) return true;
-            if (until && Date.now() >= parseInt(until)) localStorage.removeItem('taskearn_suspended_until');
+            if (isTimerSuspended()) return true;
             if (isDebtSuspended()) return true;
+            return false;
+        }
+        function isTimerSuspended() {
+            const until = localStorage.getItem('taskearn_suspended_until');
+            if (!until) return false;
+            if (Date.now() < parseInt(until)) return true;
+            localStorage.removeItem('taskearn_suspended_until');
             return false;
         }
         function isDebtSuspended() {
@@ -810,15 +798,6 @@
         }
         function getDebtAmount() {
             return parseFloat(localStorage.getItem('taskearn_debt_amount') || '0');
-        }
-        function setDebtSuspension(amount) {
-            localStorage.setItem('taskearn_debt_suspended', 'true');
-            localStorage.setItem('taskearn_debt_amount', String(amount || 0));
-        }
-        function suspendAccount() {
-            const until = Date.now() + 48 * 60 * 60 * 1000;
-            localStorage.setItem('taskearn_suspended_until', until.toString());
-            showSuspendedOverlay();
         }
         function formatCountdown(ms) {
             if (ms <= 0) return '00:00:00';
@@ -861,7 +840,6 @@
             const helperData = user ? JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}') : {};
             const balance = parseFloat(helperData.wallet || 0);
             const walletAfter = balance - penalty;
-            const dailyCount = getDailyReleaseCount();
 
             document.getElementById('tipTaskValue').textContent = '₹' + taskValue;
             document.getElementById('tipPenalty').textContent = '-₹' + penalty;
@@ -870,9 +848,12 @@
             afterEl.style.color = walletAfter < 0 ? '#ef4444' : '#10b981';
 
             const warnEl = document.getElementById('tipDailyWarning');
-            if (dailyCount >= 2) {
+            // Daily count is now tracked server-side; fetch from cached user data
+            const cachedUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
+            const serverDailyCount = cachedUser ? (cachedUser.dailyReleaseCount || 0) : 0;
+            if (serverDailyCount >= 2) {
                 warnEl.style.display = 'block';
-                document.getElementById('tipDailyCount').textContent = dailyCount;
+                document.getElementById('tipDailyCount').textContent = serverDailyCount;
             } else {
                 warnEl.style.display = 'none';
             }
@@ -900,7 +881,9 @@
                     });
                     const penaltyResult = await penaltyRes.json();
                     if (penaltyResult && penaltyResult.debtSuspended) {
-                        setDebtSuspension(penaltyResult.debtAmount || Math.abs(penaltyResult.newBalance || 0));
+                        // Cache debt suspension in localStorage
+                        localStorage.setItem('taskearn_debt_suspended', 'true');
+                        localStorage.setItem('taskearn_debt_amount', String(penaltyResult.debtAmount || Math.abs(penaltyResult.newBalance || 0)));
                     }
                 } catch (e) {
                     console.warn('Penalty API failed, deducting locally:', e.message);
@@ -939,9 +922,21 @@
                 }
             }
 
-            const dailyCount = incrementDailyReleaseCount();
-            if (dailyCount > 3) {
-                suspendAccount();
+            // Record release on server (tracks daily count + auto-suspends if > 3)
+            try {
+                const releaseToken = localStorage.getItem('taskearn_token') || '';
+                if (releaseToken) {
+                    const releaseRes = await fetch(API_URL + '/user/record-release', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + releaseToken }
+                    });
+                    const releaseResult = await releaseRes.json();
+                    if (releaseResult.suspended && releaseResult.suspendedUntil) {
+                        localStorage.setItem('taskearn_suspended_until', String(new Date(releaseResult.suspendedUntil).getTime()));
+                    }
+                }
+            } catch (e) {
+                console.warn('Record release failed:', e.message);
             }
 
             clearInterval(timerInterval);

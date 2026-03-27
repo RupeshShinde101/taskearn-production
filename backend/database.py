@@ -403,6 +403,17 @@ def init_postgres_db():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS helper_level VARCHAR(20) DEFAULT 'bronze'
         ''')
         
+        # Suspension timer columns (server-side suspension sync across devices)
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_until TIMESTAMP
+        ''')
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_releases INTEGER DEFAULT 0
+        ''')
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_release_date VARCHAR(20)
+        ''')
+        
         # Ensure service_charge column exists in tasks table (migration)
         print("[DB] Adding service_charge column to tasks table if missing...")
         try:
@@ -782,6 +793,23 @@ def init_sqlite_db():
         
         # SQLite migrations - add missing columns to existing tables
         print("[DB] Applying SQLite migrations...")
+        
+        # Users table: add suspension timer columns
+        try:
+            cursor.execute('PRAGMA table_info(users)')
+            user_columns = [row[1] for row in cursor.fetchall()]
+            if 'suspended_until' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN suspended_until TEXT')
+                print("[DB] ✅ suspended_until column added")
+            if 'daily_releases' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN daily_releases INTEGER DEFAULT 0')
+                print("[DB] ✅ daily_releases column added")
+            if 'daily_release_date' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN daily_release_date TEXT')
+                print("[DB] ✅ daily_release_date column added")
+        except Exception as e:
+            print(f"[DB] ⚠️  User column migration error: {e}")
+        
         try:
             cursor.execute('PRAGMA table_info(tasks)')
             columns = [row[1] for row in cursor.fetchall()]

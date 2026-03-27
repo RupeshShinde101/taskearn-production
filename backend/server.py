@@ -210,6 +210,41 @@ def user_to_response(user):
     wallet_low = wallet_balance < 100
     debt_suspended = wallet_balance < 0
     
+    # Check timer suspension (auto-clear if expired)
+    suspended_until = user.get('suspended_until')
+    timer_suspended = False
+    suspended_until_iso = None
+    if suspended_until:
+        if isinstance(suspended_until, str):
+            try:
+                suspended_until_dt = datetime.datetime.fromisoformat(suspended_until.replace('Z', '+00:00'))
+            except:
+                suspended_until_dt = None
+        else:
+            suspended_until_dt = suspended_until
+        
+        if suspended_until_dt:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            if suspended_until_dt.tzinfo is None:
+                suspended_until_dt = suspended_until_dt.replace(tzinfo=datetime.timezone.utc)
+            if now < suspended_until_dt:
+                timer_suspended = True
+                suspended_until_iso = suspended_until_dt.isoformat()
+            else:
+                # Auto-clear expired timer suspension
+                try:
+                    with get_db() as (cursor, conn):
+                        cursor.execute(f'UPDATE users SET suspended_until = NULL WHERE id = {PH}', (user['id'],))
+                except:
+                    pass
+    
+    # Daily release count
+    daily_release_count = int(user.get('daily_releases', 0) or 0)
+    daily_release_date = user.get('daily_release_date', '')
+    today = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
+    if daily_release_date != today:
+        daily_release_count = 0
+    
     return {
         'id': user['id'],
         'name': user['name'],
@@ -227,7 +262,10 @@ def user_to_response(user):
         'walletLow': wallet_low,
         'walletWarning': 'Please top up your wallet (below ₹100)' if wallet_low else None,
         'debtSuspended': debt_suspended,
-        'debtAmount': abs(wallet_balance) if debt_suspended else 0
+        'debtAmount': abs(wallet_balance) if debt_suspended else 0,
+        'timerSuspended': timer_suspended,
+        'suspendedUntil': suspended_until_iso,
+        'dailyReleaseCount': daily_release_count
     }
 
 
@@ -515,6 +553,61 @@ def logout():
         cursor.execute(f'UPDATE users SET session_token = NULL WHERE id = {PH}', (request.user_id,))
     
     return jsonify({'success': True, 'message': 'Logged out successfully'})
+
+
+# ========================================
+# API ROUTES - SUSPENSION (server-side)
+# ========================================
+
+@app.route('/api/user/record-release', methods=['POST'])
+@require_auth
+def record_task_release():
+    """Record a task release and auto-suspend if daily limit exceeded"""
+    today = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
+    
+    with get_db() as (cursor, conn):
+        # Get current daily release data
+        cursor.execute(f'SELECT daily_releases, daily_release_date, suspended_until FROM users WHERE id = {PH}', (request.user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+        
+        row_dict = dict_from_row(row) if not isinstance(row, dict) else row
+        current_count = int(row_dict.get('daily_releases', 0) or 0)
+        release_date = row_dict.get('daily_release_date', '')
+        
+        # Reset count if new day
+        if release_date != today:
+            current_count = 0
+        
+        new_count = current_count + 1
+        suspended = False
+        suspended_until_iso = None
+        
+        if new_count > 3:
+            # Suspend for 48 hours
+            until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48)
+            suspended_until_iso = until.isoformat()
+            cursor.execute(f'''
+                UPDATE users SET daily_releases = {PH}, daily_release_date = {PH},
+                    suspended_until = {PH}, is_suspended = {PH}, suspension_reason = {PH},
+                    suspended_at = {PH}
+                WHERE id = {PH}
+            ''', (new_count, today, suspended_until_iso, True, 'Too many task releases', datetime.datetime.now(datetime.timezone.utc).isoformat(), request.user_id))
+            suspended = True
+            print(f"⚠️ User {request.user_id} suspended until {suspended_until_iso} (released {new_count} tasks today)")
+        else:
+            cursor.execute(f'''
+                UPDATE users SET daily_releases = {PH}, daily_release_date = {PH}
+                WHERE id = {PH}
+            ''', (new_count, today, request.user_id))
+    
+    return jsonify({
+        'success': True,
+        'dailyReleaseCount': new_count,
+        'suspended': suspended,
+        'suspendedUntil': suspended_until_iso
+    })
 
 
 # ========================================

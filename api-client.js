@@ -532,6 +532,14 @@ const UserAPI = {
             method: 'GET'
         });
         return result.data;
+    },
+    
+    // Record a task release (server tracks daily count + auto-suspends)
+    async recordRelease() {
+        const result = await apiRequest('/user/record-release', {
+            method: 'POST'
+        });
+        return result.data;
     }
 };
 

@@ -1641,12 +1641,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                         try {
                             const meResult = await AuthAPI.getCurrentUser();
                             if (meResult && meResult.success && meResult.user) {
-                                if (meResult.user.isSuspended && meResult.user.suspendedUntil) {
-                                    const untilMs = new Date(meResult.user.suspendedUntil).getTime();
-                                    if (untilMs > Date.now()) {
-                                        localStorage.setItem('taskearn_suspended_until', untilMs.toString());
-                                        console.log('🔒 Suspension restored from server on session restore');
-                                    }
+                                if (restoreSuspensionFromUser(meResult.user)) {
+                                    console.log('🔒 Suspension restored from server on session restore');
+                                    checkAndClearSuspension();
                                 }
                                 // Also sync wallet balance
                                 if (typeof meResult.user.wallet === 'number') {
@@ -2571,14 +2568,23 @@ async function acceptTask(taskId) {
             // Check if server rejected due to suspension
             if (data.message && data.message.toLowerCase().includes('suspended')) {
                 closeModal('taskDetailModal');
-                // Restore suspension state from server
-                if (currentUser && currentUser.suspendedUntil) {
-                    const untilMs = new Date(currentUser.suspendedUntil).getTime();
+                // Restore suspension state from server response or fetch it
+                if (data.suspended_until) {
+                    const untilMs = new Date(data.suspended_until).getTime();
                     if (untilMs > Date.now()) {
                         localStorage.setItem('taskearn_suspended_until', untilMs.toString());
                     }
                 }
+                if (!getSuspensionEndTime() && typeof AuthAPI !== 'undefined') {
+                    try {
+                        const meResult = await AuthAPI.getCurrentUser();
+                        if (meResult && meResult.success && meResult.user) {
+                            restoreSuspensionFromUser(meResult.user);
+                        }
+                    } catch (e) { console.warn('Could not fetch suspension details:', e.message); }
+                }
                 showSuspendedPopup();
+                startSuspensionTimer();
             } else {
                 showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');
             }
@@ -2594,6 +2600,20 @@ async function acceptTask(taskId) {
 // ========================================
 
 let suspensionTimerInterval = null;
+
+// Restore suspension from a user object (server response).
+// Returns true if suspension was actively restored.
+function restoreSuspensionFromUser(user) {
+    if (!user) return false;
+    if (user.isSuspended && user.suspendedUntil) {
+        var untilMs = new Date(user.suspendedUntil).getTime();
+        if (untilMs > Date.now()) {
+            localStorage.setItem('taskearn_suspended_until', untilMs.toString());
+            return true;
+        }
+    }
+    return false;
+}
 
 function getDailyReleaseCount() {
     const today = new Date().toDateString();
@@ -2674,16 +2694,19 @@ function suspendAccount() {
 
 function showSuspendedPopup() {
     const until = getSuspensionEndTime();
-    if (!until) return;
-    const timeStr = new Date(until).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-    const remaining = formatCountdown(until - Date.now());
-
     const msgEl = document.getElementById('suspendedMessage');
     const timeEl = document.getElementById('suspendedUntilTime');
     const countdownEl = document.getElementById('suspendedCountdown');
     if (msgEl) msgEl.textContent = 'Your account has been suspended for 48 hours because you released more than 3 tasks today.';
-    if (timeEl) timeEl.textContent = timeStr;
-    if (countdownEl) countdownEl.textContent = remaining;
+    if (until) {
+        const timeStr = new Date(until).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+        const remaining = formatCountdown(until - Date.now());
+        if (timeEl) timeEl.textContent = timeStr;
+        if (countdownEl) countdownEl.textContent = remaining;
+    } else {
+        if (timeEl) timeEl.textContent = 'Pending...';
+        if (countdownEl) countdownEl.textContent = '--:--:--';
+    }
     openModal('suspendedModal');
 }
 
@@ -3808,13 +3831,7 @@ async function handleLogin(event) {
                 myCompletedTasks = result.completedTasks || [];
                 
                 // Restore suspension state from server
-                if (currentUser.isSuspended && currentUser.suspendedUntil) {
-                    const untilMs = new Date(currentUser.suspendedUntil).getTime();
-                    if (untilMs > Date.now()) {
-                        localStorage.setItem('taskearn_suspended_until', untilMs.toString());
-                        console.log('🔒 Suspension restored from server, until:', new Date(untilMs).toLocaleString());
-                    }
-                }
+                restoreSuspensionFromUser(currentUser);
                 
                 // ✅ CRITICAL FIX: Also restore tasks from local storage if not provided by API
                 const allUsers = await getStoredUsersAsync();
@@ -4199,11 +4216,8 @@ function loadProfilePage() {
                 saveUserToStorage(currentUser);
                 
                 // Restore suspension from server if missing locally
-                if (result.user.isSuspended && result.user.suspendedUntil) {
-                    var untilMs = new Date(result.user.suspendedUntil).getTime();
-                    if (untilMs > Date.now() && !localStorage.getItem('taskearn_suspended_until')) {
-                        localStorage.setItem('taskearn_suspended_until', untilMs.toString());
-                    }
+                if (!localStorage.getItem('taskearn_suspended_until')) {
+                    restoreSuspensionFromUser(result.user);
                 }
                 
                 renderProfileUI();

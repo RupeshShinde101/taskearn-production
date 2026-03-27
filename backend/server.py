@@ -969,7 +969,7 @@ def accept_task(task_id):
                     try:
                         until_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
                         if until_dt > datetime.datetime.now(datetime.timezone.utc):
-                            return jsonify({'success': False, 'message': 'Your account is suspended. You cannot accept tasks until the suspension ends.'}), 403
+                            return jsonify({'success': False, 'message': 'Your account is suspended. You cannot accept tasks until the suspension ends.', 'suspended_until': sus_until}), 403
                     except Exception:
                         pass
             

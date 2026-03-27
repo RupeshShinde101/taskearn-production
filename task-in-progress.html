@@ -593,6 +593,23 @@
         </div>
     </div>
 
+    <!-- Debt Suspended Modal -->
+    <div id="debtSuspendedOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10001;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:16px;max-width:380px;width:90%;padding:24px;text-align:center;">
+            <div style="width:56px;height:56px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+                <i class="fas fa-exclamation-triangle" style="font-size:24px;color:#ef4444;"></i>
+            </div>
+            <h3 style="color:#ef4444;margin-bottom:8px;">Account Debt Suspended</h3>
+            <p style="color:#64748b;font-size:14px;margin-bottom:10px;">Your wallet balance is negative. Add money to clear your debt and restore your account.</p>
+            <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:14px;">
+                <p style="color:#64748b;font-size:12px;margin:0 0 4px;">Amount Owed</p>
+                <p style="color:#ef4444;font-weight:800;font-size:22px;margin:0;" id="tipDebtAmount">₹0</p>
+            </div>
+            <button onclick="window.location.href='index.html#wallet'" style="width:100%;background:#6C63FF;color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;margin-bottom:8px;">Add Money Now</button>
+            <button onclick="document.getElementById('debtSuspendedOverlay').style.display='none'" style="width:100%;background:#f1f5f9;color:#64748b;padding:10px;border-radius:10px;font-weight:600;border:none;cursor:pointer;">Close</button>
+        </div>
+    </div>
+
     <script>
         // Global variables
         let currentTask = {
@@ -783,10 +800,20 @@
         }
         function isAccountSuspended() {
             const until = localStorage.getItem('taskearn_suspended_until');
-            if (!until) return false;
-            if (Date.now() < parseInt(until)) return true;
-            localStorage.removeItem('taskearn_suspended_until');
+            if (until && Date.now() < parseInt(until)) return true;
+            if (until && Date.now() >= parseInt(until)) localStorage.removeItem('taskearn_suspended_until');
+            if (isDebtSuspended()) return true;
             return false;
+        }
+        function isDebtSuspended() {
+            return localStorage.getItem('taskearn_debt_suspended') === 'true';
+        }
+        function getDebtAmount() {
+            return parseFloat(localStorage.getItem('taskearn_debt_amount') || '0');
+        }
+        function setDebtSuspension(amount) {
+            localStorage.setItem('taskearn_debt_suspended', 'true');
+            localStorage.setItem('taskearn_debt_amount', String(amount || 0));
         }
         function suspendAccount() {
             const until = Date.now() + 48 * 60 * 60 * 1000;
@@ -806,6 +833,11 @@
             document.getElementById('tipSuspendCountdown').textContent = countdown;
             document.getElementById('suspendedOverlay').style.display = 'flex';
         }
+        function showDebtSuspendedOverlay() {
+            const amount = getDebtAmount();
+            document.getElementById('tipDebtAmount').textContent = '₹' + amount.toFixed(2);
+            document.getElementById('debtSuspendedOverlay').style.display = 'flex';
+        }
 
         function closePenaltyModal() {
             document.getElementById('releasePenaltyOverlay').style.display = 'none';
@@ -813,7 +845,11 @@
 
         function goBack() {
             if (isAccountSuspended()) {
-                showSuspendedOverlay();
+                if (isDebtSuspended()) {
+                    showDebtSuspendedOverlay();
+                } else {
+                    showSuspendedOverlay();
+                }
                 return;
             }
 
@@ -857,11 +893,15 @@
             // Use dedicated penalty endpoint that allows negative balance
             if (token) {
                 try {
-                    await fetch(API_URL + '/wallet/penalty', {
+                    const penaltyRes = await fetch(API_URL + '/wallet/penalty', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                         body: JSON.stringify({ amount: penalty, taskId: taskId, description: 'Task release penalty (10% of ₹' + taskValue + ')' })
                     });
+                    const penaltyResult = await penaltyRes.json();
+                    if (penaltyResult && penaltyResult.debtSuspended) {
+                        setDebtSuspension(penaltyResult.debtAmount || Math.abs(penaltyResult.newBalance || 0));
+                    }
                 } catch (e) {
                     console.warn('Penalty API failed, deducting locally:', e.message);
                 }

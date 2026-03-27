@@ -1569,6 +1569,15 @@ async function refreshWalletBalance() {
                     wallet: walletData.balance
                 });
                 
+                // Check debt suspension status
+                if (walletData.balance >= 0 && isDebtSuspended()) {
+                    clearDebtSuspension();
+                    console.log('✅ Debt cleared! Wallet balance >= 0');
+                    showToast('🎉 Your debt has been cleared! Account restored.', 'success');
+                } else if (walletData.balance < 0) {
+                    setDebtSuspension(Math.abs(walletData.balance));
+                }
+                
                 // Update UI if wallet display exists
                 const walletDisplay = document.querySelector('[data-wallet-balance]');
                 if (walletDisplay) {
@@ -1662,6 +1671,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                     try {
                         updateNavForUser();
                         renderDashboard();
+                        // Sync debt suspension status from server
+                        syncDebtSuspensionFromServer();
                     } catch (e) {
                         console.warn('⚠️ Dashboard render failed:', e.message);
                     }
@@ -2519,7 +2530,11 @@ async function acceptTask(taskId) {
     // Check if account is suspended
     if (isAccountSuspended()) {
         closeModal('taskDetailModal');
-        showSuspendedPopup();
+        if (isDebtSuspended()) {
+            showDebtSuspendedPopup();
+        } else {
+            showSuspendedPopup();
+        }
         return;
     }
 
@@ -2621,12 +2636,47 @@ function getSuspensionEndTime() {
 }
 
 function isAccountSuspended() {
+    // Check timer-based suspension (48hr for too many releases)
     const until = getSuspensionEndTime();
-    if (!until) return false;
-    if (Date.now() < until) return true;
-    // Suspension just expired — clear and notify
-    clearSuspension(true);
+    if (until) {
+        if (Date.now() < until) return true;
+        clearSuspension(true);
+    }
+    // Check debt-based suspension (negative wallet balance)
+    if (isDebtSuspended()) return true;
     return false;
+}
+
+function isDebtSuspended() {
+    return localStorage.getItem('taskearn_debt_suspended') === 'true';
+}
+
+function setDebtSuspension(amount) {
+    localStorage.setItem('taskearn_debt_suspended', 'true');
+    localStorage.setItem('taskearn_debt_amount', String(amount || 0));
+}
+
+function clearDebtSuspension() {
+    localStorage.removeItem('taskearn_debt_suspended');
+    localStorage.removeItem('taskearn_debt_amount');
+}
+
+function getDebtAmount() {
+    return parseFloat(localStorage.getItem('taskearn_debt_amount') || '0');
+}
+
+function showDebtSuspendedPopup() {
+    const amount = getDebtAmount();
+    const msgEl = document.getElementById('debtSuspendedMessage');
+    const amountEl = document.getElementById('debtSuspendedAmount');
+    if (msgEl) msgEl.textContent = 'Your wallet balance is negative. You cannot accept tasks or withdraw funds until you clear your debt.';
+    if (amountEl) amountEl.textContent = '₹' + amount.toFixed(2);
+    const modal = document.getElementById('debtSuspendedModal');
+    if (modal) {
+        openModal('debtSuspendedModal');
+    } else {
+        showToast('⚠️ Your account is debt-suspended. Add money to clear ₹' + amount.toFixed(2) + ' debt.', 'error');
+    }
 }
 
 function clearSuspension(showPopup) {
@@ -2745,6 +2795,24 @@ function checkAndClearSuspension() {
     }
 }
 
+async function syncDebtSuspensionFromServer() {
+    try {
+        if (typeof AuthAPI === 'undefined' || !AuthAPI.me) return;
+        const result = await AuthAPI.me();
+        if (result && result.success && result.user) {
+            if (result.user.debtSuspended) {
+                setDebtSuspension(result.user.debtAmount || 0);
+                console.log('⚠️ Debt suspension synced from server. Amount:', result.user.debtAmount);
+            } else if (isDebtSuspended()) {
+                clearDebtSuspension();
+                console.log('✅ Debt suspension cleared from server sync');
+            }
+        }
+    } catch (e) {
+        console.warn('⚠️ Could not sync debt suspension:', e.message);
+    }
+}
+
 async function deductPenalty(task) {
     // Calculate total task value: budget + service charge (fallback to category-based charge)
     const serviceCharge = task.service_charge || getServiceCharge(task.category);
@@ -2760,6 +2828,11 @@ async function deductPenalty(task) {
             console.log('✅ Penalty deducted via API:', penalty, 'New balance:', result.newBalance);
             currentUser.wallet = result.newBalance;
             await updateUserData(currentUser.id, { wallet: result.newBalance });
+            // Set debt suspension if wallet went negative
+            if (result.debtSuspended) {
+                setDebtSuspension(result.debtAmount || Math.abs(result.newBalance));
+                console.log('⚠️ Debt suspension activated. Amount owed:', result.debtAmount);
+            }
         } else {
             console.warn('⚠️ Penalty API failed:', result?.message, '— updating locally');
             currentUser.wallet = (currentUser.wallet || 0) - penalty;
@@ -2836,7 +2909,11 @@ async function abandonTask(taskId) {
     }
 
     if (isAccountSuspended()) {
-        showSuspendedPopup();
+        if (isDebtSuspended()) {
+            showDebtSuspendedPopup();
+        } else {
+            showSuspendedPopup();
+        }
         return;
     }
 
@@ -4243,10 +4320,22 @@ function renderProfileUI() {
     if (fid) fid.textContent = currentUser.id || '—';
 
     // Suspension banner
-    if (isAccountSuspended()) {
+    if (isDebtSuspended()) {
+        const debtBanner = document.getElementById('debtSuspensionBanner');
+        if (debtBanner) {
+            const amountEl = debtBanner.querySelector('[data-debt-amount]');
+            if (amountEl) amountEl.textContent = '₹' + getDebtAmount().toFixed(2);
+            debtBanner.style.display = 'block';
+        }
+        hideSuspensionBanner();
+    } else if (isAccountSuspended()) {
         startSuspensionTimer();
+        const debtBanner = document.getElementById('debtSuspensionBanner');
+        if (debtBanner) debtBanner.style.display = 'none';
     } else {
         hideSuspensionBanner();
+        const debtBanner = document.getElementById('debtSuspensionBanner');
+        if (debtBanner) debtBanner.style.display = 'none';
     }
 }
 

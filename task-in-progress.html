@@ -581,7 +581,14 @@
             </div>
             <h3 style="color:#ef4444;margin-bottom:8px;">Account Suspended</h3>
             <p style="color:#64748b;font-size:14px;margin-bottom:10px;">You released too many tasks. Suspended for 48 hours.</p>
-            <p style="color:#1e293b;font-weight:700;font-size:16px;margin-bottom:14px;" id="tipSuspendUntil">--</p>
+            <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:12px;margin-bottom:8px;">
+                <p style="color:#64748b;font-size:12px;margin:0 0 4px;">Suspension ends at</p>
+                <p style="color:#1e293b;font-weight:700;font-size:16px;margin:0;" id="tipSuspendUntil">--</p>
+            </div>
+            <div style="background:rgba(239,68,68,0.05);border-radius:8px;padding:8px;margin-bottom:14px;">
+                <div style="color:#64748b;font-size:11px;">Time Remaining</div>
+                <div id="tipSuspendCountdown" style="font-size:20px;font-weight:800;color:#ef4444;font-family:monospace;">00:00:00</div>
+            </div>
             <button onclick="document.getElementById('suspendedOverlay').style.display='none'" style="width:100%;background:#6C63FF;color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;">I Understand</button>
         </div>
     </div>
@@ -743,7 +750,7 @@
             window.location.href = 'index.html?tab=accepted-tasks';
         }
 
-        // Helper: daily release tracking
+        // Helper: shared suspension utilities (same localStorage as app.js)
         function getDailyReleaseCount() {
             const today = new Date().toDateString();
             const data = JSON.parse(localStorage.getItem('taskearn_daily_releases') || '{}');
@@ -764,13 +771,26 @@
         function isAccountSuspended() {
             const until = localStorage.getItem('taskearn_suspended_until');
             if (!until) return false;
-            return Date.now() < parseInt(until);
+            if (Date.now() < parseInt(until)) return true;
+            localStorage.removeItem('taskearn_suspended_until');
+            return false;
         }
         function suspendAccount() {
             const until = Date.now() + 48 * 60 * 60 * 1000;
             localStorage.setItem('taskearn_suspended_until', until.toString());
+            showSuspendedOverlay();
+        }
+        function formatCountdown(ms) {
+            if (ms <= 0) return '00:00:00';
+            const s = Math.floor(ms / 1000);
+            return String(Math.floor(s/3600)).padStart(2,'0') + ':' + String(Math.floor((s%3600)/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+        }
+        function showSuspendedOverlay() {
+            const until = parseInt(localStorage.getItem('taskearn_suspended_until') || '0');
             const timeStr = new Date(until).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-            document.getElementById('tipSuspendUntil').textContent = 'Until: ' + timeStr;
+            const countdown = formatCountdown(until - Date.now());
+            document.getElementById('tipSuspendUntil').textContent = timeStr;
+            document.getElementById('tipSuspendCountdown').textContent = countdown;
             document.getElementById('suspendedOverlay').style.display = 'flex';
         }
 
@@ -778,12 +798,9 @@
             document.getElementById('releasePenaltyOverlay').style.display = 'none';
         }
 
-        // Go back — show penalty modal first
         function goBack() {
             if (isAccountSuspended()) {
-                const until = parseInt(localStorage.getItem('taskearn_suspended_until'));
-                document.getElementById('tipSuspendUntil').textContent = 'Until: ' + new Date(until).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-                document.getElementById('suspendedOverlay').style.display = 'flex';
+                showSuspendedOverlay();
                 return;
             }
 
@@ -820,7 +837,6 @@
             const taskValue = (currentTask.price || currentTask.amount || 0) + (currentTask.service_charge || 0);
             const penalty = Math.round(taskValue * 0.10);
 
-            // Deduct penalty from wallet
             if (token) {
                 try {
                     await fetch(API_URL + '/wallet/pay', {
@@ -832,7 +848,7 @@
                     console.warn('Penalty API failed, deducting locally:', e.message);
                 }
             }
-            // Update local wallet balance (allow negative)
+
             const user = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
             if (user) {
                 const helperData = JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}');
@@ -840,7 +856,6 @@
                 localStorage.setItem(`user_${user.id}_data`, JSON.stringify(helperData));
             }
 
-            // Call backend to abandon task
             if (token && taskId) {
                 try {
                     const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {
@@ -857,7 +872,6 @@
                     return;
                 }
 
-                // Remove from local accepted tasks
                 if (user) {
                     const helperData = JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}');
                     if (helperData.acceptedTasks) {
@@ -867,7 +881,6 @@
                 }
             }
 
-            // Track daily release count + check suspension
             const dailyCount = incrementDailyReleaseCount();
             if (dailyCount > 3) {
                 suspendAccount();

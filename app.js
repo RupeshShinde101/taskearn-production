@@ -1591,10 +1591,10 @@ async function refreshWalletBalance() {
                 });
                 
                 // Check debt suspension status
-                if (walletData.balance > -500 && isDebtSuspended()) {
+                if (walletData.balance >= 0 && isDebtSuspended()) {
                     clearDebtSuspension();
-                    console.log('✅ Debt cleared! Wallet balance above -500');
-                    showToast('🎉 Your debt suspension has been lifted! Account restored.', 'success');
+                    console.log('✅ Debt cleared! Wallet balance >= 0');
+                    showToast('🎉 Your debt has been cleared! Account restored.', 'success');
                 } else if (walletData.balance <= -500) {
                     setDebtSuspension(Math.abs(walletData.balance));
                 }
@@ -1691,13 +1691,23 @@ document.addEventListener('DOMContentLoaded', async function() {
                 setTimeout(() => {
                     try {
                         updateNavForUser();
-                        renderDashboard();
-                        // Sync suspension status from server (both timer + debt)
-                        syncSuspensionFromServer();
                     } catch (e) {
-                        console.warn('⚠️ Dashboard render failed:', e.message);
+                        console.warn('⚠️ Nav update failed:', e.message);
                     }
                 }, 100);
+                
+                // Sync suspension from server BEFORE rendering dashboard
+                try {
+                    await syncSuspensionFromServer();
+                } catch (e) {
+                    console.warn('⚠️ Suspension sync failed:', e.message);
+                }
+                
+                try {
+                    renderDashboard();
+                } catch (e) {
+                    console.warn('⚠️ Dashboard render failed:', e.message);
+                }
             } else {
                 console.log('👤 No active session - user needs to login');
             }
@@ -2691,13 +2701,13 @@ function showDebtSuspendedPopup() {
     const amount = getDebtAmount();
     const msgEl = document.getElementById('debtSuspendedMessage');
     const amountEl = document.getElementById('debtSuspendedAmount');
-    if (msgEl) msgEl.textContent = 'Your wallet balance has reached -₹500 or below. You cannot accept tasks or withdraw funds until your balance is above -₹500.';
+    if (msgEl) msgEl.textContent = 'Your wallet balance has reached -₹500 or below. You cannot accept tasks or withdraw funds until your balance is back to ₹0 or above.';
     if (amountEl) amountEl.textContent = '₹' + amount.toFixed(2);
     const modal = document.getElementById('debtSuspendedModal');
     if (modal) {
         openModal('debtSuspendedModal');
     } else {
-        showToast('⚠️ Your account is debt-suspended (balance below -₹500). Add money to restore access.', 'error');
+        showToast('⚠️ Your account is debt-suspended (balance below -₹500). Add money to bring balance to ₹0.', 'error');
     }
 }
 

@@ -1090,6 +1090,30 @@ def accept_task(task_id):
     """Accept a task"""
     try:
         with get_db() as (cursor, conn):
+            # Server-side suspension check — blocks acceptance even if client cache is stale
+            cursor.execute(f'SELECT suspended_until, is_suspended FROM users WHERE id = {PH}', (request.user_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                user_dict = dict_from_row(user_row) if not isinstance(user_row, dict) else user_row
+                # Check timer suspension
+                sus_until = user_dict.get('suspended_until')
+                if sus_until:
+                    try:
+                        if isinstance(sus_until, str):
+                            sus_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
+                        else:
+                            sus_dt = sus_until
+                        if sus_dt.tzinfo is None:
+                            sus_dt = sus_dt.replace(tzinfo=datetime.timezone.utc)
+                        if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
+                            return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
+                    except:
+                        pass
+                # Check debt suspension
+                wallet = get_or_create_wallet(request.user_id)
+                if float(wallet.get('balance', 0)) <= -500:
+                    return jsonify({'success': False, 'message': 'Your wallet balance is below -₹500. Add money to restore task acceptance.'}), 403
+
             # Check if task exists and is active
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
             task = cursor.fetchone()
@@ -2154,14 +2178,14 @@ def calculate_commission(amount):
     return (amount * COMMISSION_PERCENTAGE) / 100
 
 def clear_debt_suspension_if_needed(user_id, cursor):
-    """Clear debt suspension if wallet balance is back above -500"""
+    """Clear debt suspension if wallet balance is back to >= 0"""
     try:
         cursor.execute(f'SELECT balance FROM wallets WHERE user_id = {PH}', (user_id,))
         wallet = cursor.fetchone()
         if not wallet:
             return False
         balance = float(wallet[0]) if isinstance(wallet[0], (int, float)) else float(wallet['balance'])
-        if balance > -500:
+        if balance >= 0:
             cursor.execute(f'''
                 UPDATE users SET is_suspended = {PH}, suspension_reason = NULL, suspended_at = NULL
                 WHERE id = {PH} AND is_suspended = {PH}
@@ -2314,11 +2338,11 @@ def add_money_to_wallet():
         
         conn.commit()
         
-        # Auto-clear debt suspension if balance is back above -500
-        if new_balance > -500:
+        # Auto-clear debt suspension if balance is back to >= 0
+        if new_balance >= 0:
             clear_debt_suspension_if_needed(request.user_id, cursor)
     
-    debt_cleared = new_balance > -500
+    debt_cleared = new_balance >= 0
     return jsonify({
         'success': True,
         'message': f'₹{amount} added successfully' + (f' + ₹{cashback:.2f} cashback!' if cashback > 0 else ''),
@@ -2433,8 +2457,8 @@ def earn_to_wallet():
             VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
         ''', (wallet['id'], request.user_id, 'earning', amount, new_balance, description, task_id, now))
         
-        # Auto-clear debt suspension if balance is back above -500
-        if new_balance > -500:
+        # Auto-clear debt suspension if balance is back to >= 0
+        if new_balance >= 0:
             clear_debt_suspension_if_needed(request.user_id, cursor)
     
     return jsonify({

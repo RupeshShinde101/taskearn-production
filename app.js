@@ -2785,15 +2785,48 @@ function applySuspensionFromUser(userData) {
         setTimerSuspension(userData.suspendedUntil);
         startSuspensionTimer();
     } else {
-        clearTimerSuspension();
-        stopSuspensionTimer();
-        hideSuspensionBanner();
+        // Check if localStorage has a timer the server doesn't know about (pre-migration accounts)
+        const localUntil = localStorage.getItem('taskearn_suspended_until');
+        if (localUntil && parseInt(localUntil) > Date.now()) {
+            // Migrate local suspension to server
+            migrateLocalSuspensionToServer(localUntil);
+            // Keep local timer active until migration confirms
+            startSuspensionTimer();
+        } else {
+            clearTimerSuspension();
+            stopSuspensionTimer();
+            hideSuspensionBanner();
+        }
     }
     // Sync debt suspension from server response
     if (userData.debtSuspended) {
         setDebtSuspension(userData.debtAmount || 0);
     } else {
         clearDebtSuspension();
+    }
+}
+
+async function migrateLocalSuspensionToServer(localUntilMs) {
+    try {
+        const token = localStorage.getItem('taskearn_token');
+        if (!token) return;
+        const API_BASE = (typeof API_URL !== 'undefined') ? API_URL : '';
+        const res = await fetch(API_BASE + '/user/migrate-suspension', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ suspendedUntil: parseInt(localUntilMs) })
+        });
+        const result = await res.json();
+        if (result.success && result.migrated) {
+            console.log('✅ Local suspension migrated to server:', result.suspendedUntil);
+        } else if (result.success && !result.migrated && result.reason === 'expired') {
+            // Timer expired — clear local too
+            clearTimerSuspension();
+            stopSuspensionTimer();
+            hideSuspensionBanner();
+        }
+    } catch (e) {
+        console.warn('⚠️ Could not migrate local suspension to server:', e.message);
     }
 }
 

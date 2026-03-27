@@ -611,6 +611,57 @@ def record_task_release():
 
 
 # ========================================
+# API ROUTES - MIGRATE LOCAL SUSPENSION
+# ========================================
+
+@app.route('/api/user/migrate-suspension', methods=['POST'])
+@require_auth
+def migrate_local_suspension():
+    """Migrate a localStorage-based suspension timer to the server DB.
+    Called once per device for accounts suspended before server-side tracking."""
+    data = request.get_json() or {}
+    suspended_until_ms = data.get('suspendedUntil')  # epoch milliseconds from localStorage
+    
+    if not suspended_until_ms:
+        return jsonify({'success': False, 'message': 'Missing suspendedUntil'}), 400
+    
+    try:
+        suspended_until_ms = int(suspended_until_ms)
+        until_dt = datetime.datetime.fromtimestamp(suspended_until_ms / 1000, tz=datetime.timezone.utc)
+    except (ValueError, OSError):
+        return jsonify({'success': False, 'message': 'Invalid timestamp'}), 400
+    
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if until_dt <= now:
+        # Already expired — no need to migrate
+        return jsonify({'success': True, 'migrated': False, 'reason': 'expired'})
+    
+    with get_db() as (cursor, conn):
+        # Only migrate if server doesn't already have a suspension
+        cursor.execute(f'SELECT suspended_until FROM users WHERE id = {PH}', (request.user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+        
+        row_dict = dict_from_row(row) if not isinstance(row, dict) else row
+        existing = row_dict.get('suspended_until')
+        
+        if existing:
+            # Server already has a suspension — don't overwrite
+            return jsonify({'success': True, 'migrated': False, 'reason': 'already_set'})
+        
+        until_iso = until_dt.isoformat()
+        cursor.execute(f'''
+            UPDATE users SET suspended_until = {PH}, is_suspended = {PH},
+                suspension_reason = {PH}, suspended_at = {PH}
+            WHERE id = {PH}
+        ''', (until_iso, True, 'Migrated from local device', now.isoformat(), request.user_id))
+        print(f"✅ Migrated local suspension for user {request.user_id} until {until_iso}")
+    
+    return jsonify({'success': True, 'migrated': True, 'suspendedUntil': until_dt.isoformat()})
+
+
+# ========================================
 # API ROUTES - PASSWORD RESET
 # ========================================
 

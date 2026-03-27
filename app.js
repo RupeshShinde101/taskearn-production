@@ -542,9 +542,13 @@ async function loadCurrentSessionAsync() {
         }
     }
     
-    // Fallback to IndexedDB
+    // Fallback to IndexedDB only if localStorage had a session pointer
+    // (prevents ghost re-login after logout cleared localStorage)
     if (!session) {
-        session = await loadFromIndexedDB(STORAGE_KEYS.CURRENT_USER);
+        const hasToken = !!localStorage.getItem('taskearn_token');
+        if (hasToken) {
+            session = await loadFromIndexedDB(STORAGE_KEYS.CURRENT_USER);
+        }
     }
     
     if (!session) {
@@ -565,56 +569,31 @@ async function loadCurrentSessionAsync() {
     }
 }
 
-// Sync version for backwards compatibility
-function loadCurrentSession() {
-    if (!STORAGE_AVAILABLE) return null;
-    try {
-        // FIRST: Check for API token session (from backend login)
-        const apiToken = localStorage.getItem('taskearn_token');
-        const apiUserStr = localStorage.getItem('taskearn_user');
-        if (apiToken && apiUserStr) {
-            const apiUser = JSON.parse(apiUserStr);
-            console.log('✅ Found API session for:', apiUser.name || apiUser.email);
-            return apiUser;
-        }
-        
-        // Check local session
-        const session = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-        console.log('🔍 Checking for saved session...');
-        if (session) {
-            const user = JSON.parse(session);
-            // Refresh user data from storage to get latest data
-            const users = getStoredUsers();
-            if (users[user.id]) {
-                console.log('✅ Found saved session for:', users[user.id].name);
-                return users[user.id];
-            } else {
-                console.log('⚠️ Session user not found in storage, clearing session');
-                clearCurrentSession();
-            }
-        } else {
-            console.log('ℹ️ No saved session found');
-        }
-        return null;
-    } catch (e) {
-        console.error('Error loading session:', e);
-        return null;
-    }
-}
-
 // Clear current session (logout only, keeps account data)
 function clearCurrentSession() {
-    if (!STORAGE_AVAILABLE) return;
+    // Clear localStorage session keys
     try {
-        // Clear local session
         localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-        // Clear API session (token + user)
         localStorage.removeItem('taskearn_token');
         localStorage.removeItem('taskearn_user');
-        console.log('✅ Session cleared (account data preserved)');
+        localStorage.removeItem('taskearn_suspended_until');
+        localStorage.removeItem('taskearn_daily_releases');
+        localStorage.removeItem('currentTask');
     } catch (e) {
-        console.error('Error clearing session:', e);
+        console.error('Error clearing localStorage session:', e);
     }
+    
+    // Clear IndexedDB session (prevents ghost re-login)
+    if (db) {
+        try {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            store.delete(STORAGE_KEYS.CURRENT_USER);
+        } catch (e) {
+            console.error('Error clearing IndexedDB session:', e);
+        }
+    }
+    console.log('✅ Session fully cleared (localStorage + IndexedDB)');
 }
 
 // Validate login with secure password verification
@@ -2589,7 +2568,20 @@ async function acceptTask(taskId) {
                 window.location.href = 'task-in-progress.html?taskId=' + task.id + '&v=20260321_map_controls';
             }, 500);
         } else {
-            showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');
+            // Check if server rejected due to suspension
+            if (data.message && data.message.toLowerCase().includes('suspended')) {
+                closeModal('taskDetailModal');
+                // Restore suspension state from server
+                if (currentUser && currentUser.suspendedUntil) {
+                    const untilMs = new Date(currentUser.suspendedUntil).getTime();
+                    if (untilMs > Date.now()) {
+                        localStorage.setItem('taskearn_suspended_until', untilMs.toString());
+                    }
+                }
+                showSuspendedPopup();
+            } else {
+                showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');
+            }
         }
     } catch (err) {
         console.error('Error accepting task:', err);
@@ -4205,6 +4197,15 @@ function loadProfilePage() {
                 if (!currentUser.totalEarnings && localEarnings) currentUser.totalEarnings = localEarnings;
                 if (!currentUser.tasksCompleted && localCompleted) currentUser.tasksCompleted = localCompleted;
                 saveUserToStorage(currentUser);
+                
+                // Restore suspension from server if missing locally
+                if (result.user.isSuspended && result.user.suspendedUntil) {
+                    var untilMs = new Date(result.user.suspendedUntil).getTime();
+                    if (untilMs > Date.now() && !localStorage.getItem('taskearn_suspended_until')) {
+                        localStorage.setItem('taskearn_suspended_until', untilMs.toString());
+                    }
+                }
+                
                 renderProfileUI();
             }
         }).catch(function() { /* use cached data */ });
@@ -4499,33 +4500,24 @@ async function saveNewPassword() {
 })();
 
 function logout() {
+    // Call backend logout to invalidate token
+    if (typeof AuthAPI !== 'undefined' && AuthAPI.logout) {
+        AuthAPI.logout().catch(() => {});
+    }
+    
+    // Stop any running timers
+    stopSuspensionTimer();
+    
     clearCurrentSession();
     currentUser = null;
-    tasks = [];  // ✅ FIX: Clear all tasks to prevent showing previous account's data
+    tasks = [];
     myPostedTasks = [];
     myAcceptedTasks = [];
     myCompletedTasks = [];
     notifications = [];
 
-    const nav = document.querySelector('.nav-buttons');
-    if (nav) {
-        nav.innerHTML = `
-            <button class="btn btn-outline" onclick="openModal('loginModal')">Login</button>
-            <button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button>
-        `;
-    }
-    
-    // Hide notification bell
-    const notificationWrapper = document.getElementById('notificationWrapper');
-    const mobileNotificationItem = document.getElementById('mobileNotificationItem');
-    if (notificationWrapper) notificationWrapper.style.display = 'none';
-    if (mobileNotificationItem) mobileNotificationItem.style.display = 'none';
-    const mobileWalletItem = document.getElementById('mobileWalletItem');
-    if (mobileWalletItem) mobileWalletItem.style.display = 'none';
-    
-    updateAuthenticationStatus(); // Update auth status
-    renderDashboard();
-    showToast('Logged out successfully');
+    // Redirect to landing page for clean state
+    window.location.href = 'index.html';
 }
 
 // Alias for handleLogout

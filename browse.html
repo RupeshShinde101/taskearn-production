@@ -90,18 +90,6 @@
                 <h2>Find Tasks Near You</h2>
                 <p>Browse available tasks on the map and start earning today</p>
             </div>
-            <!-- Suspension Timer Banner -->
-            <div id="suspensionBanner" style="display:none;background:linear-gradient(135deg,#fef2f2,#fee2e2);border:1px solid #fca5a5;border-radius:14px;padding:16px 20px;margin-bottom:20px;text-align:center;">
-                <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;">
-                    <i class="fas fa-user-slash" style="font-size:20px;color:#ef4444;"></i>
-                    <span style="font-weight:700;color:#ef4444;font-size:16px;">Account Suspended</span>
-                </div>
-                <p style="color:#64748b;font-size:13px;margin:0 0 12px;">You cannot accept tasks or withdraw funds during suspension.</p>
-                <div style="background:rgba(239,68,68,0.1);border-radius:10px;padding:12px;display:inline-block;">
-                    <div style="color:#64748b;font-size:12px;margin-bottom:4px;">Time Remaining</div>
-                    <div id="suspensionBannerTimer" style="font-size:28px;font-weight:800;color:#ef4444;font-family:monospace;letter-spacing:2px;">00:00:00</div>
-                </div>
-            </div>
 
             <div class="tasks-wrapper">
                 <div class="tasks-sidebar">
@@ -328,52 +316,15 @@
         </div>
     </div>
 
-    <!-- Account Suspended Modal -->
-    <div class="modal" id="suspendedModal">
-        <div class="modal-content" style="max-width: 400px;">
-            <div style="text-align:center; padding: 20px 10px;">
-                <div style="width:64px;height:64px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
-                    <i class="fas fa-user-slash" style="font-size:28px;color:#ef4444;"></i>
-                </div>
-                <h3 style="margin-bottom:8px;color:#ef4444;">Account Suspended</h3>
-                <p style="color:#64748b;font-size:14px;margin-bottom:12px;" id="suspendedMessage">Your account has been suspended for 48 hours because you released more than 3 tasks today.</p>
-                <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:8px;">
-                    <p style="color:#64748b;font-size:13px;margin:0 0 4px;">Suspension ends at</p>
-                    <p style="color:#1e293b;font-weight:700;font-size:18px;margin:0;" id="suspendedUntilTime">--</p>
-                </div>
-                <div style="background:rgba(239,68,68,0.05);border-radius:8px;padding:10px;margin-bottom:16px;">
-                    <div style="color:#64748b;font-size:12px;">Time Remaining</div>
-                    <div id="suspendedCountdown" style="font-size:22px;font-weight:800;color:#ef4444;font-family:monospace;">00:00:00</div>
-                </div>
-                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">During suspension you cannot accept tasks or withdraw funds.</p>
-                <button class="btn" style="width:100%;background:var(--primary-gradient);color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal('suspendedModal')">I Understand</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Account Unsuspended Modal -->
-    <div class="modal" id="unsuspendedModal">
-        <div class="modal-content" style="max-width: 400px;">
-            <div style="text-align:center; padding: 20px 10px;">
-                <div style="width:64px;height:64px;border-radius:50%;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
-                    <i class="fas fa-check-circle" style="font-size:28px;color:#10b981;"></i>
-                </div>
-                <h3 style="margin-bottom:8px;color:#10b981;">Account Restored!</h3>
-                <p style="color:#64748b;font-size:14px;margin-bottom:16px;">Your suspension has ended. You can now accept tasks and withdraw funds again.</p>
-                <button class="btn" style="width:100%;background:#10b981;color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal('unsuspendedModal')">Great, Let's Go!</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Toast -->
     <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMessage">Action completed successfully!</span></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="api-client.js?v=20260327_suspension_v2"></script>
-    <script src="shared.js?v=20260327_suspension_v2"></script>
-    <script src="razorpay.js?v=20260327_suspension_v2"></script>
-    <script src="app.js?v=20260327_suspension_v2"></script>
+    <script src="api-client.js?v=20260327_suspension_v3"></script>
+    <script src="shared.js?v=20260327_suspension_v3"></script>
+    <script src="razorpay.js?v=20260327_suspension_v3"></script>
+    <script src="app.js?v=20260327_suspension_v3"></script>
 </body>
 </html>

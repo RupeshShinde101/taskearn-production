@@ -2688,6 +2688,7 @@ function suspendAccount() {
 }
 
 function showSuspendedPopup() {
+    ensureSuspensionElements();
     const until = getSuspensionEndTime();
     const msgEl = document.getElementById('suspendedMessage');
     const timeEl = document.getElementById('suspendedUntilTime');
@@ -2771,7 +2772,76 @@ function hideSuspensionBanner() {
     if (banner) banner.style.display = 'none';
 }
 
+// Ensure suspension HTML elements exist in the DOM (banner + modals).
+// Called once before any suspension operations — eliminates need for
+// hardcoding suspension HTML in every page.
+function ensureSuspensionElements() {
+    // Suspension banner — inject after the page header area if missing
+    if (!document.getElementById('suspensionBanner')) {
+        var target = document.querySelector('.task-page-content .container .task-page-header') ||
+                     document.querySelector('#my-tasks .container .section-header') ||
+                     document.querySelector('#find-tasks .container .section-header') ||
+                     document.querySelector('.profile-stats-row') ||
+                     document.querySelector('.container .section-header');
+        if (target) {
+            var banner = document.createElement('div');
+            banner.id = 'suspensionBanner';
+            banner.style.cssText = 'display:none;background:linear-gradient(135deg,#fef2f2,#fee2e2);border:1px solid #fca5a5;border-radius:14px;padding:16px 20px;margin-bottom:20px;text-align:center;';
+            banner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;">' +
+                '<i class="fas fa-user-slash" style="font-size:20px;color:#ef4444;"></i>' +
+                '<span style="font-weight:700;color:#ef4444;font-size:16px;">Account Suspended</span>' +
+                '</div>' +
+                '<p style="color:#64748b;font-size:13px;margin:0 0 12px;">You cannot accept tasks or withdraw funds during suspension.</p>' +
+                '<div style="background:rgba(239,68,68,0.1);border-radius:10px;padding:12px;display:inline-block;">' +
+                '<div style="color:#64748b;font-size:12px;margin-bottom:4px;">Time Remaining</div>' +
+                '<div id="suspensionBannerTimer" style="font-size:28px;font-weight:800;color:#ef4444;font-family:monospace;letter-spacing:2px;">00:00:00</div>' +
+                '</div>';
+            target.parentNode.insertBefore(banner, target.nextSibling);
+        }
+    }
+    // Suspended modal
+    if (!document.getElementById('suspendedModal')) {
+        var modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'suspendedModal';
+        modal.innerHTML = '<div class="modal-content" style="max-width:400px;">' +
+            '<div style="text-align:center;padding:20px 10px;">' +
+            '<div style="width:64px;height:64px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
+            '<i class="fas fa-user-slash" style="font-size:28px;color:#ef4444;"></i></div>' +
+            '<h3 style="margin-bottom:8px;color:#ef4444;">Account Suspended</h3>' +
+            '<p style="color:#64748b;font-size:14px;margin-bottom:12px;" id="suspendedMessage">Your account has been suspended for 48 hours because you released more than 3 tasks today.</p>' +
+            '<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:8px;">' +
+            '<p style="color:#64748b;font-size:13px;margin:0 0 4px;">Suspension ends at</p>' +
+            '<p style="color:#1e293b;font-weight:700;font-size:18px;margin:0;" id="suspendedUntilTime">--</p></div>' +
+            '<div style="background:rgba(239,68,68,0.05);border-radius:8px;padding:10px;margin-bottom:16px;">' +
+            '<div style="color:#64748b;font-size:12px;">Time Remaining</div>' +
+            '<div id="suspendedCountdown" style="font-size:22px;font-weight:800;color:#ef4444;font-family:monospace;">00:00:00</div></div>' +
+            '<p style="color:#64748b;font-size:13px;margin-bottom:16px;">During suspension you cannot accept tasks or withdraw funds.</p>' +
+            '<button class="btn" style="width:100%;background:var(--primary-gradient);color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal(\'suspendedModal\')">I Understand</button>' +
+            '</div></div>';
+        modal.addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('active'); document.body.style.overflow = ''; } });
+        document.body.appendChild(modal);
+    }
+    // Unsuspended modal
+    if (!document.getElementById('unsuspendedModal')) {
+        var modal2 = document.createElement('div');
+        modal2.className = 'modal';
+        modal2.id = 'unsuspendedModal';
+        modal2.innerHTML = '<div class="modal-content" style="max-width:400px;">' +
+            '<div style="text-align:center;padding:20px 10px;">' +
+            '<div style="width:64px;height:64px;border-radius:50%;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
+            '<i class="fas fa-check-circle" style="font-size:28px;color:#10b981;"></i></div>' +
+            '<h3 style="margin-bottom:8px;color:#10b981;">Account Restored!</h3>' +
+            '<p style="color:#64748b;font-size:14px;margin-bottom:16px;">Your suspension has ended. You can now accept tasks and withdraw funds again.</p>' +
+            '<button class="btn" style="width:100%;background:#10b981;color:#fff;padding:12px;border-radius:10px;font-weight:600;" onclick="closeModal(\'unsuspendedModal\')">Great, Let\'s Go!</button>' +
+            '</div></div>';
+        modal2.addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('active'); document.body.style.overflow = ''; } });
+        document.body.appendChild(modal2);
+    }
+}
+
 function checkAndClearSuspension() {
+    ensureSuspensionElements();
     const until = getSuspensionEndTime();
     if (!until) return;
     if (Date.now() >= until) {
@@ -4288,6 +4358,7 @@ function renderProfileUI() {
     if (fid) fid.textContent = currentUser.id || '—';
 
     // Suspension banner
+    ensureSuspensionElements();
     if (isAccountSuspended()) {
         startSuspensionTimer();
     } else {

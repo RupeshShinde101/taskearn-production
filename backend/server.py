@@ -208,7 +208,7 @@ def user_to_response(user):
     wallet = get_or_create_wallet(user['id'])
     wallet_balance = float(wallet.get('balance', 0))
     wallet_low = wallet_balance < 100
-    debt_suspended = wallet_balance < 0
+    debt_suspended = wallet_balance <= -500
     
     # Check timer suspension (auto-clear if expired)
     suspended_until = user.get('suspended_until')
@@ -262,7 +262,7 @@ def user_to_response(user):
         'walletLow': wallet_low,
         'walletWarning': 'Please top up your wallet (below ₹100)' if wallet_low else None,
         'debtSuspended': debt_suspended,
-        'debtAmount': abs(wallet_balance) if debt_suspended else 0,
+        'debtAmount': abs(wallet_balance) if wallet_balance < 0 else 0,
         'timerSuspended': timer_suspended,
         'suspendedUntil': suspended_until_iso,
         'dailyReleaseCount': daily_release_count
@@ -2154,14 +2154,14 @@ def calculate_commission(amount):
     return (amount * COMMISSION_PERCENTAGE) / 100
 
 def clear_debt_suspension_if_needed(user_id, cursor):
-    """Clear debt suspension if wallet balance is back to >= 0"""
+    """Clear debt suspension if wallet balance is back above -500"""
     try:
         cursor.execute(f'SELECT balance FROM wallets WHERE user_id = {PH}', (user_id,))
         wallet = cursor.fetchone()
         if not wallet:
             return False
         balance = float(wallet[0]) if isinstance(wallet[0], (int, float)) else float(wallet['balance'])
-        if balance >= 0:
+        if balance > -500:
             cursor.execute(f'''
                 UPDATE users SET is_suspended = {PH}, suspension_reason = NULL, suspended_at = NULL
                 WHERE id = {PH} AND is_suspended = {PH}
@@ -2314,17 +2314,17 @@ def add_money_to_wallet():
         
         conn.commit()
         
-        # Auto-clear debt suspension if balance is back to >= 0
-        if new_balance >= 0:
+        # Auto-clear debt suspension if balance is back above -500
+        if new_balance > -500:
             clear_debt_suspension_if_needed(request.user_id, cursor)
     
-    debt_cleared = new_balance >= 0
+    debt_cleared = new_balance > -500
     return jsonify({
         'success': True,
         'message': f'₹{amount} added successfully' + (f' + ₹{cashback:.2f} cashback!' if cashback > 0 else ''),
         'newBalance': new_balance,
         'cashback': cashback,
-        'debtSuspended': new_balance < 0,
+        'debtSuspended': new_balance <= -500,
         'debtCleared': debt_cleared
     })
 
@@ -2395,7 +2395,7 @@ def deduct_penalty():
         
         conn.commit()
     
-    debt_suspended = new_balance < 0
+    debt_suspended = new_balance <= -500
     print(f"💸 Penalty ₹{amount} deducted from user {request.user_id}. New balance: ₹{new_balance:.2f}. Debt suspended: {debt_suspended}")
     
     return jsonify({
@@ -2404,7 +2404,7 @@ def deduct_penalty():
         'newBalance': new_balance,
         'penalty': amount,
         'debtSuspended': debt_suspended,
-        'debtAmount': abs(new_balance) if debt_suspended else 0
+        'debtAmount': abs(new_balance) if new_balance < 0 else 0
     })
 
 
@@ -2433,15 +2433,15 @@ def earn_to_wallet():
             VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
         ''', (wallet['id'], request.user_id, 'earning', amount, new_balance, description, task_id, now))
         
-        # Auto-clear debt suspension if balance is back to >= 0
-        if new_balance >= 0:
+        # Auto-clear debt suspension if balance is back above -500
+        if new_balance > -500:
             clear_debt_suspension_if_needed(request.user_id, cursor)
     
     return jsonify({
         'success': True,
         'message': f'₹{amount} added to earnings',
         'newBalance': new_balance,
-        'debtSuspended': new_balance < 0
+        'debtSuspended': new_balance <= -500
     })
 
 

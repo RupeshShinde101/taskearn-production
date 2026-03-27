@@ -152,6 +152,22 @@ function loadFromIndexedDB(key) {
     });
 }
 
+// Delete from IndexedDB
+function deleteFromIndexedDB(key) {
+    return new Promise((resolve) => {
+        if (!db) { resolve(false); return; }
+        try {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            store.delete(key);
+            transaction.oncomplete = () => resolve(true);
+            transaction.onerror = () => resolve(false);
+        } catch (e) {
+            resolve(false);
+        }
+    });
+}
+
 // Check if localStorage is available and working
 function isLocalStorageAvailable() {
     try {
@@ -602,16 +618,21 @@ function loadCurrentSession() {
     }
 }
 
-// Clear current session (logout only, keeps account data)
+// Clear current session (logout — clears ALL auth and suspension state)
 function clearCurrentSession() {
     if (!STORAGE_AVAILABLE) return;
     try {
-        // Clear local session
+        // Clear auth keys
         localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-        // Clear API session (token + user)
         localStorage.removeItem('taskearn_token');
         localStorage.removeItem('taskearn_user');
-        console.log('✅ Session cleared (account data preserved)');
+        // Clear suspension cache keys
+        localStorage.removeItem('taskearn_suspended_until');
+        localStorage.removeItem('taskearn_debt_suspended');
+        localStorage.removeItem('taskearn_debt_amount');
+        // Clear IndexedDB session
+        deleteFromIndexedDB(STORAGE_KEYS.CURRENT_USER);
+        console.log('✅ Session fully cleared');
     } catch (e) {
         console.error('Error clearing session:', e);
     }
@@ -1570,11 +1591,11 @@ async function refreshWalletBalance() {
                 });
                 
                 // Check debt suspension status
-                if (walletData.balance >= 0 && isDebtSuspended()) {
+                if (walletData.balance > -500 && isDebtSuspended()) {
                     clearDebtSuspension();
-                    console.log('✅ Debt cleared! Wallet balance >= 0');
-                    showToast('🎉 Your debt has been cleared! Account restored.', 'success');
-                } else if (walletData.balance < 0) {
+                    console.log('✅ Debt cleared! Wallet balance above -500');
+                    showToast('🎉 Your debt suspension has been lifted! Account restored.', 'success');
+                } else if (walletData.balance <= -500) {
                     setDebtSuspension(Math.abs(walletData.balance));
                 }
                 
@@ -2670,13 +2691,13 @@ function showDebtSuspendedPopup() {
     const amount = getDebtAmount();
     const msgEl = document.getElementById('debtSuspendedMessage');
     const amountEl = document.getElementById('debtSuspendedAmount');
-    if (msgEl) msgEl.textContent = 'Your wallet balance is negative. You cannot accept tasks or withdraw funds until you clear your debt.';
+    if (msgEl) msgEl.textContent = 'Your wallet balance has reached -₹500 or below. You cannot accept tasks or withdraw funds until your balance is above -₹500.';
     if (amountEl) amountEl.textContent = '₹' + amount.toFixed(2);
     const modal = document.getElementById('debtSuspendedModal');
     if (modal) {
         openModal('debtSuspendedModal');
     } else {
-        showToast('⚠️ Your account is debt-suspended. Add money to clear ₹' + amount.toFixed(2) + ' debt.', 'error');
+        showToast('⚠️ Your account is debt-suspended (balance below -₹500). Add money to restore access.', 'error');
     }
 }
 
@@ -4611,13 +4632,28 @@ async function saveNewPassword() {
 })();
 
 function logout() {
+    // Call server logout to invalidate session_token
+    const token = localStorage.getItem('taskearn_token');
+    if (token) {
+        try {
+            fetch((typeof API_URL !== 'undefined' ? API_URL : '') + '/auth/logout', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            }).catch(() => {});
+        } catch (e) {}
+    }
+
     clearCurrentSession();
     currentUser = null;
-    tasks = [];  // ✅ FIX: Clear all tasks to prevent showing previous account's data
+    tasks = [];
     myPostedTasks = [];
     myAcceptedTasks = [];
     myCompletedTasks = [];
     notifications = [];
+
+    // Stop any running suspension timer
+    stopSuspensionTimer();
+    hideSuspensionBanner();
 
     const nav = document.querySelector('.nav-buttons');
     if (nav) {

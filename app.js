@@ -2547,15 +2547,14 @@ async function acceptTask(taskId) {
 
     try {
         const data = await TasksAPI.accept(taskId);
+        console.log('📥 acceptTask API response:', data);
         if (data && data.success) {
             task.status = 'accepted';
             task.acceptedBy = currentUser;
             task.acceptedAt = new Date().toISOString();
             myAcceptedTasks.push(task);
 
-            updateUserData(currentUser.id, {
-                acceptedTasks: serializeTasks(myAcceptedTasks)
-            });
+            try { updateUserData(currentUser.id, { acceptedTasks: serializeTasks(myAcceptedTasks) }); } catch (e) { console.warn('updateUserData failed:', e); }
 
             const taskLocation = task.location || {};
             localStorage.setItem('currentTask', JSON.stringify({
@@ -2578,15 +2577,14 @@ async function acceptTask(taskId) {
                 startTime: Date.now()
             }));
 
-            notifyTaskPoster(task, currentUser);
+            try { notifyTaskPoster(task, currentUser); } catch (e) { console.warn('notifyTaskPoster failed:', e); }
 
             showToast('✅ Task accepted: ' + task.title);
             closeModal('taskDetailModal');
-            clearRoute();
+            try { clearRoute(); } catch (e) { console.warn('clearRoute failed:', e); }
 
-            setTimeout(() => {
-                window.location.href = 'task-in-progress.html?taskId=' + task.id + '&v=20260321_map_controls';
-            }, 500);
+            // Redirect to task-in-progress page
+            window.location.href = 'task-in-progress.html?taskId=' + task.id;
         } else {
             // Restore accept button
             if (acceptBtn) { acceptBtn.innerHTML = originalBtnHtml; acceptBtn.disabled = false; }

@@ -881,22 +881,15 @@
                     });
                     const penaltyResult = await penaltyRes.json();
                     if (penaltyResult && penaltyResult.debtSuspended) {
-                        // Cache debt suspension in localStorage
                         localStorage.setItem('taskearn_debt_suspended', 'true');
                         localStorage.setItem('taskearn_debt_amount', String(penaltyResult.debtAmount || Math.abs(penaltyResult.newBalance || 0)));
                     }
                 } catch (e) {
-                    console.warn('Penalty API failed, deducting locally:', e.message);
+                    console.warn('Penalty API failed:', e.message);
                 }
             }
 
-            const user = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
-            if (user) {
-                const helperData = JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}');
-                helperData.wallet = (parseFloat(helperData.wallet) || 0) - penalty;
-                localStorage.setItem(`user_${user.id}_data`, JSON.stringify(helperData));
-            }
-
+            // Abandon task — server now handles release counting + auto-suspension atomically
             if (token && taskId) {
                 try {
                     const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {
@@ -908,35 +901,14 @@
                         alert(result.message || 'Could not release task');
                         return;
                     }
+                    // Handle suspension from abandon response
+                    if (result.suspended && result.suspendedUntil) {
+                        localStorage.setItem('taskearn_suspended_until', String(new Date(result.suspendedUntil).getTime()));
+                    }
                 } catch (err) {
                     alert('Network error. Please try again.');
                     return;
                 }
-
-                if (user) {
-                    const helperData = JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}');
-                    if (helperData.acceptedTasks) {
-                        helperData.acceptedTasks = helperData.acceptedTasks.filter(t => t.id != taskId);
-                        localStorage.setItem(`user_${user.id}_data`, JSON.stringify(helperData));
-                    }
-                }
-            }
-
-            // Record release on server (tracks daily count + auto-suspends if > 3)
-            try {
-                const releaseToken = localStorage.getItem('taskearn_token') || '';
-                if (releaseToken) {
-                    const releaseRes = await fetch(API_URL + '/user/record-release', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + releaseToken }
-                    });
-                    const releaseResult = await releaseRes.json();
-                    if (releaseResult.suspended && releaseResult.suspendedUntil) {
-                        localStorage.setItem('taskearn_suspended_until', String(new Date(releaseResult.suspendedUntil).getTime()));
-                    }
-                }
-            } catch (e) {
-                console.warn('Record release failed:', e.message);
             }
 
             clearInterval(timerInterval);

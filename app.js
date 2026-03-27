@@ -2885,30 +2885,6 @@ async function syncSuspensionFromServer() {
     }
 }
 
-async function recordTaskRelease() {
-    // Record release on server — server handles daily count and auto-suspension
-    try {
-        if (typeof UserAPI === 'undefined' || !UserAPI.recordRelease) return null;
-        const result = await UserAPI.recordRelease();
-        if (result && result.success) {
-            if (result.suspended && result.suspendedUntil) {
-                setTimerSuspension(result.suspendedUntil);
-                showSuspendedPopup();
-                startSuspensionTimer();
-                addNotification({
-                    title: 'Account Suspended',
-                    message: 'You released too many tasks today. Your account is suspended for 48 hours.',
-                    type: 'error'
-                });
-            }
-            return result;
-        }
-    } catch (e) {
-        console.warn('⚠️ Could not record release on server:', e.message);
-    }
-    return null;
-}
-
 async function deductPenalty(task) {
     // Calculate total task value: budget + service charge (fallback to category-based charge)
     const serviceCharge = task.service_charge || getServiceCharge(task.category);
@@ -2969,10 +2945,11 @@ async function penaltyConfirmRelease() {
     showToast('💸 Deducting penalty...');
     const penalty = await deductPenalty(task);
 
+    let abandonResult = null;
     try {
-        const result = await TasksAPI.abandon(taskId);
-        if (!result || !result.success) {
-            showToast('❌ ' + (result?.message || 'Could not release task'), 'error');
+        abandonResult = await TasksAPI.abandon(taskId);
+        if (!abandonResult || !abandonResult.success) {
+            showToast('❌ ' + (abandonResult?.message || 'Could not release task'), 'error');
             pendingReleaseTaskId = null;
             return;
         }
@@ -2983,15 +2960,27 @@ async function penaltyConfirmRelease() {
     }
 
     myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
-    await updateUserData(currentUser.id, {
-        acceptedTasks: serializeTasks(myAcceptedTasks)
-    });
+    try {
+        await updateUserData(currentUser.id, {
+            acceptedTasks: serializeTasks(myAcceptedTasks)
+        });
+    } catch (e) { console.warn('updateUserData failed:', e); }
     tasks = tasks.filter(t => t.id != taskId);
 
-    // Record release on server (handles daily count + auto-suspension)
-    await recordTaskRelease();
+    // Abandon endpoint now returns release count + suspension info
+    if (abandonResult.suspended && abandonResult.suspendedUntil) {
+        setTimerSuspension(abandonResult.suspendedUntil);
+        showSuspendedPopup();
+        startSuspensionTimer();
+        addNotification({
+            title: 'Account Suspended',
+            message: 'You released too many tasks today. Your account is suspended for 48 hours.',
+            type: 'error'
+        });
+    }
 
-    showToast('✅ Task released. ₹' + penalty + ' penalty deducted from wallet.'); pendingReleaseTaskId = null;
+    showToast('✅ Task released. ₹' + penalty + ' penalty deducted from wallet.');
+    pendingReleaseTaskId = null;
     renderDashboard();
 }
 

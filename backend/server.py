@@ -556,61 +556,6 @@ def logout():
 
 
 # ========================================
-# API ROUTES - SUSPENSION (server-side)
-# ========================================
-
-@app.route('/api/user/record-release', methods=['POST'])
-@require_auth
-def record_task_release():
-    """Record a task release and auto-suspend if daily limit exceeded"""
-    today = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
-    
-    with get_db() as (cursor, conn):
-        # Get current daily release data
-        cursor.execute(f'SELECT daily_releases, daily_release_date, suspended_until FROM users WHERE id = {PH}', (request.user_id,))
-        row = cursor.fetchone()
-        if not row:
-            return jsonify({'success': False, 'message': 'User not found'}), 404
-        
-        row_dict = dict_from_row(row) if not isinstance(row, dict) else row
-        current_count = int(row_dict.get('daily_releases', 0) or 0)
-        release_date = row_dict.get('daily_release_date', '')
-        
-        # Reset count if new day
-        if release_date != today:
-            current_count = 0
-        
-        new_count = current_count + 1
-        suspended = False
-        suspended_until_iso = None
-        
-        if new_count > 3:
-            # Suspend for 48 hours
-            until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48)
-            suspended_until_iso = until.isoformat()
-            cursor.execute(f'''
-                UPDATE users SET daily_releases = {PH}, daily_release_date = {PH},
-                    suspended_until = {PH}, is_suspended = {PH}, suspension_reason = {PH},
-                    suspended_at = {PH}
-                WHERE id = {PH}
-            ''', (new_count, today, suspended_until_iso, True, 'Too many task releases', datetime.datetime.now(datetime.timezone.utc).isoformat(), request.user_id))
-            suspended = True
-            print(f"⚠️ User {request.user_id} suspended until {suspended_until_iso} (released {new_count} tasks today)")
-        else:
-            cursor.execute(f'''
-                UPDATE users SET daily_releases = {PH}, daily_release_date = {PH}
-                WHERE id = {PH}
-            ''', (new_count, today, request.user_id))
-    
-    return jsonify({
-        'success': True,
-        'dailyReleaseCount': new_count,
-        'suspended': suspended,
-        'suspendedUntil': suspended_until_iso
-    })
-
-
-# ========================================
 # API ROUTES - MIGRATE LOCAL SUSPENSION
 # ========================================
 
@@ -1151,7 +1096,7 @@ def accept_task(task_id):
 @app.route('/api/tasks/<int:task_id>/abandon', methods=['POST'])
 @require_auth
 def abandon_task(task_id):
-    """Abandon an accepted task - reverts it back to active so others can accept it"""
+    """Abandon an accepted task - reverts it to active and records the release (auto-suspends if limit exceeded)"""
     try:
         with get_db() as (cursor, conn):
             # Check task exists and is accepted by the current user
@@ -1167,8 +1112,49 @@ def abandon_task(task_id):
                 WHERE id = {PH}
             ''', (task_id,))
 
-        print(f"✅ Task {task_id} abandoned by user {request.user_id} — reverted to active")
-        return jsonify({'success': True, 'message': 'Task released. It is now available for others.'})
+        # Record release and check daily limit (separate transaction)
+        today = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
+        suspended = False
+        suspended_until_iso = None
+        daily_count = 0
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT daily_releases, daily_release_date FROM users WHERE id = {PH}', (request.user_id,))
+            row = cursor.fetchone()
+            if row:
+                row_dict = dict_from_row(row) if not isinstance(row, dict) else row
+                current_count = int(row_dict.get('daily_releases', 0) or 0)
+                release_date = row_dict.get('daily_release_date', '')
+                if release_date != today:
+                    current_count = 0
+                daily_count = current_count + 1
+
+                if daily_count > 3:
+                    until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48)
+                    suspended_until_iso = until.isoformat()
+                    cursor.execute(f'''
+                        UPDATE users SET daily_releases = {PH}, daily_release_date = {PH},
+                            suspended_until = {PH}, is_suspended = {PH}, suspension_reason = {PH},
+                            suspended_at = {PH}
+                        WHERE id = {PH}
+                    ''', (daily_count, today, suspended_until_iso, True, 'Too many task releases',
+                          datetime.datetime.now(datetime.timezone.utc).isoformat(), request.user_id))
+                    suspended = True
+                    print(f"⚠️ User {request.user_id} suspended until {suspended_until_iso} (released {daily_count} tasks today)")
+                else:
+                    cursor.execute(f'''
+                        UPDATE users SET daily_releases = {PH}, daily_release_date = {PH}
+                        WHERE id = {PH}
+                    ''', (daily_count, today, request.user_id))
+
+        print(f"✅ Task {task_id} abandoned by user {request.user_id} — release #{daily_count} today")
+        return jsonify({
+            'success': True,
+            'message': 'Task released. It is now available for others.',
+            'dailyReleaseCount': daily_count,
+            'suspended': suspended,
+            'suspendedUntil': suspended_until_iso
+        })
     except Exception as e:
         print(f"❌ Error in abandon_task: {e}")
         import traceback

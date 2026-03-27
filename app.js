@@ -2505,6 +2505,8 @@ function navigateToTask(lat, lng, taskTitle) {
 }
 
 async function acceptTask(taskId) {
+    console.log('🔄 acceptTask called with taskId:', taskId);
+
     if (!currentUser) {
         showToast('Please login first');
         closeModal('taskDetailModal');
@@ -2514,17 +2516,38 @@ async function acceptTask(taskId) {
 
     // Check if account is suspended
     if (isAccountSuspended()) {
+        showToast('⚠️ Your account is suspended', 'error');
         closeModal('taskDetailModal');
         showSuspendedPopup();
         return;
     }
 
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
+    // Find task — try both strict and loose equality for id type mismatch
+    var task = tasks.find(t => t.id === taskId) || tasks.find(t => String(t.id) === String(taskId));
+    if (!task) {
+        console.error('❌ Task not found in local array. taskId:', taskId, 'tasks count:', tasks.length);
+        showToast('❌ Task not found. Try refreshing the page.', 'error');
+        return;
+    }
+
+    if (typeof TasksAPI === 'undefined' || !TasksAPI.accept) {
+        console.error('❌ TasksAPI not available');
+        showToast('❌ API not available. Please reload the page.', 'error');
+        return;
+    }
+
+    // Show loading state on accept button
+    var acceptBtn = document.querySelector('#taskDetailContent .btn-primary');
+    var originalBtnHtml = '';
+    if (acceptBtn) {
+        originalBtnHtml = acceptBtn.innerHTML;
+        acceptBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accepting...';
+        acceptBtn.disabled = true;
+    }
 
     try {
         const data = await TasksAPI.accept(taskId);
-        if (data.success) {
+        if (data && data.success) {
             task.status = 'accepted';
             task.acceptedBy = currentUser;
             task.acceptedAt = new Date().toISOString();
@@ -2565,8 +2588,12 @@ async function acceptTask(taskId) {
                 window.location.href = 'task-in-progress.html?taskId=' + task.id + '&v=20260321_map_controls';
             }, 500);
         } else {
+            // Restore accept button
+            if (acceptBtn) { acceptBtn.innerHTML = originalBtnHtml; acceptBtn.disabled = false; }
+
             // Check if server rejected due to suspension
-            if (data.message && data.message.toLowerCase().includes('suspended')) {
+            if (data && data.message && data.message.toLowerCase().includes('suspended')) {
+                showToast('⚠️ Your account is suspended', 'error');
                 closeModal('taskDetailModal');
                 // Restore suspension state from server response or fetch it
                 if (data.suspended_until) {
@@ -2585,12 +2612,15 @@ async function acceptTask(taskId) {
                 }
                 checkAndClearSuspension();
             } else {
-                showToast('❌ Failed to accept task: ' + (data.message || 'Unknown error'), 'error');
+                var msg = (data && data.message) ? data.message : 'Unknown error';
+                showToast('❌ Failed to accept task: ' + msg, 'error');
             }
         }
     } catch (err) {
         console.error('Error accepting task:', err);
-        showToast('❌ Error: ' + err.message, 'error');
+        // Restore accept button
+        if (acceptBtn) { acceptBtn.innerHTML = originalBtnHtml; acceptBtn.disabled = false; }
+        showToast('❌ Error: ' + (err.message || 'Network error. Check your connection.'), 'error');
     }
 }
 

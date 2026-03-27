@@ -2221,6 +2221,49 @@ def pay_from_wallet():
     })
 
 
+@app.route('/api/wallet/penalty', methods=['POST'])
+@require_auth
+def deduct_penalty():
+    """Deduct penalty from wallet — allows negative balance"""
+    data = request.get_json()
+    amount = float(data.get('amount', 0))
+    task_id = data.get('taskId')
+    description = data.get('description', 'Task release penalty')
+    
+    if amount <= 0:
+        return jsonify({'success': False, 'message': 'Invalid penalty amount'}), 400
+    
+    wallet = get_or_create_wallet(request.user_id)
+    new_balance = float(wallet['balance']) - amount
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    
+    with get_db() as (cursor, conn):
+        cursor.execute(f'''
+            UPDATE wallets 
+            SET balance = {PH}, total_spent = total_spent + {PH}, updated_at = {PH}
+            WHERE user_id = {PH}
+        ''', (new_balance, amount, now, request.user_id))
+        
+        cursor.execute(f'''
+            INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, task_id, created_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (wallet['id'], request.user_id, 'penalty', amount, new_balance, description, task_id, now))
+        
+        conn.commit()
+        
+        # Check if user should be suspended due to excessive negative balance
+        suspend_user_if_needed(request.user_id, cursor)
+    
+    print(f"💸 Penalty ₹{amount} deducted from user {request.user_id}. New balance: ₹{new_balance:.2f}")
+    
+    return jsonify({
+        'success': True,
+        'message': f'₹{amount} penalty deducted',
+        'newBalance': new_balance,
+        'penalty': amount
+    })
+
+
 @app.route('/api/wallet/earn', methods=['POST'])
 @require_auth
 def earn_to_wallet():

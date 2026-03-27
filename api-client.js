@@ -642,9 +642,18 @@ const WalletAPI = {
         return result.data;
     },
     
-    // Pay from wallet
+    // Pay from wallet (requires sufficient balance)
     async pay(amount, taskId, description) {
         const result = await apiRequest('/wallet/pay', {
+            method: 'POST',
+            body: JSON.stringify({ amount, taskId, description })
+        });
+        return result.data;
+    },
+    
+    // Deduct penalty from wallet (allows negative balance)
+    async penalty(amount, taskId, description) {
+        const result = await apiRequest('/wallet/penalty', {
             method: 'POST',
             body: JSON.stringify({ amount, taskId, description })
         });

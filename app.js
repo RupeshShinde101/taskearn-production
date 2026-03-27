@@ -2745,23 +2745,30 @@ function checkAndClearSuspension() {
     }
 }
 
-async function deductPenalty(taskValue) {
-    const penalty = Math.round(taskValue * 0.10);
+async function deductPenalty(task) {
+    // Calculate total task value: budget + service charge (fallback to category-based charge)
+    const serviceCharge = task.service_charge || getServiceCharge(task.category);
+    const totalValue = (task.price || 0) + serviceCharge;
+    const penalty = Math.round(totalValue * 0.10);
+    
+    console.log(`💸 Penalty calculation: price=₹${task.price}, serviceCharge=₹${serviceCharge}, total=₹${totalValue}, penalty(10%)=₹${penalty}`);
+    
     try {
-        const result = await WalletAPI.pay(penalty, null, 'Task release penalty (10%)');
+        // Use dedicated penalty endpoint that allows negative balance
+        const result = await WalletAPI.penalty(penalty, task.id, `Task release penalty (10% of ₹${totalValue})`);
         if (result && result.success) {
-            console.log('✅ Penalty deducted:', penalty);
+            console.log('✅ Penalty deducted via API:', penalty, 'New balance:', result.newBalance);
+            currentUser.wallet = result.newBalance;
+            await updateUserData(currentUser.id, { wallet: result.newBalance });
         } else {
-            console.warn('Penalty API failed, updating locally:', result?.message);
-            const newBalance = (currentUser.wallet || 0) - penalty;
-            currentUser.wallet = newBalance;
-            await updateUserData(currentUser.id, { wallet: newBalance });
+            console.warn('⚠️ Penalty API failed:', result?.message, '— updating locally');
+            currentUser.wallet = (currentUser.wallet || 0) - penalty;
+            await updateUserData(currentUser.id, { wallet: currentUser.wallet });
         }
     } catch (e) {
-        console.warn('Penalty deduction network error, updating locally:', e.message);
-        const newBalance = (currentUser.wallet || 0) - penalty;
-        currentUser.wallet = newBalance;
-        await updateUserData(currentUser.id, { wallet: newBalance });
+        console.warn('⚠️ Penalty network error:', e.message, '— updating locally');
+        currentUser.wallet = (currentUser.wallet || 0) - penalty;
+        await updateUserData(currentUser.id, { wallet: currentUser.wallet });
     }
     await refreshWalletBalance();
     return penalty;
@@ -2782,12 +2789,16 @@ async function penaltyConfirmRelease() {
     if (!taskId || !currentUser) return;
 
     const task = myAcceptedTasks.find(t => t.id == taskId) || tasks.find(t => t.id == taskId);
-    const taskValue = (task?.price || 0) + (task?.service_charge || 0);
+    if (!task) {
+        showToast('❌ Task not found', 'error');
+        pendingReleaseTaskId = null;
+        return;
+    }
 
     closeModal('releasePenaltyModal');
 
     showToast('💸 Deducting penalty...');
-    const penalty = await deductPenalty(taskValue);
+    const penalty = await deductPenalty(task);
 
     try {
         const result = await TasksAPI.abandon(taskId);
@@ -2835,7 +2846,9 @@ async function abandonTask(taskId) {
         return;
     }
 
-    const taskValue = (task.price || 0) + (task.service_charge || 0);
+    // Calculate total value with service charge fallback
+    const serviceCharge = task.service_charge || getServiceCharge(task.category);
+    const taskValue = (task.price || 0) + serviceCharge;
     const penalty = Math.round(taskValue * 0.10);
     const currentBalance = currentUser.wallet || 0;
     const walletAfter = currentBalance - penalty;

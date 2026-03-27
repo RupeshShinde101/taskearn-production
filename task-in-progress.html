@@ -750,6 +750,19 @@
             window.location.href = 'index.html?tab=accepted-tasks';
         }
 
+        // Service charge lookup (mirrors SERVICE_CHARGES in app.js)
+        function getServiceChargeForCategory(category) {
+            const charges = {
+                'delivery': 30, 'pickup': 30, 'document': 30, 'errand': 35,
+                'groceries': 40, 'laundry': 40, 'shopping': 40, 'gardening': 50, 'cleaning': 50, 'cooking': 50,
+                'repair': 60, 'assembly': 60, 'tech-support': 60, 'event-help': 60, 'tailoring': 60, 'beauty': 60, 'petcare': 60,
+                'tutoring': 70, 'babysitting': 70, 'fitness': 70, 'photography': 70, 'painting': 70, 'moving': 80, 'eldercare': 80,
+                'carpentry': 90, 'electrician': 100, 'plumbing': 100,
+                'other': 50
+            };
+            return charges[category] || 50;
+        }
+
         // Helper: shared suspension utilities (same localStorage as app.js)
         function getDailyReleaseCount() {
             const today = new Date().toDateString();
@@ -804,7 +817,9 @@
                 return;
             }
 
-            const taskValue = (currentTask.price || currentTask.amount || 0) + (currentTask.service_charge || 0);
+            // Calculate total value with service charge fallback
+            const serviceCharge = currentTask.service_charge || getServiceChargeForCategory(currentTask.category);
+            const taskValue = (currentTask.price || currentTask.amount || 0) + serviceCharge;
             const penalty = Math.round(taskValue * 0.10);
             const user = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
             const helperData = user ? JSON.parse(localStorage.getItem(`user_${user.id}_data`) || '{}') : {};
@@ -834,15 +849,18 @@
 
             const taskId = currentTask.id;
             const token = localStorage.getItem('taskearn_token') || '';
-            const taskValue = (currentTask.price || currentTask.amount || 0) + (currentTask.service_charge || 0);
+            // Calculate total value with service charge fallback
+            const serviceCharge = currentTask.service_charge || getServiceChargeForCategory(currentTask.category);
+            const taskValue = (currentTask.price || currentTask.amount || 0) + serviceCharge;
             const penalty = Math.round(taskValue * 0.10);
 
+            // Use dedicated penalty endpoint that allows negative balance
             if (token) {
                 try {
-                    await fetch(API_URL + '/wallet/pay', {
+                    await fetch(API_URL + '/wallet/penalty', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                        body: JSON.stringify({ amount: penalty, taskId: null, description: 'Task release penalty (10%)' })
+                        body: JSON.stringify({ amount: penalty, taskId: taskId, description: 'Task release penalty (10% of ₹' + taskValue + ')' })
                     });
                 } catch (e) {
                     console.warn('Penalty API failed, deducting locally:', e.message);

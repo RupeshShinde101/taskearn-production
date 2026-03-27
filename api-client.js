@@ -532,6 +532,15 @@ const UserAPI = {
             method: 'GET'
         });
         return result.data;
+    },
+    
+    // Set or clear account suspension
+    async suspend(suspendedUntil, reason) {
+        const result = await apiRequest('/user/suspend', {
+            method: 'POST',
+            body: JSON.stringify({ suspendedUntil, reason })
+        });
+        return result.data;
     }
 };
 
@@ -642,6 +651,15 @@ const WalletAPI = {
     // Pay from wallet
     async pay(amount, taskId, description) {
         const result = await apiRequest('/wallet/pay', {
+            method: 'POST',
+            body: JSON.stringify({ amount, taskId, description })
+        });
+        return result.data;
+    },
+    
+    // Deduct penalty from wallet (allows negative balance)
+    async penalty(amount, taskId, description) {
+        const result = await apiRequest('/wallet/penalty', {
             method: 'POST',
             body: JSON.stringify({ amount, taskId, description })
         });

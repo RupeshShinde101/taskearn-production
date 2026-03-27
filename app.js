@@ -1656,6 +1656,28 @@ document.addEventListener('DOMContentLoaded', async function() {
                         }
                         console.warn('📢 User needs to re-login to migrate to backend');
                     }, 2000);
+                } else {
+                    // Restore suspension state from server if missing locally
+                    if (!localStorage.getItem('taskearn_suspended_until') && typeof AuthAPI !== 'undefined') {
+                        try {
+                            const meResult = await AuthAPI.getCurrentUser();
+                            if (meResult && meResult.success && meResult.user) {
+                                if (meResult.user.isSuspended && meResult.user.suspendedUntil) {
+                                    const untilMs = new Date(meResult.user.suspendedUntil).getTime();
+                                    if (untilMs > Date.now()) {
+                                        localStorage.setItem('taskearn_suspended_until', untilMs.toString());
+                                        console.log('🔒 Suspension restored from server on session restore');
+                                    }
+                                }
+                                // Also sync wallet balance
+                                if (typeof meResult.user.wallet === 'number') {
+                                    currentUser.wallet = meResult.user.wallet;
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ Could not check suspension from server:', e.message);
+                        }
+                    }
                 }
                 
                 setTimeout(() => {
@@ -2618,6 +2640,14 @@ function clearSuspension(showPopup) {
     localStorage.removeItem('taskearn_suspended_until');
     stopSuspensionTimer();
     hideSuspensionBanner();
+
+    // Sync clearance to backend
+    if (typeof UserAPI !== 'undefined' && UserAPI.suspend) {
+        UserAPI.suspend(null, null).catch(e => {
+            console.warn('Could not sync suspension clearance to server:', e.message);
+        });
+    }
+
     if (showPopup) {
         showUnsuspendedPopup();
         addNotification({
@@ -2631,6 +2661,14 @@ function clearSuspension(showPopup) {
 function suspendAccount() {
     const until = Date.now() + 48 * 60 * 60 * 1000;
     localStorage.setItem('taskearn_suspended_until', until.toString());
+
+    // Sync suspension to backend
+    const untilISO = new Date(until).toISOString();
+    if (typeof UserAPI !== 'undefined' && UserAPI.suspend) {
+        UserAPI.suspend(untilISO, 'Released too many tasks today').catch(e => {
+            console.warn('Could not sync suspension to server:', e.message);
+        });
+    }
 
     showSuspendedPopup();
     startSuspensionTimer();
@@ -2733,9 +2771,17 @@ function checkAndClearSuspension() {
 async function deductPenalty(taskValue) {
     const penalty = Math.round(taskValue * 0.10);
     try {
-        const result = await WalletAPI.pay(penalty, null, 'Task release penalty (10%)');
+        // Use penalty endpoint (allows negative balance) with fallback to pay
+        const hasPenaltyAPI = (typeof WalletAPI !== 'undefined' && WalletAPI.penalty);
+        const result = hasPenaltyAPI
+            ? await WalletAPI.penalty(penalty, null, 'Task release penalty (10%)')
+            : await WalletAPI.pay(penalty, null, 'Task release penalty (10%)');
         if (result && result.success) {
-            console.log('✅ Penalty deducted:', penalty);
+            console.log('✅ Penalty deducted:', penalty, 'New balance:', result.newBalance);
+            if (typeof result.newBalance === 'number') {
+                currentUser.wallet = result.newBalance;
+                await updateUserData(currentUser.id, { wallet: result.newBalance });
+            }
         } else {
             console.warn('Penalty API failed, updating locally:', result?.message);
             const newBalance = (currentUser.wallet || 0) - penalty;
@@ -3769,6 +3815,15 @@ async function handleLogin(event) {
                 myAcceptedTasks = result.acceptedTasks || [];
                 myCompletedTasks = result.completedTasks || [];
                 
+                // Restore suspension state from server
+                if (currentUser.isSuspended && currentUser.suspendedUntil) {
+                    const untilMs = new Date(currentUser.suspendedUntil).getTime();
+                    if (untilMs > Date.now()) {
+                        localStorage.setItem('taskearn_suspended_until', untilMs.toString());
+                        console.log('🔒 Suspension restored from server, until:', new Date(untilMs).toLocaleString());
+                    }
+                }
+                
                 // ✅ CRITICAL FIX: Also restore tasks from local storage if not provided by API
                 const allUsers = await getStoredUsersAsync();
                 if (currentUser && allUsers[currentUser.id]) {
@@ -3818,7 +3873,11 @@ async function handleLogin(event) {
                 const tasksLoaded = await loadTasksFromServer();
                 
                 // Render dashboard after tasks are fully loaded
-                setTimeout(() => renderDashboard(), 100);
+                setTimeout(() => {
+                    renderDashboard();
+                    // Show suspension popup and timer if account is suspended
+                    checkAndClearSuspension();
+                }, 100);
                 
                 return;
             } else {

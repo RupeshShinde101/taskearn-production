@@ -99,6 +99,7 @@ def init_postgres_db():
                 is_suspended BOOLEAN DEFAULT FALSE,
                 suspension_reason VARCHAR(255),
                 suspended_at TIMESTAMP,
+                suspended_until TIMESTAMP,
                 profile_photo TEXT,
                 joined_at TIMESTAMP NOT NULL,
                 last_login TIMESTAMP,
@@ -109,6 +110,13 @@ def init_postgres_db():
         # Add profile_photo column if missing (migration)
         try:
             cursor.execute('ALTER TABLE users ADD COLUMN profile_photo TEXT')
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+        
+        # Add suspended_until column if missing (migration)
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN suspended_until TIMESTAMP')
             conn.commit()
         except Exception:
             pass  # Column already exists
@@ -485,6 +493,7 @@ def init_sqlite_db():
                 is_suspended BOOLEAN DEFAULT 0,
                 suspension_reason TEXT,
                 suspended_at TEXT,
+                suspended_until TEXT,
                 profile_photo TEXT,
                 joined_at TEXT NOT NULL,
                 last_login TEXT,
@@ -495,6 +504,13 @@ def init_sqlite_db():
         # Add profile_photo column if missing (migration)
         try:
             cursor.execute('ALTER TABLE users ADD COLUMN profile_photo TEXT')
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+        
+        # Add suspended_until column if missing (migration)
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN suspended_until TEXT')
             conn.commit()
         except Exception:
             pass  # Column already exists

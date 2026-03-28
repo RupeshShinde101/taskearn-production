@@ -2967,9 +2967,16 @@ async function penaltyConfirmRelease() {
     } catch (e) { console.warn('updateUserData failed:', e); }
     tasks = tasks.filter(t => t.id != taskId);
 
-    // Update local release count from server response
+    // Update local release count from server response and persist to localStorage
     if (abandonResult.dailyReleaseCount != null) {
         currentUser.dailyReleaseCount = abandonResult.dailyReleaseCount;
+        try {
+            const storedUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
+            if (storedUser) {
+                storedUser.dailyReleaseCount = abandonResult.dailyReleaseCount;
+                localStorage.setItem('taskearn_user', JSON.stringify(storedUser));
+            }
+        } catch (e) { /* ignore */ }
     }
 
     // Abandon endpoint now returns release count + suspension info

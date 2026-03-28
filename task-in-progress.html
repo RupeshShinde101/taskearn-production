@@ -897,6 +897,16 @@
                         alert(result.message || 'Could not release task');
                         return;
                     }
+                    // Save updated release count to localStorage so next modal shows correct X/3
+                    if (result.dailyReleaseCount != null) {
+                        try {
+                            const storedUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
+                            if (storedUser) {
+                                storedUser.dailyReleaseCount = result.dailyReleaseCount;
+                                localStorage.setItem('taskearn_user', JSON.stringify(storedUser));
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
                     // Handle suspension from abandon response
                     if (result.suspended && result.suspendedUntil) {
                         localStorage.setItem('taskearn_suspended_until', String(new Date(result.suspendedUntil).getTime()));

@@ -851,12 +851,8 @@
             // Daily count is now tracked server-side; fetch from cached user data
             const cachedUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
             const serverDailyCount = cachedUser ? (cachedUser.dailyReleaseCount || 0) : 0;
-            if (serverDailyCount >= 2) {
-                warnEl.style.display = 'block';
-                document.getElementById('tipDailyCount').textContent = serverDailyCount;
-            } else {
-                warnEl.style.display = 'none';
-            }
+            warnEl.style.display = 'block';
+            document.getElementById('tipDailyCount').textContent = serverDailyCount;
 
             document.getElementById('releasePenaltyOverlay').style.display = 'flex';
         }

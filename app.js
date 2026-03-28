@@ -3027,7 +3027,7 @@ async function abandonTask(taskId) {
     }
     if (dailyWarningEl && dailyCountEl) {
         dailyCountEl.textContent = dailyCount;
-        dailyWarningEl.style.display = dailyCount >= 2 ? 'block' : 'none';
+        dailyWarningEl.style.display = 'block';
     }
 
     pendingReleaseTaskId = taskId;

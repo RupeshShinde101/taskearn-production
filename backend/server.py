@@ -114,6 +114,9 @@ def _ensure_suspension_columns():
         with get_db() as (cursor, conn):
             if PH == '%s':
                 # PostgreSQL
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS suspension_reason VARCHAR(255)")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP")
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_until TIMESTAMP")
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_releases INTEGER DEFAULT 0")
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_release_date VARCHAR(20)")
@@ -121,12 +124,11 @@ def _ensure_suspension_columns():
                 # SQLite
                 cursor.execute("PRAGMA table_info(users)")
                 cols = [row[1] for row in cursor.fetchall()]
-                if 'suspended_until' not in cols:
-                    cursor.execute("ALTER TABLE users ADD COLUMN suspended_until TEXT")
-                if 'daily_releases' not in cols:
-                    cursor.execute("ALTER TABLE users ADD COLUMN daily_releases INTEGER DEFAULT 0")
-                if 'daily_release_date' not in cols:
-                    cursor.execute("ALTER TABLE users ADD COLUMN daily_release_date TEXT")
+                for col, typ in [('is_suspended', 'BOOLEAN DEFAULT 0'), ('suspension_reason', 'TEXT'),
+                                 ('suspended_at', 'TEXT'), ('suspended_until', 'TEXT'),
+                                 ('daily_releases', 'INTEGER DEFAULT 0'), ('daily_release_date', 'TEXT')]:
+                    if col not in cols:
+                        cursor.execute(f'ALTER TABLE users ADD COLUMN {col} {typ}')
         _suspension_columns_ensured = True
         print("✅ Suspension columns verified")
     except Exception as e:

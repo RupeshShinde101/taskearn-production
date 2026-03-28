@@ -135,6 +135,30 @@
     </script>
 </head>
 <body>
+    <!-- Splash Intro (shows once per session) -->
+    <div id="splashIntro" style="display:none;position:fixed;inset:0;z-index:99999;background:#fff;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 0.4s ease;">
+        <img src="W4u Logo.png" alt="Workmate4u" id="splashLogo" style="width:180px;opacity:0;transform:scale(0.7);transition:opacity 0.5s ease,transform 0.5s ease;">
+    </div>
+    <script>
+    (function(){
+        if(sessionStorage.getItem('w4u_intro_shown')){
+            var s=document.getElementById('splashIntro');if(s)s.style.display='none';
+        }else{
+            sessionStorage.setItem('w4u_intro_shown','1');
+            var s=document.getElementById('splashIntro');
+            if(s)s.style.display='flex';
+            requestAnimationFrame(function(){
+                var logo=document.getElementById('splashLogo');
+                if(logo){logo.style.opacity='1';logo.style.transform='scale(1)';}
+                setTimeout(function(){
+                    if(s){s.style.opacity='0';}
+                    setTimeout(function(){if(s)s.style.display='none';},400);
+                },1600);
+            });
+        }
+    })();
+    </script>
+
     <!-- Migration Warning Banner (Hidden by default) -->
     <div id="migrationWarningBanner" style="display: none; position: fixed; top: 0; left: 0; right: 0; background: linear-gradient(135deg, #f59e0b, #ea580c); color: white; padding: 15px; text-align: center; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
         <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">

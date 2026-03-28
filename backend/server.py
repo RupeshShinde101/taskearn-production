@@ -747,7 +747,9 @@ def forgot_password():
         'message': 'If an account exists with this email, an OTP has been sent',
         'resetToken': reset_token,
         'maskedEmail': email[:3] + '***@' + email.split('@')[1],
-        'userName': user['name']
+        'userName': user['name'],
+        # OTP returned for client-side EmailJS delivery; removed when SendGrid handles it server-side
+        'otp': otp if not config.SENDGRID_API_KEY else None
     })
 
 

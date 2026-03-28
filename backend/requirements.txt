@@ -15,6 +15,9 @@ eventlet==0.33.3
 # Authentication
 PyJWT==2.8.0
 
+# Rate Limiting
+flask-limiter==3.5.0
+
 # Environment Variables
 python-dotenv==1.0.0
 

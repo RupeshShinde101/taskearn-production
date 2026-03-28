@@ -24,9 +24,18 @@ import hashlib
 import hmac
 import json
 import time
+from html import escape as html_escape
 
 from config import get_config
 from database import init_db, get_db, dict_from_row, get_placeholder
+
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    _has_limiter = True
+except ImportError:
+    _has_limiter = False
+    print("\u26a0\ufe0f  flask-limiter not installed \u2014 rate limiting disabled")
 
 # ========================================
 # APP INITIALIZATION
@@ -35,17 +44,34 @@ from database import init_db, get_db, dict_from_row, get_placeholder
 config = get_config()
 app = Flask(__name__)
 
+# Rate limiter — protects auth endpoints from brute force
+if _has_limiter:
+    limiter = Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=[],
+        storage_uri="memory://"
+    )
+else:
+    limiter = None
+
+def rate_limit(limit_string):
+    """Apply rate limiting if flask-limiter is available, otherwise no-op"""
+    if limiter:
+        return limiter.limit(limit_string)
+    return lambda f: f
+
 # Socket.IO for real-time chat
 socketio = Server(
     async_mode='threading',
-    cors_allowed_origins='*',
+    cors_allowed_origins=config.CORS_ORIGINS,
     ping_timeout=60,
     ping_interval=25
 )
 
-# CORS configuration - Allow all origins for development
+# CORS configuration - Restrict to allowed origins
 CORS(app, 
-     resources={r"/api/*": {"origins": "*"}},
+     resources={r"/api/*": {"origins": config.CORS_ORIGINS}},
      supports_credentials=True,
      allow_headers=['Content-Type', 'Authorization', 'Accept'],
      methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -53,17 +79,28 @@ CORS(app,
 
 app.config['SECRET_KEY'] = config.SECRET_KEY
 
-# Add explicit CORS headers handler
+# Add security + CORS headers to all responses
 @app.after_request
-def add_cors_headers(response):
-    """Add CORS headers to all responses"""
-    response.headers['Access-Control-Allow-Origin'] = '*'
+def add_security_headers(response):
+    """Add security and CORS headers to all responses"""
+    origin = request.headers.get('Origin', '')
+    allowed = config.CORS_ORIGINS
+    if '*' in allowed or origin in allowed:
+        response.headers['Access-Control-Allow-Origin'] = origin or '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
     response.headers['Access-Control-Max-Age'] = '3600'
     response.headers['Access-Control-Allow-Credentials'] = 'true'
     
-    # Add cache headers for API responses
+    # Security headers
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=(self)'
+    
+    # Cache headers for API responses
     if request.path.startswith('/api/'):
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
@@ -77,7 +114,10 @@ def handle_preflight():
     """Handle preflight CORS requests"""
     if request.method == 'OPTIONS':
         response = jsonify({'success': True})
-        response.headers['Access-Control-Allow-Origin'] = '*'
+        origin = request.headers.get('Origin', '')
+        allowed = config.CORS_ORIGINS
+        if '*' in allowed or origin in allowed:
+            response.headers['Access-Control-Allow-Origin'] = origin or '*'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
         response.headers['Access-Control-Max-Age'] = '3600'
@@ -164,7 +204,6 @@ def verify_jwt_token(token):
         return None
     except jwt.InvalidTokenError as e:
         print(f"❌ Invalid token: {e}")
-        print(f"   Current SECRET_KEY: {config.SECRET_KEY[:30]}...")
         return None
 
 
@@ -455,6 +494,7 @@ def disconnect():
 # ========================================
 
 @app.route('/api/auth/register', methods=['POST'])
+@rate_limit('5 per minute')
 def register():
     """Register a new user"""
     data = request.get_json()
@@ -465,7 +505,7 @@ def register():
         if not data.get(field):
             return jsonify({'success': False, 'message': f'{field} is required'}), 400
     
-    name = data['name'].strip()
+    name = html_escape(data['name'].strip())
     email = data['email'].strip().lower()
     password = data['password']
     phone = data.get('phone', '').strip()
@@ -523,6 +563,7 @@ def register():
 
 
 @app.route('/api/auth/login', methods=['POST'])
+@rate_limit('10 per minute')
 def login():
     """Login user"""
     data = request.get_json()
@@ -642,6 +683,7 @@ def migrate_local_suspension():
 # ========================================
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
+@rate_limit('3 per minute')
 def forgot_password():
     """Find account for password reset"""
     data = request.get_json()
@@ -652,7 +694,13 @@ def forgot_password():
     
     user = get_user_by_email(email)
     if not user:
-        return jsonify({'success': False, 'message': 'No account found with this email'}), 404
+        # Return same success response to prevent account enumeration
+        return jsonify({
+            'success': True,
+            'message': 'If an account exists with this email, an OTP has been sent',
+            'resetToken': secrets.token_hex(32),
+            'maskedEmail': email[:3] + '***@' + email.split('@')[1] if '@' in email else '***'
+        })
     
     # Generate OTP (6 digits)
     otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
@@ -696,12 +744,10 @@ def forgot_password():
     
     return jsonify({
         'success': True,
-        'message': 'OTP sent to your email',
+        'message': 'If an account exists with this email, an OTP has been sent',
         'resetToken': reset_token,
         'maskedEmail': email[:3] + '***@' + email.split('@')[1],
-        'userName': user['name'],
-        # Remove 'otp' in production!
-        'otp': otp if not config.SENDGRID_API_KEY else None
+        'userName': user['name']
     })
 
 
@@ -995,12 +1041,12 @@ def create_task():
                                   location_address, price, service_charge, posted_by, posted_at, expires_at, status)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active')
             ''', (
-                data['title'],
-                data['description'],
-                data['category'],
+                html_escape(data['title']),
+                html_escape(data['description']),
+                html_escape(data['category']),
                 location.get('lat'),
                 location.get('lng'),
-                location.get('address'),
+                html_escape(location.get('address', '') or ''),
                 data['price'],
                 service_charge,
                 request.user_id,

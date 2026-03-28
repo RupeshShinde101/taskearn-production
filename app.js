@@ -2967,6 +2967,11 @@ async function penaltyConfirmRelease() {
     } catch (e) { console.warn('updateUserData failed:', e); }
     tasks = tasks.filter(t => t.id != taskId);
 
+    // Update local release count from server response
+    if (abandonResult.dailyReleaseCount != null) {
+        currentUser.dailyReleaseCount = abandonResult.dailyReleaseCount;
+    }
+
     // Abandon endpoint now returns release count + suspension info
     if (abandonResult.suspended && abandonResult.suspendedUntil) {
         setTimerSuspension(abandonResult.suspendedUntil);

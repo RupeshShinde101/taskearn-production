@@ -84,7 +84,7 @@ app.config['SECRET_KEY'] = config.SECRET_KEY
 def add_security_headers(response):
     """Add security and CORS headers to all responses"""
     origin = request.headers.get('Origin', '')
-    allowed = config.CORS_ORIGINS
+    allowed = [o.strip() for o in config.CORS_ORIGINS]
     if '*' in allowed or origin in allowed:
         response.headers['Access-Control-Allow-Origin'] = origin or '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
@@ -115,7 +115,7 @@ def handle_preflight():
     if request.method == 'OPTIONS':
         response = jsonify({'success': True})
         origin = request.headers.get('Origin', '')
-        allowed = config.CORS_ORIGINS
+        allowed = [o.strip() for o in config.CORS_ORIGINS]
         if '*' in allowed or origin in allowed:
             response.headers['Access-Control-Allow-Origin'] = origin or '*'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'

@@ -12,9 +12,6 @@ Allow: /terms.html
 # Block internal/admin pages
 Disallow: /admin.html
 Disallow: /admin-dashboard.html
-Disallow: /api-diagnostic.html
-Disallow: /api-diagnostic-page.html
-Disallow: /debug-mobile.html
 Disallow: /status.html
 Disallow: /test-api.html
 Disallow: /quick-test.html

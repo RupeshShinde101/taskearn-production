@@ -34,6 +34,7 @@
     </script>
 </head>
 <body class="has-tab-bar">
+    <div class="page-loader" id="pageLoader"></div>
     <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
@@ -149,7 +150,11 @@
                             <i class="fas fa-search"></i> Apply Filters
                         </button>
                     </div>
-                    <div class="tasks-list" id="tasksList"></div>
+                    <div class="tasks-list" id="tasksList">
+                        <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>
+                        <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>
+                        <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>
+                    </div>
                 </div>
                 <div class="tasks-map">
                     <div class="tracking-status" id="trackingStatus">
@@ -388,5 +393,6 @@
     <script src="shared.js?v=20260326_penalty"></script>
     <script src="razorpay.js?v=20260326_penalty"></script>
     <script src="app.js?v=20260326_penalty"></script>
+    <script>(function(){var l=document.getElementById('pageLoader');if(l){l.classList.add('active');window.addEventListener('load',function(){l.classList.remove('active');l.classList.add('done');setTimeout(function(){l.remove()},600)})}})()</script>
 </body>
 </html>

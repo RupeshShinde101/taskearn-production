@@ -136,6 +136,9 @@
     </script>
 </head>
 <body>
+    <!-- Page Loading Bar -->
+    <div class="page-loader" id="pageLoader"></div>
+
     <!-- Migration Warning Banner (Hidden by default) -->
     <div id="migrationWarningBanner" style="display: none; position: fixed; top: 0; left: 0; right: 0; background: linear-gradient(135deg, #f59e0b, #ea580c); color: white; padding: 15px; text-align: center; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
         <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
@@ -1304,9 +1307,21 @@
     
     <script src="app.js?v=20260326_penalty"></script>
     
-    <!-- Scroll Animations -->
+    <!-- Scroll Animations + Page Loader -->
     <script>
     (function() {
+        // Page loading bar
+        var loader = document.getElementById('pageLoader');
+        if (loader) {
+            loader.classList.add('active');
+            window.addEventListener('load', function() {
+                loader.classList.remove('active');
+                loader.classList.add('done');
+                setTimeout(function() { loader.remove(); }, 600);
+            });
+        }
+
+        // Intersection Observer for scroll animations
         var observer = new IntersectionObserver(function(entries) {
             entries.forEach(function(entry) {
                 if (entry.isIntersecting) {

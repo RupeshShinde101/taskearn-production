@@ -62,6 +62,7 @@
     </script>
 </head>
 <body>
+    <div class="page-loader" id="pageLoader"></div>
     <nav class="navbar">
         <div class="nav-container">
             <a href="index.html" class="logo"><i class="fas fa-tasks"></i><span>Workmate<span class="highlight">4u</span></span></a>
@@ -240,5 +241,6 @@
 
         loadNotifications();
     </script>
+    <script>(function(){var l=document.getElementById('pageLoader');if(l){l.classList.add('active');window.addEventListener('load',function(){l.classList.remove('active');l.classList.add('done');setTimeout(function(){l.remove()},600)})}})()</script>
 </body>
 </html>

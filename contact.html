@@ -91,6 +91,7 @@
     </script>
 </head>
 <body>
+    <div class="page-loader" id="pageLoader"></div>
     <nav class="navbar">
         <div class="nav-container">
             <a href="index.html" class="logo"><i class="fas fa-tasks"></i><span>Workmate<span class="highlight">4u</span></span></a>
@@ -103,7 +104,7 @@
     </nav>
 
     <section class="contact-hero">
-        <h1>Contact Us</h1>
+        <h1>Contact <span class="gradient-text">Us</span></h1>
         <p>Have a question, issue, or feedback? We'd love to hear from you.</p>
     </section>
 
@@ -277,5 +278,6 @@
             if (user.email) document.getElementById('contactEmail').value = user.email;
         } catch(e) {}
     </script>
+    <script>(function(){var l=document.getElementById('pageLoader');if(l){l.classList.add('active');window.addEventListener('load',function(){l.classList.remove('active');l.classList.add('done');setTimeout(function(){l.remove()},600)})}})()</script>
 </body>
 </html>

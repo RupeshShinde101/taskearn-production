@@ -649,6 +649,7 @@
     </style>
 </head>
 <body>
+    <div class="page-loader" id="pageLoader"></div>
     <!-- Navigation -->
     <nav class="navbar">
         <a href="index.html" class="logo">
@@ -1662,5 +1663,6 @@
     </script>
     <!-- Razorpay Integration -->
     <script src="razorpay.js"></script>
+    <script>(function(){var l=document.getElementById('pageLoader');if(l){l.classList.add('active');window.addEventListener('load',function(){l.classList.remove('active');l.classList.add('done');setTimeout(function(){l.remove()},600)})}})()</script>
 </body>
 </html>

@@ -240,6 +240,16 @@
                 message: document.getElementById('contactMessage').value
             };
 
+            // Save to database via backend API
+            var token = localStorage.getItem('taskearn_token');
+            var url = (window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api') + '/contact';
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': token ? 'Bearer ' + token : '' },
+                body: JSON.stringify(params)
+            }).catch(function(err) { console.warn('Backend save failed:', err); });
+
+            // Also send email notification via EmailJS
             if (typeof emailjs !== 'undefined') {
                 emailjs.init(EMAILJS_PUBLIC_KEY);
                 emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params)
@@ -249,14 +259,7 @@
                         showSuccess();
                     });
             } else {
-                // Fallback: try backend
-                var token = localStorage.getItem('taskearn_token');
-                var url = (window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api') + '/contact';
-                fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': token ? 'Bearer ' + token : '' },
-                    body: JSON.stringify(params)
-                }).catch(function() {}).finally(function() { showSuccess(); });
+                showSuccess();
             }
         }
 

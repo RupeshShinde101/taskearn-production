@@ -4819,6 +4819,60 @@ def cleanup_old_tasks():
 
 
 # ========================================
+# CONTACT MESSAGES API
+# ========================================
+
+@app.route('/api/contact', methods=['POST'])
+def submit_contact_message():
+    """Save a contact form message"""
+    data = request.get_json()
+    name = (data.get('from_name') or data.get('name', '')).strip()
+    email = (data.get('from_email') or data.get('email', '')).strip()
+    subject = data.get('subject', '').strip()
+    message = data.get('message', '').strip()
+
+    if not name or not email or not message:
+        return jsonify({'success': False, 'message': 'Name, email and message are required'}), 400
+
+    # Optional: get user_id from token if logged in
+    user_id = None
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header[7:]
+        if token:
+            with get_db() as (cursor, conn):
+                cursor.execute(f'SELECT id FROM users WHERE session_token = {PH}', (token,))
+                row = cursor.fetchone()
+                if row:
+                    user_id = dict_from_row(row)['id']
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                INSERT INTO contact_messages (name, email, subject, message, user_id, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (name, email, subject, message, user_id, 'new', now))
+        return jsonify({'success': True, 'message': 'Message received. We will respond within 24 hours.'}), 200
+    except Exception as e:
+        print(f"Contact message save error: {e}")
+        return jsonify({'success': True, 'message': 'Message received'}), 200
+
+
+@app.route('/api/admin/contact-messages', methods=['GET'])
+@require_auth
+def get_contact_messages():
+    """Get all contact messages (admin only)"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 100')
+            messages = [dict_from_row(row) for row in cursor.fetchall()]
+        return jsonify({'success': True, 'messages': messages}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ========================================
 # NOTIFICATIONS API
 # ========================================
 

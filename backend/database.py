@@ -386,6 +386,20 @@ def init_postgres_db():
             )
         ''')
         
+        # Contact messages table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS contact_messages (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                subject VARCHAR(100) NOT NULL,
+                message TEXT NOT NULL,
+                user_id VARCHAR(50),
+                status VARCHAR(20) DEFAULT 'new',
+                created_at TIMESTAMP NOT NULL
+            )
+        ''')
+        
         # Commit CREATE TABLEs and ensure clean transaction state for ALTER TABLEs
         conn.commit()
         

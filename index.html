@@ -115,7 +115,7 @@
             const userAgent = navigator.userAgent.toLowerCase();
             const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
             
-            console.log('ðŸ“± Device Detection (Inline Script):', isMobile ? 'MOBILE' : 'DESKTOP');
+            console.log('📱 Device Detection (Inline Script):', isMobile ? 'MOBILE' : 'DESKTOP');
             console.log('User-Agent:', userAgent.substring(0, 80) + '...');
             
             // Pre-set API URL before api-client.js loads
@@ -124,12 +124,12 @@
                 // Force mobile to use proxy (bypasses ISP/carrier DNS blocking)
                 window.API_BASE_URL = '/.netlify/functions/api-proxy/api';
                 window.FORCE_MOBILE_PROXY = true;
-                console.log('âœ… Pre-set for MOBILE: window.API_BASE_URL = /.netlify/functions/api-proxy/api');
+                console.log('✅ Pre-set for MOBILE: window.API_BASE_URL = /.netlify/functions/api-proxy/api');
             } else {
                 // Desktop can attempt direct Railway connection (usually not blocked)
                 window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
                 window.FORCE_MOBILE_PROXY = false;
-                console.log('âœ… Pre-set for DESKTOP: window.API_BASE_URL = Railway direct');
+                console.log('✅ Pre-set for DESKTOP: window.API_BASE_URL = Railway direct');
             }
         })();
     </script>
@@ -222,7 +222,7 @@
     <section class="hero" id="home">
         <div class="hero-content">
             <div class="hero-text">
-                <span class="badge">ðŸ‡®ðŸ‡³ India's #1 Task Marketplace Platform</span>
+                <span class="badge">🇮🇳 India's #1 Task Marketplace Platform</span>
                 <h1>Get Your Tasks Done or <span class="highlight">Earn Money</span> Doing Tasks</h1>
                 <p>Connect with local helpers across India for everyday tasks - from laundry to tutoring, deliveries to repairs. Post a task or earn by helping others in your community.</p>
                 <div class="hero-buttons">

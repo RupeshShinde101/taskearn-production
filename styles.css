@@ -552,7 +552,9 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
 /* Hero Section */
 .hero {
     min-height: 100vh;
-    background: linear-gradient(135deg, #f0f4ff 0%, #e8f4fc 50%, #fdf4ff 100%);
+    background: linear-gradient(135deg, #f0f4ff 0%, #e8f4fc 25%, #fdf4ff 50%, #e8f4fc 75%, #f0f4ff 100%);
+    background-size: 200% 200%;
+    animation: heroGradientShift 8s ease infinite;
     padding: 120px 20px 60px;
     position: relative;
     overflow: hidden;
@@ -1803,11 +1805,11 @@ section {
 @keyframes modalSlide {
     from {
         opacity: 0;
-        transform: translateY(-20px);
+        transform: translateY(30px) scale(0.96);
     }
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
     }
 }
 
@@ -2888,6 +2890,245 @@ section {
 }
 
 /* ========================================
+   Scroll-Triggered Animations
+   ======================================== */
+.animate-on-scroll {
+    opacity: 0;
+    transform: translateY(40px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.animate-on-scroll.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Stagger children animation */
+.stagger-children .animate-on-scroll:nth-child(1) { transition-delay: 0s; }
+.stagger-children .animate-on-scroll:nth-child(2) { transition-delay: 0.1s; }
+.stagger-children .animate-on-scroll:nth-child(3) { transition-delay: 0.2s; }
+.stagger-children .animate-on-scroll:nth-child(4) { transition-delay: 0.3s; }
+.stagger-children .animate-on-scroll:nth-child(5) { transition-delay: 0.4s; }
+.stagger-children .animate-on-scroll:nth-child(6) { transition-delay: 0.5s; }
+.stagger-children .animate-on-scroll:nth-child(7) { transition-delay: 0.6s; }
+.stagger-children .animate-on-scroll:nth-child(8) { transition-delay: 0.7s; }
+.stagger-children .animate-on-scroll:nth-child(9) { transition-delay: 0.8s; }
+
+/* Slide from left */
+.animate-slide-left {
+    opacity: 0;
+    transform: translateX(-40px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.animate-slide-left.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Slide from right */
+.animate-slide-right {
+    opacity: 0;
+    transform: translateX(40px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.animate-slide-right.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Scale up animation */
+.animate-scale {
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.animate-scale.visible {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+    .animate-on-scroll,
+    .animate-slide-left,
+    .animate-slide-right,
+    .animate-scale {
+        opacity: 1;
+        transform: none;
+        transition: none;
+    }
+}
+
+/* ========================================
+   Button Press Effect
+   ======================================== */
+.btn:active {
+    transform: scale(0.97) !important;
+    transition: transform 0.1s ease !important;
+}
+
+/* ========================================
+   Gradient Text for Section Headings
+   ======================================== */
+.gradient-text {
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* ========================================
+   Enhanced Hero Animation
+   ======================================== */
+@keyframes heroGradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Hero text entrance */
+.hero-text .badge {
+    animation: fadeSlideDown 0.6s ease 0.2s both;
+}
+
+.hero-text h1 {
+    animation: fadeSlideDown 0.6s ease 0.4s both;
+}
+
+.hero-text > p {
+    animation: fadeSlideDown 0.6s ease 0.6s both;
+}
+
+.hero-buttons {
+    animation: fadeSlideDown 0.6s ease 0.8s both;
+}
+
+.hero-stats {
+    animation: fadeSlideDown 0.6s ease 1s both;
+}
+
+.hero-image {
+    animation: fadeSlideDown 0.8s ease 0.5s both;
+}
+
+@keyframes fadeSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Enhanced hero illustration pulse */
+.hero-illustration {
+    animation: heroPulse 4s ease-in-out infinite;
+}
+
+@keyframes heroPulse {
+    0%, 100% { box-shadow: 0 30px 60px rgba(99, 102, 241, 0.3); }
+    50% { box-shadow: 0 30px 80px rgba(99, 102, 241, 0.45); }
+}
+
+/* ========================================
+   Enhanced Card Hover Effects
+   ======================================== */
+.category-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.category-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+}
+
+.category-card:hover::before {
+    transform: scaleX(1);
+}
+
+/* Testimonial card enhanced */
+.testimonial-card {
+    position: relative;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border: 1px solid transparent;
+}
+
+.testimonial-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 30px rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.15);
+}
+
+/* Step card hover */
+.step {
+    transition: transform 0.3s ease;
+}
+
+.step:hover {
+    transform: translateY(-5px);
+}
+
+/* ========================================
+   Stats Counter Animation
+   ======================================== */
+.stat h3 {
+    transition: color 0.3s ease;
+}
+
+.stat:hover h3 {
+    color: var(--secondary);
+}
+
+/* ========================================
+   Footer Link Hover Effects
+   ======================================== */
+.footer-links a {
+    position: relative;
+    display: inline-block;
+}
+
+.footer-links a::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: var(--primary);
+    transition: width 0.3s ease;
+}
+
+.footer-links a:hover::after {
+    width: 100%;
+}
+
+/* Social links bounce */
+.social-links a {
+    transition: transform 0.3s ease, background 0.3s ease;
+}
+
+.social-links a:hover {
+    transform: translateY(-3px);
+}
+
+/* ========================================
    Leaflet Custom Markers (FREE Maps!)
    ======================================== */
 
@@ -3883,10 +4124,10 @@ section {
 
 .forgot-step.active {
     display: block;
-    animation: fadeIn 0.3s ease;
+    animation: fadeSlideIn 0.3s ease;
 }
 
-@keyframes fadeIn {
+@keyframes fadeSlideIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }

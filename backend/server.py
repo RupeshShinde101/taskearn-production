@@ -997,6 +997,30 @@ def get_tasks():
         }), 500
 
 
+@app.route('/api/tasks/category-counts', methods=['GET'])
+def get_category_counts():
+    """Get count of active (non-expired) tasks grouped by category"""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT LOWER(category) as category, COUNT(*) as count
+                FROM tasks
+                WHERE status = 'active' AND expires_at > {PH}
+                GROUP BY LOWER(category)
+            ''', (now,))
+            rows = cursor.fetchall()
+            counts = {}
+            for row in rows:
+                r = dict_from_row(row)
+                counts[r['category']] = r['count']
+        return jsonify({'success': True, 'counts': counts})
+    except Exception as e:
+        print(f"[GET /api/tasks/category-counts] Error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/tasks', methods=['POST'])
 @require_auth
 def create_task():

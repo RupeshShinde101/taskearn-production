@@ -798,6 +798,49 @@ let tasks = [];
 let myPostedTasks = [];
 let myAcceptedTasks = [];
 let myCompletedTasks = [];
+
+// ========================================
+// LIVE CATEGORY COUNTS
+// ========================================
+
+async function loadCategoryCounts() {
+    try {
+        if (typeof TasksAPI !== 'undefined' && TasksAPI.getCategoryCounts) {
+            const result = await TasksAPI.getCategoryCounts();
+            if (result && result.success && result.counts) {
+                updateCategoryCards(result.counts);
+                return;
+            }
+        }
+        // Fallback: compute from already-loaded tasks array
+        updateCategoryCardsFromTasks();
+    } catch (e) {
+        console.warn('Category counts fetch failed, using local tasks:', e.message);
+        updateCategoryCardsFromTasks();
+    }
+}
+
+function updateCategoryCards(counts) {
+    const cards = document.querySelectorAll('#categoriesGrid .category-card');
+    cards.forEach(card => {
+        const cat = card.getAttribute('data-category');
+        if (!cat) return;
+        const count = counts[cat] || 0;
+        const span = card.querySelector('.task-count');
+        if (span) span.textContent = count + (count === 1 ? ' task' : ' tasks');
+    });
+}
+
+function updateCategoryCardsFromTasks() {
+    const counts = {};
+    tasks.forEach(t => {
+        if (t.status === 'active' && (!t.expiresAt || new Date(t.expiresAt) > new Date())) {
+            const cat = (t.category || '').toLowerCase();
+            counts[cat] = (counts[cat] || 0) + 1;
+        }
+    });
+    updateCategoryCards(counts);
+}
 let notifications = [];
 
 // ========================================
@@ -1748,6 +1791,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Could not load tasks from server:', e.message);
         }
         
+        // Load live category counts for Popular Tasks section
+        try {
+            await loadCategoryCounts();
+        } catch (e) {
+            console.warn('⚠️ Category counts failed:', e.message);
+        }
+        
         // Fallback render if server load failed
         try {
             renderTasks();
@@ -1760,6 +1810,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         setInterval(() => {
             try {
                 loadTasksFromServer().catch(e => console.warn('⚠️ Auto-refresh failed:', e.message));
+                loadCategoryCounts().catch(e => console.warn('⚠️ Category count refresh failed:', e.message));
                 // Also refresh wallet balance
                 refreshWalletBalance().catch(e => console.warn('⚠️ Wallet refresh failed:', e.message));
             } catch (e) {
@@ -3913,7 +3964,10 @@ async function handleTaskSubmit(event) {
     }, 500);
     
     // Refresh tasks from server to sync
-    setTimeout(() => loadTasksFromServer(), 1000);
+    setTimeout(() => {
+        loadTasksFromServer();
+        loadCategoryCounts();
+    }, 1000);
     
     // Show success modal with edit option
     showTaskPostedSuccess(newTask);
@@ -5274,6 +5328,7 @@ window.switchTab = switchTab;
 window.applyFilters = applyFilters;
 window.clearFilters = clearFilters;
 window.filterByCategory = filterByCategory;
+window.loadCategoryCounts = loadCategoryCounts;
 window.selectBudget = selectBudget;
 window.addBonus = addBonus;
 window.updateTotalBudgetDisplay = updateTotalBudgetDisplay;

@@ -619,6 +619,14 @@ const TasksAPI = {
             method: 'DELETE'
         });
         return result.data;
+    },
+
+    // Get active task counts grouped by category
+    async getCategoryCounts() {
+        const result = await apiRequest('/tasks/category-counts', {
+            method: 'GET'
+        });
+        return result.data;
     }
 };
 

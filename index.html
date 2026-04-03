@@ -499,78 +499,78 @@
                 <h2>Popular Task Categories</h2>
                 <p>Find help for any task or offer your skills in these categories</p>
             </div>
-            <div class="categories-grid">
-                <div class="category-card" onclick="filterByCategory('household')">
+            <div class="categories-grid" id="categoriesGrid">
+                <div class="category-card" data-category="household" onclick="filterByCategory('household')">
                     <div class="category-icon household">
                         <i class="fas fa-home"></i>
                     </div>
                     <h3>Household Chores</h3>
                     <p>Laundry, Cleaning, Organizing</p>
-                    <span class="task-count">234 tasks</span>
+                    <span class="task-count" id="count-household">0 tasks</span>
                 </div>
-                <div class="category-card" onclick="filterByCategory('delivery')">
+                <div class="category-card" data-category="delivery" onclick="filterByCategory('delivery')">
                     <div class="category-icon delivery">
                         <i class="fas fa-shipping-fast"></i>
                     </div>
                     <h3>Delivery Services</h3>
                     <p>Parcels, Groceries, Medicines, Tiffin</p>
-                    <span class="task-count">189 tasks</span>
+                    <span class="task-count" id="count-delivery">0 tasks</span>
                 </div>
-                <div class="category-card" onclick="filterByCategory('tutoring')">
+                <div class="category-card" data-category="tutoring" onclick="filterByCategory('tutoring')">
                     <div class="category-icon tutoring">
                         <i class="fas fa-graduation-cap"></i>
                     </div>
                     <h3>Online Tutoring</h3>
                     <p>JEE, NEET, Board Exams, Languages</p>
-                    <span class="task-count">156 tasks</span>
+                    <span class="task-count" id="count-tutoring">0 tasks</span>
                 </div>
-                <div class="category-card" onclick="filterByCategory('transport')">
+                <div class="category-card" data-category="transport" onclick="filterByCategory('transport')">
                     <div class="category-icon transport">
                         <i class="fas fa-car"></i>
                     </div>
                     <h3>Pick & Drop</h3>
                     <p>Railway Station, Airport, Events</p>
-                    <span class="task-count">98 tasks</span>
+                    <span class="task-count" id="count-transport">0 tasks</span>
                 </div>
-                <div class="category-card" onclick="filterByCategory('vehicle')">
+                <div class="category-card" data-category="vehicle" onclick="filterByCategory('vehicle')">
                     <div class="category-icon vehicle">
                         <i class="fas fa-car-side"></i>
                     </div>
                     <h3>Vehicle Services</h3>
                     <p>Car Wash, Bike Wash, Detailing</p>
-                    <span class="task-count">87 tasks</span>
+                    <span class="task-count" id="count-vehicle">0 tasks</span>
                 </div>
-                <div class="category-card" onclick="filterByCategory('repair')">
+                <div class="category-card" data-category="repair" onclick="filterByCategory('repair')">
                     <div class="category-icon repair">
                         <i class="fas fa-tools"></i>
                     </div>
                     <h3>Repairs & Mechanical</h3>
                     <p>Plumbing, Electrical, Appliances</p>
-                    <span class="task-count">145 tasks</span>
+                    <span class="task-count" id="count-repair">0 tasks</span>
                 </div>
-                <div class="category-card" onclick="filterByCategory('photography')">
+                <div class="category-card" data-category="photography" onclick="filterByCategory('photography')">
                     <div class="category-icon photography">
                         <i class="fas fa-camera"></i>
                     </div>
                     <h3>Photography</h3>
                     <p>Weddings, Events, Pre-wedding</p>
-                    <span class="task-count">67 tasks</span>
+                    <span class="task-count" id="count-photography">0 tasks</span>
                 </div>
-                <div class="category-card" onclick="filterByCategory('freelance')">
+                <div class="category-card" data-category="freelance" onclick="filterByCategory('freelance')">
                     <div class="category-icon freelance">
                         <i class="fas fa-laptop-code"></i>
                     </div>
                     <h3>Freelance Services</h3>
                     <p>Design, Writing, Development</p>
-                    <span class="task-count">312 tasks</span>
+                    <span class="task-count" id="count-freelance">0 tasks</span>
                 </div>
-                <div class="category-card" onclick="filterByCategory('waste')">
+                <div class="category-card" data-category="waste" onclick="filterByCategory('waste')">
                     <div class="category-icon waste">
                         <i class="fas fa-recycle"></i>
                     </div>
                     <h3>Waste Collection</h3>
                     <p>Garbage, Recycling, Junk Removal</p>
-                    <span class="task-count">45 tasks</span>
+                    <span class="task-count" id="count-waste">0 tasks</span>
                 </div>
             </div>
         </div>

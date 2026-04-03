@@ -1282,6 +1282,7 @@ document.addEventListener('click', function(e) {
 async function loadTasksFromServer() {
     try {
         console.log('📡 Loading tasks from backend server...');
+        showTaskListSkeletons();
         console.log('🔑 API Token exists:', !!localStorage.getItem('taskearn_token'));
         console.log('🌐 API URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : window.TASKEARN_API_URL);
         
@@ -2354,6 +2355,22 @@ function toggleMapType() {
 // TASK LIST RENDERING
 // ========================================
 
+function showTaskListSkeletons() {
+    const container = document.getElementById('tasksList');
+    if (!container) return;
+    container.innerHTML = Array(4).fill('').map(() => `
+        <div class="skeleton-card">
+            <div class="skeleton-row">
+                <div class="skeleton skeleton-text short"></div>
+                <div class="skeleton skeleton-text short" style="margin-left: auto; width: 60px;"></div>
+            </div>
+            <div class="skeleton skeleton-title"></div>
+            <div class="skeleton skeleton-text"></div>
+            <div class="skeleton skeleton-text short"></div>
+        </div>
+    `).join('');
+}
+
 function renderTasks(filtered = null) {
     const container = document.getElementById('tasksList');
     if (!container) return;
@@ -2377,7 +2394,10 @@ function renderTasks(filtered = null) {
             <div class="empty-state">
                 <i class="fas fa-search"></i>
                 <h3>No tasks found</h3>
-                <p>Try adjusting your filters</p>
+                <p>Try adjusting your filters or check back later</p>
+                <button class="btn btn-primary" onclick="showSection('upload-task')" style="margin-top: 15px; padding: 10px 24px;">
+                    <i class="fas fa-plus"></i> Post a Task
+                </button>
             </div>
         `;
         return;
@@ -2447,6 +2467,7 @@ function openTaskDetail(taskId) {
         return;
     }
 
+    window._lastTaskId = taskId;
     console.log('✅ Opening task detail for:', task.title);
 
     const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
@@ -2492,6 +2513,9 @@ function openTaskDetail(taskId) {
                 <div class="poster-rating">
                     ${generateStars(task.postedBy.rating)}
                     <span>(${task.postedBy.rating})</span>
+                </div>
+                <div class="poster-reviews-link" onclick="viewUserReviews('${task.postedBy.id}', '${task.postedBy.name.replace(/'/g, "\\'")}')">
+                    <i class="fas fa-comment-dots"></i> View Reviews
                 </div>
             </div>
         </div>
@@ -2554,6 +2578,76 @@ function generateStars(rating) {
         else html += '<i class="far fa-star"></i>';
     }
     return html;
+}
+
+async function viewUserReviews(userId, userName) {
+    const content = document.getElementById('taskDetailContent');
+    if (!content) return;
+    
+    content.innerHTML = `
+        <div style="padding: 20px; text-align: center;">
+            <div class="skeleton skeleton-title" style="margin: 0 auto 20px;"></div>
+            <div class="skeleton skeleton-text"></div>
+            <div class="skeleton skeleton-text short"></div>
+        </div>
+    `;
+    
+    try {
+        const result = await TasksAPI.makeRequest(`/api/user/${encodeURIComponent(userId)}/reviews`);
+        const reviews = result.data?.reviews || [];
+        const stats = result.data?.stats || {};
+        
+        let reviewsHtml = '';
+        if (reviews.length === 0) {
+            reviewsHtml = `
+                <div class="empty-state" style="padding: 30px 10px;">
+                    <i class="fas fa-star" style="font-size: 2.5rem; color: var(--gray-light); margin-bottom: 10px;"></i>
+                    <h4>No reviews yet</h4>
+                    <p style="color: var(--gray);">This user hasn't received any reviews.</p>
+                </div>
+            `;
+        } else {
+            reviewsHtml = reviews.map(r => `
+                <div style="padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <strong style="font-size: 0.9rem;">${r.rater_name || 'Anonymous'}</strong>
+                        <span style="color: var(--warning); font-size: 0.85rem;">${generateStars(r.rating)}</span>
+                    </div>
+                    ${r.review ? `<p style="color: var(--gray); font-size: 0.9rem; margin: 4px 0;">${r.review}</p>` : ''}
+                    <small style="color: var(--gray-light);">${r.task_title || ''}</small>
+                </div>
+            `).join('');
+        }
+        
+        content.innerHTML = `
+            <div style="padding: 5px 0;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                    <button class="btn btn-outline" onclick="openTaskDetail(window._lastTaskId)" style="padding: 6px 12px; font-size: 0.85rem;">
+                        <i class="fas fa-arrow-left"></i> Back
+                    </button>
+                    <h3 style="margin: 0;">Reviews for ${userName}</h3>
+                </div>
+                <div style="display: flex; gap: 20px; padding: 15px; background: var(--light); border-radius: var(--radius); margin-bottom: 15px; text-align: center;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--dark);">${(stats.avgRating || 5).toFixed(1)}</div>
+                        <div style="color: var(--warning);">${generateStars(stats.avgRating || 5)}</div>
+                        <small style="color: var(--gray);">${stats.totalReviews || 0} reviews</small>
+                    </div>
+                </div>
+                <div>${reviewsHtml}</div>
+            </div>
+        `;
+    } catch (err) {
+        content.innerHTML = `
+            <div class="empty-state" style="padding: 30px;">
+                <i class="fas fa-exclamation-circle" style="color: var(--danger);"></i>
+                <p>Could not load reviews.</p>
+                <button class="btn btn-outline" onclick="openTaskDetail(window._lastTaskId)">
+                    <i class="fas fa-arrow-left"></i> Back to Task
+                </button>
+            </div>
+        `;
+    }
 }
 
 // ========================================

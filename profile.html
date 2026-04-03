@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -14,7 +14,7 @@
         function loadRazorpayScript() { if (typeof Razorpay !== 'undefined') return; var s = document.createElement('script'); s.src = 'https://checkout.razorpay.com/v1/checkout.js'; s.async = true; document.head.appendChild(s); }
         if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', loadRazorpayScript); } else { loadRazorpayScript(); }
     </script>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="stylesheet" href="styles.css">
     <script>
         (function() { var ua = navigator.userAgent.toLowerCase(); var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua); if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; } else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; } })();
     </script>

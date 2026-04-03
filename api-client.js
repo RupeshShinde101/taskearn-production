@@ -246,9 +246,26 @@ async function apiRequest(endpoint, options = {}) {
             if (token) {
                 console.log('   Token length:', token.length);
                 console.log('   Token preview:', token.substring(0, 30) + '...');
+                localStorage.removeItem('taskearn_token');
+                console.log('⚠️  Token cleared from localStorage');
+                // Show session expired overlay if not already shown
+                if (!document.getElementById('sessionExpiredOverlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.id = 'sessionExpiredOverlay';
+                    overlay.className = 'session-expired-overlay';
+                    overlay.innerHTML = `
+                        <div class="session-expired-box">
+                            <i class="fas fa-clock"></i>
+                            <h3>Session Expired</h3>
+                            <p>Your session has expired. Please log in again to continue.</p>
+                            <button class="btn btn-primary" onclick="document.getElementById('sessionExpiredOverlay').remove(); if(typeof openModal === 'function') openModal('loginModal'); else window.location.href='index.html';">
+                                <i class="fas fa-sign-in-alt"></i> Log In Again
+                            </button>
+                        </div>
+                    `;
+                    document.body.appendChild(overlay);
+                }
             }
-            localStorage.removeItem('taskearn_token');
-            console.log('⚠️  Token cleared from localStorage');
         }
         
         return { success: response.ok, status: response.status, data };

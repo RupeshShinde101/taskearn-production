@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Us - Workmate4u Support</title>
+    <meta name="description" content="Contact Workmate4u support for help with tasks, payments, account issues, or feedback. We're here to help you.">
+    <meta name="keywords" content="Workmate4u contact, support, help, customer service">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://workmate4u.netlify.app/contact.html">
+    <meta property="og:title" content="Contact Workmate4u Support">
+    <meta property="og:description" content="Get help with your Workmate4u account, tasks, payments, or give us feedback.">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <style>
+        .contact-hero {
+            background: var(--gradient);
+            color: white;
+            padding: 100px 20px 60px;
+            text-align: center;
+        }
+        .contact-hero h1 { font-size: 2.5rem; margin-bottom: 15px; }
+        .contact-hero p { font-size: 1.1rem; opacity: 0.9; max-width: 550px; margin: 0 auto; }
+        .contact-wrapper {
+            max-width: 1000px;
+            margin: -30px auto 0;
+            padding: 0 20px 60px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+        @media (max-width: 768px) { .contact-wrapper { grid-template-columns: 1fr; margin-top: 20px; } }
+        .contact-form-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: 35px;
+            box-shadow: var(--shadow-lg);
+        }
+        .contact-form-card h2 { margin-bottom: 5px; color: var(--dark); }
+        .contact-form-card > p { color: var(--gray); margin-bottom: 25px; font-size: 0.95rem; }
+        .contact-form .form-group { margin-bottom: 18px; }
+        .contact-form label { display: block; font-weight: 600; color: var(--dark); margin-bottom: 6px; font-size: 0.9rem; }
+        .contact-form input, .contact-form select, .contact-form textarea {
+            width: 100%; padding: 12px 15px; border: 2px solid var(--light);
+            border-radius: 10px; font-size: 0.95rem; font-family: inherit;
+            transition: var(--transition); background: var(--white);
+        }
+        .contact-form input:focus, .contact-form select:focus, .contact-form textarea:focus {
+            border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+        }
+        .contact-form textarea { min-height: 120px; resize: vertical; }
+        .contact-info-card {
+            display: flex; flex-direction: column; gap: 20px;
+        }
+        .info-box {
+            background: var(--white);
+            border-radius: var(--radius);
+            padding: 25px;
+            box-shadow: var(--shadow);
+            display: flex; gap: 15px; align-items: flex-start;
+        }
+        .info-box i { font-size: 1.4rem; color: var(--primary); margin-top: 3px; flex-shrink: 0; }
+        .info-box h4 { color: var(--dark); margin-bottom: 5px; }
+        .info-box p { color: var(--gray); font-size: 0.9rem; line-height: 1.5; }
+        .info-box a { color: var(--primary); text-decoration: none; font-weight: 500; }
+        .success-msg {
+            display: none; text-align: center; padding: 30px;
+        }
+        .success-msg.show { display: block; }
+        .success-msg i { font-size: 3rem; color: var(--success); margin-bottom: 15px; }
+        .success-msg h3 { color: var(--dark); margin-bottom: 10px; }
+        .success-msg p { color: var(--gray); }
+        .faq-link {
+            background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+            border-radius: var(--radius);
+            padding: 25px;
+            text-align: center;
+        }
+        .faq-link h4 { color: var(--dark); margin-bottom: 8px; }
+        .faq-link p { color: var(--gray); font-size: 0.9rem; margin-bottom: 15px; }
+    </style>
+    <script>
+        (function() {
+            var ua = navigator.userAgent.toLowerCase();
+            var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+            if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; }
+            else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; }
+        })();
+    </script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="logo"><i class="fas fa-tasks"></i><span>Workmate<span class="highlight">4u</span></span></a>
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="browse.html">Find Tasks</a></li>
+                <li><a href="help.html">Help</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <section class="contact-hero">
+        <h1>Contact Us</h1>
+        <p>Have a question, issue, or feedback? We'd love to hear from you.</p>
+    </section>
+
+    <div class="contact-wrapper">
+        <div class="contact-form-card">
+            <h2>Send Us a Message</h2>
+            <p>Fill out the form below and we'll get back to you within 24 hours.</p>
+            <form class="contact-form" id="contactForm" onsubmit="submitContactForm(event)">
+                <div class="form-group">
+                    <label for="contactName">Your Name</label>
+                    <input type="text" id="contactName" placeholder="Enter your full name" required>
+                </div>
+                <div class="form-group">
+                    <label for="contactEmail">Email Address</label>
+                    <input type="email" id="contactEmail" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="contactSubject">Subject</label>
+                    <select id="contactSubject" required>
+                        <option value="">Select a topic</option>
+                        <option value="account">Account Issue</option>
+                        <option value="payment">Payment / Wallet Issue</option>
+                        <option value="task">Task Related</option>
+                        <option value="dispute">Dispute / Complaint</option>
+                        <option value="withdrawal">Withdrawal Issue</option>
+                        <option value="bug">Report a Bug</option>
+                        <option value="feedback">General Feedback</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="contactMessage">Message</label>
+                    <textarea id="contactMessage" placeholder="Describe your issue or feedback in detail..." required></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block" id="contactSubmitBtn">
+                    <i class="fas fa-paper-plane"></i> Send Message
+                </button>
+            </form>
+            <div class="success-msg" id="contactSuccess">
+                <i class="fas fa-check-circle"></i>
+                <h3>Message Sent!</h3>
+                <p>Thank you for reaching out. We'll respond to your email within 24 hours.</p>
+            </div>
+        </div>
+
+        <div class="contact-info-card">
+            <div class="info-box">
+                <i class="fas fa-envelope"></i>
+                <div>
+                    <h4>Email Support</h4>
+                    <p>For general inquiries and support</p>
+                    <a href="mailto:info@workmate4u.com">info@workmate4u.com</a>
+                </div>
+            </div>
+            <div class="info-box">
+                <i class="fas fa-clock"></i>
+                <div>
+                    <h4>Response Time</h4>
+                    <p>We typically respond within 24 hours on business days. Urgent payment issues are prioritized.</p>
+                </div>
+            </div>
+            <div class="info-box">
+                <i class="fas fa-shield-alt"></i>
+                <div>
+                    <h4>Safety Concerns</h4>
+                    <p>If you feel unsafe during a task, use the SOS button in the app or contact local authorities immediately.</p>
+                    <a href="safety.html">View Safety Guidelines</a>
+                </div>
+            </div>
+            <div class="info-box">
+                <i class="fas fa-exclamation-triangle"></i>
+                <div>
+                    <h4>Report a User</h4>
+                    <p>If you've encountered inappropriate behavior, please describe the incident in the contact form with the subject "Dispute / Complaint".</p>
+                </div>
+            </div>
+            <div class="faq-link">
+                <h4>Check our FAQ first</h4>
+                <p>Many questions are already answered in our Help Center.</p>
+                <a href="help.html" class="btn btn-outline"><i class="fas fa-question-circle"></i> Visit Help Center</a>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div class="logo"><i class="fas fa-tasks"></i><span>Workmate<span class="highlight">4u</span></span></div>
+                    <p>India's trusted local task marketplace.</p>
+                </div>
+                <div class="footer-links">
+                    <h4>Platform</h4>
+                    <a href="browse.html">Browse Tasks</a>
+                    <a href="index.html#upload-task">Post a Task</a>
+                    <a href="wallet.html">Wallet</a>
+                </div>
+                <div class="footer-links">
+                    <h4>Company</h4>
+                    <a href="about.html">About Us</a>
+                    <a href="contact.html">Contact</a>
+                    <a href="help.html">Help Center</a>
+                </div>
+                <div class="footer-links">
+                    <h4>Legal</h4>
+                    <a href="terms.html">Terms of Service</a>
+                    <a href="privacy.html">Privacy Policy</a>
+                    <a href="safety.html">Safety Guidelines</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 Workmate4u India. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="shared.js"></script>
+    <script>
+        function submitContactForm(e) {
+            e.preventDefault();
+            var btn = document.getElementById('contactSubmitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+
+            // Simulate sending (EmailJS or backend integration point)
+            setTimeout(function() {
+                document.getElementById('contactForm').style.display = 'none';
+                document.querySelector('.contact-form-card h2').style.display = 'none';
+                document.querySelector('.contact-form-card > p').style.display = 'none';
+                document.getElementById('contactSuccess').classList.add('show');
+            }, 1500);
+        }
+
+        // Pre-fill email if logged in
+        try {
+            var user = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
+            if (user.name) document.getElementById('contactName').value = user.name;
+            if (user.email) document.getElementById('contactEmail').value = user.email;
+        } catch(e) {}
+    </script>
+</body>
+</html>

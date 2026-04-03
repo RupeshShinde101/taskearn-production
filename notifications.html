@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notifications - Workmate4u</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <style>
+        .notif-page { padding: 90px 20px 100px; max-width: 700px; margin: 0 auto; }
+        .notif-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .notif-header h1 { font-size: 1.8rem; color: var(--dark); }
+        .notif-list { display: flex; flex-direction: column; gap: 10px; }
+        .notif-item {
+            background: var(--white); border-radius: var(--radius); padding: 18px 20px;
+            box-shadow: var(--shadow); display: flex; gap: 15px; align-items: flex-start;
+            transition: var(--transition); cursor: pointer; border-left: 4px solid transparent;
+        }
+        .notif-item:hover { box-shadow: var(--shadow-lg); }
+        .notif-item.unread { background: #f0f4ff; border-left-color: var(--primary); }
+        .notif-icon {
+            width: 42px; height: 42px; border-radius: 10px; display: flex;
+            align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;
+        }
+        .notif-icon.task { background: #ede9fe; color: #7c3aed; }
+        .notif-icon.payment { background: #dcfce7; color: #16a34a; }
+        .notif-icon.wallet { background: #fef3c7; color: #d97706; }
+        .notif-icon.system { background: #e0f2fe; color: #0284c7; }
+        .notif-icon.warning { background: #fef2f2; color: #dc2626; }
+        .notif-body { flex: 1; min-width: 0; }
+        .notif-body p { color: var(--dark); font-size: 0.95rem; line-height: 1.4; margin-bottom: 4px; }
+        .notif-body .notif-time { color: var(--gray-light); font-size: 0.8rem; }
+        .notif-delete { color: var(--gray-light); font-size: 0.9rem; padding: 5px; cursor: pointer; opacity: 0; transition: 0.2s; }
+        .notif-item:hover .notif-delete { opacity: 1; }
+        .notif-delete:hover { color: var(--danger); }
+        .notif-empty {
+            text-align: center; padding: 80px 20px;
+        }
+        .notif-empty i { font-size: 4rem; color: var(--gray-light); margin-bottom: 15px; }
+        .notif-empty h3 { color: var(--gray); margin-bottom: 8px; }
+        .notif-empty p { color: var(--gray-light); }
+        .notif-loading { text-align: center; padding: 60px 20px; color: var(--gray); }
+        .notif-tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+        .notif-tab {
+            padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 500;
+            border: 2px solid var(--light); background: var(--white); cursor: pointer;
+            transition: var(--transition); color: var(--gray);
+        }
+        .notif-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .notif-tab:hover:not(.active) { border-color: var(--primary); color: var(--primary); }
+    </style>
+    <script>
+        (function() {
+            var ua = navigator.userAgent.toLowerCase();
+            var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+            if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; }
+            else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; }
+        })();
+    </script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="logo"><i class="fas fa-tasks"></i><span>Workmate<span class="highlight">4u</span></span></a>
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="browse.html">Find Tasks</a></li>
+                <li><a href="wallet.html">Wallet</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="notif-page">
+        <div class="notif-header">
+            <h1><i class="fas fa-bell"></i> Notifications</h1>
+            <button class="btn btn-outline" style="font-size:0.85rem; padding:8px 15px;" onclick="clearAllNotifications()">
+                <i class="fas fa-check-double"></i> Mark All Read
+            </button>
+        </div>
+
+        <div class="notif-tabs">
+            <button class="notif-tab active" onclick="filterNotifs('all', this)">All</button>
+            <button class="notif-tab" onclick="filterNotifs('task', this)">Tasks</button>
+            <button class="notif-tab" onclick="filterNotifs('payment', this)">Payments</button>
+            <button class="notif-tab" onclick="filterNotifs('system', this)">System</button>
+        </div>
+
+        <div class="notif-loading" id="notifLoading">
+            <i class="fas fa-spinner fa-spin" style="font-size: 2rem; margin-bottom: 15px;"></i>
+            <p>Loading notifications...</p>
+        </div>
+
+        <div class="notif-list" id="notifList" style="display:none;"></div>
+
+        <div class="notif-empty" id="notifEmpty" style="display:none;">
+            <i class="fas fa-bell-slash"></i>
+            <h3>No Notifications</h3>
+            <p>You're all caught up! We'll notify you when something important happens.</p>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-bottom">
+                <p>&copy; 2026 Workmate4u India. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="api-client.js"></script>
+    <script src="shared.js"></script>
+    <script>
+        var allNotifications = [];
+        var currentFilter = 'all';
+
+        function getNotifIcon(type) {
+            var map = {
+                'task_accepted': { icon: 'fa-check', cls: 'task' },
+                'task_completed': { icon: 'fa-flag-checkered', cls: 'task' },
+                'task_expired': { icon: 'fa-clock', cls: 'warning' },
+                'payment_received': { icon: 'fa-rupee-sign', cls: 'payment' },
+                'payment_sent': { icon: 'fa-arrow-up', cls: 'payment' },
+                'wallet_topup': { icon: 'fa-wallet', cls: 'wallet' },
+                'withdrawal': { icon: 'fa-university', cls: 'payment' },
+                'penalty': { icon: 'fa-exclamation-triangle', cls: 'warning' },
+                'system': { icon: 'fa-info-circle', cls: 'system' }
+            };
+            return map[type] || { icon: 'fa-bell', cls: 'system' };
+        }
+
+        function getNotifCategory(type) {
+            if (type && (type.startsWith('task') || type === 'penalty')) return 'task';
+            if (type && (type.startsWith('payment') || type.startsWith('wallet') || type === 'withdrawal')) return 'payment';
+            return 'system';
+        }
+
+        function timeAgo(date) {
+            var diff = Date.now() - new Date(date).getTime();
+            var mins = Math.floor(diff / 60000);
+            if (mins < 1) return 'Just now';
+            if (mins < 60) return mins + 'm ago';
+            var hrs = Math.floor(mins / 60);
+            if (hrs < 24) return hrs + 'h ago';
+            var days = Math.floor(hrs / 24);
+            if (days < 7) return days + 'd ago';
+            return new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        }
+
+        function renderNotifications() {
+            var list = document.getElementById('notifList');
+            var empty = document.getElementById('notifEmpty');
+            var filtered = currentFilter === 'all' ? allNotifications :
+                allNotifications.filter(function(n) { return getNotifCategory(n.type) === currentFilter; });
+
+            if (filtered.length === 0) {
+                list.style.display = 'none';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            list.style.display = 'flex';
+
+            list.innerHTML = filtered.map(function(n) {
+                var ic = getNotifIcon(n.type);
+                var data = typeof n.data === 'string' ? JSON.parse(n.data || '{}') : (n.data || {});
+                var msg = data.message || n.message || 'You have a notification';
+                return '<div class="notif-item ' + (n.read ? '' : 'unread') + '" onclick="markRead(' + n.id + ')">' +
+                    '<div class="notif-icon ' + ic.cls + '"><i class="fas ' + ic.icon + '"></i></div>' +
+                    '<div class="notif-body"><p>' + msg + '</p>' +
+                    '<span class="notif-time">' + timeAgo(n.created_at || n.timestamp) + '</span></div>' +
+                    '<span class="notif-delete" onclick="event.stopPropagation();deleteNotif(' + n.id + ')" title="Delete"><i class="fas fa-times"></i></span>' +
+                '</div>';
+            }).join('');
+        }
+
+        function filterNotifs(filter, btn) {
+            currentFilter = filter;
+            document.querySelectorAll('.notif-tab').forEach(function(t) { t.classList.remove('active'); });
+            if (btn) btn.classList.add('active');
+            renderNotifications();
+        }
+
+        async function loadNotifications() {
+            var token = localStorage.getItem('taskearn_token');
+            if (!token) {
+                document.getElementById('notifLoading').style.display = 'none';
+                document.getElementById('notifEmpty').style.display = 'block';
+                return;
+            }
+            try {
+                var url = (window.API_BASE_URL || '') + '/notifications';
+                var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+                var data = await resp.json();
+                if (data.success && data.notifications) {
+                    allNotifications = data.notifications;
+                }
+            } catch(e) {
+                console.warn('Notifications load failed:', e.message);
+            }
+            document.getElementById('notifLoading').style.display = 'none';
+            renderNotifications();
+        }
+
+        async function markRead(id) {
+            try {
+                var token = localStorage.getItem('taskearn_token');
+                await fetch((window.API_BASE_URL || '') + '/notifications/' + id + '/read', {
+                    method: 'POST', headers: { 'Authorization': 'Bearer ' + token }
+                });
+                var n = allNotifications.find(function(x) { return x.id === id; });
+                if (n) n.read = true;
+                renderNotifications();
+            } catch(e) {}
+        }
+
+        async function deleteNotif(id) {
+            try {
+                var token = localStorage.getItem('taskearn_token');
+                await fetch((window.API_BASE_URL || '') + '/notifications/' + id, {
+                    method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token }
+                });
+                allNotifications = allNotifications.filter(function(x) { return x.id !== id; });
+                renderNotifications();
+            } catch(e) {}
+        }
+
+        async function clearAllNotifications() {
+            try {
+                var token = localStorage.getItem('taskearn_token');
+                await fetch((window.API_BASE_URL || '') + '/notifications/clear-all', {
+                    method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token }
+                });
+                allNotifications.forEach(function(n) { n.read = true; });
+                renderNotifications();
+            } catch(e) {}
+        }
+
+        loadNotifications();
+    </script>
+</body>
+</html>

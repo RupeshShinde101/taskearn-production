@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Refer & Earn - Workmate4u</title>
+    <meta name="description" content="Invite friends to Workmate4u and earn rewards! Share your unique referral code and both you and your friend get bonus wallet credits.">
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <style>
+        .referral-page { padding: 90px 20px 100px; max-width: 700px; margin: 0 auto; }
+        .referral-hero {
+            background: var(--gradient); color: white; border-radius: var(--radius-lg);
+            padding: 40px 30px; text-align: center; margin-bottom: 30px;
+        }
+        .referral-hero i { font-size: 3rem; margin-bottom: 15px; }
+        .referral-hero h1 { font-size: 2rem; margin-bottom: 10px; }
+        .referral-hero p { opacity: 0.9; font-size: 1.05rem; }
+        .ref-code-box {
+            background: var(--white); border-radius: var(--radius); padding: 25px;
+            box-shadow: var(--shadow-lg); text-align: center; margin-bottom: 25px;
+        }
+        .ref-code-box h3 { color: var(--dark); margin-bottom: 15px; }
+        .ref-code-display {
+            background: var(--light); border: 2px dashed var(--primary); border-radius: 10px;
+            padding: 15px 20px; font-size: 1.5rem; font-weight: 700; color: var(--primary);
+            letter-spacing: 3px; margin-bottom: 15px; display: inline-block; min-width: 200px;
+        }
+        .ref-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .ref-actions .btn { font-size: 0.9rem; padding: 10px 20px; }
+        .ref-stats {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px;
+        }
+        .ref-stat {
+            background: var(--white); border-radius: var(--radius); padding: 20px;
+            box-shadow: var(--shadow); text-align: center;
+        }
+        .ref-stat h3 { font-size: 1.8rem; color: var(--primary); font-weight: 800; }
+        .ref-stat p { color: var(--gray); font-size: 0.85rem; margin-top: 5px; }
+        .how-works {
+            background: var(--white); border-radius: var(--radius); padding: 25px;
+            box-shadow: var(--shadow); margin-bottom: 25px;
+        }
+        .how-works h3 { color: var(--dark); margin-bottom: 20px; }
+        .step-list { display: flex; flex-direction: column; gap: 18px; }
+        .step-row { display: flex; gap: 15px; align-items: flex-start; }
+        .step-num {
+            width: 32px; height: 32px; border-radius: 50%; background: var(--gradient);
+            color: white; display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.9rem; flex-shrink: 0;
+        }
+        .step-row h4 { color: var(--dark); margin-bottom: 3px; }
+        .step-row p { color: var(--gray); font-size: 0.9rem; }
+        .ref-login-prompt {
+            text-align: center; padding: 60px 20px;
+        }
+        .ref-login-prompt i { font-size: 3.5rem; color: var(--gray-light); margin-bottom: 15px; }
+        .ref-login-prompt h3 { color: var(--gray); margin-bottom: 10px; }
+        .ref-login-prompt p { color: var(--gray-light); margin-bottom: 20px; }
+        @media (max-width: 480px) { .ref-stats { grid-template-columns: 1fr; } }
+    </style>
+    <script>
+        (function() {
+            var ua = navigator.userAgent.toLowerCase();
+            var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+            if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; }
+            else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; }
+        })();
+    </script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="logo"><i class="fas fa-tasks"></i><span>Workmate<span class="highlight">4u</span></span></a>
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="browse.html">Find Tasks</a></li>
+                <li><a href="wallet.html">Wallet</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="referral-page">
+        <div class="referral-hero">
+            <i class="fas fa-gift"></i>
+            <h1>Refer & Earn</h1>
+            <p>Invite friends to Workmate4u. When they sign up with your code, you both get bonus wallet credits!</p>
+        </div>
+
+        <div id="referralContent" style="display:none;">
+            <div class="ref-code-box">
+                <h3>Your Referral Code</h3>
+                <div class="ref-code-display" id="refCode">---</div>
+                <div class="ref-actions">
+                    <button class="btn btn-primary" onclick="copyRefCode()"><i class="fas fa-copy"></i> Copy Code</button>
+                    <button class="btn btn-outline" onclick="shareRef()"><i class="fas fa-share-alt"></i> Share</button>
+                </div>
+            </div>
+
+            <div class="ref-stats">
+                <div class="ref-stat"><h3 id="refInvited">0</h3><p>Friends Invited</p></div>
+                <div class="ref-stat"><h3 id="refJoined">0</h3><p>Friends Joined</p></div>
+                <div class="ref-stat"><h3 id="refEarned">₹0</h3><p>Total Earned</p></div>
+            </div>
+
+            <div class="how-works">
+                <h3>How It Works</h3>
+                <div class="step-list">
+                    <div class="step-row">
+                        <div class="step-num">1</div>
+                        <div><h4>Share Your Code</h4><p>Copy your unique referral code and send it to friends via WhatsApp, SMS, or any social media.</p></div>
+                    </div>
+                    <div class="step-row">
+                        <div class="step-num">2</div>
+                        <div><h4>Friend Signs Up</h4><p>Your friend creates an account on Workmate4u and enters your referral code during signup.</p></div>
+                    </div>
+                    <div class="step-row">
+                        <div class="step-num">3</div>
+                        <div><h4>Both Get Rewarded</h4><p>Once your friend completes their first task, you both receive bonus credits in your wallets!</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ref-login-prompt" id="refLoginPrompt">
+            <i class="fas fa-user-lock"></i>
+            <h3>Login Required</h3>
+            <p>Please login to see your referral code and invite friends.</p>
+            <a href="index.html" class="btn btn-primary"><i class="fas fa-sign-in-alt"></i> Login</a>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-bottom">
+                <p>&copy; 2026 Workmate4u India. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="api-client.js"></script>
+    <script src="shared.js"></script>
+    <script>
+        async function loadReferralData() {
+            var token = localStorage.getItem('taskearn_token');
+            if (!token) {
+                document.getElementById('refLoginPrompt').style.display = 'block';
+                document.getElementById('referralContent').style.display = 'none';
+                return;
+            }
+            document.getElementById('refLoginPrompt').style.display = 'none';
+            document.getElementById('referralContent').style.display = 'block';
+
+            try {
+                var url = (window.API_BASE_URL || '') + '/referral/code';
+                var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+                var data = await resp.json();
+                if (data.success && data.referral_code) {
+                    document.getElementById('refCode').textContent = data.referral_code;
+                }
+            } catch(e) { console.warn('Referral code fetch failed:', e.message); }
+
+            try {
+                var url2 = (window.API_BASE_URL || '') + '/referral/stats';
+                var resp2 = await fetch(url2, { headers: { 'Authorization': 'Bearer ' + token } });
+                var stats = await resp2.json();
+                if (stats.success) {
+                    document.getElementById('refInvited').textContent = stats.total_referrals || 0;
+                    document.getElementById('refJoined').textContent = stats.successful_referrals || 0;
+                    document.getElementById('refEarned').textContent = '\u20B9' + (stats.total_earned || 0);
+                }
+            } catch(e) { console.warn('Referral stats fetch failed:', e.message); }
+        }
+
+        function copyRefCode() {
+            var code = document.getElementById('refCode').textContent;
+            if (code && code !== '---') {
+                navigator.clipboard.writeText(code).then(function() {
+                    var btn = event.target.closest('.btn');
+                    var orig = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                    setTimeout(function() { btn.innerHTML = orig; }, 2000);
+                });
+            }
+        }
+
+        function shareRef() {
+            var code = document.getElementById('refCode').textContent;
+            var text = 'Join Workmate4u and earn money doing tasks! Use my referral code: ' + code + '\nSign up at https://www.workmate4u.com';
+            if (navigator.share) {
+                navigator.share({ title: 'Join Workmate4u', text: text, url: 'https://www.workmate4u.com' });
+            } else {
+                navigator.clipboard.writeText(text);
+                alert('Referral message copied to clipboard!');
+            }
+        }
+
+        loadReferralData();
+    </script>
+</body>
+</html>

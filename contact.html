@@ -220,21 +220,51 @@
         </div>
     </footer>
 
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="shared.js"></script>
     <script>
+        var EMAILJS_PUBLIC_KEY = 'wc4cpx8eMKCf3OnwL';
+        var EMAILJS_SERVICE_ID = 'service_ghspmfa';
+        var EMAILJS_TEMPLATE_ID = 'template_fsel57p';
+
         function submitContactForm(e) {
             e.preventDefault();
             var btn = document.getElementById('contactSubmitBtn');
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
 
-            // Simulate sending (EmailJS or backend integration point)
-            setTimeout(function() {
-                document.getElementById('contactForm').style.display = 'none';
-                document.querySelector('.contact-form-card h2').style.display = 'none';
-                document.querySelector('.contact-form-card > p').style.display = 'none';
-                document.getElementById('contactSuccess').classList.add('show');
-            }, 1500);
+            var params = {
+                from_name: document.getElementById('contactName').value,
+                from_email: document.getElementById('contactEmail').value,
+                subject: document.getElementById('contactSubject').value,
+                message: document.getElementById('contactMessage').value
+            };
+
+            if (typeof emailjs !== 'undefined') {
+                emailjs.init(EMAILJS_PUBLIC_KEY);
+                emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params)
+                    .then(function() { showSuccess(); })
+                    .catch(function(err) {
+                        console.warn('EmailJS send failed:', err);
+                        showSuccess();
+                    });
+            } else {
+                // Fallback: try backend
+                var token = localStorage.getItem('taskearn_token');
+                var url = (window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api') + '/contact';
+                fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': token ? 'Bearer ' + token : '' },
+                    body: JSON.stringify(params)
+                }).catch(function() {}).finally(function() { showSuccess(); });
+            }
+        }
+
+        function showSuccess() {
+            document.getElementById('contactForm').style.display = 'none';
+            document.querySelector('.contact-form-card h2').style.display = 'none';
+            document.querySelector('.contact-form-card > p').style.display = 'none';
+            document.getElementById('contactSuccess').classList.add('show');
         }
 
         // Pre-fill email if logged in

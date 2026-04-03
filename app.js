@@ -735,9 +735,7 @@ async function debugListUsers() {
     return users;
 }
 
-// Make debug functions available in console
-window.resetUserPassword = resetUserPassword;
-window.debugListUsers = debugListUsers;
+// Debug functions removed from window scope for production security
 
 // Serialize task for storage (convert dates to ISO strings, remove circular refs)
 function serializeTask(task) {

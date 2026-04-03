@@ -233,7 +233,7 @@
                 await fetch((window.API_BASE_URL || '') + '/notifications/clear-all', {
                     method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token }
                 });
-                allNotifications.forEach(function(n) { n.read = true; });
+                allNotifications = [];
                 renderNotifications();
             } catch(e) {}
         }

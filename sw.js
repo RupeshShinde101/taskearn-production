@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workmate4u-v7';
+const CACHE_NAME = 'workmate4u-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

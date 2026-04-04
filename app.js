@@ -3354,17 +3354,32 @@ async function abandonTask(taskId) {
 }
 
 async function deleteTask(taskId) {
-    if (!confirm('Delete this task?') || !currentUser) return;
+    if (!confirm('Are you sure you want to delete this task?') || !currentUser) return;
 
     // Call backend API to delete from database
     try {
-        const token = localStorage.getItem('taskearn_token');
-        if (token && typeof TasksAPI !== 'undefined' && TasksAPI.delete) {
-            const result = await TasksAPI.delete(taskId);
-            if (!result || !result.success) {
-                showToast(`❌ ${result?.message || 'Could not delete task'}`, 'error');
-                return;
-            }
+        var result;
+        if (typeof TasksAPI !== 'undefined' && TasksAPI.delete) {
+            result = await TasksAPI.delete(taskId);
+        } else {
+            // Fallback: direct fetch
+            var apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ||
+                          'https://taskearn-production-production.up.railway.app/api';
+            var token = localStorage.getItem('taskearn_token');
+            var resp = await fetch(apiBase + '/tasks/' + taskId, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? ('Bearer ' + token) : ''
+                },
+                mode: 'cors'
+            });
+            result = await resp.json();
+        }
+
+        if (!result || !result.success) {
+            showToast('❌ ' + (result && result.message ? result.message : 'Could not delete task'));
+            return;
         }
     } catch (e) {
         console.error('Delete API failed:', e.message);
@@ -3372,19 +3387,21 @@ async function deleteTask(taskId) {
         return;
     }
 
-    // Remove from local arrays
-    tasks = tasks.filter(t => t.id !== taskId);
-    myPostedTasks = myPostedTasks.filter(t => t.id !== taskId);
+    // Remove from local arrays (use == for loose comparison)
+    tasks = tasks.filter(function(t) { return t.id != taskId; });
+    myPostedTasks = myPostedTasks.filter(function(t) { return t.id != taskId; });
 
-    updateUserData(currentUser.id, {
-        postedTasks: serializeTasks(myPostedTasks)
-    });
+    try {
+        updateUserData(currentUser.id, {
+            postedTasks: serializeTasks(myPostedTasks)
+        });
+    } catch(e) {}
 
-    showToast('✅ Task deleted');
-    closeModal('taskDetailModal');
+    showToast('✅ Task deleted successfully');
+    try { closeModal('taskDetailModal'); } catch(e) {}
     renderTasks();
     addTaskMarkers();
-    renderDashboard();
+    try { renderDashboard(); } catch(e) {}
 }
 
 // Edit Task Functions

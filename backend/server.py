@@ -1530,7 +1530,7 @@ def abandon_task(task_id):
 @app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
 @require_auth
 def delete_task(task_id):
-    """Delete a task (only poster can delete, only if not accepted)"""
+    """Delete a task (only poster can delete)"""
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'SELECT posted_by, status FROM tasks WHERE id = {PH}', (task_id,))
@@ -1544,8 +1544,14 @@ def delete_task(task_id):
             if task['posted_by'] != request.user_id:
                 return jsonify({'success': False, 'message': 'Only the task poster can delete this task'}), 403
 
-            if task['status'] not in ('active',):
+            if task['status'] in ('completed', 'paid'):
                 return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
+
+            # Delete related notifications first
+            try:
+                cursor.execute(f'DELETE FROM notifications WHERE task_id = {PH}', (task_id,))
+            except Exception:
+                pass
 
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 

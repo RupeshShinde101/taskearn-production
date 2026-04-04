@@ -124,11 +124,15 @@
             var map = {
                 'task_accepted': { icon: 'fa-check', cls: 'task' },
                 'task_completed': { icon: 'fa-flag-checkered', cls: 'task' },
+                'task_posted': { icon: 'fa-clipboard-list', cls: 'task' },
+                'task_released': { icon: 'fa-undo', cls: 'warning' },
                 'task_expired': { icon: 'fa-clock', cls: 'warning' },
                 'payment_received': { icon: 'fa-rupee-sign', cls: 'payment' },
                 'payment_sent': { icon: 'fa-arrow-up', cls: 'payment' },
+                'payment_done': { icon: 'fa-check-double', cls: 'payment' },
                 'wallet_topup': { icon: 'fa-wallet', cls: 'wallet' },
                 'withdrawal': { icon: 'fa-university', cls: 'payment' },
+                'withdrawal_requested': { icon: 'fa-university', cls: 'payment' },
                 'penalty': { icon: 'fa-exclamation-triangle', cls: 'warning' },
                 'system': { icon: 'fa-info-circle', cls: 'system' }
             };
@@ -137,7 +141,7 @@
 
         function getNotifCategory(type) {
             if (type && (type.startsWith('task') || type === 'penalty')) return 'task';
-            if (type && (type.startsWith('payment') || type.startsWith('wallet') || type === 'withdrawal')) return 'payment';
+            if (type && (type.startsWith('payment') || type.startsWith('wallet') || type === 'withdrawal' || type === 'withdrawal_requested')) return 'payment';
             return 'system';
         }
 
@@ -157,7 +161,7 @@
             var list = document.getElementById('notifList');
             var empty = document.getElementById('notifEmpty');
             var filtered = currentFilter === 'all' ? allNotifications :
-                allNotifications.filter(function(n) { return getNotifCategory(n.type) === currentFilter; });
+                allNotifications.filter(function(n) { return getNotifCategory(n.notification_type || n.type) === currentFilter; });
 
             if (filtered.length === 0) {
                 list.style.display = 'none';
@@ -168,12 +172,15 @@
             list.style.display = 'flex';
 
             list.innerHTML = filtered.map(function(n) {
-                var ic = getNotifIcon(n.type);
+                var ntype = n.notification_type || n.type;
+                var ic = getNotifIcon(ntype);
                 var data = typeof n.data === 'string' ? JSON.parse(n.data || '{}') : (n.data || {});
-                var msg = data.message || n.message || 'You have a notification';
-                return '<div class="notif-item ' + (n.read ? '' : 'unread') + '" onclick="markRead(' + n.id + ')">' +
+                var title = n.title || 'Notification';
+                var msg = n.message || data.message || 'You have a notification';
+                var readStatus = (n.status === 'read' || n.read) ? '' : 'unread';
+                return '<div class="notif-item ' + readStatus + '" onclick="markRead(' + n.id + ')">' +
                     '<div class="notif-icon ' + ic.cls + '"><i class="fas ' + ic.icon + '"></i></div>' +
-                    '<div class="notif-body"><p>' + msg + '</p>' +
+                    '<div class="notif-body"><strong>' + title + '</strong><p>' + msg + '</p>' +
                     '<span class="notif-time">' + timeAgo(n.created_at || n.timestamp) + '</span></div>' +
                     '<span class="notif-delete" onclick="event.stopPropagation();deleteNotif(' + n.id + ')" title="Delete"><i class="fas fa-times"></i></span>' +
                 '</div>';

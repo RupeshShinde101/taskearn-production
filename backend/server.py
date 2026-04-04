@@ -1035,6 +1035,12 @@ def get_tasks():
     
     print(f"\n[GET /api/tasks] Fetching tasks at {now}")
     
+    # Mark expired tasks and notify posters on each fetch
+    try:
+        cleanup_old_tasks()
+    except Exception:
+        pass
+    
     try:
         with get_db() as (cursor, conn):
             # Simple query without LEFT JOIN first
@@ -1228,6 +1234,21 @@ def create_task():
                            (request.user_id,))
             print('   ✅ User stats updated')
             
+            # Create confirmation notification for poster
+            import json
+            notif_data = json.dumps({
+                'type': 'task',
+                'label': '👁️ View Task',
+                'taskId': task_id
+            })
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (request.user_id, task_id, 'task_posted',
+                  'Task Posted! 📋',
+                  f'Your task "{html_escape(data["title"])}" has been posted. Budget: ₹{data["price"]}. It will expire in 12 hours.',
+                  'unread', notif_data, posted_at))
+            
             print(f"✅ Task created successfully with ID: {task_id}")
         
         response = {
@@ -1303,6 +1324,26 @@ def accept_task(task_id):
                 UPDATE tasks SET status = 'accepted', accepted_by = {PH}, accepted_at = {PH}
                 WHERE id = {PH}
             ''', (request.user_id, accepted_at, task_id))
+            
+            # Create notification for task poster
+            poster_id = task['posted_by']
+            cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (request.user_id,))
+            helper_row = cursor.fetchone()
+            helper_name = (dict_from_row(helper_row) if helper_row else {}).get('name', 'Someone')
+            
+            import json
+            action_data = json.dumps({
+                'type': 'task',
+                'label': '👁️ View Task',
+                'taskId': task_id
+            })
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (poster_id, task_id, 'task_accepted',
+                  'Task Accepted! 🎉',
+                  f'{helper_name} has accepted your task "{task["title"]}". Budget: ₹{task["price"]}',
+                  'unread', action_data, accepted_at))
         
         return jsonify({
             'success': True,
@@ -1372,6 +1413,29 @@ def abandon_task(task_id):
                         WHERE id = {PH}
                     ''', (daily_count, today, request.user_id))
 
+        # Notify poster that helper released their task
+        try:
+            with get_db() as (cursor, conn):
+                cursor.execute(f'SELECT title, posted_by, price FROM tasks WHERE id = {PH}', (task_id,))
+                t = cursor.fetchone()
+                if t:
+                    t = dict_from_row(t)
+                    cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (request.user_id,))
+                    h = cursor.fetchone()
+                    h_name = (dict_from_row(h) if h else {}).get('name', 'The helper')
+                    import json
+                    notif_data = json.dumps({'type': 'task', 'label': '👁️ View Task', 'taskId': task_id})
+                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    cursor.execute(f'''
+                        INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (t['posted_by'], task_id, 'task_released',
+                          'Task Released ⚠️',
+                          f'{h_name} has released your task "{t["title"]}". It is now available for others to accept.',
+                          'unread', notif_data, now))
+        except Exception as notif_err:
+            print(f"⚠️ Failed to create release notification: {notif_err}")
+        
         print(f"✅ Task {task_id} abandoned by user {request.user_id} — release #{daily_count} today")
         return jsonify({
             'success': True,
@@ -2556,6 +2620,21 @@ def add_money_to_wallet():
         if new_balance >= 0:
             clear_debt_suspension_if_needed(request.user_id, cursor)
     
+    # Create wallet top-up notification
+    try:
+        import json
+        cashback_msg = f' (includes ₹{cashback:.2f} cashback!)' if cashback > 0 else ''
+        with get_db() as (cursor2, conn2):
+            cursor2.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (request.user_id, 'wallet_topup',
+                  'Wallet Topped Up! 💰',
+                  f'₹{amount:.2f} has been added to your wallet{cashback_msg}. New balance: ₹{new_balance:.2f}',
+                  'unread', json.dumps({'type': 'success', 'amount': amount, 'cashback': cashback}), now))
+    except Exception as notif_err:
+        print(f"⚠️ Failed to create topup notification: {notif_err}")
+    
     debt_cleared = new_balance >= 0
     return jsonify({
         'success': True,
@@ -2791,6 +2870,20 @@ def request_withdrawal():
               f'WD-{withdrawal_id}', now, 'pending'))
         
         conn.commit()
+    
+    # Create withdrawal notification
+    try:
+        import json
+        with get_db() as (cursor2, conn2):
+            cursor2.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (request.user_id, 'withdrawal_requested',
+                  'Withdrawal Requested 🏦',
+                  f'Your withdrawal of ₹{amount:.2f} to {bank_name} ({masked_account}) is being processed. It will be transferred within 24 hours.',
+                  'unread', json.dumps({'type': 'info', 'amount': amount, 'withdrawalId': withdrawal_id}), now))
+    except Exception as notif_err:
+        print(f"⚠️ Failed to create withdrawal notification: {notif_err}")
     
     print(f"   New balance: ₹{new_balance:.2f}")
     print(f"   Withdrawal ID: {withdrawal_id}")
@@ -4905,13 +4998,36 @@ def init_database_endpoint():
 # ========================================
 
 def cleanup_old_tasks():
-    """Delete tasks that are completed or expired (older than 30 days)"""
+    """Delete tasks that are completed or expired (older than 30 days), and notify posters of newly expired tasks"""
     try:
         with get_db() as (cursor, conn):
-            # Delete completed tasks older than 30 days
             try:
+                import json
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 thirty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
                 
+                # Mark active tasks as expired and notify posters
+                cursor.execute(f'''
+                    SELECT id, title, posted_by, price FROM tasks
+                    WHERE status = 'active' AND expires_at < {PH}
+                ''', (now,))
+                expired_tasks = [dict_from_row(r) for r in cursor.fetchall()]
+                
+                for t in expired_tasks:
+                    cursor.execute(f"UPDATE tasks SET status = 'expired' WHERE id = {PH}", (t['id'],))
+                    notif_data = json.dumps({'type': 'task', 'taskId': t['id']})
+                    cursor.execute(f'''
+                        INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (t['posted_by'], t['id'], 'task_expired',
+                          'Task Expired ⏰',
+                          f'Your task "{t["title"]}" has expired without being accepted. You can post it again.',
+                          'unread', notif_data, now))
+                
+                if expired_tasks:
+                    print(f"✅ Marked {len(expired_tasks)} tasks as expired and notified posters")
+                
+                # Delete completed tasks older than 30 days
                 cursor.execute(f'''
                     DELETE FROM tasks 
                     WHERE (status = 'completed' OR status = 'paid')
@@ -4924,7 +5040,7 @@ def cleanup_old_tasks():
                 if deleted_count > 0:
                     print(f"✅ Cleaned up {deleted_count} old completed/paid tasks")
                 
-                return deleted_count
+                return deleted_count + len(expired_tasks)
             except Exception as query_error:
                 print(f"⚠️  Query error during cleanup: {query_error}")
                 # Don't crash if cleanup fails

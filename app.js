@@ -923,8 +923,14 @@ async function syncNotificationsFromServer() {
                 // Map notification_type to UI type
                 let uiType = 'info';
                 if (n.notification_type === 'task_completed') uiType = 'warning';
+                else if (n.notification_type === 'task_accepted') uiType = 'success';
+                else if (n.notification_type === 'task_posted') uiType = 'info';
+                else if (n.notification_type === 'task_released') uiType = 'warning';
+                else if (n.notification_type === 'task_expired') uiType = 'warning';
                 else if (n.notification_type === 'payment_received' || n.notification_type === 'payment_done') uiType = 'success';
                 else if (n.notification_type === 'payment_completed') uiType = 'warning';
+                else if (n.notification_type === 'wallet_topup') uiType = 'success';
+                else if (n.notification_type === 'withdrawal_requested') uiType = 'info';
                 
                 return {
                     id: n.id,
@@ -1035,9 +1041,11 @@ function updateNotificationUI() {
 function getNotificationIcon(type) {
     switch (type) {
         case 'success': return 'fa-check-circle';
-        case 'warning': return 'fa-exclamation-circle';
+        case 'warning': return 'fa-exclamation-triangle';
+        case 'error': return 'fa-times-circle';
         case 'task': return 'fa-tasks';
         case 'payment': return 'fa-rupee-sign';
+        case 'info': return 'fa-info-circle';
         default: return 'fa-bell';
     }
 }
@@ -2808,7 +2816,7 @@ async function acceptTask(taskId) {
                 updateUserData(currentUser.id, {
                     acceptedTasks: serializeTasks(myAcceptedTasks)
                 }).catch(e => console.warn('updateUserData failed:', e));
-                notifyTaskPoster(task, currentUser);
+                // Server creates notification for poster now — no local notification needed
                 closeModal('taskDetailModal');
                 clearRoute();
             } catch (e) {

@@ -706,9 +706,9 @@ def verify_email():
     with get_db() as (cursor, conn):
         cursor.execute(f'''
             SELECT otp, expires_at FROM password_resets
-            WHERE user_id = {PH} AND token LIKE 'email_verify_%'
+            WHERE user_id = {PH} AND token LIKE {PH}
             ORDER BY created_at DESC LIMIT 1
-        ''', (request.user_id,))
+        ''', (request.user_id, 'email_verify_%'))
         row = cursor.fetchone()
 
         if not row:
@@ -721,11 +721,14 @@ def verify_email():
         # Check expiry
         now = datetime.datetime.now(datetime.timezone.utc)
         try:
-            exp = datetime.datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+            if isinstance(expires_at, datetime.datetime):
+                exp = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=datetime.timezone.utc)
+            else:
+                exp = datetime.datetime.fromisoformat(str(expires_at).replace('Z', '+00:00'))
             if now > exp:
                 return jsonify({'success': False, 'message': 'Verification code has expired. Please request a new one.'}), 400
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"⚠️ Expiry check error: {e}")
 
         if otp != stored_otp:
             return jsonify({'success': False, 'message': 'Invalid verification code'}), 400
@@ -734,8 +737,8 @@ def verify_email():
         cursor.execute(f'UPDATE users SET email_verified = TRUE WHERE id = {PH}', (request.user_id,))
 
         # Clean up used tokens
-        cursor.execute(f"DELETE FROM password_resets WHERE user_id = {PH} AND token LIKE 'email_verify_%'",
-                       (request.user_id,))
+        cursor.execute(f"DELETE FROM password_resets WHERE user_id = {PH} AND token LIKE {PH}",
+                       (request.user_id, 'email_verify_%'))
 
     return jsonify({'success': True, 'message': 'Email verified successfully'})
 

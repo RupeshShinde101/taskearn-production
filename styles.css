@@ -1120,9 +1120,9 @@ section {
 
 .tasks-wrapper {
     display: grid;
-    grid-template-columns: 400px 1fr;
-    gap: 30px;
-    height: 700px;
+    grid-template-columns: 350px 1fr;
+    gap: 20px;
+    height: 500px;
 }
 
 .tasks-sidebar {
@@ -1217,6 +1217,23 @@ section {
     flex: 1;
     overflow-y: auto;
     padding-right: 10px;
+}
+
+/* Full-width task cards grid below map */
+.tasks-list-fullwidth {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-top: 30px;
+    padding: 0;
+}
+
+.tasks-list-fullwidth .task-card {
+    margin-bottom: 0;
+}
+
+.tasks-list-fullwidth .task-card p {
+    -webkit-line-clamp: 4;
 }
 
 .task-card {
@@ -2843,6 +2860,10 @@ section {
         height: 400px;
     }
     
+    .tasks-list-fullwidth {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+    
     .footer-grid {
         grid-template-columns: 1fr 1fr;
     }
@@ -2930,6 +2951,10 @@ section {
     .tab-btn {
         width: 100%;
         justify-content: center;
+    }
+    
+    .tasks-list-fullwidth {
+        grid-template-columns: 1fr;
     }
 }
 

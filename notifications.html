@@ -123,7 +123,9 @@
         function getNotifIcon(type) {
             var map = {
                 'task_accepted': { icon: 'fa-check', cls: 'task' },
+                'task_assigned': { icon: 'fa-thumbtack', cls: 'task' },
                 'task_completed': { icon: 'fa-flag-checkered', cls: 'task' },
+                'task_completed_helper': { icon: 'fa-clipboard-check', cls: 'task' },
                 'task_posted': { icon: 'fa-clipboard-list', cls: 'task' },
                 'task_released': { icon: 'fa-undo', cls: 'warning' },
                 'task_expired': { icon: 'fa-clock', cls: 'warning' },
@@ -133,6 +135,8 @@
                 'wallet_topup': { icon: 'fa-wallet', cls: 'wallet' },
                 'withdrawal': { icon: 'fa-university', cls: 'payment' },
                 'withdrawal_requested': { icon: 'fa-university', cls: 'payment' },
+                'account_suspended': { icon: 'fa-ban', cls: 'warning' },
+                'account_restored': { icon: 'fa-user-check', cls: 'task' },
                 'penalty': { icon: 'fa-exclamation-triangle', cls: 'warning' },
                 'system': { icon: 'fa-info-circle', cls: 'system' }
             };
@@ -142,6 +146,7 @@
         function getNotifCategory(type) {
             if (type && (type.startsWith('task') || type === 'penalty')) return 'task';
             if (type && (type.startsWith('payment') || type.startsWith('wallet') || type === 'withdrawal' || type === 'withdrawal_requested')) return 'payment';
+            if (type && (type.startsWith('account'))) return 'system';
             return 'system';
         }
 

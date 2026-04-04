@@ -924,6 +924,8 @@ async function syncNotificationsFromServer() {
                 let uiType = 'info';
                 if (n.notification_type === 'task_completed') uiType = 'warning';
                 else if (n.notification_type === 'task_accepted') uiType = 'success';
+                else if (n.notification_type === 'task_assigned') uiType = 'success';
+                else if (n.notification_type === 'task_completed_helper') uiType = 'success';
                 else if (n.notification_type === 'task_posted') uiType = 'info';
                 else if (n.notification_type === 'task_released') uiType = 'warning';
                 else if (n.notification_type === 'task_expired') uiType = 'warning';
@@ -931,6 +933,8 @@ async function syncNotificationsFromServer() {
                 else if (n.notification_type === 'payment_completed') uiType = 'warning';
                 else if (n.notification_type === 'wallet_topup') uiType = 'success';
                 else if (n.notification_type === 'withdrawal_requested') uiType = 'info';
+                else if (n.notification_type === 'account_suspended') uiType = 'error';
+                else if (n.notification_type === 'account_restored') uiType = 'success';
                 
                 return {
                     id: n.id,

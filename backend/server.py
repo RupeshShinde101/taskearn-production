@@ -1296,6 +1296,23 @@ def accept_task(task_id):
                         sus_dt = sus_dt.replace(tzinfo=datetime.timezone.utc)
                     if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
                         return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
+                    else:
+                        # Suspension expired — clear it and notify user
+                        try:
+                            with get_db() as (cur2, conn2):
+                                cur2.execute(f'UPDATE users SET is_suspended = {PH}, suspended_until = {PH}, suspension_reason = {PH} WHERE id = {PH}',
+                                             (False, None, None, request.user_id))
+                                import json as _json2
+                                _now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                                cur2.execute(f'''
+                                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                                ''', (request.user_id, 'account_restored',
+                                      'Account Restored! ✅',
+                                      'Your suspension period has ended. You can now accept tasks again.',
+                                      'unread', _json2.dumps({'type': 'system'}), _now))
+                        except Exception:
+                            pass  # Non-critical, continue allowing task acceptance
                 except:
                     pass
         
@@ -1343,6 +1360,15 @@ def accept_task(task_id):
             ''', (poster_id, task_id, 'task_accepted',
                   'Task Accepted! 🎉',
                   f'{helper_name} has accepted your task "{task["title"]}". Budget: ₹{task["price"]}',
+                  'unread', action_data, accepted_at))
+            
+            # Create confirmation notification for helper
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (request.user_id, task_id, 'task_assigned',
+                  'Task Assigned! 📌',
+                  f'You accepted "{task["title"]}". Budget: ₹{task["price"]}. Complete it before the poster cancels!',
                   'unread', action_data, accepted_at))
         
         return jsonify({
@@ -1407,6 +1433,17 @@ def abandon_task(task_id):
                           datetime.datetime.now(datetime.timezone.utc).isoformat(), request.user_id))
                     suspended = True
                     print(f"⚠️ User {request.user_id} suspended until {suspended_until_iso} (released {daily_count} tasks today)")
+                    
+                    # Notify helper about suspension
+                    import json as _json
+                    sus_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    cursor.execute(f'''
+                        INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (request.user_id, 'account_suspended',
+                          'Account Suspended ⛔',
+                          f'You released {daily_count} tasks today. Your account is suspended for 48 hours until {datetime.datetime.fromisoformat(suspended_until_iso).strftime("%b %d, %I:%M %p")} UTC.',
+                          'unread', _json.dumps({'type': 'system', 'suspendedUntil': suspended_until_iso}), sus_now))
                 else:
                     cursor.execute(f'''
                         UPDATE users SET daily_releases = {PH}, daily_release_date = {PH}
@@ -1605,6 +1642,20 @@ def complete_task(task_id):
                   'Task Completed! 💰',
                   f'{helper_name} has completed your task "{task["title"]}". Please pay ₹{total_poster_cost:.2f} from your wallet.',
                   'unread', action_data, now))
+            
+            # Create confirmation notification for helper
+            helper_data = json.dumps({
+                'type': 'task',
+                'label': '👁️ View Task',
+                'taskId': task_id
+            })
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (helper_id, task_id, 'task_completed_helper',
+                  'Task Done! ✅',
+                  f'You completed "{task["title"]}". Waiting for poster to pay ₹{helper_net_receives:.2f}.',
+                  'unread', helper_data, now))
             
             conn.commit()
             

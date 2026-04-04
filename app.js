@@ -5549,23 +5549,27 @@ function promptEmailOTP() {
     openModal('emailVerifyModal');
 }
 
-async function confirmEmailVerify() {
+function confirmEmailVerify() {
     var input = document.getElementById('emailVerifyInput');
-    if (!input) return;
+    if (!input) { showToast('Could not find input field. Please try again.', 'error'); return; }
     var code = input.value.trim();
     if (!code || code.length !== 6) {
         showToast('Please enter the 6-digit code', 'error');
         return;
     }
 
-    try {
-        var token = localStorage.getItem('taskearn_token');
-        var resp = await fetch((window.API_BASE_URL || '') + '/auth/verify-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ otp: code })
-        });
-        var data = await resp.json();
+    // Disable button to prevent double-tap
+    var verifyBtn = input.parentElement && input.parentElement.querySelector ? input.parentElement.parentElement.querySelector('.btn-primary') : null;
+    if (verifyBtn) { verifyBtn.disabled = true; verifyBtn.textContent = 'Verifying...'; }
+
+    var token = localStorage.getItem('taskearn_token');
+    fetch((window.API_BASE_URL || '') + '/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ otp: code })
+    }).then(function(resp) {
+        return resp.json();
+    }).then(function(data) {
         if (data.success) {
             currentUser.emailVerified = true;
             showToast('Email verified successfully!', 'success');
@@ -5573,10 +5577,13 @@ async function confirmEmailVerify() {
             checkEmailVerification();
         } else {
             showToast(data.message || 'Verification failed', 'error');
+            if (verifyBtn) { verifyBtn.disabled = false; verifyBtn.textContent = 'Verify'; }
         }
-    } catch (e) {
-        showToast('Network error', 'error');
-    }
+    }).catch(function(e) {
+        console.error('Email verify error:', e);
+        showToast('Network error. Please try again.', 'error');
+        if (verifyBtn) { verifyBtn.disabled = false; verifyBtn.textContent = 'Verify'; }
+    });
 }
 
 // ========================================

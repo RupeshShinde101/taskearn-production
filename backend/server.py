@@ -335,7 +335,8 @@ def user_to_response(user):
         'debtAmount': abs(wallet_balance) if wallet_balance < 0 else 0,
         'timerSuspended': timer_suspended,
         'suspendedUntil': suspended_until_iso,
-        'dailyReleaseCount': daily_release_count
+        'dailyReleaseCount': daily_release_count,
+        'emailVerified': bool(user.get('email_verified', False))
     }
 
 
@@ -625,6 +626,16 @@ def logout():
         cursor.execute(f'UPDATE users SET session_token = NULL WHERE id = {PH}', (request.user_id,))
     
     return jsonify({'success': True, 'message': 'Logged out successfully'})
+
+
+@app.route('/api/auth/verify-email', methods=['POST'])
+@require_auth
+def verify_email():
+    """Mark authenticated user's email as verified.
+    OTP verification happens client-side via EmailJS; this endpoint records it."""
+    with get_db() as (cursor, conn):
+        cursor.execute(f'UPDATE users SET email_verified = TRUE WHERE id = {PH}', (request.user_id,))
+    return jsonify({'success': True, 'message': 'Email verified successfully'})
 
 
 # ========================================

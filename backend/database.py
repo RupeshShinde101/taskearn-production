@@ -441,6 +441,11 @@ def init_postgres_db():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_release_date VARCHAR(20)
         ''')
         
+        # Email verification column
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE
+        ''')
+        
         # Ensure service_charge column exists in tasks table (migration)
         print("[DB] Adding service_charge column to tasks table if missing...")
         try:

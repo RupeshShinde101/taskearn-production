@@ -14,12 +14,13 @@
         function loadRazorpayScript() { if (typeof Razorpay !== 'undefined') return; var s = document.createElement('script'); s.src = 'https://checkout.razorpay.com/v1/checkout.js'; s.async = true; document.head.appendChild(s); }
         if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', loadRazorpayScript); } else { loadRazorpayScript(); }
     </script>
-    <link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="styles.css">
     <script>
         (function() { var ua = navigator.userAgent.toLowerCase(); var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua); if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; } else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; } })();
     </script>
 </head>
 <body class="has-tab-bar">
+<script>if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}</script>
     <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
@@ -30,6 +31,7 @@
                 <div class="notification-dropdown" id="notificationDropdown"><div class="notification-header"><h4>Notifications</h4><button onclick="event.stopPropagation(); clearAllNotifications()" class="clear-all-btn">Clear All</button></div><div class="notification-list" id="notificationList"><div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div></div></div>
             </div>
             <div class="nav-buttons"><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></div>
+            <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
             <div class="hamburger" onclick="toggleMobileMenu()"><span></span><span></span><span></span></div>
         </div>
     </nav>
@@ -94,6 +96,39 @@
 
             <!-- Suspension Timer Banner -->
             <div id="suspensionBanner" style="display:none;background:linear-gradient(135deg,#fef2f2,#fee2e2);border:1px solid #fca5a5;border-radius:14px;padding:16px 20px;margin-bottom:20px;text-align:center;">
+
+            <!-- Email Verification Banner -->
+            <div id="emailVerifyBanner" style="display:none;background:linear-gradient(135deg,#fef3c7,#fde68a);border:1px solid #f59e0b;border-radius:14px;padding:16px 20px;margin-bottom:20px;text-align:center;">
+                <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+                    <i class="fas fa-envelope" style="color:#f59e0b;"></i>
+                    <span style="font-weight:700;color:#92400e;">Verify Your Email</span>
+                </div>
+                <p style="color:#78716c;font-size:13px;margin:0 0 12px;">Verify your email to unlock all features and secure your account.</p>
+                <button class="btn btn-primary" onclick="startEmailVerification()" style="padding:10px 24px;background:#f59e0b;border:none;border-radius:10px;font-weight:600;color:white;cursor:pointer;"><i class="fas fa-paper-plane"></i> Send Verification Code</button>
+            </div>
+
+            <!-- Earnings Dashboard Section -->
+            <div class="profile-card" id="earningsDashboard" style="margin-bottom:20px;display:none;">
+                <div class="profile-card-header">
+                    <div class="profile-card-title"><i class="fas fa-chart-line"></i> Earnings Dashboard</div>
+                    <button class="profile-edit-btn" onclick="toggleEarningsDetail()"><i class="fas fa-chevron-down" id="earningsToggleIcon"></i></button>
+                </div>
+                <div class="profile-card-body" id="earningsOverview">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                        <div style="background:linear-gradient(135deg,#10b981,#34d399);color:white;padding:16px;border-radius:12px;text-align:center;">
+                            <div style="font-size:12px;opacity:0.9;">Total Earned</div>
+                            <div style="font-size:1.5rem;font-weight:800;" id="earningsTotalAmount">₹0</div>
+                        </div>
+                        <div style="background:linear-gradient(135deg,#6366f1,#818cf8);color:white;padding:16px;border-radius:12px;text-align:center;">
+                            <div style="font-size:12px;opacity:0.9;">Tasks Done</div>
+                            <div style="font-size:1.5rem;font-weight:800;" id="earningsTotalTasks">0</div>
+                        </div>
+                    </div>
+                </div>
+                <div id="earningsDetailList" style="display:none;padding:0 20px 20px;max-height:300px;overflow-y:auto;"></div>
+            </div>
+
+            <div id="suspensionBannerInner" style="display:none;background:linear-gradient(135deg,#fef2f2,#fee2e2);border:1px solid #fca5a5;border-radius:14px;padding:16px 20px;margin-bottom:20px;text-align:center;">
                 <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;">
                     <i class="fas fa-user-slash" style="font-size:20px;color:#ef4444;"></i>
                     <span style="font-weight:700;color:#ef4444;font-size:16px;">Account Suspended</span>
@@ -325,5 +360,6 @@
     <script src="shared.js?v=20260326_penalty"></script>
     <script src="razorpay.js?v=20260326_penalty"></script>
     <script src="app.js?v=20260326_penalty"></script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>
 </body>
 </html>

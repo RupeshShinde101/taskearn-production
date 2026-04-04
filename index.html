@@ -104,6 +104,7 @@
     </script>
     <link rel="stylesheet" href="styles.css">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="manifest" href="manifest.json">
     
     <!-- Backend API Configuration - INLINE MOBILE DETECTION (Cannot be cached) -->
     <script>
@@ -136,6 +137,7 @@
     </script>
 </head>
 <body>
+<script>if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}</script>
     <!-- Page Loading Bar -->
     <div class="page-loader" id="pageLoader"></div>
 
@@ -193,6 +195,7 @@
                 <button class="btn btn-outline" onclick="openModal('loginModal')">Login</button>
                 <button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button>
             </div>
+            <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
             <div class="hamburger" onclick="toggleMobileMenu()">
                 <span></span>
                 <span></span>
@@ -1373,5 +1376,6 @@
     <!-- That script runs FIRST and pre-sets window.API_BASE_URL before any external scripts load -->
     
 
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>
 </body>
 </html>

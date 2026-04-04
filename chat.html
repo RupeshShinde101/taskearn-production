@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Task Chat - Workmate4u</title>
+    <link rel="manifest" href="manifest.json">
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -318,6 +319,7 @@
     </style>
 </head>
 <body>
+<script>if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}</script>
     <div class="chat-container">
         <!-- Chat Header -->
         <div class="chat-header">
@@ -326,6 +328,7 @@
                 <p>Connected <span class="status-indicator" id="statusIndicator"></span></p>
             </div>
             <div class="header-buttons">
+                <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
                 <button class="header-btn" onclick="goBack()" title="Back">
                     <i class="fas fa-arrow-left"></i>
                 </button>
@@ -512,5 +515,6 @@
             if (socket) socket.disconnect();
         });
     </script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>
 </body>
 </html>

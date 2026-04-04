@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Workmate4u - Production Status Check</title>
+    <link rel="manifest" href="manifest.json">
     <meta name="robots" content="noindex, nofollow">
     <style>
         * {
@@ -291,5 +292,6 @@
         // Auto-refresh every 30 seconds
         setInterval(checkStatus, 30000);
     </script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>
 </body>
 </html>

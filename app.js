@@ -4,6 +4,22 @@
 // Robust GPS with Fallback System
 // ========================================
 
+// Dark mode initialization — runs before paint
+(function() {
+    var t = localStorage.getItem('theme');
+    if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
+})();
+
+function toggleDarkMode() {
+    var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    var icons = document.querySelectorAll('.dark-mode-toggle i');
+    icons.forEach(function(ic) { ic.className = isDark ? 'fas fa-moon' : 'fas fa-sun'; });
+}
+
 // Global State
 let map = null;
 let userMarker = null;
@@ -194,6 +210,25 @@ if (!STORAGE_AVAILABLE) {
 // ========================================
 
 function showNotification(message, type = 'info', duration = 5000) {
+    // Vibrate on mobile for important notifications
+    if (navigator.vibrate && (type === 'success' || type === 'error')) {
+        navigator.vibrate(type === 'error' ? [100, 50, 100] : [80]);
+    }
+
+    // Play notification sound using Web Audio API
+    try {
+        var ac = window._notifAudioCtx || (window._notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
+        var osc = ac.createOscillator();
+        var gain = ac.createGain();
+        osc.connect(gain);
+        gain.connect(ac.destination);
+        gain.gain.value = 0.08;
+        osc.frequency.value = type === 'error' ? 300 : type === 'success' ? 800 : 600;
+        osc.type = 'sine';
+        osc.start();
+        osc.stop(ac.currentTime + 0.15);
+    } catch (e) {}
+
     // Create notification container if it doesn't exist
     let container = document.getElementById('notification-container');
     if (!container) {
@@ -2404,6 +2439,7 @@ function renderTasks(filtered = null) {
     container.innerHTML = list.map(task => {
         const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
         const timeLeft = getTimeLeft(task.expiresAt);
+        const rating = task.postedBy && task.postedBy.rating ? task.postedBy.rating : null;
 
         return `
             <div class="task-card" data-task-id="${task.id}" onclick="onTaskCardClick(${task.id})">
@@ -2415,6 +2451,7 @@ function renderTasks(filtered = null) {
                 <p>${task.description}</p>
                 <div class="task-meta">
                     <span><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
+                    ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
                     <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft}</span>
                 </div>
             </div>
@@ -2532,6 +2569,9 @@ function openTaskDetail(taskId) {
         <div class="task-detail-actions">
             <button class="btn btn-outline" onclick="closeModal('taskDetailModal'); clearRoute();" style="flex: 1; padding: 12px; margin: 5px;">
                 <i class="fas fa-times"></i> Close
+            </button>
+            <button class="btn btn-outline" onclick="shareTask(${task.id})" style="flex:0 0 auto; padding: 12px 16px; margin: 5px;" title="Share this task">
+                <i class="fas fa-share-alt"></i>
             </button>
             ${!isOwner ? `
             <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
@@ -4269,6 +4309,9 @@ async function handleSignup(event) {
                 // Render dashboard after tasks are fully loaded
                 setTimeout(() => renderDashboard(), 100);
                 
+                // Show onboarding for new users
+                setTimeout(showOnboarding, 500);
+                
                 return;
             } else {
                 showToast('❌ ' + result.message);
@@ -4579,6 +4622,43 @@ function renderProfileUI() {
         hideSuspensionBanner();
         const debtBanner = document.getElementById('debtSuspensionBanner');
         if (debtBanner) debtBanner.style.display = 'none';
+    }
+
+    // Populate Earnings Dashboard
+    var earningsPanel = document.getElementById('earningsDashboard');
+    if (earningsPanel && currentUser) {
+        earningsPanel.style.display = 'block';
+
+        // Check email verification status
+        checkEmailVerification();
+        var etAmt = document.getElementById('earningsTotalAmount');
+        if (etAmt) etAmt.textContent = '₹' + (typeof totalEarned === 'number' ? totalEarned.toFixed(2) : totalEarned);
+        var etTasks = document.getElementById('earningsTotalTasks');
+        if (etTasks) etTasks.textContent = completedCount;
+
+        var listEl = document.getElementById('earningsDetailList');
+        if (listEl && myCompletedTasks.length > 0) {
+            listEl.innerHTML = myCompletedTasks.slice().reverse().map(function(t) {
+                var amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
+                var earned = t.earnedAmount || (amt * 0.88);
+                var date = t.completedAt ? new Date(t.completedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+                return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border,#e2e8f0);">' +
+                    '<div><div style="font-weight:600;font-size:14px;">' + (t.title || 'Task') + '</div><div style="font-size:12px;color:#94a3b8;">' + date + '</div></div>' +
+                    '<div style="font-weight:700;color:#10b981;">+₹' + earned.toFixed(2) + '</div></div>';
+            }).join('');
+        } else if (listEl) {
+            listEl.innerHTML = '<p style="text-align:center;color:#94a3b8;padding:20px;">No completed tasks yet</p>';
+        }
+    }
+}
+
+function toggleEarningsDetail() {
+    var list = document.getElementById('earningsDetailList');
+    var icon = document.getElementById('earningsToggleIcon');
+    if (list) {
+        var show = list.style.display === 'none';
+        list.style.display = show ? 'block' : 'none';
+        if (icon) icon.className = show ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
     }
 }
 
@@ -5023,6 +5103,8 @@ function applyFilters() {
     const dist = parseInt(document.getElementById('filterDistance').value);
     const minB = parseInt(document.getElementById('minBudget').value) || 0;
     const maxB = parseInt(document.getElementById('maxBudget').value) || 999999;
+    const searchEl = document.getElementById('filterSearch');
+    const searchTerm = searchEl ? searchEl.value.trim().toLowerCase() : '';
 
     const filtered = tasks.filter(t => {
         if (t.status !== 'active') return false;
@@ -5031,6 +5113,7 @@ function applyFilters() {
         if (cat !== 'all' && t.category !== cat) return false;
         if (d > dist) return false;
         if (t.price < minB || t.price > maxB) return false;
+        if (searchTerm && !(t.title || '').toLowerCase().includes(searchTerm) && !(t.description || '').toLowerCase().includes(searchTerm)) return false;
         return true;
     });
 
@@ -5044,6 +5127,8 @@ function clearFilters() {
     document.getElementById('distanceValue').textContent = '10';
     document.getElementById('minBudget').value = '';
     document.getElementById('maxBudget').value = '';
+    var searchEl = document.getElementById('filterSearch');
+    if (searchEl) searchEl.value = '';
     renderTasks();
     addTaskMarkers();
 }
@@ -5394,6 +5479,189 @@ function setupEventListeners() {
 }
 
 // ========================================
+// EMAIL VERIFICATION
+// ========================================
+
+function checkEmailVerification() {
+    var banner = document.getElementById('emailVerifyBanner');
+    if (!banner || !currentUser) return;
+    banner.style.display = currentUser.emailVerified ? 'none' : 'block';
+}
+
+function startEmailVerification() {
+    if (!currentUser || !currentUser.email) { showToast('Please login first', 'error'); return; }
+
+    // Generate 6-digit OTP
+    var otp = Math.floor(100000 + Math.random() * 900000).toString();
+    window._emailVerifyOTP = otp;
+
+    if (typeof emailjs !== 'undefined') {
+        emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, {
+            to_email: currentUser.email,
+            to_name: currentUser.name,
+            otp_code: otp,
+            app_name: 'Workmate4u'
+        }).then(function() {
+            showToast('Verification code sent to ' + currentUser.email, 'success');
+            promptEmailOTP();
+        }).catch(function() {
+            showToast('Failed to send verification email', 'error');
+        });
+    } else {
+        showToast('Email service not available', 'error');
+    }
+}
+
+function promptEmailOTP() {
+    var html = '<div style="text-align:center;padding:20px;">' +
+        '<div style="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#fbbf24);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;"><i class="fas fa-envelope-open" style="font-size:24px;color:white;"></i></div>' +
+        '<h3 style="margin-bottom:8px;">Enter Verification Code</h3>' +
+        '<p style="color:#64748b;margin-bottom:20px;">We sent a 6-digit code to your email</p>' +
+        '<input type="text" id="emailVerifyInput" maxlength="6" style="text-align:center;font-size:24px;letter-spacing:8px;padding:12px;border:2px solid #e2e8f0;border-radius:12px;width:200px;font-weight:700;" placeholder="000000">' +
+        '<div style="margin-top:20px;display:flex;gap:10px;justify-content:center;">' +
+        '<button class="btn btn-outline" onclick="closeModal(\'emailVerifyModal\')">Cancel</button>' +
+        '<button class="btn btn-primary" onclick="confirmEmailVerify()">Verify</button>' +
+        '</div></div>';
+
+    var modal = document.getElementById('emailVerifyModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'emailVerifyModal';
+        modal.innerHTML = '<div class="modal-content" style="max-width:380px;"></div>';
+        document.body.appendChild(modal);
+    }
+    modal.querySelector('.modal-content').innerHTML = html;
+    openModal('emailVerifyModal');
+}
+
+async function confirmEmailVerify() {
+    var input = document.getElementById('emailVerifyInput');
+    if (!input) return;
+    var code = input.value.trim();
+    if (code !== window._emailVerifyOTP) {
+        showToast('Invalid verification code', 'error');
+        return;
+    }
+
+    try {
+        var token = localStorage.getItem('taskearn_token');
+        var resp = await fetch((window.API_BASE_URL || '') + '/auth/verify-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        });
+        var data = await resp.json();
+        if (data.success) {
+            currentUser.emailVerified = true;
+            showToast('Email verified successfully!', 'success');
+            closeModal('emailVerifyModal');
+            checkEmailVerification();
+        } else {
+            showToast(data.message || 'Verification failed', 'error');
+        }
+    } catch (e) {
+        showToast('Network error', 'error');
+    }
+}
+
+// ========================================
+// ONBOARDING TUTORIAL
+// ========================================
+
+function showOnboarding() {
+    if (localStorage.getItem('onboarding_done')) return;
+
+    var steps = [
+        { icon: 'fa-hand-wave', title: 'Welcome to Workmate4u!', desc: 'Your local task marketplace. Post tasks you need help with or earn money by completing tasks nearby.' },
+        { icon: 'fa-search-location', title: 'Browse Tasks', desc: 'Find tasks near you on the map. Use filters to search by category, distance, and budget.' },
+        { icon: 'fa-clipboard-check', title: 'Accept & Earn', desc: 'Accept tasks, complete them, and get paid directly to your wallet. It\'s that simple!' },
+        { icon: 'fa-plus-circle', title: 'Post Tasks', desc: 'Need help? Post a task with your budget and location. Helpers nearby will see it instantly.' },
+        { icon: 'fa-wallet', title: 'Wallet & Payments', desc: 'Add money to your wallet, pay for tasks, and withdraw your earnings anytime.' }
+    ];
+
+    var currentStep = 0;
+
+    function renderStep() {
+        var s = steps[currentStep];
+        var overlay = document.getElementById('onboardingOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'onboardingOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;';
+            document.body.appendChild(overlay);
+        }
+        overlay.innerHTML = '<div style="background:white;border-radius:20px;max-width:380px;width:100%;padding:40px 30px;text-align:center;animation:slideIn 0.3s ease;">' +
+            '<div style="width:70px;height:70px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#0ea5e9);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;"><i class="fas ' + s.icon + '" style="font-size:28px;color:white;"></i></div>' +
+            '<h2 style="margin-bottom:10px;color:#1e293b;font-size:1.3rem;">' + s.title + '</h2>' +
+            '<p style="color:#64748b;margin-bottom:24px;line-height:1.6;">' + s.desc + '</p>' +
+            '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:20px;">' + steps.map(function(_, i) { return '<div style="width:8px;height:8px;border-radius:50%;background:' + (i === currentStep ? '#6366f1' : '#e2e8f0') + ';"></div>'; }).join('') + '</div>' +
+            '<div style="display:flex;gap:10px;justify-content:center;">' +
+            (currentStep > 0 ? '<button onclick="window._onboardPrev()" style="padding:10px 20px;border:1px solid #e2e8f0;border-radius:10px;background:white;cursor:pointer;font-weight:600;color:#64748b;">Back</button>' : '<button onclick="window._onboardSkip()" style="padding:10px 20px;border:1px solid #e2e8f0;border-radius:10px;background:white;cursor:pointer;font-weight:600;color:#64748b;">Skip</button>') +
+            '<button onclick="window._onboardNext()" style="padding:10px 20px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#0ea5e9);color:white;cursor:pointer;font-weight:600;">' + (currentStep === steps.length - 1 ? 'Get Started' : 'Next') + '</button>' +
+            '</div></div>';
+    }
+
+    window._onboardNext = function() {
+        if (currentStep < steps.length - 1) { currentStep++; renderStep(); }
+        else { closeOnboarding(); }
+    };
+    window._onboardPrev = function() {
+        if (currentStep > 0) { currentStep--; renderStep(); }
+    };
+    window._onboardSkip = function() { closeOnboarding(); };
+
+    function closeOnboarding() {
+        localStorage.setItem('onboarding_done', '1');
+        var el = document.getElementById('onboardingOverlay');
+        if (el) el.remove();
+    }
+
+    renderStep();
+}
+
+// ========================================
+// SHARE TASK
+// ========================================
+
+function shareTask(taskId) {
+    var task = tasks.find(function(t) { return t.id == taskId; });
+    if (!task) return;
+
+    var text = task.title + ' - ₹' + (task.price + getServiceCharge(task.category)) + ' on Workmate4u';
+    var url = 'https://www.workmate4u.com/browse.html';
+
+    if (navigator.share) {
+        navigator.share({ title: task.title, text: text, url: url }).catch(function() {});
+    } else {
+        // Fallback: show share options
+        var wa = 'https://wa.me/?text=' + encodeURIComponent(text + ' ' + url);
+        var tw = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(url);
+        var fb = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
+        var shareHTML = '<div style="text-align:center;padding:20px;">' +
+            '<h3 style="margin-bottom:16px;">Share this Task</h3>' +
+            '<p style="color:#64748b;margin-bottom:20px;">' + task.title + '</p>' +
+            '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">' +
+            '<a href="' + wa + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:12px 20px;background:#25d366;color:#fff;border-radius:10px;text-decoration:none;font-weight:600;"><i class="fab fa-whatsapp"></i> WhatsApp</a>' +
+            '<a href="' + tw + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:12px 20px;background:#1da1f2;color:#fff;border-radius:10px;text-decoration:none;font-weight:600;"><i class="fab fa-twitter"></i> Twitter</a>' +
+            '<a href="' + fb + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:12px 20px;background:#1877f2;color:#fff;border-radius:10px;text-decoration:none;font-weight:600;"><i class="fab fa-facebook"></i> Facebook</a>' +
+            '</div>' +
+            '<button class="btn btn-outline" onclick="closeModal(\'shareModal\')" style="margin-top:20px;padding:10px 24px;">Close</button>' +
+            '</div>';
+
+        var modal = document.getElementById('shareModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.id = 'shareModal';
+            modal.innerHTML = '<div class="modal-content" style="max-width:420px;"></div>';
+            document.body.appendChild(modal);
+        }
+        modal.querySelector('.modal-content').innerHTML = shareHTML;
+        openModal('shareModal');
+    }
+}
+
+// ========================================
 // GLOBAL EXPORTS
 // ========================================
 
@@ -5404,6 +5672,7 @@ window.handleLogin = handleLogin;
 window.handleSignup = handleSignup;
 window.handleTaskSubmit = handleTaskSubmit;
 window.openTaskDetail = openTaskDetail;
+window.shareTask = shareTask;
 window.navigateToTask = navigateToTask;
 window.acceptTask = acceptTask;
 window.abandonTask = abandonTask;
@@ -5446,6 +5715,9 @@ window.toggleEditPersonal = toggleEditPersonal;
 window.cancelEditPersonal = cancelEditPersonal;
 window.savePersonalInfo = savePersonalInfo;
 window.toggleChangePassword = toggleChangePassword;
+window.toggleEarningsDetail = toggleEarningsDetail;
+window.startEmailVerification = startEmailVerification;
+window.confirmEmailVerify = confirmEmailVerify;
 window.saveNewPassword = saveNewPassword;
 window.toggleNotifications = toggleNotifications;
 window.markAsRead = markAsRead;

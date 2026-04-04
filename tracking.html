@@ -18,7 +18,7 @@
     <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.1/mapbox-gl-directions.js"></script>
     <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.1/mapbox-gl-directions.css">
     
-    <link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="styles.css">
     
     <style>
         /* Tracking Page Specific Styles */
@@ -680,6 +680,7 @@
     </script>
 </head>
 <body>
+<script>if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}</script>
     <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
@@ -697,6 +698,7 @@
                     <i class="fas fa-arrow-left"></i> Back
                 </button>
             </div>
+            <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
         </div>
     </nav>
 
@@ -1708,5 +1710,6 @@
 
         document.addEventListener('DOMContentLoaded', initMap);
     </script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>
 </body>
 </html>

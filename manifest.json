@@ -1,0 +1,21 @@
+{
+  "name": "Workmate4u - Task Marketplace",
+  "short_name": "Workmate4u",
+  "description": "Post tasks or earn money by completing tasks nearby",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "en-IN",
+  "scope": "/"
+}

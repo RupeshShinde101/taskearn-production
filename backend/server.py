@@ -628,13 +628,115 @@ def logout():
     return jsonify({'success': True, 'message': 'Logged out successfully'})
 
 
+@app.route('/api/auth/send-verification-otp', methods=['POST'])
+@require_auth
+def send_verification_otp():
+    """Generate and send email verification OTP — same pattern as forgot-password."""
+    with get_db() as (cursor, conn):
+        cursor.execute(f'SELECT email, name, email_verified FROM users WHERE id = {PH}', (request.user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+        user = dict_from_row(user) if not isinstance(user, dict) else user
+
+        if user.get('email_verified'):
+            return jsonify({'success': False, 'message': 'Email already verified'}), 400
+
+        email = user['email']
+        name = user.get('name', 'User')
+
+        # Generate 6-digit OTP
+        otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)).isoformat()
+
+        # Store OTP in password_resets table (reuse existing table)
+        cursor.execute(f'''
+            INSERT INTO password_resets (user_id, token, otp, created_at, expires_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (request.user_id, 'email_verify_' + secrets.token_hex(16), otp,
+              datetime.datetime.now(datetime.timezone.utc).isoformat(), expires_at))
+
+    # Send via SendGrid if configured
+    email_sent_server = False
+    if config.SENDGRID_API_KEY:
+        try:
+            from sendgrid import SendGridAPIClient
+            from sendgrid.helpers.mail import Mail
+            message = Mail(
+                from_email=config.FROM_EMAIL,
+                to_emails=email,
+                subject=f'{config.APP_NAME} - Email Verification OTP',
+                html_content=f'''
+                    <h2>Email Verification</h2>
+                    <p>Hi {name},</p>
+                    <p>Your verification code for Workmate4u is:</p>
+                    <h1 style="color: #6366f1; font-size: 32px; letter-spacing: 4px;">{otp}</h1>
+                    <p>This code expires in 10 minutes.</p>
+                    <p>If you didn't request this, please ignore this email.</p>
+                '''
+            )
+            sg = SendGridAPIClient(config.SENDGRID_API_KEY)
+            sg.send(message)
+            email_sent_server = True
+            print(f"📧 Verification OTP sent to {email}")
+        except Exception as e:
+            print(f"⚠️ SendGrid email error: {e}")
+
+    if not email_sent_server:
+        print(f"🔐 Verification OTP for {email}: {otp}")
+
+    return jsonify({
+        'success': True,
+        'message': 'Verification code sent to your email',
+        # Return OTP for client-side EmailJS delivery when SendGrid is not configured
+        'otp': otp if not config.SENDGRID_API_KEY else None
+    })
+
+
 @app.route('/api/auth/verify-email', methods=['POST'])
 @require_auth
 def verify_email():
-    """Mark authenticated user's email as verified.
-    OTP verification happens client-side via EmailJS; this endpoint records it."""
+    """Verify email OTP and mark email as verified."""
+    data = request.get_json() or {}
+    otp = data.get('otp', '').strip()
+
+    if not otp or len(otp) != 6:
+        return jsonify({'success': False, 'message': 'Valid 6-digit OTP required'}), 400
+
     with get_db() as (cursor, conn):
+        cursor.execute(f'''
+            SELECT otp, expires_at FROM password_resets
+            WHERE user_id = {PH} AND token LIKE 'email_verify_%'
+            ORDER BY created_at DESC LIMIT 1
+        ''', (request.user_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            return jsonify({'success': False, 'message': 'No verification code found. Please request a new one.'}), 400
+
+        row = dict_from_row(row) if not isinstance(row, dict) else row
+        stored_otp = row['otp']
+        expires_at = row['expires_at']
+
+        # Check expiry
+        now = datetime.datetime.now(datetime.timezone.utc)
+        try:
+            exp = datetime.datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+            if now > exp:
+                return jsonify({'success': False, 'message': 'Verification code has expired. Please request a new one.'}), 400
+        except Exception:
+            pass
+
+        if otp != stored_otp:
+            return jsonify({'success': False, 'message': 'Invalid verification code'}), 400
+
+        # Mark email as verified
         cursor.execute(f'UPDATE users SET email_verified = TRUE WHERE id = {PH}', (request.user_id,))
+
+        # Clean up used tokens
+        cursor.execute(f"DELETE FROM password_resets WHERE user_id = {PH} AND token LIKE 'email_verify_%'",
+                       (request.user_id,))
+
     return jsonify({'success': True, 'message': 'Email verified successfully'})
 
 

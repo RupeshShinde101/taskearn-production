@@ -5491,35 +5491,38 @@ function checkEmailVerification() {
 function startEmailVerification() {
     if (!currentUser || !currentUser.email) { showToast('Please login first', 'error'); return; }
 
-    if (typeof emailjs === 'undefined') {
-        showToast('Email service not loaded. Please refresh the page and try again.', 'error');
-        return;
-    }
-
-    // Ensure EmailJS is initialized before sending
-    if (isEmailJSConfigured()) {
-        emailjs.init(EMAILJS_CONFIG.PUBLIC_KEY);
-    }
-
-    // Generate 6-digit OTP
-    var otp = Math.floor(100000 + Math.random() * 900000).toString();
-    window._emailVerifyOTP = otp;
-
     showToast('Sending verification code...', 'info');
 
-    emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, {
-        to_email: currentUser.email,
-        to_name: currentUser.name || 'User',
-        otp_code: otp,
-        app_name: 'Workmate4u',
-        validity: '10 minutes'
-    }).then(function(response) {
-        console.log('✅ Email verification OTP sent:', response);
-        showToast('Verification code sent to ' + currentUser.email, 'success');
-        promptEmailOTP();
-    }).catch(function(error) {
-        console.error('❌ EmailJS send error:', error);
-        showToast('Failed to send email: ' + (error && error.text ? error.text : 'Check your email service config'), 'error');
+    var token = localStorage.getItem('taskearn_token');
+    fetch((window.API_BASE_URL || '') + '/auth/send-verification-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+    }).then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (data.success) {
+            // If backend returned OTP (no SendGrid), use EmailJS as fallback
+            if (data.otp && typeof emailjs !== 'undefined' && isEmailJSConfigured()) {
+                emailjs.init(EMAILJS_CONFIG.PUBLIC_KEY);
+                emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, {
+                    to_email: currentUser.email,
+                    to_name: currentUser.name || 'User',
+                    otp_code: data.otp,
+                    app_name: 'Workmate4u',
+                    validity: '10 minutes'
+                }).then(function() {
+                    console.log('✅ Verification OTP sent via EmailJS');
+                }).catch(function(err) {
+                    console.error('⚠️ EmailJS fallback failed:', err);
+                });
+            }
+            showToast('Verification code sent to ' + currentUser.email, 'success');
+            promptEmailOTP();
+        } else {
+            showToast(data.message || 'Failed to send verification code', 'error');
+        }
+    }).catch(function(err) {
+        console.error('❌ Send verification OTP error:', err);
+        showToast('Network error. Please try again.', 'error');
     });
 }
 
@@ -5550,8 +5553,8 @@ async function confirmEmailVerify() {
     var input = document.getElementById('emailVerifyInput');
     if (!input) return;
     var code = input.value.trim();
-    if (code !== window._emailVerifyOTP) {
-        showToast('Invalid verification code', 'error');
+    if (!code || code.length !== 6) {
+        showToast('Please enter the 6-digit code', 'error');
         return;
     }
 
@@ -5559,7 +5562,8 @@ async function confirmEmailVerify() {
         var token = localStorage.getItem('taskearn_token');
         var resp = await fetch((window.API_BASE_URL || '') + '/auth/verify-email', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ otp: code })
         });
         var data = await resp.json();
         if (data.success) {

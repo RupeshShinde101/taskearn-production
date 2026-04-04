@@ -400,6 +400,20 @@ def init_postgres_db():
             )
         ''')
         
+        # Admin audit log table - tracks all admin actions
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admin_audit_log (
+                id SERIAL PRIMARY KEY,
+                admin_id VARCHAR(50) NOT NULL,
+                action VARCHAR(50) NOT NULL,
+                resource_type VARCHAR(50) NOT NULL,
+                resource_id VARCHAR(50),
+                details TEXT,
+                ip_address VARCHAR(45),
+                created_at TIMESTAMP NOT NULL
+            )
+        ''')
+        
         # Commit CREATE TABLEs and ensure clean transaction state for ALTER TABLEs
         conn.commit()
         

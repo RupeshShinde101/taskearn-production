@@ -4864,6 +4864,8 @@ def submit_contact_message():
 def get_contact_messages():
     """Get all contact messages (admin only)"""
     try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         with get_db() as (cursor, conn):
             cursor.execute(f'SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 100')
             messages = [dict_from_row(row) for row in cursor.fetchall()]
@@ -5641,11 +5643,259 @@ except Exception as e:
 
 
 # ========================================
-# STATIC FILE SERVING (Must come AFTER all API routes)
+# ADMIN AUDIT LOG HELPER
 # ========================================
 
-# Note: Admin dashboard is served directly via /admin-dashboard.html route
-# Other static files should be served by frontend server or CDN
+def log_admin_action(cursor, admin_id, action, resource_type, resource_id=None, details=None, ip_address=None):
+    """Log an admin action to the audit trail"""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cursor.execute(f'''
+        INSERT INTO admin_audit_log (admin_id, action, resource_type, resource_id, details, ip_address, created_at)
+        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+    ''', (admin_id, action, resource_type, str(resource_id) if resource_id else None, details, ip_address, now))
+
+
+# ========================================
+# ADMIN: AUDIT LOG API
+# ========================================
+
+@app.route('/api/admin/audit-log', methods=['GET'])
+@require_auth
+def get_audit_log():
+    """Get admin audit log entries"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        limit = min(int(request.args.get('limit', 50)), 200)
+        offset = int(request.args.get('offset', 0))
+        
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT * FROM admin_audit_log 
+                ORDER BY created_at DESC 
+                LIMIT {PH} OFFSET {PH}
+            ''', (limit, offset))
+            rows = cursor.fetchall()
+            entries = [dict_from_row(row) for row in rows]
+            
+            cursor.execute('SELECT COUNT(*) as count FROM admin_audit_log')
+            total = cursor.fetchone()[0]
+        
+        return jsonify({'success': True, 'entries': entries, 'total': total}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ========================================
+# ADMIN: MANUAL REFUND
+# ========================================
+
+@app.route('/api/admin/refund', methods=['POST'])
+@require_auth
+def admin_manual_refund():
+    """Admin manually credits a user's wallet"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        data = request.get_json()
+        target_user_id = data.get('user_id', '').strip()
+        amount = float(data.get('amount', 0))
+        reason = data.get('reason', '').strip()
+        
+        if not target_user_id or amount <= 0 or not reason:
+            return jsonify({'success': False, 'message': 'user_id, positive amount, and reason are required'}), 400
+        
+        if amount > 50000:
+            return jsonify({'success': False, 'message': 'Refund amount cannot exceed ₹50,000'}), 400
+        
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        with get_db() as (cursor, conn):
+            # Check user exists
+            cursor.execute(f'SELECT id, name FROM users WHERE id = {PH}', (target_user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+            # Update wallet balance
+            cursor.execute(f'''
+                UPDATE wallets SET balance = balance + {PH}, updated_at = {PH}
+                WHERE user_id = {PH}
+            ''', (amount, now, target_user_id))
+            
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'User wallet not found'}), 404
+            
+            # Get new balance
+            cursor.execute(f'SELECT balance FROM wallets WHERE user_id = {PH}', (target_user_id,))
+            new_balance = float(cursor.fetchone()[0])
+            
+            # Log transaction
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (user_id, wallet_id, type, amount, balance_after, description, status, created_at)
+                SELECT {PH}, w.id, 'refund', {PH}, {PH}, {PH}, 'completed', {PH}
+                FROM wallets w WHERE w.user_id = {PH}
+            ''', (target_user_id, amount, new_balance, f'Admin refund: {reason}', now, target_user_id))
+            
+            # Audit log
+            log_admin_action(cursor, request.user_id, 'refund', 'wallet', target_user_id,
+                           f'Refunded ₹{amount} to user. Reason: {reason}', request.remote_addr)
+        
+        return jsonify({
+            'success': True, 
+            'message': f'₹{amount} refunded to user wallet',
+            'new_balance': new_balance
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ========================================
+# ADMIN: TASK MODERATION
+# ========================================
+
+@app.route('/api/admin/tasks/<int:task_id>/hide', methods=['POST'])
+@require_auth
+def admin_hide_task(task_id):
+    """Admin hides/removes an inappropriate task"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        data = request.get_json() or {}
+        reason = data.get('reason', 'Removed by admin').strip()
+        
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id, title, status, posted_by FROM tasks WHERE id = {PH}', (task_id,))
+            task = cursor.fetchone()
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found'}), 404
+            
+            old_status = task[2] if not hasattr(task, 'get') else task.get('status', '')
+            
+            # Set task to 'removed' status
+            cursor.execute(f"UPDATE tasks SET status = 'removed' WHERE id = {PH}", (task_id,))
+            
+            # Audit log
+            log_admin_action(cursor, request.user_id, 'hide_task', 'task', task_id,
+                           f'Task hidden (was: {old_status}). Reason: {reason}', request.remote_addr)
+        
+        return jsonify({'success': True, 'message': 'Task hidden successfully'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/tasks/<int:task_id>/restore', methods=['POST'])
+@require_auth
+def admin_restore_task(task_id):
+    """Admin restores a hidden task back to active"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id, status FROM tasks WHERE id = {PH}', (task_id,))
+            task = cursor.fetchone()
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found'}), 404
+            
+            cursor.execute(f"UPDATE tasks SET status = 'active' WHERE id = {PH}", (task_id,))
+            
+            log_admin_action(cursor, request.user_id, 'restore_task', 'task', task_id,
+                           'Task restored to active', request.remote_addr)
+        
+        return jsonify({'success': True, 'message': 'Task restored'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ========================================
+# ADMIN: ANALYTICS / DASHBOARD STATS
+# ========================================
+
+@app.route('/api/admin/analytics', methods=['GET'])
+@require_auth
+def admin_analytics():
+    """Get platform analytics for admin dashboard"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        with get_db() as (cursor, conn):
+            # Signups per day (last 30 days)
+            cursor.execute('''
+                SELECT DATE(joined_at) as day, COUNT(*) as count
+                FROM users
+                WHERE joined_at >= NOW() - INTERVAL '30 days'
+                GROUP BY DATE(joined_at)
+                ORDER BY day
+            ''')
+            signups = [{'day': str(r[0]), 'count': r[1]} for r in cursor.fetchall()]
+            
+            # Tasks per day (last 30 days)
+            cursor.execute('''
+                SELECT DATE(posted_at) as day, COUNT(*) as count
+                FROM tasks
+                WHERE posted_at >= NOW() - INTERVAL '30 days'
+                GROUP BY DATE(posted_at)
+                ORDER BY day
+            ''')
+            tasks_daily = [{'day': str(r[0]), 'count': r[1]} for r in cursor.fetchall()]
+            
+            # Tasks by category
+            cursor.execute('''
+                SELECT category, COUNT(*) as count
+                FROM tasks
+                GROUP BY category
+                ORDER BY count DESC
+                LIMIT 10
+            ''')
+            categories = [{'category': r[0], 'count': r[1]} for r in cursor.fetchall()]
+            
+            # Revenue last 30 days (commission + poster fees)
+            cursor.execute('''
+                SELECT COALESCE(SUM(amount), 0) as total
+                FROM wallet_transactions
+                WHERE user_id = '1'
+                  AND type IN ('commission', 'platform_fee')
+                  AND created_at >= NOW() - INTERVAL '30 days'
+            ''')
+            revenue_30d = float(cursor.fetchone()[0])
+            
+            # Tasks by status
+            cursor.execute('''
+                SELECT status, COUNT(*) as count
+                FROM tasks GROUP BY status ORDER BY count DESC
+            ''')
+            tasks_by_status = [{'status': r[0], 'count': r[1]} for r in cursor.fetchall()]
+            
+            # Top earners
+            cursor.execute('''
+                SELECT u.id, u.name, w.total_earned, w.balance
+                FROM users u JOIN wallets w ON u.id = w.user_id
+                ORDER BY w.total_earned DESC
+                LIMIT 10
+            ''')
+            top_earners = [{'id': r[0], 'name': r[1], 'total_earned': float(r[2] or 0), 'balance': float(r[3] or 0)} for r in cursor.fetchall()]
+        
+        return jsonify({
+            'success': True,
+            'signups_daily': signups,
+            'tasks_daily': tasks_daily,
+            'categories': categories,
+            'revenue_30d': revenue_30d,
+            'tasks_by_status': tasks_by_status,
+            'top_earners': top_earners
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ========================================
+# STATIC FILE SERVING (Must come AFTER all API routes)
+# ========================================
 
 
 # ========================================

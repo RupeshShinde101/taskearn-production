@@ -1547,28 +1547,20 @@ def delete_task(task_id):
             if task['status'] in ('completed', 'paid'):
                 return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
 
-            # Delete related notifications first
-            try:
-                cursor.execute(f'DELETE FROM notifications WHERE task_id = {PH}', (task_id,))
-            except Exception:
-                pass
-
-            # Remove task_id references from wallet_transactions (preserve history)
-            try:
-                cursor.execute(f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}', (task_id,))
-            except Exception:
-                pass
-
-            # Remove task_id references from any other tables
-            try:
-                cursor.execute(f'DELETE FROM task_releases WHERE task_id = {PH}', (task_id,))
-            except Exception:
-                pass
-
-            try:
-                cursor.execute(f'DELETE FROM reviews WHERE task_id = {PH}', (task_id,))
-            except Exception:
-                pass
+            # Clean up foreign key references using SAVEPOINTs
+            # (PostgreSQL aborts entire transaction if a statement fails without savepoint)
+            for cleanup_sql in [
+                f'DELETE FROM notifications WHERE task_id = {PH}',
+                f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
+                f'DELETE FROM task_releases WHERE task_id = {PH}',
+                f'DELETE FROM reviews WHERE task_id = {PH}',
+            ]:
+                try:
+                    cursor.execute('SAVEPOINT sp_cleanup')
+                    cursor.execute(cleanup_sql, (task_id,))
+                    cursor.execute('RELEASE SAVEPOINT sp_cleanup')
+                except Exception:
+                    cursor.execute('ROLLBACK TO SAVEPOINT sp_cleanup')
 
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 

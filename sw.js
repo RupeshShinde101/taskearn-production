@@ -1,12 +1,19 @@
-const CACHE_NAME = 'workmate4u-v1';
+const CACHE_NAME = 'workmate4u-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/browse.html',
+  '/posted.html',
+  '/accepted.html',
+  '/completed.html',
   '/profile.html',
   '/wallet.html',
+  '/chat.html',
+  '/help.html',
   '/styles.css',
   '/app.js',
+  '/api-client.js',
+  '/shared.js',
   '/favicon.svg'
 ];
 
@@ -28,7 +35,7 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch — network first, fallback to cache
+// Fetch — stale-while-revalidate for static, network-first for HTML
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
@@ -37,13 +44,29 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // HTML pages: network-first (always fresh)
+  if (event.request.headers.get('accept')?.includes('text/html') || url.pathname.endsWith('.html')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Static assets (JS, CSS, images, fonts): cache-first with background revalidation
   event.respondWith(
-    fetch(event.request)
-      .then(response => {
+    caches.match(event.request).then(cached => {
+      const fetchPromise = fetch(event.request).then(response => {
         const clone = response.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         return response;
-      })
-      .catch(() => caches.match(event.request))
+      });
+      return cached || fetchPromise;
+    })
   );
 });

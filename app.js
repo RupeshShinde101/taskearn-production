@@ -1818,18 +1818,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Event listener setup failed:', e.message);
         }
         
-        // Load tasks from server (replaces demo tasks)
+        // Load tasks and category counts in PARALLEL (not serial)
         try {
-            await loadTasksFromServer();
+            await Promise.all([
+                loadTasksFromServer().catch(e => console.warn('⚠️ Could not load tasks from server:', e.message)),
+                loadCategoryCounts().catch(e => console.warn('⚠️ Category counts failed:', e.message))
+            ]);
         } catch (e) {
-            console.warn('⚠️ Could not load tasks from server:', e.message);
-        }
-        
-        // Load live category counts for Popular Tasks section
-        try {
-            await loadCategoryCounts();
-        } catch (e) {
-            console.warn('⚠️ Category counts failed:', e.message);
+            console.warn('⚠️ Parallel load failed:', e.message);
         }
         
         // Fallback render if server load failed
@@ -1840,17 +1836,19 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Task rendering failed:', e.message);
         }
         
-        // Refresh tasks from server every 30 seconds
+        // Refresh tasks from server every 60 seconds (was 30s — reduced for performance)
         setInterval(() => {
+            if (document.hidden) return; // Skip refresh when tab is not visible
             try {
-                loadTasksFromServer().catch(e => console.warn('⚠️ Auto-refresh failed:', e.message));
-                loadCategoryCounts().catch(e => console.warn('⚠️ Category count refresh failed:', e.message));
-                // Also refresh wallet balance
-                refreshWalletBalance().catch(e => console.warn('⚠️ Wallet refresh failed:', e.message));
+                Promise.all([
+                    loadTasksFromServer().catch(e => console.warn('⚠️ Auto-refresh failed:', e.message)),
+                    loadCategoryCounts().catch(e => console.warn('⚠️ Category count refresh failed:', e.message)),
+                    refreshWalletBalance().catch(e => console.warn('⚠️ Wallet refresh failed:', e.message))
+                ]);
             } catch (e) {
                 console.warn('⚠️ Task refresh failed:', e.message);
             }
-        }, 30000);
+        }, 60000);
         
         console.log('✅ Workmate4u Ready!');
     } catch (error) {

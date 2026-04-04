@@ -81,10 +81,12 @@
     </script>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- Leaflet.js - Free OpenStreetMap (No API Key Required) -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Leaflet CSS - deferred (not needed for first paint) -->
+    <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></noscript>
+    <link rel="preload" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"></noscript>
     <!-- Razorpay Checkout - Loaded dynamically -->
     <script>
         // Load Razorpay dynamically to avoid preload warnings
@@ -1294,12 +1296,12 @@
         <span id="toastMessage">Action completed successfully!</span>
     </div>
 
-    <!-- Leaflet.js - Free OpenStreetMap (No API Key Required!) -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <!-- Leaflet.js - Deferred loading (not needed for initial render) -->
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     
-    <!-- EmailJS SDK for Real Email OTP -->
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <!-- EmailJS SDK - Deferred (only needed for password reset / verification) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     
     <!-- API Client for Python Backend -->
     <script src="api-client.js?v=20260326_penalty"></script>
@@ -1308,7 +1310,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260326_penalty"></script>
     
-    <script src="app.js?v=20260326_penalty"></script>
+    <script src="app.js?v=20250615_perf"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>

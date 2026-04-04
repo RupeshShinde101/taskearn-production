@@ -5491,25 +5491,36 @@ function checkEmailVerification() {
 function startEmailVerification() {
     if (!currentUser || !currentUser.email) { showToast('Please login first', 'error'); return; }
 
+    if (typeof emailjs === 'undefined') {
+        showToast('Email service not loaded. Please refresh the page and try again.', 'error');
+        return;
+    }
+
+    // Ensure EmailJS is initialized before sending
+    if (isEmailJSConfigured()) {
+        emailjs.init(EMAILJS_CONFIG.PUBLIC_KEY);
+    }
+
     // Generate 6-digit OTP
     var otp = Math.floor(100000 + Math.random() * 900000).toString();
     window._emailVerifyOTP = otp;
 
-    if (typeof emailjs !== 'undefined') {
-        emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, {
-            to_email: currentUser.email,
-            to_name: currentUser.name,
-            otp_code: otp,
-            app_name: 'Workmate4u'
-        }).then(function() {
-            showToast('Verification code sent to ' + currentUser.email, 'success');
-            promptEmailOTP();
-        }).catch(function() {
-            showToast('Failed to send verification email', 'error');
-        });
-    } else {
-        showToast('Email service not available', 'error');
-    }
+    showToast('Sending verification code...', 'info');
+
+    emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, {
+        to_email: currentUser.email,
+        to_name: currentUser.name || 'User',
+        otp_code: otp,
+        app_name: 'Workmate4u',
+        validity: '10 minutes'
+    }).then(function(response) {
+        console.log('✅ Email verification OTP sent:', response);
+        showToast('Verification code sent to ' + currentUser.email, 'success');
+        promptEmailOTP();
+    }).catch(function(error) {
+        console.error('❌ EmailJS send error:', error);
+        showToast('Failed to send email: ' + (error && error.text ? error.text : 'Check your email service config'), 'error');
+    });
 }
 
 function promptEmailOTP() {

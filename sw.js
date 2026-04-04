@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workmate4u-v2';
+const CACHE_NAME = 'workmate4u-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -35,12 +35,17 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch — stale-while-revalidate for static, network-first for HTML
+// Fetch — only cache same-origin resources; let browser handle CDN/cross-origin
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET and API requests
+  // Skip non-GET, API requests, and cross-origin CDN requests (Font Awesome, Google Fonts, Leaflet, etc.)
   if (event.request.method !== 'GET' || url.pathname.startsWith('/api') || url.pathname.includes('netlify')) {
+    return;
+  }
+
+  // Let browser handle cross-origin requests natively (CDN icons, fonts, map tiles)
+  if (url.origin !== self.location.origin) {
     return;
   }
 
@@ -58,7 +63,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Static assets (JS, CSS, images, fonts): cache-first with background revalidation
+  // Same-origin static assets (JS, CSS, images): cache-first with background revalidation
   event.respondWith(
     caches.match(event.request).then(cached => {
       const fetchPromise = fetch(event.request).then(response => {

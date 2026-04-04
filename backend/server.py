@@ -160,13 +160,18 @@ def _ensure_suspension_columns():
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_until TIMESTAMP")
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_releases INTEGER DEFAULT 0")
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_release_date VARCHAR(20)")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_reason VARCHAR(255)")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMP")
             else:
                 # SQLite
                 cursor.execute("PRAGMA table_info(users)")
                 cols = [row[1] for row in cursor.fetchall()]
                 for col, typ in [('is_suspended', 'BOOLEAN DEFAULT 0'), ('suspension_reason', 'TEXT'),
                                  ('suspended_at', 'TEXT'), ('suspended_until', 'TEXT'),
-                                 ('daily_releases', 'INTEGER DEFAULT 0'), ('daily_release_date', 'TEXT')]:
+                                 ('daily_releases', 'INTEGER DEFAULT 0'), ('daily_release_date', 'TEXT'),
+                                 ('is_banned', 'BOOLEAN DEFAULT 0'), ('banned_reason', 'TEXT'),
+                                 ('banned_at', 'TEXT')]:
                     if col not in cols:
                         cursor.execute(f'ALTER TABLE users ADD COLUMN {col} {typ}')
         _suspension_columns_ensured = True
@@ -280,6 +285,15 @@ def user_to_response(user):
     wallet_low = wallet_balance < 100
     debt_suspended = wallet_balance <= -500
     
+    # Check admin suspension (is_suspended=True without suspended_until)
+    is_suspended = bool(user.get('is_suspended', False))
+    admin_suspended = False
+    suspension_reason = user.get('suspension_reason', '')
+    is_banned = bool(user.get('is_banned', False))
+    
+    if is_suspended and not user.get('suspended_until'):
+        admin_suspended = True  # Permanent admin suspension
+    
     # Check timer suspension (auto-clear if expired)
     suspended_until = user.get('suspended_until')
     timer_suspended = False
@@ -304,7 +318,7 @@ def user_to_response(user):
                 # Auto-clear expired timer suspension
                 try:
                     with get_db() as (cursor, conn):
-                        cursor.execute(f'UPDATE users SET suspended_until = NULL WHERE id = {PH}', (user['id'],))
+                        cursor.execute(f'UPDATE users SET suspended_until = NULL, is_suspended = FALSE, suspension_reason = NULL WHERE id = {PH}', (user['id'],))
                 except:
                     pass
     
@@ -335,6 +349,9 @@ def user_to_response(user):
         'debtAmount': abs(wallet_balance) if wallet_balance < 0 else 0,
         'timerSuspended': timer_suspended,
         'suspendedUntil': suspended_until_iso,
+        'adminSuspended': admin_suspended,
+        'suspensionReason': suspension_reason or None,
+        'isBanned': is_banned,
         'dailyReleaseCount': daily_release_count,
         'emailVerified': bool(user.get('email_verified', False))
     }
@@ -583,6 +600,10 @@ def login():
     # Verify password
     if not check_password_hash(user['password_hash'], password):
         return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+    
+    # Check if user is banned
+    if user.get('is_banned'):
+        return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
     
     # Update last login
     with get_db() as (cursor, conn):
@@ -1277,15 +1298,28 @@ def accept_task(task_id):
         # Ensure suspension columns exist
         _ensure_suspension_columns()
 
-        # Server-side suspension check
+        # Server-side suspension check (admin + timer + ban)
         cursor_user = None
         with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT suspended_until FROM users WHERE id = {PH}', (request.user_id,))
+            cursor.execute(f'SELECT is_suspended, suspended_until, suspension_reason, is_banned FROM users WHERE id = {PH}', (request.user_id,))
             cursor_user = cursor.fetchone()
         
         if cursor_user:
             user_dict = dict_from_row(cursor_user) if not isinstance(cursor_user, dict) else cursor_user
+            
+            # Check permanent ban first
+            if user_dict.get('is_banned'):
+                return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
+            
+            # Check admin suspension (is_suspended=True without suspended_until = permanent admin suspension)
+            is_suspended = user_dict.get('is_suspended', False)
             sus_until = user_dict.get('suspended_until')
+            sus_reason = user_dict.get('suspension_reason', '')
+            
+            if is_suspended and not sus_until:
+                # Admin-imposed suspension (no expiry) — block
+                return jsonify({'success': False, 'message': f'Your account is suspended by admin. Reason: {sus_reason or "Contact support"}'}), 403
+            
             if sus_until:
                 try:
                     if isinstance(sus_until, str):
@@ -1297,7 +1331,7 @@ def accept_task(task_id):
                     if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
                         return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
                     else:
-                        # Suspension expired — clear it and notify user
+                        # Timer suspension expired — clear it and notify user
                         try:
                             with get_db() as (cur2, conn2):
                                 cur2.execute(f'UPDATE users SET is_suspended = {PH}, suspended_until = {PH}, suspension_reason = {PH} WHERE id = {PH}',
@@ -6172,6 +6206,260 @@ def admin_analytics():
             'tasks_by_status': tasks_by_status,
             'top_earners': top_earners
         }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ========================================
+# ADMIN: USER MANAGEMENT (Suspend/Ban/Delete)
+# ========================================
+
+@app.route('/api/admin/users/<user_id>/suspend', methods=['POST'])
+@require_auth
+def admin_suspend_user(user_id):
+    """Admin suspends a user (with optional duration)"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+        _ensure_suspension_columns()
+        data = request.get_json() or {}
+        reason = data.get('reason', 'Suspended by admin').strip()
+        duration_hours = data.get('duration_hours')  # None = indefinite
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        suspended_until = None
+        if duration_hours:
+            suspended_until = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(duration_hours))).isoformat()
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id, name FROM users WHERE id = {PH}', (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+
+            cursor.execute(f'''
+                UPDATE users SET is_suspended = {PH}, suspension_reason = {PH},
+                    suspended_at = {PH}, suspended_until = {PH}
+                WHERE id = {PH}
+            ''', (True, reason, now, suspended_until, user_id))
+
+            # Send notification to user
+            import json
+            notif_msg = f'Your account has been suspended by admin. Reason: {reason}'
+            if suspended_until:
+                notif_msg += f' (until {datetime.datetime.fromisoformat(suspended_until).strftime("%b %d, %I:%M %p")} UTC)'
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'account_suspended', 'Account Suspended ⛔',
+                  notif_msg, 'unread', json.dumps({'type': 'system', 'reason': reason}), now))
+
+            log_admin_action(cursor, request.user_id, 'suspend_user', 'user', user_id,
+                           f'Suspended. Reason: {reason}. Duration: {duration_hours or "indefinite"}h', request.remote_addr)
+
+        return jsonify({'success': True, 'message': f'User {user_id} suspended'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/users/<user_id>/unsuspend', methods=['POST'])
+@require_auth
+def admin_unsuspend_user(user_id):
+    """Admin unsuspends a user"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+        _ensure_suspension_columns()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id, name FROM users WHERE id = {PH}', (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+
+            cursor.execute(f'''
+                UPDATE users SET is_suspended = {PH}, suspension_reason = {PH},
+                    suspended_at = {PH}, suspended_until = {PH}
+                WHERE id = {PH}
+            ''', (False, None, None, None, user_id))
+
+            import json
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'account_restored', 'Account Restored! ✅',
+                  'Your account suspension has been lifted by admin. You can now accept tasks again.',
+                  'unread', json.dumps({'type': 'system'}), now))
+
+            log_admin_action(cursor, request.user_id, 'unsuspend_user', 'user', user_id,
+                           'User unsuspended by admin', request.remote_addr)
+
+        return jsonify({'success': True, 'message': f'User {user_id} unsuspended'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/users/<user_id>/ban', methods=['POST'])
+@require_auth
+def admin_ban_user(user_id):
+    """Admin permanently bans a user (blocks login + all actions)"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+        _ensure_suspension_columns()
+        data = request.get_json() or {}
+        reason = data.get('reason', 'Banned by admin').strip()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id, name FROM users WHERE id = {PH}', (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+
+            cursor.execute(f'''
+                UPDATE users SET is_banned = {PH}, banned_reason = {PH}, banned_at = {PH},
+                    is_suspended = {PH}, suspension_reason = {PH}, session_token = {PH}
+                WHERE id = {PH}
+            ''', (True, reason, now, True, f'Banned: {reason}', None, user_id))
+
+            import json
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'account_banned', 'Account Permanently Banned 🚫',
+                  f'Your account has been permanently banned. Reason: {reason}. Contact support if you believe this is an error.',
+                  'unread', json.dumps({'type': 'system', 'reason': reason}), now))
+
+            log_admin_action(cursor, request.user_id, 'ban_user', 'user', user_id,
+                           f'Permanently banned. Reason: {reason}', request.remote_addr)
+
+        return jsonify({'success': True, 'message': f'User {user_id} permanently banned'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/users/<user_id>/unban', methods=['POST'])
+@require_auth
+def admin_unban_user(user_id):
+    """Admin lifts a permanent ban"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+        _ensure_suspension_columns()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id, name FROM users WHERE id = {PH}', (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+
+            cursor.execute(f'''
+                UPDATE users SET is_banned = {PH}, banned_reason = {PH}, banned_at = {PH},
+                    is_suspended = {PH}, suspension_reason = {PH}
+                WHERE id = {PH}
+            ''', (False, None, None, False, None, user_id))
+
+            import json
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'account_restored', 'Account Restored! ✅',
+                  'Your account ban has been lifted. You can now use the platform again.',
+                  'unread', json.dumps({'type': 'system'}), now))
+
+            log_admin_action(cursor, request.user_id, 'unban_user', 'user', user_id,
+                           'Ban lifted by admin', request.remote_addr)
+
+        return jsonify({'success': True, 'message': f'User {user_id} unbanned'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/users/<user_id>', methods=['DELETE'])
+@require_auth
+def admin_delete_user(user_id):
+    """Admin permanently deletes a user and all their data"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+        if user_id == '1':
+            return jsonify({'success': False, 'message': 'Cannot delete admin user'}), 400
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id, name, email FROM users WHERE id = {PH}', (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            user = dict_from_row(user) if not isinstance(user, dict) else user
+
+            # Delete in dependency order
+            cursor.execute(f'DELETE FROM notifications WHERE user_id = {PH}', (user_id,))
+            cursor.execute(f'DELETE FROM wallet_transactions WHERE user_id = {PH}', (user_id,))
+            cursor.execute(f'DELETE FROM withdrawal_requests WHERE user_id = {PH}', (user_id,))
+            cursor.execute(f'DELETE FROM wallets WHERE user_id = {PH}', (user_id,))
+            cursor.execute(f'DELETE FROM tasks WHERE posted_by = {PH} AND status = {PH}', (user_id, 'active'))
+            cursor.execute(f'UPDATE tasks SET accepted_by = NULL, status = {PH} WHERE accepted_by = {PH} AND status = {PH}', ('active', user_id, 'accepted'))
+            cursor.execute(f'DELETE FROM users WHERE id = {PH}', (user_id,))
+
+            log_admin_action(cursor, request.user_id, 'delete_user', 'user', user_id,
+                           f'Deleted user: {user.get("name")} ({user.get("email")})', request.remote_addr)
+
+        return jsonify({'success': True, 'message': f'User {user_id} permanently deleted'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/users/<user_id>/adjust-balance', methods=['POST'])
+@require_auth
+def admin_adjust_balance(user_id):
+    """Admin adjusts a user's wallet balance (add or deduct)"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+        data = request.get_json() or {}
+        amount = float(data.get('amount', 0))
+        reason = data.get('reason', '').strip()
+
+        if amount == 0 or not reason:
+            return jsonify({'success': False, 'message': 'Non-zero amount and reason are required'}), 400
+        if abs(amount) > 50000:
+            return jsonify({'success': False, 'message': 'Amount cannot exceed ±₹50,000'}), 400
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id, name FROM users WHERE id = {PH}', (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+
+            cursor.execute(f'UPDATE wallets SET balance = balance + {PH}, updated_at = {PH} WHERE user_id = {PH}', (amount, now, user_id))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'User wallet not found'}), 404
+
+            cursor.execute(f'SELECT balance FROM wallets WHERE user_id = {PH}', (user_id,))
+            new_balance = float(cursor.fetchone()[0])
+
+            txn_type = 'admin_credit' if amount > 0 else 'admin_debit'
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (user_id, wallet_id, type, amount, balance_after, description, status, created_at)
+                SELECT {PH}, w.id, {PH}, {PH}, {PH}, {PH}, 'completed', {PH}
+                FROM wallets w WHERE w.user_id = {PH}
+            ''', (user_id, txn_type, abs(amount), new_balance, f'Admin: {reason}', now, user_id))
+
+            log_admin_action(cursor, request.user_id, 'adjust_balance', 'wallet', user_id,
+                           f'{"+" if amount > 0 else ""}{amount}. Reason: {reason}. New balance: {new_balance}', request.remote_addr)
+
+        return jsonify({'success': True, 'message': f'Balance adjusted by ₹{amount}', 'new_balance': new_balance}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 

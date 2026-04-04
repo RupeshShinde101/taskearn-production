@@ -935,6 +935,7 @@ async function syncNotificationsFromServer() {
                 else if (n.notification_type === 'withdrawal_requested') uiType = 'info';
                 else if (n.notification_type === 'account_suspended') uiType = 'error';
                 else if (n.notification_type === 'account_restored') uiType = 'success';
+                else if (n.notification_type === 'account_banned') uiType = 'error';
                 
                 return {
                     id: n.id,
@@ -2765,7 +2766,12 @@ async function acceptTask(taskId) {
     // Check if account is suspended
     if (isAccountSuspended()) {
         closeModal('taskDetailModal');
-        if (isDebtSuspended()) {
+        if (isBanned()) {
+            showToast('🚫 Your account has been permanently banned. Contact support for assistance.', 'error');
+        } else if (isAdminSuspended()) {
+            const reason = localStorage.getItem('taskearn_suspension_reason') || 'Contact support';
+            showToast('⛔ Your account is suspended by admin. Reason: ' + reason, 'error');
+        } else if (isDebtSuspended()) {
             showDebtSuspendedPopup();
         } else {
             showSuspendedPopup();
@@ -2869,7 +2875,17 @@ function isDebtSuspended() {
     return localStorage.getItem('taskearn_debt_suspended') === 'true';
 }
 
+function isAdminSuspended() {
+    return localStorage.getItem('taskearn_admin_suspended') === 'true';
+}
+
+function isBanned() {
+    return localStorage.getItem('taskearn_banned') === 'true';
+}
+
 function isAccountSuspended() {
+    if (isBanned()) return true;
+    if (isAdminSuspended()) return true;
     if (isTimerSuspended()) return true;
     if (isDebtSuspended()) return true;
     return false;
@@ -3015,6 +3031,20 @@ function checkAndClearSuspension() {
 }
 
 function applySuspensionFromUser(userData) {
+    // Sync admin suspension from server
+    if (userData.adminSuspended) {
+        localStorage.setItem('taskearn_admin_suspended', 'true');
+        localStorage.setItem('taskearn_suspension_reason', userData.suspensionReason || 'Contact support');
+    } else {
+        localStorage.removeItem('taskearn_admin_suspended');
+        localStorage.removeItem('taskearn_suspension_reason');
+    }
+    // Sync ban status
+    if (userData.isBanned) {
+        localStorage.setItem('taskearn_banned', 'true');
+    } else {
+        localStorage.removeItem('taskearn_banned');
+    }
     // Sync timer suspension from server response
     if (userData.timerSuspended && userData.suspendedUntil) {
         setTimerSuspension(userData.suspendedUntil);
@@ -3196,7 +3226,11 @@ async function abandonTask(taskId) {
     }
 
     if (isAccountSuspended()) {
-        if (isDebtSuspended()) {
+        if (isBanned()) {
+            showToast('🚫 Your account has been permanently banned.', 'error');
+        } else if (isAdminSuspended()) {
+            showToast('⛔ Your account is suspended by admin.', 'error');
+        } else if (isDebtSuspended()) {
             showDebtSuspendedPopup();
         } else {
             showSuspendedPopup();

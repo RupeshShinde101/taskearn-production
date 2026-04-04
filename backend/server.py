@@ -1301,7 +1301,12 @@ def accept_task(task_id):
         # Server-side suspension check (admin + timer + ban)
         cursor_user = None
         with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT is_suspended, suspended_until, suspension_reason, is_banned FROM users WHERE id = {PH}', (request.user_id,))
+            try:
+                cursor.execute(f'SELECT is_suspended, suspended_until, suspension_reason, is_banned FROM users WHERE id = {PH}', (request.user_id,))
+            except Exception:
+                # Fallback if is_banned column doesn't exist yet
+                conn.rollback()
+                cursor.execute(f'SELECT is_suspended, suspended_until, suspension_reason FROM users WHERE id = {PH}', (request.user_id,))
             cursor_user = cursor.fetchone()
         
         if cursor_user:

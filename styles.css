@@ -1302,6 +1302,29 @@ section {
     font-weight: 500;
 }
 
+.task-card-accept-btn {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+    padding: 10px 16px;
+    background: var(--primary-gradient, linear-gradient(135deg, #667eea, #764ba2));
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+}
+
+.task-card-accept-btn:hover {
+    opacity: 0.9;
+}
+
+.task-card-accept-btn:active {
+    transform: scale(0.97);
+}
+
 /* Available Tasks Browse Styles */
 .available-task-card {
     background: var(--white);

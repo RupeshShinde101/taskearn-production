@@ -2447,10 +2447,12 @@ function renderTasks(filtered = null) {
         return;
     }
 
+    const isHelper = currentUser && currentUser.id;
     container.innerHTML = list.map(task => {
         const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
         const timeLeft = getTimeLeft(task.expiresAt);
         const rating = task.postedBy && task.postedBy.rating ? task.postedBy.rating : null;
+        const isOwn = isHelper && task.postedBy && task.postedBy.id === currentUser.id;
 
         return `
             <div class="task-card" data-task-id="${task.id}" onclick="onTaskCardClick(${task.id})">
@@ -2465,6 +2467,9 @@ function renderTasks(filtered = null) {
                     ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
                     <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft}</span>
                 </div>
+                ${!isOwn ? `<button class="task-card-accept-btn" onclick="event.stopPropagation(); acceptTask(${task.id})">
+                    <i class="fas fa-check"></i> Accept Task
+                </button>` : ''}
             </div>
         `;
     }).join('');
@@ -2799,43 +2804,47 @@ async function acceptTask(taskId) {
             task.acceptedAt = new Date().toISOString();
             myAcceptedTasks.push(task);
 
-            // Save task data for task-in-progress page
-            const taskLocation = task.location || {};
-            localStorage.setItem('currentTask', JSON.stringify({
-                id: task.id,
-                title: task.title,
-                description: task.description,
-                category: task.category,
-                price: task.price,
-                service_charge: task.service_charge || 0,
-                location: {
-                    lat: parseFloat(taskLocation.lat) || 19.0760,
-                    lng: parseFloat(taskLocation.lng) || 72.8777
-                },
-                providerId: task.postedBy?.id,
-                providerName: task.postedBy?.name,
-                providerPhone: task.postedBy?.phone,
-                providerRating: task.postedBy?.rating,
-                expiresAt: task.expiresAt,
-                postedAt: task.postedAt,
-                startTime: Date.now()
-            }));
+            // Save task data for task-in-progress page (non-critical)
+            try {
+                const taskLocation = task.location || {};
+                localStorage.setItem('currentTask', JSON.stringify({
+                    id: task.id,
+                    title: task.title,
+                    description: task.description,
+                    category: task.category,
+                    price: task.price,
+                    service_charge: task.service_charge || 0,
+                    location: {
+                        lat: parseFloat(taskLocation.lat) || 19.0760,
+                        lng: parseFloat(taskLocation.lng) || 72.8777
+                    },
+                    providerId: task.postedBy?.id,
+                    providerName: task.postedBy?.name,
+                    providerPhone: task.postedBy?.phone,
+                    providerRating: task.postedBy?.rating,
+                    expiresAt: task.expiresAt,
+                    postedAt: task.postedAt,
+                    startTime: Date.now()
+                }));
+            } catch (e) {
+                console.warn('localStorage save failed:', e);
+            }
 
             // Non-blocking updates (must not prevent redirect)
             try {
                 updateUserData(currentUser.id, {
                     acceptedTasks: serializeTasks(myAcceptedTasks)
                 }).catch(e => console.warn('updateUserData failed:', e));
-                // Server creates notification for poster now — no local notification needed
                 closeModal('taskDetailModal');
                 clearRoute();
             } catch (e) {
                 console.warn('Non-critical post-accept update failed:', e);
             }
 
-            // Redirect to task-in-progress page
+            // Redirect to task-in-progress page — ALWAYS runs
             console.log('🚀 Redirecting to task-in-progress.html for task:', task.id);
             window.location.href = 'task-in-progress.html?taskId=' + task.id;
+            return;
         } else {
             console.error('❌ Accept API returned failure:', data);
             showToast('❌ ' + (data.message || 'Failed to accept task'), 'error');

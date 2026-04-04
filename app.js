@@ -1863,6 +1863,22 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }, 60000);
         
+        // Event delegation for Accept Task buttons (more reliable than inline onclick)
+        document.addEventListener('click', function(e) {
+            var btn = e.target.closest('.task-card-accept-btn');
+            if (btn) {
+                e.stopPropagation();
+                e.preventDefault();
+                var card = btn.closest('.task-card');
+                var taskId = card ? card.getAttribute('data-task-id') : null;
+                if (taskId) {
+                    console.log('🖱️ Accept button clicked via delegation, taskId:', taskId);
+                    acceptTask(parseInt(taskId, 10));
+                }
+                return;
+            }
+        });
+
         console.log('✅ Workmate4u Ready!');
     } catch (error) {
         console.error('❌ CRITICAL ERROR during initialization:', error);
@@ -2467,7 +2483,7 @@ function renderTasks(filtered = null) {
                     ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
                     <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft}</span>
                 </div>
-                ${!isOwn ? `<button class="task-card-accept-btn" onclick="event.stopPropagation(); acceptTask(${task.id})">
+                ${!isOwn ? `<button class="task-card-accept-btn" data-accept-task-id="${task.id}" onclick="event.stopPropagation(); acceptTask(${task.id})">
                     <i class="fas fa-check"></i> Accept Task
                 </button>` : ''}
             </div>
@@ -2761,97 +2777,142 @@ function navigateToTask(lat, lng, taskTitle) {
 async function acceptTask(taskId) {
     console.log('🎯 acceptTask called with taskId:', taskId, 'type:', typeof taskId);
 
+    // Immediate visual feedback — disable ALL accept buttons on page
+    var acceptBtns = document.querySelectorAll('.task-card-accept-btn, .btn-primary');
+    acceptBtns.forEach(function(btn) {
+        if (btn.textContent.trim().includes('Accept')) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accepting...';
+        }
+    });
+
     if (!currentUser) {
         showToast('Please login first');
-        closeModal('taskDetailModal');
-        openModal('loginModal');
+        try { closeModal('taskDetailModal'); } catch(e) {}
+        try { openModal('loginModal'); } catch(e) {}
+        // Re-enable buttons
+        acceptBtns.forEach(function(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Accept Task'; });
         return;
     }
 
     // Check if account is suspended
-    if (isAccountSuspended()) {
-        closeModal('taskDetailModal');
-        if (isBanned()) {
-            showToast('🚫 Your account has been permanently banned. Contact support for assistance.', 'error');
-        } else if (isAdminSuspended()) {
-            const reason = localStorage.getItem('taskearn_suspension_reason') || 'Contact support';
-            showToast('⛔ Your account is suspended by admin. Reason: ' + reason, 'error');
-        } else if (isDebtSuspended()) {
-            showDebtSuspendedPopup();
+    if (typeof isAccountSuspended === 'function' && isAccountSuspended()) {
+        try { closeModal('taskDetailModal'); } catch(e) {}
+        if (typeof isBanned === 'function' && isBanned()) {
+            showToast('Your account has been permanently banned. Contact support.');
+        } else if (typeof isAdminSuspended === 'function' && isAdminSuspended()) {
+            var reason = localStorage.getItem('taskearn_suspension_reason') || 'Contact support';
+            showToast('Your account is suspended by admin. Reason: ' + reason);
+        } else if (typeof isDebtSuspended === 'function' && isDebtSuspended()) {
+            try { showDebtSuspendedPopup(); } catch(e) { showToast('Account suspended due to debt.'); }
         } else {
-            showSuspendedPopup();
+            try { showSuspendedPopup(); } catch(e) { showToast('Account suspended.'); }
         }
+        acceptBtns.forEach(function(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Accept Task'; });
         return;
     }
 
-    // Use loose equality (==) to handle number/string ID mismatch
-    const task = tasks.find(t => t.id == taskId);
-    if (!task) {
-        console.error('❌ Task not found in local tasks array. taskId:', taskId, 'Available IDs:', tasks.map(t => t.id));
-        showToast('❌ Task not found. Please refresh and try again.', 'error');
-        return;
-    }
+    // Find task in local array (optional — used for localStorage save only)
+    var task = tasks.find(function(t) { return t.id == taskId; });
+    // Don't block if task not found locally — we can still call the API
 
     try {
-        console.log('📡 Calling TasksAPI.accept for task:', taskId);
-        const data = await TasksAPI.accept(taskId);
+        console.log('📡 Calling API to accept task:', taskId);
+
+        // Call the accept API
+        var data;
+        if (typeof TasksAPI !== 'undefined' && TasksAPI.accept) {
+            data = await TasksAPI.accept(taskId);
+        } else {
+            // Fallback: direct fetch if TasksAPI unavailable
+            console.warn('⚠️ TasksAPI not available, using direct fetch');
+            var apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) || 
+                          (typeof window.TASKEARN_API_URL !== 'undefined' && window.TASKEARN_API_URL) ||
+                          'https://taskearn-production-production.up.railway.app/api';
+            var token = localStorage.getItem('taskearn_token');
+            var resp = await fetch(apiBase + '/tasks/' + taskId + '/accept', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? ('Bearer ' + token) : ''
+                },
+                mode: 'cors'
+            });
+            data = await resp.json();
+            data._httpSuccess = resp.ok;
+        }
+
         console.log('📥 Accept API response:', JSON.stringify(data));
 
-        // Check for success
-        if (data && (data.success === true || data._httpSuccess === true)) {
-            task.status = 'accepted';
-            task.acceptedBy = currentUser;
-            task.acceptedAt = new Date().toISOString();
-            myAcceptedTasks.push(task);
+        // Accept ANY successful response — be lenient
+        var isSuccess = data && (data.success === true || data._httpSuccess === true || data.message === 'Task accepted successfully');
+
+        if (isSuccess) {
+            console.log('✅ Task accepted successfully!');
+
+            // Update local state (non-critical)
+            if (task) {
+                task.status = 'accepted';
+                task.acceptedBy = currentUser;
+                task.acceptedAt = new Date().toISOString();
+                try { myAcceptedTasks.push(task); } catch(e) {}
+            }
 
             // Save task data for task-in-progress page (non-critical)
             try {
-                const taskLocation = task.location || {};
+                var taskData = task || {};
+                var taskLocation = (taskData.location) || {};
                 localStorage.setItem('currentTask', JSON.stringify({
-                    id: task.id,
-                    title: task.title,
-                    description: task.description,
-                    category: task.category,
-                    price: task.price,
-                    service_charge: task.service_charge || 0,
+                    id: taskId,
+                    title: taskData.title || '',
+                    description: taskData.description || '',
+                    category: taskData.category || '',
+                    price: taskData.price || 0,
+                    service_charge: taskData.service_charge || 0,
                     location: {
                         lat: parseFloat(taskLocation.lat) || 19.0760,
                         lng: parseFloat(taskLocation.lng) || 72.8777
                     },
-                    providerId: task.postedBy?.id,
-                    providerName: task.postedBy?.name,
-                    providerPhone: task.postedBy?.phone,
-                    providerRating: task.postedBy?.rating,
-                    expiresAt: task.expiresAt,
-                    postedAt: task.postedAt,
+                    providerId: taskData.postedBy ? taskData.postedBy.id : null,
+                    providerName: taskData.postedBy ? taskData.postedBy.name : null,
+                    providerPhone: taskData.postedBy ? taskData.postedBy.phone : null,
+                    providerRating: taskData.postedBy ? taskData.postedBy.rating : null,
+                    expiresAt: taskData.expiresAt || null,
+                    postedAt: taskData.postedAt || null,
                     startTime: Date.now()
                 }));
             } catch (e) {
-                console.warn('localStorage save failed:', e);
+                console.warn('localStorage save failed (non-critical):', e);
             }
 
-            // Non-blocking updates (must not prevent redirect)
+            // Non-blocking updates
             try {
-                updateUserData(currentUser.id, {
-                    acceptedTasks: serializeTasks(myAcceptedTasks)
-                }).catch(e => console.warn('updateUserData failed:', e));
-                closeModal('taskDetailModal');
-                clearRoute();
+                if (typeof updateUserData === 'function' && currentUser.id) {
+                    updateUserData(currentUser.id, {
+                        acceptedTasks: typeof serializeTasks === 'function' ? serializeTasks(myAcceptedTasks) : []
+                    }).catch(function(e) { console.warn('updateUserData failed:', e); });
+                }
+                try { closeModal('taskDetailModal'); } catch(e) {}
+                try { if (typeof clearRoute === 'function') clearRoute(); } catch(e) {}
             } catch (e) {
                 console.warn('Non-critical post-accept update failed:', e);
             }
 
-            // Redirect to task-in-progress page — ALWAYS runs
-            console.log('🚀 Redirecting to task-in-progress.html for task:', task.id);
-            window.location.href = 'task-in-progress.html?taskId=' + task.id;
+            // REDIRECT — this is the critical action
+            console.log('🚀 Redirecting to task-in-progress.html for task:', taskId);
+            window.location.href = 'task-in-progress.html?taskId=' + taskId;
             return;
         } else {
-            console.error('❌ Accept API returned failure:', data);
-            showToast('❌ ' + (data.message || 'Failed to accept task'), 'error');
+            // API returned an error
+            var errorMsg = (data && data.message) ? data.message : 'Failed to accept task. Please try again.';
+            console.error('❌ Accept API returned failure:', errorMsg);
+            showToast('❌ ' + errorMsg);
+            acceptBtns.forEach(function(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Accept Task'; });
         }
     } catch (err) {
         console.error('❌ Error accepting task:', err);
-        showToast('❌ Error: ' + err.message, 'error');
+        showToast('❌ Network error. Please check your connection and try again.');
+        acceptBtns.forEach(function(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Accept Task'; });
     }
 }
 

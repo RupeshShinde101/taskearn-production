@@ -1553,6 +1553,23 @@ def delete_task(task_id):
             except Exception:
                 pass
 
+            # Remove task_id references from wallet_transactions (preserve history)
+            try:
+                cursor.execute(f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}', (task_id,))
+            except Exception:
+                pass
+
+            # Remove task_id references from any other tables
+            try:
+                cursor.execute(f'DELETE FROM task_releases WHERE task_id = {PH}', (task_id,))
+            except Exception:
+                pass
+
+            try:
+                cursor.execute(f'DELETE FROM reviews WHERE task_id = {PH}', (task_id,))
+            except Exception:
+                pass
+
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
         print(f"✅ Task {task_id} deleted by user {request.user_id}")

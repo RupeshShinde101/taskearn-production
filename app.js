@@ -2483,7 +2483,7 @@ function renderTasks(filtered = null) {
                     ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
                     <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft}</span>
                 </div>
-                ${!isOwn ? `<button class="task-card-accept-btn" data-accept-task-id="${task.id}" onclick="event.stopPropagation(); acceptTask(${task.id})">
+                ${!isOwn ? `<button class="task-card-accept-btn" data-accept-task-id="${task.id}">
                     <i class="fas fa-check"></i> Accept Task
                 </button>` : ''}
             </div>
@@ -2609,7 +2609,7 @@ function openTaskDetail(taskId) {
             <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
                 <i class="fas fa-map-marker-alt"></i> Navigate
             </button>
-            <button class="btn btn-primary" style="flex: 1; padding: 12px; margin: 5px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="acceptTask(${task.id})">
+            <button class="btn btn-primary modal-accept-btn" data-accept-task-id="${task.id}" style="flex: 1; padding: 12px; margin: 5px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="acceptTask(${task.id})">
                 <i class="fas fa-check"></i> Accept
             </button>
             ` : ''}
@@ -2777,13 +2777,11 @@ function navigateToTask(lat, lng, taskTitle) {
 async function acceptTask(taskId) {
     console.log('🎯 acceptTask called with taskId:', taskId, 'type:', typeof taskId);
 
-    // Immediate visual feedback — disable ALL accept buttons on page
-    var acceptBtns = document.querySelectorAll('.task-card-accept-btn, .btn-primary');
+    // Immediate visual feedback — disable only accept-specific buttons
+    var acceptBtns = document.querySelectorAll('.task-card-accept-btn, .modal-accept-btn');
     acceptBtns.forEach(function(btn) {
-        if (btn.textContent.trim().includes('Accept')) {
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accepting...';
-        }
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accepting...';
     });
 
     if (!currentUser) {
@@ -2791,7 +2789,7 @@ async function acceptTask(taskId) {
         try { closeModal('taskDetailModal'); } catch(e) {}
         try { openModal('loginModal'); } catch(e) {}
         // Re-enable buttons
-        acceptBtns.forEach(function(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Accept Task'; });
+        resetAcceptButtons();
         return;
     }
 
@@ -2808,7 +2806,7 @@ async function acceptTask(taskId) {
         } else {
             try { showSuspendedPopup(); } catch(e) { showToast('Account suspended.'); }
         }
-        acceptBtns.forEach(function(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Accept Task'; });
+        resetAcceptButtons();
         return;
     }
 
@@ -2907,13 +2905,25 @@ async function acceptTask(taskId) {
             var errorMsg = (data && data.message) ? data.message : 'Failed to accept task. Please try again.';
             console.error('❌ Accept API returned failure:', errorMsg);
             showToast('❌ ' + errorMsg);
-            acceptBtns.forEach(function(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Accept Task'; });
+            resetAcceptButtons();
         }
     } catch (err) {
         console.error('❌ Error accepting task:', err);
         showToast('❌ Network error. Please check your connection and try again.');
-        acceptBtns.forEach(function(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Accept Task'; });
+        resetAcceptButtons();
     }
+}
+
+// Reset accept buttons back to their original state
+function resetAcceptButtons() {
+    document.querySelectorAll('.task-card-accept-btn').forEach(function(btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check"></i> Accept Task';
+    });
+    document.querySelectorAll('.modal-accept-btn').forEach(function(btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check"></i> Accept';
+    });
 }
 
 // ========================================

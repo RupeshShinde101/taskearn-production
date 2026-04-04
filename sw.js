@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workmate4u-v3';
+const CACHE_NAME = 'workmate4u-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -63,15 +63,14 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Same-origin static assets (JS, CSS, images): cache-first with background revalidation
+  // Same-origin static assets (JS, CSS, images): network-first (so code updates deploy instantly)
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      const fetchPromise = fetch(event.request).then(response => {
+    fetch(event.request)
+      .then(response => {
         const clone = response.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         return response;
-      });
-      return cached || fetchPromise;
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });

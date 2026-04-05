@@ -806,7 +806,12 @@ function serializeTask(task) {
         status: task.status,
         earnedAmount: task.earnedAmount || 0,
         service_charge: task.service_charge || 0,
-        localOnly: task.localOnly || false
+        localOnly: task.localOnly || false,
+        accepted_by: task.accepted_by || task.acceptedBy || null,
+        helper_name: task.helper_name || null,
+        helper_phone: task.helper_phone || null,
+        helper_rating: task.helper_rating || null,
+        helper_tasks_completed: task.helper_tasks_completed || null
     };
 }
 
@@ -5161,13 +5166,18 @@ function renderDashboard() {
     // Highlight task if navigated from notification
     const urlHighlight = new URLSearchParams(window.location.search).get('highlight');
     if (urlHighlight) {
-        setTimeout(() => {
+        function tryHighlight() {
             const taskEl = document.querySelector(`[data-task-id="${urlHighlight}"]`);
             if (taskEl) {
                 taskEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 taskEl.style.boxShadow = '0 0 0 3px #4ade80';
                 setTimeout(() => { taskEl.style.boxShadow = ''; }, 3000);
+                return true;
             }
+            return false;
+        }
+        // Retry: card may not exist until server data loads
+        setTimeout(() => { if (!tryHighlight()) setTimeout(tryHighlight, 2000); }, 300);
         }, 300);
     }
     

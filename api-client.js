@@ -514,6 +514,21 @@ const AuthAPI = {
         return result.data;
     },
     
+    // Send email verification OTP
+    async sendVerificationOTP() {
+        const result = await apiRequest('/auth/send-verification-otp', { method: 'POST' });
+        return result.data;
+    },
+    
+    // Verify email with OTP
+    async verifyEmail(otp) {
+        const result = await apiRequest('/auth/verify-email', {
+            method: 'POST',
+            body: JSON.stringify({ otp })
+        });
+        return result.data;
+    },
+    
     // Check if logged in
     isLoggedIn() {
         return !!authToken;

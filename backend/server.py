@@ -597,11 +597,51 @@ def register():
     token = generate_jwt_token(user_id, email)
     user = get_user_by_id(user_id)
     
+    # Auto-send email verification OTP
+    otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+    otp_expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)).isoformat()
+    
+    with get_db() as (cursor, conn):
+        cursor.execute(f'''
+            INSERT INTO password_resets (user_id, token, otp, created_at, expires_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (user_id, 'email_verify_' + secrets.token_hex(16), otp,
+              datetime.datetime.now(datetime.timezone.utc).isoformat(), otp_expires))
+    
+    if config.SENDGRID_API_KEY:
+        try:
+            from sendgrid import SendGridAPIClient
+            from sendgrid.helpers.mail import Mail
+            message = Mail(
+                from_email=config.FROM_EMAIL,
+                to_emails=email,
+                subject=f'{config.APP_NAME} - Verify Your Email',
+                html_content=f'''
+                    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;">
+                        <h2 style="color:#6366f1;">Welcome to Workmate4u!</h2>
+                        <p>Hi {name},</p>
+                        <p>Your email verification code is:</p>
+                        <h1 style="color:#6366f1;font-size:36px;letter-spacing:6px;text-align:center;
+                            background:#f0f0ff;padding:16px;border-radius:10px;">{otp}</h1>
+                        <p>This code expires in <strong>10 minutes</strong>.</p>
+                        <p style="color:#888;font-size:13px;">If you didn't create this account, please ignore this email.</p>
+                    </div>
+                '''
+            )
+            sg = SendGridAPIClient(config.SENDGRID_API_KEY)
+            sg.send(message)
+            print(f"📧 Verification OTP sent to {email}")
+        except Exception as e:
+            print(f"⚠️ SendGrid email error: {e}")
+    else:
+        print(f"🔐 Verification OTP for {email}: {otp}")
+    
     return jsonify({
         'success': True,
-        'message': 'Registration successful',
+        'message': 'Registration successful. Please verify your email.',
         'token': token,
-        'user': user_to_response(user)
+        'user': user_to_response(user),
+        'requiresVerification': True
     }), 201
 
 

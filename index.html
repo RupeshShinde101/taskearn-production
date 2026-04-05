@@ -782,6 +782,37 @@
         </div>
     </div>
 
+    <!-- Email Verification Modal -->
+    <div class="modal" id="emailVerifyModal">
+        <div class="modal-content" style="max-width:420px;">
+            <div style="text-align:center;padding:10px 0 0;">
+                <div style="width:70px;height:70px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;">
+                    <i class="fas fa-envelope-open-text" style="font-size:28px;color:#fff;"></i>
+                </div>
+                <h2 style="margin:0 0 6px;font-size:22px;">Verify Your Email</h2>
+                <p id="verifyEmailText" style="color:#888;font-size:14px;margin:0 0 20px;">We've sent a 6-digit verification code to your email</p>
+            </div>
+            <div style="display:flex;justify-content:center;gap:8px;margin-bottom:20px;">
+                <input type="text" id="otpDigit1" class="otp-input" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="one-time-code" style="width:46px;height:54px;text-align:center;font-size:22px;font-weight:700;border:2px solid #ddd;border-radius:10px;outline:none;transition:border-color 0.2s;" onfocus="this.select()" oninput="otpInputHandler(this,1)" onkeydown="otpKeyHandler(event,1)" onpaste="otpPasteHandler(event)">
+                <input type="text" id="otpDigit2" class="otp-input" maxlength="1" inputmode="numeric" pattern="[0-9]" style="width:46px;height:54px;text-align:center;font-size:22px;font-weight:700;border:2px solid #ddd;border-radius:10px;outline:none;transition:border-color 0.2s;" onfocus="this.select()" oninput="otpInputHandler(this,2)" onkeydown="otpKeyHandler(event,2)">
+                <input type="text" id="otpDigit3" class="otp-input" maxlength="1" inputmode="numeric" pattern="[0-9]" style="width:46px;height:54px;text-align:center;font-size:22px;font-weight:700;border:2px solid #ddd;border-radius:10px;outline:none;transition:border-color 0.2s;" onfocus="this.select()" oninput="otpInputHandler(this,3)" onkeydown="otpKeyHandler(event,3)">
+                <input type="text" id="otpDigit4" class="otp-input" maxlength="1" inputmode="numeric" pattern="[0-9]" style="width:46px;height:54px;text-align:center;font-size:22px;font-weight:700;border:2px solid #ddd;border-radius:10px;outline:none;transition:border-color 0.2s;" onfocus="this.select()" oninput="otpInputHandler(this,4)" onkeydown="otpKeyHandler(event,4)">
+                <input type="text" id="otpDigit5" class="otp-input" maxlength="1" inputmode="numeric" pattern="[0-9]" style="width:46px;height:54px;text-align:center;font-size:22px;font-weight:700;border:2px solid #ddd;border-radius:10px;outline:none;transition:border-color 0.2s;" onfocus="this.select()" oninput="otpInputHandler(this,5)" onkeydown="otpKeyHandler(event,5)">
+                <input type="text" id="otpDigit6" class="otp-input" maxlength="1" inputmode="numeric" pattern="[0-9]" style="width:46px;height:54px;text-align:center;font-size:22px;font-weight:700;border:2px solid #ddd;border-radius:10px;outline:none;transition:border-color 0.2s;" onfocus="this.select()" oninput="otpInputHandler(this,6)" onkeydown="otpKeyHandler(event,6)">
+            </div>
+            <button id="verifyOTPBtn" onclick="verifyEmailOTP()" class="btn btn-primary btn-block" style="padding:14px;font-size:16px;border-radius:10px;margin-bottom:14px;">
+                <i class="fas fa-check-circle"></i> Verify Email
+            </button>
+            <div style="text-align:center;">
+                <p style="color:#888;font-size:13px;margin:0 0 6px;">Didn't receive the code?</p>
+                <button id="resendOTPBtn" onclick="resendVerificationOTP()" class="btn btn-outline" style="font-size:13px;padding:8px 20px;border-radius:8px;">
+                    <i class="fas fa-redo"></i> Resend Code
+                </button>
+                <p id="resendTimer" style="color:#6366f1;font-size:13px;margin-top:6px;display:none;"></p>
+            </div>
+        </div>
+    </div>
+
     <!-- Forgot Password Modal -->
     <div class="modal" id="forgotPasswordModal">
         <div class="modal-content">

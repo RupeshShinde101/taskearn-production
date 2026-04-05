@@ -4480,13 +4480,7 @@ async function handleSignup(event) {
                 myAcceptedTasks = [];
                 myCompletedTasks = [];
                 
-                showToast('🎉 Welcome to Workmate4u! Your ID: ' + currentUser.id);
-                
-                // Check wallet balance and show warning if low
-                if (currentUser.walletLow) {
-                    showToast('⚠️ ' + (currentUser.walletWarning || 'Your wallet balance is low. Please top up.'), 'warning');
-                }
-                
+                // Close signup and show email verification
                 closeModal('signupModal');
                 
                 // Clear form
@@ -4497,17 +4491,26 @@ async function handleSignup(event) {
                 if (document.getElementById('signupPhone')) document.getElementById('signupPhone').value = '';
                 document.getElementById('signupDOB').value = '';
                 
-                updateNavForUser();
-                
-                // ✅ FIX: Load tasks from server FIRST, then render UI
-                // This ensures new users see all available tasks in the marketplace
-                const tasksLoaded = await loadTasksFromServer();
-                
-                // Render dashboard after tasks are fully loaded
-                setTimeout(() => renderDashboard(), 100);
-                
-                // Show onboarding for new users
-                setTimeout(showOnboarding, 500);
+                // Show email verification modal
+                if (result.requiresVerification) {
+                    const emailDisplay = email.replace(/(.{2})(.*)(@.*)/, '$1***$3');
+                    const verifyText = document.getElementById('verifyEmailText');
+                    if (verifyText) verifyText.textContent = 'We\'ve sent a 6-digit code to ' + emailDisplay;
+                    openModal('emailVerifyModal');
+                    // Focus first OTP input
+                    setTimeout(() => {
+                        const d1 = document.getElementById('otpDigit1');
+                        if (d1) d1.focus();
+                    }, 300);
+                    startResendTimer();
+                } else {
+                    // Already verified (shouldn't happen for new user, but handle it)
+                    showToast('🎉 Welcome to Workmate4u! Your ID: ' + currentUser.id);
+                    updateNavForUser();
+                    const tasksLoaded = await loadTasksFromServer();
+                    setTimeout(() => renderDashboard(), 100);
+                    setTimeout(showOnboarding, 500);
+                }
                 
                 return;
             } else {
@@ -4528,6 +4531,146 @@ async function handleSignup(event) {
             signupBtn.innerHTML = 'Create Account';
         }
     }
+}
+
+// ========== EMAIL VERIFICATION OTP FUNCTIONS ==========
+
+let resendTimerInterval = null;
+
+function otpInputHandler(el, idx) {
+    // Only allow digits
+    el.value = el.value.replace(/[^0-9]/g, '');
+    if (el.value && idx < 6) {
+        const next = document.getElementById('otpDigit' + (idx + 1));
+        if (next) next.focus();
+    }
+    // Auto-submit when all 6 digits filled
+    if (idx === 6 && el.value) {
+        const otp = getOTPValue();
+        if (otp.length === 6) verifyEmailOTP();
+    }
+}
+
+function otpKeyHandler(event, idx) {
+    if (event.key === 'Backspace' && !event.target.value && idx > 1) {
+        const prev = document.getElementById('otpDigit' + (idx - 1));
+        if (prev) { prev.focus(); prev.select(); }
+    }
+}
+
+function otpPasteHandler(event) {
+    event.preventDefault();
+    const paste = (event.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '').slice(0, 6);
+    for (let i = 0; i < 6; i++) {
+        const d = document.getElementById('otpDigit' + (i + 1));
+        if (d) d.value = paste[i] || '';
+    }
+    if (paste.length === 6) {
+        document.getElementById('otpDigit6').focus();
+        verifyEmailOTP();
+    }
+}
+
+function getOTPValue() {
+    let otp = '';
+    for (let i = 1; i <= 6; i++) {
+        const d = document.getElementById('otpDigit' + i);
+        otp += d ? d.value : '';
+    }
+    return otp;
+}
+
+async function verifyEmailOTP() {
+    const otp = getOTPValue();
+    if (!otp || otp.length !== 6) {
+        showToast('❌ Please enter the 6-digit code');
+        return;
+    }
+    
+    const btn = document.getElementById('verifyOTPBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+    }
+    
+    try {
+        const data = await AuthAPI.verifyEmail(otp) || {};
+        
+        if (data.success) {
+            closeModal('emailVerifyModal');
+            showToast('✅ Email verified! Welcome to Workmate4u!');
+            if (currentUser) currentUser.email_verified = true;
+            
+            updateNavForUser();
+            const tasksLoaded = await loadTasksFromServer();
+            setTimeout(() => renderDashboard(), 100);
+            setTimeout(showOnboarding, 500);
+        } else {
+            showToast('❌ ' + (data.message || 'Invalid code. Please try again.'));
+            // Clear OTP inputs
+            for (let i = 1; i <= 6; i++) {
+                const d = document.getElementById('otpDigit' + i);
+                if (d) d.value = '';
+            }
+            const d1 = document.getElementById('otpDigit1');
+            if (d1) d1.focus();
+        }
+    } catch (err) {
+        showToast('❌ Verification failed. Please try again.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Verify Email';
+        }
+    }
+}
+
+async function resendVerificationOTP() {
+    const btn = document.getElementById('resendOTPBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+    }
+    
+    try {
+        const data = await AuthAPI.sendVerificationOTP() || {};
+        
+        if (data.success) {
+            showToast('📧 New verification code sent!');
+            startResendTimer();
+        } else {
+            showToast('❌ ' + (data.message || 'Failed to resend code'));
+        }
+    } catch (err) {
+        showToast('❌ Failed to resend code');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-redo"></i> Resend Code';
+        }
+    }
+}
+
+function startResendTimer() {
+    const btn = document.getElementById('resendOTPBtn');
+    const timerEl = document.getElementById('resendTimer');
+    if (btn) btn.style.display = 'none';
+    if (timerEl) timerEl.style.display = 'block';
+    
+    let seconds = 60;
+    if (resendTimerInterval) clearInterval(resendTimerInterval);
+    
+    if (timerEl) timerEl.textContent = 'Resend available in ' + seconds + 's';
+    
+    resendTimerInterval = setInterval(() => {
+        seconds--;
+        if (timerEl) timerEl.textContent = 'Resend available in ' + seconds + 's';
+        if (seconds <= 0) {
+            clearInterval(resendTimerInterval);
+            if (btn) btn.style.display = 'inline-block';
+            if (timerEl) timerEl.style.display = 'none';
+        }
+    }, 1000);
 }
 
 function updateNavForUser() {
@@ -5943,6 +6086,11 @@ window.closeModal = closeModal;
 window.switchModal = switchModal;
 window.handleLogin = handleLogin;
 window.handleSignup = handleSignup;
+window.verifyEmailOTP = verifyEmailOTP;
+window.resendVerificationOTP = resendVerificationOTP;
+window.otpInputHandler = otpInputHandler;
+window.otpKeyHandler = otpKeyHandler;
+window.otpPasteHandler = otpPasteHandler;
 window.handleTaskSubmit = handleTaskSubmit;
 window.openTaskDetail = openTaskDetail;
 window.shareTask = shareTask;

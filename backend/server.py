@@ -25,6 +25,7 @@ import hmac
 import json
 import time
 from html import escape as html_escape
+from urllib.parse import urlparse
 
 from config import get_config
 from database import init_db, get_db, dict_from_row, get_placeholder
@@ -108,10 +109,10 @@ def add_security_headers(response):
     
     return response
 
-# Handle OPTIONS requests
+# Handle OPTIONS requests and CSRF origin validation
 @app.before_request
-def handle_preflight():
-    """Handle preflight CORS requests"""
+def handle_preflight_and_csrf():
+    """Handle preflight CORS requests and validate origin for state-changing requests"""
     if request.method == 'OPTIONS':
         response = jsonify({'success': True})
         origin = request.headers.get('Origin', '')
@@ -123,6 +124,30 @@ def handle_preflight():
         response.headers['Access-Control-Max-Age'] = '3600'
         response.status_code = 200
         return response
+
+    # CSRF: Validate Origin/Referer for state-changing requests
+    if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        # Exempt server-to-server callbacks (no browser Origin)
+        csrf_exempt_paths = ('/api/payments/webhook',)
+        if request.path in csrf_exempt_paths:
+            return None
+
+        allowed = [o.strip() for o in config.CORS_ORIGINS]
+        if '*' in allowed:
+            return None
+
+        # Check Origin header first, fall back to Referer
+        origin = request.headers.get('Origin', '')
+        if not origin:
+            referer = request.headers.get('Referer', '')
+            if referer:
+                parsed = urlparse(referer)
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+
+        # Same-origin requests from non-browser clients may lack Origin
+        # Only reject when Origin IS present but doesn't match
+        if origin and origin not in allowed:
+            return jsonify({'success': False, 'message': 'Request blocked'}), 403
 
 # ========================================
 # DATABASE INITIALIZATION

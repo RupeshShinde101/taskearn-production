@@ -580,38 +580,38 @@
         </div>
         <ul class="sidebar-menu">
             <li class="menu-item">
-                <a href="#" class="menu-link active" onclick="showSection('dashboard', this)">
+                <a href="#" class="menu-link active" onclick="showSection('dashboard', this); return false;">
                     <i class="fas fa-chart-pie"></i>
                     <span>Dashboard</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('revenue', this)">
+                <a href="#" class="menu-link" onclick="showSection('revenue', this); return false;">
                     <i class="fas fa-indian-rupee-sign"></i>
                     <span>Revenue</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('users', this)">
+                <a href="#" class="menu-link" onclick="showSection('users', this); return false;">
                     <i class="fas fa-users"></i>
                     <span>Users</span>
                     <span class="menu-badge" id="totalUsersCount">0</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('tasks', this)">
+                <a href="#" class="menu-link" onclick="showSection('tasks', this); return false;">
                     <i class="fas fa-tasks"></i>
                     <span>Tasks</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('payments', this)">
+                <a href="#" class="menu-link" onclick="showSection('payments', this); return false;">
                     <i class="fas fa-credit-card"></i>
                     <span>Payments</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('sos', this)">
+                <a href="#" class="menu-link" onclick="showSection('sos', this); return false;">
                     <i class="fas fa-shield-halved"></i>
                     <span>SOS Alerts</span>
                     <span class="menu-badge" id="sosCount">0</span>
@@ -689,6 +689,41 @@
                     <div class="stat-change up">
                         <i class="fas fa-check-circle"></i> <span id="completedCount">0</span> completed
                     </div>
+                </div>
+            </div>
+
+            <!-- Revenue Cards (inline on dashboard) -->
+            <h3 style="color: rgba(255,255,255,0.7); margin-bottom: 15px; font-size: 16px; text-transform: uppercase; letter-spacing: 1px;"><i class="fas fa-indian-rupee-sign" style="color: #4ade80;"></i> Revenue Overview</h3>
+            <div class="revenue-grid" style="margin-bottom: 30px;">
+                <div class="revenue-card">
+                    <div class="rev-label">Total Revenue (All Time)</div>
+                    <div class="rev-value" id="revTotalRevenueDash">₹0</div>
+                    <div class="rev-sub">Commission + Platform fees</div>
+                </div>
+                <div class="revenue-card accent-blue">
+                    <div class="rev-label">Revenue (Last 30 Days)</div>
+                    <div class="rev-value" id="revRevenue30dDash">₹0</div>
+                    <div class="rev-sub">Recent earnings</div>
+                </div>
+                <div class="revenue-card accent-purple">
+                    <div class="rev-label">Current Balance</div>
+                    <div class="rev-value" id="revBalanceDash">₹0</div>
+                    <div class="rev-sub">Available for settlement</div>
+                </div>
+                <div class="revenue-card accent-yellow">
+                    <div class="rev-label">Helper Commission (30D)</div>
+                    <div class="rev-value" id="revCommissionDash">₹0</div>
+                    <div class="rev-sub">10% from completed tasks</div>
+                </div>
+                <div class="revenue-card accent-red">
+                    <div class="rev-label">Poster Fees (30D)</div>
+                    <div class="rev-value" id="revFeesDash">₹0</div>
+                    <div class="rev-sub">5% platform fee</div>
+                </div>
+                <div class="revenue-card">
+                    <div class="rev-label">Total Settled</div>
+                    <div class="rev-value" id="revSettledDash">₹0</div>
+                    <div class="rev-sub" id="revSettleCountDash">0 settlements</div>
                 </div>
             </div>
 
@@ -771,8 +806,8 @@
             </div>
         </div>
 
-        <!-- ============ REVENUE SECTION ============ -->
-        <div class="dashboard-section hidden" id="section-revenue">
+        <!-- ============ REVENUE SECTION (detailed view, shown when clicking Revenue sidebar) ============ -->
+        <div id="section-revenue" style="display:none">
             <div class="revenue-grid">
                 <div class="revenue-card">
                     <div class="rev-label">Total Revenue (All Time)</div>
@@ -907,7 +942,16 @@
                 document.getElementById('usersChange').innerHTML = '<i class="fas fa-user-plus"></i> ' + data.new_users_30d + ' new (30d)';
                 document.getElementById('tasksChange').innerHTML = '<i class="fas fa-bolt"></i> ' + data.active_tasks + ' active now';
 
-                // Populate revenue section
+                // Populate revenue cards on dashboard
+                document.getElementById('revTotalRevenueDash').textContent = '₹' + data.total_revenue.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revRevenue30dDash').textContent = '₹' + data.revenue_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revBalanceDash').textContent = '₹' + data.current_balance.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revCommissionDash').textContent = '₹' + data.commission_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revFeesDash').textContent = '₹' + data.fees_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revSettledDash').textContent = '₹' + data.total_settled.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revSettleCountDash').textContent = data.settlement_count + ' settlements';
+
+                // Populate revenue section (detailed view)
                 document.getElementById('revTotalRevenue').textContent = '₹' + data.total_revenue.toLocaleString('en-IN', {maximumFractionDigits: 2});
                 document.getElementById('revRevenue30d').textContent = '₹' + data.revenue_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
                 document.getElementById('revBalance').textContent = '₹' + data.current_balance.toLocaleString('en-IN', {maximumFractionDigits: 2});
@@ -1048,13 +1092,16 @@
             document.querySelectorAll('.menu-link').forEach(l => l.classList.remove('active'));
             if (linkEl) linkEl.classList.add('active');
 
-            // Hide all sections
-            document.querySelectorAll('.dashboard-section').forEach(s => s.classList.add('hidden'));
+            // Toggle sections
+            const dashSection = document.getElementById('section-dashboard');
+            const revSection = document.getElementById('section-revenue');
 
-            // Show requested section
-            const target = document.getElementById('section-' + section);
-            if (target) {
-                target.classList.remove('hidden');
+            if (section === 'revenue') {
+                dashSection.classList.add('hidden');
+                revSection.style.display = 'block';
+            } else {
+                dashSection.classList.remove('hidden');
+                revSection.style.display = 'none';
             }
 
             // Update page title

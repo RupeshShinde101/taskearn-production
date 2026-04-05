@@ -5178,7 +5178,6 @@ function renderDashboard() {
         }
         // Retry: card may not exist until server data loads
         setTimeout(() => { if (!tryHighlight()) setTimeout(tryHighlight, 2000); }, 300);
-        }, 300);
     }
     
     // Sync notifications from server (non-blocking) so poster sees Pay Now from helper

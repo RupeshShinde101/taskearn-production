@@ -5947,6 +5947,160 @@ def get_settlement_stats():
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 
+@app.route('/api/admin/dashboard-stats', methods=['GET'])
+@require_auth
+def get_admin_dashboard_stats():
+    """Get comprehensive admin dashboard statistics with real data"""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+        with get_db() as (cursor, conn):
+            now = datetime.datetime.now(datetime.timezone.utc)
+            thirty_days_ago = (now - datetime.timedelta(days=30)).isoformat()
+            seven_days_ago = (now - datetime.timedelta(days=7)).isoformat()
+
+            # Total users
+            cursor.execute('SELECT COUNT(*) FROM users')
+            total_users = cursor.fetchone()[0]
+
+            # New users (30d)
+            cursor.execute(f'SELECT COUNT(*) FROM users WHERE created_at >= {PH}', (thirty_days_ago,))
+            new_users_30d = cursor.fetchone()[0]
+
+            # Total tasks
+            cursor.execute('SELECT COUNT(*) FROM tasks')
+            total_tasks = cursor.fetchone()[0]
+
+            # Active tasks
+            cursor.execute(f"SELECT COUNT(*) FROM tasks WHERE status = 'active'")
+            active_tasks = cursor.fetchone()[0]
+
+            # Completed tasks
+            cursor.execute(f"SELECT COUNT(*) FROM tasks WHERE status IN ('completed', 'paid')")
+            completed_tasks = cursor.fetchone()[0]
+
+            # Completion rate
+            completion_rate = round((completed_tasks / total_tasks * 100), 1) if total_tasks > 0 else 0
+
+            # Company wallet balance (total revenue)
+            cursor.execute(f'SELECT balance FROM wallets WHERE user_id = {PH}', ('1',))
+            wallet = cursor.fetchone()
+            current_balance = float(wallet[0]) if wallet else 0
+
+            # Total revenue earned (all time) - sum of commission + platform_fee
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(amount), 0) FROM wallet_transactions
+                WHERE user_id = {PH} AND transaction_type IN ('commission', 'platform_fee')
+            """, ('1',))
+            total_revenue = float(cursor.fetchone()[0])
+
+            # Revenue last 30 days
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(amount), 0) FROM wallet_transactions
+                WHERE user_id = {PH} AND transaction_type IN ('commission', 'platform_fee')
+                AND created_at >= {PH}
+            """, ('1', thirty_days_ago))
+            revenue_30d = float(cursor.fetchone()[0])
+
+            # Commission vs Platform fee breakdown (30d)
+            cursor.execute(f"""
+                SELECT
+                    COALESCE(SUM(CASE WHEN transaction_type = 'commission' THEN amount ELSE 0 END), 0) as commission_30d,
+                    COALESCE(SUM(CASE WHEN transaction_type = 'platform_fee' THEN amount ELSE 0 END), 0) as fees_30d
+                FROM wallet_transactions
+                WHERE user_id = {PH} AND created_at >= {PH}
+                AND transaction_type IN ('commission', 'platform_fee')
+            """, ('1', thirty_days_ago))
+            breakdown = cursor.fetchone()
+            commission_30d = float(breakdown[0])
+            fees_30d = float(breakdown[1])
+
+            # Daily revenue for last 7 days
+            daily_revenue = []
+            for i in range(6, -1, -1):
+                day_start = (now - datetime.timedelta(days=i)).replace(hour=0, minute=0, second=0).isoformat()
+                day_end = (now - datetime.timedelta(days=i)).replace(hour=23, minute=59, second=59).isoformat()
+                cursor.execute(f"""
+                    SELECT COALESCE(SUM(amount), 0) FROM wallet_transactions
+                    WHERE user_id = {PH} AND transaction_type IN ('commission', 'platform_fee')
+                    AND created_at >= {PH} AND created_at <= {PH}
+                """, ('1', day_start, day_end))
+                day_amount = float(cursor.fetchone()[0])
+                day_label = (now - datetime.timedelta(days=i)).strftime('%a')
+                daily_revenue.append({'day': day_label, 'amount': day_amount})
+
+            # Task category distribution
+            cursor.execute("""
+                SELECT category, COUNT(*) as cnt FROM tasks
+                GROUP BY category ORDER BY cnt DESC LIMIT 10
+            """)
+            categories = [{'category': row[0] or 'other', 'count': row[1]} for row in cursor.fetchall()]
+
+            # Recent tasks (10)
+            cursor.execute(f"""
+                SELECT t.id, t.title, t.price, t.status, t.category, t.created_at,
+                       u.first_name || ' ' || u.last_name as poster_name
+                FROM tasks t
+                LEFT JOIN users u ON CAST(t.posted_by AS TEXT) = CAST(u.id AS TEXT)
+                ORDER BY t.created_at DESC LIMIT 10
+            """)
+            recent_tasks = []
+            for row in cursor.fetchall():
+                r = dict_from_row(row) if hasattr(row, 'keys') else {
+                    'id': row[0], 'title': row[1], 'price': float(row[2] or 0),
+                    'status': row[3], 'category': row[4], 'created_at': row[5],
+                    'poster_name': row[6] or 'Unknown'
+                }
+                recent_tasks.append(r)
+
+            # Recent users (10)
+            cursor.execute("""
+                SELECT id, first_name, last_name, email, created_at, rating
+                FROM users ORDER BY created_at DESC LIMIT 10
+            """)
+            recent_users = []
+            for row in cursor.fetchall():
+                r = dict_from_row(row) if hasattr(row, 'keys') else {
+                    'id': row[0], 'first_name': row[1], 'last_name': row[2],
+                    'email': row[3], 'created_at': row[4], 'rating': float(row[5] or 0)
+                }
+                recent_users.append(r)
+
+            # Total settled
+            cursor.execute("SELECT COALESCE(SUM(amount_settled), 0), COUNT(*) FROM platform_settlements WHERE status IN ('completed', 'initiated')")
+            settle_row = cursor.fetchone()
+            total_settled = float(settle_row[0])
+            settlement_count = settle_row[1]
+
+            return jsonify({
+                'success': True,
+                'total_users': total_users,
+                'new_users_30d': new_users_30d,
+                'total_tasks': total_tasks,
+                'active_tasks': active_tasks,
+                'completed_tasks': completed_tasks,
+                'completion_rate': completion_rate,
+                'current_balance': current_balance,
+                'total_revenue': total_revenue,
+                'revenue_30d': revenue_30d,
+                'commission_30d': commission_30d,
+                'fees_30d': fees_30d,
+                'daily_revenue': daily_revenue,
+                'categories': categories,
+                'recent_tasks': recent_tasks,
+                'recent_users': recent_users,
+                'total_settled': total_settled,
+                'settlement_count': settlement_count
+            }), 200
+
+    except Exception as e:
+        print(f"❌ Error getting dashboard stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
 # ========================================
 # BANK DETAILS INITIALIZATION
 # ========================================

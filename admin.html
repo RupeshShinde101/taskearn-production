@@ -463,6 +463,112 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* Revenue Dashboard Styles */
+        .revenue-section {
+            display: none;
+        }
+        .revenue-section.active {
+            display: block;
+        }
+        .dashboard-section {
+            display: block;
+        }
+        .dashboard-section.hidden {
+            display: none;
+        }
+        .revenue-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .revenue-card {
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 25px;
+            position: relative;
+        }
+        .revenue-card .rev-label {
+            font-size: 13px;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+        .revenue-card .rev-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #4ade80;
+        }
+        .revenue-card .rev-sub {
+            font-size: 12px;
+            color: rgba(255,255,255,0.4);
+            margin-top: 5px;
+        }
+        .revenue-card.accent-blue .rev-value { color: #3b82f6; }
+        .revenue-card.accent-purple .rev-value { color: #a855f7; }
+        .revenue-card.accent-yellow .rev-value { color: #fbbf24; }
+        .revenue-card.accent-red .rev-value { color: #ef4444; }
+        .revenue-breakdown {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .breakdown-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .breakdown-card h3 {
+            font-size: 16px;
+            color: #fff;
+            margin-bottom: 20px;
+        }
+        .breakdown-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .breakdown-row:last-child { border-bottom: none; }
+        .breakdown-row .label { color: rgba(255,255,255,0.6); font-size: 14px; }
+        .breakdown-row .value { font-weight: 600; font-size: 16px; }
+        .breakdown-row .value.green { color: #4ade80; }
+        .breakdown-row .value.blue { color: #3b82f6; }
+        .breakdown-row .value.yellow { color: #fbbf24; }
+
+        .settle-btn {
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            border: none;
+            border-radius: 10px;
+            padding: 14px 28px;
+            color: #000;
+            font-weight: 700;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .settle-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(74,222,128,0.3);
+        }
+        .settle-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        @media (max-width: 1200px) {
+            .revenue-grid { grid-template-columns: repeat(2, 1fr); }
+            .revenue-breakdown { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 768px) {
+            .revenue-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -474,47 +580,47 @@
         </div>
         <ul class="sidebar-menu">
             <li class="menu-item">
-                <a href="#" class="menu-link active">
+                <a href="#" class="menu-link active" onclick="showSection('dashboard', this)">
                     <i class="fas fa-chart-pie"></i>
                     <span>Dashboard</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('users')">
+                <a href="#" class="menu-link" onclick="showSection('revenue', this)">
+                    <i class="fas fa-indian-rupee-sign"></i>
+                    <span>Revenue</span>
+                </a>
+            </li>
+            <li class="menu-item">
+                <a href="#" class="menu-link" onclick="showSection('users', this)">
                     <i class="fas fa-users"></i>
                     <span>Users</span>
                     <span class="menu-badge" id="totalUsersCount">0</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('tasks')">
+                <a href="#" class="menu-link" onclick="showSection('tasks', this)">
                     <i class="fas fa-tasks"></i>
                     <span>Tasks</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('payments')">
+                <a href="#" class="menu-link" onclick="showSection('payments', this)">
                     <i class="fas fa-credit-card"></i>
                     <span>Payments</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link" onclick="showSection('sos')">
+                <a href="#" class="menu-link" onclick="showSection('sos', this)">
                     <i class="fas fa-shield-halved"></i>
                     <span>SOS Alerts</span>
                     <span class="menu-badge" id="sosCount">0</span>
                 </a>
             </li>
             <li class="menu-item">
-                <a href="#" class="menu-link">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Analytics</span>
-                </a>
-            </li>
-            <li class="menu-item">
-                <a href="#" class="menu-link">
-                    <i class="fas fa-cog"></i>
-                    <span>Settings</span>
+                <a href="admin-dashboard.html" class="menu-link">
+                    <i class="fas fa-money-bill-transfer"></i>
+                    <span>Settlements</span>
                 </a>
             </li>
             <li class="menu-item">
@@ -530,7 +636,7 @@
     <main class="main-content">
         <!-- Header -->
         <header class="header">
-            <h1 class="page-title">Dashboard</h1>
+            <h1 class="page-title" id="pageTitle">Dashboard</h1>
             <div class="header-actions">
                 <div class="search-box">
                     <i class="fas fa-search"></i>
@@ -540,302 +646,426 @@
             </div>
         </header>
 
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon revenue">
-                    <i class="fas fa-indian-rupee-sign"></i>
-                </div>
-                <div class="stat-value" id="totalRevenue">₹0</div>
-                <div class="stat-label">Total Revenue</div>
-                <div class="stat-change up">
-                    <i class="fas fa-arrow-up"></i> 12% from last month
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon users">
-                    <i class="fas fa-users"></i>
-                </div>
-                <div class="stat-value" id="totalUsers">0</div>
-                <div class="stat-label">Total Users</div>
-                <div class="stat-change up">
-                    <i class="fas fa-arrow-up"></i> 8% from last month
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon tasks">
-                    <i class="fas fa-tasks"></i>
-                </div>
-                <div class="stat-value" id="totalTasks">0</div>
-                <div class="stat-label">Total Tasks</div>
-                <div class="stat-change up">
-                    <i class="fas fa-arrow-up"></i> 23% from last month
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon growth">
-                    <i class="fas fa-chart-line"></i>
-                </div>
-                <div class="stat-value" id="completionRate">0%</div>
-                <div class="stat-label">Completion Rate</div>
-                <div class="stat-change up">
-                    <i class="fas fa-arrow-up"></i> 5% improvement
-                </div>
-            </div>
-        </div>
-
-        <!-- Charts Section -->
-        <div class="charts-section">
-            <div class="chart-card">
-                <div class="chart-header">
-                    <h3 class="chart-title">Revenue Overview</h3>
-                    <div class="chart-filter">
-                        <button class="filter-btn active">Week</button>
-                        <button class="filter-btn">Month</button>
-                        <button class="filter-btn">Year</button>
+        <!-- ============ DASHBOARD SECTION ============ -->
+        <div class="dashboard-section" id="section-dashboard">
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon revenue">
+                        <i class="fas fa-indian-rupee-sign"></i>
+                    </div>
+                    <div class="stat-value" id="totalRevenue">₹0</div>
+                    <div class="stat-label">Total Revenue</div>
+                    <div class="stat-change up" id="revChange">
+                        <i class="fas fa-arrow-up"></i> Loading...
                     </div>
                 </div>
-                <canvas id="revenueChart" height="100"></canvas>
-            </div>
-            <div class="chart-card">
-                <div class="chart-header">
-                    <h3 class="chart-title">Task Categories</h3>
+                <div class="stat-card">
+                    <div class="stat-icon users">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div class="stat-value" id="totalUsers">0</div>
+                    <div class="stat-label">Total Users</div>
+                    <div class="stat-change up" id="usersChange">
+                        <i class="fas fa-arrow-up"></i> Loading...
+                    </div>
                 </div>
-                <canvas id="categoryChart" height="200"></canvas>
+                <div class="stat-card">
+                    <div class="stat-icon tasks">
+                        <i class="fas fa-tasks"></i>
+                    </div>
+                    <div class="stat-value" id="totalTasks">0</div>
+                    <div class="stat-label">Total Tasks</div>
+                    <div class="stat-change up" id="tasksChange">
+                        <i class="fas fa-arrow-up"></i> Loading...
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon growth">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="stat-value" id="completionRate">0%</div>
+                    <div class="stat-label">Completion Rate</div>
+                    <div class="stat-change up">
+                        <i class="fas fa-check-circle"></i> <span id="completedCount">0</span> completed
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-section">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Revenue Overview (7 Days)</h3>
+                    </div>
+                    <canvas id="revenueChart" height="100"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Task Categories</h3>
+                    </div>
+                    <canvas id="categoryChart" height="200"></canvas>
+                </div>
+            </div>
+
+            <!-- SOS Alerts -->
+            <div class="sos-section" id="sosSection">
+                <div class="sos-header">
+                    <i class="fas fa-shield-halved"></i>
+                    <span class="sos-title">Active SOS Alerts</span>
+                </div>
+                <div id="sosAlerts">
+                    <p style="color: rgba(255,255,255,0.5); text-align: center; padding: 20px;">
+                        No active SOS alerts
+                    </p>
+                </div>
+            </div>
+
+            <!-- Recent Tasks Table -->
+            <div class="table-card">
+                <div class="table-header">
+                    <h3 class="table-title">Recent Tasks</h3>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Task</th>
+                            <th>Posted By</th>
+                            <th>Category</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tasksTableBody">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: rgba(255,255,255,0.5);">
+                                Loading tasks...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Recent Users Table -->
+            <div class="table-card">
+                <div class="table-header">
+                    <h3 class="table-title">Recent Users</h3>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Email</th>
+                            <th>Rating</th>
+                            <th>Joined</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr>
+                            <td colspan="4" style="text-align: center; color: rgba(255,255,255,0.5);">
+                                Loading users...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- SOS Alerts -->
-        <div class="sos-section" id="sosSection">
-            <div class="sos-header">
-                <i class="fas fa-shield-halved"></i>
-                <span class="sos-title">Active SOS Alerts</span>
+        <!-- ============ REVENUE SECTION ============ -->
+        <div class="dashboard-section hidden" id="section-revenue">
+            <div class="revenue-grid">
+                <div class="revenue-card">
+                    <div class="rev-label">Total Revenue (All Time)</div>
+                    <div class="rev-value" id="revTotalRevenue">₹0</div>
+                    <div class="rev-sub">Commission + Platform fees</div>
+                </div>
+                <div class="revenue-card accent-blue">
+                    <div class="rev-label">Revenue (Last 30 Days)</div>
+                    <div class="rev-value" id="revRevenue30d">₹0</div>
+                    <div class="rev-sub">Recent earnings</div>
+                </div>
+                <div class="revenue-card accent-purple">
+                    <div class="rev-label">Current Balance</div>
+                    <div class="rev-value" id="revBalance">₹0</div>
+                    <div class="rev-sub">Available for settlement</div>
+                </div>
+                <div class="revenue-card accent-yellow">
+                    <div class="rev-label">Helper Commission (30D)</div>
+                    <div class="rev-value" id="revCommission">₹0</div>
+                    <div class="rev-sub">10% from completed tasks</div>
+                </div>
+                <div class="revenue-card accent-red">
+                    <div class="rev-label">Poster Fees (30D)</div>
+                    <div class="rev-value" id="revFees">₹0</div>
+                    <div class="rev-sub">5% platform fee</div>
+                </div>
+                <div class="revenue-card">
+                    <div class="rev-label">Total Settled</div>
+                    <div class="rev-value" id="revSettled">₹0</div>
+                    <div class="rev-sub" id="revSettleCount">0 settlements</div>
+                </div>
             </div>
-            <div id="sosAlerts">
-                <p style="color: rgba(255,255,255,0.5); text-align: center; padding: 20px;">
-                    No active SOS alerts
-                </p>
-            </div>
-        </div>
 
-        <!-- Recent Tasks Table -->
-        <div class="table-card">
-            <div class="table-header">
-                <h3 class="table-title">Recent Tasks</h3>
-                <button class="filter-btn">View All</button>
+            <!-- Revenue Chart -->
+            <div class="charts-section" style="margin-bottom: 30px;">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Daily Revenue (Last 7 Days)</h3>
+                    </div>
+                    <canvas id="revRevenueChart" height="100"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Revenue Composition (30D)</h3>
+                    </div>
+                    <canvas id="revBreakdownChart" height="200"></canvas>
+                </div>
             </div>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Task</th>
-                        <th>Posted By</th>
-                        <th>Helper</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="tasksTableBody">
-                    <tr>
-                        <td colspan="6" style="text-align: center; color: rgba(255,255,255,0.5);">
-                            Loading tasks...
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
 
-        <!-- Recent Users Table -->
-        <div class="table-card">
-            <div class="table-header">
-                <h3 class="table-title">Recent Users</h3>
-                <button class="filter-btn">View All</button>
+            <!-- Revenue Breakdown -->
+            <div class="revenue-breakdown">
+                <div class="breakdown-card">
+                    <h3><i class="fas fa-chart-bar" style="color: #4ade80;"></i> Revenue Summary</h3>
+                    <div class="breakdown-row">
+                        <span class="label">Total Revenue (All Time)</span>
+                        <span class="value green" id="revSumTotal">₹0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span class="label">Revenue (30 Days)</span>
+                        <span class="value blue" id="revSum30d">₹0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span class="label">Helper Commission (30D)</span>
+                        <span class="value yellow" id="revSumComm">₹0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span class="label">Poster Fees (30D)</span>
+                        <span class="value yellow" id="revSumFees">₹0</span>
+                    </div>
+                </div>
+                <div class="breakdown-card">
+                    <h3><i class="fas fa-wallet" style="color: #3b82f6;"></i> Settlement Status</h3>
+                    <div class="breakdown-row">
+                        <span class="label">Wallet Balance</span>
+                        <span class="value green" id="revWalletBal">₹0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span class="label">Total Settled</span>
+                        <span class="value blue" id="revTotalSettled">₹0</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span class="label">Settlements Count</span>
+                        <span class="value" style="color: #fff;" id="revSettleNum">0</span>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <a href="admin-dashboard.html" class="settle-btn" style="display: inline-block; text-decoration: none; text-align: center; width: 100%;">
+                            <i class="fas fa-money-bill-transfer"></i> Go to Settlements
+                        </a>
+                    </div>
+                </div>
             </div>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>User</th>
-                        <th>Email</th>
-                        <th>Tasks Done</th>
-                        <th>Earnings</th>
-                        <th>Rating</th>
-                        <th>Level</th>
-                    </tr>
-                </thead>
-                <tbody id="usersTableBody">
-                    <tr>
-                        <td colspan="6" style="text-align: center; color: rgba(255,255,255,0.5);">
-                            Loading users...
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
         </div>
     </main>
 
     <script src="api-client.js"></script>
     <script>
-        // Initialize dashboard
+        const API_URL = window.TASKEARN_API_URL;
+        let authToken = localStorage.getItem('authToken');
+        let dashboardData = null;
+        let revenueChartInstance = null;
+        let categoryChartInstance = null;
+        let revRevenueChartInstance = null;
+        let revBreakdownChartInstance = null;
+
         document.addEventListener('DOMContentLoaded', () => {
             loadDashboardData();
-            initCharts();
         });
 
         async function loadDashboardData() {
-            // In production, these would be admin API endpoints
-            // For now, simulate with health check
             try {
-                const health = await checkBackendHealth();
-                if (health) {
-                    // Simulate dashboard data
-                    document.getElementById('totalRevenue').textContent = '₹45,230';
-                    document.getElementById('totalUsers').textContent = '1,234';
-                    document.getElementById('totalUsersCount').textContent = '1,234';
-                    document.getElementById('totalTasks').textContent = '5,678';
-                    document.getElementById('completionRate').textContent = '92%';
-                    
-                    loadRecentTasks();
-                    loadRecentUsers();
+                const headers = { 'Content-Type': 'application/json' };
+                if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+
+                const resp = await fetch(API_URL + '/admin/dashboard-stats', { headers });
+                const data = await resp.json();
+
+                if (!data.success) {
+                    console.error('Dashboard API error:', data.message);
+                    return;
                 }
+
+                dashboardData = data;
+
+                // Populate overview stats
+                document.getElementById('totalRevenue').textContent = '₹' + data.total_revenue.toLocaleString('en-IN', {maximumFractionDigits: 0});
+                document.getElementById('totalUsers').textContent = data.total_users.toLocaleString();
+                document.getElementById('totalUsersCount').textContent = data.total_users.toLocaleString();
+                document.getElementById('totalTasks').textContent = data.total_tasks.toLocaleString();
+                document.getElementById('completionRate').textContent = data.completion_rate + '%';
+                document.getElementById('completedCount').textContent = data.completed_tasks.toLocaleString();
+                document.getElementById('revChange').innerHTML = '<i class="fas fa-indian-rupee-sign"></i> ₹' + data.revenue_30d.toLocaleString('en-IN', {maximumFractionDigits: 0}) + ' (30d)';
+                document.getElementById('usersChange').innerHTML = '<i class="fas fa-user-plus"></i> ' + data.new_users_30d + ' new (30d)';
+                document.getElementById('tasksChange').innerHTML = '<i class="fas fa-bolt"></i> ' + data.active_tasks + ' active now';
+
+                // Populate revenue section
+                document.getElementById('revTotalRevenue').textContent = '₹' + data.total_revenue.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revRevenue30d').textContent = '₹' + data.revenue_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revBalance').textContent = '₹' + data.current_balance.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revCommission').textContent = '₹' + data.commission_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revFees').textContent = '₹' + data.fees_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revSettled').textContent = '₹' + data.total_settled.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revSettleCount').textContent = data.settlement_count + ' settlements';
+
+                // Revenue breakdown summary
+                document.getElementById('revSumTotal').textContent = '₹' + data.total_revenue.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revSum30d').textContent = '₹' + data.revenue_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revSumComm').textContent = '₹' + data.commission_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revSumFees').textContent = '₹' + data.fees_30d.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revWalletBal').textContent = '₹' + data.current_balance.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revTotalSettled').textContent = '₹' + data.total_settled.toLocaleString('en-IN', {maximumFractionDigits: 2});
+                document.getElementById('revSettleNum').textContent = data.settlement_count;
+
+                // Render tables
+                renderRecentTasks(data.recent_tasks);
+                renderRecentUsers(data.recent_users);
+
+                // Render charts
+                initCharts(data);
+
             } catch (e) {
                 console.error('Error loading dashboard:', e);
             }
         }
 
-        function loadRecentTasks() {
-            // Simulated data - in production, fetch from API
-            const tasks = [
-                { title: 'Grocery Delivery', poster: 'Rahul S.', helper: 'Amit K.', amount: 250, status: 'completed' },
-                { title: 'Document Pickup', poster: 'Priya M.', helper: '-', amount: 150, status: 'pending' },
-                { title: 'Medicine Delivery', poster: 'Vikram R.', helper: 'Suresh P.', amount: 180, status: 'active' },
-                { title: 'Food Delivery', poster: 'Anita D.', helper: 'Raj T.', amount: 120, status: 'completed' },
-                { title: 'Laundry Pickup', poster: 'Mohan L.', helper: '-', amount: 200, status: 'pending' }
-            ];
-
+        function renderRecentTasks(tasks) {
             const tbody = document.getElementById('tasksTableBody');
-            tbody.innerHTML = tasks.map(task => `
+            if (!tasks || tasks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:rgba(255,255,255,0.5);">No tasks yet</td></tr>';
+                return;
+            }
+            tbody.innerHTML = tasks.map(t => `
                 <tr>
-                    <td>${task.title}</td>
-                    <td>${task.poster}</td>
-                    <td>${task.helper}</td>
-                    <td>₹${task.amount}</td>
-                    <td><span class="status-badge ${task.status}">${task.status}</span></td>
-                    <td>
-                        <button class="action-btn"><i class="fas fa-eye"></i></button>
-                        <button class="action-btn"><i class="fas fa-edit"></i></button>
-                    </td>
+                    <td>${escapeHtml(t.title || 'Untitled')}</td>
+                    <td>${escapeHtml(t.poster_name || 'Unknown')}</td>
+                    <td><span class="status-badge" style="background:rgba(74,222,128,0.15);color:#4ade80;">${escapeHtml(t.category || 'other')}</span></td>
+                    <td>₹${Number(t.price || 0).toLocaleString()}</td>
+                    <td><span class="status-badge ${t.status}">${t.status}</span></td>
                 </tr>
             `).join('');
         }
 
-        function loadRecentUsers() {
-            // Simulated data
-            const users = [
-                { name: 'Rahul Sharma', email: 'rahul@email.com', tasks: 45, earnings: 12500, rating: 4.8, level: 'gold' },
-                { name: 'Priya Mehta', email: 'priya@email.com', tasks: 23, earnings: 6800, rating: 4.5, level: 'silver' },
-                { name: 'Amit Kumar', email: 'amit@email.com', tasks: 156, earnings: 45000, rating: 4.9, level: 'platinum' },
-                { name: 'Sneha Gupta', email: 'sneha@email.com', tasks: 12, earnings: 3200, rating: 4.2, level: 'bronze' },
-                { name: 'Vikram Singh', email: 'vikram@email.com', tasks: 67, earnings: 18500, rating: 4.7, level: 'gold' }
-            ];
-
+        function renderRecentUsers(users) {
             const tbody = document.getElementById('usersTableBody');
-            tbody.innerHTML = users.map(user => `
+            if (!users || users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:rgba(255,255,255,0.5);">No users yet</td></tr>';
+                return;
+            }
+            tbody.innerHTML = users.map(u => {
+                const name = (u.first_name || '') + ' ' + (u.last_name || '');
+                const initial = (u.first_name || 'U').charAt(0).toUpperCase();
+                const rating = u.rating ? '⭐ ' + Number(u.rating).toFixed(1) : '-';
+                const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
+                return `
                 <tr>
-                    <td>
-                        <div class="user-cell">
-                            <div class="user-avatar">${user.name.charAt(0)}</div>
-                            <span>${user.name}</span>
-                        </div>
-                    </td>
-                    <td>${user.email}</td>
-                    <td>${user.tasks}</td>
-                    <td>₹${user.earnings.toLocaleString()}</td>
-                    <td>⭐ ${user.rating}</td>
-                    <td><span class="status-badge ${user.level}">${user.level}</span></td>
-                </tr>
-            `).join('');
+                    <td><div class="user-cell"><div class="user-avatar">${initial}</div><span>${escapeHtml(name.trim() || 'Unknown')}</span></div></td>
+                    <td>${escapeHtml(u.email || '-')}</td>
+                    <td>${rating}</td>
+                    <td>${joined}</td>
+                </tr>`;
+            }).join('');
         }
 
-        function initCharts() {
-            // Revenue Chart
-            const revenueCtx = document.getElementById('revenueChart').getContext('2d');
-            new Chart(revenueCtx, {
+        function initCharts(data) {
+            const chartOptions = {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: 'rgba(255,255,255,0.5)', callback: v => '₹' + v } },
+                    x: { grid: { display: false }, ticks: { color: 'rgba(255,255,255,0.5)' } }
+                }
+            };
+
+            // Dashboard revenue chart
+            const labels = data.daily_revenue.map(d => d.day);
+            const values = data.daily_revenue.map(d => d.amount);
+
+            if (revenueChartInstance) revenueChartInstance.destroy();
+            revenueChartInstance = new Chart(document.getElementById('revenueChart').getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                    datasets: [{
-                        label: 'Revenue',
-                        data: [4500, 5200, 4800, 6100, 5800, 7200, 6500],
-                        borderColor: '#4ade80',
-                        backgroundColor: 'rgba(74, 222, 128, 0.1)',
-                        fill: true,
-                        tension: 0.4
+                    labels, datasets: [{
+                        label: 'Revenue', data: values,
+                        borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)',
+                        fill: true, tension: 0.4, pointBackgroundColor: '#4ade80'
                     }]
                 },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: {
-                                color: 'rgba(255, 255, 255, 0.05)'
-                            },
-                            ticks: {
-                                color: 'rgba(255, 255, 255, 0.5)'
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
-                            },
-                            ticks: {
-                                color: 'rgba(255, 255, 255, 0.5)'
-                            }
-                        }
-                    }
-                }
+                options: chartOptions
             });
 
-            // Category Chart
-            const categoryCtx = document.getElementById('categoryChart').getContext('2d');
-            new Chart(categoryCtx, {
+            // Category chart
+            const catLabels = data.categories.map(c => c.category);
+            const catValues = data.categories.map(c => c.count);
+            const catColors = ['#4ade80','#3b82f6','#fbbf24','#a855f7','#ef4444','#06b6d4','#f97316','#ec4899','#14b8a6','#8b5cf6'];
+
+            if (categoryChartInstance) categoryChartInstance.destroy();
+            categoryChartInstance = new Chart(document.getElementById('categoryChart').getContext('2d'), {
                 type: 'doughnut',
+                data: { labels: catLabels, datasets: [{ data: catValues, backgroundColor: catColors.slice(0, catLabels.length) }] },
+                options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.7)', padding: 15 } } } }
+            });
+
+            // Revenue section - daily revenue chart
+            if (revRevenueChartInstance) revRevenueChartInstance.destroy();
+            revRevenueChartInstance = new Chart(document.getElementById('revRevenueChart').getContext('2d'), {
+                type: 'bar',
                 data: {
-                    labels: ['Delivery', 'Groceries', 'Documents', 'Errands', 'Others'],
-                    datasets: [{
-                        data: [35, 25, 15, 15, 10],
-                        backgroundColor: [
-                            '#4ade80',
-                            '#3b82f6',
-                            '#fbbf24',
-                            '#a855f7',
-                            '#ef4444'
-                        ]
+                    labels, datasets: [{
+                        label: 'Daily Revenue', data: values,
+                        backgroundColor: 'rgba(74,222,128,0.5)', borderColor: '#4ade80',
+                        borderWidth: 1, borderRadius: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                color: 'rgba(255, 255, 255, 0.7)',
-                                padding: 20
-                            }
-                        }
-                    }
-                }
+                options: chartOptions
+            });
+
+            // Revenue section - breakdown doughnut
+            if (revBreakdownChartInstance) revBreakdownChartInstance.destroy();
+            revBreakdownChartInstance = new Chart(document.getElementById('revBreakdownChart').getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['Helper Commission', 'Poster Fees'],
+                    datasets: [{
+                        data: [data.commission_30d, data.fees_30d],
+                        backgroundColor: ['#3b82f6', '#fbbf24']
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.7)', padding: 15 } } } }
             });
         }
 
-        function showSection(section) {
-            // In a full implementation, this would show different sections
-            console.log('Showing section:', section);
+        function showSection(section, linkEl) {
+            // Update sidebar active state
+            document.querySelectorAll('.menu-link').forEach(l => l.classList.remove('active'));
+            if (linkEl) linkEl.classList.add('active');
+
+            // Hide all sections
+            document.querySelectorAll('.dashboard-section').forEach(s => s.classList.add('hidden'));
+
+            // Show requested section
+            const target = document.getElementById('section-' + section);
+            if (target) {
+                target.classList.remove('hidden');
+            }
+
+            // Update page title
+            const titles = { dashboard: 'Dashboard', revenue: 'Revenue Dashboard', users: 'Users', tasks: 'Tasks', payments: 'Payments', sos: 'SOS Alerts' };
+            document.getElementById('pageTitle').textContent = titles[section] || 'Dashboard';
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
     </script>
 </body>

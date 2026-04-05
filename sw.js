@@ -8,7 +8,7 @@ const STATIC_ASSETS = [
   '/completed.html',
   '/profile.html',
   '/wallet.html',
-  '/chat.html',
+
   '/help.html',
   '/styles.css',
   '/app.js',

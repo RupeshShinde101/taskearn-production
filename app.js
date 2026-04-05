@@ -5226,7 +5226,6 @@ function renderPostedTasks() {
                     <div style="display:flex;gap:8px;">
                         ${hPhone ? '<a href="tel:' + hPhone + '" class="btn" style="flex:1;background:#4ade80;color:#000;text-align:center;padding:10px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fas fa-phone"></i> Call</a>' : ''}
                         ${hPhone ? '<a href="https://wa.me/' + hPhone.replace(/[^0-9]/g, '') + '" target="_blank" class="btn" style="flex:1;background:#25D366;color:#fff;text-align:center;padding:10px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fab fa-whatsapp"></i> WhatsApp</a>' : ''}
-                        <a href="chat.html?taskId=${t.id}" class="btn" style="flex:1;background:var(--primary, #6c5ce7);color:#fff;text-align:center;padding:10px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fas fa-comment"></i> Chat</a>
                     </div>
                 </div>`;
         }

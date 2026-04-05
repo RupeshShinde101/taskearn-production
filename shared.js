@@ -4,7 +4,7 @@
 
     function initTabBar() {
         // Skip on pages that already have their own nav (task-in-progress, tracking, admin, etc.)
-        if (['task-in-progress.html','tracking.html','admin.html','admin-dashboard.html','chat.html'].indexOf(page) !== -1) return;
+        if (['task-in-progress.html','tracking.html','admin.html','admin-dashboard.html'].indexOf(page) !== -1) return;
 
         var bar = document.createElement('nav');
         bar.className = 'bottom-tab-bar';

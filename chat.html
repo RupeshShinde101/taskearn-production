@@ -8,8 +8,6 @@
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Socket.IO Client -->
-    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -361,6 +359,7 @@
     <script>
         // Configuration
         const API_URL = 'https://taskearn-production-production.up.railway.app';
+        const POLL_INTERVAL = 3000; // Poll every 3 seconds
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -372,53 +371,38 @@
             name: localStorage.getItem('userName') || 'User'
         };
 
-        let socket = null;
+        let pollTimer = null;
+        let lastMessageCount = 0;
 
-        // Initialize Socket.IO connection
+        // Initialize chat with REST API polling
         function initializeChat() {
-            const token = localStorage.getItem('authToken') || '';
-            
-            socket = io(API_URL, {
-                auth: {
-                    token: token,
-                    taskId: taskId,
-                    userId: currentUser.id,
-                    userName: currentUser.name
-                },
-                transports: ['websocket', 'polling'],
-                reconnection: true
-            });
-
-            // Connection events
-            socket.on('connect', () => {
-                console.log('✅ Connected to chat');
-                document.getElementById('statusIndicator').classList.remove('offline');
-                
-                socket.emit('join_task', {
-                    taskId: taskId,
-                    token: token
-                });
-            });
-
-            socket.on('disconnect', () => {
-                console.log('❌ Disconnected');
-                document.getElementById('statusIndicator').classList.add('offline');
-            });
-
-            // Chat events
-            socket.on('new_message', (data) => {
-                displayMessage(data.userName, data.message, data.timestamp, data.userId === currentUser.id);
-            });
-
-            socket.on('user_joined', () => {
-                showSystemMessage('User joined the chat');
-            });
-
-            // Load history
+            document.getElementById('statusIndicator').classList.remove('offline');
             loadChatHistory();
+            // Start polling for new messages
+            pollTimer = setInterval(pollMessages, POLL_INTERVAL);
         }
 
-        // Load chat history
+        // Poll for new messages
+        function pollMessages() {
+            const token = localStorage.getItem('authToken') || '';
+            
+            fetch(API_URL + '/api/chat/' + taskId + '/messages', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.messages && data.messages.length !== lastMessageCount) {
+                    renderMessages(data.messages);
+                    lastMessageCount = data.messages.length;
+                }
+                document.getElementById('statusIndicator').classList.remove('offline');
+            })
+            .catch(() => {
+                document.getElementById('statusIndicator').classList.add('offline');
+            });
+        }
+
+        // Load chat history (initial load)
         function loadChatHistory() {
             const token = localStorage.getItem('authToken') || '';
             
@@ -428,20 +412,29 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success && data.messages) {
-                    const container = document.getElementById('messagesContainer');
-                    const systemMsg = container.querySelector('.system-message');
-                    container.innerHTML = '';
-                    if (systemMsg) container.appendChild(systemMsg);
-                    
-                    data.messages.forEach(msg => {
-                        displayMessage(msg.user_name || 'User', msg.message, msg.timestamp, msg.user_id === currentUser.id);
-                    });
+                    renderMessages(data.messages);
+                    lastMessageCount = data.messages.length;
                 }
             })
             .catch(err => console.error('Error loading chat:', err));
         }
 
-        // Display message
+        // Render all messages (replaces container content)
+        function renderMessages(messages) {
+            const container = document.getElementById('messagesContainer');
+            const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+            container.innerHTML = '';
+            
+            messages.forEach(msg => {
+                displayMessage(msg.user_name || 'User', msg.message, msg.timestamp, msg.user_id === currentUser.id);
+            });
+
+            if (wasAtBottom) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        // Display a single message
         function displayMessage(name, text, timestamp, isSent) {
             const container = document.getElementById('messagesContainer');
             const msgDiv = document.createElement('div');
@@ -458,25 +451,43 @@
             `;
             
             container.appendChild(msgDiv);
-            container.scrollTop = container.scrollHeight;
         }
 
-        // Send message
+        // Send message via REST API
         function sendMessage() {
             const input = document.getElementById('messageInput');
             const message = input.value.trim();
             
             if (!message) return;
-            
-            if (socket && socket.connected) {
-                socket.emit('send_message', {
-                    message: message,
-                    taskId: taskId,
-                    token: localStorage.getItem('authToken') || '',
-                    userName: currentUser.name
-                });
-                input.value = '';
-            }
+
+            const token = localStorage.getItem('authToken') || '';
+            input.value = '';
+
+            // Optimistic: show message immediately
+            displayMessage(currentUser.name, message, new Date().toISOString(), true);
+            const container = document.getElementById('messagesContainer');
+            container.scrollTop = container.scrollHeight;
+            lastMessageCount++;
+
+            fetch(API_URL + '/api/chat/' + taskId + '/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ message: message })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.success) {
+                    showSystemMessage('Failed to send message');
+                    lastMessageCount--;
+                }
+            })
+            .catch(() => {
+                showSystemMessage('Network error - message may not have been sent');
+                lastMessageCount--;
+            });
         }
 
         // Handle Enter key
@@ -499,7 +510,7 @@
 
         // Go back
         function goBack() {
-            if (socket) socket.disconnect();
+            if (pollTimer) clearInterval(pollTimer);
             window.history.back();
         }
 
@@ -512,7 +523,7 @@
         // Initialize
         window.addEventListener('load', initializeChat);
         window.addEventListener('beforeunload', () => {
-            if (socket) socket.disconnect();
+            if (pollTimer) clearInterval(pollTimer);
         });
     </script>
 <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>

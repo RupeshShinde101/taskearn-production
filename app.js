@@ -1393,9 +1393,14 @@ async function loadTasksFromServer() {
                                             ...pt,
                                             status: dbTask.status,
                                             acceptedBy: dbTask.accepted_by || pt.acceptedBy,
+                                            accepted_by: dbTask.accepted_by || pt.accepted_by,
                                             completedAt: dbTask.completed_at || pt.completedAt,
                                             price: parseFloat(dbTask.price) || pt.price,
-                                            service_charge: parseFloat(dbTask.service_charge || 0)
+                                            service_charge: parseFloat(dbTask.service_charge || 0),
+                                            helper_name: dbTask.helper_name || pt.helper_name,
+                                            helper_phone: dbTask.helper_phone || pt.helper_phone,
+                                            helper_rating: dbTask.helper_rating || pt.helper_rating,
+                                            helper_tasks_completed: dbTask.helper_tasks_completed || pt.helper_tasks_completed
                                         };
                                     }
                                     return pt;
@@ -1417,7 +1422,12 @@ async function loadTasksFromServer() {
                                             postedAt: new Date(dbTask.posted_at),
                                             expiresAt: new Date(dbTask.expires_at),
                                             acceptedBy: dbTask.accepted_by,
+                                            accepted_by: dbTask.accepted_by,
                                             completedAt: dbTask.completed_at,
+                                            helper_name: dbTask.helper_name,
+                                            helper_phone: dbTask.helper_phone,
+                                            helper_rating: dbTask.helper_rating,
+                                            helper_tasks_completed: dbTask.helper_tasks_completed,
                                             postedBy: { id: currentUser.id, name: currentUser.name },
                                             location: {
                                                 lat: dbTask.location_lat,
@@ -1547,6 +1557,7 @@ async function loadTasksFromServer() {
                 console.log('✅ Loaded', serverTasks.length, 'tasks from server');
                 console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
+                renderDashboard();
                 addTaskMarkers();
                 return true;
             } else if (result.offline) {
@@ -1857,9 +1868,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Parallel load failed:', e.message);
         }
         
-        // Fallback render if server load failed
+        // Re-render all views with fresh server data
         try {
             renderTasks();
+            renderDashboard();
             startTaskTimers();
         } catch (e) {
             console.warn('⚠️ Task rendering failed:', e.message);

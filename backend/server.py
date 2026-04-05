@@ -2134,9 +2134,13 @@ def pay_helper(task_id):
 def get_user_tasks():
     """Get current user's tasks"""
     with get_db() as (cursor, conn):
-        # Posted tasks - ALL statuses
+        # Posted tasks - ALL statuses, join helper info for accepted tasks
         cursor.execute(f'''
-            SELECT * FROM tasks WHERE posted_by = {PH} ORDER BY posted_at DESC
+            SELECT t.*, u.name as helper_name, u.phone as helper_phone,
+                   u.rating as helper_rating, u.tasks_completed as helper_tasks_completed
+            FROM tasks t
+            LEFT JOIN users u ON t.accepted_by = u.id
+            WHERE t.posted_by = {PH} ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
         

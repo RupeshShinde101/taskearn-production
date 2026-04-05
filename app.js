@@ -1220,12 +1220,18 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
     } else if (actionType === 'task' && taskId) {
         console.log(`📋 Opening task ${taskId}`);
         closeNotifDropdown();
-        const section = currentUserRole === 'poster' ? 'myTasks' : 'browseTasks';
-        showSection(section);
-        setTimeout(() => {
+        // Navigate to posted tasks page so poster can see helper info
+        if (window.location.pathname.includes('posted.html')) {
+            // Already on posted page, just scroll to the task
             const taskElement = document.querySelector(`[data-task-id="${taskId}"]`);
-            if (taskElement) taskElement.scrollIntoView({ behavior: 'smooth' });
-        }, 500);
+            if (taskElement) {
+                taskElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                taskElement.style.boxShadow = '0 0 0 3px #4ade80';
+                setTimeout(() => { taskElement.style.boxShadow = ''; }, 3000);
+            }
+        } else {
+            window.location.href = 'posted.html?highlight=' + taskId;
+        }
     }
     
     // Mark notification as read
@@ -5139,6 +5145,19 @@ function renderDashboard() {
     renderPostedTasks();
     renderAcceptedTasks();
     renderCompletedTasks();
+
+    // Highlight task if navigated from notification
+    const urlHighlight = new URLSearchParams(window.location.search).get('highlight');
+    if (urlHighlight) {
+        setTimeout(() => {
+            const taskEl = document.querySelector(`[data-task-id="${urlHighlight}"]`);
+            if (taskEl) {
+                taskEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                taskEl.style.boxShadow = '0 0 0 3px #4ade80';
+                setTimeout(() => { taskEl.style.boxShadow = ''; }, 3000);
+            }
+        }, 300);
+    }
     
     // Sync notifications from server (non-blocking) so poster sees Pay Now from helper
     syncNotificationsFromServer();
@@ -5151,8 +5170,9 @@ function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    // Show only active (non-expired) posted tasks — payment is handled via notifications
+    // Show active (non-expired) and accepted posted tasks
     const visiblePostedTasks = myPostedTasks.filter(t => {
+        if (t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment') return true;
         if (t.status !== 'active') return false;
         if (getTimeLeft(t.expiresAt) === 'Expired') return false;
         return true;
@@ -5164,18 +5184,55 @@ function renderPostedTasks() {
     }
 
     el.innerHTML = visiblePostedTasks.map(t => {
+        let helperHTML = '';
+        if ((t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment') && t.accepted_by) {
+            const hName = t.helper_name || t.helperName || 'Helper';
+            const hPhone = t.helper_phone || t.helperPhone || '';
+            const hRating = t.helper_rating || t.helperRating || 0;
+            const hTasks = t.helper_tasks_completed || t.helperTasksCompleted || 0;
+            helperHTML = `
+                <div style="background:var(--card-bg, rgba(74,222,128,0.06));border:1px solid var(--border-color, rgba(74,222,128,0.2));border-radius:10px;padding:14px;margin-top:12px;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+                        <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#4ade80,#22c55e);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;">${hName.charAt(0).toUpperCase()}</div>
+                        <div style="flex:1;">
+                            <div style="font-weight:600;font-size:15px;">${hName}</div>
+                            <div style="font-size:12px;color:#888;">
+                                ${hRating > 0 ? '<i class="fas fa-star" style="color:#fbbf24;"></i> ' + Number(hRating).toFixed(1) : ''}
+                                ${hTasks > 0 ? ' &middot; ' + hTasks + ' tasks done' : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        ${hPhone ? '<a href="tel:' + hPhone + '" class="btn" style="flex:1;background:#4ade80;color:#000;text-align:center;padding:10px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fas fa-phone"></i> Call</a>' : ''}
+                        ${hPhone ? '<a href="https://wa.me/' + hPhone.replace(/[^0-9]/g, '') + '" target="_blank" class="btn" style="flex:1;background:#25D366;color:#fff;text-align:center;padding:10px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fab fa-whatsapp"></i> WhatsApp</a>' : ''}
+                        <a href="chat.html?taskId=${t.id}" class="btn" style="flex:1;background:var(--primary, #6c5ce7);color:#fff;text-align:center;padding:10px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fas fa-comment"></i> Chat</a>
+                    </div>
+                </div>`;
+        }
+
+        let statusLabel = t.status;
+        let statusClass = t.status;
+        if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
+        else if (t.status === 'completed' || t.status === 'pending_payment') { statusLabel = 'Awaiting Payment'; statusClass = 'warning'; }
+
+        let actionsHTML = '';
+        if (t.status === 'active') {
+            actionsHTML = `<div class="task-actions">
+                    <button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button>
+                    <button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
+                </div>`;
+        }
+
         return `
-            <div class="my-task-card">
+            <div class="my-task-card" data-task-id="${t.id}">
                 <div class="my-task-card-header">
                     <span class="task-category">${formatCategory(t.category)}</span>
-                    <span class="task-status ${t.status}">${t.status}</span>
+                    <span class="task-status ${statusClass}">${statusLabel}</span>
                 </div>
                 <h4>${t.title}</h4>
                 <div class="task-meta"><span>₹${(t.price || 0) + (t.service_charge || t.serviceCharge || getServiceCharge(t.category))}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
-                <div class="task-actions">
-                    <button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button>
-                    <button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
-                </div>
+                ${helperHTML}
+                ${actionsHTML}
             </div>
         `;
     }).join('');

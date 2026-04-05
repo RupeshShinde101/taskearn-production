@@ -4,6 +4,26 @@
 // Robust GPS with Fallback System
 // ========================================
 
+// Send OTP email via EmailJS (used when backend SendGrid not configured)
+async function sendOTPviaEmailJS(toEmail, toName, otpCode) {
+    if (typeof emailjs === 'undefined' || !isEmailJSConfigured()) {
+        return false;
+    }
+    try {
+        await emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, {
+            to_email: toEmail,
+            to_name: toName,
+            otp_code: otpCode,
+            validity: '10 minutes',
+            app_name: 'Workmate4u'
+        });
+        return true;
+    } catch (err) {
+        console.error('EmailJS send error:', err);
+        return false;
+    }
+}
+
 // Production: suppress debug logs
 (function() {
     if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
@@ -4493,6 +4513,13 @@ async function handleSignup(event) {
                 
                 // Show email verification modal
                 if (result.requiresVerification) {
+                    // If backend returned OTP (no SendGrid), send via EmailJS
+                    if (result._otp) {
+                        const sent = await sendOTPviaEmailJS(result._email || email, result._name || (firstName + ' ' + lastName), result._otp);
+                        if (!sent) {
+                            showToast('⚠️ Could not send email. Check EmailJS config.', 'warning');
+                        }
+                    }
                     const emailDisplay = email.replace(/(.{2})(.*)(@.*)/, '$1***$3');
                     const verifyText = document.getElementById('verifyEmailText');
                     if (verifyText) verifyText.textContent = 'We\'ve sent a 6-digit code to ' + emailDisplay;
@@ -4636,6 +4663,13 @@ async function resendVerificationOTP() {
         const data = await AuthAPI.sendVerificationOTP() || {};
         
         if (data.success) {
+            // If backend returned OTP (no SendGrid), send via EmailJS
+            if (data._otp) {
+                const sent = await sendOTPviaEmailJS(data._email, data._name, data._otp);
+                if (!sent) {
+                    showToast('⚠️ Could not send email. Check EmailJS config.', 'warning');
+                }
+            }
             showToast('📧 New verification code sent!');
             startResendTimer();
         } else {

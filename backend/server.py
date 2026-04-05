@@ -636,13 +636,19 @@ def register():
     else:
         print(f"🔐 Verification OTP for {email}: {otp}")
     
-    return jsonify({
+    response = {
         'success': True,
         'message': 'Registration successful. Please verify your email.',
         'token': token,
         'user': user_to_response(user),
         'requiresVerification': True
-    }), 201
+    }
+    # If SendGrid not configured, return OTP for frontend EmailJS to send
+    if not config.SENDGRID_API_KEY:
+        response['_otp'] = otp
+        response['_email'] = email
+        response['_name'] = name
+    return jsonify(response), 201
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -771,10 +777,16 @@ def send_verification_otp():
     if not email_sent_server:
         print(f"🔐 Verification OTP for {email}: {otp}")
 
-    return jsonify({
+    response = {
         'success': True,
         'message': 'Verification code sent to your email'
-    })
+    }
+    # If SendGrid not configured, return OTP for frontend EmailJS to send
+    if not config.SENDGRID_API_KEY:
+        response['_otp'] = otp
+        response['_email'] = email
+        response['_name'] = name
+    return jsonify(response)
 
 
 @app.route('/api/auth/verify-email', methods=['POST'])

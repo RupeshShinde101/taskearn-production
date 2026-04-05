@@ -3,6 +3,16 @@
 // Connect frontend to Python backend
 // ========================================
 
+// Production: suppress debug logs (keep console.warn and console.error)
+(function() {
+    if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        const noop = function() {};
+        console.log = noop;
+        console.debug = noop;
+        console.info = noop;
+    }
+})();
+
 // Detect if user is on mobile (using User-Agent sniffing)
 function isMobileDevice() {
     const userAgent = navigator.userAgent || navigator.vendor || window.opera;

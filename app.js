@@ -4,6 +4,16 @@
 // Robust GPS with Fallback System
 // ========================================
 
+// Production: suppress debug logs
+(function() {
+    if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        const noop = function() {};
+        console.log = noop;
+        console.debug = noop;
+        console.info = noop;
+    }
+})();
+
 // Dark mode initialization — runs before paint
 (function() {
     var t = localStorage.getItem('theme');

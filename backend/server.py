@@ -708,9 +708,7 @@ def send_verification_otp():
 
     return jsonify({
         'success': True,
-        'message': 'Verification code sent to your email',
-        # Return OTP for client-side EmailJS delivery when SendGrid is not configured
-        'otp': otp if not config.SENDGRID_API_KEY else None
+        'message': 'Verification code sent to your email'
     })
 
 
@@ -884,9 +882,7 @@ def forgot_password():
         'message': 'If an account exists with this email, an OTP has been sent',
         'resetToken': reset_token,
         'maskedEmail': email[:3] + '***@' + email.split('@')[1],
-        'userName': user['name'],
-        # OTP returned for client-side EmailJS delivery; removed when SendGrid handles it server-side
-        'otp': otp if not config.SENDGRID_API_KEY else None
+        'userName': user['name']
     })
 
 
@@ -2606,47 +2602,19 @@ def get_or_create_wallet(user_id):
 @app.route('/api/wallet/debug', methods=['GET'])
 @require_auth
 def debug_wallet():
-    """Debug endpoint - check actual wallet balance in database"""
+    """Wallet debug - admin only"""
+    if request.user_id != '1':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         with get_db() as (cursor, conn):
-            # Get wallet directly from database
             cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
             wallet_row = cursor.fetchone()
-            
             if not wallet_row:
                 return jsonify({'success': False, 'message': 'Wallet not found'}), 404
-            
             wallet = dict_from_row(wallet_row)
-            
-            # Get recent transactions
-            cursor.execute(f'''
-                SELECT id, type, amount, balance_after, description, created_at
-                FROM wallet_transactions 
-                WHERE user_id = {PH}
-                ORDER BY created_at DESC 
-                LIMIT 20
-            ''', (request.user_id,))
-            transactions = [dict_from_row(row) for row in cursor.fetchall()]
-        
-        print(f"\n[DEBUG WALLET] Wallet info for user {request.user_id}:")
-        print(f"  Wallet ID: {wallet.get('id')}")
-        print(f"  Balance: ₹{wallet.get('balance')}")
-        print(f"  Total Added: ₹{wallet.get('total_added')}")
-        print(f"  Total Spent: ₹{wallet.get('total_spent')}")
-        print(f"  Total Earned: ₹{wallet.get('total_earned')}")
-        print(f"  Recent Transactions: {len(transactions)}")
-        
-        return jsonify({
-            'success': True,
-            'wallet': wallet,
-            'recentTransactions': transactions
-        }), 200
-        
+        return jsonify({'success': True, 'wallet': wallet}), 200
     except Exception as e:
-        print(f"❌ Error in debug endpoint: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': 'Internal error'}), 500
 
 
 @app.route('/api/wallet', methods=['GET'])
@@ -3369,6 +3337,7 @@ def rate_user(task_id):
 
 
 @app.route('/api/user/<user_id>/reviews', methods=['GET'])
+@require_auth
 def get_user_reviews(user_id):
     """Get reviews for a user"""
     with get_db() as (cursor, conn):
@@ -3813,7 +3782,7 @@ def verify_payment():
         return jsonify({'success': False, 'message': 'Invalid amount'}), 400
     
     try:
-        # Optional: Verify signature if available
+        # MANDATORY: Verify Razorpay payment signature
         if signature and config.RAZORPAY_KEY_SECRET:
             message = f'{order_id}|{payment_id}'
             expected_signature = hmac.new(
@@ -3823,8 +3792,11 @@ def verify_payment():
             ).hexdigest()
             
             if expected_signature != signature:
-                print(f"⚠️ Signature mismatch - proceeding anyway (optional verification)")
-                # Don't fail here - Razorpay payments are verified server-to-server
+                print(f"❌ Payment signature verification FAILED for order {order_id}")
+                return jsonify({'success': False, 'message': 'Payment verification failed - invalid signature'}), 400
+        elif config.RAZORPAY_KEY_SECRET and not signature:
+            print(f"❌ Missing payment signature for order {order_id}")
+            return jsonify({'success': False, 'message': 'Payment signature required'}), 400
         
         with get_db() as (cursor, conn):
             # Verify task exists and get details
@@ -4668,433 +4640,38 @@ def health_check():
     })
 
 
-@app.route('/admin-dashboard.html', methods=['GET'])
-def admin_dashboard():
-    """Serve admin dashboard HTML"""
-    # Return HTML directly without trying to load a file
-    html_content = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - TaskEarn</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #fff;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        h1 {
-            font-size: 32px;
-            color: #4ade80;
-        }
-        
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .logout-btn {
-            background: #ff6b6b;
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        
-        .logout-btn:hover {
-            background: #ff5252;
-            transform: translateY(-2px);
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 40px;
-        }
-        
-        .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 25px;
-            backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
-        }
-        
-        .stat-card:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(74, 222, 128, 0.3);
-            transform: translateY(-5px);
-        }
-        
-        .stat-label {
-            font-size: 14px;
-            color: #aaa;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-weight: 600;
-        }
-        
-        .stat-value {
-            font-size: 32px;
-            font-weight: 700;
-            color: #4ade80;
-            margin-bottom: 5px;
-        }
-        
-        .stat-subtext {
-            font-size: 12px;
-            color: #888;
-        }
-        
-        .section {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 30px;
-            margin-bottom: 30px;
-            backdrop-filter: blur(10px);
-        }
-        
-        .section h2 {
-            font-size: 24px;
-            margin-bottom: 25px;
-            color: #4ade80;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            font-size: 14px;
-            margin-bottom: 8px;
-            color: #ddd;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        input, select {
-            width: 100%;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            color: #fff;
-            font-size: 14px;
-        }
-        
-        input:focus, select:focus {
-            outline: none;
-            border-color: #4ade80;
-            box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.1);
-        }
-        
-        input::placeholder {
-            color: #777;
-        }
-        
-        .btn {
-            padding: 12px 24px;
-            border-radius: 8px;
-            border: none;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .btn-primary {
-            background: #4ade80;
-            color: #000;
-            width: 100%;
-        }
-        
-        .btn-primary:hover {
-            background: #22c55e;
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(74, 222, 128, 0.3);
-        }
-        
-        .alert {
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        
-        .alert.success {
-            background: rgba(74, 222, 128, 0.2);
-            border-left: 4px solid #4ade80;
-            color: #4ade80;
-            display: block;
-        }
-        
-        .alert.error {
-            background: rgba(255, 107, 107, 0.2);
-            border-left: 4px solid #ff6b6b;
-            color: #ff6b6b;
-            display: block;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        
-        th, td {
-            padding: 15px;
-            text-align: left;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        th {
-            background: rgba(255, 255, 255, 0.05);
-            font-weight: 700;
-            color: #aaa;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .status-initiated {
-            background: rgba(96, 165, 250, 0.2);
-            color: #60a5fa;
-        }
-        
-        .status-completed {
-            background: rgba(74, 222, 128, 0.2);
-            color: #4ade80;
-        }
-        
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(74, 222, 128, 0.2);
-            border-top: 3px solid #4ade80;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .no-data {
-            text-align: center;
-            padding: 40px;
-            color: #888;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>🏢 Admin Dashboard</h1>
-            <div class="user-info">
-                <span id="userEmail">Loading...</span>
-                <button class="logout-btn" onclick="logout()">Logout</button>
-            </div>
-        </header>
-        
-        <div class="stats-grid" id="statsGrid">
-            <div class="loading"></div>
-        </div>
-        
-        <div class="section">
-            <h2>💰 Platform Statistics</h2>
-            <div id="statsContent">Loading statistics...</div>
-        </div>
-        
-        <div class="section">
-            <h2>📊 Settlement Status</h2>
-            <div id="settlementContent">Loading settlement data...</div>
-        </div>
-    </div>
-    
-    <script>
-        const API_BASE_URL = window.location.origin;
-        let authToken = localStorage.getItem('authToken');
-        
-        if (!authToken) {
-            alert('Please login first!');
-            window.location.href = '/index.html';
-        }
-        
-        document.addEventListener('DOMContentLoaded', () => {
-            loadStats();
-        });
-        
-        function getUserEmail() {
-            try {
-                const parts = authToken.split('.');
-                if (parts.length !== 3) return 'Admin User';
-                const payload = JSON.parse(atob(parts[1]));
-                return payload.email || 'Admin User';
-            } catch (e) {
-                return 'Admin User';
-            }
-        }
-        
-        document.getElementById('userEmail').textContent = getUserEmail();
-        
-        async function loadStats() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/admin/settlement-stats`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    renderStats(data);
-                } else {
-                    document.getElementById('statsGrid').innerHTML = 
-                        '<div style="color: red;">Error: ' + data.message + '</div>';
-                }
-            } catch (error) {
-                console.error('Error loading stats:', error);
-                document.getElementById('statsGrid').innerHTML = 
-                    '<div style="color: red;">Error: ' + error.message + '</div>';
-            }
-        }
-        
-        function renderStats(data) {
-            const statsGrid = document.getElementById('statsGrid');
-            statsGrid.innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-label">💳 Current Balance</div>
-                    <div class="stat-value">₹${data.current_balance.toFixed(2)}</div>
-                    <div class="stat-subtext">Available for settlement</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">💸 Total Settled</div>
-                    <div class="stat-value">₹${data.total_settled.toFixed(2)}</div>
-                    <div class="stat-subtext">${data.settlement_count} settlements</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">📈 Income (30 Days)</div>
-                    <div class="stat-value">₹${data.income_30d.toFixed(2)}</div>
-                    <div class="stat-subtext">Helper + Poster fees</div>
-                </div>
-            `;
-            
-            document.getElementById('statsContent').innerHTML = `
-                <p><strong>Current Balance:</strong> ₹${data.current_balance.toFixed(2)}</p>
-                <p><strong>30-Day Income:</strong> ₹${data.income_30d.toFixed(2)}</p>
-                <p><strong>Helper Commission (30D):</strong> ₹${data.commission_30d.toFixed(2)}</p>
-                <p><strong>Poster Fees (30D):</strong> ₹${data.fees_30d.toFixed(2)}</p>
-            `;
-        }
-        
-        function logout() {
-            localStorage.removeItem('authToken');
-            window.location.href = '/index.html';
-        }
-    </script>
-</body>
-</html>'''
-    
-    return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
-
-
-@app.route('/admin-dashboard', methods=['GET'])
-def admin_dashboard_redirect():
-    """Redirect to admin dashboard"""
-    return admin_dashboard()
-
-
 @app.route('/api/diagnostic', methods=['GET'])
+@require_auth
 def diagnostic():
-    """Diagnostic endpoint for debugging deployment issues"""
+    """Diagnostic endpoint - admin only"""
+    if request.user_id != '1':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     return jsonify({
         'success': True,
         'message': 'Flask API is running correctly',
-        'title': 'TaskEarn Backend API - WORKING',
         'status': 'operational',
-        'routes': [
-            '/api/health - Health check',
-            '/api/auth/register - User registration',
-            '/api/auth/login - User login',
-            '/api/tasks - Get/create tasks',
-            '/api/wallet - Wallet operations'
-        ],
-        'database_config': {
-            'type': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite',
-            'status': 'connected' if config.USE_POSTGRES else 'local'
-        },
-        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        'environment_production': config.USE_POSTGRES
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
     })
 
 
-@app.route('/api/init-db', methods=['POST', 'GET'])
+@app.route('/api/init-db', methods=['POST'])
+@require_auth
 def init_database_endpoint():
-    """Manually initialize database tables (admin endpoint)"""
+    """Manually initialize database tables - admin only"""
+    if request.user_id != '1':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         init_db()
         return jsonify({
             'success': True,
             'message': 'Database initialized successfully',
-            'database_type': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite',
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
         }), 200
     except Exception as e:
         print(f"ERROR during database init: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({
             'success': False,
-            'error': str(e),
-            'message': 'Failed to initialize database',
-            'database_type': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite'
+            'message': 'Failed to initialize database'
         }), 500
 
 
@@ -5160,6 +4737,7 @@ def cleanup_old_tasks():
 # ========================================
 
 @app.route('/api/contact', methods=['POST'])
+@rate_limit('5 per minute')
 def submit_contact_message():
     """Save a contact form message"""
     data = request.get_json()
@@ -6113,14 +5691,21 @@ def initialize_bank_details():
             existing = cursor.fetchone()
             
             if not existing:
-                # Initialize with provided bank details
-                now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                cursor.execute(f'''
-                    INSERT INTO company_bank_details
-                    (account_number, ifsc_code, account_holder_name, bank_name, is_active, created_at, updated_at)
-                    VALUES ({PH}, {PH}, {PH}, {PH}, TRUE, {PH}, {PH})
-                ''', ('2549449456', 'KKBK0001764', 'TaskEarn Platform', 'Kotak Bank', now, now))
-                print("💾 Bank details initialized: KKBK0001764 ****9456")
+                # Initialize with bank details from environment variables
+                acct = os.environ.get('COMPANY_BANK_ACCOUNT', '')
+                ifsc = os.environ.get('COMPANY_BANK_IFSC', '')
+                holder = os.environ.get('COMPANY_BANK_HOLDER', 'TaskEarn Platform')
+                bank = os.environ.get('COMPANY_BANK_NAME', 'Kotak Bank')
+                if acct and ifsc:
+                    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute(f'''
+                        INSERT INTO company_bank_details
+                        (account_number, ifsc_code, account_holder_name, bank_name, is_active, created_at, updated_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, TRUE, {PH}, {PH})
+                    ''', (acct, ifsc, holder, bank, now, now))
+                    print(f"💾 Bank details initialized: {ifsc} ****{acct[-4:]}")
+                else:
+                    print("⚠️  COMPANY_BANK_ACCOUNT and COMPANY_BANK_IFSC env vars not set — skipping bank init")
             else:
                 print("✅ Bank details already configured")
     except Exception as e:

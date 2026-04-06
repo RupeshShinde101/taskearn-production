@@ -27,3 +27,6 @@ psycopg2-binary==2.9.9
 # Payment Gateway
 razorpay==1.4.1
 email-validator==2.1.0
+
+# Email Service
+sendgrid==6.11.0

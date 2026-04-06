@@ -2465,8 +2465,13 @@ function renderTasks(filtered = null) {
         return;
     }
 
+    const INITIAL_SHOW = 6;
+    const showAll = container.dataset.showAll === 'true';
+    const displayList = showAll ? list : list.slice(0, INITIAL_SHOW);
+    const hasMore = list.length > INITIAL_SHOW;
+
     const isHelper = currentUser && currentUser.id;
-    container.innerHTML = list.map(task => {
+    container.innerHTML = displayList.map(task => {
         const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
         const timeLeft = getTimeLeft(task.expiresAt);
         const rating = task.postedBy && task.postedBy.rating ? task.postedBy.rating : null;
@@ -2491,6 +2496,17 @@ function renderTasks(filtered = null) {
             </div>
         `;
     }).join('');
+
+    // Show "View All Tasks" button if there are more tasks
+    if (hasMore && !showAll) {
+        container.innerHTML += `
+            <div class="view-all-tasks-wrap">
+                <button class="btn btn-outline view-all-tasks-btn" onclick="document.getElementById('tasksList').dataset.showAll='true'; renderTasks();">
+                    <i class="fas fa-th-list"></i> View All ${list.length} Tasks
+                </button>
+            </div>
+        `;
+    }
 }
 
 function onTaskCardClick(taskId) {

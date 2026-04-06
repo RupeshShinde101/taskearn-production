@@ -1293,11 +1293,6 @@ function notifyTaskPoster(task, acceptedBy) {
             createdAt: new Date().toISOString()
         });
         localStorage.setItem(`notifications_${posterUser.id}`, JSON.stringify(posterNotifications));
-        
-        // Send email notification
-        sendTaskAcceptedEmail(posterUser, task, acceptedBy);
-        
-        console.log('✅ Notification sent to task poster:', posterUser.name);
     }
 }
 

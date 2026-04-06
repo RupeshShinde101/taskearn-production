@@ -392,20 +392,15 @@ def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         auth_header = request.headers.get('Authorization', '')
-        print(f"🔍 Auth header received: {auth_header[:50] if auth_header else 'EMPTY'}...")
         
         token = auth_header.replace('Bearer ', '')
         if not token:
-            print("❌ No token found in Authorization header")
             return jsonify({'success': False, 'message': 'Authentication required'}), 401
         
-        print(f"🔑 Attempting to verify token (first 50 chars): {token[:50]}...")
         payload = verify_jwt_token(token)
         if not payload:
-            print("❌ Token verification failed - returning Invalid or expired token")
             return jsonify({'success': False, 'message': 'Invalid or expired token'}), 401
         
-        print(f"✅ Auth successful for user: {payload.get('email')}")
         request.user_id = payload['user_id']
         request.user_email = payload['email']
         return f(*args, **kwargs)
@@ -630,11 +625,10 @@ def register():
             )
             sg = SendGridAPIClient(config.SENDGRID_API_KEY)
             sg.send(message)
-            print(f"📧 Verification OTP sent to {email}")
         except Exception as e:
             print(f"⚠️ SendGrid email error: {e}")
     else:
-        print(f"🔐 Verification OTP for {email}: {otp}")
+        print(f"⚠️ SendGrid not configured — OTP email not sent for {email}")
     
     response = {
         'success': True,
@@ -717,6 +711,7 @@ def logout():
 
 @app.route('/api/auth/send-verification-otp', methods=['POST'])
 @require_auth
+@rate_limit('3 per minute')
 def send_verification_otp():
     """Generate and send email verification OTP — same pattern as forgot-password."""
     with get_db() as (cursor, conn):
@@ -765,12 +760,11 @@ def send_verification_otp():
             sg = SendGridAPIClient(config.SENDGRID_API_KEY)
             sg.send(message)
             email_sent_server = True
-            print(f"📧 Verification OTP sent to {email}")
         except Exception as e:
             print(f"⚠️ SendGrid email error: {e}")
 
     if not email_sent_server:
-        print(f"🔐 Verification OTP for {email}: {otp}")
+        print(f"⚠️ SendGrid not configured — verification OTP email not sent for {email}")
 
     response = {
         'success': True,
@@ -781,6 +775,7 @@ def send_verification_otp():
 
 @app.route('/api/auth/verify-email', methods=['POST'])
 @require_auth
+@rate_limit('5 per minute')
 def verify_email():
     """Verify email OTP and mark email as verified."""
     data = request.get_json() or {}
@@ -938,11 +933,10 @@ def forgot_password():
             )
             sg = SendGridAPIClient(config.SENDGRID_API_KEY)
             sg.send(message)
-            print(f"📧 OTP sent to {email}")
         except Exception as e:
-            print(f"⚠️ Email error: {e}")
+            print(f"⚠️ SendGrid email error: {e}")
     else:
-        print(f"🔐 OTP for {email}: {otp}")
+        print(f"⚠️ SendGrid not configured — forgot-password OTP not sent for {email}")
     
     return jsonify({
         'success': True,
@@ -954,6 +948,7 @@ def forgot_password():
 
 
 @app.route('/api/auth/verify-otp', methods=['POST'])
+@rate_limit('5 per minute')
 def verify_otp():
     """Verify OTP for password reset"""
     data = request.get_json()
@@ -983,6 +978,7 @@ def verify_otp():
 
 
 @app.route('/api/auth/reset-password', methods=['POST'])
+@rate_limit('5 per minute')
 def reset_password():
     """Reset password with verified token"""
     data = request.get_json()
@@ -1854,17 +1850,10 @@ def create_payment_order(task_id):
                 
             except Exception as razorpay_error:
                 print(f"❌ Razorpay error: {razorpay_error}")
-                # Fallback: Create a local order ID for testing
-                # In production, don't do this - always use Razorpay
-                test_order_id = f'order_test_{task_id}_{request.user_id}'
                 return jsonify({
-                    'success': True,
-                    'razorpay_order_id': test_order_id,
-                    'razorpay_key_id': config.RAZORPAY_KEY_ID or 'rzp_test_demo',
-                    'amount': amount,
-                    'message': 'Test order (Razorpay unavailable)',
-                    'test_mode': True
-                }), 200
+                    'success': False,
+                    'message': 'Payment service temporarily unavailable. Please try again later.'
+                }), 503
     
     except Exception as e:
         print(f"❌ Error creating payment order: {e}")

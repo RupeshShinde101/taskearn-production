@@ -4,26 +4,6 @@
 // Robust GPS with Fallback System
 // ========================================
 
-// Send OTP email via EmailJS (used when backend SendGrid not configured)
-async function sendOTPviaEmailJS(toEmail, toName, otpCode) {
-    if (typeof emailjs === 'undefined' || !isEmailJSConfigured()) {
-        return false;
-    }
-    try {
-        await emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, {
-            to_email: toEmail,
-            to_name: toName,
-            otp_code: otpCode,
-            validity: '10 minutes',
-            app_name: 'Workmate4u'
-        });
-        return true;
-    } catch (err) {
-        console.error('EmailJS send error:', err);
-        return false;
-    }
-}
-
 // Production: suppress debug logs
 (function() {
     if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
@@ -1276,38 +1256,7 @@ async function processPaymentFromNotification(taskId, notification) {
     await showPaymentInvoice(taskId);
 }
 
-// Send email notification for task acceptance
-async function sendTaskAcceptedEmail(taskPoster, task, acceptedBy) {
-    if (typeof emailjs === 'undefined' || !isEmailJSConfigured()) {
-        console.log('📧 EmailJS not configured, skipping email notification');
-        return false;
-    }
-    
-    try {
-        // Create a notification email template
-        const templateParams = {
-            to_email: taskPoster.email,
-            to_name: taskPoster.name,
-            otp_code: '', // Not used for this type
-            app_name: 'Workmate4u',
-            // Custom fields - add these to your EmailJS template
-            subject: `Your task "${task.title}" has been accepted!`,
-            message: `Great news! ${acceptedBy.name} has accepted your task "${task.title}". You can now coordinate with them to get your task completed. Budget: ₹${task.price}`
-        };
-        
-        await emailjs.send(
-            EMAILJS_CONFIG.SERVICE_ID,
-            EMAILJS_CONFIG.TEMPLATE_ID,
-            templateParams
-        );
-        
-        console.log('✅ Task acceptance email sent to:', taskPoster.email);
-        return true;
-    } catch (error) {
-        console.error('❌ Failed to send email:', error);
-        return false;
-    }
-}
+
 
 // Notify task poster when task is accepted
 function notifyTaskPoster(task, acceptedBy) {
@@ -4513,13 +4462,6 @@ async function handleSignup(event) {
                 
                 // Show email verification modal
                 if (result.requiresVerification) {
-                    // If backend returned OTP (no SendGrid), send via EmailJS
-                    if (result._otp) {
-                        const sent = await sendOTPviaEmailJS(result._email || email, result._name || (firstName + ' ' + lastName), result._otp);
-                        if (!sent) {
-                            showToast('⚠️ Could not send email. Check EmailJS config.', 'warning');
-                        }
-                    }
                     const emailDisplay = email.replace(/(.{2})(.*)(@.*)/, '$1***$3');
                     const verifyText = document.getElementById('verifyEmailText');
                     if (verifyText) verifyText.textContent = 'We\'ve sent a 6-digit code to ' + emailDisplay;
@@ -4663,13 +4605,6 @@ async function resendVerificationOTP() {
         const data = await AuthAPI.sendVerificationOTP() || {};
         
         if (data.success) {
-            // If backend returned OTP (no SendGrid), send via EmailJS
-            if (data._otp) {
-                const sent = await sendOTPviaEmailJS(data._email, data._name, data._otp);
-                if (!sent) {
-                    showToast('⚠️ Could not send email. Check EmailJS config.', 'warning');
-                }
-            }
             showToast('📧 New verification code sent!');
             startResendTimer();
         } else {
@@ -5928,21 +5863,6 @@ function startEmailVerification() {
     }).then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (data.success) {
-            // If backend returned OTP (no SendGrid), use EmailJS as fallback
-            if (data.otp && typeof emailjs !== 'undefined' && isEmailJSConfigured()) {
-                emailjs.init(EMAILJS_CONFIG.PUBLIC_KEY);
-                emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, {
-                    to_email: currentUser.email,
-                    to_name: currentUser.name || 'User',
-                    otp_code: data.otp,
-                    app_name: 'Workmate4u',
-                    validity: '10 minutes'
-                }).then(function() {
-                    console.log('✅ Verification OTP sent via EmailJS');
-                }).catch(function(err) {
-                    console.error('⚠️ EmailJS fallback failed:', err);
-                });
-            }
             showToast('Verification code sent to ' + currentUser.email, 'success');
             promptEmailOTP();
         } else {
@@ -6195,49 +6115,9 @@ window.handleOTPKeydown = handleOTPKeydown;
 window.togglePasswordVisibility = togglePasswordVisibility;
 
 // ========================================
-// FORGOT PASSWORD SYSTEM WITH REAL OTP
-// Using EmailJS (Free - 200 emails/month)
+// FORGOT PASSWORD SYSTEM WITH OTP
+// Using SendGrid (backend sends emails)
 // ========================================
-
-// ⚠️ EMAILJS CONFIGURATION - YOU MUST SET THESE UP!
-// 1. Go to https://www.emailjs.com/ and create FREE account
-// 2. Add Email Service (Gmail recommended)
-// 3. Create Email Template with these variables:
-//    - {{to_email}} - recipient email
-//    - {{to_name}} - recipient name  
-//    - {{otp_code}} - the 6-digit OTP
-//    - {{app_name}} - Workmate4u
-// 4. Copy your IDs below:
-
-const EMAILJS_CONFIG = {
-    PUBLIC_KEY: 'wc4cpx8eMKCf3OnwL',      // From EmailJS Dashboard > Account > API Keys
-    SERVICE_ID: 'service_ghspmfa',       // From EmailJS Dashboard > Email Services
-    TEMPLATE_ID: 'template_fsel57p'      // From EmailJS Dashboard > Email Templates
-};
-
-// Check if EmailJS is configured (not placeholder values)
-function isEmailJSConfigured() {
-    return EMAILJS_CONFIG.PUBLIC_KEY !== 'YOUR_PUBLIC_KEY_HERE' &&
-           EMAILJS_CONFIG.SERVICE_ID !== 'YOUR_SERVICE_ID_HERE' &&
-           EMAILJS_CONFIG.TEMPLATE_ID !== 'YOUR_TEMPLATE_ID_HERE' &&
-           EMAILJS_CONFIG.PUBLIC_KEY.length > 0;
-}
-
-// Initialize EmailJS
-function initEmailJS() {
-    if (typeof emailjs !== 'undefined') {
-        emailjs.init(EMAILJS_CONFIG.PUBLIC_KEY);
-        console.log('✅ EmailJS initialized with key:', EMAILJS_CONFIG.PUBLIC_KEY);
-        return true;
-    }
-    console.log('⚠️ EmailJS SDK not loaded');
-    return false;
-}
-
-// Initialize on load
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(initEmailJS, 1000);
-});
 
 let forgotPasswordState = {
     email: '',
@@ -6355,7 +6235,7 @@ function maskEmail(email) {
     return maskedName + '@' + domain;
 }
 
-// Step 2: Send OTP via EmailJS (OTP was already generated by backend)
+// Step 2: Send OTP (backend sends via SendGrid)
 async function sendOTP(method) {
     if (forgotPasswordState.isSending) {
         showToast('⏳ Please wait, sending OTP...');
@@ -6366,37 +6246,8 @@ async function sendOTP(method) {
     forgotPasswordState.isSending = true;
     forgotPasswordState.otpExpiry = Date.now() + 10 * 60 * 1000; // 10 min (matches backend)
     
-    const user = forgotPasswordState.user;
-    const otp = forgotPasswordState.otp; // From backend response (dev mode)
-    
     if (method === 'email') {
-        showToast('📨 Sending OTP to your email...', 2000);
-        
-        // Try sending via EmailJS
-        if (isEmailJSConfigured() && typeof emailjs !== 'undefined' && otp) {
-            try {
-                await emailjs.send(
-                    EMAILJS_CONFIG.SERVICE_ID,
-                    EMAILJS_CONFIG.TEMPLATE_ID,
-                    {
-                        to_email: forgotPasswordState.email,
-                        to_name: user.name || 'User',
-                        otp_code: otp,
-                        app_name: 'Workmate4u',
-                        validity: '10 minutes'
-                    }
-                );
-                console.log('✅ OTP email sent via EmailJS');
-                showToast('✅ OTP sent to your email!', 4000);
-            } catch (error) {
-                console.error('EmailJS error:', error);
-                showToast('✅ OTP sent to your email!', 4000);
-                // Backend already logged OTP to console as fallback
-            }
-        } else {
-            // No EmailJS or no OTP in response (SendGrid handled it on backend)
-            showToast('✅ OTP sent to your email!', 4000);
-        }
+        showToast('✅ OTP sent to your email!', 4000);
     } else if (method === 'phone') {
         showToast('📱 SMS not available. Please use email.', 3000);
         forgotPasswordState.isSending = false;
@@ -6444,32 +6295,12 @@ function startOTPTimer() {
 }
 
 async function resendOTP() {
-    // Re-call backend to generate new OTP
+    // Re-call backend to generate new OTP (sent via SendGrid)
     try {
         const result = await AuthAPI.forgotPassword(forgotPasswordState.email);
         if (result.success) {
             forgotPasswordState.resetToken = result.resetToken;
-            if (result.otp) forgotPasswordState.otp = result.otp;
             forgotPasswordState.otpExpiry = Date.now() + 10 * 60 * 1000;
-            
-            // Re-send via EmailJS if available
-            if (isEmailJSConfigured() && typeof emailjs !== 'undefined' && result.otp) {
-                try {
-                    await emailjs.send(
-                        EMAILJS_CONFIG.SERVICE_ID,
-                        EMAILJS_CONFIG.TEMPLATE_ID,
-                        {
-                            to_email: forgotPasswordState.email,
-                            to_name: forgotPasswordState.user?.name || 'User',
-                            otp_code: result.otp,
-                            app_name: 'Workmate4u',
-                            validity: '10 minutes'
-                        }
-                    );
-                } catch (e) {
-                    console.warn('EmailJS resend error:', e);
-                }
-            }
             
             showToast('✅ New OTP sent!', 3000);
             startOTPTimer();

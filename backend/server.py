@@ -643,11 +643,6 @@ def register():
         'user': user_to_response(user),
         'requiresVerification': True
     }
-    # If SendGrid not configured, return OTP for frontend EmailJS to send
-    if not config.SENDGRID_API_KEY:
-        response['_otp'] = otp
-        response['_email'] = email
-        response['_name'] = name
     return jsonify(response), 201
 
 
@@ -781,11 +776,6 @@ def send_verification_otp():
         'success': True,
         'message': 'Verification code sent to your email'
     }
-    # If SendGrid not configured, return OTP for frontend EmailJS to send
-    if not config.SENDGRID_API_KEY:
-        response['_otp'] = otp
-        response['_email'] = email
-        response['_name'] = name
     return jsonify(response)
 
 

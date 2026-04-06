@@ -224,13 +224,8 @@
         </div>
     </footer>
 
-    <script defer src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="shared.js"></script>
     <script>
-        var EMAILJS_PUBLIC_KEY = 'wc4cpx8eMKCf3OnwL';
-        var EMAILJS_SERVICE_ID = 'service_ghspmfa';
-        var EMAILJS_TEMPLATE_ID = 'template_fsel57p';
-
         function submitContactForm(e) {
             e.preventDefault();
             var btn = document.getElementById('contactSubmitBtn');
@@ -251,20 +246,11 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': token ? 'Bearer ' + token : '' },
                 body: JSON.stringify(params)
-            }).catch(function(err) { console.warn('Backend save failed:', err); });
-
-            // Also send email notification via EmailJS
-            if (typeof emailjs !== 'undefined') {
-                emailjs.init(EMAILJS_PUBLIC_KEY);
-                emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params)
-                    .then(function() { showSuccess(); })
-                    .catch(function(err) {
-                        console.warn('EmailJS send failed:', err);
-                        showSuccess();
-                    });
-            } else {
+            }).then(function() { showSuccess(); })
+            .catch(function(err) {
+                console.warn('Backend save failed:', err);
                 showSuccess();
-            }
+            });
         }
 
         function showSuccess() {

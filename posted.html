@@ -29,7 +29,7 @@
             <ul class="nav-links"><li><a href="index.html">Home</a></li><li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li></ul>
             <div class="notification-wrapper" id="notificationWrapper" style="display: none;">
                 <button class="notification-bell" onclick="toggleNotifications()"><i class="fas fa-bell"></i><span class="notification-badge" id="notificationBadge">0</span></button>
-                <div class="notification-dropdown" id="notificationDropdown"><div class="notification-header"><h4>Notifications</h4><button onclick="event.stopPropagation(); clearAllNotifications()" class="clear-all-btn">Clear All</button></div><div class="notification-list" id="notificationList"><div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div></div></div>
+                <div class="notification-dropdown" id="notificationDropdown"><div class="notification-header"><h4>Notifications</h4><button onclick="event.stopPropagation(); clearAllNotifications()" class="clear-all-btn">Clear All</button></div><div class="notification-list" id="notificationList"><div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div></div><div class="notification-footer"><a href="notifications.html">View All Notifications</a></div></div>
             </div>
             <div class="nav-buttons"><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></div>
             <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
@@ -41,7 +41,7 @@
             <li><a href="index.html" onclick="toggleMobileMenu()">Home</a></li>
             <li><a href="browse.html" onclick="toggleMobileMenu()">Browse Tasks</a></li>
             <li class="mobile-wallet-item" id="mobileWalletItem" style="display: none;"><a href="wallet.html" onclick="toggleMobileMenu();"><i class="fas fa-wallet"></i> Wallet</a></li>
-            <li class="mobile-notification-item" id="mobileNotificationItem" style="display: none;"><a href="#" onclick="toggleNotifications(); toggleMobileMenu();"><i class="fas fa-bell"></i> Notifications <span class="mobile-badge" id="mobileBadge">0</span></a></li>
+            <li class="mobile-notification-item" id="mobileNotificationItem" style="display: none;"><a href="notifications.html" onclick="toggleMobileMenu();"><i class="fas fa-bell"></i> Notifications <span class="mobile-badge" id="mobileBadge">0</span></a></li>
             <li><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button></li>
             <li><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></li>
         </ul>

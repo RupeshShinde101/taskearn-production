@@ -1041,7 +1041,7 @@ function updateNotificationUI() {
                 ` : '';
                 
                 return `
-                    <div class="notification-item ${n.read ? '' : 'unread'}" onclick="markAsRead(${n.id})">
+                    <div class="notification-item ${n.read ? '' : 'unread'}" onclick="markAsRead(${n.id}); window.location.href='notifications.html';">
                         <div class="notification-icon ${n.type || 'info'}">
                             <i class="fas ${getNotificationIcon(n.type)}"></i>
                         </div>

@@ -62,6 +62,9 @@
                     <div class="notification-list" id="notificationList">
                         <div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div>
                     </div>
+                    <div class="notification-footer">
+                        <a href="notifications.html">View All Notifications</a>
+                    </div>
                 </div>
             </div>
             <div class="nav-buttons">
@@ -79,7 +82,7 @@
             <li><a href="index.html" onclick="toggleMobileMenu()">Home</a></li>
             <li><a href="browse.html" onclick="toggleMobileMenu()">Browse Tasks</a></li>
             <li class="mobile-wallet-item" id="mobileWalletItem" style="display: none;"><a href="wallet.html" onclick="toggleMobileMenu();"><i class="fas fa-wallet"></i> Wallet</a></li>
-            <li class="mobile-notification-item" id="mobileNotificationItem" style="display: none;"><a href="#" onclick="toggleNotifications(); toggleMobileMenu();"><i class="fas fa-bell"></i> Notifications <span class="mobile-badge" id="mobileBadge">0</span></a></li>
+            <li class="mobile-notification-item" id="mobileNotificationItem" style="display: none;"><a href="notifications.html" onclick="toggleMobileMenu();"><i class="fas fa-bell"></i> Notifications <span class="mobile-badge" id="mobileBadge">0</span></a></li>
             <li><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button></li>
             <li><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></li>
         </ul>

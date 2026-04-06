@@ -469,9 +469,29 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
     font-size: 0.8rem;
     color: var(--gray);
     line-height: 1.4;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+}
+
+.notification-footer {
+    padding: 12px 20px;
+    text-align: center;
+    border-top: 1px solid var(--light);
+}
+
+.notification-footer a {
+    color: var(--primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.notification-footer a:hover {
+    color: var(--primary-dark);
+    text-decoration: underline;
 }
 
 .notification-time {

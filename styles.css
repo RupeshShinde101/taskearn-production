@@ -663,6 +663,11 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
     flex-direction: column;
     gap: 5px;
     cursor: pointer;
+    padding: 10px;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
 }
 
 .hamburger span {
@@ -1397,15 +1402,16 @@ section {
     display: block;
     width: 100%;
     margin-top: 10px;
-    padding: 8px 14px;
+    padding: 10px 14px;
     background: var(--primary-gradient, linear-gradient(135deg, #667eea, #764ba2));
     color: #fff;
     border: none;
     border-radius: 8px;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 600;
     cursor: pointer;
     transition: opacity 0.2s, transform 0.1s;
+    min-height: 44px;
 }
 
 .task-card-accept-btn:hover {
@@ -2042,8 +2048,8 @@ section {
     right: 15px;
     background: var(--light);
     border: none;
-    width: 35px;
-    height: 35px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     cursor: pointer;
     display: flex;
@@ -3022,6 +3028,7 @@ section {
     
     .hero-buttons {
         flex-direction: column;
+        gap: 10px;
     }
     
     .hero-buttons .btn {
@@ -3039,6 +3046,8 @@ section {
     
     .budget-option {
         text-align: center;
+        padding: 14px 16px;
+        min-height: 44px;
     }
     
     .task-detail-actions {
@@ -3056,6 +3065,28 @@ section {
     
     .tasks-list-fullwidth {
         grid-template-columns: 1fr;
+    }
+
+    section {
+        padding: 60px 0;
+    }
+
+    .section-header {
+        margin-bottom: 35px;
+    }
+
+    .modal-content {
+        padding: 20px;
+        margin: 10px;
+        max-width: calc(100vw - 20px);
+    }
+
+    .container {
+        padding: 0 14px;
+    }
+
+    .hero p {
+        font-size: 0.95rem;
     }
 }
 
@@ -4655,13 +4686,14 @@ section {
 /* Mobile OTP */
 @media (max-width: 480px) {
     .otp-input {
-        width: 42px;
-        height: 48px;
+        width: 40px;
+        height: 46px;
         font-size: 1.2rem;
+        border-radius: 8px;
     }
     
     .otp-input-container {
-        gap: 6px;
+        gap: 5px;
     }
     
     .verification-option {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workmate4u-v9';
+const CACHE_NAME = 'workmate4u-v10';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -14,7 +14,9 @@ const STATIC_ASSETS = [
   '/app.js',
   '/api-client.js',
   '/shared.js',
-  '/favicon.svg'
+  '/favicon.svg',
+  '/icon-192x192.png',
+  '/icon-512x512.png'
 ];
 
 // Install — cache static assets

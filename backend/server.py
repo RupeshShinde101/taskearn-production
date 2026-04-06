@@ -688,14 +688,69 @@ def login():
 @app.route('/api/auth/me', methods=['GET'])
 @require_auth
 def get_current_user():
-    """Get current authenticated user"""
+    """Get current authenticated user with real-time computed stats"""
     user = get_user_by_id(request.user_id)
     if not user:
         return jsonify({'success': False, 'message': 'User not found'}), 404
     
+    resp = user_to_response(user)
+    
+    # Compute real-time stats from DB to ensure accuracy
+    try:
+        with get_db() as (cursor, conn):
+            # Count completed (paid) tasks as helper
+            cursor.execute(f'''
+                SELECT COUNT(*) as cnt FROM tasks
+                WHERE accepted_by = {PH} AND status = 'paid'
+            ''', (request.user_id,))
+            row = dict_from_row(cursor.fetchone())
+            real_completed = int(row['cnt'] or 0)
+            
+            # Count posted tasks
+            cursor.execute(f'''
+                SELECT COUNT(*) as cnt FROM tasks
+                WHERE posted_by = {PH}
+            ''', (request.user_id,))
+            row = dict_from_row(cursor.fetchone())
+            real_posted = int(row['cnt'] or 0)
+            
+            # Sum actual earnings from wallet credit transactions for this user
+            cursor.execute(f'''
+                SELECT COALESCE(SUM(amount), 0) as total FROM wallet_transactions
+                WHERE user_id = {PH} AND type = 'credit' AND description LIKE '%%Task payment received%%'
+            ''', (request.user_id,))
+            row = dict_from_row(cursor.fetchone())
+            credit_total = float(row['total'] or 0)
+            
+            # Sum deductions (commissions)
+            cursor.execute(f'''
+                SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM wallet_transactions
+                WHERE user_id = {PH} AND type = 'deduction' AND description LIKE '%%Commission%%'
+            ''', (request.user_id,))
+            row = dict_from_row(cursor.fetchone())
+            deduction_total = float(row['total'] or 0)
+            
+            real_earnings = credit_total - deduction_total
+            
+            # Ratings count
+            cursor.execute(f'''
+                SELECT COUNT(*) as cnt FROM helper_ratings WHERE rated_id = {PH}
+            ''', (request.user_id,))
+            row = dict_from_row(cursor.fetchone())
+            reviews_count = int(row['cnt'] or 0)
+            
+            # Override with computed values
+            resp['tasksCompleted'] = max(real_completed, int(resp.get('tasksCompleted') or 0))
+            resp['tasksPosted'] = max(real_posted, int(resp.get('tasksPosted') or 0))
+            if real_earnings > 0:
+                resp['totalEarnings'] = round(real_earnings, 2)
+            resp['reviewsCount'] = reviews_count
+    except Exception as e:
+        print(f'⚠️ Stats computation error: {e}')
+    
     return jsonify({
         'success': True,
-        'user': user_to_response(user)
+        'user': resp
     })
 
 
@@ -2099,6 +2154,24 @@ def pay_helper(task_id):
                 SET status = 'paid', paid_at = {PH}
                 WHERE id = {PH}
             ''', (now, task_id))
+            
+            # Update helper's tasks_completed and total_earnings stats
+            helper_earnings = total_task_value - helper_total_deduction
+            cursor.execute(f'''
+                UPDATE users
+                SET tasks_completed = COALESCE(tasks_completed, 0) + 1,
+                    total_earnings = COALESCE(total_earnings, 0) + {PH}
+                WHERE id = {PH}
+            ''', (helper_earnings, helper_id))
+            
+            # Update poster's tasks_posted count (if not already tracked)
+            cursor.execute(f'''
+                UPDATE users
+                SET tasks_posted = (
+                    SELECT COUNT(*) FROM tasks WHERE posted_by = {PH} AND status IN ('accepted','completed','paid')
+                )
+                WHERE id = {PH}
+            ''', (request.user_id, request.user_id))
             
             # Clear payment notification for poster
             cursor.execute(f'''

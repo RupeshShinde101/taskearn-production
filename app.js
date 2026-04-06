@@ -4850,12 +4850,7 @@ function loadProfilePage() {
     if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
         AuthAPI.getCurrentUser().then(function(result) {
             if (result && result.success && result.user) {
-                // Preserve locally-computed earnings if server doesn't track them
-                var localEarnings = currentUser.totalEarnings;
-                var localCompleted = currentUser.tasksCompleted;
                 Object.assign(currentUser, result.user);
-                if (!currentUser.totalEarnings && localEarnings) currentUser.totalEarnings = localEarnings;
-                if (!currentUser.tasksCompleted && localCompleted) currentUser.tasksCompleted = localCompleted;
                 saveUserToStorage(currentUser);
                 renderProfileUI();
             }
@@ -4864,6 +4859,9 @@ function loadProfilePage() {
     
     // Also refresh wallet balance
     refreshWalletBalance().then(function() { renderProfileUI(); }).catch(function() {});
+    
+    // Fetch user reviews
+    loadProfileReviews();
 }
 
 function renderProfileUI() {
@@ -4889,10 +4887,10 @@ function renderProfileUI() {
             new Date(currentUser.joinedAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long' });
     }
     
-    // Stats — compute from actual data, fall back to stored values
-    var completedCount = myCompletedTasks.length || currentUser.tasksCompleted || 0;
+    // Stats — use server-computed values first, fall back to client-side
+    var completedCount = currentUser.tasksCompleted || myCompletedTasks.length || 0;
     var totalEarned = currentUser.totalEarnings || 0;
-    if (myCompletedTasks.length > 0 && !totalEarned) {
+    if (!totalEarned && myCompletedTasks.length > 0) {
         totalEarned = myCompletedTasks.reduce(function(sum, t) {
             if (t.earnedAmount) return sum + t.earnedAmount;
             var amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
@@ -4900,7 +4898,7 @@ function renderProfileUI() {
         }, 0);
         totalEarned = Math.round(totalEarned * 100) / 100;
     }
-    var postedCount = myPostedTasks.length || currentUser.tasksPosted || 0;
+    var postedCount = currentUser.tasksPosted || myPostedTasks.length || 0;
     
     var sr = document.getElementById('statRating');
     if (sr) sr.textContent = (currentUser.rating || 5.0).toFixed(1);
@@ -4979,6 +4977,52 @@ function toggleEarningsDetail() {
         var show = list.style.display === 'none';
         list.style.display = show ? 'block' : 'none';
         if (icon) icon.className = show ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+    }
+}
+
+async function loadProfileReviews() {
+    if (!currentUser) return;
+    var container = document.getElementById('profileReviewsList');
+    if (!container) return;
+    
+    try {
+        var result = await apiRequest('/user/' + currentUser.id + '/reviews', { method: 'GET' });
+        if (result && result.success && result.data) {
+            var data = result.data;
+            var reviews = data.reviews || [];
+            var stats = data.stats || {};
+            
+            // Update rating stat with server value
+            var sr = document.getElementById('statRating');
+            if (sr && stats.avg_rating) sr.textContent = parseFloat(stats.avg_rating).toFixed(1);
+            
+            // Update reviews count
+            var rc = document.getElementById('reviewsCount');
+            if (rc) rc.textContent = (stats.total_reviews || 0) + ' review' + ((stats.total_reviews || 0) !== 1 ? 's' : '');
+            
+            if (reviews.length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:#94a3b8;padding:20px;font-size:14px;">No reviews yet. Complete tasks to get reviews!</p>';
+                return;
+            }
+            
+            container.innerHTML = reviews.map(function(r) {
+                var stars = '';
+                for (var i = 0; i < 5; i++) {
+                    stars += i < Math.round(r.rating) ? '★' : '☆';
+                }
+                var date = r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+                return '<div style="padding:12px 0;border-bottom:1px solid var(--border,#e2e8f0);">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+                    '<span style="font-weight:600;font-size:14px;">' + (r.rater_name || 'User') + '</span>' +
+                    '<span style="font-size:12px;color:#94a3b8;">' + date + '</span></div>' +
+                    '<div style="color:#f59e0b;font-size:14px;letter-spacing:2px;margin-bottom:4px;">' + stars + '</div>' +
+                    (r.review ? '<p style="font-size:13px;color:var(--text-secondary,#64748b);margin:0;">' + r.review + '</p>' : '') +
+                    (r.task_title ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Task: ' + r.task_title + '</div>' : '') +
+                    '</div>';
+            }).join('');
+        }
+    } catch (e) {
+        container.innerHTML = '<p style="text-align:center;color:#94a3b8;padding:20px;font-size:14px;">Unable to load reviews</p>';
     }
 }
 

@@ -4453,6 +4453,23 @@ def verify_wallet_topup():
         print(f"[WALLET] Payment verified, crediting wallet...")
         
         with get_db() as (cursor, conn):
+            # Idempotency check: skip if already credited by webhook or previous call
+            cursor.execute(f'''
+                SELECT id FROM wallet_transactions 
+                WHERE reference_id = {PH} AND user_id = {PH} AND type = {PH}
+            ''', (payment_id, request.user_id, 'razorpay_topup'))
+            existing = cursor.fetchone()
+            
+            if existing:
+                print(f"⚠️ [WALLET] Already credited for {payment_id}, returning current balance")
+                wallet = get_or_create_wallet(request.user_id)
+                return jsonify({
+                    'success': True,
+                    'message': f'Wallet already credited',
+                    'newBalance': float(wallet.get('balance', 0)),
+                    'transactionId': payment_id
+                }), 200
+            
             # Get or create wallet for user
             wallet = get_or_create_wallet(request.user_id)
             current_balance = float(wallet.get('balance', 0))
@@ -4688,13 +4705,18 @@ def payment_webhook():
         print(f"📨 Razorpay Webhook Event: {event}")
         
         if event == 'payment.authorized' or event == 'payment.captured':
-            payment_id = payload.get('payment', {}).get('entity', {}).get('id')
-            order_id = payload.get('payment', {}).get('entity', {}).get('order_id')
-            amount = payload.get('payment', {}).get('entity', {}).get('amount', 0) / 100  # Convert paise to rupees
+            payment_entity = payload.get('payment', {}).get('entity', {})
+            payment_id = payment_entity.get('id')
+            order_id = payment_entity.get('order_id')
+            amount = payment_entity.get('amount', 0) / 100  # Convert paise to rupees
+            notes = payment_entity.get('notes', {})
             
             print(f"💰 Payment captured: {payment_id} (Order: {order_id}, Amount: ₹{amount})")
             
-            # Mark as captured in database and update task
+            # Check if this is a wallet topup payment
+            is_wallet_topup = notes.get('type') == 'wallet_topup'
+            topup_user_id = notes.get('userId') or notes.get('user_id')
+            
             with get_db() as (cursor, conn):
                 # Update payment status
                 cursor.execute(f'''
@@ -4711,6 +4733,45 @@ def payment_webhook():
                         SELECT task_id FROM payments WHERE razorpay_payment_id = {PH}
                     )
                 ''', ('paid', payment_id))
+                
+                # Credit wallet for topup payments (idempotent — skip if already credited)
+                if is_wallet_topup and topup_user_id and event == 'payment.captured':
+                    # Check if this payment was already credited (prevent double-credit)
+                    cursor.execute(f'''
+                        SELECT id FROM wallet_transactions 
+                        WHERE reference_id = {PH} AND user_id = {PH} AND type = {PH}
+                    ''', (payment_id, topup_user_id, 'razorpay_topup'))
+                    existing = cursor.fetchone()
+                    
+                    if existing:
+                        print(f"⚠️ [WEBHOOK] Wallet already credited for {payment_id}, skipping")
+                    else:
+                        print(f"💳 [WEBHOOK] Crediting wallet for user {topup_user_id}: ₹{amount}")
+                        wallet = get_or_create_wallet(topup_user_id)
+                        current_balance = float(wallet.get('balance', 0))
+                        new_balance = current_balance + amount
+                        wallet_id = wallet.get('id')
+                        
+                        cursor.execute(f'''
+                            UPDATE wallets
+                            SET balance = {PH}, total_added = total_added + {PH}
+                            WHERE user_id = {PH}
+                        ''', (new_balance, amount, topup_user_id))
+                        
+                        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                        cursor.execute(f'''
+                            INSERT INTO wallet_transactions (
+                                wallet_id, user_id, type, amount, balance_after,
+                                description, reference_id, created_at
+                            ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (
+                            wallet_id, topup_user_id, 'razorpay_topup',
+                            amount, new_balance,
+                            f'Wallet top-up via Razorpay - ₹{amount:.2f}',
+                            payment_id, now
+                        ))
+                        
+                        print(f"✅ [WEBHOOK] Wallet credited: ₹{amount} → new balance ₹{new_balance}")
                 
                 conn.commit()
         

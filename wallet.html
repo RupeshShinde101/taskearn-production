@@ -1364,8 +1364,8 @@
                 
                 if (orderData.success && orderData.orderId) {
                     console.log('[WALLET] Order created:', orderData.orderId);
-                    // Open Razorpay checkout
-                    openWalletRazorpayCheckout(orderData.orderId, amount);
+                    // Open Razorpay checkout with key from backend
+                    openWalletRazorpayCheckout(orderData.orderId, amount, orderData.key);
                 } else {
                     showToast('Failed to initialize payment. Please try again.');
                 }
@@ -1375,7 +1375,7 @@
             }
         }
         
-        function openWalletRazorpayCheckout(orderId, amount) {
+        function openWalletRazorpayCheckout(orderId, amount, razorpayKey) {
             try {
                 if (typeof Razorpay === 'undefined') {
                     showToast('Payment gateway not available. Please refresh page.');
@@ -1386,7 +1386,7 @@
                 const user = JSON.parse(localStorage.getItem('taskearn_user') || '{}');
                 
                 const options = {
-                    key: 'rzp_live_SRt7rogPTT3FuK',
+                    key: razorpayKey,
                     amount: amount * 100,  // Razorpay uses paise
                     currency: 'INR',
                     order_id: orderId,

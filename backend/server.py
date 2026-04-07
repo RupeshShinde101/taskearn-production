@@ -2795,9 +2795,15 @@ def add_money_to_wallet():
     total_credit = amount + cashback
     
     wallet = get_or_create_wallet(request.user_id)
-    new_balance = float(wallet['balance']) + total_credit
+    old_balance = float(wallet['balance'])
+    new_balance = old_balance + total_credit
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     wallet_id = wallet.get('id')
+    
+    # Calculate how much of this top-up covers negative (debt) balance
+    debt_recovered = 0
+    if old_balance < 0:
+        debt_recovered = min(amount, abs(old_balance))
     
     with get_db() as (cursor, conn):
         # Update wallet
@@ -2819,6 +2825,27 @@ def add_money_to_wallet():
                 INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (wallet_id, request.user_id, 'cashback', cashback, new_balance, f'2% cashback on ₹{amount}', now))
+        
+        # Credit debt recovery to company wallet as revenue
+        if debt_recovered > 0:
+            company_wallet = get_or_create_wallet('1')
+            company_balance = float(company_wallet.get('balance', 0))
+            company_new_balance = company_balance + debt_recovered
+            
+            cursor.execute(f'''
+                UPDATE wallets
+                SET balance = {PH}, total_earned = total_earned + {PH}, updated_at = {PH}
+                WHERE user_id = {PH}
+            ''', (company_new_balance, debt_recovered, now, '1'))
+            
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, reference_id, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (company_wallet.get('id'), '1', 'penalty', debt_recovered, company_new_balance,
+                  f'Debt recovery from user {request.user_id} (topped up ₹{amount}, covered ₹{debt_recovered:.2f} debt)',
+                  f'debt-recovery-{request.user_id}', now))
+            
+            print(f"💰 Debt recovery: ₹{debt_recovered:.2f} from user {request.user_id} credited to company wallet")
         
         conn.commit()
         

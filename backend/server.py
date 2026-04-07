@@ -4528,6 +4528,13 @@ def verify_wallet_topup():
             print(f"[WALLET] Crediting: ₹{credit_amount}")
             print(f"[WALLET] New balance: ₹{new_balance}")
             
+            # Calculate debt recovery — if user had negative balance, the portion
+            # covering that debt is real revenue (penalty collection)
+            debt_recovered = 0
+            if current_balance < 0:
+                debt_recovered = min(credit_amount, abs(current_balance))
+                print(f"[WALLET] Debt recovery: ₹{debt_recovered:.2f} from negative balance ₹{current_balance:.2f}")
+            
             # Update wallet balance
             cursor.execute(f'''
                 UPDATE wallets
@@ -4559,6 +4566,36 @@ def verify_wallet_topup():
                 f'Razorpay wallet top-up - ₹{credit_amount:.2f}',
                 payment_id, now
             ))
+            
+            # Credit debt recovery to company wallet as penalty revenue
+            if debt_recovered > 0:
+                company_wallet = get_or_create_wallet('1')
+                company_balance = float(company_wallet.get('balance', 0))
+                company_new_balance = company_balance + debt_recovered
+                
+                cursor.execute(f'''
+                    UPDATE wallets
+                    SET balance = {PH}, total_earned = total_earned + {PH}, updated_at = {PH}
+                    WHERE user_id = {PH}
+                ''', (company_new_balance, debt_recovered, now, '1'))
+                
+                cursor.execute(f'''
+                    INSERT INTO wallet_transactions (
+                        wallet_id, user_id, type, amount, balance_after,
+                        description, reference_id, created_at
+                    ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (
+                    company_wallet.get('id'), '1', 'penalty',
+                    debt_recovered, company_new_balance,
+                    f'Debt recovery from user {request.user_id} (topped up ₹{credit_amount:.2f}, covered ₹{debt_recovered:.2f} debt)',
+                    f'debt-recovery-{request.user_id}', now
+                ))
+                
+                print(f"💰 [WALLET] Debt recovery: ₹{debt_recovered:.2f} credited to company wallet as penalty revenue")
+            
+            # Auto-clear debt suspension if balance is back to >= 0
+            if new_balance >= 0:
+                clear_debt_suspension_if_needed(request.user_id, cursor)
             
             conn.commit()
         

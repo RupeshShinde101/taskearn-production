@@ -14,6 +14,7 @@ const STATIC_ASSETS = [
   '/styles.css',
   '/app.js',
   '/api-client.js',
+  '/i18n.js',
   '/sw-register.js',
   '/shared.js',
   '/favicon.svg',
@@ -88,5 +89,57 @@ self.addEventListener('fetch', event => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+// ========================================
+// PUSH NOTIFICATIONS
+// ========================================
+
+self.addEventListener('push', event => {
+  let data = { title: 'Workmate4u', body: 'You have a new notification', icon: '/icon-192x192.png' };
+  
+  if (event.data) {
+    try {
+      data = Object.assign(data, event.data.json());
+    } catch (e) {
+      data.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: data.icon || '/icon-192x192.png',
+    badge: '/icon-192x192.png',
+    vibrate: [200, 100, 200],
+    tag: data.tag || 'workmate4u-notification',
+    renotify: true,
+    data: {
+      url: data.url || '/',
+      notificationId: data.notificationId
+    }
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/';
+  
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      // Focus existing tab if open
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.navigate(targetUrl);
+          return client.focus();
+        }
+      }
+      // Open new tab
+      return self.clients.openWindow(targetUrl);
+    })
   );
 });

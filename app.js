@@ -2751,6 +2751,9 @@ function openTaskDetail(taskId) {
             </button>
             ${!isOwner && currentUser ? `<button class="btn btn-outline" onclick="event.stopPropagation(); openDisputeModal(${task.id})" style="flex:0 0 auto; padding: 12px 16px; margin: 5px; color:#ef4444; border-color:#ef4444;" title="Report this task">
                 <i class="fas fa-flag"></i>
+            </button>
+            <button class="btn btn-outline" onclick="event.stopPropagation(); openReportModal('${task.postedBy}', '${(task.posterName || 'User').replace(/'/g, "\\'")}')" style="flex:0 0 auto; padding: 12px 16px; margin: 5px; color:#f59e0b; border-color:#f59e0b;" title="Report User">
+                <i class="fas fa-user-slash"></i>
             </button>` : ''}
             ${!isOwner ? `
             <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
@@ -4519,6 +4522,13 @@ async function handleLogin(event) {
                 // Render dashboard after tasks are fully loaded
                 setTimeout(() => renderDashboard(), 100);
                 
+                // Initialize push notifications after login
+                if (Notification.permission === 'granted') {
+                    initPushNotifications();
+                } else if (Notification.permission !== 'denied') {
+                    setTimeout(() => requestPushPermission(), 3000);
+                }
+                
                 return;
             } else {
                 showToast('❌ ' + (result.message || 'Login failed'));
@@ -5667,6 +5677,8 @@ function renderCompletedTasks() {
 // FILTERS
 // ========================================
 
+let _searchDebounceTimer = null;
+
 function applyFilters() {
     const cat = document.getElementById('filterCategory').value;
     const dist = parseInt(document.getElementById('filterDistance').value);
@@ -5675,6 +5687,7 @@ function applyFilters() {
     const searchEl = document.getElementById('filterSearch');
     const searchTerm = searchEl ? searchEl.value.trim().toLowerCase() : '';
 
+    // Client-side filter on already-loaded tasks
     const filtered = tasks.filter(t => {
         if (t.status !== 'active') return false;
         if (getTimeLeft(t.expiresAt) === 'Expired') return false;
@@ -5688,6 +5701,36 @@ function applyFilters() {
 
     renderTasks(filtered);
     showToast('Found ' + filtered.length + ' tasks');
+
+    // Also do server-side search for broader results (debounced)
+    if (searchTerm.length >= 2 && typeof SearchAPI !== 'undefined') {
+        clearTimeout(_searchDebounceTimer);
+        _searchDebounceTimer = setTimeout(async () => {
+            try {
+                const params = { q: searchTerm };
+                if (cat !== 'all') params.category = cat;
+                if (minB > 0) params.min_price = minB;
+                if (maxB < 999999) params.max_price = maxB;
+                const result = await SearchAPI.search(params);
+                if (result.success && result.tasks && result.tasks.length > 0) {
+                    // Merge server results with local - add any new tasks not already loaded
+                    const existingIds = new Set(tasks.map(t => t.id));
+                    let newCount = 0;
+                    result.tasks.forEach(st => {
+                        if (!existingIds.has(st.id)) {
+                            tasks.push(st);
+                            newCount++;
+                        }
+                    });
+                    if (newCount > 0) {
+                        applyFilters(); // Re-filter with merged data
+                    }
+                }
+            } catch (e) {
+                console.log('Server search error:', e);
+            }
+        }, 500);
+    }
 }
 
 function clearFilters() {
@@ -6264,6 +6307,322 @@ window.completeTask = completeTask;
 window.openEditTask = openEditTask;
 window.selectBudgetIncrease = selectBudgetIncrease;
 window.updateNewBudget = updateNewBudget;
+
+// ========================================
+// GOOGLE SIGN-IN
+// ========================================
+
+async function handleGoogleLogin() {
+    if (typeof google === 'undefined' || !google.accounts) {
+        showToast('❌ Google Sign-In is loading, please try again', 'error');
+        return;
+    }
+    
+    const client = google.accounts.oauth2.initTokenClient({
+        client_id: window.GOOGLE_CLIENT_ID || '',
+        scope: 'openid email profile',
+        callback: async (tokenResponse) => {
+            if (!tokenResponse.access_token) {
+                showToast('❌ Google login cancelled', 'error');
+                return;
+            }
+            try {
+                // Get user info from Google
+                const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: 'Bearer ' + tokenResponse.access_token }
+                });
+                const gUser = await resp.json();
+                
+                // Send to our backend
+                const result = await apiRequest('/api/auth/google', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        id_token: tokenResponse.access_token,
+                        email: gUser.email,
+                        name: gUser.name,
+                        google_id: gUser.sub,
+                        photo: gUser.picture
+                    })
+                });
+                
+                if (result.success) {
+                    currentUser = result.user;
+                    saveCurrentSession(currentUser);
+                    showToast('✅ Welcome, ' + currentUser.name);
+                    closeModal('loginModal');
+                    closeModal('signupModal');
+                    updateNavForUser();
+                    const tasksLoaded = await loadTasksFromServer();
+                    setTimeout(() => renderDashboard(), 100);
+                    // Initialize push notifications
+                    if (Notification.permission === 'granted') {
+                        initPushNotifications();
+                    } else if (Notification.permission !== 'denied') {
+                        setTimeout(() => requestPushPermission(), 3000);
+                    }
+                } else {
+                    showToast('❌ ' + (result.message || 'Google login failed'), 'error');
+                }
+            } catch (err) {
+                console.error('Google login error:', err);
+                showToast('❌ Google login failed', 'error');
+            }
+        }
+    });
+    
+    client.requestAccessToken();
+}
+
+// ========================================
+// KYC VERIFICATION
+// ========================================
+
+async function submitKYC() {
+    const docType = document.getElementById('kycDocType').value;
+    const docNum = document.getElementById('kycDocNumber').value.trim();
+    
+    if (!docType) { showToast('❌ Please select a document type', 'error'); return; }
+    if (!docNum) { showToast('❌ Please enter document number', 'error'); return; }
+    
+    const btn = document.getElementById('kycSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+    
+    try {
+        const result = await KYCAPI.submit(docType, docNum);
+        if (result.success) {
+            showToast('✅ KYC submitted for verification');
+            loadKYCStatus();
+        } else {
+            showToast('❌ ' + (result.message || 'KYC submission failed'), 'error');
+        }
+    } catch (err) {
+        showToast('❌ KYC submission failed', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit for Verification';
+    }
+}
+
+async function loadKYCStatus() {
+    try {
+        const result = await KYCAPI.getStatus();
+        if (!result.success) return;
+        
+        const status = result.kyc_status;
+        const badge = document.getElementById('kycBadge');
+        const formSection = document.getElementById('kycFormSection');
+        const statusSection = document.getElementById('kycStatusSection');
+        
+        if (!badge) return;
+        
+        if (status === 'none' || !status) {
+            badge.textContent = 'Not Verified';
+            badge.style.background = '#fef3c7'; badge.style.color = '#d97706';
+            if (formSection) formSection.style.display = '';
+            if (statusSection) statusSection.style.display = 'none';
+        } else {
+            if (formSection) formSection.style.display = 'none';
+            if (statusSection) statusSection.style.display = '';
+            
+            const docTypeEl = document.getElementById('kycDocTypeDisplay');
+            const statusEl = document.getElementById('kycStatusDisplay');
+            if (docTypeEl) docTypeEl.textContent = (result.document_type || '').toUpperCase();
+            
+            if (status === 'pending') {
+                badge.textContent = 'Pending';
+                badge.style.background = '#fef3c7'; badge.style.color = '#d97706';
+                if (statusEl) statusEl.innerHTML = '<span style="color:#d97706;"><i class="fas fa-clock"></i> Under Review</span>';
+            } else if (status === 'approved') {
+                badge.textContent = 'Verified';
+                badge.style.background = '#d1fae5'; badge.style.color = '#059669';
+                if (statusEl) statusEl.innerHTML = '<span style="color:#059669;"><i class="fas fa-check-circle"></i> Verified</span>';
+                const verRow = document.getElementById('kycVerifiedAtRow');
+                const verAt = document.getElementById('kycVerifiedAt');
+                if (verRow && result.verified_at) {
+                    verRow.style.display = '';
+                    verAt.textContent = new Date(result.verified_at).toLocaleDateString('en-IN');
+                }
+            } else if (status === 'rejected') {
+                badge.textContent = 'Rejected';
+                badge.style.background = '#fee2e2'; badge.style.color = '#dc2626';
+                if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626;"><i class="fas fa-times-circle"></i> Rejected</span>';
+                if (formSection) formSection.style.display = '';
+            }
+        }
+    } catch (err) {
+        console.error('KYC status error:', err);
+    }
+}
+
+// ========================================
+// REPORT & BLOCK USER
+// ========================================
+
+let reportTargetUserId = null;
+
+function openReportModal(userId, userName) {
+    reportTargetUserId = userId;
+    const nameEl = document.getElementById('reportUserName');
+    if (nameEl) nameEl.textContent = 'Reporting: ' + userName;
+    document.getElementById('reportReason').value = '';
+    document.getElementById('reportDetails').value = '';
+    openModal('reportUserModal');
+}
+
+async function submitReport() {
+    if (!reportTargetUserId) return;
+    const reason = document.getElementById('reportReason').value;
+    const details = document.getElementById('reportDetails').value.trim();
+    
+    if (!reason) { showToast('❌ Please select a reason', 'error'); return; }
+    
+    try {
+        const result = await ReportAPI.reportUser(reportTargetUserId, reason, details);
+        if (result.success) {
+            showToast('✅ Report submitted. Our team will review it.');
+            closeModal('reportUserModal');
+        } else {
+            showToast('❌ ' + (result.message || 'Report failed'), 'error');
+        }
+    } catch (err) {
+        showToast('❌ Failed to submit report', 'error');
+    }
+}
+
+async function blockUser(userId) {
+    if (!confirm('Block this user? They won\'t be able to see your tasks or message you.')) return;
+    try {
+        const result = await ReportAPI.blockUser(userId);
+        if (result.success) {
+            showToast('✅ User blocked');
+        } else {
+            showToast('❌ ' + (result.message || 'Block failed'), 'error');
+        }
+    } catch (err) {
+        showToast('❌ Failed to block user', 'error');
+    }
+}
+
+async function unblockUser(userId) {
+    try {
+        const result = await ReportAPI.unblockUser(userId);
+        if (result.success) {
+            showToast('✅ User unblocked');
+        } else {
+            showToast('❌ ' + (result.message || 'Unblock failed'), 'error');
+        }
+    } catch (err) {
+        showToast('❌ Failed to unblock user', 'error');
+    }
+}
+
+// ========================================
+// LANGUAGE PREFERENCE
+// ========================================
+
+async function changeLanguagePref(lang) {
+    if (typeof setLanguage === 'function') {
+        await setLanguage(lang);
+        showToast('✅ Language changed');
+    }
+}
+
+// Load language on profile page
+function initLanguageSelector() {
+    const select = document.getElementById('languageSelect');
+    if (select) {
+        const saved = localStorage.getItem('preferredLanguage') || 'en';
+        select.value = saved;
+    }
+}
+
+// ========================================
+// PROFILE PAGE INIT HOOKS
+// ========================================
+
+// Hook into existing profile load to initialize new features
+(function() {
+    const origRenderDashboard = window.renderDashboard;
+    if (typeof origRenderDashboard === 'function') {
+        window.renderDashboard = function() {
+            origRenderDashboard.apply(this, arguments);
+            // Initialize KYC, language selector on profile page
+            if (document.getElementById('kycCard')) {
+                loadKYCStatus();
+            }
+            initLanguageSelector();
+        };
+    }
+})();
+
+// ========================================
+// PUSH NOTIFICATIONS
+// ========================================
+
+async function initPushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (!currentUser) return;
+    
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) return; // Already subscribed
+        
+        // Get VAPID key from server
+        const keyResult = await PushAPI.getVapidKey();
+        if (!keyResult.success || !keyResult.vapidKey) return;
+        
+        const vapidKey = urlBase64ToUint8Array(keyResult.vapidKey);
+        const subscription = await reg.pushManager.subscribe({
+            userVisuallyPushed: true,
+            applicationServerKey: vapidKey
+        });
+        
+        // Send subscription to backend
+        await PushAPI.subscribe(subscription.toJSON());
+    } catch (err) {
+        console.log('Push notification setup:', err.message);
+    }
+}
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+async function requestPushPermission() {
+    if (!('Notification' in window)) {
+        showToast('Push notifications not supported in this browser', 'error');
+        return;
+    }
+    
+    const perm = await Notification.requestPermission();
+    if (perm === 'granted') {
+        await initPushNotifications();
+        showToast('✅ Push notifications enabled');
+    } else {
+        showToast('Push notifications were denied', 'error');
+    }
+}
+
+// Window exports for new features
+window.handleGoogleLogin = handleGoogleLogin;
+window.submitKYC = submitKYC;
+window.loadKYCStatus = loadKYCStatus;
+window.openReportModal = openReportModal;
+window.submitReport = submitReport;
+window.blockUser = blockUser;
+window.unblockUser = unblockUser;
+window.changeLanguagePref = changeLanguagePref;
+window.requestPushPermission = requestPushPermission;
+window.initPushNotifications = initPushNotifications;
 window.saveTaskEdit = saveTaskEdit;
 window.showTaskPostedSuccess = showTaskPostedSuccess;
 window.switchTab = switchTab;

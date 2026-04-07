@@ -252,7 +252,97 @@
                     </div>
                 </div>
 
+                <!-- KYC Verification Card -->
+                <div class="profile-card" id="kycCard">
+                    <div class="profile-card-header">
+                        <div class="profile-card-title"><i class="fas fa-id-card"></i> Identity Verification (KYC)</div>
+                        <span id="kycBadge" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;background:#fef3c7;color:#d97706;">Not Verified</span>
+                    </div>
+                    <div class="profile-card-body">
+                        <p style="color:#64748b;font-size:13px;margin:0 0 14px;">Verify your identity to unlock higher withdrawal limits and build trust.</p>
+                        <div id="kycFormSection">
+                            <div class="profile-field-edit" style="margin-bottom:12px;">
+                                <label for="kycDocType">Document Type</label>
+                                <select id="kycDocType" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
+                                    <option value="">Select document</option>
+                                    <option value="aadhaar">Aadhaar Card</option>
+                                    <option value="pan">PAN Card</option>
+                                </select>
+                            </div>
+                            <div class="profile-field-edit" style="margin-bottom:14px;">
+                                <label for="kycDocNumber">Document Number</label>
+                                <input type="text" id="kycDocNumber" placeholder="Enter document number" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
+                                <small id="kycDocHint" style="color:#94a3b8;font-size:12px;">Aadhaar: 12 digits | PAN: e.g. ABCDE1234F</small>
+                            </div>
+                            <button class="btn btn-primary btn-block" onclick="submitKYC()" id="kycSubmitBtn"><i class="fas fa-paper-plane"></i> Submit for Verification</button>
+                        </div>
+                        <div id="kycStatusSection" style="display:none;">
+                            <div class="profile-field">
+                                <div class="profile-field-label">Document Type</div>
+                                <div class="profile-field-value" id="kycDocTypeDisplay">—</div>
+                            </div>
+                            <div class="profile-field">
+                                <div class="profile-field-label">Status</div>
+                                <div class="profile-field-value" id="kycStatusDisplay">—</div>
+                            </div>
+                            <div class="profile-field" id="kycVerifiedAtRow" style="display:none;">
+                                <div class="profile-field-label">Verified On</div>
+                                <div class="profile-field-value" id="kycVerifiedAt">—</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Language Preference Card -->
+                <div class="profile-card">
+                    <div class="profile-card-header">
+                        <div class="profile-card-title"><i class="fas fa-language"></i> Language</div>
+                    </div>
+                    <div class="profile-card-body">
+                        <div class="profile-field-edit">
+                            <label for="languageSelect">Preferred Language</label>
+                            <select id="languageSelect" onchange="changeLanguagePref(this.value)" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
+                                <option value="en">English</option>
+                                <option value="hi">हिन्दी (Hindi)</option>
+                                <option value="mr">मराठी (Marathi)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
             </div>
+        </div>
+    </div>
+
+    <!-- Report User Modal -->
+    <div class="modal" id="reportUserModal">
+        <div class="modal-content" style="max-width:440px;">
+            <button class="modal-close" onclick="closeModal('reportUserModal')"><i class="fas fa-times"></i></button>
+            <div style="text-align:center;margin-bottom:16px;">
+                <div style="width:56px;height:56px;border-radius:50%;background:rgba(239,68,68,0.12);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+                    <i class="fas fa-flag" style="font-size:22px;color:#ef4444;"></i>
+                </div>
+                <h2 style="margin:0 0 4px;font-size:20px;">Report User</h2>
+                <p style="color:#94a3b8;font-size:13px;margin:0;" id="reportUserName"></p>
+            </div>
+            <div class="form-group" style="margin-bottom:14px;">
+                <label for="reportReason" style="font-weight:600;font-size:13px;">Reason</label>
+                <select id="reportReason" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
+                    <option value="">Select a reason</option>
+                    <option value="harassment">Harassment or Bullying</option>
+                    <option value="fraud">Fraud or Scam</option>
+                    <option value="spam">Spam</option>
+                    <option value="inappropriate">Inappropriate Content</option>
+                    <option value="fake_profile">Fake Profile</option>
+                    <option value="no_show">No Show / Didn't Complete Task</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:16px;">
+                <label for="reportDetails" style="font-weight:600;font-size:13px;">Details (optional)</label>
+                <textarea id="reportDetails" rows="3" placeholder="Provide additional details..." style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;resize:vertical;"></textarea>
+            </div>
+            <button class="btn btn-block" onclick="submitReport()" style="background:#ef4444;color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;"><i class="fas fa-paper-plane"></i> Submit Report</button>
         </div>
     </div>
 
@@ -267,6 +357,8 @@
                 <div class="form-options"><label class="checkbox-label"><input type="checkbox"> Remember me</label><a href="#" class="forgot-link" onclick="openForgotPassword()">Forgot Password?</a></div>
                 <button type="submit" class="btn btn-primary btn-block">Login</button>
             </form>
+            <div class="social-divider" style="display:flex;align-items:center;gap:12px;margin:18px 0 14px;"><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"><span style="color:#94a3b8;font-size:13px;white-space:nowrap;">or continue with</span><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"></div>
+            <button type="button" onclick="handleGoogleLogin()" class="btn btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#333;border:1px solid #dadce0;padding:11px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;"><svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Sign in with Google</button>
             <div class="modal-footer"><p>Don't have an account? <a href="#" onclick="switchModal('loginModal', 'signupModal')">Sign Up</a></p></div>
         </div>
     </div>
@@ -285,6 +377,8 @@
                 <div class="form-group"><label class="checkbox-label"><input type="checkbox" required> I agree to the <a href="terms.html" target="_blank">Terms of Service</a> and <a href="privacy.html" target="_blank">Privacy Policy</a></label></div>
                 <button type="submit" class="btn btn-primary btn-block">Create Account</button>
             </form>
+            <div class="social-divider" style="display:flex;align-items:center;gap:12px;margin:18px 0 14px;"><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"><span style="color:#94a3b8;font-size:13px;white-space:nowrap;">or sign up with</span><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"></div>
+            <button type="button" onclick="handleGoogleLogin()" class="btn btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#333;border:1px solid #dadce0;padding:11px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;"><svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Sign up with Google</button>
             <div class="modal-footer"><p>Already have an account? <a href="#" onclick="switchModal('signupModal', 'loginModal')">Login</a></p></div>
         </div>
     </div>
@@ -371,6 +465,8 @@
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script src="api-client.js?v=20260404_accept_v2"></script>
     <script src="shared.js?v=20260404_accept_v2"></script>
+    <script src="i18n.js?v=20260601"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     <script src="app.js?v=20260404_delete_fix2"></script>
 <script src="sw-register.js"></script>

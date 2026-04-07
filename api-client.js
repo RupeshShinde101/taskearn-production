@@ -943,6 +943,127 @@ async function checkBackendHealth() {
     return result.success;
 }
 
+// ========================================
+// SEARCH API
+// ========================================
+
+const SearchAPI = {
+    async search(params = {}) {
+        const qs = new URLSearchParams();
+        if (params.q) qs.set('q', params.q);
+        if (params.category) qs.set('category', params.category);
+        if (params.min_price) qs.set('min_price', params.min_price);
+        if (params.max_price) qs.set('max_price', params.max_price);
+        if (params.page) qs.set('page', params.page);
+        if (params.limit) qs.set('limit', params.limit);
+        const result = await apiRequest(`/tasks/search?${qs.toString()}`, { method: 'GET' });
+        return result.data;
+    }
+};
+
+// ========================================
+// REPORT & BLOCK API
+// ========================================
+
+const ReportAPI = {
+    async reportUser(userId, reason, details = '', taskId = null) {
+        const result = await apiRequest(`/user/${userId}/report`, {
+            method: 'POST',
+            body: JSON.stringify({ reason, details, taskId })
+        });
+        return result.data;
+    },
+
+    async blockUser(userId) {
+        const result = await apiRequest(`/user/${userId}/block`, { method: 'POST' });
+        return result.data;
+    },
+
+    async unblockUser(userId) {
+        const result = await apiRequest(`/user/${userId}/unblock`, { method: 'POST' });
+        return result.data;
+    },
+
+    async getBlockedUsers() {
+        const result = await apiRequest('/user/blocked', { method: 'GET' });
+        return result.data;
+    }
+};
+
+// ========================================
+// CATEGORIES API
+// ========================================
+
+const CategoriesAPI = {
+    async getAll() {
+        const result = await apiRequest('/categories', { method: 'GET' });
+        return result.data;
+    },
+
+    async create(data) {
+        const result = await apiRequest('/admin/categories', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+        return result.data;
+    },
+
+    async update(categoryId, data) {
+        const result = await apiRequest(`/admin/categories/${categoryId}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+        return result.data;
+    },
+
+    async delete(categoryId) {
+        const result = await apiRequest(`/admin/categories/${categoryId}`, {
+            method: 'DELETE'
+        });
+        return result.data;
+    }
+};
+
+// ========================================
+// KYC API
+// ========================================
+
+const KYCAPI = {
+    async submit(documentType, documentNumber) {
+        const result = await apiRequest('/user/kyc/submit', {
+            method: 'POST',
+            body: JSON.stringify({ documentType, documentNumber })
+        });
+        return result.data;
+    },
+
+    async getStatus() {
+        const result = await apiRequest('/user/kyc/status', { method: 'GET' });
+        return result.data;
+    }
+};
+
+// ========================================
+// LANGUAGE API
+// ========================================
+
+const LanguageAPI = {
+    async setLanguage(language) {
+        const result = await apiRequest('/user/language', {
+            method: 'PUT',
+            body: JSON.stringify({ language })
+        });
+        return result.data;
+    }
+};
+
+// Push Notifications API
+const PushAPI = {
+    getVapidKey: () => apiRequest('/api/push/vapid-key'),
+    subscribe: (subscription) => apiRequest('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription }) }),
+    unsubscribe: () => apiRequest('/api/push/unsubscribe', { method: 'POST' })
+};
+
 // Export for use
 window.AuthAPI = AuthAPI;
 window.UserAPI = UserAPI;
@@ -955,6 +1076,12 @@ window.ReferralAPI = ReferralAPI;
 window.SosAPI = SosAPI;
 window.HelperAPI = HelperAPI;
 window.NotificationsAPI = NotificationsAPI;
+window.SearchAPI = SearchAPI;
+window.ReportAPI = ReportAPI;
+window.CategoriesAPI = CategoriesAPI;
+window.KYCAPI = KYCAPI;
+window.LanguageAPI = LanguageAPI;
+window.PushAPI = PushAPI;
 window.checkBackendHealth = checkBackendHealth;
 
 // Log backend status on load

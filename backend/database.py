@@ -438,6 +438,60 @@ def init_postgres_db():
                 UNIQUE(user_id, task_id)
             )
         ''')
+
+        # User reports table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_reports (
+                id SERIAL PRIMARY KEY,
+                reporter_id VARCHAR(50) NOT NULL REFERENCES users(id),
+                reported_id VARCHAR(50) NOT NULL REFERENCES users(id),
+                reason VARCHAR(50) NOT NULL,
+                details TEXT,
+                task_id INTEGER REFERENCES tasks(id),
+                status VARCHAR(20) DEFAULT 'pending',
+                admin_notes TEXT,
+                resolved_by VARCHAR(50),
+                resolved_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL
+            )
+        ''')
+
+        # User blocks table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_blocks (
+                id SERIAL PRIMARY KEY,
+                blocker_id VARCHAR(50) NOT NULL REFERENCES users(id),
+                blocked_id VARCHAR(50) NOT NULL REFERENCES users(id),
+                created_at TIMESTAMP NOT NULL,
+                UNIQUE(blocker_id, blocked_id)
+            )
+        ''')
+
+        # Task categories table (admin-managed)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS task_categories (
+                id SERIAL PRIMARY KEY,
+                slug VARCHAR(50) UNIQUE NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                icon VARCHAR(50) DEFAULT 'fas fa-tasks',
+                service_charge_percent DECIMAL(5,2) DEFAULT 10.0,
+                is_active BOOLEAN DEFAULT TRUE,
+                sort_order INTEGER DEFAULT 0,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP
+            )
+        ''')
+        
+        # Push notification subscriptions
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL,
+                subscription_json TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                UNIQUE(user_id)
+            )
+        ''')
         
         # Commit CREATE TABLEs and ensure clean transaction state for ALTER TABLEs
         conn.commit()
@@ -469,6 +523,41 @@ def init_postgres_db():
         # Email verification column
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE
+        ''')
+
+        # Google OAuth columns
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE
+        ''')
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'email'
+        ''')
+
+        # KYC columns
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT FALSE
+        ''')
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_status VARCHAR(20) DEFAULT 'none'
+        ''')
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_type VARCHAR(30)
+        ''')
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_number VARCHAR(50)
+        ''')
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_verified_at TIMESTAMP
+        ''')
+
+        # Language preference
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(10) DEFAULT 'en'
+        ''')
+
+        # Banned column
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE
         ''')
         
         # Ensure service_charge column exists in tasks table (migration)

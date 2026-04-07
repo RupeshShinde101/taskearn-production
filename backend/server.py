@@ -378,7 +378,11 @@ def user_to_response(user):
         'suspensionReason': suspension_reason or None,
         'isBanned': is_banned,
         'dailyReleaseCount': daily_release_count,
-        'emailVerified': bool(user.get('email_verified', False))
+        'emailVerified': bool(user.get('email_verified', False)),
+        'authProvider': user.get('auth_provider', 'email'),
+        'kycStatus': user.get('kyc_status', 'none'),
+        'phoneVerified': bool(user.get('phone_verified', False)),
+        'preferredLanguage': user.get('preferred_language', 'en')
     }
 
 
@@ -1570,6 +1574,12 @@ def accept_task(task_id):
                   'Task Assigned! 📌',
                   f'You accepted "{task["title"]}". Budget: ₹{task["price"]}. Complete it before the poster cancels!',
                   'unread', action_data, accepted_at))
+
+        # Send email notification to poster
+        try:
+            notify_task_accepted_email(poster_id, helper_name, task['title'])
+        except Exception:
+            pass
         
         return jsonify({
             'success': True,
@@ -1878,6 +1888,12 @@ def complete_task(task_id):
             print(f"   Notification created for poster (ID: {poster_id}) with 'Pay Now' action")
             print(f"   Task status: accepted → completed")
             print('='*60 + "\n")
+
+            # Send email notification to poster
+            try:
+                notify_task_completed_email(poster_id, helper_name, task['title'], total_poster_cost)
+            except Exception:
+                pass
             
             return jsonify({
                 'success': True,
@@ -2254,6 +2270,12 @@ def pay_helper(task_id):
             print(f"   Poster final balance: ₹{poster_new_balance:.2f}")
             print(f"   Company final balance: ₹{company_new_balance:.2f}")
             print('='*60 + "\n")
+
+            # Send email notification to helper
+            try:
+                notify_payment_received_email(helper_id, task['title'], helper_earnings)
+            except Exception:
+                pass
             
             return jsonify({
                 'success': True,
@@ -6234,6 +6256,12 @@ def admin_suspend_user(user_id):
             log_admin_action(cursor, request.user_id, 'suspend_user', 'user', user_id,
                            f'Suspended. Reason: {reason}. Duration: {duration_hours or "indefinite"}h', request.remote_addr)
 
+        # Send email notification
+        try:
+            notify_account_suspended_email(user_id, reason)
+        except Exception:
+            pass
+
         return jsonify({'success': True, 'message': f'User {user_id} suspended'}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -6770,6 +6798,827 @@ def export_transactions():
         )
     except Exception as e:
         return jsonify({'success': False, 'message': 'Failed to export transactions'}), 500
+
+
+# ========================================
+# TASK SEARCH BY KEYWORD (SERVER-SIDE)
+# ========================================
+
+@app.route('/api/tasks/search', methods=['GET'])
+def search_tasks():
+    """Search tasks by keyword with server-side filtering"""
+    keyword = request.args.get('q', '').strip()
+    category = request.args.get('category', '').strip()
+    min_price = request.args.get('min_price', type=float)
+    max_price = request.args.get('max_price', type=float)
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 20, type=int)
+    limit = min(max(limit, 1), 100)
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    try:
+        with get_db() as (cursor, conn):
+            conditions = [f"status = 'active'", f"expires_at > {PH}"]
+            params = [now]
+
+            if keyword:
+                conditions.append(f"(LOWER(title) LIKE {PH} OR LOWER(description) LIKE {PH} OR LOWER(category) LIKE {PH})")
+                kw = f"%{keyword.lower()}%"
+                params.extend([kw, kw, kw])
+
+            if category and category != 'all':
+                conditions.append(f"category = {PH}")
+                params.append(category)
+
+            if min_price is not None:
+                conditions.append(f"price >= {PH}")
+                params.append(min_price)
+
+            if max_price is not None:
+                conditions.append(f"price <= {PH}")
+                params.append(max_price)
+
+            where = " AND ".join(conditions)
+
+            # Count total
+            cursor.execute(f'SELECT COUNT(*) as total FROM tasks WHERE {where}', tuple(params))
+            total = dict_from_row(cursor.fetchone())['total']
+
+            # Paginated results
+            offset = (page - 1) * limit
+            cursor.execute(f'''
+                SELECT id, title, description, category, location_lat, location_lng,
+                       location_address, price, service_charge, posted_by, posted_at, expires_at, status
+                FROM tasks WHERE {where}
+                ORDER BY posted_at DESC
+                LIMIT {PH} OFFSET {PH}
+            ''', tuple(params) + (limit, offset))
+
+            rows = cursor.fetchall()
+            task_list = []
+            for task in rows:
+                task = dict_from_row(task)
+                poster_name = 'Anonymous'
+                poster_rating = 5.0
+                try:
+                    if task.get('posted_by'):
+                        cursor.execute(f'SELECT name, rating FROM users WHERE id = {PH}', (task['posted_by'],))
+                        u = cursor.fetchone()
+                        if u:
+                            u = dict_from_row(u)
+                            poster_name = u.get('name', 'Anonymous')
+                            poster_rating = float(u.get('rating', 5.0))
+                except:
+                    pass
+
+                task_list.append({
+                    'id': task['id'],
+                    'title': task['title'],
+                    'description': task['description'],
+                    'category': task['category'],
+                    'location': {
+                        'lat': task['location_lat'],
+                        'lng': task['location_lng'],
+                        'address': task['location_address']
+                    },
+                    'price': float(task['price']),
+                    'service_charge': float(task.get('service_charge', 0)),
+                    'postedBy': {
+                        'id': task.get('posted_by'),
+                        'name': poster_name,
+                        'rating': poster_rating
+                    },
+                    'postedAt': task['posted_at'],
+                    'expiresAt': task['expires_at'],
+                    'status': task['status']
+                })
+
+            return jsonify({
+                'success': True,
+                'tasks': task_list,
+                'pagination': {
+                    'page': page,
+                    'limit': limit,
+                    'total': total,
+                    'totalPages': (total + limit - 1) // limit if limit else 1
+                }
+            })
+    except Exception as e:
+        print(f"[SEARCH] Error: {e}")
+        return jsonify({'success': False, 'message': 'Search failed'}), 500
+
+
+# ========================================
+# REPORT USER / BLOCK USER
+# ========================================
+
+@app.route('/api/user/<user_id>/report', methods=['POST'])
+@require_auth
+@rate_limit('5 per minute')
+def report_user(user_id):
+    """Report a user for violation"""
+    data = request.get_json()
+    reason = data.get('reason', '').strip()
+    details = data.get('details', '').strip()
+    task_id = data.get('taskId')
+
+    if not reason:
+        return jsonify({'success': False, 'message': 'Reason is required'}), 400
+
+    valid_reasons = ['harassment', 'fraud', 'spam', 'inappropriate', 'fake_profile', 'no_show', 'other']
+    if reason not in valid_reasons:
+        return jsonify({'success': False, 'message': 'Invalid report reason'}), 400
+
+    if len(details) > 2000:
+        return jsonify({'success': False, 'message': 'Details too long (max 2000 chars)'}), 400
+
+    if user_id == request.user_id:
+        return jsonify({'success': False, 'message': 'You cannot report yourself'}), 400
+
+    try:
+        with get_db() as (cursor, conn):
+            # Check target user exists
+            cursor.execute(f'SELECT id FROM users WHERE id = {PH}', (user_id,))
+            if not cursor.fetchone():
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+
+            # Check for duplicate recent report
+            cursor.execute(f'''
+                SELECT id FROM user_reports
+                WHERE reporter_id = {PH} AND reported_id = {PH}
+                AND created_at > {PH}
+            ''', (request.user_id, user_id,
+                  (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)).isoformat()))
+            if cursor.fetchone():
+                return jsonify({'success': False, 'message': 'You already reported this user recently'}), 429
+
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                INSERT INTO user_reports (reporter_id, reported_id, reason, details, task_id, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (request.user_id, user_id, reason, details, task_id, now))
+
+            # Notify admins via notification
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', ('1', 'user_report', '🚨 New User Report',
+                  f'User reported for: {reason}', 'unread', now))
+
+        return jsonify({'success': True, 'message': 'Report submitted. We will review it shortly.'})
+    except Exception as e:
+        print(f"[REPORT] Error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to submit report'}), 500
+
+
+@app.route('/api/user/<user_id>/block', methods=['POST'])
+@require_auth
+def block_user(user_id):
+    """Block a user"""
+    if user_id == request.user_id:
+        return jsonify({'success': False, 'message': 'You cannot block yourself'}), 400
+
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id FROM users WHERE id = {PH}', (user_id,))
+            if not cursor.fetchone():
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            try:
+                cursor.execute(f'''
+                    INSERT INTO user_blocks (blocker_id, blocked_id, created_at)
+                    VALUES ({PH}, {PH}, {PH})
+                ''', (request.user_id, user_id, now))
+            except:
+                return jsonify({'success': False, 'message': 'User already blocked'}), 409
+
+        return jsonify({'success': True, 'message': 'User blocked successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to block user'}), 500
+
+
+@app.route('/api/user/<user_id>/unblock', methods=['POST'])
+@require_auth
+def unblock_user(user_id):
+    """Unblock a user"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                DELETE FROM user_blocks WHERE blocker_id = {PH} AND blocked_id = {PH}
+            ''', (request.user_id, user_id))
+        return jsonify({'success': True, 'message': 'User unblocked'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to unblock user'}), 500
+
+
+@app.route('/api/user/blocked', methods=['GET'])
+@require_auth
+def get_blocked_users():
+    """Get list of blocked users"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT b.blocked_id, u.name, u.profile_photo, b.created_at
+                FROM user_blocks b
+                JOIN users u ON u.id = b.blocked_id
+                WHERE b.blocker_id = {PH}
+                ORDER BY b.created_at DESC
+            ''', (request.user_id,))
+            rows = [dict_from_row(r) for r in cursor.fetchall()]
+
+        return jsonify({
+            'success': True,
+            'blocked': [{
+                'userId': r['blocked_id'],
+                'name': r['name'],
+                'profilePhoto': r.get('profile_photo'),
+                'blockedAt': r['created_at']
+            } for r in rows]
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to get blocked users'}), 500
+
+
+# ========================================
+# ADMIN: USER REPORTS MANAGEMENT
+# ========================================
+
+@app.route('/api/admin/reports', methods=['GET'])
+@require_auth
+def get_reports():
+    """Get all user reports (admin)"""
+    status = request.args.get('status', 'pending')
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT r.*, 
+                       reporter.name as reporter_name,
+                       reported.name as reported_name
+                FROM user_reports r
+                JOIN users reporter ON reporter.id = r.reporter_id
+                JOIN users reported ON reported.id = r.reported_id
+                WHERE r.status = {PH}
+                ORDER BY r.created_at DESC
+                LIMIT 100
+            ''', (status,))
+            rows = [dict_from_row(r) for r in cursor.fetchall()]
+
+        return jsonify({'success': True, 'reports': rows})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to load reports'}), 500
+
+
+@app.route('/api/admin/reports/<int:report_id>/resolve', methods=['POST'])
+@require_auth
+def resolve_report(report_id):
+    """Resolve a user report (admin)"""
+    data = request.get_json()
+    action = data.get('action', 'dismiss')  # dismiss, warn, suspend, ban
+    admin_notes = data.get('notes', '')
+
+    try:
+        with get_db() as (cursor, conn):
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                UPDATE user_reports SET status = 'resolved', admin_notes = {PH},
+                resolved_by = {PH}, resolved_at = {PH}
+                WHERE id = {PH}
+            ''', (f'{action}: {admin_notes}', request.user_id, now, report_id))
+
+            # Log admin action
+            cursor.execute(f'''
+                INSERT INTO admin_audit_log (admin_id, action, resource_type, resource_id, details, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (request.user_id, f'report_{action}', 'report', str(report_id), admin_notes, now))
+
+        return jsonify({'success': True, 'message': f'Report resolved ({action})'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to resolve report'}), 500
+
+
+# ========================================
+# ADMIN: TASK CATEGORIES MANAGEMENT
+# ========================================
+
+@app.route('/api/categories', methods=['GET'])
+def get_categories():
+    """Get all active task categories"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('''
+                SELECT id, slug, name, icon, service_charge_percent, sort_order
+                FROM task_categories
+                WHERE is_active = TRUE
+                ORDER BY sort_order ASC, name ASC
+            ''')
+            rows = cursor.fetchall()
+
+            if not rows:
+                # Return default categories if none exist in DB
+                defaults = [
+                    {'slug': 'household', 'name': 'Household Chores', 'icon': 'fas fa-home', 'service_charge_percent': 10},
+                    {'slug': 'delivery', 'name': 'Delivery Services', 'icon': 'fas fa-truck', 'service_charge_percent': 8},
+                    {'slug': 'tutoring', 'name': 'Online Tutoring', 'icon': 'fas fa-graduation-cap', 'service_charge_percent': 12},
+                    {'slug': 'cleaning', 'name': 'Cleaning Services', 'icon': 'fas fa-broom', 'service_charge_percent': 10},
+                    {'slug': 'shopping', 'name': 'Shopping & Errands', 'icon': 'fas fa-shopping-bag', 'service_charge_percent': 8},
+                    {'slug': 'repair', 'name': 'Repair & Maintenance', 'icon': 'fas fa-wrench', 'service_charge_percent': 12},
+                    {'slug': 'moving', 'name': 'Moving & Packing', 'icon': 'fas fa-box', 'service_charge_percent': 15},
+                    {'slug': 'petcare', 'name': 'Pet Care', 'icon': 'fas fa-paw', 'service_charge_percent': 10},
+                    {'slug': 'other', 'name': 'Other', 'icon': 'fas fa-ellipsis-h', 'service_charge_percent': 10}
+                ]
+                return jsonify({'success': True, 'categories': defaults})
+
+            categories = [dict_from_row(r) for r in rows]
+            return jsonify({'success': True, 'categories': categories})
+    except Exception as e:
+        print(f"[CATEGORIES] Error: {e}")
+        # Fallback defaults
+        return jsonify({'success': True, 'categories': [
+            {'slug': 'household', 'name': 'Household Chores', 'icon': 'fas fa-home', 'service_charge_percent': 10},
+            {'slug': 'delivery', 'name': 'Delivery Services', 'icon': 'fas fa-truck', 'service_charge_percent': 8},
+            {'slug': 'other', 'name': 'Other', 'icon': 'fas fa-ellipsis-h', 'service_charge_percent': 10}
+        ]})
+
+
+@app.route('/api/admin/categories', methods=['POST'])
+@require_auth
+def create_category():
+    """Create a new task category (admin)"""
+    data = request.get_json()
+    name = html_escape(data.get('name', '').strip())
+    slug = data.get('slug', '').strip().lower().replace(' ', '-')
+    icon = data.get('icon', 'fas fa-tasks').strip()
+    charge = data.get('service_charge_percent', 10)
+    sort_order = data.get('sort_order', 0)
+
+    if not name or not slug:
+        return jsonify({'success': False, 'message': 'Name and slug are required'}), 400
+
+    if len(slug) > 50 or len(name) > 100:
+        return jsonify({'success': False, 'message': 'Name or slug too long'}), 400
+
+    try:
+        with get_db() as (cursor, conn):
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                INSERT INTO task_categories (slug, name, icon, service_charge_percent, sort_order, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (slug, name, icon, charge, sort_order, now))
+
+            cursor.execute(f'''
+                INSERT INTO admin_audit_log (admin_id, action, resource_type, resource_id, details, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (request.user_id, 'create_category', 'category', slug, f'Created: {name}', now))
+
+        return jsonify({'success': True, 'message': f'Category "{name}" created'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Category slug already exists or creation failed'}), 400
+
+
+@app.route('/api/admin/categories/<int:category_id>', methods=['PUT'])
+@require_auth
+def update_category(category_id):
+    """Update a task category (admin)"""
+    data = request.get_json()
+    try:
+        with get_db() as (cursor, conn):
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            updates = []
+            params = []
+            for field in ['name', 'icon', 'service_charge_percent', 'sort_order', 'is_active']:
+                if field in data:
+                    updates.append(f"{field} = {PH}")
+                    val = data[field]
+                    if field == 'name':
+                        val = html_escape(str(val).strip())
+                    params.append(val)
+
+            if not updates:
+                return jsonify({'success': False, 'message': 'No fields to update'}), 400
+
+            updates.append(f"updated_at = {PH}")
+            params.append(now)
+            params.append(category_id)
+
+            cursor.execute(f'''
+                UPDATE task_categories SET {", ".join(updates)} WHERE id = {PH}
+            ''', tuple(params))
+
+        return jsonify({'success': True, 'message': 'Category updated'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to update category'}), 500
+
+
+@app.route('/api/admin/categories/<int:category_id>', methods=['DELETE'])
+@require_auth
+def delete_category(category_id):
+    """Soft-delete a task category (admin)"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'UPDATE task_categories SET is_active = FALSE WHERE id = {PH}', (category_id,))
+        return jsonify({'success': True, 'message': 'Category disabled'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to delete category'}), 500
+
+
+# ========================================
+# EMAIL NOTIFICATIONS FOR KEY EVENTS
+# ========================================
+
+def send_event_email(to_email, to_name, subject, body_html):
+    """Send transactional email for key platform events"""
+    if not config.SENDGRID_API_KEY:
+        print(f"⚠️ SendGrid not configured — skipping email to {to_email}")
+        return False
+    try:
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
+        message = Mail(
+            from_email=config.FROM_EMAIL,
+            to_emails=to_email,
+            subject=f'{config.APP_NAME} - {subject}',
+            html_content=f'''
+                <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">
+                    <div style="text-align:center;margin-bottom:16px;">
+                        <h2 style="color:#6366f1;margin:0;">Workmate4u</h2>
+                    </div>
+                    <p>Hi {html_escape(to_name)},</p>
+                    {body_html}
+                    <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;">
+                    <p style="color:#888;font-size:12px;text-align:center;">
+                        You're receiving this because you have an account on Workmate4u.<br>
+                        <a href="https://www.workmate4u.com" style="color:#6366f1;">www.workmate4u.com</a>
+                    </p>
+                </div>
+            '''
+        )
+        sg = SendGridAPIClient(config.SENDGRID_API_KEY)
+        sg.send(message)
+        print(f"📧 Event email sent to {to_email}: {subject}")
+        return True
+    except Exception as e:
+        print(f"⚠️ Event email failed for {to_email}: {e}")
+        return False
+
+
+def notify_task_accepted_email(poster_id, helper_name, task_title):
+    """Email poster when their task is accepted"""
+    try:
+        user = get_user_by_id(poster_id)
+        if user:
+            send_event_email(user['email'], user['name'],
+                'Your Task Was Accepted! ✅',
+                f'<p>Great news! <strong>{html_escape(helper_name)}</strong> has accepted your task:</p>'
+                f'<div style="background:#f0f0ff;padding:12px;border-radius:8px;margin:12px 0;">'
+                f'<strong>{html_escape(task_title)}</strong></div>'
+                f'<p>You can chat with them to discuss details.</p>')
+    except Exception as e:
+        print(f"⚠️ notify_task_accepted_email error: {e}")
+
+
+def notify_task_completed_email(poster_id, helper_name, task_title, amount):
+    """Email poster when task is completed"""
+    try:
+        user = get_user_by_id(poster_id)
+        if user:
+            send_event_email(user['email'], user['name'],
+                'Task Completed! 🎉',
+                f'<p><strong>{html_escape(helper_name)}</strong> has completed your task:</p>'
+                f'<div style="background:#f0fff0;padding:12px;border-radius:8px;margin:12px 0;">'
+                f'<strong>{html_escape(task_title)}</strong> — ₹{amount}</div>'
+                f'<p>Please review and process the payment.</p>')
+    except Exception as e:
+        print(f"⚠️ notify_task_completed_email error: {e}")
+
+
+def notify_payment_received_email(helper_id, task_title, amount):
+    """Email helper when they receive payment"""
+    try:
+        user = get_user_by_id(helper_id)
+        if user:
+            send_event_email(user['email'], user['name'],
+                'Payment Received! 💰',
+                f'<p>You received <strong>₹{amount}</strong> for completing:</p>'
+                f'<div style="background:#f0fff0;padding:12px;border-radius:8px;margin:12px 0;">'
+                f'<strong>{html_escape(task_title)}</strong></div>'
+                f'<p>The money has been added to your wallet.</p>')
+    except Exception as e:
+        print(f"⚠️ notify_payment_received_email error: {e}")
+
+
+def notify_withdrawal_processed_email(user_id, amount, status):
+    """Email user when withdrawal is processed"""
+    try:
+        user = get_user_by_id(user_id)
+        if user:
+            if status == 'completed':
+                send_event_email(user['email'], user['name'],
+                    'Withdrawal Processed! 🏦',
+                    f'<p>Your withdrawal of <strong>₹{amount}</strong> has been processed and sent to your bank account.</p>'
+                    f'<p>It may take 1-3 business days to reflect in your account.</p>')
+            else:
+                send_event_email(user['email'], user['name'],
+                    'Withdrawal Update',
+                    f'<p>Your withdrawal request of <strong>₹{amount}</strong> status: <strong>{status}</strong></p>')
+    except Exception as e:
+        print(f"⚠️ notify_withdrawal_email error: {e}")
+
+
+def notify_account_suspended_email(user_id, reason):
+    """Email user when account is suspended"""
+    try:
+        user = get_user_by_id(user_id)
+        if user:
+            send_event_email(user['email'], user['name'],
+                'Account Suspended ⚠️',
+                f'<p>Your account has been suspended.</p>'
+                f'<p><strong>Reason:</strong> {html_escape(reason or "Policy violation")}</p>'
+                f'<p>If you believe this is an error, please contact support.</p>')
+    except Exception as e:
+        print(f"⚠️ notify_suspended_email error: {e}")
+
+
+# ========================================
+# USER VERIFICATION / KYC
+# ========================================
+
+@app.route('/api/user/kyc/submit', methods=['POST'])
+@require_auth
+def submit_kyc():
+    """Submit KYC document for verification"""
+    data = request.get_json()
+    doc_type = data.get('documentType', '').strip()
+    doc_number = data.get('documentNumber', '').strip()
+
+    valid_types = ['aadhaar', 'pan', 'voter_id', 'driving_license']
+    if doc_type not in valid_types:
+        return jsonify({'success': False, 'message': 'Invalid document type'}), 400
+
+    if not doc_number or len(doc_number) < 6 or len(doc_number) > 20:
+        return jsonify({'success': False, 'message': 'Invalid document number'}), 400
+
+    # Basic format validation
+    import re
+    if doc_type == 'aadhaar' and not re.match(r'^\d{12}$', doc_number):
+        return jsonify({'success': False, 'message': 'Aadhaar must be 12 digits'}), 400
+    if doc_type == 'pan' and not re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]$', doc_number.upper()):
+        return jsonify({'success': False, 'message': 'Invalid PAN format (e.g. ABCDE1234F)'}), 400
+
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                UPDATE users SET kyc_document_type = {PH}, kyc_document_number = {PH},
+                kyc_status = 'pending'
+                WHERE id = {PH}
+            ''', (doc_type, doc_number.upper(), request.user_id))
+
+            # Notify admin
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', ('1', 'kyc_request', '📋 KYC Verification Request',
+                  f'User {request.user_id} submitted {doc_type} for verification', 'unread', now))
+
+        return jsonify({'success': True, 'message': 'KYC documents submitted for review'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to submit KYC'}), 500
+
+
+@app.route('/api/user/kyc/status', methods=['GET'])
+@require_auth
+def get_kyc_status():
+    """Get KYC verification status"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT kyc_status, kyc_document_type, kyc_verified_at, phone_verified, email_verified
+                FROM users WHERE id = {PH}
+            ''', (request.user_id,))
+            row = dict_from_row(cursor.fetchone())
+
+        return jsonify({
+            'success': True,
+            'kyc': {
+                'status': row.get('kyc_status', 'none'),
+                'documentType': row.get('kyc_document_type'),
+                'verifiedAt': row.get('kyc_verified_at'),
+                'phoneVerified': bool(row.get('phone_verified')),
+                'emailVerified': bool(row.get('email_verified'))
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to get KYC status'}), 500
+
+
+@app.route('/api/admin/kyc/<user_id>/verify', methods=['POST'])
+@require_auth
+def admin_verify_kyc(user_id):
+    """Admin: approve or reject KYC (admin)"""
+    data = request.get_json()
+    action = data.get('action', 'approve')  # approve or reject
+
+    try:
+        with get_db() as (cursor, conn):
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            if action == 'approve':
+                cursor.execute(f'''
+                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}
+                    WHERE id = {PH}
+                ''', (now, user_id))
+                msg = '✅ Your KYC verification has been approved!'
+            else:
+                cursor.execute(f'''
+                    UPDATE users SET kyc_status = 'rejected'
+                    WHERE id = {PH}
+                ''', (user_id,))
+                msg = '❌ Your KYC verification was rejected. Please resubmit.'
+
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'kyc_result', 'KYC Verification Update', msg, 'unread', now))
+
+            cursor.execute(f'''
+                INSERT INTO admin_audit_log (admin_id, action, resource_type, resource_id, details, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (request.user_id, f'kyc_{action}', 'user', user_id, f'KYC {action}d', now))
+
+        return jsonify({'success': True, 'message': f'KYC {action}d for user {user_id}'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to process KYC'}), 500
+
+
+# ========================================
+# GOOGLE SOCIAL LOGIN
+# ========================================
+
+@app.route('/api/auth/google', methods=['POST'])
+@rate_limit('10 per minute')
+def google_login():
+    """Login or register via Google ID token"""
+    data = request.get_json()
+    id_token = data.get('credential', '')
+
+    if not id_token:
+        return jsonify({'success': False, 'message': 'Google credential is required'}), 400
+
+    try:
+        # Verify Google ID token
+        import urllib.request
+        import json as json_mod
+        # Use Google's tokeninfo endpoint to verify (no extra dependency needed)
+        token_url = f'https://oauth2.googleapis.com/tokeninfo?id_token={id_token}'
+        req = urllib.request.Request(token_url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            google_data = json_mod.loads(resp.read().decode())
+
+        google_id = google_data.get('sub')
+        email = google_data.get('email', '').lower()
+        name = google_data.get('name', '')
+        picture = google_data.get('picture', '')
+
+        if not google_id or not email:
+            return jsonify({'success': False, 'message': 'Invalid Google token'}), 401
+
+        with get_db() as (cursor, conn):
+            # Check if user exists by google_id
+            cursor.execute(f'SELECT id FROM users WHERE google_id = {PH}', (google_id,))
+            existing = cursor.fetchone()
+
+            if existing:
+                # Existing Google user — login
+                user_id = dict_from_row(existing)['id']
+                last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
+            else:
+                # Check if email already registered (link accounts)
+                cursor.execute(f'SELECT id FROM users WHERE email = {PH}', (email,))
+                email_user = cursor.fetchone()
+
+                if email_user:
+                    user_id = dict_from_row(email_user)['id']
+                    cursor.execute(f'''
+                        UPDATE users SET google_id = {PH}, auth_provider = 'google'
+                        WHERE id = {PH}
+                    ''', (google_id, user_id))
+                else:
+                    # New user — register
+                    user_id = generate_user_id()
+                    joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    # Google users get a random password (they never use it)
+                    random_pw = generate_password_hash(secrets.token_hex(32), method='pbkdf2:sha256')
+                    cursor.execute(f'''
+                        INSERT INTO users (id, name, email, password_hash, google_id, auth_provider,
+                                          email_verified, profile_photo, joined_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (user_id, name, email, random_pw, google_id, 'google',
+                          True, picture, joined_at))
+
+                    # Create wallet
+                    cursor.execute(f'''
+                        INSERT INTO wallets (user_id, balance, created_at)
+                        VALUES ({PH}, 0, {PH})
+                    ''', (user_id, joined_at))
+
+            user = get_user_by_id(user_id)
+            if user and user.get('is_banned'):
+                return jsonify({'success': False, 'message': 'Account is banned'}), 403
+
+        token = generate_jwt_token(user_id, email)
+        user = get_user_by_id(user_id)
+
+        return jsonify({
+            'success': True,
+            'message': 'Google login successful',
+            'token': token,
+            'user': user_to_response(user)
+        })
+
+    except urllib.error.URLError:
+        return jsonify({'success': False, 'message': 'Could not verify Google token'}), 401
+    except Exception as e:
+        print(f"[GOOGLE LOGIN] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': 'Google login failed'}), 500
+
+
+# ========================================
+# LANGUAGE PREFERENCE
+# ========================================
+
+@app.route('/api/user/language', methods=['PUT'])
+@require_auth
+def update_language():
+    """Update user language preference"""
+    data = request.get_json()
+    lang = data.get('language', 'en').strip()
+    if lang not in ('en', 'hi', 'mr', 'ta', 'te', 'kn', 'bn'):
+        return jsonify({'success': False, 'message': 'Unsupported language'}), 400
+
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'UPDATE users SET preferred_language = {PH} WHERE id = {PH}',
+                          (lang, request.user_id))
+        return jsonify({'success': True, 'message': 'Language updated'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to update language'}), 500
+
+
+# ========================================
+# PUSH NOTIFICATION SUBSCRIPTIONS
+# ========================================
+
+@app.route('/api/push/subscribe', methods=['POST'])
+@require_auth
+def push_subscribe():
+    """Store a push notification subscription for the current user."""
+    try:
+        data = request.get_json()
+        subscription = data.get('subscription')
+        if not subscription or not subscription.get('endpoint'):
+            return jsonify({'success': False, 'message': 'Invalid subscription'}), 400
+        
+        import json as json_mod
+        sub_json = json_mod.dumps(subscription)
+        
+        with get_db() as conn:
+            cur = conn.cursor()
+            # Upsert: replace existing subscription for this user
+            cur.execute(f"""
+                DELETE FROM push_subscriptions WHERE user_id = {PH}
+            """, (request.user_id,))
+            cur.execute(f"""
+                INSERT INTO push_subscriptions (user_id, subscription_json, created_at)
+                VALUES ({PH}, {PH}, NOW())
+            """, (request.user_id, sub_json))
+            conn.commit()
+        
+        return jsonify({'success': True, 'message': 'Push subscription saved'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to save subscription'}), 500
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+@require_auth
+def push_unsubscribe():
+    """Remove push subscription for the current user."""
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(f"DELETE FROM push_subscriptions WHERE user_id = {PH}", (request.user_id,))
+            conn.commit()
+        return jsonify({'success': True, 'message': 'Push subscription removed'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to remove subscription'}), 500
+
+@app.route('/api/push/vapid-key', methods=['GET'])
+def get_vapid_key():
+    """Return the public VAPID key for client-side subscription."""
+    vapid_key = os.environ.get('VAPID_PUBLIC_KEY', '')
+    return jsonify({'success': True, 'vapidKey': vapid_key})
 
 
 # ========================================

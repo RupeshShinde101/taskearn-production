@@ -1096,7 +1096,7 @@ function confirmDeleteAccount() {
     if (!pwd) return;
     if (!confirm('Are you absolutely sure? All your data will be permanently deleted.')) return;
     
-    fetch(API_BASE + '/api/user/delete-account', {
+    fetch(API_BASE_URL + '/user/delete-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         body: JSON.stringify({ password: pwd })
@@ -1157,7 +1157,7 @@ function submitDispute(taskId) {
     const details = document.getElementById('disputeDetails').value;
     if (!reason) { alert('Please select a reason'); return; }
     
-    fetch(API_BASE + '/api/tasks/' + taskId + '/dispute', {
+    fetch(API_BASE_URL + '/tasks/' + taskId + '/dispute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         body: JSON.stringify({ reason, details })
@@ -1174,7 +1174,7 @@ function submitDispute(taskId) {
 // BOOKMARKS
 // ========================================
 function toggleBookmark(taskId, el) {
-    fetch(API_BASE + '/api/tasks/' + taskId + '/bookmark', {
+    fetch(API_BASE_URL + '/tasks/' + taskId + '/bookmark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') }
     })
@@ -1198,7 +1198,7 @@ function toggleBookmark(taskId, el) {
 // TRANSACTION EXPORT
 // ========================================
 function exportTransactionsCSV() {
-    fetch(API_BASE + '/api/wallet/export', {
+    fetch(API_BASE_URL + '/wallet/export', {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
     })
     .then(r => {
@@ -6300,6 +6300,13 @@ window.clearAllNotifications = clearAllNotifications;
 window.handleNotificationAction = handleNotificationAction;
 window.executePayment = executePayment;
 window.showPaymentInvoice = showPaymentInvoice;
+
+// New feature functions
+window.confirmDeleteAccount = confirmDeleteAccount;
+window.openDisputeModal = openDisputeModal;
+window.submitDispute = submitDispute;
+window.toggleBookmark = toggleBookmark;
+window.exportTransactionsCSV = exportTransactionsCSV;
 
 // Forgot Password Functions
 window.openForgotPassword = openForgotPassword;

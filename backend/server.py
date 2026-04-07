@@ -86,8 +86,8 @@ def add_security_headers(response):
     """Add security and CORS headers to all responses"""
     origin = request.headers.get('Origin', '')
     allowed = [o.strip() for o in config.CORS_ORIGINS]
-    if '*' in allowed or origin in allowed:
-        response.headers['Access-Control-Allow-Origin'] = origin or '*'
+    if origin and origin in allowed:
+        response.headers['Access-Control-Allow-Origin'] = origin
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
     response.headers['Access-Control-Max-Age'] = '3600'
@@ -1201,7 +1201,7 @@ def get_tasks():
                     LIMIT {PH} OFFSET {PH}
                 ''', (now, limit, offset))
             else:
-                # Legacy: return all (no pagination)
+                # Legacy: return all (with safety limit)
                 total = None
                 cursor.execute(f'''
                     SELECT id, title, description, category, location_lat, location_lng, 
@@ -1209,6 +1209,7 @@ def get_tasks():
                     FROM tasks
                     {base_where}
                     ORDER BY posted_at DESC
+                    LIMIT 200
                 ''', (now,))
             
             rows = cursor.fetchall()
@@ -1328,6 +1329,20 @@ def create_task():
                 print(f"⚠️ Task creation failed: missing required field '{field}'")
                 print(f'   Available fields: {list(data.keys())}')
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
+        
+        # Input length validation
+        if len(str(data.get('title', ''))) > 200:
+            return jsonify({'success': False, 'message': 'Title max 200 characters'}), 400
+        if len(str(data.get('description', ''))) > 5000:
+            return jsonify({'success': False, 'message': 'Description max 5000 characters'}), 400
+        
+        # Price validation
+        try:
+            price = float(data['price'])
+            if price < 10 or price > 50000:
+                return jsonify({'success': False, 'message': 'Price must be between ₹10 and ₹50,000'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': 'Invalid price'}), 400
         
         print(f"📝 Creating task: '{data.get('title')}'")
         print(f"   Category: {data.get('category')}")
@@ -3018,7 +3033,7 @@ def earn_to_wallet():
 def get_transactions():
     """Get wallet transaction history"""
     page = int(request.args.get('page', 1))
-    limit = int(request.args.get('limit', 20))
+    limit = min(int(request.args.get('limit', 20)), 100)  # Cap at 100
     offset = (page - 1) * limit
     
     with get_db() as (cursor, conn):
@@ -3269,6 +3284,7 @@ def get_chat_messages(task_id):
 
 @app.route('/api/chat/<int:task_id>/send', methods=['POST'])
 @require_auth
+@rate_limit('20 per minute')
 def send_chat_message(task_id):
     """Send a chat message (REST fallback for Socket.IO)"""
     data = request.get_json()
@@ -3276,6 +3292,9 @@ def send_chat_message(task_id):
     
     if not message:
         return jsonify({'success': False, 'message': 'Message cannot be empty'}), 400
+    
+    if len(message) > 5000:
+        return jsonify({'success': False, 'message': 'Message too long (max 5000 chars)'}), 400
     
     with get_db() as (cursor, conn):
         # Verify user is part of this task
@@ -4452,6 +4471,16 @@ def verify_wallet_topup():
         # Payment verified! Now credit wallet
         print(f"[WALLET] Payment verified, crediting wallet...")
         
+        # SECURITY: Verify amount from the Razorpay order, not client-supplied amount
+        try:
+            rzp_order = razorpay_client.order.fetch(order_id)
+            verified_amount = rzp_order.get('amount', 0)  # in paise
+            if verified_amount != amount:
+                print(f"⚠️ [WALLET] Client amount ({amount}) != Razorpay order amount ({verified_amount}), using Razorpay amount")
+                amount = verified_amount
+        except Exception as order_err:
+            print(f"⚠️ [WALLET] Could not fetch order from Razorpay: {order_err}, using client amount")
+        
         with get_db() as (cursor, conn):
             # Idempotency check: skip if already credited by webhook or previous call
             cursor.execute(f'''
@@ -4933,6 +4962,9 @@ def submit_contact_message():
 
     if not name or not email or not message:
         return jsonify({'success': False, 'message': 'Name, email and message are required'}), 400
+
+    if len(name) > 200 or len(email) > 200 or len(subject) > 500 or len(message) > 10000:
+        return jsonify({'success': False, 'message': 'Input too long'}), 400
 
     # Optional: get user_id from token if logged in
     user_id = None

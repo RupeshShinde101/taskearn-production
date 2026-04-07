@@ -536,7 +536,9 @@ async function updateUserData(userId, updates) {
     // Update current user if logged in — merge updates into existing currentUser
     // instead of replacing it, to preserve fields like profilePhoto
     if (currentUser && currentUser.id === userId) {
-        Object.assign(currentUser, updates);
+        Object.assign(currentUser, Object.fromEntries(
+            Object.entries(updates).filter(([k]) => !k.startsWith('__'))
+        ));
         saveCurrentSession(currentUser);
     }
     return users[userId];
@@ -2825,11 +2827,11 @@ async function viewUserReviews(userId, userName) {
             reviewsHtml = reviews.map(r => `
                 <div style="padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <strong style="font-size: 0.9rem;">${r.rater_name || 'Anonymous'}</strong>
+                        <strong style="font-size: 0.9rem;">${escapeHtml(r.rater_name || 'Anonymous')}</strong>
                         <span style="color: var(--warning); font-size: 0.85rem;">${generateStars(r.rating)}</span>
                     </div>
-                    ${r.review ? `<p style="color: var(--gray); font-size: 0.9rem; margin: 4px 0;">${r.review}</p>` : ''}
-                    <small style="color: var(--gray-light);">${r.task_title || ''}</small>
+                    ${r.review ? `<p style="color: var(--gray); font-size: 0.9rem; margin: 4px 0;">${escapeHtml(r.review)}</p>` : ''}
+                    <small style="color: var(--gray-light);">${escapeHtml(r.task_title || '')}</small>
                 </div>
             `).join('');
         }
@@ -2840,7 +2842,7 @@ async function viewUserReviews(userId, userName) {
                     <button class="btn btn-outline" onclick="openTaskDetail(window._lastTaskId)" style="padding: 6px 12px; font-size: 0.85rem;">
                         <i class="fas fa-arrow-left"></i> Back
                     </button>
-                    <h3 style="margin: 0;">Reviews for ${userName}</h3>
+                    <h3 style="margin: 0;">Reviews for ${escapeHtml(userName)}</h3>
                 </div>
                 <div style="display: flex; gap: 20px; padding: 15px; background: var(--light); border-radius: var(--radius); margin-bottom: 15px; text-align: center;">
                     <div style="flex: 1;">
@@ -4987,7 +4989,9 @@ function loadProfilePage() {
     if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
         AuthAPI.getCurrentUser().then(function(result) {
             if (result && result.success && result.user) {
-                Object.assign(currentUser, result.user);
+                Object.assign(currentUser, Object.fromEntries(
+                    Object.entries(result.user).filter(([k]) => !k.startsWith('__'))
+                ));
                 saveUserToStorage(currentUser);
                 renderProfileUI();
             }
@@ -5212,7 +5216,9 @@ async function handleProfilePhoto(event) {
         var result = await UserAPI.updateProfile({ profile_photo: base64 });
         if (result.success) {
             if (result.user) {
-                Object.assign(currentUser, result.user);
+                Object.assign(currentUser, Object.fromEntries(
+                    Object.entries(result.user).filter(([k]) => !k.startsWith('__'))
+                ));
             }
             saveUserToStorage(currentUser);
             showToast('Profile photo updated!', 'success');

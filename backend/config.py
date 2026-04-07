@@ -15,6 +15,8 @@ class Config:
     # Secret key for JWT and sessions - MUST be set via environment variable in production
     SECRET_KEY = os.environ.get('SECRET_KEY', '')
     if not SECRET_KEY:
+        if os.environ.get('DATABASE_URL'):
+            raise RuntimeError("SECRET_KEY must be set in production (DATABASE_URL is configured)")
         import secrets as _secrets
         SECRET_KEY = _secrets.token_hex(32)
         print("⚠️  SECRET_KEY not set in environment — using random key (sessions won't survive restarts)")

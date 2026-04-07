@@ -79,4 +79,60 @@
         <changefreq>daily</changefreq>
         <priority>0.5</priority>
     </url>
+
+    <!-- Wallet -->
+    <url>
+        <loc>https://www.workmate4u.com/wallet.html</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- Profile -->
+    <url>
+        <loc>https://www.workmate4u.com/profile.html</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.7</priority>
+    </url>
+
+    <!-- Posted Tasks -->
+    <url>
+        <loc>https://www.workmate4u.com/posted.html</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- Accepted Tasks -->
+    <url>
+        <loc>https://www.workmate4u.com/accepted.html</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- Completed Tasks -->
+    <url>
+        <loc>https://www.workmate4u.com/completed.html</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.6</priority>
+    </url>
+
+    <!-- Chat -->
+    <url>
+        <loc>https://www.workmate4u.com/chat.html</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.7</priority>
+    </url>
+
+    <!-- Task In Progress -->
+    <url>
+        <loc>https://www.workmate4u.com/task-in-progress.html</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.7</priority>
+    </url>
 </urlset>

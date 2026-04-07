@@ -2916,6 +2916,23 @@ def deduct_penalty():
             VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
         ''', (wallet['id'], request.user_id, 'penalty', amount, new_balance, description, task_id, now))
         
+        # Credit penalty to company wallet as platform revenue
+        company_wallet = get_or_create_wallet('1')
+        company_balance = float(company_wallet.get('balance', 0))
+        company_new_balance = company_balance + amount
+        
+        cursor.execute(f'''
+            UPDATE wallets
+            SET balance = {PH}, total_earned = total_earned + {PH}, updated_at = {PH}
+            WHERE user_id = {PH}
+        ''', (company_new_balance, amount, now, '1'))
+        
+        cursor.execute(f'''
+            INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, task_id, created_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (company_wallet.get('id'), '1', 'penalty', amount, company_new_balance,
+              f'Penalty from user {request.user_id}: {description}', task_id, now))
+        
         conn.commit()
     
     debt_suspended = new_balance <= -500

@@ -2,7 +2,7 @@
 // Razorpay Payment Integration for Workmate4u
 // ========================================
 
-const RAZORPAY_KEY_ID = 'rzp_live_SRt7rogPTT3FuK'; // Live Key ID - Updated March 17
+const RAZORPAY_KEY_ID = 'rzp_live_Sah3BHaaEDLUJr'; // Live Key ID - Updated March 17
 
 // ========================================
 // PAYMENT FUNCTIONS

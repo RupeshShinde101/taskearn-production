@@ -1430,6 +1430,6 @@ function acceptCookies(){localStorage.setItem('cookieConsent','accepted');docume
 function declineCookies(){localStorage.setItem('cookieConsent','declined');document.getElementById('cookieConsent').style.display='none';}
 </script>
 
-<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>
+<script src="sw-register.js"></script>
 </body>
 </html>

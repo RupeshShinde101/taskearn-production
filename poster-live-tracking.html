@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helper Live Tracking - Workmate4u</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Poppins', sans-serif; background: #f5f7fb; color: #1f2937; }
+        .layout { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+        #map { width: 100%; height: 100%; }
+        .sidebar { background: #fff; border-left: 1px solid #e5e7eb; padding: 20px; overflow-y: auto; }
+        .heading { margin-bottom: 16px; }
+        .heading h2 { font-size: 22px; margin-bottom: 6px; }
+        .heading p { color: #6b7280; font-size: 13px; }
+        .status { display: inline-flex; align-items: center; gap: 8px; background: #ecfeff; color: #0e7490; border: 1px solid #bae6fd; border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #0ea5e9; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: .35; } 100% { opacity: 1; } }
+        .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+        .card h4 { font-size: 13px; color: #6b7280; margin-bottom: 10px; }
+        .helper-row { display: flex; gap: 12px; align-items: center; }
+        .avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #0ea5e9); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+        .helper-meta strong { display: block; font-size: 16px; }
+        .helper-meta small { color: #6b7280; }
+        .kv { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; font-size: 14px; }
+        .kv span:first-child { color: #6b7280; }
+        .value { font-weight: 600; }
+        .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+        .btn { border: none; border-radius: 10px; padding: 10px 12px; font-weight: 600; cursor: pointer; }
+        .btn.primary { background: #2563eb; color: #fff; }
+        .btn.success { background: #059669; color: #fff; }
+        .btn.outline { background: #fff; color: #2563eb; border: 1px solid #93c5fd; }
+        .btn.block { width: 100%; margin-top: 10px; }
+        .muted { color: #6b7280; font-size: 12px; }
+        .warn { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; font-size: 12px; margin-top: 10px; }
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
+            .sidebar { border-left: 0; border-top: 1px solid #e5e7eb; }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <div id="map"></div>
+        <aside class="sidebar">
+            <div class="heading">
+                <h2 id="taskTitle">Live Helper Tracking</h2>
+                <p id="taskSubtitle">Loading tracking details...</p>
+            </div>
+            <div class="status"><span class="dot"></span><span id="liveStatus">Live updates active</span></div>
+
+            <div class="card">
+                <h4>HELPER CONTACT</h4>
+                <div class="helper-row">
+                    <div class="avatar" id="helperAvatar">?</div>
+                    <div class="helper-meta">
+                        <strong id="helperName">Waiting for helper</strong>
+                        <small id="helperPhone">Phone unavailable</small>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn success" id="callBtn"><i class="fas fa-phone"></i> Call</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h4>LIVE DISTANCE</h4>
+                <div class="kv"><span>ETA</span><span class="value" id="eta">Calculating...</span></div>
+                <div class="kv"><span>Distance</span><span class="value" id="distance">Calculating...</span></div>
+                <div class="kv"><span>Task ID</span><span class="value" id="taskIdLabel">-</span></div>
+                <div class="muted" id="lastUpdated">Waiting for location updates...</div>
+            </div>
+
+            <div class="card">
+                <h4>TASK LOCATION</h4>
+                <div id="taskAddress" class="muted">Address unavailable</div>
+                <button class="btn outline block" onclick="refreshTracking()"><i class="fas fa-rotate-right"></i> Refresh</button>
+                <button class="btn outline block" onclick="window.location.href='index.html'">Back to Home</button>
+                <div id="waitingNote" class="warn" style="display:none;">Helper accepted but live GPS is not available yet. It will appear automatically once helper shares location.</div>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        const API_URL = 'https://taskearn-production-production.up.railway.app/api';
+
+        const params = new URLSearchParams(window.location.search);
+        const taskId = parseInt(params.get('task') || params.get('taskId') || '0', 10);
+        const token = localStorage.getItem('taskearn_token') || '';
+
+        let map;
+        let destinationMarker;
+        let helperMarker;
+        let pollTimer;
+        let trackingData = null;
+
+        function initMap(centerLat, centerLng) {
+            map = L.map('map').setView([centerLat, centerLng], 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap',
+                maxZoom: 19
+            }).addTo(map);
+        }
+
+        function setHelperCard(helper) {
+            const helperName = document.getElementById('helperName');
+            const helperPhone = document.getElementById('helperPhone');
+            const helperAvatar = document.getElementById('helperAvatar');
+            const callBtn = document.getElementById('callBtn');
+
+            if (helper && helper.id) {
+                helperName.textContent = helper.name || 'Helper';
+                helperPhone.textContent = helper.phone || 'Phone unavailable';
+                helperAvatar.textContent = (helper.name || '?').charAt(0).toUpperCase();
+                callBtn.disabled = !helper.phone;
+                callBtn.onclick = function () {
+                    if (helper.phone) window.location.href = 'tel:' + helper.phone;
+                };
+            } else {
+                helperName.textContent = 'Waiting for helper';
+                helperPhone.textContent = 'Phone unavailable';
+                helperAvatar.textContent = '?';
+                callBtn.disabled = true;
+            }
+        }
+
+        function updateSidebar(tracking) {
+            document.getElementById('taskTitle').textContent = tracking.title || 'Live Helper Tracking';
+            document.getElementById('taskSubtitle').textContent = tracking.status === 'accepted'
+                ? 'Task accepted. Tracking helper in real time.'
+                : 'Waiting for task acceptance.';
+            document.getElementById('taskIdLabel').textContent = '#' + tracking.taskId;
+            document.getElementById('taskAddress').textContent = tracking.destination?.address || tracking.pickup?.address || 'Address unavailable';
+            document.getElementById('eta').textContent = tracking.eta || 'Calculating...';
+            document.getElementById('distance').textContent = tracking.distance || 'Calculating...';
+            setHelperCard(tracking.helper);
+        }
+
+        function updateHelperMarker(location) {
+            if (!location || !location.lat || !location.lng) return;
+            const latLng = [location.lat, location.lng];
+
+            if (!helperMarker) {
+                helperMarker = L.marker(latLng, {
+                    icon: L.icon({
+                        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                        iconSize: [25, 41],
+                        iconAnchor: [12, 41],
+                        popupAnchor: [1, -34],
+                        shadowSize: [41, 41]
+                    })
+                }).addTo(map).bindPopup('Helper live location');
+            } else {
+                helperMarker.setLatLng(latLng);
+            }
+
+            const waitingNote = document.getElementById('waitingNote');
+            waitingNote.style.display = 'none';
+
+            if (destinationMarker) {
+                const bounds = L.latLngBounds([helperMarker.getLatLng(), destinationMarker.getLatLng()]);
+                map.fitBounds(bounds, { padding: [40, 40] });
+            } else {
+                map.setView(latLng, 15);
+            }
+        }
+
+        async function loadInitialTracking() {
+            if (!token) {
+                alert('Please login first.');
+                window.location.href = 'index.html';
+                return;
+            }
+            if (!taskId) {
+                alert('Missing task id for tracking.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            const response = await fetch(API_URL + '/tracking/' + taskId, {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const data = await response.json();
+            if (!data.success || !data.tracking) {
+                alert(data.message || 'Unable to load tracking data.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            trackingData = data.tracking;
+            updateSidebar(trackingData);
+
+            const centerLat = trackingData.destination?.lat || trackingData.pickup?.lat || 28.6139;
+            const centerLng = trackingData.destination?.lng || trackingData.pickup?.lng || 77.2090;
+            initMap(centerLat, centerLng);
+
+            if (trackingData.destination?.lat && trackingData.destination?.lng) {
+                destinationMarker = L.marker([trackingData.destination.lat, trackingData.destination.lng], {
+                    icon: L.icon({
+                        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                        iconSize: [25, 41],
+                        iconAnchor: [12, 41],
+                        popupAnchor: [1, -34],
+                        shadowSize: [41, 41]
+                    })
+                }).addTo(map).bindPopup('Task destination');
+            }
+
+            if (trackingData.helperLocation) {
+                updateHelperMarker(trackingData.helperLocation);
+            } else {
+                document.getElementById('waitingNote').style.display = 'block';
+            }
+        }
+
+        async function pollLiveLocation() {
+            try {
+                const response = await fetch(API_URL + '/tracking/' + taskId + '/location', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await response.json();
+
+                if (!data.success) return;
+
+                if (data.status === 'waiting' || data.status === 'no_location') {
+                    document.getElementById('waitingNote').style.display = 'block';
+                    document.getElementById('liveStatus').textContent = 'Waiting for helper GPS...';
+                    return;
+                }
+
+                if (data.status === 'completed') {
+                    document.getElementById('liveStatus').textContent = 'Task completed';
+                    if (pollTimer) {
+                        clearInterval(pollTimer);
+                        pollTimer = null;
+                    }
+                    return;
+                }
+
+                if (data.location) {
+                    updateHelperMarker(data.location);
+                    if (data.eta) document.getElementById('eta').textContent = data.eta;
+                    if (data.distance) document.getElementById('distance').textContent = data.distance;
+                    document.getElementById('liveStatus').textContent = 'Live updates active';
+                    document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+                }
+            } catch (e) {
+                document.getElementById('liveStatus').textContent = 'Reconnecting...';
+            }
+        }
+
+        async function refreshTracking() {
+            await loadInitialTracking();
+            await pollLiveLocation();
+        }
+
+        async function initPage() {
+            try {
+                await loadInitialTracking();
+                await pollLiveLocation();
+                pollTimer = setInterval(pollLiveLocation, 4000);
+            } catch (e) {
+                alert('Failed to initialize tracking page.');
+                window.location.href = 'index.html';
+            }
+        }
+
+        window.addEventListener('beforeunload', function () {
+            if (pollTimer) clearInterval(pollTimer);
+        });
+        window.addEventListener('load', initPage);
+    </script>
+<script src="sw-register.js"></script>
+</body>
+</html>

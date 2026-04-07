@@ -1,5 +1,6 @@
 [build]
-  # No build needed - using static HTML/CSS/JS
+  # Auto-stamp SW version on each deploy to bust caches
+  command = "node -e \"const fs=require('fs');const v='v'+Date.now();const f=fs.readFileSync('sw.js','utf8');fs.writeFileSync('sw.js',f.replace(/workmate4u-v[0-9]+/,'workmate4u-'+v));\""
   publish = "."
   functions = "netlify/functions"
 
@@ -47,21 +48,27 @@
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://checkout.razorpay.com https://cdn.razorpay.com https://*.razorpay.com https://unpkg.com https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com https://*.razorpay.com; connect-src 'self' https://taskearn-production-production.up.railway.app https://api.razorpay.com https://*.razorpay.com https://*.tile.openstreetmap.org https://router.project-osrm.org; frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.com;"
     Cache-Control = "public, max-age=3600"
 
+# Service worker must NEVER be cached — browser must always check for updates
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
 # Caching for static assets
 [[headers]]
   for = "*.js"
   [headers.values]
-    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
+    Cache-Control = "public, max-age=3600, stale-while-revalidate=86400"
 
 [[headers]]
   for = "*.css"
   [headers.values]
-    Cache-Control = "public, max-age=31536000"
+    Cache-Control = "public, max-age=3600, stale-while-revalidate=86400"
 
 [[headers]]
   for = "*.html"
   [headers.values]
-    Cache-Control = "public, max-age=3600"
+    Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
   for = "*.svg"

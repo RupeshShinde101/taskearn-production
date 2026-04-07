@@ -1,4 +1,6 @@
-const CACHE_NAME = 'workmate4u-v12';
+// DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
+// The browser detects byte-level changes to sw.js and triggers an update.
+const CACHE_NAME = 'workmate4u-v2026040801';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -8,18 +10,18 @@ const STATIC_ASSETS = [
   '/completed.html',
   '/profile.html',
   '/wallet.html',
-
   '/help.html',
   '/styles.css',
   '/app.js',
   '/api-client.js',
+  '/sw-register.js',
   '/shared.js',
   '/favicon.svg',
   '/icon-192x192.png',
   '/icon-512x512.png'
 ];
 
-// Install — cache static assets
+// Install — cache static assets and activate immediately
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
@@ -27,14 +29,26 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate — clean ALL old caches and notify clients to refresh
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+    ).then(() => {
+      // Notify all open tabs that a new version is active
+      self.clients.matchAll({ type: 'window' }).then(clients => {
+        clients.forEach(client => client.postMessage({ type: 'SW_UPDATED' }));
+      });
+    })
   );
   self.clients.claim();
+});
+
+// Listen for skip-waiting message from the page
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // Fetch — only cache same-origin resources; let browser handle CDN/cross-origin

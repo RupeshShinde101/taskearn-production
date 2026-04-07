@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Call - Workmate4u</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- WebRTC -->
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .call-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            backdrop-filter: blur(10px);
+        }
+
+        .call-status {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .provider-avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 50px;
+        }
+
+        .provider-name {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .call-status-text {
+            font-size: 16px;
+            opacity: 0.9;
+            margin-bottom: 15px;
+        }
+
+        .call-timer {
+            font-size: 32px;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 2px;
+        }
+
+        /* Video sections */
+        .video-section {
+            margin: 30px 0;
+            display: none;
+        }
+
+        .video-section.active {
+            display: block;
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            aspect-ratio: 9/16;
+            max-height: 400px;
+            margin-bottom: 15px;
+        }
+
+        #localVideo, #remoteVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        #remoteVideo {
+            transform: none;
+        }
+
+        .video-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* Call controls */
+        .call-controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .control-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 24px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-speaker {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        .btn-speaker:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
+        .btn-speaker.muted {
+            background: #ff6b6b;
+        }
+
+        .btn-mic {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        .btn-mic:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
+        .btn-mic.muted {
+            background: #ff6b6b;
+        }
+
+        .btn-end {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .btn-end:hover {
+            background: #ff5252;
+            transform: scale(1.1);
+        }
+
+        .btn-end:active {
+            transform: scale(0.95);
+        }
+
+        /* Incoming call UI */
+        .incoming-call {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .incoming-text {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 20px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50%, 100% { opacity: 0.9; }
+            25%, 75% { opacity: 0.5; }
+        }
+
+        .incoming-controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .btn-answer, .btn-reject {
+            padding: 15px 40px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-answer {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-answer:hover {
+            background: #388e3c;
+            transform: translateY(-2px);
+        }
+
+        .btn-reject {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-reject:hover {
+            background: #d32f2f;
+            transform: translateY(-2px);
+        }
+
+        /* Stats info */
+        .call-stats {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 20px;
+            font-size: 12px;
+            text-align: center;
+            opacity: 0.8;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            text-align: center;
+            color: #333;
+        }
+
+        .modal-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+            color: #4caf50;
+        }
+
+        @media (max-width: 768px) {
+            .call-container {
+                padding: 20px;
+            }
+
+            .provider-name {
+                font-size: 20px;
+            }
+
+            .control-btn {
+                width: 60px;
+                height: 60px;
+                font-size: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="call-container">
+        <!-- Call Status -->
+        <div class="call-status">
+            <div class="provider-avatar">
+                <i class="fas fa-user"></i>
+            </div>
+            <div class="provider-name" id="providerName">Provider Name</div>
+            <div class="call-status-text" id="statusText">Calling...</div>
+            <div class="call-timer" id="callTimer" style="display: none;">00:00</div>
+        </div>
+
+        <!-- Video Section (for WebRTC) -->
+        <div class="video-section" id="videoSection">
+            <div class="video-container">
+                <video id="localVideo" autoplay playsinline muted></video>
+                <div class="video-label">You</div>
+            </div>
+            <div class="video-container">
+                <video id="remoteVideo" autoplay playsinline></video>
+                <div class="video-label">Provider</div>
+            </div>
+        </div>
+
+        <!-- Incoming Call UI -->
+        <div class="incoming-call" id="incomingCall" style="display: none;">
+            <div class="incoming-text">
+                <i class="fas fa-phone"></i> Incoming Call
+            </div>
+            <div class="incoming-controls">
+                <button class="btn-answer" onclick="handleAcceptCall()">
+                    <i class="fas fa-phone"></i> Answer
+                </button>
+                <button class="btn-reject" onclick="handleRejectCall()">
+                    <i class="fas fa-phone-slash"></i> Reject
+                </button>
+            </div>
+        </div>
+
+        <!-- Call Controls -->
+        <div class="call-controls" id="callControls">
+            <button class="control-btn btn-speaker" id="speakerBtn" onclick="toggleSpeaker()" title="Speaker">
+                <i class="fas fa-volume-up"></i>
+            </button>
+            <button class="control-btn btn-mic" id="micBtn" onclick="toggleMic()" title="Microphone">
+                <i class="fas fa-microphone"></i>
+            </button>
+            <button class="control-btn btn-end" onclick="endCall()" title="End Call">
+                <i class="fas fa-phone-slash"></i>
+            </button>
+        </div>
+
+        <!-- Call Stats -->
+        <div class="call-stats" id="callStats" style="display: none;">
+            <div id="statsText">Connecting...</div>
+        </div>
+    </div>
+
+    <!-- End Call Modal -->
+    <div class="modal" id="endCallModal">
+        <div class="modal-content">
+            <div class="modal-icon">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <h2 style="margin-bottom: 10px;">Call Ended</h2>
+            <p id="callDuration" style="color: #666; margin-bottom: 20px;">Duration: 2:45</p>
+            <button onclick="closeEndCallModal()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                Done
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const urlParams = new URLSearchParams(window.location.search);
+        const taskId = urlParams.get('taskId') || '1';
+        const providerName = urlParams.get('providerName') || 'Provider';
+        const providerPhone = urlParams.get('providerPhone') || '+91-XXXX-XXXX';
+
+        let callActive = false;
+        let callStartTime = null;
+        let timerInterval = null;
+        let isMicMuted = false;
+        let isSpeakerMuted = false;
+        let localStream = null;
+        let remoteStream = null;
+        let peerConnection = null;
+
+        // Set provider name
+        document.getElementById('providerName').textContent = providerName;
+
+        // Check if device supports WebRTC
+        function supportsWebRTC() {
+            return !!(
+                navigator.getUserMedia ||
+                navigator.webkitGetUserMedia ||
+                navigator.mozGetUserMedia ||
+                navigator.msGetUserMedia ||
+                (navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+            );
+        }
+
+        // Initialize call
+        function initializeCall() {
+            // Show incoming call UI for demo
+            setTimeout(showIncomingCall, 500);
+        }
+
+        // Show incoming call
+        function showIncomingCall() {
+            document.getElementById('incomingCall').style.display = 'block';
+            // Play ringtone (optional)
+            playRingtone();
+        }
+
+        // Play ringtone
+        function playRingtone() {
+            // Create a simple beep sound using Web Audio API
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 800;
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+        }
+
+        // Handle accept call
+        function handleAcceptCall() {
+            document.getElementById('incomingCall').style.display = 'none';
+            document.getElementById('statusText').textContent = 'Call connected';
+            startCall();
+        }
+
+        // Handle reject call
+        function handleRejectCall() {
+            endCall();
+        }
+
+        // Start call
+        function startCall() {
+            if (!callActive) {
+                callActive = true;
+                callStartTime = Date.now();
+                
+                // Start timer
+                document.getElementById('callTimer').style.display = 'block';
+                timerInterval = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+                    const min = Math.floor(elapsed / 60);
+                    const sec = elapsed % 60;
+                    document.getElementById('callTimer').textContent = 
+                        String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+                }, 1000);
+
+                // Try to initialize WebRTC if supported
+                if (supportsWebRTC()) {
+                    initializeWebRTC();
+                } else {
+                    // Fallback: Use device's native calling
+                    makePhoneCall();
+                }
+            }
+        }
+
+        // Initialize WebRTC
+        function initializeWebRTC() {
+            navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                .then(stream => {
+                    localStream = stream;
+                    console.log('✅ Local stream obtained');
+                    
+                    // In a real app, would establish peer connection here
+                    // For now, just show stats
+                    document.getElementById('callStats').style.display = 'block';
+                    updateCallStats();
+                })
+                .catch(err => {
+                    console.error('✅ Error accessing media:', err);
+                    // Fallback to phone call
+                    makePhoneCall();
+                });
+        }
+
+        // Update call stats
+        function updateCallStats() {
+            const container = document.getElementById('statsText');
+            if (peerConnection) {
+                container.textContent = '📶 Video call active • Codec: VP8';
+            } else {
+                container.textContent = '📞 Audio call via device';
+            }
+        }
+
+        // Make phone call
+        function makePhoneCall() {
+            alert(`📞 Call initiated to ${providerPhone}\n\nUse your device's phone app to complete the call.`);
+            // Could also use: window.location.href = `tel:${providerPhone}`;
+        }
+
+        // Toggle microphone
+        function toggleMic() {
+            isMicMuted = !isMicMuted;
+            const btn = document.getElementById('micBtn');
+            
+            if (localStream) {
+                localStream.getAudioTracks().forEach(track => {
+                    track.enabled = !isMicMuted;
+                });
+            }
+            
+            btn.classList.toggle('muted');
+            btn.innerHTML = isMicMuted ? 
+                '<i class="fas fa-microphone-slash"></i>' : 
+                '<i class="fas fa-microphone"></i>';
+        }
+
+        // Toggle speaker
+        function toggleSpeaker() {
+            isSpeakerMuted = !isSpeakerMuted;
+            const btn = document.getElementById('speakerBtn');
+            
+            btn.classList.toggle('muted');
+            btn.innerHTML = isSpeakerMuted ? 
+                '<i class="fas fa-volume-mute"></i>' : 
+                '<i class="fas fa-volume-up"></i>';
+        }
+
+        // End call
+        function endCall() {
+            if (!callActive) return;
+            
+            callActive = false;
+            clearInterval(timerInterval);
+            
+            // Stop streams
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            
+            // Close peer connection
+            if (peerConnection) {
+                peerConnection.close();
+            }
+            
+            // Show end call modal
+            document.getElementById('callDuration').textContent = 
+                'Duration: ' + document.getElementById('callTimer').textContent;
+            document.getElementById('endCallModal').classList.add('active');
+        }
+
+        // Close end call modal
+        function closeEndCallModal() {
+            document.getElementById('endCallModal').classList.remove('active');
+            window.history.back();
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', initializeCall);
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peerConnection) {
+                peerConnection.close();
+            }
+        });
+    </script>
+<script src="sw-register.js"></script>
+</body>
+</html>

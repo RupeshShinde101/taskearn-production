@@ -668,8 +668,6 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
     min-height: 44px;
     align-items: center;
     justify-content: center;
-    background: none;
-    border: none;
 }
 
 .hamburger span {

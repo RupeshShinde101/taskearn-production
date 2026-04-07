@@ -1164,9 +1164,14 @@ def change_password():
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
-    """Get all active tasks (non-expired)"""
+    """Get all active tasks (non-expired) with optional pagination"""
     import datetime
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    
+    # Pagination params
+    page = request.args.get('page', type=int)
+    limit = request.args.get('limit', 20, type=int)
+    limit = min(max(limit, 1), 100)  # clamp 1-100
     
     print(f"\n[GET /api/tasks] Fetching tasks at {now}")
     
@@ -1178,14 +1183,33 @@ def get_tasks():
     
     try:
         with get_db() as (cursor, conn):
-            # Simple query without LEFT JOIN first
-            cursor.execute(f'''
-                SELECT id, title, description, category, location_lat, location_lng, 
-                       location_address, price, service_charge, posted_by, posted_at, expires_at, status
-                FROM tasks
-                WHERE status = 'active' AND expires_at > {PH}
-                ORDER BY posted_at DESC
-            ''', (now,))
+            # Build query
+            base_where = f"WHERE status = 'active' AND expires_at > {PH}"
+            
+            if page is not None:
+                # Paginated mode
+                cursor.execute(f'SELECT COUNT(*) as total FROM tasks {base_where}', (now,))
+                total = dict_from_row(cursor.fetchone())['total']
+                
+                offset = (page - 1) * limit
+                cursor.execute(f'''
+                    SELECT id, title, description, category, location_lat, location_lng, 
+                           location_address, price, service_charge, posted_by, posted_at, expires_at, status
+                    FROM tasks
+                    {base_where}
+                    ORDER BY posted_at DESC
+                    LIMIT {PH} OFFSET {PH}
+                ''', (now, limit, offset))
+            else:
+                # Legacy: return all (no pagination)
+                total = None
+                cursor.execute(f'''
+                    SELECT id, title, description, category, location_lat, location_lng, 
+                           location_address, price, service_charge, posted_by, posted_at, expires_at, status
+                    FROM tasks
+                    {base_where}
+                    ORDER BY posted_at DESC
+                ''', (now,))
             
             rows = cursor.fetchall()
             print(f"[GET /api/tasks] Found {len(rows)} active tasks")
@@ -1239,10 +1263,18 @@ def get_tasks():
                 })
         
         print(f"[GET /api/tasks] Returning {len(task_list)} tasks to client")
-        return jsonify({
+        response = {
             'success': True,
             'tasks': task_list
-        })
+        }
+        if total is not None:
+            response['pagination'] = {
+                'page': page,
+                'limit': limit,
+                'total': total,
+                'totalPages': (total + limit - 1) // limit if limit else 1
+            }
+        return jsonify(response)
         
     except Exception as e:
         print(f"[GET /api/tasks] Error: {e}")
@@ -2732,24 +2764,6 @@ def get_or_create_wallet(user_id):
         return wallet_dict
 
 
-@app.route('/api/wallet/debug', methods=['GET'])
-@require_auth
-def debug_wallet():
-    """Wallet debug - admin only"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    try:
-        with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT * FROM wallets WHERE user_id = {PH}', (request.user_id,))
-            wallet_row = cursor.fetchone()
-            if not wallet_row:
-                return jsonify({'success': False, 'message': 'Wallet not found'}), 404
-            wallet = dict_from_row(wallet_row)
-        return jsonify({'success': True, 'wallet': wallet}), 200
-    except Exception as e:
-        return jsonify({'success': False, 'message': 'Internal error'}), 500
-
-
 @app.route('/api/wallet', methods=['GET'])
 @require_auth
 def get_wallet():
@@ -3381,6 +3395,14 @@ def upload_proof(task_id):
     proof_type = data.get('type', 'photo')  # pickup, delivery, photo
     image_url = data.get('imageUrl')  # Base64 or URL
     notes = data.get('notes', '')
+    
+    # Validate upload size (max 2.8MB base64)
+    if image_url and len(image_url) > 2800000:
+        return jsonify({'success': False, 'message': 'Image too large. Maximum 2MB allowed.'}), 400
+    
+    # Validate image type if base64
+    if image_url and image_url.startswith('data:') and not image_url.startswith('data:image/'):
+        return jsonify({'success': False, 'message': 'Only image uploads are allowed'}), 400
     
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
@@ -4274,93 +4296,6 @@ def wallet_payment():
         return jsonify({'success': False, 'message': 'Payment processing failed'}), 500
 
 
-@app.route('/api/wallet/transaction', methods=['POST'])
-@require_auth
-def log_transaction():
-    """Log wallet transaction
-    
-    Request Body:
-    {
-        "type": "payment" | "topup" | "refund",
-        "amount": 500,
-        "taskId": 123,
-        "transactionId": "TXN-...",
-        "status": "completed" | "pending" | "failed"
-    }
-    """
-    data = request.get_json()
-    tx_type = data.get('type')
-    amount = data.get('amount')
-    task_id = data.get('taskId')
-    transaction_id = data.get('transactionId')
-    status = data.get('status', 'completed')
-    
-    if not all([tx_type, amount, transaction_id]):
-        return jsonify({'success': False, 'message': 'Missing transaction details'}), 400
-    
-    try:
-        with get_db() as (cursor, conn):
-            # Check if transaction already exists
-            cursor.execute(f'''
-                SELECT id FROM payments 
-                WHERE transaction_id = {PH}
-            ''', (transaction_id,))
-            
-            if cursor.fetchone():
-                return jsonify({
-                    'success': False,
-                    'message': 'Transaction already logged'
-                }), 400
-            
-            # Log transaction
-            cursor.execute(f'''
-                INSERT INTO payments 
-                (poster_id, amount, payment_method, status, 
-                 transaction_id, task_id, created_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (
-                request.user_id, amount, tx_type, status,
-                transaction_id, task_id,
-                datetime.datetime.now(datetime.timezone.utc).isoformat()
-            ))
-            
-            print(f"✅ Transaction logged: {tx_type} ₹{amount} - ID: {transaction_id}")
-            
-            return jsonify({
-                'success': True,
-                'message': 'Transaction logged',
-                'transactionId': transaction_id
-            }), 200
-            
-    except Exception as e:
-        print(f"❌ Error logging transaction: {e}")
-        return jsonify({'success': False, 'message': 'Failed to log transaction'}), 500
-
-
-@app.route('/api/wallet/balance', methods=['GET'])
-@require_auth
-def get_wallet_balance():
-    """Get current wallet balance for user"""
-    try:
-        with get_db() as (cursor, conn):
-            cursor.execute(f'''
-                SELECT wallet_balance FROM users WHERE id = {PH}
-            ''', (request.user_id,))
-            user = dict_from_row(cursor.fetchone())
-            
-            if not user:
-                return jsonify({'success': False, 'message': 'User not found'}), 404
-            
-            return jsonify({
-                'success': True,
-                'balance': float(user['wallet_balance'] or 0)
-            }), 200
-            
-    except Exception as e:
-        print(f"❌ Error getting wallet balance: {e}")
-        return jsonify({'success': False, 'message': 'Failed to get wallet balance'}), 500
-
-
 # ========================================
 # WALLET TOP-UP WITH RAZORPAY (REAL MONEY)
 # ========================================
@@ -4617,20 +4552,6 @@ def verify_wallet_topup():
         return jsonify({'success': False, 'message': f'Verification failed: {str(e)}'}), 500
 
 
-@app.route('/api/wallet/topup', methods=['POST'])
-@require_auth
-def topup_wallet():
-    """✅ DEPRECATED - Virtual wallet topups are disabled. Use Razorpay for all transactions.
-    
-    Only Razorpay-verified transactions are now supported.
-    Use /api/payments/wallet-topup-order for real money wallet top-ups.
-    """
-    return jsonify({
-        'success': False, 
-        'message': 'Virtual wallet top-ups are disabled. Please use Razorpay payment gateway with /api/payments/wallet-topup-order'
-    }), 403
-
-
 @app.route('/api/payments/<payment_id>', methods=['GET'])
 @require_auth
 def get_payment_status(payment_id):
@@ -4739,7 +4660,7 @@ def payment_webhook():
         raw_body = request.get_data(as_text=True)
         signature = request.headers.get('X-Razorpay-Signature', '')
         
-        # Verify signature only if secret is configured
+        # Verify signature — mandatory in production
         if webhook_secret and signature:
             expected_signature = hmac.new(
                 webhook_secret.encode('utf-8'),
@@ -4752,10 +4673,12 @@ def payment_webhook():
                 return jsonify({'success': False, 'message': 'Invalid signature'}), 401
             
             print("✅ Webhook signature verified")
-        elif signature and not webhook_secret:
-            print("⚠️  Webhook signature received but not verified (secret not configured)")
-        elif webhook_secret:
-            print("⚠️  Webhook secret configured but no signature in request")
+        elif not webhook_secret:
+            print("❌ Webhook secret not configured — rejecting request")
+            return jsonify({'success': False, 'message': 'Webhook not configured'}), 503
+        elif not signature:
+            print("❌ Missing webhook signature — rejecting request")
+            return jsonify({'success': False, 'message': 'Signature required'}), 401
         
         # Parse JSON payload
         data = json.loads(raw_body)
@@ -6427,6 +6350,333 @@ def admin_adjust_balance(user_id):
 # ========================================
 # STATIC FILE SERVING (Must come AFTER all API routes)
 # ========================================
+
+
+# ========================================
+# ACCOUNT DELETION (GDPR)
+# ========================================
+
+@app.route('/api/user/delete-account', methods=['POST'])
+@require_auth
+def delete_account():
+    """Delete user account and all associated data (GDPR right to be forgotten)"""
+    data = request.get_json() or {}
+    password = data.get('password', '')
+    
+    if not password:
+        return jsonify({'success': False, 'message': 'Password required to confirm deletion'}), 400
+    
+    try:
+        with get_db() as (cursor, conn):
+            # Verify password
+            cursor.execute(f'SELECT password_hash FROM users WHERE id = {PH}', (request.user_id,))
+            user = dict_from_row(cursor.fetchone())
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+            from werkzeug.security import check_password_hash
+            if not check_password_hash(user['password_hash'], password):
+                return jsonify({'success': False, 'message': 'Incorrect password'}), 401
+            
+            # Check for active tasks
+            cursor.execute(f"SELECT COUNT(*) as cnt FROM tasks WHERE (posted_by = {PH} OR accepted_by = {PH}) AND status IN ('active', 'accepted')", 
+                          (request.user_id, request.user_id))
+            active = dict_from_row(cursor.fetchone())
+            if active and active['cnt'] > 0:
+                return jsonify({'success': False, 'message': 'Cannot delete account with active tasks. Complete or cancel them first.'}), 400
+            
+            # Check for pending withdrawals
+            cursor.execute(f"SELECT COUNT(*) as cnt FROM withdrawal_requests WHERE user_id = {PH} AND status = 'pending'", (request.user_id,))
+            pending = dict_from_row(cursor.fetchone())
+            if pending and pending['cnt'] > 0:
+                return jsonify({'success': False, 'message': 'Cannot delete account with pending withdrawals.'}), 400
+            
+            uid = request.user_id
+            
+            # Delete user data in order (foreign key safe)
+            cursor.execute(f'DELETE FROM notifications WHERE user_id = {PH}', (uid,))
+            cursor.execute(f'DELETE FROM chat_messages WHERE sender_id = {PH} OR receiver_id = {PH}', (uid, uid))
+            cursor.execute(f'DELETE FROM helper_ratings WHERE helper_id = {PH} OR rater_id = {PH}', (uid, uid))
+            cursor.execute(f'DELETE FROM wallet_transactions WHERE user_id = {PH}', (uid,))
+            cursor.execute(f'DELETE FROM wallets WHERE user_id = {PH}', (uid,))
+            cursor.execute(f'DELETE FROM referrals WHERE referrer_id = {PH} OR referred_id = {PH}', (uid, uid))
+            cursor.execute(f'DELETE FROM location_tracking WHERE user_id = {PH}', (uid,))
+            cursor.execute(f'DELETE FROM task_proofs WHERE user_id = {PH}', (uid,))
+            cursor.execute(f'DELETE FROM password_resets WHERE user_id = {PH}', (uid,))
+            cursor.execute(f'DELETE FROM withdrawal_requests WHERE user_id = {PH}', (uid,))
+            cursor.execute(f'DELETE FROM sos_alerts WHERE user_id = {PH}', (uid,))
+            cursor.execute(f'DELETE FROM contact_messages WHERE user_id = {PH}', (uid,))
+            
+            # Anonymize completed tasks (keep for records but remove PII)
+            cursor.execute(f"UPDATE tasks SET posted_by = NULL WHERE posted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
+            cursor.execute(f"UPDATE tasks SET accepted_by = NULL WHERE accepted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
+            
+            # Delete the user
+            cursor.execute(f'DELETE FROM users WHERE id = {PH}', (uid,))
+            
+            conn.commit()
+            
+            print(f"🗑️ Account deleted: user {uid}")
+        
+        return jsonify({'success': True, 'message': 'Account deleted successfully'}), 200
+        
+    except Exception as e:
+        print(f"❌ Error deleting account: {e}")
+        return jsonify({'success': False, 'message': 'Failed to delete account'}), 500
+
+
+# ========================================
+# DISPUTE RESOLUTION SYSTEM
+# ========================================
+
+@app.route('/api/tasks/<int:task_id>/dispute', methods=['POST'])
+@require_auth
+def file_dispute(task_id):
+    """File a dispute for a task"""
+    data = request.get_json()
+    reason = data.get('reason', '').strip()
+    details = data.get('details', '').strip()
+    
+    if not reason:
+        return jsonify({'success': False, 'message': 'Dispute reason is required'}), 400
+    
+    if len(reason) > 200:
+        return jsonify({'success': False, 'message': 'Reason must be under 200 characters'}), 400
+    
+    try:
+        with get_db() as (cursor, conn):
+            # Verify task exists and user is involved
+            cursor.execute(f'SELECT id, posted_by, accepted_by, status FROM tasks WHERE id = {PH}', (task_id,))
+            task = dict_from_row(cursor.fetchone())
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found'}), 404
+            
+            if request.user_id not in [str(task.get('posted_by', '')), str(task.get('accepted_by', ''))]:
+                return jsonify({'success': False, 'message': 'You are not involved in this task'}), 403
+            
+            # Check for existing open dispute
+            cursor.execute(f"SELECT id FROM disputes WHERE task_id = {PH} AND status IN ('open', 'under_review')", (task_id,))
+            if cursor.fetchone():
+                return jsonify({'success': False, 'message': 'A dispute is already open for this task'}), 400
+            
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                INSERT INTO disputes (task_id, filed_by, reason, details, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (task_id, request.user_id, html_escape(reason), html_escape(details), 'open', now))
+            
+            # Notify admin
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', ('1', task_id, 'dispute', 'New Dispute Filed',
+                  f'Dispute filed by user {request.user_id} for task #{task_id}: {reason}',
+                  'unread', now))
+            
+            conn.commit()
+        
+        return jsonify({'success': True, 'message': 'Dispute filed successfully. Our team will review it.'}), 201
+        
+    except Exception as e:
+        print(f"❌ Error filing dispute: {e}")
+        return jsonify({'success': False, 'message': 'Failed to file dispute'}), 500
+
+
+@app.route('/api/user/disputes', methods=['GET'])
+@require_auth
+def get_user_disputes():
+    """Get disputes for current user"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT d.*, t.title as task_title
+                FROM disputes d
+                JOIN tasks t ON d.task_id = t.id
+                WHERE d.filed_by = {PH}
+                ORDER BY d.created_at DESC
+            ''', (request.user_id,))
+            disputes = [dict_from_row(row) for row in cursor.fetchall()]
+        
+        return jsonify({'success': True, 'disputes': disputes}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to load disputes'}), 500
+
+
+@app.route('/api/admin/disputes', methods=['GET'])
+@require_auth
+def admin_get_disputes():
+    """Admin: get all disputes"""
+    if request.user_id != '1':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT d.*, t.title as task_title, u.name as filed_by_name
+                FROM disputes d
+                JOIN tasks t ON d.task_id = t.id
+                JOIN users u ON d.filed_by = u.id
+                ORDER BY d.created_at DESC
+                LIMIT 50
+            ''')
+            disputes = [dict_from_row(row) for row in cursor.fetchall()]
+        
+        return jsonify({'success': True, 'disputes': disputes}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to load disputes'}), 500
+
+
+@app.route('/api/admin/disputes/<int:dispute_id>/resolve', methods=['POST'])
+@require_auth
+def admin_resolve_dispute(dispute_id):
+    """Admin: resolve a dispute"""
+    if request.user_id != '1':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    decision = data.get('decision', '').strip()
+    refund_amount = float(data.get('refundAmount', 0))
+    
+    if not decision:
+        return jsonify({'success': False, 'message': 'Decision is required'}), 400
+    
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT * FROM disputes WHERE id = {PH}', (dispute_id,))
+            dispute = dict_from_row(cursor.fetchone())
+            if not dispute:
+                return jsonify({'success': False, 'message': 'Dispute not found'}), 404
+            
+            cursor.execute(f'''
+                UPDATE disputes SET status = 'resolved', resolution = {PH}, resolved_by = {PH}, resolved_at = {PH}
+                WHERE id = {PH}
+            ''', (html_escape(decision), request.user_id, now, dispute_id))
+            
+            # Process refund if applicable
+            if refund_amount > 0:
+                filed_by = dispute['filed_by']
+                wallet = get_or_create_wallet(filed_by)
+                new_balance = float(wallet['balance']) + refund_amount
+                
+                cursor.execute(f'''
+                    UPDATE wallets SET balance = {PH}, total_earned = total_earned + {PH} WHERE user_id = {PH}
+                ''', (new_balance, refund_amount, filed_by))
+                
+                cursor.execute(f'''
+                    INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, task_id, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (wallet['id'], filed_by, 'credit', refund_amount, new_balance,
+                      f'Dispute resolution refund', dispute['task_id'], now))
+            
+            # Notify the filer
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (dispute['filed_by'], dispute['task_id'], 'dispute_resolved',
+                  'Dispute Resolved',
+                  f'Your dispute has been resolved: {decision}' + (f' Refund: ₹{refund_amount:.2f}' if refund_amount > 0 else ''),
+                  'unread', now))
+            
+            conn.commit()
+        
+        return jsonify({'success': True, 'message': 'Dispute resolved'}), 200
+    except Exception as e:
+        print(f"❌ Error resolving dispute: {e}")
+        return jsonify({'success': False, 'message': 'Failed to resolve dispute'}), 500
+
+
+# ========================================
+# BOOKMARKS
+# ========================================
+
+@app.route('/api/tasks/<int:task_id>/bookmark', methods=['POST'])
+@require_auth
+def toggle_bookmark(task_id):
+    """Toggle bookmark on a task"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT id FROM bookmarks WHERE user_id = {PH} AND task_id = {PH}', 
+                          (request.user_id, task_id))
+            existing = cursor.fetchone()
+            
+            if existing:
+                cursor.execute(f'DELETE FROM bookmarks WHERE user_id = {PH} AND task_id = {PH}', 
+                              (request.user_id, task_id))
+                conn.commit()
+                return jsonify({'success': True, 'bookmarked': False, 'message': 'Bookmark removed'}), 200
+            else:
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'''
+                    INSERT INTO bookmarks (user_id, task_id, created_at) VALUES ({PH}, {PH}, {PH})
+                ''', (request.user_id, task_id, now))
+                conn.commit()
+                return jsonify({'success': True, 'bookmarked': True, 'message': 'Task bookmarked'}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to update bookmark'}), 500
+
+
+@app.route('/api/user/bookmarks', methods=['GET'])
+@require_auth
+def get_bookmarks():
+    """Get user's bookmarked tasks"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT t.*, u.name as poster_name, u.rating as poster_rating
+                FROM bookmarks b
+                JOIN tasks t ON b.task_id = t.id
+                LEFT JOIN users u ON t.posted_by = u.id
+                WHERE b.user_id = {PH}
+                ORDER BY b.created_at DESC
+            ''', (request.user_id,))
+            tasks = [dict_from_row(row) for row in cursor.fetchall()]
+        
+        return jsonify({'success': True, 'tasks': tasks}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to load bookmarks'}), 500
+
+
+# ========================================
+# TRANSACTION EXPORT
+# ========================================
+
+@app.route('/api/wallet/export', methods=['GET'])
+@require_auth
+def export_transactions():
+    """Export wallet transactions as CSV"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT type, amount, balance_after, description, created_at
+                FROM wallet_transactions
+                WHERE user_id = {PH}
+                ORDER BY created_at DESC
+            ''', (request.user_id,))
+            rows = [dict_from_row(row) for row in cursor.fetchall()]
+        
+        import io, csv
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Date', 'Type', 'Amount (₹)', 'Balance After (₹)', 'Description'])
+        for r in rows:
+            writer.writerow([
+                r.get('created_at', ''),
+                r.get('type', ''),
+                r.get('amount', 0),
+                r.get('balance_after', 0),
+                r.get('description', '')
+            ])
+        
+        from flask import Response
+        csv_data = output.getvalue()
+        return Response(
+            csv_data,
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename=transactions_{request.user_id}.csv'}
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to export transactions'}), 500
 
 
 # ========================================

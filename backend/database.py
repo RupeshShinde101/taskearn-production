@@ -413,6 +413,31 @@ def init_postgres_db():
                 created_at TIMESTAMP NOT NULL
             )
         ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS disputes (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER NOT NULL REFERENCES tasks(id),
+                filed_by VARCHAR(50) NOT NULL REFERENCES users(id),
+                reason VARCHAR(200) NOT NULL,
+                details TEXT,
+                status VARCHAR(20) DEFAULT 'open',
+                resolution TEXT,
+                resolved_by VARCHAR(50),
+                resolved_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bookmarks (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL REFERENCES users(id),
+                task_id INTEGER NOT NULL REFERENCES tasks(id),
+                created_at TIMESTAMP NOT NULL,
+                UNIQUE(user_id, task_id)
+            )
+        ''')
         
         # Commit CREATE TABLEs and ensure clean transaction state for ALTER TABLEs
         conn.commit()

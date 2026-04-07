@@ -1088,6 +1088,134 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// ========================================
+// ACCOUNT DELETION
+// ========================================
+function confirmDeleteAccount() {
+    const pwd = prompt('This action is PERMANENT. Type your password to confirm:');
+    if (!pwd) return;
+    if (!confirm('Are you absolutely sure? All your data will be permanently deleted.')) return;
+    
+    fetch(API_BASE + '/api/user/delete-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+        body: JSON.stringify({ password: pwd })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert('Account deleted. We\'re sorry to see you go.');
+            localStorage.clear();
+            window.location.reload();
+        } else {
+            alert(data.message || 'Failed to delete account');
+        }
+    })
+    .catch(() => alert('Network error. Try again.'));
+}
+
+// ========================================
+// DISPUTE / REPORT
+// ========================================
+function openDisputeModal(taskId) {
+    closeModal('taskDetailModal');
+    const reasons = ['Task description misleading', 'Inappropriate content', 'Suspected scam', 'Payment issue', 'Other'];
+    const optionsHtml = reasons.map(r => `<option value="${r}">${r}</option>`).join('');
+    
+    const html = `
+        <div style="padding:20px;">
+            <h3 style="margin-bottom:15px;"><i class="fas fa-flag" style="color:#ef4444;"></i> Report / Dispute Task #${taskId}</h3>
+            <label style="font-weight:600;display:block;margin-bottom:5px;">Reason</label>
+            <select id="disputeReason" style="width:100%;padding:10px;border:1px solid var(--border,#e2e8f0);border-radius:8px;margin-bottom:12px;font-size:14px;">
+                <option value="">-- Select reason --</option>
+                ${optionsHtml}
+            </select>
+            <label style="font-weight:600;display:block;margin-bottom:5px;">Details (optional)</label>
+            <textarea id="disputeDetails" maxlength="500" rows="3" style="width:100%;padding:10px;border:1px solid var(--border,#e2e8f0);border-radius:8px;resize:vertical;font-size:14px;" placeholder="Describe the issue..."></textarea>
+            <div style="display:flex;gap:10px;margin-top:15px;">
+                <button class="btn btn-outline" onclick="closeModal('disputeModal')" style="flex:1;padding:10px;">Cancel</button>
+                <button class="btn" onclick="submitDispute(${taskId})" style="flex:1;padding:10px;background:#ef4444;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Submit Report</button>
+            </div>
+        </div>
+    `;
+    
+    let modal = document.getElementById('disputeModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'disputeModal';
+        modal.className = 'modal';
+        modal.innerHTML = `<div class="modal-content" style="max-width:450px;">${html}</div>`;
+        document.body.appendChild(modal);
+    } else {
+        modal.querySelector('.modal-content').innerHTML = html;
+    }
+    openModal('disputeModal');
+}
+
+function submitDispute(taskId) {
+    const reason = document.getElementById('disputeReason').value;
+    const details = document.getElementById('disputeDetails').value;
+    if (!reason) { alert('Please select a reason'); return; }
+    
+    fetch(API_BASE + '/api/tasks/' + taskId + '/dispute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+        body: JSON.stringify({ reason, details })
+    })
+    .then(r => r.json())
+    .then(data => {
+        closeModal('disputeModal');
+        alert(data.message || (data.success ? 'Dispute filed!' : 'Failed'));
+    })
+    .catch(() => alert('Network error. Try again.'));
+}
+
+// ========================================
+// BOOKMARKS
+// ========================================
+function toggleBookmark(taskId, el) {
+    fetch(API_BASE + '/api/tasks/' + taskId + '/bookmark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const icon = el.querySelector('i');
+            if (data.bookmarked) {
+                icon.className = 'fas fa-bookmark';
+                el.style.color = '#667eea';
+            } else {
+                icon.className = 'far fa-bookmark';
+                el.style.color = '#94a3b8';
+            }
+        }
+    })
+    .catch(() => {});
+}
+
+// ========================================
+// TRANSACTION EXPORT
+// ========================================
+function exportTransactionsCSV() {
+    fetch(API_BASE + '/api/wallet/export', {
+        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+    })
+    .then(r => {
+        if (!r.ok) throw new Error('Failed');
+        return r.blob();
+    })
+    .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'transactions.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    })
+    .catch(() => alert('Failed to export. Try again.'));
+}
+
 function toggleNotifications() {
     const dropdown = document.getElementById('notificationDropdown');
     if (!dropdown) return;
@@ -2477,9 +2605,10 @@ function renderTasks(filtered = null) {
                 <div class="task-card-header">
                     <span class="task-category">${formatCategory(task.category)}</span>
                     <span class="task-price">₹${task.price + getServiceCharge(task.category)}</span>
+                    ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
                 </div>
-                <h4>${task.title}</h4>
-                <p>${task.description}</p>
+                <h4>${escapeHtml(task.title)}</h4>
+                <p>${escapeHtml(task.description)}</p>
                 <div class="task-meta">
                     <span><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
                     ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
@@ -2562,7 +2691,7 @@ function openTaskDetail(taskId) {
         <div class="task-detail-header">
             <span class="task-category">${formatCategory(task.category)}</span>
             ${isOwner ? '<span class="owner-badge"><i class="fas fa-user-check"></i> Your Task</span>' : ''}
-            <h2>${task.title}</h2>
+            <h2>${escapeHtml(task.title)}</h2>
             <div class="task-detail-meta">
                 <span><i class="fas fa-map-marker-alt"></i> ${task.location.address}</span>
                 <span><i class="fas fa-ruler"></i> ${dist.toFixed(1)} km away</span>
@@ -2572,7 +2701,7 @@ function openTaskDetail(taskId) {
         
         <div class="task-detail-body">
             <h4>Description</h4>
-            <p>${task.description}</p>
+            <p>${escapeHtml(task.description)}</p>
         </div>
         
         <div class="task-detail-map" id="taskDetailMap"></div>
@@ -2588,7 +2717,7 @@ function openTaskDetail(taskId) {
         <div class="task-poster">
             <div class="poster-avatar"><i class="fas fa-user"></i></div>
             <div class="poster-info">
-                <h4>${task.postedBy.name}</h4>
+                <h4>${escapeHtml(task.postedBy.name)}</h4>
                 <span>${task.postedBy.tasksPosted} tasks posted</span>
                 <div class="poster-rating">
                     ${generateStars(task.postedBy.rating)}
@@ -2618,6 +2747,9 @@ function openTaskDetail(taskId) {
             <button class="btn btn-outline" onclick="shareTask(${task.id})" style="flex:0 0 auto; padding: 12px 16px; margin: 5px;" title="Share this task">
                 <i class="fas fa-share-alt"></i>
             </button>
+            ${!isOwner && currentUser ? `<button class="btn btn-outline" onclick="event.stopPropagation(); openDisputeModal(${task.id})" style="flex:0 0 auto; padding: 12px 16px; margin: 5px; color:#ef4444; border-color:#ef4444;" title="Report this task">
+                <i class="fas fa-flag"></i>
+            </button>` : ''}
             ${!isOwner ? `
             <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
                 <i class="fas fa-map-marker-alt"></i> Navigate
@@ -3617,8 +3749,8 @@ function showTaskPostedSuccess(task) {
                 <span class="task-category">${formatCategory(task.category)}</span>
                 <span class="task-price">₹${task.price}</span>
             </div>
-            <h4>${task.title}</h4>
-            <p>${task.description}</p>
+            <h4>${escapeHtml(task.title)}</h4>
+            <p>${escapeHtml(task.description)}</p>
             <div class="preview-meta">
                 <span><i class="fas fa-map-marker-alt"></i> ${task.location.address}</span>
                 <span><i class="fas fa-clock"></i> 12 hours left</span>
@@ -4685,7 +4817,7 @@ function updateNavForUser() {
                 // Add user profile and logout for mobile
                 const profileLi = document.createElement('li');
                 profileLi.className = 'mobile-profile-item';
-                profileLi.innerHTML = `<a href="profile.html" onclick="toggleMobileMenu();"><i class="fas fa-user-circle"></i> ${currentUser.name}</a>`;
+                profileLi.innerHTML = `<a href="profile.html" onclick="toggleMobileMenu();"><i class="fas fa-user-circle"></i> ${escapeHtml(currentUser.name)}</a>`;
                 mobileMenuList.appendChild(profileLi);
                 
                 const dashboardLi = document.createElement('li');
@@ -4759,7 +4891,7 @@ function openUserProfile() {
             <div class="profile-avatar">
                 <i class="fas fa-user-circle"></i>
             </div>
-            <h2>${currentUser.name}</h2>
+            <h2>${escapeHtml(currentUser.name)}</h2>
             <p class="user-id">ID: ${currentUser.id}</p>
             <div class="profile-rating">
                 ${generateStars(currentUser.rating)}
@@ -4807,6 +4939,11 @@ function openUserProfile() {
             </button>
             <button class="btn btn-primary" onclick="scrollToSection('my-tasks'); closeModal('profileModal')">
                 <i class="fas fa-tasks"></i> My Tasks
+            </button>
+        </div>
+        <div style="margin-top:20px;padding-top:15px;border-top:1px solid var(--border,#e2e8f0);text-align:center;">
+            <button class="btn" onclick="confirmDeleteAccount()" style="background:#ef4444;color:white;padding:8px 20px;border:none;border-radius:8px;cursor:pointer;font-size:13px;">
+                <i class="fas fa-trash-alt"></i> Delete My Account
             </button>
         </div>
     `;
@@ -4967,6 +5104,14 @@ function renderProfileUI() {
         } else if (listEl) {
             listEl.innerHTML = '<p style="text-align:center;color:#94a3b8;padding:20px;">No completed tasks yet</p>';
         }
+
+        // Add export button if not already present
+        if (!document.getElementById('exportTransBtn')) {
+            var exportWrap = document.createElement('div');
+            exportWrap.style.cssText = 'text-align:center;margin-top:12px;';
+            exportWrap.innerHTML = '<button id="exportTransBtn" onclick="exportTransactionsCSV()" style="background:#667eea;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px;"><i class="fas fa-download"></i> Export Transactions</button>';
+            earningsPanel.appendChild(exportWrap);
+        }
     }
 }
 
@@ -5013,11 +5158,11 @@ async function loadProfileReviews() {
                 var date = r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
                 return '<div style="padding:12px 0;border-bottom:1px solid var(--border,#e2e8f0);">' +
                     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-                    '<span style="font-weight:600;font-size:14px;">' + (r.rater_name || 'User') + '</span>' +
+                    '<span style="font-weight:600;font-size:14px;">' + (r.rater_name ? escapeHtml(r.rater_name) : 'User') + '</span>' +
                     '<span style="font-size:12px;color:#94a3b8;">' + date + '</span></div>' +
                     '<div style="color:#f59e0b;font-size:14px;letter-spacing:2px;margin-bottom:4px;">' + stars + '</div>' +
-                    (r.review ? '<p style="font-size:13px;color:var(--text-secondary,#64748b);margin:0;">' + r.review + '</p>' : '') +
-                    (r.task_title ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Task: ' + r.task_title + '</div>' : '') +
+                    (r.review ? '<p style="font-size:13px;color:var(--text-secondary,#64748b);margin:0;">' + escapeHtml(r.review) + '</p>' : '') +
+                    (r.task_title ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Task: ' + escapeHtml(r.task_title) + '</div>' : '') +
                     '</div>';
             }).join('');
         }
@@ -5383,7 +5528,7 @@ function renderPostedTasks() {
                     <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
                         <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#4ade80,#22c55e);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;">${hName.charAt(0).toUpperCase()}</div>
                         <div style="flex:1;">
-                            <div style="font-weight:600;font-size:15px;">${hName}</div>
+                            <div style="font-weight:600;font-size:15px;">${escapeHtml(hName)}</div>
                             <div style="font-size:12px;color:#888;">
                                 ${hRating > 0 ? '<i class="fas fa-star" style="color:#fbbf24;"></i> ' + Number(hRating).toFixed(1) : ''}
                                 ${hTasks > 0 ? ' &middot; ' + hTasks + ' tasks done' : ''}
@@ -5416,7 +5561,7 @@ function renderPostedTasks() {
                     <span class="task-category">${formatCategory(t.category)}</span>
                     <span class="task-status ${statusClass}">${statusLabel}</span>
                 </div>
-                <h4>${t.title}</h4>
+                <h4>${escapeHtml(t.title)}</h4>
                 <div class="task-meta"><span>₹${(t.price || 0) + (t.service_charge || t.serviceCharge || getServiceCharge(t.category))}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
                 ${helperHTML}
                 ${actionsHTML}
@@ -5474,7 +5619,7 @@ function renderAcceptedTasks() {
                     <span class="task-category">${formatCategory(t.category)}</span>
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
-                <h4>${t.title}</h4>
+                <h4>${escapeHtml(t.title)}</h4>
                 <div class="task-meta"><span>₹${(t.price || 0) + (t.service_charge || t.serviceCharge || getServiceCharge(t.category))}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
                 ${actionHTML}
             </div>
@@ -5507,7 +5652,7 @@ function renderCompletedTasks() {
         ${myCompletedTasks.map(t => {
             const amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
             const earned = t.earnedAmount || (amt * 0.88);
-            return `<div class="my-task-card"><h4>${t.title}</h4><p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(Task ₹${amt.toFixed(2)} - 12% commission)</small></p></div>`;
+            return `<div class="my-task-card"><h4>${escapeHtml(t.title)}</h4><p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(Task ₹${amt.toFixed(2)} - 12% commission)</small></p></div>`;
         }).join('')}
     `;
 }

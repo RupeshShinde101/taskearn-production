@@ -6317,22 +6317,33 @@ window.updateNewBudget = updateNewBudget;
 
 // Initialize Google Sign-In buttons when GIS library loads
 async function initGoogleSignIn() {
+    console.log('🔄 initGoogleSignIn called');
+    
     if (typeof google === 'undefined' || !google.accounts) {
+        console.log('⏳ Google GIS library not loaded yet');
         return;
     }
     
     if (!window.GOOGLE_CLIENT_ID) {
         try {
-            const configResp = await apiRequest('/config/google-client-id');
+            // Use direct fetch to avoid apiRequest auth issues
+            const API_BASE = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+            const resp = await fetch(API_BASE + '/config/google-client-id');
+            const configResp = await resp.json();
+            console.log('📦 Google client ID response:', configResp);
             if (configResp.success && configResp.clientId) {
                 window.GOOGLE_CLIENT_ID = configResp.clientId;
             } else {
+                console.warn('❌ Google client ID not available');
                 return;
             }
         } catch (e) {
+            console.error('❌ Failed to fetch Google client ID:', e);
             return;
         }
     }
+    
+    console.log('✅ Google Client ID loaded, initializing...');
     
     google.accounts.id.initialize({
         client_id: window.GOOGLE_CLIENT_ID,
@@ -6349,8 +6360,9 @@ async function initGoogleSignIn() {
             size: 'large',
             text: 'signin_with',
             theme: 'outline',
-            width: '100%'
+            width: 300
         });
+        console.log('✅ Google button rendered in login modal');
     }
     const signupBtn = document.getElementById('googleSignInBtn_signup');
     if (signupBtn) {
@@ -6359,8 +6371,9 @@ async function initGoogleSignIn() {
             size: 'large',
             text: 'signup_with',
             theme: 'outline',
-            width: '100%'
+            width: 300
         });
+        console.log('✅ Google button rendered in signup modal');
     }
     
     window._googleSignInReady = true;
@@ -6368,6 +6381,7 @@ async function initGoogleSignIn() {
 
 // Called when GIS script loads
 window.onGoogleLibraryLoad = function() {
+    console.log('📦 Google GIS library loaded');
     initGoogleSignIn();
 };
 
@@ -6375,7 +6389,6 @@ window.onGoogleLibraryLoad = function() {
 function handleGoogleLogin() {
     if (!window._googleSignInReady) {
         initGoogleSignIn();
-        showToast('Google Sign-In is loading, please click the Google button', 'info');
     }
 }
 

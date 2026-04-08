@@ -6321,7 +6321,7 @@ async function handleGoogleLogin() {
     // Get the client ID from backend if not already loaded
     if (!window.GOOGLE_CLIENT_ID) {
         try {
-            const configResp = await apiRequest('/api/config/google-client-id');
+            const configResp = await apiRequest('/config/google-client-id');
             if (configResp.success && configResp.clientId) {
                 window.GOOGLE_CLIENT_ID = configResp.clientId;
             } else {

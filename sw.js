@@ -14,7 +14,6 @@ const STATIC_ASSETS = [
   '/styles.css',
   '/app.js',
   '/api-client.js',
-  '/i18n.js',
   '/sw-register.js',
   '/shared.js',
   '/favicon.svg',

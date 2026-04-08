@@ -1043,20 +1043,6 @@ const KYCAPI = {
     }
 };
 
-// ========================================
-// LANGUAGE API
-// ========================================
-
-const LanguageAPI = {
-    async setLanguage(language) {
-        const result = await apiRequest('/user/language', {
-            method: 'PUT',
-            body: JSON.stringify({ language })
-        });
-        return result.data;
-    }
-};
-
 // Push Notifications API
 const PushAPI = {
     getVapidKey: () => apiRequest('/api/push/vapid-key'),
@@ -1080,7 +1066,6 @@ window.SearchAPI = SearchAPI;
 window.ReportAPI = ReportAPI;
 window.CategoriesAPI = CategoriesAPI;
 window.KYCAPI = KYCAPI;
-window.LanguageAPI = LanguageAPI;
 window.PushAPI = PushAPI;
 window.checkBackendHealth = checkBackendHealth;
 

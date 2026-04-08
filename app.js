@@ -6629,26 +6629,6 @@ async function unblockUser(userId) {
 }
 
 // ========================================
-// LANGUAGE PREFERENCE
-// ========================================
-
-async function changeLanguagePref(lang) {
-    if (typeof setLanguage === 'function') {
-        await setLanguage(lang);
-        showToast('✅ Language changed');
-    }
-}
-
-// Load language on profile page
-function initLanguageSelector() {
-    const select = document.getElementById('languageSelect');
-    if (select) {
-        const saved = localStorage.getItem('preferredLanguage') || 'en';
-        select.value = saved;
-    }
-}
-
-// ========================================
 // PROFILE PAGE INIT HOOKS
 // ========================================
 
@@ -6658,11 +6638,10 @@ function initLanguageSelector() {
     if (typeof origRenderDashboard === 'function') {
         window.renderDashboard = function() {
             origRenderDashboard.apply(this, arguments);
-            // Initialize KYC, language selector on profile page
+            // Initialize KYC on profile page
             if (document.getElementById('kycCard')) {
                 loadKYCStatus();
             }
-            initLanguageSelector();
         };
     }
 })();
@@ -6734,7 +6713,6 @@ window.openReportModal = openReportModal;
 window.submitReport = submitReport;
 window.blockUser = blockUser;
 window.unblockUser = unblockUser;
-window.changeLanguagePref = changeLanguagePref;
 window.requestPushPermission = requestPushPermission;
 window.initPushNotifications = initPushNotifications;
 window.saveTaskEdit = saveTaskEdit;

@@ -382,8 +382,7 @@ def user_to_response(user):
         'authProvider': user.get('auth_provider', 'email'),
         'kycStatus': user.get('kyc_status', 'none'),
         'kycDocumentType': user.get('kyc_document_type'),
-        'phoneVerified': bool(user.get('phone_verified', False)),
-        'preferredLanguage': user.get('preferred_language', 'en')
+        'phoneVerified': bool(user.get('phone_verified', False))
     }
 
 
@@ -7617,28 +7616,6 @@ def google_login():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': 'Google login failed'}), 500
-
-
-# ========================================
-# LANGUAGE PREFERENCE
-# ========================================
-
-@app.route('/api/user/language', methods=['PUT'])
-@require_auth
-def update_language():
-    """Update user language preference"""
-    data = request.get_json()
-    lang = data.get('language', 'en').strip()
-    if lang not in ('en', 'hi', 'mr', 'ta', 'te', 'kn', 'bn'):
-        return jsonify({'success': False, 'message': 'Unsupported language'}), 400
-
-    try:
-        with get_db() as (cursor, conn):
-            cursor.execute(f'UPDATE users SET preferred_language = {PH} WHERE id = {PH}',
-                          (lang, request.user_id))
-        return jsonify({'success': True, 'message': 'Language updated'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': 'Failed to update language'}), 500
 
 
 # ========================================

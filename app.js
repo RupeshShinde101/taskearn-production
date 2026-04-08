@@ -6375,7 +6375,7 @@ async function handleGoogleCredentialResponse(response) {
     
     try {
         // Send the ID token to our backend
-        const result = await apiRequest('/api/auth/google', {
+        const result = await apiRequest('/auth/google', {
             method: 'POST',
             body: JSON.stringify({
                 credential: response.credential
@@ -6385,7 +6385,7 @@ async function handleGoogleCredentialResponse(response) {
         if (result.success) {
             // Store token
             if (result.token) {
-                localStorage.setItem('authToken', result.token);
+                localStorage.setItem('taskearn_token', result.token);
             }
             currentUser = result.user;
             saveCurrentSession(currentUser);

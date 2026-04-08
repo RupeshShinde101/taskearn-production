@@ -7455,6 +7455,14 @@ def admin_verify_kyc(user_id):
 # GOOGLE SOCIAL LOGIN
 # ========================================
 
+@app.route('/api/config/google-client-id', methods=['GET'])
+def get_google_client_id():
+    """Return the Google Client ID for frontend initialization."""
+    client_id = os.environ.get('GOOGLE_CLIENT_ID', '')
+    if not client_id:
+        return jsonify({'success': False, 'message': 'Google Sign-In not configured'}), 404
+    return jsonify({'success': True, 'clientId': client_id})
+
 @app.route('/api/auth/google', methods=['POST'])
 @rate_limit('10 per minute')
 def google_login():
@@ -7469,11 +7477,17 @@ def google_login():
         # Verify Google ID token
         import urllib.request
         import json as json_mod
-        # Use Google's tokeninfo endpoint to verify (no extra dependency needed)
+        # Use Google's tokeninfo endpoint to verify
         token_url = f'https://oauth2.googleapis.com/tokeninfo?id_token={id_token}'
         req = urllib.request.Request(token_url)
         with urllib.request.urlopen(req, timeout=10) as resp:
             google_data = json_mod.loads(resp.read().decode())
+
+        # Verify the token audience matches our client ID
+        expected_client_id = os.environ.get('GOOGLE_CLIENT_ID', '')
+        token_aud = google_data.get('aud', '')
+        if expected_client_id and token_aud != expected_client_id:
+            return jsonify({'success': False, 'message': 'Invalid token audience'}), 401
 
         google_id = google_data.get('sub')
         email = google_data.get('email', '').lower()

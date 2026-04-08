@@ -6318,59 +6318,96 @@ async function handleGoogleLogin() {
         return;
     }
     
-    const client = google.accounts.oauth2.initTokenClient({
-        client_id: window.GOOGLE_CLIENT_ID || '',
-        scope: 'openid email profile',
-        callback: async (tokenResponse) => {
-            if (!tokenResponse.access_token) {
-                showToast('❌ Google login cancelled', 'error');
+    // Get the client ID from backend if not already loaded
+    if (!window.GOOGLE_CLIENT_ID) {
+        try {
+            const configResp = await apiRequest('/api/config/google-client-id');
+            if (configResp.success && configResp.clientId) {
+                window.GOOGLE_CLIENT_ID = configResp.clientId;
+            } else {
+                showToast('❌ Google Sign-In is not configured yet', 'error');
                 return;
             }
-            try {
-                // Get user info from Google
-                const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                    headers: { Authorization: 'Bearer ' + tokenResponse.access_token }
-                });
-                const gUser = await resp.json();
-                
-                // Send to our backend
-                const result = await apiRequest('/api/auth/google', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        id_token: tokenResponse.access_token,
-                        email: gUser.email,
-                        name: gUser.name,
-                        google_id: gUser.sub,
-                        photo: gUser.picture
-                    })
-                });
-                
-                if (result.success) {
-                    currentUser = result.user;
-                    saveCurrentSession(currentUser);
-                    showToast('✅ Welcome, ' + currentUser.name);
-                    closeModal('loginModal');
-                    closeModal('signupModal');
-                    updateNavForUser();
-                    const tasksLoaded = await loadTasksFromServer();
-                    setTimeout(() => renderDashboard(), 100);
-                    // Initialize push notifications
-                    if (Notification.permission === 'granted') {
-                        initPushNotifications();
-                    } else if (Notification.permission !== 'denied') {
-                        setTimeout(() => requestPushPermission(), 3000);
-                    }
-                } else {
-                    showToast('❌ ' + (result.message || 'Google login failed'), 'error');
-                }
-            } catch (err) {
-                console.error('Google login error:', err);
-                showToast('❌ Google login failed', 'error');
-            }
+        } catch (e) {
+            showToast('❌ Google Sign-In is not configured yet', 'error');
+            return;
         }
+    }
+    
+    // Use google.accounts.id (One Tap / ID token flow)
+    google.accounts.id.initialize({
+        client_id: window.GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true
     });
     
-    client.requestAccessToken();
+    // Show the Google One Tap prompt
+    google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            // Fallback: use popup mode via renderButton trick
+            // Create a temporary hidden div, render Google button, then click it
+            let tempDiv = document.getElementById('googleBtnTemp');
+            if (!tempDiv) {
+                tempDiv = document.createElement('div');
+                tempDiv.id = 'googleBtnTemp';
+                tempDiv.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+                document.body.appendChild(tempDiv);
+            }
+            google.accounts.id.renderButton(tempDiv, {
+                type: 'standard',
+                size: 'large',
+                text: 'signin_with',
+                theme: 'outline'
+            });
+            // Click the rendered button
+            const gBtn = tempDiv.querySelector('div[role=button]') || tempDiv.querySelector('iframe');
+            if (gBtn) gBtn.click();
+        }
+    });
+}
+
+async function handleGoogleCredentialResponse(response) {
+    if (!response.credential) {
+        showToast('❌ Google login cancelled', 'error');
+        return;
+    }
+    
+    try {
+        // Send the ID token to our backend
+        const result = await apiRequest('/api/auth/google', {
+            method: 'POST',
+            body: JSON.stringify({
+                credential: response.credential
+            })
+        });
+        
+        if (result.success) {
+            // Store token
+            if (result.token) {
+                localStorage.setItem('authToken', result.token);
+            }
+            currentUser = result.user;
+            saveCurrentSession(currentUser);
+            showToast('✅ Welcome, ' + currentUser.name);
+            closeModal('loginModal');
+            closeModal('signupModal');
+            updateNavForUser();
+            const tasksLoaded = await loadTasksFromServer();
+            setTimeout(() => renderDashboard(), 100);
+            // Initialize push notifications
+            if ('Notification' in window && Notification.permission === 'granted') {
+                initPushNotifications();
+            } else if ('Notification' in window && Notification.permission !== 'denied') {
+                setTimeout(() => requestPushPermission(), 3000);
+            }
+        } else {
+            showToast('❌ ' + (result.message || 'Google login failed'), 'error');
+        }
+    } catch (err) {
+        console.error('Google login error:', err);
+        showToast('❌ Google login failed', 'error');
+    }
 }
 
 // ========================================
@@ -6614,6 +6651,7 @@ async function requestPushPermission() {
 
 // Window exports for new features
 window.handleGoogleLogin = handleGoogleLogin;
+window.handleGoogleCredentialResponse = handleGoogleCredentialResponse;
 window.submitKYC = submitKYC;
 window.loadKYCStatus = loadKYCStatus;
 window.openReportModal = openReportModal;

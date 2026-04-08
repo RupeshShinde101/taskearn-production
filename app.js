@@ -6447,14 +6447,22 @@ async function submitKYC() {
     if (!docType) { showToast('❌ Please select a document type', 'error'); return; }
     if (!docNum) { showToast('❌ Please enter document number', 'error'); return; }
     
+    // Get uploaded image
+    const imageData = window._kycDocImageBase64;
+    if (!imageData) {
+        showToast('❌ Please upload a document photo', 'error');
+        return;
+    }
+    
     const btn = document.getElementById('kycSubmitBtn');
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
     
     try {
-        const result = await KYCAPI.submit(docType, docNum);
+        const result = await KYCAPI.submit(docType, docNum, imageData);
         if (result.success) {
-            showToast('✅ KYC submitted for verification');
+            showToast('✅ ' + (result.message || 'KYC verified successfully!'));
+            window._kycDocImageBase64 = null;
             loadKYCStatus();
         } else {
             showToast('❌ ' + (result.message || 'KYC submission failed'), 'error');
@@ -6463,8 +6471,42 @@ async function submitKYC() {
         showToast('❌ KYC submission failed', 'error');
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit for Verification';
+        btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit & Verify';
     }
+}
+
+// KYC image preview helper
+function previewKYCImage(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    if (file.size > 5 * 1024 * 1024) {
+        showToast('❌ Image too large. Max 5MB', 'error');
+        input.value = '';
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        window._kycDocImageBase64 = e.target.result;
+        const preview = document.getElementById('kycImagePreview');
+        const previewImg = document.getElementById('kycPreviewImg');
+        const uploadArea = document.getElementById('kycUploadArea');
+        if (previewImg) previewImg.src = e.target.result;
+        if (preview) preview.style.display = '';
+        if (uploadArea) uploadArea.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearKYCImage() {
+    window._kycDocImageBase64 = null;
+    const input = document.getElementById('kycDocImage');
+    if (input) input.value = '';
+    const preview = document.getElementById('kycImagePreview');
+    const uploadArea = document.getElementById('kycUploadArea');
+    if (preview) preview.style.display = 'none';
+    if (uploadArea) uploadArea.style.display = '';
 }
 
 async function loadKYCStatus() {
@@ -6472,7 +6514,8 @@ async function loadKYCStatus() {
         const result = await KYCAPI.getStatus();
         if (!result.success) return;
         
-        const status = result.kyc_status;
+        const kyc = result.kyc || {};
+        const status = kyc.status;
         const badge = document.getElementById('kycBadge');
         const formSection = document.getElementById('kycFormSection');
         const statusSection = document.getElementById('kycStatusSection');
@@ -6489,22 +6532,27 @@ async function loadKYCStatus() {
             if (statusSection) statusSection.style.display = '';
             
             const docTypeEl = document.getElementById('kycDocTypeDisplay');
+            const docNumEl = document.getElementById('kycDocNumberDisplay');
             const statusEl = document.getElementById('kycStatusDisplay');
-            if (docTypeEl) docTypeEl.textContent = (result.document_type || '').toUpperCase();
+            if (docTypeEl) docTypeEl.textContent = (kyc.documentType || '').toUpperCase();
+            if (docNumEl) {
+                const num = kyc.documentNumber || '';
+                docNumEl.textContent = num.length > 4 ? '****' + num.slice(-4) : num;
+            }
             
             if (status === 'pending') {
                 badge.textContent = 'Pending';
                 badge.style.background = '#fef3c7'; badge.style.color = '#d97706';
                 if (statusEl) statusEl.innerHTML = '<span style="color:#d97706;"><i class="fas fa-clock"></i> Under Review</span>';
-            } else if (status === 'approved') {
-                badge.textContent = 'Verified';
+            } else if (status === 'verified' || status === 'approved') {
+                badge.textContent = 'Verified ✓';
                 badge.style.background = '#d1fae5'; badge.style.color = '#059669';
                 if (statusEl) statusEl.innerHTML = '<span style="color:#059669;"><i class="fas fa-check-circle"></i> Verified</span>';
                 const verRow = document.getElementById('kycVerifiedAtRow');
                 const verAt = document.getElementById('kycVerifiedAt');
-                if (verRow && result.verified_at) {
+                if (verRow && kyc.verifiedAt) {
                     verRow.style.display = '';
-                    verAt.textContent = new Date(result.verified_at).toLocaleDateString('en-IN');
+                    verAt.textContent = new Date(kyc.verifiedAt).toLocaleDateString('en-IN');
                 }
             } else if (status === 'rejected') {
                 badge.textContent = 'Rejected';
@@ -6680,6 +6728,8 @@ window.handleGoogleLogin = handleGoogleLogin;
 window.handleGoogleCredentialResponse = handleGoogleCredentialResponse;
 window.submitKYC = submitKYC;
 window.loadKYCStatus = loadKYCStatus;
+window.previewKYCImage = previewKYCImage;
+window.clearKYCImage = clearKYCImage;
 window.openReportModal = openReportModal;
 window.submitReport = submitReport;
 window.blockUser = blockUser;

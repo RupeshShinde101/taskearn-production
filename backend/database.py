@@ -549,6 +549,9 @@ def init_postgres_db():
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_verified_at TIMESTAMP
         ''')
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_image TEXT
+        ''')
 
         # Language preference
         cursor.execute('''

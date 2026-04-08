@@ -274,12 +274,29 @@
                                 <input type="text" id="kycDocNumber" placeholder="Enter document number" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
                                 <small id="kycDocHint" style="color:#94a3b8;font-size:12px;">Aadhaar: 12 digits | PAN: e.g. ABCDE1234F</small>
                             </div>
-                            <button class="btn btn-primary btn-block" onclick="submitKYC()" id="kycSubmitBtn"><i class="fas fa-paper-plane"></i> Submit for Verification</button>
+                            <div class="profile-field-edit" style="margin-bottom:14px;">
+                                <label for="kycDocImage"><i class="fas fa-camera"></i> Upload Document Photo</label>
+                                <div id="kycUploadArea" onclick="document.getElementById('kycDocImage').click()" style="border:2px dashed #cbd5e1;border-radius:10px;padding:24px;text-align:center;cursor:pointer;background:#f8fafc;transition:all 0.2s;">
+                                    <i class="fas fa-cloud-upload-alt" style="font-size:28px;color:#94a3b8;"></i>
+                                    <p style="margin:8px 0 0;color:#64748b;font-size:13px;">Tap to upload document photo</p>
+                                    <small style="color:#94a3b8;font-size:11px;">JPG, PNG — Max 5MB</small>
+                                </div>
+                                <input type="file" id="kycDocImage" accept="image/*" style="display:none;" onchange="previewKYCImage(this)">
+                                <div id="kycImagePreview" style="display:none;margin-top:10px;text-align:center;">
+                                    <img id="kycPreviewImg" src="" alt="Document preview" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid #e2e8f0;">
+                                    <button type="button" onclick="clearKYCImage()" style="display:block;margin:8px auto 0;background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;"><i class="fas fa-times"></i> Remove</button>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-block" onclick="submitKYC()" id="kycSubmitBtn"><i class="fas fa-paper-plane"></i> Submit & Verify</button>
                         </div>
                         <div id="kycStatusSection" style="display:none;">
                             <div class="profile-field">
                                 <div class="profile-field-label">Document Type</div>
                                 <div class="profile-field-value" id="kycDocTypeDisplay">—</div>
+                            </div>
+                            <div class="profile-field">
+                                <div class="profile-field-label">Document Number</div>
+                                <div class="profile-field-value" id="kycDocNumberDisplay">—</div>
                             </div>
                             <div class="profile-field">
                                 <div class="profile-field-label">Status</div>

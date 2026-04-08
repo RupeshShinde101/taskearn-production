@@ -381,6 +381,7 @@ def user_to_response(user):
         'emailVerified': bool(user.get('email_verified', False)),
         'authProvider': user.get('auth_provider', 'email'),
         'kycStatus': user.get('kyc_status', 'none'),
+        'kycDocumentType': user.get('kyc_document_type'),
         'phoneVerified': bool(user.get('phone_verified', False)),
         'preferredLanguage': user.get('preferred_language', 'en')
     }
@@ -5873,14 +5874,17 @@ def get_admin_dashboard_stats():
 
             # Recent users (10)
             cursor.execute("""
-                SELECT id, first_name, last_name, email, created_at, rating
+                SELECT id, first_name, last_name, email, created_at, rating,
+                       kyc_status, kyc_document_type, kyc_document_number, kyc_verified_at
                 FROM users ORDER BY created_at DESC LIMIT 10
             """)
             recent_users = []
             for row in cursor.fetchall():
                 r = dict_from_row(row) if hasattr(row, 'keys') else {
                     'id': row[0], 'first_name': row[1], 'last_name': row[2],
-                    'email': row[3], 'created_at': row[4], 'rating': float(row[5] or 0)
+                    'email': row[3], 'created_at': row[4], 'rating': float(row[5] or 0),
+                    'kyc_status': row[6] or 'none', 'kyc_document_type': row[7],
+                    'kyc_document_number': row[8], 'kyc_verified_at': row[9]
                 }
                 recent_users.append(r)
 
@@ -7347,10 +7351,11 @@ def notify_account_suspended_email(user_id, reason):
 @app.route('/api/user/kyc/submit', methods=['POST'])
 @require_auth
 def submit_kyc():
-    """Submit KYC document for verification"""
+    """Submit KYC document for verification (with document image upload)"""
     data = request.get_json()
     doc_type = data.get('documentType', '').strip()
     doc_number = data.get('documentNumber', '').strip()
+    doc_image = data.get('documentImage', '').strip()  # base64 image data
 
     valid_types = ['aadhaar', 'pan', 'voter_id', 'driving_license']
     if doc_type not in valid_types:
@@ -7358,6 +7363,13 @@ def submit_kyc():
 
     if not doc_number or len(doc_number) < 6 or len(doc_number) > 20:
         return jsonify({'success': False, 'message': 'Invalid document number'}), 400
+
+    if not doc_image:
+        return jsonify({'success': False, 'message': 'Please upload a document image'}), 400
+
+    # Validate image size (max 5MB base64 ~ 6.67MB string)
+    if len(doc_image) > 7_000_000:
+        return jsonify({'success': False, 'message': 'Document image too large (max 5MB)'}), 400
 
     # Basic format validation
     import re
@@ -7367,23 +7379,32 @@ def submit_kyc():
         return jsonify({'success': False, 'message': 'Invalid PAN format (e.g. ABCDE1234F)'}), 400
 
     try:
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with get_db() as (cursor, conn):
+            # Auto-verify: set status to 'verified' immediately
             cursor.execute(f'''
                 UPDATE users SET kyc_document_type = {PH}, kyc_document_number = {PH},
-                kyc_status = 'pending'
+                kyc_document_image = {PH}, kyc_status = 'verified', kyc_verified_at = {PH}
                 WHERE id = {PH}
-            ''', (doc_type, doc_number.upper(), request.user_id))
+            ''', (doc_type, doc_number.upper(), doc_image, now, request.user_id))
 
-            # Notify admin
-            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            # Notify user of verification
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', ('1', 'kyc_request', '📋 KYC Verification Request',
-                  f'User {request.user_id} submitted {doc_type} for verification', 'unread', now))
+            ''', (request.user_id, 'kyc_result', 'KYC Verification Update',
+                  '✅ Your KYC verification has been approved!', 'unread', now))
 
-        return jsonify({'success': True, 'message': 'KYC documents submitted for review'})
+            # Log for admin
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', ('1', 'kyc_request', '📋 KYC Auto-Verified',
+                  f'User {request.user_id} submitted {doc_type} — auto-verified', 'unread', now))
+
+        return jsonify({'success': True, 'message': 'KYC verified successfully! Your identity has been confirmed.'})
     except Exception as e:
+        print(f"[KYC SUBMIT] Error: {e}")
         return jsonify({'success': False, 'message': 'Failed to submit KYC'}), 500
 
 
@@ -7394,16 +7415,20 @@ def get_kyc_status():
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''
-                SELECT kyc_status, kyc_document_type, kyc_verified_at, phone_verified, email_verified
+                SELECT kyc_status, kyc_document_type, kyc_document_number, kyc_verified_at,
+                       phone_verified, email_verified, kyc_document_image
                 FROM users WHERE id = {PH}
             ''', (request.user_id,))
             row = dict_from_row(cursor.fetchone())
 
+        has_image = bool(row.get('kyc_document_image'))
         return jsonify({
             'success': True,
             'kyc': {
                 'status': row.get('kyc_status', 'none'),
                 'documentType': row.get('kyc_document_type'),
+                'documentNumber': row.get('kyc_document_number'),
+                'hasDocumentImage': has_image,
                 'verifiedAt': row.get('kyc_verified_at'),
                 'phoneVerified': bool(row.get('phone_verified')),
                 'emailVerified': bool(row.get('email_verified'))
@@ -7411,6 +7436,40 @@ def get_kyc_status():
         })
     except Exception as e:
         return jsonify({'success': False, 'message': 'Failed to get KYC status'}), 500
+
+
+@app.route('/api/admin/user/<user_id>/kyc', methods=['GET'])
+@require_auth
+def admin_get_user_kyc(user_id):
+    """Admin: get user KYC details including document image"""
+    if request.user_id != '1':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT name, email, kyc_status, kyc_document_type, kyc_document_number,
+                       kyc_document_image, kyc_verified_at
+                FROM users WHERE id = {PH}
+            ''', (user_id,))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            user_data = dict_from_row(row)
+
+        return jsonify({
+            'success': True,
+            'user': {
+                'name': user_data.get('name'),
+                'email': user_data.get('email'),
+                'kycStatus': user_data.get('kyc_status', 'none'),
+                'documentType': user_data.get('kyc_document_type'),
+                'documentNumber': user_data.get('kyc_document_number'),
+                'documentImage': user_data.get('kyc_document_image'),
+                'verifiedAt': user_data.get('kyc_verified_at')
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Failed to get KYC details'}), 500
 
 
 @app.route('/api/admin/kyc/<user_id>/verify', methods=['POST'])

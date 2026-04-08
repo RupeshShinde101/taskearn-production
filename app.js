@@ -2007,6 +2007,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
 
         console.log('✅ Workmate4u Ready!');
+        
+        // Initialize Google Sign-In (if GIS loaded before app.js)
+        setTimeout(() => initGoogleSignIn(), 500);
     } catch (error) {
         console.error('❌ CRITICAL ERROR during initialization:', error);
         console.error('Stack:', error.stack);
@@ -6312,29 +6315,25 @@ window.updateNewBudget = updateNewBudget;
 // GOOGLE SIGN-IN
 // ========================================
 
-async function handleGoogleLogin() {
+// Initialize Google Sign-In buttons when GIS library loads
+async function initGoogleSignIn() {
     if (typeof google === 'undefined' || !google.accounts) {
-        showToast('❌ Google Sign-In is loading, please try again', 'error');
         return;
     }
     
-    // Get the client ID from backend if not already loaded
     if (!window.GOOGLE_CLIENT_ID) {
         try {
             const configResp = await apiRequest('/config/google-client-id');
             if (configResp.success && configResp.clientId) {
                 window.GOOGLE_CLIENT_ID = configResp.clientId;
             } else {
-                showToast('❌ Google Sign-In is not configured yet', 'error');
                 return;
             }
         } catch (e) {
-            showToast('❌ Google Sign-In is not configured yet', 'error');
             return;
         }
     }
     
-    // Use google.accounts.id (One Tap / ID token flow)
     google.accounts.id.initialize({
         client_id: window.GOOGLE_CLIENT_ID,
         callback: handleGoogleCredentialResponse,
@@ -6342,29 +6341,42 @@ async function handleGoogleLogin() {
         cancel_on_tap_outside: true
     });
     
-    // Show the Google One Tap prompt
-    google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            // Fallback: use popup mode via renderButton trick
-            // Create a temporary hidden div, render Google button, then click it
-            let tempDiv = document.getElementById('googleBtnTemp');
-            if (!tempDiv) {
-                tempDiv = document.createElement('div');
-                tempDiv.id = 'googleBtnTemp';
-                tempDiv.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
-                document.body.appendChild(tempDiv);
-            }
-            google.accounts.id.renderButton(tempDiv, {
-                type: 'standard',
-                size: 'large',
-                text: 'signin_with',
-                theme: 'outline'
-            });
-            // Click the rendered button
-            const gBtn = tempDiv.querySelector('div[role=button]') || tempDiv.querySelector('iframe');
-            if (gBtn) gBtn.click();
-        }
-    });
+    // Render official Google buttons into both modals
+    const loginBtn = document.getElementById('googleSignInBtn_login');
+    if (loginBtn) {
+        google.accounts.id.renderButton(loginBtn, {
+            type: 'standard',
+            size: 'large',
+            text: 'signin_with',
+            theme: 'outline',
+            width: '100%'
+        });
+    }
+    const signupBtn = document.getElementById('googleSignInBtn_signup');
+    if (signupBtn) {
+        google.accounts.id.renderButton(signupBtn, {
+            type: 'standard',
+            size: 'large',
+            text: 'signup_with',
+            theme: 'outline',
+            width: '100%'
+        });
+    }
+    
+    window._googleSignInReady = true;
+}
+
+// Called when GIS script loads
+window.onGoogleLibraryLoad = function() {
+    initGoogleSignIn();
+};
+
+// Also try to init when modals open (in case GIS loaded before DOM)
+function handleGoogleLogin() {
+    if (!window._googleSignInReady) {
+        initGoogleSignIn();
+        showToast('Google Sign-In is loading, please click the Google button', 'info');
+    }
 }
 
 async function handleGoogleCredentialResponse(response) {

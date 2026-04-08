@@ -6407,14 +6407,14 @@ async function handleGoogleCredentialResponse(response) {
             })
         });
         
-        if (result.success) {
-            // Store token
-            if (result.token) {
-                localStorage.setItem('taskearn_token', result.token);
+        if (result.success && result.data && result.data.success) {
+            // Store token - data is nested inside result.data
+            if (result.data.token) {
+                localStorage.setItem('taskearn_token', result.data.token);
             }
-            currentUser = result.user;
+            currentUser = result.data.user;
             saveCurrentSession(currentUser);
-            showToast('✅ Welcome, ' + currentUser.name);
+            showToast('✅ Welcome, ' + (currentUser.name || currentUser.email));
             closeModal('loginModal');
             closeModal('signupModal');
             updateNavForUser();
@@ -6427,7 +6427,8 @@ async function handleGoogleCredentialResponse(response) {
                 setTimeout(() => requestPushPermission(), 3000);
             }
         } else {
-            showToast('❌ ' + (result.message || 'Google login failed'), 'error');
+            const msg = (result.data && result.data.message) || 'Google login failed';
+            showToast('❌ ' + msg, 'error');
         }
     } catch (err) {
         console.error('Google login error:', err);

@@ -1092,8 +1092,18 @@ def update_profile():
     """Update user profile"""
     data = request.get_json()
     
-    allowed_fields = ['name', 'phone', 'email', 'profile_photo']
+    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob']
     updates = {k: v for k, v in data.items() if k in allowed_fields}
+    
+    # Validate DOB / age if provided
+    if 'dob' in updates:
+        try:
+            dob_date = datetime.datetime.strptime(updates['dob'], '%Y-%m-%d')
+            age = (datetime.datetime.now() - dob_date).days // 365
+            if age < 16:
+                return jsonify({'success': False, 'message': 'You must be 16 or older to use Workmate4u'}), 400
+        except ValueError:
+            return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
     
     # Validate email uniqueness if changing email
     if 'email' in updates:
@@ -1324,6 +1334,11 @@ def create_task():
         print('🚀 POST /api/tasks - Task creation endpoint called')
         print(f'   User ID: {request.user_id}')
         
+        # Check phone number is set (required for task helpers to contact poster)
+        user_check = get_user_by_id(request.user_id)
+        if user_check and not user_check.get('phone'):
+            return jsonify({'success': False, 'message': 'Please add your phone number in Profile before posting tasks. It is required so task helpers can contact you.', 'needsPhone': True}), 400
+        
         data = request.get_json()
         print(f'   Raw request data: {data}')
         
@@ -1460,6 +1475,11 @@ def create_task():
 def accept_task(task_id):
     """Accept a task"""
     try:
+        # Check phone number is set (required to contact task poster)
+        user_check = get_user_by_id(request.user_id)
+        if user_check and not user_check.get('phone'):
+            return jsonify({'success': False, 'message': 'Please add your phone number in Profile before accepting tasks. It is required so the task poster can contact you.', 'needsPhone': True}), 400
+
         # Ensure suspension columns exist
         _ensure_suspension_columns()
 

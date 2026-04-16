@@ -1935,6 +1935,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 } catch (e) {
                     console.warn('⚠️ Dashboard render failed:', e.message);
                 }
+
+                // Prompt Google users to complete profile if phone/DOB missing
+                if (currentUser.authProvider === 'google' && (!currentUser.phone || !currentUser.dob)) {
+                    setTimeout(() => showCompleteProfileModal(), 1500);
+                }
             } else {
                 console.log('👤 No active session - user needs to login');
             }
@@ -6426,6 +6431,10 @@ async function handleGoogleCredentialResponse(response) {
             } else if ('Notification' in window && Notification.permission !== 'denied') {
                 setTimeout(() => requestPushPermission(), 3000);
             }
+            // Check if profile is incomplete (Google users often lack phone/DOB)
+            if (!currentUser.phone || !currentUser.dob) {
+                setTimeout(() => showCompleteProfileModal(), 800);
+            }
         } else {
             const msg = (result.data && result.data.message) || 'Google login failed';
             showToast('❌ ' + msg, 'error');
@@ -6433,6 +6442,91 @@ async function handleGoogleCredentialResponse(response) {
     } catch (err) {
         console.error('Google login error:', err);
         showToast('❌ Google login failed', 'error');
+    }
+}
+
+// ── Complete Profile Modal (for Google sign-in users missing phone/DOB) ──
+function showCompleteProfileModal() {
+    // Remove existing modal if any
+    const old = document.getElementById('completeProfileModal');
+    if (old) old.remove();
+
+    const needPhone = !currentUser.phone;
+    const needDob = !currentUser.dob;
+    if (!needPhone && !needDob) return;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.id = 'completeProfileModal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:420px;">
+            <div style="text-align:center;padding:8px 0 16px;">
+                <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#a855f7);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+                    <i class="fas fa-user-edit" style="font-size:24px;color:#fff;"></i>
+                </div>
+                <h2 style="margin-bottom:6px;">Complete Your Profile</h2>
+                <p style="color:#64748b;font-size:14px;">Please add these details to use all features</p>
+            </div>
+            <form onsubmit="submitCompleteProfile(event)">
+                ${needPhone ? `
+                <div class="form-group">
+                    <label for="cpPhone">Phone Number <span style="color:#ef4444;">*</span></label>
+                    <input type="tel" id="cpPhone" placeholder="+91 98765 43210" required
+                        style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
+                    <small style="color:#64748b;">Required to contact task posters/helpers</small>
+                </div>` : ''}
+                ${needDob ? `
+                <div class="form-group">
+                    <label for="cpDob">Date of Birth <span style="color:#ef4444;">*</span></label>
+                    <input type="date" id="cpDob" required
+                        style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
+                    <small style="color:#64748b;">You must be 16 or older to use Workmate4u</small>
+                </div>` : ''}
+                <button type="submit" class="btn btn-primary btn-block" style="margin-top:10px;">
+                    <i class="fas fa-check"></i> Save & Continue
+                </button>
+            </form>
+            <button onclick="closeModal('completeProfileModal')" style="width:100%;margin-top:8px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:13px;padding:8px;">
+                I'll do this later
+            </button>
+        </div>`;
+    document.body.appendChild(modal);
+}
+
+async function submitCompleteProfile(e) {
+    e.preventDefault();
+    const phoneEl = document.getElementById('cpPhone');
+    const dobEl = document.getElementById('cpDob');
+    const updates = {};
+
+    if (phoneEl) {
+        const phone = phoneEl.value.trim();
+        if (!phone) { showToast('❌ Please enter your phone number', 'error'); return; }
+        updates.phone = phone;
+    }
+    if (dobEl) {
+        const dob = dobEl.value;
+        if (!dob) { showToast('❌ Please enter your date of birth', 'error'); return; }
+        const age = Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600000));
+        if (age < 16) { showToast('❌ You must be 16 or older to use Workmate4u', 'error'); return; }
+        updates.dob = dob;
+    }
+
+    try {
+        const result = await apiRequest('/user/profile', {
+            method: 'PUT',
+            body: JSON.stringify(updates)
+        });
+        if (result.success && result.data && result.data.success) {
+            currentUser = result.data.user;
+            saveCurrentSession(currentUser);
+            closeModal('completeProfileModal');
+            showToast('✅ Profile updated successfully!');
+        } else {
+            showToast('❌ ' + ((result.data && result.data.message) || 'Update failed'), 'error');
+        }
+    } catch (err) {
+        showToast('❌ Failed to update profile', 'error');
     }
 }
 

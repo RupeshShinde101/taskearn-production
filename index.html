@@ -249,15 +249,15 @@
                 </div>
                 <div class="hero-stats">
                     <div class="stat">
-                        <h3>50K+</h3>
+                        <h3 id="heroStatUsers">--</h3>
                         <p>Active Users in India</p>
                     </div>
                     <div class="stat">
-                        <h3>1L+</h3>
+                        <h3 id="heroStatTasks">--</h3>
                         <p>Tasks Completed</p>
                     </div>
                     <div class="stat">
-                        <h3>₹2Cr+</h3>
+                        <h3 id="heroStatEarned">--</h3>
                         <p>Earned by Taskers</p>
                     </div>
                 </div>
@@ -1395,22 +1395,50 @@
         if (statsEl) statsObserver.observe(statsEl);
 
         function animateCounters() {
-            document.querySelectorAll('.hero-stats .stat h3').forEach(function(el) {
-                var text = el.textContent;
-                var match = text.match(/([₹]?)(\d+)([KLCr+]+)/);
-                if (!match) return;
-                var prefix = match[1], target = parseInt(match[2]), suffix = match[3];
-                var duration = 1500, start = performance.now();
-                function step(now) {
-                    var progress = Math.min((now - start) / duration, 1);
-                    var eased = 1 - Math.pow(1 - progress, 3);
-                    var current = Math.round(target * eased);
-                    el.textContent = prefix + current + suffix;
-                    if (progress < 1) requestAnimationFrame(step);
-                }
-                el.textContent = prefix + '0' + suffix;
-                requestAnimationFrame(step);
+            // Fetch real-time stats from API
+            var apiBase = window.TASKEARN_API_URL || window.API_BASE_URL || '';
+            fetch(apiBase + '/api/platform-stats').then(function(r) { return r.json(); }).then(function(data) {
+                if (!data.success) return;
+                var usersEl = document.getElementById('heroStatUsers');
+                var tasksEl = document.getElementById('heroStatTasks');
+                var earnedEl = document.getElementById('heroStatEarned');
+                animateValue(usersEl, data.users, formatCount);
+                animateValue(tasksEl, data.completedTasks, formatCount);
+                animateValue(earnedEl, data.totalEarned, formatRupees);
+            }).catch(function() {
+                // Fallback to static values if API fails
+                var el = document.getElementById('heroStatUsers'); if (el) el.textContent = '50K+';
+                el = document.getElementById('heroStatTasks'); if (el) el.textContent = '1L+';
+                el = document.getElementById('heroStatEarned'); if (el) el.textContent = '₹2Cr+';
             });
+        }
+
+        function formatCount(n) {
+            if (n >= 10000000) return (n / 10000000).toFixed(1).replace(/\.0$/, '') + 'Cr+';
+            if (n >= 100000) return (n / 100000).toFixed(1).replace(/\.0$/, '') + 'L+';
+            if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K+';
+            return n + '+';
+        }
+
+        function formatRupees(n) {
+            if (n >= 10000000) return '₹' + (n / 10000000).toFixed(1).replace(/\.0$/, '') + 'Cr+';
+            if (n >= 100000) return '₹' + (n / 100000).toFixed(1).replace(/\.0$/, '') + 'L+';
+            if (n >= 1000) return '₹' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K+';
+            return '₹' + n + '+';
+        }
+
+        function animateValue(el, target, formatter) {
+            if (!el || !target) return;
+            var duration = 1500, start = performance.now();
+            function step(now) {
+                var progress = Math.min((now - start) / duration, 1);
+                var eased = 1 - Math.pow(1 - progress, 3);
+                var current = Math.round(target * eased);
+                el.textContent = formatter(current);
+                if (progress < 1) requestAnimationFrame(step);
+            }
+            el.textContent = formatter(0);
+            requestAnimationFrame(step);
         }
     })();
     </script>

@@ -7530,6 +7530,37 @@ def admin_verify_kyc(user_id):
 
 
 # ========================================
+# PUBLIC PLATFORM STATS (no auth required)
+# ========================================
+
+@app.route('/api/platform-stats', methods=['GET'])
+@rate_limit('30 per minute')
+def platform_stats():
+    """Return real-time platform statistics for the hero section (public, cached)."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT
+                    (SELECT COUNT(*) FROM users) AS total_users,
+                    (SELECT COUNT(*) FROM tasks WHERE status = 'completed') AS completed_tasks,
+                    (SELECT COALESCE(SUM(total_earned), 0) FROM wallets) AS total_earned
+            ''')
+            row = cursor.fetchone()
+            if row:
+                r = dict_from_row(row) if not isinstance(row, dict) else row
+                return jsonify({
+                    'success': True,
+                    'users': int(r.get('total_users', 0)),
+                    'completedTasks': int(r.get('completed_tasks', 0)),
+                    'totalEarned': float(r.get('total_earned', 0))
+                })
+        return jsonify({'success': False}), 500
+    except Exception as e:
+        print(f"[PLATFORM STATS] Error: {e}")
+        return jsonify({'success': False}), 500
+
+
+# ========================================
 # GOOGLE SOCIAL LOGIN
 # ========================================
 

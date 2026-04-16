@@ -4988,6 +4988,35 @@ def cleanup_old_tasks():
         return 0
 
 
+def cleanup_expired_suspensions():
+    """Auto-clear timer-based suspensions that have expired"""
+    try:
+        with get_db() as (cursor, conn):
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(f'''
+                UPDATE users SET is_suspended = FALSE, suspended_until = NULL, suspension_reason = NULL
+                WHERE suspended_until IS NOT NULL AND suspended_until < {PH}
+            ''', (now,))
+            cleared = cursor.rowcount
+            if cleared > 0:
+                print(f"✅ Auto-cleared {cleared} expired timer suspension(s)")
+            return cleared
+    except Exception as e:
+        print(f"⚠️  Suspension cleanup error: {e}")
+        return 0
+
+
+def _run_periodic_cleanup():
+    """Background thread that periodically cleans up expired suspensions"""
+    import time
+    while True:
+        time.sleep(300)  # Every 5 minutes
+        try:
+            cleanup_expired_suspensions()
+        except Exception as e:
+            print(f"⚠️  Periodic suspension cleanup error: {e}")
+
+
 # ========================================
 # CONTACT MESSAGES API
 # ========================================
@@ -7738,6 +7767,16 @@ if __name__ == '__main__':
         cleanup_old_tasks()
     except Exception as cleanup_error:
         print(f"⚠️  Cleanup failed at startup (non-fatal): {cleanup_error}")
+    
+    # Clear expired timer suspensions on startup + start periodic cleanup
+    try:
+        cleanup_expired_suspensions()
+        import threading
+        t = threading.Thread(target=_run_periodic_cleanup, daemon=True)
+        t.start()
+        print("✅ Periodic suspension cleanup thread started (every 5 min)")
+    except Exception as susp_error:
+        print(f"⚠️  Suspension cleanup failed at startup (non-fatal): {susp_error}")
     
     # Get port from environment (Railway/Render provide this)
     port = int(os.environ.get('PORT', 5000))

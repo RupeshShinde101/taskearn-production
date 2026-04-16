@@ -1395,9 +1395,8 @@
         if (statsEl) statsObserver.observe(statsEl);
 
         function animateCounters() {
-            // Fetch real-time stats from API
-            var apiBase = window.TASKEARN_API_URL || window.API_BASE_URL || '';
-            fetch(apiBase + '/api/platform-stats').then(function(r) { return r.json(); }).then(function(data) {
+            // Fetch real-time stats from API (use Railway URL directly, API_BASE_URL already has /api suffix)
+            fetch('https://taskearn-production-production.up.railway.app/api/platform-stats').then(function(r) { return r.json(); }).then(function(data) {
                 if (!data.success) return;
                 var usersEl = document.getElementById('heroStatUsers');
                 var tasksEl = document.getElementById('heroStatTasks');

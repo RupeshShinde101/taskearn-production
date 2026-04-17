@@ -3,7 +3,7 @@
     <!-- Main Page -->
     <url>
         <loc>https://www.workmate4u.com/</loc>
-        <lastmod>2026-03-26</lastmod>
+        <lastmod>2026-04-17</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>
@@ -11,7 +11,7 @@
     <!-- Help Center -->
     <url>
         <loc>https://www.workmate4u.com/help.html</loc>
-        <lastmod>2026-03-26</lastmod>
+        <lastmod>2026-04-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
@@ -19,7 +19,7 @@
     <!-- Privacy Policy -->
     <url>
         <loc>https://www.workmate4u.com/privacy.html</loc>
-        <lastmod>2026-03-26</lastmod>
+        <lastmod>2026-04-17</lastmod>
         <changefreq>yearly</changefreq>
         <priority>0.5</priority>
     </url>
@@ -27,7 +27,7 @@
     <!-- Safety Tips -->
     <url>
         <loc>https://www.workmate4u.com/safety.html</loc>
-        <lastmod>2026-03-26</lastmod>
+        <lastmod>2026-04-17</lastmod>
         <changefreq>yearly</changefreq>
         <priority>0.5</priority>
     </url>
@@ -35,7 +35,7 @@
     <!-- Terms of Service -->
     <url>
         <loc>https://www.workmate4u.com/terms.html</loc>
-        <lastmod>2026-03-26</lastmod>
+        <lastmod>2026-04-17</lastmod>
         <changefreq>yearly</changefreq>
         <priority>0.5</priority>
     </url>
@@ -43,7 +43,7 @@
     <!-- About Us -->
     <url>
         <loc>https://www.workmate4u.com/about.html</loc>
-        <lastmod>2026-03-26</lastmod>
+        <lastmod>2026-04-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
@@ -51,88 +51,16 @@
     <!-- Contact -->
     <url>
         <loc>https://www.workmate4u.com/contact.html</loc>
-        <lastmod>2026-03-26</lastmod>
+        <lastmod>2026-04-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
-    </url>
-
-    <!-- Browse Tasks -->
-    <url>
-        <loc>https://www.workmate4u.com/browse.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>daily</changefreq>
-        <priority>0.9</priority>
     </url>
 
     <!-- Referral Program -->
     <url>
         <loc>https://www.workmate4u.com/referral.html</loc>
-        <lastmod>2026-03-26</lastmod>
+        <lastmod>2026-04-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
-    </url>
-
-    <!-- Notifications -->
-    <url>
-        <loc>https://www.workmate4u.com/notifications.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>daily</changefreq>
-        <priority>0.5</priority>
-    </url>
-
-    <!-- Wallet -->
-    <url>
-        <loc>https://www.workmate4u.com/wallet.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>daily</changefreq>
-        <priority>0.8</priority>
-    </url>
-
-    <!-- Profile -->
-    <url>
-        <loc>https://www.workmate4u.com/profile.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>weekly</changefreq>
-        <priority>0.7</priority>
-    </url>
-
-    <!-- Posted Tasks -->
-    <url>
-        <loc>https://www.workmate4u.com/posted.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>daily</changefreq>
-        <priority>0.8</priority>
-    </url>
-
-    <!-- Accepted Tasks -->
-    <url>
-        <loc>https://www.workmate4u.com/accepted.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>daily</changefreq>
-        <priority>0.8</priority>
-    </url>
-
-    <!-- Completed Tasks -->
-    <url>
-        <loc>https://www.workmate4u.com/completed.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>weekly</changefreq>
-        <priority>0.6</priority>
-    </url>
-
-    <!-- Chat -->
-    <url>
-        <loc>https://www.workmate4u.com/chat.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>daily</changefreq>
-        <priority>0.7</priority>
-    </url>
-
-    <!-- Task In Progress -->
-    <url>
-        <loc>https://www.workmate4u.com/task-in-progress.html</loc>
-        <lastmod>2026-03-26</lastmod>
-        <changefreq>daily</changefreq>
-        <priority>0.7</priority>
     </url>
 </urlset>

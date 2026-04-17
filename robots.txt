@@ -1,13 +1,16 @@
-# Workmate4u - Robots.txt
+# Workmate4u - India's #1 Freelance Marketplace
 # https://www.workmate4u.com
 
 User-agent: *
 Allow: /
 Allow: /index.html
+Allow: /about.html
+Allow: /contact.html
 Allow: /help.html
 Allow: /privacy.html
 Allow: /safety.html
 Allow: /terms.html
+Allow: /referral.html
 
 # Block internal/admin pages
 Disallow: /admin.html

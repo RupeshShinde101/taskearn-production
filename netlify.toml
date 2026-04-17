@@ -12,6 +12,13 @@
 [context.deploy-preview.environment]
   BACKEND_URL = "https://taskearn-production-production.up.railway.app"
 
+# 301 redirect: Netlify subdomain → custom domain (SEO canonical)
+[[redirects]]
+  from = "https://workmate4u.netlify.app/*"
+  to = "https://www.workmate4u.com/:splat"
+  status = 301
+  force = true
+
 # Serve static files directly
 [[redirects]]
   from = "/robots.txt"

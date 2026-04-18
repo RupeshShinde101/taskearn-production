@@ -210,20 +210,10 @@ async function apiRequest(endpoint, options = {}) {
     // ALWAYS fetch fresh token from localStorage (don't cache it!)
     const authToken = localStorage.getItem('taskearn_token');
     if (authToken) {
-        const tokenPreview = authToken.substring(0, 20) + '...' + authToken.substring(authToken.length - 10);
-        console.log('🔐 Using auth token:', tokenPreview);
-        console.log('   Token length:', authToken.length);
         headers['Authorization'] = `Bearer ${authToken}`;
-        console.log('✅ Authorization header set to: Bearer [TOKEN]');
-    } else {
-        console.warn('⚠️ No auth token available for request:', endpoint);
     }
     
     try {
-        console.log('🌐 Making API request to:', url);
-        console.log('📤 Method:', options.method || 'GET');
-        console.log('📦 Headers:', headers);
-        if (options.body) console.log('📄 Body:', options.body);
         
         const fetchOptions = {
             ...options,
@@ -234,16 +224,11 @@ async function apiRequest(endpoint, options = {}) {
         
         const response = await fetch(url, fetchOptions);
         
-        console.log('📥 Response status:', response.status, response.statusText);
-        console.log('📥 Response type:', response.type);
-        
         // Try to parse JSON
         let data;
         try {
             data = await response.json();
-            console.log('📄 Response data:', data);
         } catch (parseError) {
-            console.warn('⚠️ Could not parse JSON response:', parseError.message);
             data = { success: false, message: 'Invalid JSON response' };
         }
         

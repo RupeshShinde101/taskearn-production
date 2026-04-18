@@ -227,13 +227,10 @@ def verify_jwt_token(token):
     """Verify JWT token and return payload"""
     try:
         payload = jwt.decode(token, config.SECRET_KEY, algorithms=['HS256'])
-        print(f"✅ Token valid for user: {payload.get('email')}")
         return payload
-    except jwt.ExpiredSignatureError as e:
-        print(f"❌ Token expired: {e}")
+    except jwt.ExpiredSignatureError:
         return None
-    except jwt.InvalidTokenError as e:
-        print(f"❌ Invalid token: {e}")
+    except jwt.InvalidTokenError:
         return None
 
 
@@ -405,7 +402,18 @@ def require_auth(f):
         if not payload:
             return jsonify({'success': False, 'message': 'Invalid or expired token'}), 401
         
-        request.user_id = payload['user_id']
+        # Verify session is still active (not logged out)
+        user_id = payload['user_id']
+        try:
+            with get_db() as (cursor, conn):
+                cursor.execute(f'SELECT session_token FROM users WHERE id = {PH}', (user_id,))
+                row = cursor.fetchone()
+                if row and row[0] is None:
+                    return jsonify({'success': False, 'message': 'Session expired. Please login again.'}), 401
+        except Exception:
+            pass  # If DB check fails, allow request (don't lock out users on DB hiccup)
+        
+        request.user_id = user_id
         request.user_email = payload['email']
         return f(*args, **kwargs)
     return decorated
@@ -4066,7 +4074,13 @@ def verify_payment():
                 
                 print(f"   Poster balance: ₹{poster_balance:.2f}")
                 
-                # Auto-deduct from poster's wallet (even if negative)
+                # Check poster has sufficient balance before deducting
+                if poster_balance < task_amount:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Insufficient wallet balance. Need ₹{task_amount:.2f}, have ₹{poster_balance:.2f}. Please top up your wallet first.'
+                    }), 400
+                
                 new_poster_balance = poster_balance - task_amount
                 
                 cursor.execute(f'''

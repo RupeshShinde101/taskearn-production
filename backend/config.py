@@ -45,6 +45,10 @@ class Config:
     RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
     RAZORPAYX_ACCOUNT_NUMBER = os.environ.get('RAZORPAYX_ACCOUNT_NUMBER', '')  # RazorpayX business account number
     
+    # Validate Razorpay keys in production
+    if DATABASE_URL and (not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET):
+        print('⚠️  WARNING: RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not set — payments will fail!')
+    
     # Email Settings (SendGrid)
     SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
     FROM_EMAIL = os.environ.get('FROM_EMAIL', 'info@workmate4u.com')

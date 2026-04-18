@@ -80,6 +80,22 @@ CORS(app,
 
 app.config['SECRET_KEY'] = config.SECRET_KEY
 
+# ========================================
+# ERROR HANDLERS — prevent raw tracebacks in production
+# ========================================
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'success': False, 'message': 'Resource not found'}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return jsonify({'success': False, 'message': 'Method not allowed'}), 405
+
+@app.errorhandler(500)
+def server_error(error):
+    return jsonify({'success': False, 'message': 'Internal server error'}), 500
+
 # Add security + CORS headers to all responses
 @app.after_request
 def add_security_headers(response):
@@ -4895,18 +4911,10 @@ def payment_webhook():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    import os
-    db_url = os.environ.get('DATABASE_URL', 'NOT SET')
-    db_url_masked = db_url[:30] + '***' if db_url != 'NOT SET' else 'NOT SET'
-    
     return jsonify({
         'success': True,
         'status': 'healthy',
-        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        'database': 'PostgreSQL' if config.USE_POSTGRES else 'SQLite',
-        'environment': 'production' if config.USE_POSTGRES else 'development',
-        'config.DATABASE_URL': db_url_masked,
-        'config.USE_POSTGRES': config.USE_POSTGRES
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
     })
 
 

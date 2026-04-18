@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorials & Training - Workmate4u | Learn How to Use the Platform</title>
+    <meta name="description" content="Learn how to use Workmate4u with step-by-step video tutorials. Sign up, post tasks, find work, use wallet, earn money, and stay safe on India's #1 freelance marketplace.">
+    <meta name="keywords" content="Workmate4u tutorials, Workmate4u guide, how to use Workmate4u, Workmate4u training, freelance marketplace tutorial India">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://www.workmate4u.com/tutorials.html">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://www.workmate4u.com/tutorials.html">
+    <meta property="og:title" content="Tutorials & Training - Workmate4u">
+    <meta property="og:description" content="Step-by-step video tutorials to master Workmate4u — India's #1 freelance marketplace.">
+    <meta property="og:image" content="https://www.workmate4u.com/og-image.png">
+    <meta property="og:site_name" content="Workmate4u">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Tutorials & Training - Workmate4u">
+    <meta name="twitter:description" content="Step-by-step video tutorials to master Workmate4u — India's #1 freelance marketplace.">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
+    <link rel="manifest" href="manifest.json">
+    <script>
+        (function() {
+            var ua = navigator.userAgent.toLowerCase();
+            var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+            if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; }
+            else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; }
+        })();
+    </script>
+    <style>
+        .tutorials-hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 100px 20px 60px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .tutorials-hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+            animation: pulse 8s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        .tutorials-hero h1 { font-size: 2.8rem; margin-bottom: 15px; position: relative; z-index: 1; }
+        .tutorials-hero p { font-size: 1.2rem; opacity: 0.9; max-width: 600px; margin: 0 auto; position: relative; z-index: 1; }
+        .tutorials-hero .hero-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.15);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .tutorials-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 50px 20px 80px;
+        }
+
+        .tutorials-intro {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        .tutorials-intro h2 {
+            font-size: 1.8rem;
+            color: var(--dark, #1e293b);
+            margin-bottom: 10px;
+        }
+        .tutorials-intro p {
+            color: var(--gray, #64748b);
+            font-size: 1.05rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .tutorials-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 30px;
+        }
+
+        .tutorial-card {
+            background: var(--white, #fff);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .tutorial-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+        }
+
+        .tutorial-thumbnail {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 aspect ratio */
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .tutorial-thumbnail .thumb-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: opacity 0.3s;
+        }
+        .tutorial-thumbnail .thumb-icon {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            color: white;
+        }
+        .tutorial-thumbnail .thumb-label {
+            color: white;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
+
+        .tutorial-thumbnail .play-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .tutorial-thumbnail:hover .play-overlay {
+            opacity: 1;
+        }
+        .play-btn {
+            width: 64px;
+            height: 64px;
+            background: rgba(255,255,255,0.95);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        }
+        .play-btn i {
+            font-size: 24px;
+            color: #6c5ce7;
+            margin-left: 3px;
+        }
+
+        /* Video embed container */
+        .tutorial-thumbnail iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+
+        .tutorial-body {
+            padding: 20px 24px 24px;
+        }
+        .tutorial-tag {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+        .tag-getting-started { background: #ede9fe; color: #7c3aed; }
+        .tag-posting { background: #fce7f3; color: #db2777; }
+        .tag-earning { background: #d1fae5; color: #059669; }
+        .tag-payments { background: #fff7ed; color: #ea580c; }
+        .tag-safety { background: #fee2e2; color: #dc2626; }
+
+        .tutorial-body h3 {
+            font-size: 1.15rem;
+            color: var(--dark, #1e293b);
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        .tutorial-body p {
+            color: var(--gray, #64748b);
+            font-size: 0.92rem;
+            line-height: 1.6;
+            margin-bottom: 16px;
+        }
+        .tutorial-meta {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            color: var(--gray, #94a3b8);
+            font-size: 0.82rem;
+        }
+        .tutorial-meta span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .tutorial-steps {
+            margin: 12px 0 16px;
+            padding: 0;
+            list-style: none;
+        }
+        .tutorial-steps li {
+            position: relative;
+            padding-left: 24px;
+            margin-bottom: 6px;
+            color: var(--gray, #64748b);
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }
+        .tutorial-steps li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 7px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            border: 3px solid #6c5ce7;
+        }
+
+        /* CTA section */
+        .tutorials-cta {
+            text-align: center;
+            margin-top: 60px;
+            padding: 50px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            color: white;
+        }
+        .tutorials-cta h2 {
+            font-size: 1.8rem;
+            margin-bottom: 12px;
+            color: white;
+        }
+        .tutorials-cta p {
+            opacity: 0.9;
+            margin-bottom: 25px;
+            font-size: 1.05rem;
+        }
+        .tutorials-cta .cta-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .tutorials-cta .btn-white {
+            background: white;
+            color: #6c5ce7;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .tutorials-cta .btn-white:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+        .tutorials-cta .btn-outline-white {
+            background: transparent;
+            color: white;
+            border: 2px solid rgba(255,255,255,0.5);
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .tutorials-cta .btn-outline-white:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: white;
+        }
+
+        /* Footer */
+        .tutorials-footer {
+            text-align: center;
+            padding: 30px 20px;
+            color: var(--gray, #64748b);
+            font-size: 0.9rem;
+        }
+        .tutorials-footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .tutorials-footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Dark mode */
+        [data-theme="dark"] .tutorial-card { background: #1e293b; }
+        [data-theme="dark"] .tutorial-body h3 { color: #f1f5f9; }
+        [data-theme="dark"] .tutorial-body p { color: #94a3b8; }
+        [data-theme="dark"] .tutorials-intro h2 { color: #f1f5f9; }
+        [data-theme="dark"] .tutorials-intro p { color: #94a3b8; }
+        [data-theme="dark"] .tutorials-container { background: #0f172a; }
+        [data-theme="dark"] body { background: #0f172a; }
+
+        @media (max-width: 768px) {
+            .tutorials-hero h1 { font-size: 2rem; }
+            .tutorials-grid { grid-template-columns: 1fr; }
+            .tutorials-hero { padding: 80px 16px 40px; }
+        }
+    </style>
+</head>
+<body>
+<script>if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}</script>
+    <div class="page-loader" id="pageLoader"></div>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="logo"><i class="fas fa-tasks"></i><span>Workmate<span class="highlight">4u</span></span></a>
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="browse.html">Find Tasks</a></li>
+                <li><a href="help.html">Help</a></li>
+            </ul>
+            <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
+        </div>
+    </nav>
+
+    <section class="tutorials-hero">
+        <span class="hero-badge"><i class="fas fa-play-circle"></i> Video Tutorials</span>
+        <h1>Learn Workmate4u</h1>
+        <p>Step-by-step tutorials to help you get started, post tasks, earn money, and use every feature like a pro.</p>
+    </section>
+
+    <div class="tutorials-container">
+        <div class="tutorials-intro">
+            <h2>Video <span class="gradient-text">Tutorials</span></h2>
+            <p>Watch these quick guides to master the platform in minutes</p>
+        </div>
+
+        <div class="tutorials-grid">
+
+            <!-- Tutorial 1: Sign Up & Verify -->
+            <div class="tutorial-card">
+                <div class="tutorial-thumbnail" onclick="playTutorial(this, '')" data-video="">
+                    <div class="thumb-bg" style="background: linear-gradient(135deg, #6366f1, #8b5cf6);">
+                        <div class="thumb-icon" style="background: rgba(255,255,255,0.2);">
+                            <i class="fas fa-user-plus"></i>
+                        </div>
+                        <span class="thumb-label">Sign Up & Verify</span>
+                    </div>
+                    <div class="play-overlay">
+                        <div class="play-btn"><i class="fas fa-play"></i></div>
+                    </div>
+                </div>
+                <div class="tutorial-body">
+                    <span class="tutorial-tag tag-getting-started">Getting Started</span>
+                    <h3>How to Sign Up & Verify Your Email</h3>
+                    <p>Create your free Workmate4u account in under a minute. Learn how to fill in your details and verify your email with OTP.</p>
+                    <ul class="tutorial-steps">
+                        <li>Click "Sign Up" on the homepage</li>
+                        <li>Enter your name, email, phone & password</li>
+                        <li>Enter the 6-digit OTP sent to your email</li>
+                        <li>Start using Workmate4u instantly</li>
+                    </ul>
+                    <div class="tutorial-meta">
+                        <span><i class="fas fa-clock"></i> 2 min</span>
+                        <span><i class="fas fa-signal"></i> Beginner</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tutorial 2: Post a Task -->
+            <div class="tutorial-card">
+                <div class="tutorial-thumbnail" onclick="playTutorial(this, '')" data-video="">
+                    <div class="thumb-bg" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
+                        <div class="thumb-icon" style="background: rgba(255,255,255,0.2);">
+                            <i class="fas fa-plus-circle"></i>
+                        </div>
+                        <span class="thumb-label">Post a Task</span>
+                    </div>
+                    <div class="play-overlay">
+                        <div class="play-btn"><i class="fas fa-play"></i></div>
+                    </div>
+                </div>
+                <div class="tutorial-body">
+                    <span class="tutorial-tag tag-posting">Posting Tasks</span>
+                    <h3>How to Post a Task</h3>
+                    <p>Learn how to post a task with the right title, description, budget, and location to get the best helpers nearby.</p>
+                    <ul class="tutorial-steps">
+                        <li>Click "Post a Task" and choose a category</li>
+                        <li>Write a clear title and description</li>
+                        <li>Set your budget (min ₹100) and location</li>
+                        <li>Submit — your task is live for 12 hours</li>
+                    </ul>
+                    <div class="tutorial-meta">
+                        <span><i class="fas fa-clock"></i> 3 min</span>
+                        <span><i class="fas fa-signal"></i> Beginner</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tutorial 3: Find & Accept Tasks -->
+            <div class="tutorial-card">
+                <div class="tutorial-thumbnail" onclick="playTutorial(this, '')" data-video="">
+                    <div class="thumb-bg" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
+                        <div class="thumb-icon" style="background: rgba(255,255,255,0.2);">
+                            <i class="fas fa-search-location"></i>
+                        </div>
+                        <span class="thumb-label">Find & Accept Tasks</span>
+                    </div>
+                    <div class="play-overlay">
+                        <div class="play-btn"><i class="fas fa-play"></i></div>
+                    </div>
+                </div>
+                <div class="tutorial-body">
+                    <span class="tutorial-tag tag-earning">Earning Money</span>
+                    <h3>How to Find & Accept Tasks</h3>
+                    <p>Browse tasks on the map, filter by category and distance, and accept tasks to start earning money right away.</p>
+                    <ul class="tutorial-steps">
+                        <li>Go to "Find Tasks" or "Browse Tasks"</li>
+                        <li>Enable location to see tasks near you on the map</li>
+                        <li>Filter by category, distance, and budget</li>
+                        <li>Tap a task and click "Accept" to start working</li>
+                    </ul>
+                    <div class="tutorial-meta">
+                        <span><i class="fas fa-clock"></i> 3 min</span>
+                        <span><i class="fas fa-signal"></i> Beginner</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tutorial 4: Wallet & Payments -->
+            <div class="tutorial-card">
+                <div class="tutorial-thumbnail" onclick="playTutorial(this, '')" data-video="">
+                    <div class="thumb-bg" style="background: linear-gradient(135deg, #f59e0b, #ea580c);">
+                        <div class="thumb-icon" style="background: rgba(255,255,255,0.2);">
+                            <i class="fas fa-wallet"></i>
+                        </div>
+                        <span class="thumb-label">Wallet & Payments</span>
+                    </div>
+                    <div class="play-overlay">
+                        <div class="play-btn"><i class="fas fa-play"></i></div>
+                    </div>
+                </div>
+                <div class="tutorial-body">
+                    <span class="tutorial-tag tag-payments">Payments</span>
+                    <h3>How to Use the Wallet & Payments</h3>
+                    <p>Top up your wallet via UPI/card, pay for tasks securely, and track all your transactions in one place.</p>
+                    <ul class="tutorial-steps">
+                        <li>Open "Wallet" from the navigation menu</li>
+                        <li>Click "Add Money" and pay via UPI, card, or net banking</li>
+                        <li>Wallet balance is used for task payments & service charges</li>
+                        <li>View full transaction history anytime</li>
+                    </ul>
+                    <div class="tutorial-meta">
+                        <span><i class="fas fa-clock"></i> 3 min</span>
+                        <span><i class="fas fa-signal"></i> Beginner</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tutorial 5: Earn Money -->
+            <div class="tutorial-card">
+                <div class="tutorial-thumbnail" onclick="playTutorial(this, '')" data-video="">
+                    <div class="thumb-bg" style="background: linear-gradient(135deg, #43e97b, #38f9d7);">
+                        <div class="thumb-icon" style="background: rgba(255,255,255,0.2);">
+                            <i class="fas fa-rupee-sign"></i>
+                        </div>
+                        <span class="thumb-label">Earn Money</span>
+                    </div>
+                    <div class="play-overlay">
+                        <div class="play-btn"><i class="fas fa-play"></i></div>
+                    </div>
+                </div>
+                <div class="tutorial-body">
+                    <span class="tutorial-tag tag-earning">Earning Money</span>
+                    <h3>How to Earn Money on Workmate4u</h3>
+                    <p>Tips and strategies to maximize your earnings — from picking the right tasks to building a 5-star reputation.</p>
+                    <ul class="tutorial-steps">
+                        <li>Accept tasks that match your skills and location</li>
+                        <li>Complete tasks on time to build a strong rating</li>
+                        <li>Earnings are credited directly to your wallet</li>
+                        <li>Refer friends with your code to earn bonus rewards</li>
+                    </ul>
+                    <div class="tutorial-meta">
+                        <span><i class="fas fa-clock"></i> 4 min</span>
+                        <span><i class="fas fa-signal"></i> Intermediate</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tutorial 6: Safety Tips -->
+            <div class="tutorial-card">
+                <div class="tutorial-thumbnail" onclick="playTutorial(this, '')" data-video="">
+                    <div class="thumb-bg" style="background: linear-gradient(135deg, #ef4444, #dc2626);">
+                        <div class="thumb-icon" style="background: rgba(255,255,255,0.2);">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <span class="thumb-label">Stay Safe</span>
+                    </div>
+                    <div class="play-overlay">
+                        <div class="play-btn"><i class="fas fa-play"></i></div>
+                    </div>
+                </div>
+                <div class="tutorial-body">
+                    <span class="tutorial-tag tag-safety">Safety</span>
+                    <h3>Safety Tips for Users</h3>
+                    <p>Essential safety guidelines to protect yourself while posting tasks or working as a tasker on Workmate4u.</p>
+                    <ul class="tutorial-steps">
+                        <li>Always use in-app payments — never pay in cash</li>
+                        <li>Meet in public places for task handoffs</li>
+                        <li>Check ratings and reviews before accepting</li>
+                        <li>Report suspicious users immediately</li>
+                    </ul>
+                    <div class="tutorial-meta">
+                        <span><i class="fas fa-clock"></i> 3 min</span>
+                        <span><i class="fas fa-signal"></i> Essential</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- CTA Section -->
+        <div class="tutorials-cta">
+            <h2>Ready to Get Started?</h2>
+            <p>Create your free account and start posting or completing tasks in minutes!</p>
+            <div class="cta-buttons">
+                <a href="index.html#upload-task" class="btn-white"><i class="fas fa-plus-circle"></i> Post a Task</a>
+                <a href="browse.html" class="btn-outline-white"><i class="fas fa-search"></i> Find Tasks to Earn</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="tutorials-footer">
+        <p>&copy; 2026 Workmate4u India. All rights reserved. | <a href="index.html">Home</a> · <a href="help.html">Help Center</a> · <a href="contact.html">Contact</a></p>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Play tutorial video - replace thumbnail with YouTube embed
+        function playTutorial(el, videoId) {
+            if (!videoId) {
+                // No video yet — show coming soon message
+                const overlay = el.querySelector('.play-overlay');
+                if (overlay) {
+                    overlay.innerHTML = '<div style="background:rgba(0,0,0,0.7);padding:16px 24px;border-radius:12px;color:white;text-align:center;"><i class="fas fa-video" style="font-size:24px;margin-bottom:8px;display:block;"></i><strong>Video Coming Soon!</strong><br><small style="opacity:0.8;">We\'re recording this tutorial</small></div>';
+                    overlay.style.opacity = '1';
+                }
+                return;
+            }
+            // Replace thumbnail with iframe
+            const thumbBg = el.querySelector('.thumb-bg');
+            const playOverlay = el.querySelector('.play-overlay');
+            if (thumbBg) thumbBg.style.display = 'none';
+            if (playOverlay) playOverlay.style.display = 'none';
+            const iframe = document.createElement('iframe');
+            iframe.src = 'https://www.youtube.com/embed/' + videoId + '?autoplay=1&rel=0';
+            iframe.setAttribute('allow', 'autoplay; encrypted-media');
+            iframe.setAttribute('allowfullscreen', '');
+            iframe.setAttribute('loading', 'lazy');
+            iframe.title = 'Tutorial video';
+            el.appendChild(iframe);
+        }
+
+        // Page loader
+        window.addEventListener('load', function() {
+            var loader = document.getElementById('pageLoader');
+            if (loader) { loader.style.opacity = '0'; setTimeout(function() { loader.style.display = 'none'; }, 300); }
+        });
+    </script>
+</body>
+</html>

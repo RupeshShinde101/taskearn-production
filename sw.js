@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v2026042001';
+const CACHE_NAME = 'workmate4u-v2026042002';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -20,18 +20,19 @@ const STATIC_ASSETS = [
   '/icon-512x512.png'
 ];
 
-// Install — cache static assets and activate immediately
+// Install — activate INSTANTLY, cache assets in background (non-blocking)
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache =>
-      Promise.all(
-        STATIC_ASSETS.map(url =>
-          cache.add(url).catch(err => console.warn('SW cache skip:', url, err.message))
-        )
-      )
-    )
-  );
   self.skipWaiting();
+  // Cache assets in background — don't block install on this
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      // Fire-and-forget: cache each asset individually, failures are fine
+      STATIC_ASSETS.forEach(url => {
+        cache.add(url).catch(() => {});
+      });
+      return Promise.resolve(); // Resolve immediately — don't wait for caching
+    })
+  );
 });
 
 // Activate — clean ALL old caches and notify clients to refresh

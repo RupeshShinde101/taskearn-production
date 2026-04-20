@@ -2,6 +2,7 @@
   "name": "Workmate4u - Task Marketplace",
   "short_name": "Workmate4u",
   "description": "Post tasks or earn money by completing tasks nearby",
+  "id": "/index.html",
   "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -12,13 +13,34 @@
       "src": "icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Workmate4u Home"
     }
   ],
   "categories": ["business", "productivity"],

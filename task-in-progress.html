@@ -639,7 +639,7 @@
         let timerInterval;
 
         // Load task details from localStorage or API
-        function loadTaskDetails() {
+        async function loadTaskDetails() {
             const savedTask = localStorage.getItem('currentTask');
             if (savedTask) {
                 try {
@@ -651,6 +651,36 @@
                     console.log('✅ Loaded task from localStorage:', currentTask);
                 } catch (e) {
                     console.error('Error parsing saved task:', e);
+                }
+            }
+
+            // If we have a taskId from URL but no proper data, fetch from API
+            const taskId = taskIdFromUrl || currentTask.id;
+            if (taskId) {
+                const token = localStorage.getItem('taskearn_token') || '';
+                if (token) {
+                    try {
+                        const res = await fetch(API_URL + '/tracking/' + taskId, {
+                            headers: { 'Authorization': 'Bearer ' + token }
+                        });
+                        const result = await res.json();
+                        if (result.success && result.tracking) {
+                            const t = result.tracking;
+                            currentTask.id = t.taskId || taskId;
+                            currentTask.title = t.title || currentTask.title;
+                            currentTask.price = t.price || currentTask.price || currentTask.amount;
+                            if (t.poster) {
+                                currentTask.providerName = t.poster.name || currentTask.providerName;
+                                currentTask.providerPhone = t.poster.phone || currentTask.providerPhone;
+                            }
+                            if (t.pickup && t.pickup.lat) {
+                                currentTask.location = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address };
+                            }
+                            console.log('✅ Loaded task from API tracking:', currentTask);
+                        }
+                    } catch (e) {
+                        console.warn('Tracking API fetch failed:', e.message);
+                    }
                 }
             }
 
@@ -929,7 +959,7 @@
 
         // Initialize on page load
         window.addEventListener('load', async function() {
-            loadTaskDetails();
+            await loadTaskDetails();
             showLocation();
             initializeMap();
             

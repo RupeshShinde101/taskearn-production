@@ -3398,6 +3398,19 @@ function penaltyContinueTask() {
     pendingReleaseTaskId = null;
     const task = myAcceptedTasks.find(t => t.id == taskId);
     if (task) {
+        // Save task data for the in-progress page
+        localStorage.setItem('currentTask', JSON.stringify({
+            id: task.id,
+            title: task.title,
+            category: task.category,
+            price: task.price,
+            service_charge: task.service_charge || 0,
+            amount: (task.price || 0) + (task.service_charge || 0),
+            providerName: task.postedBy?.name || 'Task Poster',
+            providerPhone: task.postedBy?.phone || '',
+            location: task.location || {},
+            startTime: task.acceptedAt ? new Date(task.acceptedAt).getTime() : Date.now()
+        }));
         window.location.href = 'task-in-progress.html?taskId=' + task.id;
     }
 }

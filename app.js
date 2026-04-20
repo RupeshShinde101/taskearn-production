@@ -2719,9 +2719,9 @@ function openTaskDetail(taskId) {
         <div class="task-detail-price">
             <div>
                 <h3>Your Earnings</h3>
-                <small>₹${task.price} + ₹${getServiceCharge(task.category)} service charge</small>
+                <small>₹${task.price} + ₹${task.service_charge !== undefined ? parseFloat(task.service_charge) : getServiceCharge(task.category)} service charge</small>
             </div>
-            <span class="price">₹${task.price + getServiceCharge(task.category)}</span>
+            <span class="price">₹${parseFloat(task.price) + (task.service_charge !== undefined ? parseFloat(task.service_charge) : getServiceCharge(task.category))}</span>
         </div>
         
         <div class="task-poster">

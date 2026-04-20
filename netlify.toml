@@ -36,6 +36,12 @@
   to = "/:splat.html"
   status = 200
 
+# Root URL serves index.html
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
+
 # SPA catch-all — 404 for unknown routes
 [[redirects]]
   from = "/*"

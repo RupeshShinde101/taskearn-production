@@ -2,7 +2,6 @@
 // The browser detects byte-level changes to sw.js and triggers an update.
 const CACHE_NAME = 'workmate4u-v2026042001';
 const STATIC_ASSETS = [
-  '/',
   '/index.html',
   '/browse.html',
   '/posted.html',
@@ -24,7 +23,13 @@ const STATIC_ASSETS = [
 // Install — cache static assets and activate immediately
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.all(
+        STATIC_ASSETS.map(url =>
+          cache.add(url).catch(err => console.warn('SW cache skip:', url, err.message))
+        )
+      )
+    )
   );
   self.skipWaiting();
 });

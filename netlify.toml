@@ -79,6 +79,12 @@
     Cache-Control = "no-cache, no-store, must-revalidate"
     Service-Worker-Allowed = "/"
 
+# Manifest must not be cached so PWA install always sees latest version
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
 [[headers]]
   for = "*.html"
   [headers.values]

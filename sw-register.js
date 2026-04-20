@@ -1,6 +1,19 @@
-// Service Worker registration with auto-update detection
+// Service Worker registration with auto-update detection and stuck-SW recovery
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(function(reg) {
+  // Recovery: if SW is stuck in a failed state, unregister and re-register
+  navigator.serviceWorker.getRegistration().then(function(existing) {
+    if (existing && existing.installing === null && existing.waiting === null && existing.active === null) {
+      // SW registration exists but no worker in any state — stuck
+      console.warn('SW stuck, unregistering...');
+      return existing.unregister().then(function() {
+        return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+      });
+    }
+    return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+  }).then(function(reg) {
+    if (!reg) return;
+    // Force immediate update check
+    reg.update();
     // Check for updates every 60 seconds
     setInterval(function() { reg.update(); }, 60000);
     reg.addEventListener('updatefound', function() {
@@ -11,6 +24,16 @@ if ('serviceWorker' in navigator) {
         }
       });
     });
+  }).catch(function(err) {
+    console.error('SW registration failed:', err);
+    // Nuclear option: clear all caches and retry
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        names.forEach(function(name) { caches.delete(name); });
+      }).then(function() {
+        navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+      });
+    }
   });
   navigator.serviceWorker.addEventListener('message', function(event) {
     if (event.data && event.data.type === 'SW_UPDATED') {

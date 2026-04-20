@@ -3876,10 +3876,6 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
                     <span style="color: #999;">Total Paid:</span>
                     <span style="font-weight: 600; color: #ef4444;">-₹${totalPaid.toFixed(2)}</span>
                 </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span style="color: #999;">Helper Receives:</span>
-                    <span style="font-weight: 600; color: #4ade80;">₹${helperReceives.toFixed(2)}</span>
-                </div>
                 <hr style="border-color: rgba(255,255,255,0.1); margin: 12px 0;">
                 <div style="display: flex; justify-content: space-between;">
                     <span style="font-weight: 600;">Your New Balance:</span>
@@ -4127,13 +4123,6 @@ async function showPaymentInvoice(taskId) {
                     <span style="color: #ccc;">After Payment</span>
                     <span style="color: #fbbf24; font-weight: 600;">₹${balanceAfter.toFixed(2)}</span>
                 </div>`}
-            </div>
-
-            <div style="background: rgba(74, 222, 128, 0.05); border: 1px solid rgba(74, 222, 128, 0.2); border-radius: 10px; padding: 14px; margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="color: #4ade80; font-size: 13px;"><i class="fas fa-user"></i> Helper Receives (after 12% commission)</span>
-                    <span style="color: #4ade80; font-weight: 700;">₹${helperNetReceives.toFixed(2)}</span>
-                </div>
             </div>
 
             ${insufficient ? `

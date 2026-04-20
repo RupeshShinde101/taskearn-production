@@ -1935,7 +1935,7 @@ def complete_task(task_id):
 
             # Send email notification to poster
             try:
-                notify_task_completed_email(poster_id, helper_name, task['title'], total_poster_cost)
+                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, poster_deduction, total_poster_cost)
             except Exception:
                 pass
             
@@ -7352,17 +7352,44 @@ def notify_task_accepted_email(poster_id, helper_name, task_title):
         print(f"⚠️ notify_task_accepted_email error: {e}")
 
 
-def notify_task_completed_email(poster_id, helper_name, task_title, amount):
-    """Email poster when task is completed"""
+def notify_task_completed_email(poster_id, helper_name, task_title, task_amount, service_charge, poster_fee, total_cost):
+    """Email poster when task is completed with price breakdown and Pay Now button"""
     try:
         user = get_user_by_id(poster_id)
         if user:
-            send_event_email(user['email'], user['name'],
-                'Task Completed! 🎉',
+            breakdown_html = (
                 f'<p><strong>{html_escape(helper_name)}</strong> has completed your task:</p>'
-                f'<div style="background:#f0fff0;padding:12px;border-radius:8px;margin:12px 0;">'
-                f'<strong>{html_escape(task_title)}</strong> — ₹{amount}</div>'
-                f'<p>Please review and process the payment.</p>')
+                f'<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin:16px 0;">'
+                f'<h3 style="margin:0 0 12px 0;color:#374151;font-size:16px;">{html_escape(task_title)}</h3>'
+                f'<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+                f'<tr style="border-bottom:1px solid #f3f4f6;">'
+                f'<td style="padding:8px 0;color:#6b7280;">Budget</td>'
+                f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#111827;">₹{task_amount:.2f}</td></tr>'
+            )
+            if service_charge > 0:
+                breakdown_html += (
+                    f'<tr style="border-bottom:1px solid #f3f4f6;">'
+                    f'<td style="padding:8px 0;color:#6b7280;">Service Charge</td>'
+                    f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{service_charge:.2f}</td></tr>'
+                )
+            breakdown_html += (
+                f'<tr style="border-bottom:1px solid #f3f4f6;">'
+                f'<td style="padding:8px 0;color:#6b7280;">Posting Fee (5%)</td>'
+                f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{poster_fee:.2f}</td></tr>'
+                f'<tr>'
+                f'<td style="padding:10px 0;color:#111827;font-weight:700;font-size:16px;">Total to Pay</td>'
+                f'<td style="padding:10px 0;text-align:right;font-weight:800;font-size:16px;color:#dc2626;">₹{total_cost:.2f}</td></tr>'
+                f'</table></div>'
+                f'<div style="text-align:center;margin:20px 0 8px 0;">'
+                f'<a href="https://www.workmate4u.com/index.html" '
+                f'style="display:inline-block;background:#6366f1;color:#ffffff;padding:14px 36px;'
+                f'border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">'
+                f'💳 Pay Now</a></div>'
+                f'<p style="color:#6b7280;font-size:12px;text-align:center;margin-top:8px;">'
+                f'Log in to your account and approve the payment from your wallet.</p>'
+            )
+            send_event_email(user['email'], user['name'],
+                'Task Completed! 🎉', breakdown_html)
     except Exception as e:
         print(f"⚠️ notify_task_completed_email error: {e}")
 

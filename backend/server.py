@@ -1935,7 +1935,7 @@ def complete_task(task_id):
 
             # Send email notification to poster
             try:
-                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, poster_deduction, total_poster_cost)
+                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, poster_deduction, total_poster_cost, task_id)
             except Exception:
                 pass
             
@@ -7354,7 +7354,7 @@ def notify_task_accepted_email(poster_id, helper_name, task_title):
         print(f"⚠️ notify_task_accepted_email error: {e}")
 
 
-def notify_task_completed_email(poster_id, helper_name, task_title, task_amount, service_charge, poster_fee, total_cost):
+def notify_task_completed_email(poster_id, helper_name, task_title, task_amount, service_charge, poster_fee, total_cost, task_id=None):
     """Email poster when task is completed with price breakdown and Pay Now button"""
     try:
         user = get_user_by_id(poster_id)
@@ -7383,7 +7383,7 @@ def notify_task_completed_email(poster_id, helper_name, task_title, task_amount,
                 f'<td style="padding:10px 0;text-align:right;font-weight:800;font-size:16px;color:#dc2626;">₹{total_cost:.2f}</td></tr>'
                 f'</table></div>'
                 f'<div style="text-align:center;margin:20px 0 8px 0;">'
-                f'<a href="https://www.workmate4u.com/index.html" '
+                f'<a href="https://www.workmate4u.com/index.html?pay={task_id}" '
                 f'style="display:inline-block;background:#6366f1;color:#ffffff;padding:14px 36px;'
                 f'border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">'
                 f'💳 Pay Now</a></div>'

@@ -1980,6 +1980,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         } catch (e) {
             console.warn('⚠️ Task rendering failed:', e.message);
         }
+
+        // Auto-open payment invoice if ?pay=TASK_ID is in URL (from email Pay Now button)
+        try {
+            const payTaskId = new URLSearchParams(window.location.search).get('pay');
+            if (payTaskId && currentUser) {
+                // Clean URL without reloading
+                window.history.replaceState({}, '', window.location.pathname);
+                setTimeout(() => showPaymentInvoice(parseInt(payTaskId, 10)), 800);
+            }
+        } catch (e) {
+            console.warn('⚠️ Auto-pay URL handler failed:', e.message);
+        }
         
         // Refresh tasks from server every 60 seconds (was 30s — reduced for performance)
         setInterval(() => {
@@ -3388,6 +3400,28 @@ function penaltyContinueTask() {
     if (task) {
         window.location.href = 'task-in-progress.html?taskId=' + task.id;
     }
+}
+
+// Navigate to task-in-progress page when clicking accepted task card
+function goToTaskInProgress(taskId) {
+    const task = myAcceptedTasks.find(t => t.id == taskId);
+    if (!task) return;
+    // Only navigate for in-progress tasks, not completed/awaiting payment
+    if (task.status === 'completed' || task.status === 'pending_payment' || task.status === 'paid') return;
+    // Save task data for the in-progress page
+    localStorage.setItem('currentTask', JSON.stringify({
+        id: task.id,
+        title: task.title,
+        category: task.category,
+        price: task.price,
+        service_charge: task.service_charge || 0,
+        amount: (task.price || 0) + (task.service_charge || 0),
+        providerName: task.postedBy?.name || 'Task Poster',
+        providerPhone: task.postedBy?.phone || '',
+        location: task.location || {},
+        startTime: task.acceptedAt ? new Date(task.acceptedAt).getTime() : Date.now()
+    }));
+    window.location.href = 'task-in-progress.html?taskId=' + task.id;
 }
 
 async function penaltyConfirmRelease() {
@@ -5619,15 +5653,20 @@ function renderAcceptedTasks() {
                 <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${((t.price || 0) + (t.service_charge || 0)) * 0.88} (after 12% commission)</p>
             </div>`;
         } else {
-            // Still in progress - show complete and release buttons
-            actionHTML = `<div class="task-actions" style="display:flex;gap:8px;">
-                <button class="btn btn-success" onclick="completeTask(${t.id})">Mark Complete</button>
-                <button class="btn" style="background:#ef4444;color:#fff;" onclick="abandonTask(${t.id})">Release Task</button>
+            // Still in progress - show action buttons
+            const posterPhone = t.postedBy?.phone || '';
+            const taskLat = t.location?.lat || '';
+            const taskLng = t.location?.lng || '';
+            actionHTML = `<div class="task-actions" style="display:flex;flex-wrap:wrap;gap:8px;">
+                <button class="btn btn-success" style="flex:1;min-width:120px;" onclick="event.stopPropagation(); completeTask(${t.id})"><i class="fas fa-check"></i> Mark Complete</button>
+                <button class="btn" style="flex:1;min-width:120px;background:#ef4444;color:#fff;" onclick="event.stopPropagation(); abandonTask(${t.id})"><i class="fas fa-times"></i> Release Task</button>
+                ${posterPhone ? `<a href="tel:${escapeHtml(posterPhone)}" class="btn" style="flex:1;min-width:120px;background:#6366f1;color:#fff;text-decoration:none;text-align:center;display:inline-flex;align-items:center;justify-content:center;gap:4px;" onclick="event.stopPropagation();"><i class="fas fa-phone"></i> Contact</a>` : ''}
+                ${taskLat && taskLng ? `<button class="btn" style="flex:1;min-width:120px;background:#0ea5e9;color:#fff;" onclick="event.stopPropagation(); navigateToTask(${taskLat}, ${taskLng}, '${escapeHtml(t.title).replace(/'/g, "\\\\'")}')"><i class="fas fa-map-marker-alt"></i> Navigate</button>` : ''}
             </div>`;
         }
         
         return `
-            <div class="my-task-card">
+            <div class="my-task-card" style="cursor:pointer;" onclick="goToTaskInProgress(${t.id})">
                 <div class="my-task-card-header">
                     <span class="task-category">${formatCategory(t.category)}</span>
                     <span class="task-status ${statusColor}">${statusHTML}</span>
@@ -6840,6 +6879,7 @@ window.clearAllNotifications = clearAllNotifications;
 window.handleNotificationAction = handleNotificationAction;
 window.executePayment = executePayment;
 window.showPaymentInvoice = showPaymentInvoice;
+window.goToTaskInProgress = goToTaskInProgress;
 
 // New feature functions
 window.confirmDeleteAccount = confirmDeleteAccount;

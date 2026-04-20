@@ -519,11 +519,15 @@
 
             </div>
 
-            <!-- Complete Section -->
-            <div class="complete-section">
-                <button class="btn-complete" onclick="completeTask()">
+            <!-- Action Buttons -->
+            <div class="complete-section" style="display:flex;gap:12px;">
+                <button class="btn-complete" onclick="completeTask()" style="flex:1;">
                     <i class="fas fa-check-circle"></i>
-                    Mark Task Completed
+                    Mark Completed
+                </button>
+                <button onclick="goBack()" style="flex:1;background:#ef4444;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+                    <i class="fas fa-times-circle"></i>
+                    Release Task
                 </button>
             </div>
         </div>

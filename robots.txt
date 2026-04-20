@@ -1,5 +1,5 @@
 # Workmate4u - India's #1 Freelance Marketplace
-# https://www.workmate4u.com
+# https://workmate4u.com
 
 User-agent: *
 Allow: /
@@ -46,4 +46,4 @@ Disallow: /*.json$
 Disallow: /*.toml$
 
 # Sitemap
-Sitemap: https://www.workmate4u.com/sitemap.xml
+Sitemap: https://workmate4u.com/sitemap.xml

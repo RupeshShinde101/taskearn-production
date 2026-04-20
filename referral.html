@@ -6,7 +6,7 @@
     <title>Refer & Earn - Workmate4u</title>
     <meta name="description" content="Invite friends to Workmate4u and earn rewards! Share your unique referral code and both you and your friend get bonus wallet credits.">
     <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://www.workmate4u.com/referral.html">
+    <link rel="canonical" href="https://workmate4u.com/referral.html">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
@@ -195,9 +195,9 @@
 
         function shareRef() {
             var code = document.getElementById('refCode').textContent;
-            var text = 'Join Workmate4u and earn money doing tasks! Use my referral code: ' + code + '\nSign up at https://www.workmate4u.com';
+            var text = 'Join Workmate4u and earn money doing tasks! Use my referral code: ' + code + '\nSign up at https://workmate4u.com';
             if (navigator.share) {
-                navigator.share({ title: 'Join Workmate4u', text: text, url: 'https://www.workmate4u.com' });
+                navigator.share({ title: 'Join Workmate4u', text: text, url: 'https://workmate4u.com' });
             } else {
                 navigator.clipboard.writeText(text);
                 alert('Referral message copied to clipboard!');

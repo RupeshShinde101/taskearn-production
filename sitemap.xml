@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <!-- Main Page -->
     <url>
-        <loc>https://www.workmate4u.com/</loc>
+        <loc>https://workmate4u.com/</loc>
         <lastmod>2026-04-17</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
@@ -10,7 +10,7 @@
 
     <!-- Help Center -->
     <url>
-        <loc>https://www.workmate4u.com/help.html</loc>
+        <loc>https://workmate4u.com/help.html</loc>
         <lastmod>2026-04-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
@@ -18,7 +18,7 @@
 
     <!-- Privacy Policy -->
     <url>
-        <loc>https://www.workmate4u.com/privacy.html</loc>
+        <loc>https://workmate4u.com/privacy.html</loc>
         <lastmod>2026-04-17</lastmod>
         <changefreq>yearly</changefreq>
         <priority>0.5</priority>
@@ -26,7 +26,7 @@
 
     <!-- Safety Tips -->
     <url>
-        <loc>https://www.workmate4u.com/safety.html</loc>
+        <loc>https://workmate4u.com/safety.html</loc>
         <lastmod>2026-04-17</lastmod>
         <changefreq>yearly</changefreq>
         <priority>0.5</priority>
@@ -34,7 +34,7 @@
 
     <!-- Terms of Service -->
     <url>
-        <loc>https://www.workmate4u.com/terms.html</loc>
+        <loc>https://workmate4u.com/terms.html</loc>
         <lastmod>2026-04-17</lastmod>
         <changefreq>yearly</changefreq>
         <priority>0.5</priority>
@@ -42,7 +42,7 @@
 
     <!-- About Us -->
     <url>
-        <loc>https://www.workmate4u.com/about.html</loc>
+        <loc>https://workmate4u.com/about.html</loc>
         <lastmod>2026-04-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
@@ -50,7 +50,7 @@
 
     <!-- Contact -->
     <url>
-        <loc>https://www.workmate4u.com/contact.html</loc>
+        <loc>https://workmate4u.com/contact.html</loc>
         <lastmod>2026-04-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
@@ -58,7 +58,7 @@
 
     <!-- Referral Program -->
     <url>
-        <loc>https://www.workmate4u.com/referral.html</loc>
+        <loc>https://workmate4u.com/referral.html</loc>
         <lastmod>2026-04-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>

@@ -2317,7 +2317,9 @@ def pay_helper(task_id):
 
             # Send email notification to helper
             try:
-                notify_payment_received_email(helper_id, task['title'], helper_earnings)
+                notify_payment_received_email(helper_id, task['title'], helper_earnings,
+                    task_amount=task_amount, service_charge=service_charge,
+                    commission=helper_total_deduction)
             except Exception:
                 pass
             
@@ -7394,17 +7396,42 @@ def notify_task_completed_email(poster_id, helper_name, task_title, task_amount,
         print(f"⚠️ notify_task_completed_email error: {e}")
 
 
-def notify_payment_received_email(helper_id, task_title, amount):
-    """Email helper when they receive payment"""
+def notify_payment_received_email(helper_id, task_title, amount, task_amount=0, service_charge=0, commission=0):
+    """Email helper when they receive payment with earnings breakdown"""
     try:
         user = get_user_by_id(helper_id)
         if user:
+            breakdown_html = (
+                f'<p>Great news! You\'ve been paid for completing:</p>'
+                f'<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin:16px 0;">'
+                f'<h3 style="margin:0 0 12px 0;color:#374151;font-size:16px;">{html_escape(task_title)}</h3>'
+                f'<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+                f'<tr style="border-bottom:1px solid #f3f4f6;">'
+                f'<td style="padding:8px 0;color:#6b7280;">Task Price</td>'
+                f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#111827;">₹{task_amount:.2f}</td></tr>'
+            )
+            if service_charge > 0:
+                breakdown_html += (
+                    f'<tr style="border-bottom:1px solid #f3f4f6;">'
+                    f'<td style="padding:8px 0;color:#6b7280;">Service Charge</td>'
+                    f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{service_charge:.2f}</td></tr>'
+                )
+            total_task_val = task_amount + service_charge
+            breakdown_html += (
+                f'<tr style="border-bottom:1px solid #f3f4f6;">'
+                f'<td style="padding:8px 0;color:#6b7280;font-weight:700;">Task Value</td>'
+                f'<td style="padding:8px 0;text-align:right;font-weight:700;color:#111827;">₹{total_task_val:.2f}</td></tr>'
+                f'<tr style="border-bottom:1px solid #f3f4f6;">'
+                f'<td style="padding:8px 0;color:#6b7280;">Platform Commission (12%)</td>'
+                f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#dc2626;">-₹{commission:.2f}</td></tr>'
+                f'<tr>'
+                f'<td style="padding:10px 0;color:#059669;font-weight:700;font-size:16px;">Your Earnings</td>'
+                f'<td style="padding:10px 0;text-align:right;font-weight:800;font-size:16px;color:#059669;">₹{amount:.2f}</td></tr>'
+                f'</table></div>'
+                f'<p style="color:#374151;">The money has been added to your wallet. You can withdraw anytime.</p>'
+            )
             send_event_email(user['email'], user['name'],
-                'Payment Received! 💰',
-                f'<p>You received <strong>₹{amount}</strong> for completing:</p>'
-                f'<div style="background:#f0fff0;padding:12px;border-radius:8px;margin:12px 0;">'
-                f'<strong>{html_escape(task_title)}</strong></div>'
-                f'<p>The money has been added to your wallet.</p>')
+                'Payment Received! 💰', breakdown_html)
     except Exception as e:
         print(f"⚠️ notify_payment_received_email error: {e}")
 

@@ -51,6 +51,24 @@ window.addEventListener('appinstalled', function() {
   deferredInstallPrompt = null;
 });
 
+// iOS doesn't fire beforeinstallprompt — show manual install hint
+(function() {
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  var isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (isIOS && !isStandalone && !sessionStorage.getItem('ios-install-dismissed')) {
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        if (document.getElementById('pwa-install-banner')) return;
+        var banner = document.createElement('div');
+        banner.id = 'pwa-install-banner';
+        banner.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#6366f1;color:#fff;padding:14px 20px;border-radius:14px;z-index:99999;font-family:Poppins,sans-serif;font-weight:600;display:flex;align-items:center;gap:12px;box-shadow:0 4px 24px rgba(0,0,0,0.35);max-width:90%;';
+        banner.innerHTML = '<span style="font-size:22px;">📲</span><span style="flex:1;font-size:14px;">Install: tap <b>Share ↑</b> then <b>"Add to Home Screen"</b></span><button onclick="sessionStorage.setItem(\'ios-install-dismissed\',\'1\');this.parentElement.remove()" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:18px;padding:0 4px;">✕</button>';
+        document.body.appendChild(banner);
+      }, 3000);
+    });
+  }
+})();
+
 function showUpdateBanner() {
   if (document.getElementById('sw-update-banner')) return;
   var banner = document.createElement('div');

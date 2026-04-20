@@ -1,6 +1,6 @@
 // Service Worker registration with auto-update detection
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(function(reg) {
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(function(reg) {
     // Check for updates every 60 seconds
     setInterval(function() { reg.update(); }, 60000);
     reg.addEventListener('updatefound', function() {

@@ -277,11 +277,11 @@
                             <!-- Front side upload (always shown once doc type is selected) -->
                             <div id="kycFrontUploadSection" class="profile-field-edit" style="margin-bottom:14px;display:none;">
                                 <label><i class="fas fa-camera"></i> <span id="kycFrontLabelText">Front Side</span></label>
-                                <div id="kycFrontUploadArea" onclick="document.getElementById('kycDocFront').click()" style="border:2px dashed #cbd5e1;border-radius:10px;padding:24px;text-align:center;cursor:pointer;background:#f8fafc;transition:all 0.2s;">
+                                <label for="kycDocFront" id="kycFrontUploadArea" style="display:block;border:2px dashed #cbd5e1;border-radius:10px;padding:24px;text-align:center;cursor:pointer;background:#f8fafc;transition:all 0.2s;">
                                     <i class="fas fa-cloud-upload-alt" style="font-size:28px;color:#94a3b8;"></i>
                                     <p style="margin:8px 0 0;color:#64748b;font-size:13px;">Tap to upload front side photo</p>
                                     <small style="color:#94a3b8;font-size:11px;">JPG, PNG — Max 5MB</small>
-                                </div>
+                                </label>
                                 <input type="file" id="kycDocFront" accept="image/*" style="display:none;" onchange="previewKYCImage(this,'front')">
                                 <div id="kycFrontPreview" style="display:none;margin-top:10px;text-align:center;">
                                     <img id="kycFrontPreviewImg" src="" alt="Front side preview" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid #e2e8f0;">
@@ -291,11 +291,11 @@
                             <!-- Back side upload (Aadhaar only) -->
                             <div id="kycBackUploadSection" class="profile-field-edit" style="margin-bottom:14px;display:none;">
                                 <label><i class="fas fa-camera"></i> Back Side</label>
-                                <div id="kycBackUploadArea" onclick="document.getElementById('kycDocBack').click()" style="border:2px dashed #cbd5e1;border-radius:10px;padding:24px;text-align:center;cursor:pointer;background:#f8fafc;transition:all 0.2s;">
+                                <label for="kycDocBack" id="kycBackUploadArea" style="display:block;border:2px dashed #cbd5e1;border-radius:10px;padding:24px;text-align:center;cursor:pointer;background:#f8fafc;transition:all 0.2s;">
                                     <i class="fas fa-cloud-upload-alt" style="font-size:28px;color:#94a3b8;"></i>
                                     <p style="margin:8px 0 0;color:#64748b;font-size:13px;">Tap to upload back side photo</p>
                                     <small style="color:#94a3b8;font-size:11px;">JPG, PNG — Max 5MB</small>
-                                </div>
+                                </label>
                                 <input type="file" id="kycDocBack" accept="image/*" style="display:none;" onchange="previewKYCImage(this,'back')">
                                 <div id="kycBackPreview" style="display:none;margin-top:10px;text-align:center;">
                                     <img id="kycBackPreviewImg" src="" alt="Back side preview" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid #e2e8f0;">

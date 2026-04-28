@@ -220,6 +220,29 @@ def _ensure_suspension_columns():
     except Exception as e:
         print(f"⚠️ _ensure_suspension_columns error: {e}")
 
+_kyc_columns_ensured = False
+
+def _ensure_kyc_columns():
+    """Ensure kyc_document_image_back column exists in users table (one-time per process)"""
+    global _kyc_columns_ensured
+    if _kyc_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                # PostgreSQL
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_image_back TEXT")
+            else:
+                # SQLite
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'kyc_document_image_back' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN kyc_document_image_back TEXT")
+        _kyc_columns_ensured = True
+        print("✅ KYC back-image column verified")
+    except Exception as e:
+        print(f"⚠️ _ensure_kyc_columns error: {e}")
+
 def generate_user_id():
     """Generate unique user ID"""
     import time
@@ -7513,15 +7536,18 @@ def submit_kyc():
     if doc_type == 'pan' and not re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]$', doc_number.upper()):
         return jsonify({'success': False, 'message': 'Invalid PAN format (e.g. ABCDE1234F)'}), 400
 
+    _ensure_kyc_columns()
+
     try:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with get_db() as (cursor, conn):
             # Auto-verify: set status to 'verified' immediately
             cursor.execute(f'''
                 UPDATE users SET kyc_document_type = {PH}, kyc_document_number = {PH},
-                kyc_document_image = {PH}, kyc_status = 'verified', kyc_verified_at = {PH}
+                kyc_document_image = {PH}, kyc_document_image_back = {PH},
+                kyc_status = 'verified', kyc_verified_at = {PH}
                 WHERE id = {PH}
-            ''', (doc_type, doc_number.upper(), doc_image_front, now, request.user_id))
+            ''', (doc_type, doc_number.upper(), doc_image_front, doc_image_back or None, now, request.user_id))
 
             # Notify user of verification
             cursor.execute(f'''
@@ -7583,7 +7609,7 @@ def admin_get_user_kyc(user_id):
         with get_db() as (cursor, conn):
             cursor.execute(f'''
                 SELECT name, email, kyc_status, kyc_document_type, kyc_document_number,
-                       kyc_document_image, kyc_verified_at
+                       kyc_document_image, kyc_document_image_back, kyc_verified_at
                 FROM users WHERE id = {PH}
             ''', (user_id,))
             row = cursor.fetchone()
@@ -7599,7 +7625,8 @@ def admin_get_user_kyc(user_id):
                 'kycStatus': user_data.get('kyc_status', 'none'),
                 'documentType': user_data.get('kyc_document_type'),
                 'documentNumber': user_data.get('kyc_document_number'),
-                'documentImage': user_data.get('kyc_document_image'),
+                'documentImageFront': user_data.get('kyc_document_image'),
+                'documentImageBack': user_data.get('kyc_document_image_back'),
                 'verifiedAt': user_data.get('kyc_verified_at')
             }
         })

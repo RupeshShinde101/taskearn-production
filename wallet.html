@@ -1157,7 +1157,7 @@
                         loadWallet();
                     }, 500);
                 } else {
-                    showToast('? ' + (result.message || 'Login failed'));
+                    showToast('❌ ' + (result.message || 'Login failed'));
                 }
             } catch (e) {
                 console.error('Login error:', e);
@@ -1456,7 +1456,7 @@
                 const verifyData = await verifyResponse.json();
                 
                 if (verifyData.success) {
-                    console.log('[WALLET] ? Payment verified and wallet credited');
+                    console.log('[WALLET] ✅ Payment verified and wallet credited');
                     
                     // Use BACKEND response for the exact credited amount
                     const creditedAmount = verifyData.newBalance - (JSON.parse(localStorage.getItem('taskearn_user') || '{}').wallet || 0);
@@ -1486,7 +1486,7 @@
                         loadWallet();
                     }, 1000);
                 } else {
-                    console.log('[WALLET] ? Payment verification failed:', verifyData.message);
+                    console.log('[WALLET] ❌ Payment verification failed:', verifyData.message);
                     showToast('❌ Payment verification failed: ' + (verifyData.message || 'Please contact support'));
                 }
             } catch (error) {
@@ -1813,7 +1813,7 @@
                 });
                 
                 if (result && result.success) {
-                    showToast('? ' + result.message);
+                    showToast('❌ ' + result.message);
                     closeWithdrawalModal();
                     loadWallet();
                 } else {

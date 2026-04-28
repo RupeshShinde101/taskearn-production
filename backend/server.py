@@ -8122,15 +8122,36 @@ def push_test():
             'url': '/browse.html',
         })
 
-        webpush(
-            subscription_info=json_mod.loads(row['subscription_json']),
-            data=payload,
-            vapid_private_key=vapid_private,
-            vapid_claims={'sub': vapid_email},
-        )
-        return jsonify({'success': True, 'message': 'Test push sent! Check your device.'})
+        try:
+            webpush(
+                subscription_info=json_mod.loads(row['subscription_json']),
+                data=payload,
+                vapid_private_key=vapid_private,
+                vapid_claims={'sub': vapid_email},
+            )
+            return jsonify({'success': True, 'message': 'Test push sent! Check your device.'})
+        except WebPushException as wpe:
+            # Common: 410 Gone (subscription expired), 404, 403 (bad VAPID key)
+            status = wpe.response.status_code if wpe.response is not None else 0
+            body = ''
+            try:
+                body = wpe.response.text[:200] if wpe.response is not None else ''
+            except Exception:
+                pass
+            # Drop dead subscription so the next subscribe creates a fresh one
+            if status in (404, 410):
+                with get_db() as (cursor, conn):
+                    cursor.execute(f"DELETE FROM push_subscriptions WHERE user_id = {PH}",
+                                   (request.user_id,))
+                    conn.commit()
+                return jsonify({'success': False,
+                                'message': 'Your old subscription expired. Tap the test button again to re-subscribe.'}), 200
+            return jsonify({'success': False,
+                            'message': f'Push gateway error {status}: {body or str(wpe)}'}), 200
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'message': f'Push failed: {str(e)}'}), 500
 
 

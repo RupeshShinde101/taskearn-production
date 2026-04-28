@@ -7123,16 +7123,57 @@ async function enablePushAndSubscribe() {
 }
 
 async function testPushNotification() {
-    // For debugging: sends a test push to the current device via the server
-    showToast('Sending test notification…');
+    // Robust test: ensure permission + subscription, THEN send test push
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+        showToast('Push notifications are not supported in this browser', 'error');
+        return;
+    }
+    if (!currentUser) {
+        showToast('Please log in first', 'error');
+        return;
+    }
+
     try {
+        // Step 1: ensure notification permission
+        if (Notification.permission === 'denied') {
+            showToast('Notifications are blocked. Enable them in your browser settings.', 'error');
+            return;
+        }
+        if (Notification.permission !== 'granted') {
+            showToast('Requesting notification permission…');
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') {
+                showToast('Permission denied — cannot send test', 'error');
+                return;
+            }
+        }
+
+        // Step 2: ensure SW is registered & ready
+        showToast('Preparing notification…');
+        const reg = await navigator.serviceWorker.ready;
+
+        // Step 3: ensure server-side subscription exists (always re-subscribe with fresh VAPID)
+        await initPushNotifications();
+
+        // Verify a subscription is actually active
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+            showToast('Could not create push subscription. Please try again.', 'error');
+            return;
+        }
+
+        // Step 4: ask the server to send a test push to this device
+        showToast('Sending test notification…');
         const result = await PushAPI.test();
         if (result && result.success) {
             showToast('✅ Test push sent — check your notification tray!');
         } else {
-            showToast('Test failed: ' + (result && result.message ? result.message : 'Unknown error'), 'error');
+            const msg = result && result.message ? result.message : 'Unknown error';
+            showToast('Test failed: ' + msg, 'error');
+            console.error('[PUSH-TEST] Server response:', result);
         }
     } catch (e) {
+        console.error('[PUSH-TEST] Error:', e);
         showToast('Test push error: ' + e.message, 'error');
     }
 }

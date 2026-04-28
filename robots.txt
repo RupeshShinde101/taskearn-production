@@ -11,6 +11,7 @@ Allow: /privacy.html
 Allow: /safety.html
 Allow: /terms.html
 Allow: /referral.html
+Allow: /tutorials.html
 
 # Block internal/admin pages
 Disallow: /admin.html

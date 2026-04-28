@@ -182,19 +182,6 @@
                 </div>
             </div>
             
-            <!-- Push Notification Banner (shown only to logged-in users who haven't enabled yet) -->
-            <div id="pushBanner" style="display:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:14px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-                <span style="font-size:24px;">🔔</span>
-                <div style="flex:1;min-width:180px;">
-                    <strong style="font-size:14px;">Get notified of nearby tasks!</strong>
-                    <p style="margin:2px 0 0;font-size:12px;opacity:.9;">Allow notifications to get instant alerts when delivery &amp; pickup tasks appear within 10 km of you.</p>
-                </div>
-                <div style="display:flex;gap:8px;flex-shrink:0;">
-                    <button onclick="enablePushAndSubscribe()" style="background:#fff;color:#6366f1;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer;">Enable</button>
-                    <button onclick="document.getElementById('pushBanner').style.display='none';localStorage.setItem('pushBannerDismissed','1')" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer;">✕</button>
-                </div>
-            </div>
-
             <div class="tasks-list-fullwidth" id="tasksList">
                 <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>
                 <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>

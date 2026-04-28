@@ -920,7 +920,7 @@
                 }
             }
 
-            // Abandon task  server now handles release counting + auto-suspension atomically
+            // Abandon task — server now handles release counting + auto-suspension atomically
             if (token && taskId) {
                 try {
                     const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {

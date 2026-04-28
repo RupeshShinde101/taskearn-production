@@ -191,7 +191,7 @@
             <!-- AI Recommended Tasks Section -->
             <div id="recommendedSection" style="display:none;margin-top:28px;">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-                    <span style="font-size:22px;">âœ¨</span>
+                    <span style="font-size:22px;">✨</span>
                     <h3 style="margin:0;font-size:17px;font-weight:700;color:#1e293b;">Recommended For You</h3>
                     <span style="background:#6366f1;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;letter-spacing:.5px;">AI Matched</span>
                 </div>
@@ -332,9 +332,9 @@
                 </div>
                 <div class="form-group"><label for="modalTaskDescription">Description</label><textarea id="modalTaskDescription" rows="4" placeholder="Provide details about the task, any special requirements, etc." required></textarea></div>
                 <div class="form-group"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
-                <div class="form-group"><label>Task Budget (Min â‚¹100)</label><div class="budget-selector"><div class="budget-option" onclick="selectBudget(this, 100)">â‚¹100</div><div class="budget-option" onclick="selectBudget(this, 200)">â‚¹200</div><div class="budget-option" onclick="selectBudget(this, 500)">â‚¹500</div><div class="budget-option" onclick="selectBudget(this, 1000)">â‚¹1000</div><input type="number" id="customBudget" placeholder="Custom ?" min="100"></div></div>
-                <div class="form-group"><label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label><div class="bonus-section"><p class="bonus-hint">Increase your budget to attract more taskers and get faster responses!</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="addBonus(50)">+â‚¹50</button><button type="button" class="bonus-btn" onclick="addBonus(100)">+â‚¹100</button><button type="button" class="bonus-btn" onclick="addBonus(200)">+â‚¹200</button><button type="button" class="bonus-btn" onclick="addBonus(500)">+â‚¹500</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">â‚¹500</strong></div></div></div>
-                <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Service Charge</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">â‚¹100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">â‚¹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row total"><span><strong>You Pay:</strong></span><span><strong id="totalPayable">â‚¹150</strong></span></div><div class="charge-row" style="color:#10b981;font-size:13px;margin-top:5px;"><span>Worker Earns:</span><span><strong id="workerEarns">â‚¹150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity</p></div>
+                <div class="form-group"><label>Task Budget (Min ₹100)</label><div class="budget-selector"><div class="budget-option" onclick="selectBudget(this, 100)">₹100</div><div class="budget-option" onclick="selectBudget(this, 200)">₹200</div><div class="budget-option" onclick="selectBudget(this, 500)">₹500</div><div class="budget-option" onclick="selectBudget(this, 1000)">₹1000</div><input type="number" id="customBudget" placeholder="Custom ₹" min="100"></div></div>
+                <div class="form-group"><label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label><div class="bonus-section"><p class="bonus-hint">Increase your budget to attract more taskers and get faster responses!</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="addBonus(50)">+₹50</button><button type="button" class="bonus-btn" onclick="addBonus(100)">+₹100</button><button type="button" class="bonus-btn" onclick="addBonus(200)">+₹200</button><button type="button" class="bonus-btn" onclick="addBonus(500)">+₹500</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">₹500</strong></div></div></div>
+                <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Service Charge</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">₹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row total"><span><strong>You Pay:</strong></span><span><strong id="totalPayable">₹150</strong></span></div><div class="charge-row" style="color:#10b981;font-size:13px;margin-top:5px;"><span>Worker Earns:</span><span><strong id="workerEarns">₹150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity</p></div>
                 <div class="task-info-box"><i class="fas fa-info-circle"></i><div><strong>Task Visibility</strong><p>Your task will be visible to nearby taskers for 12 hours.</p></div></div>
                 <button type="submit" class="btn btn-primary btn-block btn-large"><i class="fas fa-paper-plane"></i> Post Task Now</button>
             </form>
@@ -395,13 +395,13 @@
                 </div>
                 <h3 style="margin-bottom:8px;color:#ef4444;">Account Debt Suspended</h3>
                 <p style="color:#64748b;font-size:14px;margin-bottom:12px;" id="debtSuspendedMessage">
-                    Your wallet balance has reached -â‚¹500 or below. You cannot accept tasks or withdraw funds until your balance is back to â‚¹0 or above.
+                    Your wallet balance has reached -₹500 or below. You cannot accept tasks or withdraw funds until your balance is back to ₹0 or above.
                 </p>
                 <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:12px;">
                     <p style="color:#64748b;font-size:13px;margin:0 0 4px;">Amount Owed</p>
-                    <p style="color:#ef4444;font-weight:800;font-size:24px;margin:0;" id="debtSuspendedAmount">â‚¹0</p>
+                    <p style="color:#ef4444;font-weight:800;font-size:24px;margin:0;" id="debtSuspendedAmount">₹0</p>
                 </div>
-                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">Add money to your wallet to bring your balance back to â‚¹0 or above and restore your account.</p>
+                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">Add money to your wallet to bring your balance back to ₹0 or above and restore your account.</p>
                 <button class="btn" style="width:100%;background:var(--primary-gradient);color:#fff;padding:12px;border-radius:10px;font-weight:600;margin-bottom:8px;" onclick="closeModal('debtSuspendedModal'); window.location.href='wallet.html';">
                     Add Money Now
                 </button>
@@ -417,11 +417,11 @@
 
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-    <script src="api-client.js?v=20260429_clientfix"></script>
+    <script src="api-client.js?v=20260429_pushgone"></script>
     <script src="shared.js?v=20260404_accept_v2"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="razorpay.js?v=20260404_accept_v2"></script>
-    <script src="app.js?v=20260429_clientfix"></script>
+    <script src="app.js?v=20260429_pushgone"></script>
     <script>(function(){var l=document.getElementById('pageLoader');if(l){l.classList.add('active');window.addEventListener('load',function(){l.classList.remove('active');l.classList.add('done');setTimeout(function(){l.remove()},600)})}})()</script>
 <script src="sw-register.js?v=20260420_recovery"></script>
 </body>

@@ -1036,23 +1036,13 @@ const KYCAPI = {
     }
 };
 
-// Push Notifications API
-// All methods return the unwrapped server JSON body (e.g. {success, vapidKey, message})
-// Network/transport failures throw or return {success:false, message}.
-const _unwrap = async (p) => {
-    try {
-        const r = await p;
-        if (r && typeof r === 'object' && 'data' in r) return r.data || { success: false, message: 'Empty response' };
-        return r || { success: false, message: 'Empty response' };
-    } catch (e) {
-        return { success: false, message: (e && e.message) || 'Network error' };
-    }
-};
+// Push Notifications API removed — stub returns to keep any cached
+// frontend code from crashing if it still tries to call PushAPI methods.
 const PushAPI = {
-    getVapidKey: () => _unwrap(apiRequest('/push/vapid-key')),
-    subscribe:   (payload) => _unwrap(apiRequest('/push/subscribe',   { method: 'POST', body: JSON.stringify(payload) })),
-    unsubscribe: () => _unwrap(apiRequest('/push/unsubscribe', { method: 'POST' })),
-    test:        () => _unwrap(apiRequest('/push/test',        { method: 'POST' }))
+    getVapidKey: async () => ({ success: false, message: 'Push notifications removed' }),
+    subscribe:   async () => ({ success: false, message: 'Push notifications removed' }),
+    unsubscribe: async () => ({ success: false, message: 'Push notifications removed' }),
+    test:        async () => ({ success: false, message: 'Push notifications removed' })
 };
 
 // Export for use

@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260429f';
+const CACHE_NAME = 'workmate4u-v20260429g';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -98,72 +98,5 @@ self.addEventListener('fetch', event => {
 });
 
 // ========================================
-// PUSH NOTIFICATIONS
+// PUSH NOTIFICATIONS REMOVED
 // ========================================
-
-self.addEventListener('push', event => {
-  let data = { title: 'Workmate4u', body: 'You have a new notification', icon: '/icon-192x192.png' };
-  
-  if (event.data) {
-    try {
-      data = Object.assign(data, event.data.json());
-    } catch (e) {
-      data.body = event.data.text();
-    }
-  }
-
-  const options = {
-    body: data.body,
-    icon: data.icon || '/icon-192x192.png',
-    badge: '/icon-192x192.png',
-    vibrate: [200, 100, 200],
-    tag: data.tag || 'workmate4u-notification',
-    renotify: true,
-    data: {
-      url: data.url || '/',
-      notificationId: data.notificationId
-    }
-  };
-
-  event.waitUntil(
-    // Check if the app is open in a focused tab
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-      // Always show the OS notification (background + lock screen)
-      const showNotif = self.registration.showNotification(data.title, options);
-
-      // ALSO send to any open page tab so it can show an in-app banner
-      // (works like WhatsApp — shows even when app is open)
-      clients.forEach(client => {
-        client.postMessage({
-          type: 'PUSH_RECEIVED',
-          title: data.title,
-          body: data.body,
-          icon: data.icon || '/icon-192x192.png',
-          url: data.url || '/',
-          tag: data.tag || ''
-        });
-      });
-
-      return showNotif;
-    })
-  );
-});
-
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  const targetUrl = event.notification.data?.url || '/';
-  
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-      // Focus existing tab if open
-      for (const client of clients) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          client.navigate(targetUrl);
-          return client.focus();
-        }
-      }
-      // Open new tab
-      return self.clients.openWindow(targetUrl);
-    })
-  );
-});

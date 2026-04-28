@@ -125,9 +125,9 @@
                 <div class="form-row"><div class="form-group"><label for="modalTaskCategory">Category</label><select id="modalTaskCategory" required><option value="">Select category</option><option value="household">Household Chores</option><option value="delivery">Delivery Services</option><option value="tutoring">Online Tutoring</option><option value="transport">Pick & Drop</option><option value="vehicle">Vehicle Services</option><option value="repair">Repairs & Mechanical</option><option value="photography">Photography</option><option value="freelance">Freelance Services</option><option value="waste">Waste Collection</option><option value="cleaning">Cleaning Services</option><option value="cooking">Cooking & Chef</option><option value="petcare">Pet Care</option><option value="gardening">Gardening & Lawn</option><option value="shopping">Shopping & Errands</option><option value="eventhelp">Event Help</option><option value="moving">Moving & Packing</option><option value="techsupport">Tech Support</option><option value="beauty">Beauty & Wellness</option><option value="laundry">Laundry & Ironing</option><option value="catering">Catering Services</option><option value="babysitting">Babysitting</option><option value="eldercare">Elder Care</option><option value="fitness">Fitness Training</option><option value="painting">Painting & Decor</option><option value="electrician">Electrician</option><option value="plumbing">Plumbing</option><option value="carpentry">Carpentry</option><option value="tailoring">Tailoring & Alterations</option><option value="other">Other</option></select></div><div class="form-group"><label for="modalTaskDate">When do you need this done?</label><input type="datetime-local" id="modalTaskDate" required></div></div>
                 <div class="form-group"><label for="modalTaskDescription">Description</label><textarea id="modalTaskDescription" rows="4" placeholder="Provide details about the task..." required></textarea></div>
                 <div class="form-group"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
-                <div class="form-group"><label>Task Budget (Min â‚¹100)</label><div class="budget-selector"><div class="budget-option" onclick="selectBudget(this, 100)">â‚¹100</div><div class="budget-option" onclick="selectBudget(this, 200)">â‚¹200</div><div class="budget-option" onclick="selectBudget(this, 500)">â‚¹500</div><div class="budget-option" onclick="selectBudget(this, 1000)">â‚¹1000</div><input type="number" id="customBudget" placeholder="Custom ?" min="100"></div></div>
-                <div class="form-group"><label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label><div class="bonus-section"><p class="bonus-hint">Increase your budget to attract more taskers!</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="addBonus(50)">+â‚¹50</button><button type="button" class="bonus-btn" onclick="addBonus(100)">+â‚¹100</button><button type="button" class="bonus-btn" onclick="addBonus(200)">+â‚¹200</button><button type="button" class="bonus-btn" onclick="addBonus(500)">+â‚¹500</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">â‚¹500</strong></div></div></div>
-                <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Service Charge</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">â‚¹100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">â‚¹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row total"><span><strong>You Pay:</strong></span><span><strong id="totalPayable">â‚¹150</strong></span></div><div class="charge-row" style="color:#10b981;font-size:13px;margin-top:5px;"><span>Worker Earns:</span><span><strong id="workerEarns">â‚¹150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity</p></div>
+                <div class="form-group"><label>Task Budget (Min ₹100)</label><div class="budget-selector"><div class="budget-option" onclick="selectBudget(this, 100)">₹100</div><div class="budget-option" onclick="selectBudget(this, 200)">₹200</div><div class="budget-option" onclick="selectBudget(this, 500)">₹500</div><div class="budget-option" onclick="selectBudget(this, 1000)">₹1000</div><input type="number" id="customBudget" placeholder="Custom ?" min="100"></div></div>
+                <div class="form-group"><label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label><div class="bonus-section"><p class="bonus-hint">Increase your budget to attract more taskers!</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="addBonus(50)">+₹50</button><button type="button" class="bonus-btn" onclick="addBonus(100)">+₹100</button><button type="button" class="bonus-btn" onclick="addBonus(200)">+₹200</button><button type="button" class="bonus-btn" onclick="addBonus(500)">+₹500</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">₹500</strong></div></div></div>
+                <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Service Charge</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">₹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row total"><span><strong>You Pay:</strong></span><span><strong id="totalPayable">₹150</strong></span></div><div class="charge-row" style="color:#10b981;font-size:13px;margin-top:5px;"><span>Worker Earns:</span><span><strong id="workerEarns">₹150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Service charge varies by task complexity</p></div>
                 <div class="task-info-box"><i class="fas fa-info-circle"></i><div><strong>Task Visibility</strong><p>Your task will be visible to nearby taskers for 12 hours.</p></div></div>
                 <button type="submit" class="btn btn-primary btn-block btn-large"><i class="fas fa-paper-plane"></i> Post Task Now</button>
             </form>
@@ -151,15 +151,15 @@
                 <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:20px;">
                     <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
                         <span style="color:#64748b;font-size:13px;">Task Value</span>
-                        <span style="color:#1e293b;font-weight:600;" id="penaltyTaskValue">â‚¹0</span>
+                        <span style="color:#1e293b;font-weight:600;" id="penaltyTaskValue">₹0</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
                         <span style="color:#64748b;font-size:13px;">Penalty (10%)</span>
-                        <span style="color:#ef4444;font-weight:600;" id="penaltyAmount">-â‚¹0</span>
+                        <span style="color:#ef4444;font-weight:600;" id="penaltyAmount">-₹0</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;border-top:1px dashed #e2e8f0;padding-top:6px;">
                         <span style="color:#64748b;font-size:13px;">Wallet After</span>
-                        <span style="font-weight:600;" id="penaltyWalletAfter">â‚¹0</span>
+                        <span style="font-weight:600;" id="penaltyWalletAfter">₹0</span>
                     </div>
                 </div>
                 <div id="penaltyDailyWarning" style="display:none;background:rgba(251,191,36,0.1);border:1px solid #fbbf24;border-radius:8px;padding:10px;margin-bottom:16px;">
@@ -223,13 +223,13 @@
                 </div>
                 <h3 style="margin-bottom:8px;color:#ef4444;">Account Debt Suspended</h3>
                 <p style="color:#64748b;font-size:14px;margin-bottom:12px;" id="debtSuspendedMessage">
-                    Your wallet balance has reached -â‚¹500 or below. You cannot accept tasks or withdraw funds until your balance is back to â‚¹0 or above.
+                    Your wallet balance has reached -₹500 or below. You cannot accept tasks or withdraw funds until your balance is back to ₹0 or above.
                 </p>
                 <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:12px;">
                     <p style="color:#64748b;font-size:13px;margin:0 0 4px;">Amount Owed</p>
-                    <p style="color:#ef4444;font-weight:800;font-size:24px;margin:0;" id="debtSuspendedAmount">â‚¹0</p>
+                    <p style="color:#ef4444;font-weight:800;font-size:24px;margin:0;" id="debtSuspendedAmount">₹0</p>
                 </div>
-                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">Add money to your wallet to bring your balance back to â‚¹0 or above and restore your account.</p>
+                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">Add money to your wallet to bring your balance back to ₹0 or above and restore your account.</p>
                 <button class="btn" style="width:100%;background:var(--primary-gradient);color:#fff;padding:12px;border-radius:10px;font-weight:600;margin-bottom:8px;" onclick="closeModal('debtSuspendedModal'); window.location.href='wallet.html';">
                     Add Money Now
                 </button>
@@ -245,10 +245,10 @@
 
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-    <script src="api-client.js?v=20260429_clientfix"></script>
+    <script src="api-client.js?v=20260429_pushgone"></script>
     <script src="shared.js?v=20260404_accept_v2"></script>
     <script src="razorpay.js?v=20260404_accept_v2"></script>
-    <script src="app.js?v=20260429_clientfix"></script>
+    <script src="app.js?v=20260429_pushgone"></script>
 <script src="sw-register.js?v=20260420_recovery"></script>
 </body>
 </html>

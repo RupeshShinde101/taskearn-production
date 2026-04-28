@@ -1913,11 +1913,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         // Initialize Push Notifications (non-critical, won't fail)
-        try {
-            initPushNotifications();
-        } catch (e) {
-            console.warn('⚠️ Push notifications failed:', e.message);
-        }
+        // PUSH NOTIFICATION FEATURE REMOVED
         
         // Check and clear expired suspension
         checkAndClearSuspension();
@@ -2026,9 +2022,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Load AI recommended tasks (after main tasks so userLocation is set)
         loadRecommendedTasks().catch(e => console.log('Recommendations unavailable:', e.message));
 
-        // Show push notification enable banner if user hasn't opted in yet
-        showPushBannerIfNeeded();
-        
         // Re-render all views with fresh server data
         try {
             renderTasks();
@@ -2099,129 +2092,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 // ========================================
 // IN-APP PUSH BANNER (foreground notifications like WhatsApp)
 // ========================================
-
-// Listen for PUSH_RECEIVED messages from the service worker
-// This fires when a push arrives while the app is open (foreground)
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', function(event) {
-        if (event.data && event.data.type === 'PUSH_RECEIVED') {
-            showInAppPushBanner(event.data);
-        }
-    });
-}
-
-function showInAppPushBanner(data) {
-    // Remove any existing banner
-    const existing = document.getElementById('inAppPushBanner');
-    if (existing) existing.remove();
-
-    const banner = document.createElement('div');
-    banner.id = 'inAppPushBanner';
-    banner.style.cssText = [
-        'position:fixed',
-        'top:16px',
-        'left:50%',
-        'transform:translateX(-50%)',
-        'z-index:99999',
-        'background:#1e293b',
-        'color:#fff',
-        'border-radius:14px',
-        'padding:12px 16px',
-        'display:flex',
-        'align-items:center',
-        'gap:12px',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.35)',
-        'max-width:380px',
-        'width:calc(100% - 32px)',
-        'cursor:pointer',
-        'animation:slideDownFadeIn 0.3s ease',
-        'font-family:-apple-system,BlinkMacSystemFont,sans-serif'
-    ].join(';');
-
-    const iconEl = document.createElement('img');
-    iconEl.src = data.icon || '/icon-192x192.png';
-    iconEl.style.cssText = 'width:40px;height:40px;border-radius:10px;flex-shrink:0;object-fit:cover;';
-
-    const textEl = document.createElement('div');
-    textEl.style.cssText = 'flex:1;min-width:0;';
-    textEl.innerHTML = '<div style="font-weight:700;font-size:13px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-        + escapeHtml(data.title || 'Workmate4u') + '</div>'
-        + '<div style="font-size:12px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-        + escapeHtml(data.body || '') + '</div>';
-
-    const closeBtn = document.createElement('button');
-    closeBtn.innerHTML = '✕';
-    closeBtn.style.cssText = 'background:none;border:none;color:rgba(255,255,255,.6);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0;line-height:1;';
-    closeBtn.onclick = function(e) { e.stopPropagation(); banner.remove(); };
-
-    banner.appendChild(iconEl);
-    banner.appendChild(textEl);
-    banner.appendChild(closeBtn);
-
-    banner.onclick = function() {
-        banner.remove();
-        if (data.url && data.url !== '/') {
-            window.location.href = data.url;
-        }
-    };
-
-    // Inject keyframe animation if not already present
-    if (!document.getElementById('inAppPushBannerStyle')) {
-        const style = document.createElement('style');
-        style.id = 'inAppPushBannerStyle';
-        style.textContent = '@keyframes slideDownFadeIn{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
-        document.head.appendChild(style);
-    }
-
-    document.body.appendChild(banner);
-
-    // Auto-dismiss after 6 seconds
-    setTimeout(function() {
-        if (banner.parentNode) {
-            banner.style.transition = 'opacity 0.4s';
-            banner.style.opacity = '0';
-            setTimeout(function() { if (banner.parentNode) banner.remove(); }, 400);
-        }
-    }, 6000);
-}
+// PUSH NOTIFICATION FEATURE REMOVED
 
 function escapeHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ========================================
-// PUSH NOTIFICATIONS
-// ========================================
-
-function showLocalNotification(title, body, options = {}) {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    
-    try {
-        const notification = new Notification(title, {
-            body: body,
-            icon: 'https://img.icons8.com/fluency/96/task.png',
-            badge: 'https://img.icons8.com/fluency/48/task.png',
-            vibrate: [200, 100, 200],
-            tag: options.tag || 'taskearn-notification',
-            renotify: true,
-            ...options
-        });
-        
-        notification.onclick = function() {
-            window.focus();
-            notification.close();
-            if (options.url) {
-                window.location.href = options.url;
-            }
-        };
-        
-        // Auto close after 5 seconds
-        setTimeout(() => notification.close(), 5000);
-        
-    } catch (e) {
-        console.error('Error showing notification:', e);
-    }
-}
+// PUSH NOTIFICATIONS feature removed
 
 
 // ========================================
@@ -4684,13 +4561,6 @@ async function handleLogin(event) {
                 // Render dashboard after tasks are fully loaded
                 setTimeout(() => renderDashboard(), 100);
                 
-                // Initialize push notifications after login
-                if (Notification.permission === 'granted') {
-                    initPushNotifications();
-                } else if (Notification.permission !== 'denied') {
-                    setTimeout(() => requestPushPermission(), 3000);
-                }
-                
                 return;
             } else {
                 showToast('❌ ' + (result.message || 'Login failed'));
@@ -6652,12 +6522,6 @@ async function handleGoogleCredentialResponse(response) {
             updateNavForUser();
             const tasksLoaded = await loadTasksFromServer();
             setTimeout(() => renderDashboard(), 100);
-            // Initialize push notifications
-            if ('Notification' in window && Notification.permission === 'granted') {
-                initPushNotifications();
-            } else if ('Notification' in window && Notification.permission !== 'denied') {
-                setTimeout(() => requestPushPermission(), 3000);
-            }
             // Check if profile is incomplete (Google users often lack phone/DOB)
             if (!currentUser.phone || !currentUser.dob) {
                 setTimeout(() => showCompleteProfileModal(), 800);
@@ -7018,271 +6882,16 @@ async function unblockUser(userId) {
 // ========================================
 // PUSH NOTIFICATIONS
 // ========================================
-
-async function initPushNotifications() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-    if (!currentUser) return;
-    if (Notification.permission !== 'granted') return;
-
-    try {
-        // Fetch VAPID key first — we need it to validate / create subscription
-        const keyResult = await PushAPI.getVapidKey();
-        if (!keyResult || !keyResult.vapidKey) {
-            console.log('[PUSH] No VAPID key from server — push not configured yet');
-            return;
-        }
-        const vapidKey = urlBase64ToUint8Array(keyResult.vapidKey);
-
-        const reg = await navigator.serviceWorker.ready;
-        let subscription = await reg.pushManager.getSubscription();
-
-        // On mobile, the existing subscription may be stale (expired endpoint or
-        // different VAPID key from a previous deploy). Unsubscribe and resubscribe
-        // to guarantee a fresh, valid subscription every time.
-        if (subscription) {
-            try {
-                await subscription.unsubscribe();
-                console.log('[PUSH] Old subscription cleared, creating fresh one');
-            } catch (e) {
-                console.warn('[PUSH] Could not unsubscribe old sub:', e.message);
-            }
-            subscription = null;
-        }
-
-        subscription = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: vapidKey
-        });
-
-        // Send to server with lat/lng for geo-targeted delivery pushes
-        const subPayload = { subscription: subscription.toJSON() };
-        if (userLocation && userLocation.lat && userLocation.lng) {
-            subPayload.lat = userLocation.lat;
-            subPayload.lng = userLocation.lng;
-        }
-        const result = await PushAPI.subscribe(subPayload);
-        if (result && result.success) {
-            console.log('[PUSH] ✅ Subscription registered with server (lat/lng included)');
-        } else {
-            console.warn('[PUSH] Server save failed:', result);
-        }
-    } catch (err) {
-        console.warn('[PUSH] Setup failed:', err.message);
-    }
-}
-
-function urlBase64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; i++) {
-        outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-}
-
-async function requestPushPermission() {
-    if (!('Notification' in window)) {
-        showToast('Push notifications not supported in this browser', 'error');
-        return;
-    }
-    
-    const perm = await Notification.requestPermission();
-    if (perm === 'granted') {
-        await initPushNotifications();
-        showToast('✅ Push notifications enabled');
-    } else {
-        showToast('Push notifications were denied', 'error');
-    }
-}
-
-async function enablePushAndSubscribe() {
-    // Called from the push banner on browse.html
+// Push notification feature has been removed.
+// Stub functions kept as no-ops to avoid breaking any cached HTML still
+// referencing them (e.g. older browser cache calling testPushNotification()).
+function initPushNotifications() {}
+function requestPushPermission() {}
+function enablePushAndSubscribe() {}
+function testPushNotification() {}
+function showPushBannerIfNeeded() {
     const banner = document.getElementById('pushBanner');
     if (banner) banner.style.display = 'none';
-
-    if (!('Notification' in window) || !('PushManager' in window)) {
-        showToast('Push notifications are not supported in this browser', 'error');
-        return;
-    }
-    if (Notification.permission === 'denied') {
-        showToast('Notifications are blocked. Please allow them in your browser settings.', 'error');
-        return;
-    }
-    showToast('Enabling notifications…');
-    const perm = Notification.permission === 'granted'
-        ? 'granted'
-        : await Notification.requestPermission();
-    if (perm !== 'granted') {
-        showToast('Notification permission denied', 'error');
-        return;
-    }
-    await initPushNotifications();
-    showToast('✅ You will now receive nearby delivery task alerts!');
-}
-
-async function testPushNotification() {
-    // Verbose diagnostic flow — every step logs and shows toast so we can
-    // see exactly where things break in the field.
-    const steps = [];
-    const log = (msg, ok) => {
-        const tag = ok === true ? '✅' : ok === false ? '❌' : '🔹';
-        console.log('[PUSH-TEST] ' + tag + ' ' + msg);
-        steps.push(tag + ' ' + msg);
-    };
-
-    try {
-        // 0) Browser support
-        if (!('serviceWorker' in navigator)) { log('No serviceWorker support', false); showPushDiagModal(steps, 'Service Worker not supported'); return; }
-        if (!('PushManager' in window)) { log('No PushManager support', false); showPushDiagModal(steps, 'Push API not supported'); return; }
-        if (!('Notification' in window)) { log('No Notification API', false); showPushDiagModal(steps, 'Notification API not supported'); return; }
-        log('Browser supports push', true);
-
-        // iOS: must be installed as PWA (Add to Home Screen)
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-        if (isIOS && !isStandalone) {
-            log('iOS detected & not installed as PWA', false);
-            showPushDiagModal(steps,
-                'On iOS, push notifications only work after you install Workmate4u to your Home Screen.\n\n' +
-                '1. Tap the Share button (square with arrow ↑)\n' +
-                '2. Tap "Add to Home Screen"\n' +
-                '3. Open Workmate4u from the home screen\n' +
-                '4. Then come back here and tap Send Test Notification again.');
-            return;
-        }
-
-        if (!currentUser) { log('Not logged in', false); showPushDiagModal(steps, 'Please log in first.'); return; }
-        log('Logged in as ' + (currentUser.name || currentUser.email || 'user'), true);
-
-        // 1) Permission
-        if (Notification.permission === 'denied') {
-            log('Permission DENIED by user', false);
-            showPushDiagModal(steps,
-                'Notifications are BLOCKED for this site.\n\n' +
-                'To fix:\n• Tap the lock icon in the address bar\n• Find "Notifications"\n• Change from "Block" to "Allow"\n• Reload the page and try again.');
-            return;
-        }
-        if (Notification.permission !== 'granted') {
-            log('Permission not yet granted — asking now', null);
-            const perm = await Notification.requestPermission();
-            if (perm !== 'granted') {
-                log('User dismissed/denied prompt', false);
-                showPushDiagModal(steps, 'You declined the notification prompt. Tap the button again to retry.');
-                return;
-            }
-        }
-        log('Permission granted', true);
-
-        // 2) Service Worker ready
-        showToast('Preparing service worker…');
-        const reg = await navigator.serviceWorker.ready;
-        log('Service worker ready (scope ' + reg.scope + ')', true);
-
-        // 3) Fetch VAPID key
-        const keyRes = await PushAPI.getVapidKey();
-        if (!keyRes || !keyRes.vapidKey) {
-            log('Server did not return VAPID key', false);
-            showPushDiagModal(steps, 'Server is missing VAPID keys. Contact admin.');
-            return;
-        }
-        log('Got VAPID key from server (' + keyRes.vapidKey.length + ' chars)', true);
-
-        // 4) Always unsubscribe existing & resubscribe fresh
-        let sub = await reg.pushManager.getSubscription();
-        if (sub) {
-            try { await sub.unsubscribe(); log('Cleared old subscription', true); }
-            catch (e) { log('Could not unsubscribe old: ' + e.message, null); }
-        }
-
-        try {
-            sub = await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(keyRes.vapidKey)
-            });
-            log('Created fresh push subscription', true);
-        } catch (e) {
-            log('subscribe() failed: ' + e.name + ' — ' + e.message, false);
-            showPushDiagModal(steps,
-                'Could not create push subscription:\n' + e.message +
-                '\n\nThis usually means:\n• Browser blocked notifications without prompting\n• You are using an in-app browser (open in Chrome/Safari instead)\n• Network blocking push gateway');
-            return;
-        }
-
-        // 5) Send subscription to server
-        const subPayload = { subscription: sub.toJSON() };
-        if (typeof userLocation !== 'undefined' && userLocation && userLocation.lat) {
-            subPayload.lat = userLocation.lat; subPayload.lng = userLocation.lng;
-        }
-        const subRes = await PushAPI.subscribe(subPayload);
-        if (!subRes || !subRes.success) {
-            log('Server rejected subscription save', false);
-            showPushDiagModal(steps, 'Server error saving subscription: ' + (subRes && subRes.message || 'unknown'));
-            return;
-        }
-        log('Subscription saved on server', true);
-
-        // 6) Trigger test push
-        showToast('Sending test push…');
-        const testRes = await PushAPI.test();
-        if (testRes && testRes.success) {
-            log('Server sent push to this device', true);
-            showToast('✅ Test push sent — watch for the notification!');
-            // Also show a confirmation banner immediately for instant feedback
-            setTimeout(() => {
-                showInAppPushBanner({
-                    title: '🔔 Test Notification',
-                    body: 'If you see this, in-app banners work! The OS notification should also appear shortly.',
-                    icon: '/icon-192x192.png',
-                    url: '/'
-                });
-            }, 800);
-        } else {
-            log('Server reported test failure: ' + (testRes && testRes.message), false);
-            showPushDiagModal(steps, 'Server failed to send push:\n' + (testRes && testRes.message || 'Unknown error'));
-        }
-    } catch (e) {
-        console.error('[PUSH-TEST] Unexpected error:', e);
-        log('Unexpected error: ' + e.message, false);
-        showPushDiagModal(steps, 'Unexpected error: ' + e.message);
-    }
-}
-
-// Diagnostic modal that shows the full step-by-step trace
-function showPushDiagModal(steps, finalMessage) {
-    const old = document.getElementById('pushDiagModal');
-    if (old) old.remove();
-    const overlay = document.createElement('div');
-    overlay.id = 'pushDiagModal';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
-    overlay.innerHTML =
-        '<div style="background:#fff;border-radius:14px;padding:20px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;font-family:-apple-system,sans-serif;">' +
-            '<h3 style="margin:0 0 12px;font-size:17px;color:#1e293b;">🔔 Push Notification Diagnostics</h3>' +
-            '<div style="background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;margin-bottom:14px;">' +
-                steps.map(s => s.replace(/</g, '&lt;')).join('\n') +
-            '</div>' +
-            '<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 12px;border-radius:6px;font-size:13px;color:#78350f;line-height:1.5;white-space:pre-wrap;margin-bottom:14px;">' +
-                String(finalMessage).replace(/</g, '&lt;') +
-            '</div>' +
-            '<button onclick="document.getElementById(\'pushDiagModal\').remove()" style="background:#6366f1;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;width:100%;">Close</button>' +
-        '</div>';
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-}
-
-function showPushBannerIfNeeded() {
-    // Show the enable-notifications banner on browse page for logged-in users
-    // who haven't enabled push yet and haven't dismissed it
-    const banner = document.getElementById('pushBanner');
-    if (!banner) return;
-    if (!currentUser) { banner.style.display = 'none'; return; }
-    if (localStorage.getItem('pushBannerDismissed') === '1') { banner.style.display = 'none'; return; }
-    if (!('PushManager' in window)) { banner.style.display = 'none'; return; }
-    if (Notification.permission === 'granted') { banner.style.display = 'none'; return; }
-    if (Notification.permission === 'denied') { banner.style.display = 'none'; return; }
-    // Only show if permission is 'default' (never asked)
-    banner.style.display = 'flex';
 }
 
 // Window exports for new features

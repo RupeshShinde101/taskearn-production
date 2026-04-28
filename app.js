@@ -5861,7 +5861,13 @@ function formatCategory(cat) {
 
 function openModal(id) {
     document.getElementById(id)?.classList.add('active');
+    // iOS-compatible scroll lock: freezes page at current position
+    const scrollY = window.scrollY;
     document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    document.body.dataset.scrollY = scrollY;
     if (id === 'postTaskModal') {
         resetBonusOnModalOpen();
     }
@@ -5869,7 +5875,16 @@ function openModal(id) {
 
 function closeModal(id) {
     document.getElementById(id)?.classList.remove('active');
-    document.body.style.overflow = '';
+    // Check no other modals are open before unlocking scroll
+    const anyOpen = document.querySelector('.modal.active');
+    if (!anyOpen) {
+        const scrollY = parseInt(document.body.dataset.scrollY || '0', 10);
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
+        window.scrollTo(0, scrollY);
+    }
 }
 
 function switchModal(from, to) {
@@ -7312,4 +7327,60 @@ showToast = function(msg, duration = 3000) {
         setTimeout(() => toast.classList.remove('show'), duration);
     }
 }
+
+// ============================================================
+// HERO STATS ANIMATED COUNTER
+// ============================================================
+(function initHeroStats() {
+    const statUsers = document.getElementById('heroStatUsers');
+    const statTasks = document.getElementById('heroStatTasks');
+    const statEarned = document.getElementById('heroStatEarned');
+    if (!statUsers && !statTasks && !statEarned) return;
+
+    // Tasteful baseline numbers reflecting platform traction
+    const targets = {
+        users:  1200,
+        tasks:  3500,
+        earned: 850000   // ₹8,50,000
+    };
+
+    function animateCount(el, end, prefix, suffix, duration) {
+        if (!el) return;
+        const start = 0;
+        const startTime = performance.now();
+        function step(now) {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            // Ease-out cubic
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const value = Math.round(start + (end - start) * eased);
+            el.textContent = prefix + value.toLocaleString('en-IN') + suffix;
+            if (progress < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+    }
+
+    function runStats() {
+        animateCount(statUsers,  targets.users,  '',  '+', 1800);
+        animateCount(statTasks,  targets.tasks,  '',  '+', 2000);
+        animateCount(statEarned, targets.earned, '₹', '+', 2200);
+    }
+
+    // Use IntersectionObserver so animation triggers when hero is visible
+    const heroSection = statUsers ? statUsers.closest('.hero-stats, .hero, section') : null;
+    if (heroSection && 'IntersectionObserver' in window) {
+        const observer = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (entry.isIntersecting) {
+                    runStats();
+                    observer.disconnect();
+                }
+            });
+        }, { threshold: 0.3 });
+        observer.observe(heroSection);
+    } else {
+        // Fallback: run after short delay
+        setTimeout(runStats, 600);
+    }
+})();
 

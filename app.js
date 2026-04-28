@@ -6590,29 +6590,57 @@ async function submitCompleteProfile(e) {
 // KYC VERIFICATION
 // ========================================
 
+function onKycDocTypeChange() {
+    const docType = document.getElementById('kycDocType').value;
+    const frontSection = document.getElementById('kycFrontUploadSection');
+    const backSection = document.getElementById('kycBackUploadSection');
+    const hint = document.getElementById('kycDocHint');
+
+    if (!docType) {
+        if (frontSection) frontSection.style.display = 'none';
+        if (backSection) backSection.style.display = 'none';
+        return;
+    }
+
+    if (hint) hint.textContent = docType === 'pan' ? 'PAN: e.g. ABCDE1234F' : 'Aadhaar: 12 digits';
+
+    if (frontSection) frontSection.style.display = '';
+
+    if (docType === 'aadhaar') {
+        if (backSection) backSection.style.display = '';
+    } else {
+        // PAN: back side not needed — clear and hide it
+        clearKYCImage('back');
+        if (backSection) backSection.style.display = 'none';
+    }
+}
+
 async function submitKYC() {
     const docType = document.getElementById('kycDocType').value;
     const docNum = document.getElementById('kycDocNumber').value.trim();
-    
+
     if (!docType) { showToast('❌ Please select a document type', 'error'); return; }
     if (!docNum) { showToast('❌ Please enter document number', 'error'); return; }
-    
-    // Get uploaded image
-    const imageData = window._kycDocImageBase64;
-    if (!imageData) {
-        showToast('❌ Please upload a document photo', 'error');
+
+    if (!window._kycFrontBase64) {
+        showToast('❌ Please upload the front side photo', 'error');
         return;
     }
-    
+    if (docType === 'aadhaar' && !window._kycBackBase64) {
+        showToast('❌ Please upload the back side photo of Aadhaar', 'error');
+        return;
+    }
+
     const btn = document.getElementById('kycSubmitBtn');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
-    
+
     try {
-        const result = await KYCAPI.submit(docType, docNum, imageData);
+        const result = await KYCAPI.submit(docType, docNum, window._kycFrontBase64, window._kycBackBase64 || null);
         if (result.success) {
-            showToast('✅ ' + (result.message || 'KYC verified successfully!'));
-            window._kycDocImageBase64 = null;
+            showToast('✅ ' + (result.message || 'KYC submitted successfully!'));
+            window._kycFrontBase64 = null;
+            window._kycBackBase64 = null;
             loadKYCStatus();
         } else {
             showToast('❌ ' + (result.message || 'KYC submission failed'), 'error');
@@ -6625,38 +6653,58 @@ async function submitKYC() {
     }
 }
 
-// KYC image preview helper
-function previewKYCImage(input) {
+function previewKYCImage(input, side) {
     const file = input.files[0];
     if (!file) return;
-    
+
     if (file.size > 5 * 1024 * 1024) {
         showToast('❌ Image too large. Max 5MB', 'error');
         input.value = '';
         return;
     }
-    
+
     const reader = new FileReader();
     reader.onload = function(e) {
-        window._kycDocImageBase64 = e.target.result;
-        const preview = document.getElementById('kycImagePreview');
-        const previewImg = document.getElementById('kycPreviewImg');
-        const uploadArea = document.getElementById('kycUploadArea');
-        if (previewImg) previewImg.src = e.target.result;
-        if (preview) preview.style.display = '';
-        if (uploadArea) uploadArea.style.display = 'none';
+        const data = e.target.result;
+        if (side === 'back') {
+            window._kycBackBase64 = data;
+            const preview = document.getElementById('kycBackPreview');
+            const previewImg = document.getElementById('kycBackPreviewImg');
+            const uploadArea = document.getElementById('kycBackUploadArea');
+            if (previewImg) previewImg.src = data;
+            if (preview) preview.style.display = '';
+            if (uploadArea) uploadArea.style.display = 'none';
+        } else {
+            window._kycFrontBase64 = data;
+            const preview = document.getElementById('kycFrontPreview');
+            const previewImg = document.getElementById('kycFrontPreviewImg');
+            const uploadArea = document.getElementById('kycFrontUploadArea');
+            if (previewImg) previewImg.src = data;
+            if (preview) preview.style.display = '';
+            if (uploadArea) uploadArea.style.display = 'none';
+        }
     };
     reader.readAsDataURL(file);
 }
 
-function clearKYCImage() {
-    window._kycDocImageBase64 = null;
-    const input = document.getElementById('kycDocImage');
-    if (input) input.value = '';
-    const preview = document.getElementById('kycImagePreview');
-    const uploadArea = document.getElementById('kycUploadArea');
-    if (preview) preview.style.display = 'none';
-    if (uploadArea) uploadArea.style.display = '';
+function clearKYCImage(side) {
+    if (side === 'back') {
+        window._kycBackBase64 = null;
+        const input = document.getElementById('kycDocBack');
+        if (input) input.value = '';
+        const preview = document.getElementById('kycBackPreview');
+        const uploadArea = document.getElementById('kycBackUploadArea');
+        if (preview) preview.style.display = 'none';
+        if (uploadArea) uploadArea.style.display = '';
+    } else {
+        window._kycFrontBase64 = null;
+        const input = document.getElementById('kycDocFront');
+        if (input) input.value = '';
+        const preview = document.getElementById('kycFrontPreview');
+        const uploadArea = document.getElementById('kycFrontUploadArea');
+        if (preview) preview.style.display = 'none';
+        if (uploadArea) uploadArea.style.display = '';
+    }
 }
 
 async function loadKYCStatus() {

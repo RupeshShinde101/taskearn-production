@@ -1014,10 +1014,10 @@ const CategoriesAPI = {
 // ========================================
 
 const KYCAPI = {
-    async submit(documentType, documentNumber, documentImage) {
+    async submit(documentType, documentNumber, documentImageFront, documentImageBack) {
         const result = await apiRequest('/user/kyc/submit', {
             method: 'POST',
-            body: JSON.stringify({ documentType, documentNumber, documentImage })
+            body: JSON.stringify({ documentType, documentNumber, documentImageFront, documentImageBack })
         });
         return result.data;
     },

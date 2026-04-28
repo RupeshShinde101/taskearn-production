@@ -4869,8 +4869,8 @@ function updateNavForUser() {
                 const existingAuthButtons = mobileMenuList.querySelectorAll('li:has(button)');
                 existingAuthButtons.forEach(btn => btn.remove());
                 
-                // Remove old profile items if any
-                const oldProfileItems = mobileMenuList.querySelectorAll('.mobile-profile-item, .mobile-logout-item, .mobile-dashboard-item');
+                // Remove old profile items and refresh item (will be re-added at bottom)
+                const oldProfileItems = mobileMenuList.querySelectorAll('.mobile-profile-item, .mobile-logout-item, .mobile-dashboard-item, .mobile-refresh-item');
                 oldProfileItems.forEach(item => item.remove());
                 
                 // Add user profile and logout for mobile
@@ -4888,6 +4888,12 @@ function updateNavForUser() {
                 logoutLi.className = 'mobile-logout-item';
                 logoutLi.innerHTML = `<button class="btn btn-primary" onclick="logout(); toggleMobileMenu();">Logout</button>`;
                 mobileMenuList.appendChild(logoutLi);
+
+                const refreshLi = document.createElement('li');
+                refreshLi.className = 'mobile-refresh-item';
+                refreshLi.style.cssText = 'border-top:1px solid var(--border,#e2e8f0);margin-top:8px;padding-top:8px;';
+                refreshLi.innerHTML = `<button class="btn btn-outline" style="width:100%;color:var(--gray);" onclick="hardRefreshApp()"><i class="fas fa-rotate-right"></i> Refresh App</button>`;
+                mobileMenuList.appendChild(refreshLi);
             }
         }
         
@@ -4916,16 +4922,26 @@ function updateNavForUser() {
                 const profileItems = mobileMenuList.querySelectorAll('.mobile-profile-item, .mobile-logout-item, .mobile-dashboard-item');
                 profileItems.forEach(item => item.remove());
                 
+                // Remove stale refresh item so we can re-add it at the bottom
+                mobileMenuList.querySelectorAll('.mobile-refresh-item').forEach(i => i.remove());
+
                 // Check if login/signup buttons exist, if not add them
                 if (!mobileMenuList.querySelector('button')) {
                     const loginLi = document.createElement('li');
                     loginLi.innerHTML = `<button class="btn btn-outline" onclick="openModal('loginModal')">Login</button>`;
                     mobileMenuList.appendChild(loginLi);
-                    
+
                     const signupLi = document.createElement('li');
                     signupLi.innerHTML = `<button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button>`;
                     mobileMenuList.appendChild(signupLi);
                 }
+
+                // Always keep Refresh App at the bottom
+                const refreshLi = document.createElement('li');
+                refreshLi.className = 'mobile-refresh-item';
+                refreshLi.style.cssText = 'border-top:1px solid var(--border,#e2e8f0);margin-top:8px;padding-top:8px;';
+                refreshLi.innerHTML = `<button class="btn btn-outline" style="width:100%;color:var(--gray);" onclick="hardRefreshApp()"><i class="fas fa-rotate-right"></i> Refresh App</button>`;
+                mobileMenuList.appendChild(refreshLi);
             }
         }
         

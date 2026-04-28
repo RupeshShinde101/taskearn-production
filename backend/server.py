@@ -7964,6 +7964,66 @@ def google_login():
 # PUSH NOTIFICATION SUBSCRIPTIONS
 # ========================================
 
+def _get_vapid_keys():
+    """
+    Return (public_key, private_key, email) for Web Push VAPID.
+    Resolution order:
+      1. Environment variables (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)
+      2. Persistent cache in `app_config` DB table
+      3. Auto-generate a fresh ES256 keypair, persist it, and use it forever
+    This guarantees push always works even if Railway env vars are missing.
+    """
+    pub   = (os.environ.get('VAPID_PUBLIC_KEY')  or '').strip()
+    priv  = (os.environ.get('VAPID_PRIVATE_KEY') or '').strip()
+    email = (os.environ.get('VAPID_EMAIL') or 'mailto:admin@workmate4u.com').strip()
+    if pub and priv:
+        return pub, priv, email
+
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute("""CREATE TABLE IF NOT EXISTS app_config (
+                key VARCHAR(64) PRIMARY KEY,
+                value TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+            cursor.execute(f"SELECT key, value FROM app_config WHERE key IN ({PH}, {PH})",
+                           ('vapid_public', 'vapid_private'))
+            rows = cursor.fetchall() or []
+            cfg = {}
+            for r in rows:
+                try:
+                    cfg[r['key']] = r['value']
+                except Exception:
+                    cfg[r[0]] = r[1]
+            if cfg.get('vapid_public') and cfg.get('vapid_private'):
+                return cfg['vapid_public'], cfg['vapid_private'], email
+
+            # Auto-generate fresh ES256 (P-256) keypair, URL-safe-base64 raw form
+            from cryptography.hazmat.primitives.asymmetric import ec
+            from cryptography.hazmat.primitives import serialization
+            import base64 as _b64
+            sk = ec.generate_private_key(ec.SECP256R1())
+            priv_raw = sk.private_numbers().private_value.to_bytes(32, 'big')
+            new_priv = _b64.urlsafe_b64encode(priv_raw).rstrip(b'=').decode()
+            pub_raw = sk.public_key().public_bytes(
+                encoding=serialization.Encoding.X962,
+                format=serialization.PublicFormat.UncompressedPoint
+            )
+            new_pub = _b64.urlsafe_b64encode(pub_raw).rstrip(b'=').decode()
+            cursor.execute(
+                f"INSERT INTO app_config(key, value) VALUES ({PH}, {PH})",
+                ('vapid_public', new_pub))
+            cursor.execute(
+                f"INSERT INTO app_config(key, value) VALUES ({PH}, {PH})",
+                ('vapid_private', new_priv))
+            conn.commit()
+            print('[PUSH] Auto-generated VAPID keypair and persisted to app_config')
+            return new_pub, new_priv, email
+    except Exception as e:
+        print(f'[PUSH] VAPID resolution failed: {e}')
+        return pub, priv, email
+
+
 def _send_delivery_push_nearby(task_id, task_lat, task_lng, task_title, category):
     """
     Send Web Push notifications to all subscribed users within 10 km of a
@@ -7976,11 +8036,9 @@ def _send_delivery_push_nearby(task_id, task_lat, task_lng, task_title, category
     if task_lat is None or task_lng is None:
         return
 
-    vapid_private = os.environ.get('VAPID_PRIVATE_KEY', '')
-    vapid_public  = os.environ.get('VAPID_PUBLIC_KEY', '')
-    vapid_email   = os.environ.get('VAPID_EMAIL', 'mailto:admin@workmate4u.com')
+    vapid_public, vapid_private, vapid_email = _get_vapid_keys()
     if not vapid_private or not vapid_public:
-        print('[PUSH] VAPID keys not configured — skipping geo-push')
+        print('[PUSH] VAPID keys unavailable — skipping geo-push')
         return
 
     try:
@@ -8084,22 +8142,23 @@ def push_unsubscribe():
 
 @app.route('/api/push/vapid-key', methods=['GET'])
 def get_vapid_key():
-    """Return the public VAPID key for client-side subscription."""
-    vapid_key = os.environ.get('VAPID_PUBLIC_KEY', '')
-    return jsonify({'success': True, 'vapidKey': vapid_key})
+    """Return the public VAPID key. Auto-generates if not configured."""
+    vapid_public, _vapid_private, _email = _get_vapid_keys()
+    if not vapid_public:
+        return jsonify({'success': False,
+                        'message': 'Server unable to provide VAPID key'}), 500
+    return jsonify({'success': True, 'vapidKey': vapid_public})
 
 
 @app.route('/api/push/test', methods=['POST'])
 @require_auth
 def push_test():
     """Send a test Web Push to the current user to verify the whole pipeline."""
-    vapid_private = os.environ.get('VAPID_PRIVATE_KEY', '')
-    vapid_public  = os.environ.get('VAPID_PUBLIC_KEY', '')
-    vapid_email   = os.environ.get('VAPID_EMAIL', 'mailto:admin@workmate4u.com')
+    vapid_public, vapid_private, vapid_email = _get_vapid_keys()
 
     if not vapid_private or not vapid_public:
         return jsonify({'success': False,
-                        'message': 'VAPID keys not configured on the server. Add VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY and VAPID_EMAIL to Railway environment variables.'}), 503
+                        'message': 'VAPID keys unavailable. Check server logs.'}), 503
 
     try:
         from pywebpush import webpush, WebPushException

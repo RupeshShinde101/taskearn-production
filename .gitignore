@@ -53,7 +53,6 @@ QUICK_START.bat
 START_APP_FIXED.bat
 START_SERVER.bat
 START_TASKEARN.bat
-start.sh
 APIFix.ps1
 
 # Internal documentation

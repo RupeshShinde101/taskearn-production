@@ -1,6 +1,6 @@
-ï»¿// DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
+// DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260428f';
+const CACHE_NAME = 'workmate4u-v20260428g';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -20,22 +20,22 @@ const STATIC_ASSETS = [
   '/icon-512x512.png'
 ];
 
-// Install â€” activate INSTANTLY, cache assets in background (non-blocking)
+// Install — activate INSTANTLY, cache assets in background (non-blocking)
 self.addEventListener('install', event => {
   self.skipWaiting();
-  // Cache assets in background â€” don't block install on this
+  // Cache assets in background — don't block install on this
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       // Fire-and-forget: cache each asset individually, failures are fine
       STATIC_ASSETS.forEach(url => {
         cache.add(url).catch(() => {});
       });
-      return Promise.resolve(); // Resolve immediately â€” don't wait for caching
+      return Promise.resolve(); // Resolve immediately — don't wait for caching
     })
   );
 });
 
-// Activate â€” clean ALL old caches and notify clients to refresh
+// Activate — clean ALL old caches and notify clients to refresh
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -57,7 +57,7 @@ self.addEventListener('message', event => {
   }
 });
 
-// Fetch â€” only cache same-origin resources; let browser handle CDN/cross-origin
+// Fetch — only cache same-origin resources; let browser handle CDN/cross-origin
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 

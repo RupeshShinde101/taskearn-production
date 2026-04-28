@@ -1499,6 +1499,15 @@ def create_task():
             
             print(f"✅ Task created successfully with ID: {task_id}")
         
+        # ── Geo-push: notify nearby helpers for delivery/pickup tasks ──
+        import threading
+        threading.Thread(
+            target=_send_delivery_push_nearby,
+            args=(task_id, location.get('lat'), location.get('lng'),
+                  data['title'], data.get('category', '')),
+            daemon=True
+        ).start()
+
         response = {
             'success': True,
             'message': 'Task created successfully',
@@ -6899,6 +6908,145 @@ def export_transactions():
         return jsonify({'success': False, 'message': 'Failed to export transactions'}), 500
 
 
+
+# ========================================
+# AI TASK MATCHING — RECOMMENDED FOR YOU
+# ========================================
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    """Return distance in km between two lat/lng points."""
+    import math
+    R = 6371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+@app.route('/api/tasks/recommended', methods=['GET'])
+@require_auth
+def get_recommended_tasks():
+    """
+    Return up to 10 tasks ranked by a smart scoring algorithm:
+      - Category affinity  (50 pts for top category, 30 for second)
+      - Distance           (closer = more points)
+      - Price              (higher pay = bonus)
+      - Freshness          (posted recently = bonus)
+    Requires ?lat=&lng= query params (user's current location).
+    """
+    try:
+        user_lat = request.args.get('lat', type=float)
+        user_lng = request.args.get('lng', type=float)
+        if user_lat is None or user_lng is None:
+            return jsonify({'success': False, 'message': 'lat and lng are required'}), 400
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        with get_db() as (cursor, conn):
+            # ── 1. Discover user's top 2 preferred categories from history ──
+            cursor.execute(f"""
+                SELECT category, COUNT(*) AS cnt
+                FROM tasks
+                WHERE accepted_by = {PH} AND status IN ('completed', 'active')
+                GROUP BY category
+                ORDER BY cnt DESC
+                LIMIT 5
+            """, (request.user_id,))
+            rows = cursor.fetchall()
+            cat_ranks = {}
+            for i, r in enumerate(rows):
+                cat_ranks[r['category']] = max(0, 50 - i * 10)  # 50, 40, 30, 20, 10 …
+
+            # ── 2. Fetch all active tasks (exclude tasks posted by this user) ──
+            cursor.execute(f"""
+                SELECT id, title, description, category,
+                       location_lat, location_lng, location_address,
+                       price, service_charge, posted_by, posted_at, expires_at
+                FROM tasks
+                WHERE status = 'active'
+                  AND expires_at > {PH}
+                  AND posted_by != {PH}
+                ORDER BY posted_at DESC
+                LIMIT 200
+            """, (now.isoformat(), request.user_id))
+            tasks_raw = cursor.fetchall()
+
+            # ── 3. Score each task ──
+            scored = []
+            for t in tasks_raw:
+                score = 0
+
+                # Category affinity
+                score += cat_ranks.get(t['category'], 0)
+
+                # Distance (penalise far tasks, reward nearby)
+                if t['location_lat'] and t['location_lng']:
+                    dist_km = _haversine_km(user_lat, user_lng,
+                                            float(t['location_lat']),
+                                            float(t['location_lng']))
+                    if dist_km <= 1:
+                        score += 40
+                    elif dist_km <= 3:
+                        score += 30
+                    elif dist_km <= 5:
+                        score += 20
+                    elif dist_km <= 10:
+                        score += 10
+                    elif dist_km > 20:
+                        score -= 20
+                else:
+                    dist_km = None
+
+                # Price attractiveness (log scale, capped at 30 pts)
+                import math
+                score += min(30, int(math.log1p(float(t['price'])) * 4))
+
+                # Freshness bonus
+                try:
+                    posted = datetime.datetime.fromisoformat(str(t['posted_at']).replace('Z', '+00:00'))
+                    if posted.tzinfo is None:
+                        posted = posted.replace(tzinfo=datetime.timezone.utc)
+                    age_hours = (now - posted).total_seconds() / 3600
+                    if age_hours < 1:
+                        score += 20
+                    elif age_hours < 3:
+                        score += 10
+                    elif age_hours < 6:
+                        score += 5
+                except Exception:
+                    pass
+
+                scored.append((score, dist_km, t))
+
+            # ── 4. Sort by score desc, return top 10 ──
+            scored.sort(key=lambda x: x[0], reverse=True)
+            results = []
+            for score, dist_km, t in scored[:10]:
+                results.append({
+                    'id': t['id'],
+                    'title': t['title'],
+                    'description': t['description'],
+                    'category': t['category'],
+                    'location': {
+                        'lat': float(t['location_lat']) if t['location_lat'] else None,
+                        'lng': float(t['location_lng']) if t['location_lng'] else None,
+                        'address': t['location_address'],
+                    },
+                    'price': float(t['price']),
+                    'serviceCharge': float(t['service_charge'] or 0),
+                    'postedAt': str(t['posted_at']),
+                    'expiresAt': str(t['expires_at']),
+                    'distanceKm': round(dist_km, 2) if dist_km is not None else None,
+                    'matchScore': score,
+                })
+
+        return jsonify({'success': True, 'tasks': results})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'message': 'Could not fetch recommendations'}), 500
+
+
 # ========================================
 # TASK SEARCH BY KEYWORD (SERVER-SIDE)
 # ========================================
@@ -7816,6 +7964,75 @@ def google_login():
 # PUSH NOTIFICATION SUBSCRIPTIONS
 # ========================================
 
+def _send_delivery_push_nearby(task_id, task_lat, task_lng, task_title, category):
+    """
+    Send Web Push notifications to all subscribed users within 10 km of a
+    newly-posted delivery/pickup/errand task.  Runs best-effort — failures
+    are logged but do not abort task creation.
+    """
+    DELIVERY_CATEGORIES = {'delivery', 'pickup', 'errand', 'courier'}
+    if category not in DELIVERY_CATEGORIES:
+        return
+    if task_lat is None or task_lng is None:
+        return
+
+    vapid_private = os.environ.get('VAPID_PRIVATE_KEY', '')
+    vapid_public  = os.environ.get('VAPID_PUBLIC_KEY', '')
+    vapid_email   = os.environ.get('VAPID_EMAIL', 'mailto:admin@workmate4u.com')
+    if not vapid_private or not vapid_public:
+        print('[PUSH] VAPID keys not configured — skipping geo-push')
+        return
+
+    try:
+        from pywebpush import webpush, WebPushException
+        import json as json_mod
+
+        with get_db() as (cursor, conn):
+            cursor.execute('SELECT user_id, subscription_json, lat, lng FROM push_subscriptions WHERE lat IS NOT NULL')
+            subs = cursor.fetchall()
+
+        payload = json_mod.dumps({
+            'title': '📦 Nearby Delivery Task!',
+            'body': f'{task_title[:60]} — accept it before someone else does!',
+            'icon': '/icon-192x192.png',
+            'tag': f'delivery-task-{task_id}',
+            'url': '/browse.html',
+            'notificationId': f'task-{task_id}',
+        })
+
+        sent = 0
+        for row in subs:
+            try:
+                sub_lat = float(row['lat'])
+                sub_lng = float(row['lng'])
+                dist = _haversine_km(task_lat, task_lng, sub_lat, sub_lng)
+                if dist > 10:
+                    continue
+                webpush(
+                    subscription_info=json_mod.loads(row['subscription_json']),
+                    data=payload,
+                    vapid_private_key=vapid_private,
+                    vapid_claims={'sub': vapid_email},
+                )
+                sent += 1
+            except WebPushException as wpe:
+                # Subscription expired — remove it
+                if wpe.response and wpe.response.status_code in (404, 410):
+                    try:
+                        with get_db() as (cur2, con2):
+                            cur2.execute(f'DELETE FROM push_subscriptions WHERE user_id = {PH}',
+                                         (row['user_id'],))
+                            con2.commit()
+                    except Exception:
+                        pass
+            except Exception as inner:
+                print(f'[PUSH] Error sending to {row["user_id"]}: {inner}')
+
+        print(f'[PUSH] Sent delivery push to {sent} nearby user(s) for task {task_id}')
+    except Exception as e:
+        print(f'[PUSH] geo-push failed: {e}')
+
+
 @app.route('/api/push/subscribe', methods=['POST'])
 @require_auth
 def push_subscribe():
@@ -7825,22 +8042,30 @@ def push_subscribe():
         subscription = data.get('subscription')
         if not subscription or not subscription.get('endpoint'):
             return jsonify({'success': False, 'message': 'Invalid subscription'}), 400
-        
+
+        # Accept optional lat/lng so we can do geo-targeted pushes later
+        sub_lat = data.get('lat')
+        sub_lng = data.get('lng')
+        try:
+            sub_lat = float(sub_lat) if sub_lat is not None else None
+            sub_lng = float(sub_lng) if sub_lng is not None else None
+        except (ValueError, TypeError):
+            sub_lat = sub_lng = None
+
         import json as json_mod
         sub_json = json_mod.dumps(subscription)
-        
-        with get_db() as conn:
-            cur = conn.cursor()
+
+        with get_db() as (cursor, conn):
             # Upsert: replace existing subscription for this user
-            cur.execute(f"""
+            cursor.execute(f"""
                 DELETE FROM push_subscriptions WHERE user_id = {PH}
             """, (request.user_id,))
-            cur.execute(f"""
-                INSERT INTO push_subscriptions (user_id, subscription_json, created_at)
-                VALUES ({PH}, {PH}, NOW())
-            """, (request.user_id, sub_json))
+            cursor.execute(f"""
+                INSERT INTO push_subscriptions (user_id, subscription_json, lat, lng, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, NOW())
+            """, (request.user_id, sub_json, sub_lat, sub_lng))
             conn.commit()
-        
+
         return jsonify({'success': True, 'message': 'Push subscription saved'})
     except Exception as e:
         return jsonify({'success': False, 'message': 'Failed to save subscription'}), 500

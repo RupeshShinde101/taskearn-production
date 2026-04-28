@@ -856,6 +856,54 @@ let myCompletedTasks = [];
 // LIVE CATEGORY COUNTS
 // ========================================
 
+// ========================================
+// AI-MATCHED RECOMMENDED TASKS
+// ========================================
+
+async function loadRecommendedTasks() {
+    const container = document.getElementById('recommendedTasksList');
+    const section   = document.getElementById('recommendedSection');
+    if (!container || !section) return;
+    if (!currentUser) { section.style.display = 'none'; return; }
+
+    try {
+        if (typeof TasksAPI === 'undefined' || !TasksAPI.getRecommended) return;
+
+        const lat = userLocation ? userLocation.lat : null;
+        const lng = userLocation ? userLocation.lng : null;
+        if (!lat || !lng) return;
+
+        const result = await TasksAPI.getRecommended(lat, lng);
+        if (!result || !result.success || !result.tasks || result.tasks.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        container.innerHTML = result.tasks.map(t => {
+            const distText = t.distanceKm != null ? `${t.distanceKm.toFixed(1)} km` : '?';
+            const total = (t.price + t.serviceCharge).toFixed(0);
+            const catLabel = formatCategory ? formatCategory(t.category) : t.category;
+            return `
+            <div class="task-card recommended-task-card" onclick="openTask(${t.id})">
+                <div class="task-card-top">
+                    <span class="task-category-badge">${catLabel}</span>
+                    <span class="task-price-badge">₹${total}</span>
+                </div>
+                <h4 class="task-title">${t.title}</h4>
+                <p class="task-desc">${(t.description || '').slice(0, 80)}${t.description && t.description.length > 80 ? '…' : ''}</p>
+                <div class="task-meta">
+                    <span>📍 ${distText}</span>
+                    <span>⏱️ ${getTimeLeft ? getTimeLeft(t.expiresAt) : ''}</span>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        console.log('Recommended tasks unavailable:', err.message);
+        if (section) section.style.display = 'none';
+    }
+}
+
 async function loadCategoryCounts() {
     try {
         if (typeof TasksAPI !== 'undefined' && TasksAPI.getCategoryCounts) {
@@ -1974,6 +2022,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         } catch (e) {
             console.warn('⚠️ Parallel load failed:', e.message);
         }
+
+        // Load AI recommended tasks (after main tasks so userLocation is set)
+        loadRecommendedTasks().catch(e => console.log('Recommendations unavailable:', e.message));
         
         // Re-render all views with fresh server data
         try {
@@ -6923,8 +6974,13 @@ async function initPushNotifications() {
             applicationServerKey: vapidKey
         });
         
-        // Send subscription to backend
-        await PushAPI.subscribe(subscription.toJSON());
+        // Send subscription + current location so backend can send geo-targeted pushes
+        const subPayload = { subscription: subscription.toJSON() };
+        if (userLocation && userLocation.lat && userLocation.lng) {
+            subPayload.lat = userLocation.lat;
+            subPayload.lng = userLocation.lng;
+        }
+        await PushAPI.subscribe(subPayload);
     } catch (err) {
         console.log('Push notification setup:', err.message);
     }
@@ -6969,6 +7025,7 @@ window.blockUser = blockUser;
 window.unblockUser = unblockUser;
 window.requestPushPermission = requestPushPermission;
 window.initPushNotifications = initPushNotifications;
+window.loadRecommendedTasks = loadRecommendedTasks;
 window.saveTaskEdit = saveTaskEdit;
 window.showTaskPostedSuccess = showTaskPostedSuccess;
 window.switchTab = switchTab;

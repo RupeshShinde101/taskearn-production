@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -456,7 +456,7 @@
             <div id="map"></div>
             <!-- Location Info Overlay -->
             <div class="location-info">
-                <strong>📍 Task Location:</strong>
+                <strong>?? Task Location:</strong>
                 <div id="taskLocation">Loading location...</div>
             </div>
             <!-- Center on location button -->
@@ -560,9 +560,9 @@
             <h3 style="margin-bottom:8px;color:#1e293b;font-size:18px;">Release Task Penalty</h3>
             <p style="color:#64748b;font-size:14px;margin-bottom:14px;">Releasing this task will deduct a <b>10% penalty</b> from your wallet.</p>
             <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px;margin-bottom:16px;text-align:left;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Task Value</span><span style="color:#1e293b;font-weight:600;" id="tipTaskValue">₹0</span></div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Penalty (10%)</span><span style="color:#ef4444;font-weight:600;" id="tipPenalty">-₹0</span></div>
-                <div style="display:flex;justify-content:space-between;border-top:1px dashed #e2e8f0;padding-top:4px;"><span style="color:#64748b;font-size:13px;">Wallet After</span><span style="font-weight:600;" id="tipWalletAfter">₹0</span></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Task Value</span><span style="color:#1e293b;font-weight:600;" id="tipTaskValue">?0</span></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Penalty (10%)</span><span style="color:#ef4444;font-weight:600;" id="tipPenalty">-?0</span></div>
+                <div style="display:flex;justify-content:space-between;border-top:1px dashed #e2e8f0;padding-top:4px;"><span style="color:#64748b;font-size:13px;">Wallet After</span><span style="font-weight:600;" id="tipWalletAfter">?0</span></div>
             </div>
             <div id="tipDailyWarning" style="display:none;background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:8px;margin-bottom:14px;">
                 <p style="color:#b45309;font-size:12px;margin:0;"><i class="fas fa-info-circle"></i> <span id="tipDailyCount">0</span>/3 daily releases used.</p>
@@ -605,10 +605,10 @@
                 <i class="fas fa-exclamation-triangle" style="font-size:24px;color:#ef4444;"></i>
             </div>
             <h3 style="color:#ef4444;margin-bottom:8px;">Account Debt Suspended</h3>
-            <p style="color:#64748b;font-size:14px;margin-bottom:10px;">Your wallet balance has reached -₹500 or below. Add money to bring your balance back to ₹0 and restore your account.</p>
+            <p style="color:#64748b;font-size:14px;margin-bottom:10px;">Your wallet balance has reached -?500 or below. Add money to bring your balance back to ?0 and restore your account.</p>
             <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:14px;">
                 <p style="color:#64748b;font-size:12px;margin:0 0 4px;">Amount Owed</p>
-                <p style="color:#ef4444;font-weight:800;font-size:22px;margin:0;" id="tipDebtAmount">₹0</p>
+                <p style="color:#ef4444;font-weight:800;font-size:22px;margin:0;" id="tipDebtAmount">?0</p>
             </div>
             <button onclick="window.location.href='wallet.html'" style="width:100%;background:#6C63FF;color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;margin-bottom:8px;">Add Money Now</button>
             <button onclick="document.getElementById('debtSuspendedOverlay').style.display='none'" style="width:100%;background:#f1f5f9;color:#64748b;padding:10px;border-radius:10px;font-weight:600;border:none;cursor:pointer;">Close</button>
@@ -648,7 +648,7 @@
                         ...currentTask,
                         ...taskData
                     };
-                    console.log('✅ Loaded task from localStorage:', currentTask);
+                    console.log('? Loaded task from localStorage:', currentTask);
                 } catch (e) {
                     console.error('Error parsing saved task:', e);
                 }
@@ -676,7 +676,7 @@
                             if (t.pickup && t.pickup.lat) {
                                 currentTask.location = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address };
                             }
-                            console.log('✅ Loaded task from API tracking:', currentTask);
+                            console.log('? Loaded task from API tracking:', currentTask);
                         }
                     } catch (e) {
                         console.warn('Tracking API fetch failed:', e.message);
@@ -765,7 +765,7 @@
                     }
                     return;
                 }
-                console.log('✅ Backend: Task marked completed, poster notified');
+                console.log('? Backend: Task marked completed, poster notified');
             } catch (err) {
                 alert('Network error. Please check connection and try again.');
                 console.error('Backend complete failed:', err.message);
@@ -849,7 +849,7 @@
         }
         function showDebtSuspendedOverlay() {
             const amount = getDebtAmount();
-            document.getElementById('tipDebtAmount').textContent = '₹' + amount.toFixed(2);
+            document.getElementById('tipDebtAmount').textContent = '?' + amount.toFixed(2);
             document.getElementById('debtSuspendedOverlay').style.display = 'flex';
         }
 
@@ -876,10 +876,10 @@
             const balance = parseFloat(helperData.wallet || 0);
             const walletAfter = balance - penalty;
 
-            document.getElementById('tipTaskValue').textContent = '₹' + taskValue;
-            document.getElementById('tipPenalty').textContent = '-₹' + penalty;
+            document.getElementById('tipTaskValue').textContent = '?' + taskValue;
+            document.getElementById('tipPenalty').textContent = '-?' + penalty;
             const afterEl = document.getElementById('tipWalletAfter');
-            afterEl.textContent = '₹' + walletAfter.toFixed(2);
+            afterEl.textContent = '?' + walletAfter.toFixed(2);
             afterEl.style.color = walletAfter < 0 ? '#ef4444' : '#10b981';
 
             const warnEl = document.getElementById('tipDailyWarning');
@@ -908,7 +908,7 @@
                     const penaltyRes = await fetch(API_URL + '/wallet/penalty', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                        body: JSON.stringify({ amount: penalty, taskId: taskId, description: 'Task release penalty (10% of ₹' + taskValue + ')' })
+                        body: JSON.stringify({ amount: penalty, taskId: taskId, description: 'Task release penalty (10% of ?' + taskValue + ')' })
                     });
                     const penaltyResult = await penaltyRes.json();
                     if (penaltyResult && penaltyResult.debtSuspended) {
@@ -920,7 +920,7 @@
                 }
             }
 
-            // Abandon task — server now handles release counting + auto-suspension atomically
+            // Abandon task � server now handles release counting + auto-suspension atomically
             if (token && taskId) {
                 try {
                     const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {
@@ -953,7 +953,7 @@
             }
 
             clearInterval(timerInterval);
-            alert('Task released. ₹' + penalty + ' penalty deducted from your wallet.');
+            alert('Task released. ?' + penalty + ' penalty deducted from your wallet.');
             window.location.href = 'index.html';
         }
 
@@ -1015,7 +1015,7 @@
 
                 // Add OpenStreetMap tiles
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap',
+                    attribution: '� OpenStreetMap',
                     maxZoom: 19
                 }).addTo(map);
 
@@ -1040,9 +1040,9 @@
                     displayLocationInfo();
                 }
 
-                console.log('✅ Map initialized successfully');
+                console.log('? Map initialized successfully');
             } catch (error) {
-                console.error('❌ Map error:', error);
+                console.error('? Map error:', error);
             }
         }
 

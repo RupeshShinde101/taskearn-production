@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -742,7 +742,7 @@
         const mapboxToken = window.MAPBOX_TOKEN || 'pk.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
         
         if (mapboxToken.includes('XXX')) {
-            console.warn('⚠️  Mapbox token not configured. Set MAPBOX_TOKEN environment variable.');
+            console.warn('??  Mapbox token not configured. Set MAPBOX_TOKEN environment variable.');
         }
         
         mapboxgl.accessToken = mapboxToken;
@@ -895,7 +895,7 @@
                                 <div class="task-select-info">
                                     <h4>${task.title}</h4>
                                     <p>${task.status === 'accepted' ? 'In Progress' : 'Waiting for helper'}</p>
-                                    <span class="task-price">₹${task.price}</span>
+                                    <span class="task-price">?${task.price}</span>
                                 </div>
                                 <i class="fas fa-chevron-right"></i>
                             </div>
@@ -1096,7 +1096,7 @@
                     </div>
                     <div class="task-detail-row">
                         <span>Payment</span>
-                        <span style="color: var(--success);">₹${data.price}</span>
+                        <span style="color: var(--success);">?${data.price}</span>
                     </div>
                 </div>
 
@@ -1179,7 +1179,7 @@
                 .setLngLat([data.helperLocation.lng, data.helperLocation.lat])
                 .setPopup(new mapboxgl.Popup().setHTML(`
                     <strong>${data.helper.name}</strong><br>
-                    <span style="color: #f59e0b;">★ ${data.helper.rating}</span>
+                    <span style="color: #f59e0b;">? ${data.helper.rating}</span>
                 `))
                 .addTo(map);
 
@@ -1400,7 +1400,7 @@
                     .setLngLat(coords)
                     .setPopup(new mapboxgl.Popup().setHTML(`
                         <strong>${trackingData.helper.name}</strong><br>
-                        <span style="color: #f59e0b;">★ ${trackingData.helper.rating}</span>
+                        <span style="color: #f59e0b;">? ${trackingData.helper.rating}</span>
                     `))
                     .addTo(map);
             }

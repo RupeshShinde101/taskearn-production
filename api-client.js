@@ -654,6 +654,14 @@ const TasksAPI = {
             method: 'GET'
         });
         return result.data;
+    },
+
+    // Get AI-matched recommended tasks for the current user
+    async getRecommended(lat, lng) {
+        const result = await apiRequest(`/tasks/recommended?lat=${lat}&lng=${lng}`, {
+            method: 'GET'
+        });
+        return result.data;
     }
 };
 
@@ -1031,7 +1039,7 @@ const KYCAPI = {
 // Push Notifications API
 const PushAPI = {
     getVapidKey: () => apiRequest('/api/push/vapid-key'),
-    subscribe: (subscription) => apiRequest('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription }) }),
+    subscribe: (payload) => apiRequest('/api/push/subscribe', { method: 'POST', body: JSON.stringify(payload) }),
     unsubscribe: () => apiRequest('/api/push/unsubscribe', { method: 'POST' })
 };
 

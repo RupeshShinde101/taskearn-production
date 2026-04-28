@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -422,7 +422,7 @@
             </div>
 
             <!-- Amount -->
-            <div class="amount-total">₹<span id="amount">500</span></div>
+            <div class="amount-total">?<span id="amount">500</span></div>
 
             <!-- QR Code Section -->
             <div class="qr-section">
@@ -555,7 +555,7 @@
                     const upiString = `upi://pay?pa=taskearnofficialtest@okaxis&pn=Workmate4u&am=${taskData.amount || amount}&tr=Workmate4u_${taskData.id || taskId}&tn=Task%20Payment`;
                     document.getElementById('qrImage').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiString)}`;
                     
-                    console.log('✅ Loaded task details from localStorage');
+                    console.log('? Loaded task details from localStorage');
                 } catch (e) {
                     console.error('Error parsing saved task:', e);
                     setupDefaultPaymentPage(amount, taskName, providerName);

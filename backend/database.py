@@ -581,6 +581,18 @@ def init_postgres_db():
             print("[DB] ✅ paid_at column added or already exists")
         except Exception as e:
             print(f"[DB] ⚠️  Could not add paid_at column: {e}")
+
+        # Add lat/lng to push_subscriptions for geo-targeted notifications
+        try:
+            cursor.execute('''
+                ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS lat DECIMAL(10,8)
+            ''')
+            cursor.execute('''
+                ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS lng DECIMAL(11,8)
+            ''')
+            print("[DB] ✅ push_subscriptions lat/lng columns added or already exist")
+        except Exception as e:
+            print(f"[DB] ⚠️  Could not add lat/lng to push_subscriptions: {e}")
         
         # ========================================
         # CREATE SYSTEM/COMPANY USER

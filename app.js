@@ -6932,25 +6932,36 @@ async function initPushNotifications() {
     if (Notification.permission !== 'granted') return;
 
     try {
+        // Fetch VAPID key first — we need it to validate / create subscription
+        const keyResult = await PushAPI.getVapidKey();
+        if (!keyResult || !keyResult.vapidKey) {
+            console.log('[PUSH] No VAPID key from server — push not configured yet');
+            return;
+        }
+        const vapidKey = urlBase64ToUint8Array(keyResult.vapidKey);
+
         const reg = await navigator.serviceWorker.ready;
         let subscription = await reg.pushManager.getSubscription();
 
-        if (!subscription) {
-            // Not yet subscribed — fetch VAPID key and create subscription
-            const keyResult = await PushAPI.getVapidKey();
-            if (!keyResult || !keyResult.vapidKey) {
-                console.log('[PUSH] No VAPID key from server — push not configured yet');
-                return;
+        // On mobile, the existing subscription may be stale (expired endpoint or
+        // different VAPID key from a previous deploy). Unsubscribe and resubscribe
+        // to guarantee a fresh, valid subscription every time.
+        if (subscription) {
+            try {
+                await subscription.unsubscribe();
+                console.log('[PUSH] Old subscription cleared, creating fresh one');
+            } catch (e) {
+                console.warn('[PUSH] Could not unsubscribe old sub:', e.message);
             }
-            const vapidKey = urlBase64ToUint8Array(keyResult.vapidKey);
-            subscription = await reg.pushManager.subscribe({
-                userVisibleOnly: true,          // was: userVisuallyPushed (typo that broke everything)
-                applicationServerKey: vapidKey
-            });
+            subscription = null;
         }
 
-        // Always re-send to server so lat/lng stays current
-        // (handles users who subscribed before geo-push feature was added)
+        subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: vapidKey
+        });
+
+        // Send to server with lat/lng for geo-targeted delivery pushes
         const subPayload = { subscription: subscription.toJSON() };
         if (userLocation && userLocation.lat && userLocation.lng) {
             subPayload.lat = userLocation.lat;
@@ -6959,6 +6970,8 @@ async function initPushNotifications() {
         const result = await PushAPI.subscribe(subPayload);
         if (result && result.success) {
             console.log('[PUSH] ✅ Subscription registered with server (lat/lng included)');
+        } else {
+            console.warn('[PUSH] Server save failed:', result);
         }
     } catch (err) {
         console.warn('[PUSH] Setup failed:', err.message);

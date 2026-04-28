@@ -2025,6 +2025,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // Load AI recommended tasks (after main tasks so userLocation is set)
         loadRecommendedTasks().catch(e => console.log('Recommendations unavailable:', e.message));
+
+        // Show push notification enable banner if user hasn't opted in yet
+        showPushBannerIfNeeded();
         
         // Re-render all views with fresh server data
         try {
@@ -2097,40 +2100,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 // PUSH NOTIFICATIONS
 // ========================================
 
-let notificationPermission = 'default';
-
-function initPushNotifications() {
-    if ('Notification' in window) {
-        notificationPermission = Notification.permission;
-        console.log('🔔 Notification permission:', notificationPermission);
-        
-        if (notificationPermission === 'default') {
-            // Ask for permission after user interacts with the page
-            document.addEventListener('click', requestNotificationPermission, { once: true });
-        }
-    } else {
-        console.log('⚠️ Push notifications not supported');
-    }
-}
-
-async function requestNotificationPermission() {
-    if ('Notification' in window && Notification.permission === 'default') {
-        try {
-            const permission = await Notification.requestPermission();
-            notificationPermission = permission;
-            console.log('🔔 Notification permission:', permission);
-            
-            if (permission === 'granted') {
-                showLocalNotification('Workmate4u', 'Notifications enabled! You\'ll be notified about task updates.');
-            }
-        } catch (e) {
-            console.error('Error requesting notification permission:', e);
-        }
-    }
-}
-
 function showLocalNotification(title, body, options = {}) {
-    if (notificationPermission !== 'granted') return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
     
     try {
         const notification = new Notification(title, {
@@ -6958,31 +6929,39 @@ async function unblockUser(userId) {
 async function initPushNotifications() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     if (!currentUser) return;
-    
+    if (Notification.permission !== 'granted') return;
+
     try {
         const reg = await navigator.serviceWorker.ready;
-        const existing = await reg.pushManager.getSubscription();
-        if (existing) return; // Already subscribed
-        
-        // Get VAPID key from server
-        const keyResult = await PushAPI.getVapidKey();
-        if (!keyResult.success || !keyResult.vapidKey) return;
-        
-        const vapidKey = urlBase64ToUint8Array(keyResult.vapidKey);
-        const subscription = await reg.pushManager.subscribe({
-            userVisuallyPushed: true,
-            applicationServerKey: vapidKey
-        });
-        
-        // Send subscription + current location so backend can send geo-targeted pushes
+        let subscription = await reg.pushManager.getSubscription();
+
+        if (!subscription) {
+            // Not yet subscribed — fetch VAPID key and create subscription
+            const keyResult = await PushAPI.getVapidKey();
+            if (!keyResult || !keyResult.vapidKey) {
+                console.log('[PUSH] No VAPID key from server — push not configured yet');
+                return;
+            }
+            const vapidKey = urlBase64ToUint8Array(keyResult.vapidKey);
+            subscription = await reg.pushManager.subscribe({
+                userVisibleOnly: true,          // was: userVisuallyPushed (typo that broke everything)
+                applicationServerKey: vapidKey
+            });
+        }
+
+        // Always re-send to server so lat/lng stays current
+        // (handles users who subscribed before geo-push feature was added)
         const subPayload = { subscription: subscription.toJSON() };
         if (userLocation && userLocation.lat && userLocation.lng) {
             subPayload.lat = userLocation.lat;
             subPayload.lng = userLocation.lng;
         }
-        await PushAPI.subscribe(subPayload);
+        const result = await PushAPI.subscribe(subPayload);
+        if (result && result.success) {
+            console.log('[PUSH] ✅ Subscription registered with server (lat/lng included)');
+        }
     } catch (err) {
-        console.log('Push notification setup:', err.message);
+        console.warn('[PUSH] Setup failed:', err.message);
     }
 }
 
@@ -7012,6 +6991,60 @@ async function requestPushPermission() {
     }
 }
 
+async function enablePushAndSubscribe() {
+    // Called from the push banner on browse.html
+    const banner = document.getElementById('pushBanner');
+    if (banner) banner.style.display = 'none';
+
+    if (!('Notification' in window) || !('PushManager' in window)) {
+        showToast('Push notifications are not supported in this browser', 'error');
+        return;
+    }
+    if (Notification.permission === 'denied') {
+        showToast('Notifications are blocked. Please allow them in your browser settings.', 'error');
+        return;
+    }
+    showToast('Enabling notifications…');
+    const perm = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission();
+    if (perm !== 'granted') {
+        showToast('Notification permission denied', 'error');
+        return;
+    }
+    await initPushNotifications();
+    showToast('✅ You will now receive nearby delivery task alerts!');
+}
+
+async function testPushNotification() {
+    // For debugging: sends a test push to the current device via the server
+    showToast('Sending test notification…');
+    try {
+        const result = await PushAPI.test();
+        if (result && result.success) {
+            showToast('✅ Test push sent — check your notification tray!');
+        } else {
+            showToast('Test failed: ' + (result && result.message ? result.message : 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        showToast('Test push error: ' + e.message, 'error');
+    }
+}
+
+function showPushBannerIfNeeded() {
+    // Show the enable-notifications banner on browse page for logged-in users
+    // who haven't enabled push yet and haven't dismissed it
+    const banner = document.getElementById('pushBanner');
+    if (!banner) return;
+    if (!currentUser) { banner.style.display = 'none'; return; }
+    if (localStorage.getItem('pushBannerDismissed') === '1') { banner.style.display = 'none'; return; }
+    if (!('PushManager' in window)) { banner.style.display = 'none'; return; }
+    if (Notification.permission === 'granted') { banner.style.display = 'none'; return; }
+    if (Notification.permission === 'denied') { banner.style.display = 'none'; return; }
+    // Only show if permission is 'default' (never asked)
+    banner.style.display = 'flex';
+}
+
 // Window exports for new features
 window.handleGoogleLogin = handleGoogleLogin;
 window.handleGoogleCredentialResponse = handleGoogleCredentialResponse;
@@ -7026,12 +7059,9 @@ window.unblockUser = unblockUser;
 window.requestPushPermission = requestPushPermission;
 window.initPushNotifications = initPushNotifications;
 window.loadRecommendedTasks = loadRecommendedTasks;
-window.saveTaskEdit = saveTaskEdit;
-window.showTaskPostedSuccess = showTaskPostedSuccess;
-window.switchTab = switchTab;
-window.applyFilters = applyFilters;
-window.clearFilters = clearFilters;
-window.filterByCategory = filterByCategory;
+window.enablePushAndSubscribe = enablePushAndSubscribe;
+window.testPushNotification = testPushNotification;
+window.showPushBannerIfNeeded = showPushBannerIfNeeded;
 window.loadCategoryCounts = loadCategoryCounts;
 window.selectBudget = selectBudget;
 window.addBonus = addBonus;

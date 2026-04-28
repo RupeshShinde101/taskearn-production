@@ -8075,9 +8075,8 @@ def push_subscribe():
 def push_unsubscribe():
     """Remove push subscription for the current user."""
     try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(f"DELETE FROM push_subscriptions WHERE user_id = {PH}", (request.user_id,))
+        with get_db() as (cursor, conn):
+            cursor.execute(f"DELETE FROM push_subscriptions WHERE user_id = {PH}", (request.user_id,))
             conn.commit()
         return jsonify({'success': True, 'message': 'Push subscription removed'})
     except Exception as e:
@@ -8088,6 +8087,51 @@ def get_vapid_key():
     """Return the public VAPID key for client-side subscription."""
     vapid_key = os.environ.get('VAPID_PUBLIC_KEY', '')
     return jsonify({'success': True, 'vapidKey': vapid_key})
+
+
+@app.route('/api/push/test', methods=['POST'])
+@require_auth
+def push_test():
+    """Send a test Web Push to the current user to verify the whole pipeline."""
+    vapid_private = os.environ.get('VAPID_PRIVATE_KEY', '')
+    vapid_public  = os.environ.get('VAPID_PUBLIC_KEY', '')
+    vapid_email   = os.environ.get('VAPID_EMAIL', 'mailto:admin@workmate4u.com')
+
+    if not vapid_private or not vapid_public:
+        return jsonify({'success': False,
+                        'message': 'VAPID keys not configured on the server. Add VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY and VAPID_EMAIL to Railway environment variables.'}), 503
+
+    try:
+        from pywebpush import webpush, WebPushException
+        import json as json_mod
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f"SELECT subscription_json, lat, lng FROM push_subscriptions WHERE user_id = {PH}",
+                           (request.user_id,))
+            row = cursor.fetchone()
+
+        if not row:
+            return jsonify({'success': False,
+                            'message': 'No push subscription found for your account. Enable notifications first.'}), 404
+
+        payload = json_mod.dumps({
+            'title': '🔔 Test Notification',
+            'body': 'Push notifications are working! You will receive delivery task alerts within 10 km.',
+            'icon': '/icon-192x192.png',
+            'tag': 'push-test',
+            'url': '/browse.html',
+        })
+
+        webpush(
+            subscription_info=json_mod.loads(row['subscription_json']),
+            data=payload,
+            vapid_private_key=vapid_private,
+            vapid_claims={'sub': vapid_email},
+        )
+        return jsonify({'success': True, 'message': 'Test push sent! Check your device.'})
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Push failed: {str(e)}'}), 500
 
 
 # ========================================

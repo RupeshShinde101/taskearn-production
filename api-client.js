@@ -1040,7 +1040,8 @@ const KYCAPI = {
 const PushAPI = {
     getVapidKey: () => apiRequest('/api/push/vapid-key'),
     subscribe: (payload) => apiRequest('/api/push/subscribe', { method: 'POST', body: JSON.stringify(payload) }),
-    unsubscribe: () => apiRequest('/api/push/unsubscribe', { method: 'POST' })
+    unsubscribe: () => apiRequest('/api/push/unsubscribe', { method: 'POST' }),
+    test: () => apiRequest('/api/push/test', { method: 'POST' })
 };
 
 // Export for use

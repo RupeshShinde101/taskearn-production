@@ -7996,15 +7996,28 @@ def _get_vapid_keys():
                 except Exception:
                     cfg[r[0]] = r[1]
             if cfg.get('vapid_public') and cfg.get('vapid_private'):
-                return cfg['vapid_public'], cfg['vapid_private'], email
+                # Sanity check: private key must be PEM. If a previous build
+                # stored raw base64url (which pywebpush rejects with
+                # "curve must be an EllipticCurve instance"), drop and regen.
+                if '-----BEGIN' in cfg['vapid_private']:
+                    return cfg['vapid_public'], cfg['vapid_private'], email
+                cursor.execute(f"DELETE FROM app_config WHERE key IN ({PH}, {PH})",
+                               ('vapid_public', 'vapid_private'))
+                conn.commit()
+                print('[PUSH] Discarded non-PEM VAPID private key, regenerating')
 
-            # Auto-generate fresh ES256 (P-256) keypair, URL-safe-base64 raw form
+            # Auto-generate fresh ES256 (P-256) keypair.
+            # Public key: URL-safe-base64 raw uncompressed (for browser subscribe)
+            # Private key: PEM (what pywebpush/py_vapid expect)
             from cryptography.hazmat.primitives.asymmetric import ec
             from cryptography.hazmat.primitives import serialization
             import base64 as _b64
             sk = ec.generate_private_key(ec.SECP256R1())
-            priv_raw = sk.private_numbers().private_value.to_bytes(32, 'big')
-            new_priv = _b64.urlsafe_b64encode(priv_raw).rstrip(b'=').decode()
+            new_priv = sk.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            ).decode('ascii')
             pub_raw = sk.public_key().public_bytes(
                 encoding=serialization.Encoding.X962,
                 format=serialization.PublicFormat.UncompressedPoint

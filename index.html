@@ -1438,7 +1438,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260428b"></script>
+    <script src="app.js?v=20260428c"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>
@@ -1482,7 +1482,6 @@
         if (statsEl) statsObserver.observe(statsEl);
 
         function animateCounters() {
-            // Fetch real-time stats from API (use Railway URL directly, API_BASE_URL already has /api suffix)
             fetch('https://taskearn-production-production.up.railway.app/api/platform-stats').then(function(r) { return r.json(); }).then(function(data) {
                 if (!data.success) return;
                 var usersEl = document.getElementById('heroStatUsers');
@@ -1492,10 +1491,7 @@
                 animateValue(tasksEl, data.completedTasks, formatCount);
                 animateValue(earnedEl, data.totalEarned, formatRupees);
             }).catch(function() {
-                // Fallback to static values if API fails
-                var el = document.getElementById('heroStatUsers'); if (el) el.textContent = '50K+';
-                el = document.getElementById('heroStatTasks'); if (el) el.textContent = '1L+';
-                el = document.getElementById('heroStatEarned'); if (el) el.textContent = '₹2Cr+';
+                // API unavailable — leave as '--' placeholder, don't show fake numbers
             });
         }
 

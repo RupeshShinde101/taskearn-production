@@ -7479,7 +7479,13 @@ def submit_kyc():
     data = request.get_json()
     doc_type = data.get('documentType', '').strip()
     doc_number = data.get('documentNumber', '').strip()
-    doc_image = data.get('documentImage', '').strip()  # base64 image data
+    # Accept new front/back fields; fall back to legacy documentImage field
+    doc_image_front = data.get('documentImageFront') or data.get('documentImage', '')
+    doc_image_back = data.get('documentImageBack') or ''
+    if doc_image_front:
+        doc_image_front = doc_image_front.strip()
+    if doc_image_back:
+        doc_image_back = doc_image_back.strip()
 
     valid_types = ['aadhaar', 'pan', 'voter_id', 'driving_license']
     if doc_type not in valid_types:
@@ -7488,12 +7494,17 @@ def submit_kyc():
     if not doc_number or len(doc_number) < 6 or len(doc_number) > 20:
         return jsonify({'success': False, 'message': 'Invalid document number'}), 400
 
-    if not doc_image:
-        return jsonify({'success': False, 'message': 'Please upload a document image'}), 400
+    if not doc_image_front:
+        return jsonify({'success': False, 'message': 'Please upload the front side of the document'}), 400
 
-    # Validate image size (max 5MB base64 ~ 6.67MB string)
-    if len(doc_image) > 7_000_000:
-        return jsonify({'success': False, 'message': 'Document image too large (max 5MB)'}), 400
+    if doc_type == 'aadhaar' and not doc_image_back:
+        return jsonify({'success': False, 'message': 'Please upload the back side of your Aadhaar card'}), 400
+
+    # Validate image sizes (max 5MB each; base64 overhead ~33%)
+    if len(doc_image_front) > 7_000_000:
+        return jsonify({'success': False, 'message': 'Front image too large (max 5MB)'}), 400
+    if doc_image_back and len(doc_image_back) > 7_000_000:
+        return jsonify({'success': False, 'message': 'Back image too large (max 5MB)'}), 400
 
     # Basic format validation
     import re
@@ -7510,7 +7521,7 @@ def submit_kyc():
                 UPDATE users SET kyc_document_type = {PH}, kyc_document_number = {PH},
                 kyc_document_image = {PH}, kyc_status = 'verified', kyc_verified_at = {PH}
                 WHERE id = {PH}
-            ''', (doc_type, doc_number.upper(), doc_image, now, request.user_id))
+            ''', (doc_type, doc_number.upper(), doc_image_front, now, request.user_id))
 
             # Notify user of verification
             cursor.execute(f'''

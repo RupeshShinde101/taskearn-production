@@ -560,9 +560,9 @@
             <h3 style="margin-bottom:8px;color:#1e293b;font-size:18px;">Release Task Penalty</h3>
             <p style="color:#64748b;font-size:14px;margin-bottom:14px;">Releasing this task will deduct a <b>10% penalty</b> from your wallet.</p>
             <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px;margin-bottom:16px;text-align:left;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Task Value</span><span style="color:#1e293b;font-weight:600;" id="tipTaskValue">?0</span></div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Penalty (10%)</span><span style="color:#ef4444;font-weight:600;" id="tipPenalty">-?0</span></div>
-                <div style="display:flex;justify-content:space-between;border-top:1px dashed #e2e8f0;padding-top:4px;"><span style="color:#64748b;font-size:13px;">Wallet After</span><span style="font-weight:600;" id="tipWalletAfter">?0</span></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Task Value</span><span style="color:#1e293b;font-weight:600;" id="tipTaskValue">₹0</span></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#64748b;font-size:13px;">Penalty (10%)</span><span style="color:#ef4444;font-weight:600;" id="tipPenalty">-₹0</span></div>
+                <div style="display:flex;justify-content:space-between;border-top:1px dashed #e2e8f0;padding-top:4px;"><span style="color:#64748b;font-size:13px;">Wallet After</span><span style="font-weight:600;" id="tipWalletAfter">₹0</span></div>
             </div>
             <div id="tipDailyWarning" style="display:none;background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:8px;margin-bottom:14px;">
                 <p style="color:#b45309;font-size:12px;margin:0;"><i class="fas fa-info-circle"></i> <span id="tipDailyCount">0</span>/3 daily releases used.</p>
@@ -605,10 +605,10 @@
                 <i class="fas fa-exclamation-triangle" style="font-size:24px;color:#ef4444;"></i>
             </div>
             <h3 style="color:#ef4444;margin-bottom:8px;">Account Debt Suspended</h3>
-            <p style="color:#64748b;font-size:14px;margin-bottom:10px;">Your wallet balance has reached -?500 or below. Add money to bring your balance back to ?0 and restore your account.</p>
+            <p style="color:#64748b;font-size:14px;margin-bottom:10px;">Your wallet balance has reached -₹500 or below. Add money to bring your balance back to ₹0 and restore your account.</p>
             <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:14px;">
                 <p style="color:#64748b;font-size:12px;margin:0 0 4px;">Amount Owed</p>
-                <p style="color:#ef4444;font-weight:800;font-size:22px;margin:0;" id="tipDebtAmount">?0</p>
+                <p style="color:#ef4444;font-weight:800;font-size:22px;margin:0;" id="tipDebtAmount">₹0</p>
             </div>
             <button onclick="window.location.href='wallet.html'" style="width:100%;background:#6C63FF;color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;margin-bottom:8px;">Add Money Now</button>
             <button onclick="document.getElementById('debtSuspendedOverlay').style.display='none'" style="width:100%;background:#f1f5f9;color:#64748b;padding:10px;border-radius:10px;font-weight:600;border:none;cursor:pointer;">Close</button>
@@ -920,7 +920,7 @@
                 }
             }
 
-            // Abandon task � server now handles release counting + auto-suspension atomically
+            // Abandon task  server now handles release counting + auto-suspension atomically
             if (token && taskId) {
                 try {
                     const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {
@@ -1015,7 +1015,7 @@
 
                 // Add OpenStreetMap tiles
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '� OpenStreetMap',
+                    attribution: '© OpenStreetMap',
                     maxZoom: 19
                 }).addTo(map);
 

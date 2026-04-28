@@ -6120,7 +6120,9 @@ function setupEventListeners() {
         m.onclick = function(e) {
             if (e.target === this) {
                 this.classList.remove('active');
-                document.body.style.overflow = '';
+                if (!document.querySelector('.modal.active')) {
+                    document.body.classList.remove('modal-open');
+                }
                 clearRoute();
             }
         };
@@ -6130,7 +6132,7 @@ function setupEventListeners() {
     document.onkeydown = function(e) {
         if (e.key === 'Escape') {
             document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active'));
-            document.body.style.overflow = '';
+            document.body.classList.remove('modal-open');
             clearRoute();
         }
     };
@@ -6140,6 +6142,11 @@ function setupEventListeners() {
         const nav = document.querySelector('.navbar');
         if (nav) nav.style.boxShadow = window.scrollY > 50 ? '0 4px 20px rgba(0,0,0,0.1)' : '';
     };
+
+    // Safety: clear any stale scroll lock on load (e.g. from crashed previous session)
+    if (!document.querySelector('.modal.active')) {
+        document.body.classList.remove('modal-open');
+    }
 }
 
 // ========================================

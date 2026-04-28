@@ -7123,59 +7123,152 @@ async function enablePushAndSubscribe() {
 }
 
 async function testPushNotification() {
-    // Robust test: ensure permission + subscription, THEN send test push
-    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-        showToast('Push notifications are not supported in this browser', 'error');
-        return;
-    }
-    if (!currentUser) {
-        showToast('Please log in first', 'error');
-        return;
-    }
+    // Verbose diagnostic flow — every step logs and shows toast so we can
+    // see exactly where things break in the field.
+    const steps = [];
+    const log = (msg, ok) => {
+        const tag = ok === true ? '✅' : ok === false ? '❌' : '🔹';
+        console.log('[PUSH-TEST] ' + tag + ' ' + msg);
+        steps.push(tag + ' ' + msg);
+    };
 
     try {
-        // Step 1: ensure notification permission
+        // 0) Browser support
+        if (!('serviceWorker' in navigator)) { log('No serviceWorker support', false); showPushDiagModal(steps, 'Service Worker not supported'); return; }
+        if (!('PushManager' in window)) { log('No PushManager support', false); showPushDiagModal(steps, 'Push API not supported'); return; }
+        if (!('Notification' in window)) { log('No Notification API', false); showPushDiagModal(steps, 'Notification API not supported'); return; }
+        log('Browser supports push', true);
+
+        // iOS: must be installed as PWA (Add to Home Screen)
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+        if (isIOS && !isStandalone) {
+            log('iOS detected & not installed as PWA', false);
+            showPushDiagModal(steps,
+                'On iOS, push notifications only work after you install Workmate4u to your Home Screen.\n\n' +
+                '1. Tap the Share button (square with arrow ↑)\n' +
+                '2. Tap "Add to Home Screen"\n' +
+                '3. Open Workmate4u from the home screen\n' +
+                '4. Then come back here and tap Send Test Notification again.');
+            return;
+        }
+
+        if (!currentUser) { log('Not logged in', false); showPushDiagModal(steps, 'Please log in first.'); return; }
+        log('Logged in as ' + (currentUser.name || currentUser.email || 'user'), true);
+
+        // 1) Permission
         if (Notification.permission === 'denied') {
-            showToast('Notifications are blocked. Enable them in your browser settings.', 'error');
+            log('Permission DENIED by user', false);
+            showPushDiagModal(steps,
+                'Notifications are BLOCKED for this site.\n\n' +
+                'To fix:\n• Tap the lock icon in the address bar\n• Find "Notifications"\n• Change from "Block" to "Allow"\n• Reload the page and try again.');
             return;
         }
         if (Notification.permission !== 'granted') {
-            showToast('Requesting notification permission…');
+            log('Permission not yet granted — asking now', null);
             const perm = await Notification.requestPermission();
             if (perm !== 'granted') {
-                showToast('Permission denied — cannot send test', 'error');
+                log('User dismissed/denied prompt', false);
+                showPushDiagModal(steps, 'You declined the notification prompt. Tap the button again to retry.');
                 return;
             }
         }
+        log('Permission granted', true);
 
-        // Step 2: ensure SW is registered & ready
-        showToast('Preparing notification…');
+        // 2) Service Worker ready
+        showToast('Preparing service worker…');
         const reg = await navigator.serviceWorker.ready;
+        log('Service worker ready (scope ' + reg.scope + ')', true);
 
-        // Step 3: ensure server-side subscription exists (always re-subscribe with fresh VAPID)
-        await initPushNotifications();
+        // 3) Fetch VAPID key
+        const keyRes = await PushAPI.getVapidKey();
+        if (!keyRes || !keyRes.vapidKey) {
+            log('Server did not return VAPID key', false);
+            showPushDiagModal(steps, 'Server is missing VAPID keys. Contact admin.');
+            return;
+        }
+        log('Got VAPID key from server (' + keyRes.vapidKey.length + ' chars)', true);
 
-        // Verify a subscription is actually active
-        const sub = await reg.pushManager.getSubscription();
-        if (!sub) {
-            showToast('Could not create push subscription. Please try again.', 'error');
+        // 4) Always unsubscribe existing & resubscribe fresh
+        let sub = await reg.pushManager.getSubscription();
+        if (sub) {
+            try { await sub.unsubscribe(); log('Cleared old subscription', true); }
+            catch (e) { log('Could not unsubscribe old: ' + e.message, null); }
+        }
+
+        try {
+            sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(keyRes.vapidKey)
+            });
+            log('Created fresh push subscription', true);
+        } catch (e) {
+            log('subscribe() failed: ' + e.name + ' — ' + e.message, false);
+            showPushDiagModal(steps,
+                'Could not create push subscription:\n' + e.message +
+                '\n\nThis usually means:\n• Browser blocked notifications without prompting\n• You are using an in-app browser (open in Chrome/Safari instead)\n• Network blocking push gateway');
             return;
         }
 
-        // Step 4: ask the server to send a test push to this device
-        showToast('Sending test notification…');
-        const result = await PushAPI.test();
-        if (result && result.success) {
-            showToast('✅ Test push sent — check your notification tray!');
+        // 5) Send subscription to server
+        const subPayload = { subscription: sub.toJSON() };
+        if (typeof userLocation !== 'undefined' && userLocation && userLocation.lat) {
+            subPayload.lat = userLocation.lat; subPayload.lng = userLocation.lng;
+        }
+        const subRes = await PushAPI.subscribe(subPayload);
+        if (!subRes || !subRes.success) {
+            log('Server rejected subscription save', false);
+            showPushDiagModal(steps, 'Server error saving subscription: ' + (subRes && subRes.message || 'unknown'));
+            return;
+        }
+        log('Subscription saved on server', true);
+
+        // 6) Trigger test push
+        showToast('Sending test push…');
+        const testRes = await PushAPI.test();
+        if (testRes && testRes.success) {
+            log('Server sent push to this device', true);
+            showToast('✅ Test push sent — watch for the notification!');
+            // Also show a confirmation banner immediately for instant feedback
+            setTimeout(() => {
+                showInAppPushBanner({
+                    title: '🔔 Test Notification',
+                    body: 'If you see this, in-app banners work! The OS notification should also appear shortly.',
+                    icon: '/icon-192x192.png',
+                    url: '/'
+                });
+            }, 800);
         } else {
-            const msg = result && result.message ? result.message : 'Unknown error';
-            showToast('Test failed: ' + msg, 'error');
-            console.error('[PUSH-TEST] Server response:', result);
+            log('Server reported test failure: ' + (testRes && testRes.message), false);
+            showPushDiagModal(steps, 'Server failed to send push:\n' + (testRes && testRes.message || 'Unknown error'));
         }
     } catch (e) {
-        console.error('[PUSH-TEST] Error:', e);
-        showToast('Test push error: ' + e.message, 'error');
+        console.error('[PUSH-TEST] Unexpected error:', e);
+        log('Unexpected error: ' + e.message, false);
+        showPushDiagModal(steps, 'Unexpected error: ' + e.message);
     }
+}
+
+// Diagnostic modal that shows the full step-by-step trace
+function showPushDiagModal(steps, finalMessage) {
+    const old = document.getElementById('pushDiagModal');
+    if (old) old.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'pushDiagModal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    overlay.innerHTML =
+        '<div style="background:#fff;border-radius:14px;padding:20px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;font-family:-apple-system,sans-serif;">' +
+            '<h3 style="margin:0 0 12px;font-size:17px;color:#1e293b;">🔔 Push Notification Diagnostics</h3>' +
+            '<div style="background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;margin-bottom:14px;">' +
+                steps.map(s => s.replace(/</g, '&lt;')).join('\n') +
+            '</div>' +
+            '<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 12px;border-radius:6px;font-size:13px;color:#78350f;line-height:1.5;white-space:pre-wrap;margin-bottom:14px;">' +
+                String(finalMessage).replace(/</g, '&lt;') +
+            '</div>' +
+            '<button onclick="document.getElementById(\'pushDiagModal\').remove()" style="background:#6366f1;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;width:100%;">Close</button>' +
+        '</div>';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 }
 
 function showPushBannerIfNeeded() {

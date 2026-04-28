@@ -468,7 +468,7 @@
             navigator.mediaDevices.getUserMedia({ audio: true, video: false })
                 .then(stream => {
                     localStream = stream;
-                    console.log('? Local stream obtained');
+                    console.log('✅ Local stream obtained');
                     
                     // In a real app, would establish peer connection here
                     // For now, just show stats
@@ -476,7 +476,7 @@
                     updateCallStats();
                 })
                 .catch(err => {
-                    console.error('? Error accessing media:', err);
+                    console.error('❌ Error accessing media:', err);
                     // Fallback to phone call
                     makePhoneCall();
                 });
@@ -488,13 +488,13 @@
             if (peerConnection) {
                 container.textContent = '📹 Video call active • Codec: VP8';
             } else {
-                container.textContent = '?? Audio call via device';
+                container.textContent = '📞 Audio call via device';
             }
         }
 
         // Make phone call
         function makePhoneCall() {
-            alert(`?? Call initiated to ${providerPhone}\n\nUse your device's phone app to complete the call.`);
+            alert(`📞 Call initiated to ${providerPhone}\n\nUse your device's phone app to complete the call.`);
             // Could also use: window.location.href = `tel:${providerPhone}`;
         }
 

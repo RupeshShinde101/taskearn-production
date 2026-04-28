@@ -849,7 +849,7 @@
         }
         function showDebtSuspendedOverlay() {
             const amount = getDebtAmount();
-            document.getElementById('tipDebtAmount').textContent = '?' + amount.toFixed(2);
+            document.getElementById('tipDebtAmount').textContent = '₹' + amount.toFixed(2);
             document.getElementById('debtSuspendedOverlay').style.display = 'flex';
         }
 
@@ -876,10 +876,10 @@
             const balance = parseFloat(helperData.wallet || 0);
             const walletAfter = balance - penalty;
 
-            document.getElementById('tipTaskValue').textContent = '?' + taskValue;
-            document.getElementById('tipPenalty').textContent = '-?' + penalty;
+            document.getElementById('tipTaskValue').textContent = '₹' + taskValue;
+            document.getElementById('tipPenalty').textContent = '-₹' + penalty;
             const afterEl = document.getElementById('tipWalletAfter');
-            afterEl.textContent = '?' + walletAfter.toFixed(2);
+            afterEl.textContent = '₹' + walletAfter.toFixed(2);
             afterEl.style.color = walletAfter < 0 ? '#ef4444' : '#10b981';
 
             const warnEl = document.getElementById('tipDailyWarning');

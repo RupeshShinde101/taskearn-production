@@ -5904,13 +5904,13 @@ function scrollToSection(id) {
     }
 }
 
-function showToast(msg) {
+function showToast(msg, duration = 3000) {
     const toast = document.getElementById('toast');
     const text = document.getElementById('toastMessage');
     if (toast && text) {
         text.textContent = msg;
         toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 3000);
+        setTimeout(() => toast.classList.remove('show'), duration);
     }
 }
 
@@ -6406,6 +6406,13 @@ async function initGoogleSignIn() {
     
     console.log('✅ Google Client ID loaded, initializing...');
     
+    // Guard: only initialize once — calling it twice causes a console warning
+    if (window._googleSignInInitialized) {
+        console.log('ℹ️ Google Sign-In already initialized, skipping');
+        return;
+    }
+    window._googleSignInInitialized = true;
+
     google.accounts.id.initialize({
         client_id: window.GOOGLE_CLIENT_ID,
         callback: handleGoogleCredentialResponse,
@@ -7364,22 +7371,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Extended toast function with custom duration
-const originalShowToast = showToast;
-showToast = function(msg, duration = 3000) {
-    const toast = document.getElementById('toast');
-    const text = document.getElementById('toastMessage');
-    if (toast && text) {
-        text.textContent = msg;
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), duration);
-    }
-}
-
+;
 // ============================================================
 // HERO STATS ANIMATED COUNTER
 // ============================================================
-(function initHeroStats() {
+;(function initHeroStats() {
     const statUsers = document.getElementById('heroStatUsers');
     const statTasks = document.getElementById('heroStatTasks');
     const statEarned = document.getElementById('heroStatEarned');

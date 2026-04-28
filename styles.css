@@ -132,6 +132,11 @@ body {
     touch-action: manipulation;
 }
 
+/* Scroll lock when a modal is open */
+body.modal-open {
+    overflow: hidden;
+}
+
 /* iOS safe area support */
 :root {
     --safe-top: env(safe-area-inset-top, 0px);

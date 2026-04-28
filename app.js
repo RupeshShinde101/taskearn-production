@@ -5861,13 +5861,7 @@ function formatCategory(cat) {
 
 function openModal(id) {
     document.getElementById(id)?.classList.add('active');
-    // iOS-compatible scroll lock: freezes page at current position
-    const scrollY = window.scrollY;
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
-    document.body.dataset.scrollY = scrollY;
+    document.body.classList.add('modal-open');
     if (id === 'postTaskModal') {
         resetBonusOnModalOpen();
     }
@@ -5875,15 +5869,9 @@ function openModal(id) {
 
 function closeModal(id) {
     document.getElementById(id)?.classList.remove('active');
-    // Check no other modals are open before unlocking scroll
-    const anyOpen = document.querySelector('.modal.active');
-    if (!anyOpen) {
-        const scrollY = parseInt(document.body.dataset.scrollY || '0', 10);
-        document.body.style.overflow = '';
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.width = '';
-        window.scrollTo(0, scrollY);
+    // Only unlock scroll when no modal is open
+    if (!document.querySelector('.modal.active')) {
+        document.body.classList.remove('modal-open');
     }
 }
 

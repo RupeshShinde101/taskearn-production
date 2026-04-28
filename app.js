@@ -2097,6 +2097,99 @@ document.addEventListener('DOMContentLoaded', async function() {
 });
 
 // ========================================
+// IN-APP PUSH BANNER (foreground notifications like WhatsApp)
+// ========================================
+
+// Listen for PUSH_RECEIVED messages from the service worker
+// This fires when a push arrives while the app is open (foreground)
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'PUSH_RECEIVED') {
+            showInAppPushBanner(event.data);
+        }
+    });
+}
+
+function showInAppPushBanner(data) {
+    // Remove any existing banner
+    const existing = document.getElementById('inAppPushBanner');
+    if (existing) existing.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'inAppPushBanner';
+    banner.style.cssText = [
+        'position:fixed',
+        'top:16px',
+        'left:50%',
+        'transform:translateX(-50%)',
+        'z-index:99999',
+        'background:#1e293b',
+        'color:#fff',
+        'border-radius:14px',
+        'padding:12px 16px',
+        'display:flex',
+        'align-items:center',
+        'gap:12px',
+        'box-shadow:0 8px 32px rgba(0,0,0,0.35)',
+        'max-width:380px',
+        'width:calc(100% - 32px)',
+        'cursor:pointer',
+        'animation:slideDownFadeIn 0.3s ease',
+        'font-family:-apple-system,BlinkMacSystemFont,sans-serif'
+    ].join(';');
+
+    const iconEl = document.createElement('img');
+    iconEl.src = data.icon || '/icon-192x192.png';
+    iconEl.style.cssText = 'width:40px;height:40px;border-radius:10px;flex-shrink:0;object-fit:cover;';
+
+    const textEl = document.createElement('div');
+    textEl.style.cssText = 'flex:1;min-width:0;';
+    textEl.innerHTML = '<div style="font-weight:700;font-size:13px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+        + escapeHtml(data.title || 'Workmate4u') + '</div>'
+        + '<div style="font-size:12px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+        + escapeHtml(data.body || '') + '</div>';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '✕';
+    closeBtn.style.cssText = 'background:none;border:none;color:rgba(255,255,255,.6);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0;line-height:1;';
+    closeBtn.onclick = function(e) { e.stopPropagation(); banner.remove(); };
+
+    banner.appendChild(iconEl);
+    banner.appendChild(textEl);
+    banner.appendChild(closeBtn);
+
+    banner.onclick = function() {
+        banner.remove();
+        if (data.url && data.url !== '/') {
+            window.location.href = data.url;
+        }
+    };
+
+    // Inject keyframe animation if not already present
+    if (!document.getElementById('inAppPushBannerStyle')) {
+        const style = document.createElement('style');
+        style.id = 'inAppPushBannerStyle';
+        style.textContent = '@keyframes slideDownFadeIn{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
+        document.head.appendChild(style);
+    }
+
+    document.body.appendChild(banner);
+
+    // Auto-dismiss after 6 seconds
+    setTimeout(function() {
+        if (banner.parentNode) {
+            banner.style.transition = 'opacity 0.4s';
+            banner.style.opacity = '0';
+            setTimeout(function() { if (banner.parentNode) banner.remove(); }, 400);
+        }
+    }, 6000);
+}
+
+function escapeHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ========================================
 // PUSH NOTIFICATIONS
 // ========================================
 

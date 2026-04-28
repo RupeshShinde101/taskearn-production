@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260428h';
+const CACHE_NAME = 'workmate4u-v20260429a';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -20,22 +20,22 @@ const STATIC_ASSETS = [
   '/icon-512x512.png'
 ];
 
-// Install — activate INSTANTLY, cache assets in background (non-blocking)
+// Install ï¿½ activate INSTANTLY, cache assets in background (non-blocking)
 self.addEventListener('install', event => {
   self.skipWaiting();
-  // Cache assets in background — don't block install on this
+  // Cache assets in background ï¿½ don't block install on this
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       // Fire-and-forget: cache each asset individually, failures are fine
       STATIC_ASSETS.forEach(url => {
         cache.add(url).catch(() => {});
       });
-      return Promise.resolve(); // Resolve immediately — don't wait for caching
+      return Promise.resolve(); // Resolve immediately ï¿½ don't wait for caching
     })
   );
 });
 
-// Activate — clean ALL old caches and notify clients to refresh
+// Activate ï¿½ clean ALL old caches and notify clients to refresh
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -57,7 +57,7 @@ self.addEventListener('message', event => {
   }
 });
 
-// Fetch — only cache same-origin resources; let browser handle CDN/cross-origin
+// Fetch ï¿½ only cache same-origin resources; let browser handle CDN/cross-origin
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
@@ -126,7 +126,26 @@ self.addEventListener('push', event => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    // Check if the app is open in a focused tab
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      // Always show the OS notification (background + lock screen)
+      const showNotif = self.registration.showNotification(data.title, options);
+
+      // ALSO send to any open page tab so it can show an in-app banner
+      // (works like WhatsApp â€” shows even when app is open)
+      clients.forEach(client => {
+        client.postMessage({
+          type: 'PUSH_RECEIVED',
+          title: data.title,
+          body: data.body,
+          icon: data.icon || '/icon-192x192.png',
+          url: data.url || '/',
+          tag: data.tag || ''
+        });
+      });
+
+      return showNotif;
+    })
   );
 });
 

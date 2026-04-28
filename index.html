@@ -171,12 +171,12 @@
                 // Force mobile to use proxy (bypasses ISP/carrier DNS blocking)
                 window.API_BASE_URL = '/.netlify/functions/api-proxy/api';
                 window.FORCE_MOBILE_PROXY = true;
-                console.log('? Pre-set for MOBILE: window.API_BASE_URL = /.netlify/functions/api-proxy/api');
+                console.log('📱 Pre-set for MOBILE: window.API_BASE_URL = /.netlify/functions/api-proxy/api');
             } else {
                 // Desktop can attempt direct Railway connection (usually not blocked)
                 window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
                 window.FORCE_MOBILE_PROXY = false;
-                console.log('? Pre-set for DESKTOP: window.API_BASE_URL = Railway direct');
+                console.log('🖥️ Pre-set for DESKTOP: window.API_BASE_URL = Railway direct');
             }
         })();
     </script>

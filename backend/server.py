@@ -7964,6 +7964,39 @@ def google_login():
 # PUSH NOTIFICATION SUBSCRIPTIONS
 # ========================================
 
+def _ensure_pem_private_key(priv_str):
+    """
+    pywebpush/py_vapid expect a PEM-encoded EC private key.
+    If we receive a raw base64url-encoded 32-byte value (common when storing
+    the key as an applicationServerKey-style string in env vars), convert it
+    to PEM here. Returns PEM string (or original if already PEM, or None).
+    """
+    if not priv_str:
+        return priv_str
+    s = priv_str.strip()
+    if '-----BEGIN' in s:
+        return s
+    try:
+        import base64 as _b64
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives import serialization
+        # Pad and decode urlsafe base64
+        pad = '=' * (-len(s) % 4)
+        raw = _b64.urlsafe_b64decode(s + pad)
+        if len(raw) != 32:
+            return s  # not a raw EC private value; let pywebpush try as-is
+        priv_int = int.from_bytes(raw, 'big')
+        sk = ec.derive_private_key(priv_int, ec.SECP256R1())
+        return sk.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode('ascii')
+    except Exception as _e:
+        print(f'[PUSH] Could not convert raw VAPID private key to PEM: {_e}')
+        return s
+
+
 def _get_vapid_keys():
     """
     Return (public_key, private_key, email) for Web Push VAPID.
@@ -7971,13 +8004,14 @@ def _get_vapid_keys():
       1. Environment variables (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)
       2. Persistent cache in `app_config` DB table
       3. Auto-generate a fresh ES256 keypair, persist it, and use it forever
-    This guarantees push always works even if Railway env vars are missing.
+    Private keys in raw base64url form are auto-converted to PEM (which is
+    what pywebpush requires).
     """
     pub   = (os.environ.get('VAPID_PUBLIC_KEY')  or '').strip()
     priv  = (os.environ.get('VAPID_PRIVATE_KEY') or '').strip()
     email = (os.environ.get('VAPID_EMAIL') or 'mailto:admin@workmate4u.com').strip()
     if pub and priv:
-        return pub, priv, email
+        return pub, _ensure_pem_private_key(priv), email
 
     try:
         with get_db() as (cursor, conn):
@@ -7996,15 +8030,15 @@ def _get_vapid_keys():
                 except Exception:
                     cfg[r[0]] = r[1]
             if cfg.get('vapid_public') and cfg.get('vapid_private'):
-                # Sanity check: private key must be PEM. If a previous build
-                # stored raw base64url (which pywebpush rejects with
-                # "curve must be an EllipticCurve instance"), drop and regen.
-                if '-----BEGIN' in cfg['vapid_private']:
-                    return cfg['vapid_public'], cfg['vapid_private'], email
+                # Convert raw base64url to PEM if needed
+                pem_priv = _ensure_pem_private_key(cfg['vapid_private'])
+                if '-----BEGIN' in pem_priv:
+                    return cfg['vapid_public'], pem_priv, email
+                # Could not convert — drop and regen
                 cursor.execute(f"DELETE FROM app_config WHERE key IN ({PH}, {PH})",
                                ('vapid_public', 'vapid_private'))
                 conn.commit()
-                print('[PUSH] Discarded non-PEM VAPID private key, regenerating')
+                print('[PUSH] Discarded unusable VAPID private key, regenerating')
 
             # Auto-generate fresh ES256 (P-256) keypair.
             # Public key: URL-safe-base64 raw uncompressed (for browser subscribe)

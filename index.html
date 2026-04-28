@@ -1482,17 +1482,45 @@
         if (statsEl) statsObserver.observe(statsEl);
 
         function animateCounters() {
-            fetch('https://taskearn-production-production.up.railway.app/api/platform-stats').then(function(r) { return r.json(); }).then(function(data) {
-                if (!data.success) return;
-                var usersEl = document.getElementById('heroStatUsers');
-                var tasksEl = document.getElementById('heroStatTasks');
-                var earnedEl = document.getElementById('heroStatEarned');
-                animateValue(usersEl, data.users, formatCount);
-                animateValue(tasksEl, data.completedTasks, formatCount);
-                animateValue(earnedEl, data.totalEarned, formatRupees);
-            }).catch(function() {
-                // API unavailable — leave as '--' placeholder, don't show fake numbers
-            });
+            // Show cached stats instantly while fetching fresh data
+            var CACHE_KEY = 'platformStatsCache';
+            try {
+                var cached = JSON.parse(localStorage.getItem(CACHE_KEY));
+                if (cached && cached.users) {
+                    var usersEl = document.getElementById('heroStatUsers');
+                    var tasksEl = document.getElementById('heroStatTasks');
+                    var earnedEl = document.getElementById('heroStatEarned');
+                    animateValue(usersEl, cached.users, formatCount);
+                    animateValue(tasksEl, cached.completedTasks, formatCount);
+                    animateValue(earnedEl, cached.totalEarned, formatRupees);
+                }
+            } catch(e) {}
+
+            // Fetch fresh from backend; update + re-cache if newer
+            fetch('https://taskearn-production-production.up.railway.app/api/platform-stats')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.success) return;
+                    // Only re-animate if values have changed
+                    var usersEl = document.getElementById('heroStatUsers');
+                    var tasksEl = document.getElementById('heroStatTasks');
+                    var earnedEl = document.getElementById('heroStatEarned');
+                    animateValue(usersEl, data.users, formatCount);
+                    animateValue(tasksEl, data.completedTasks, formatCount);
+                    animateValue(earnedEl, data.totalEarned, formatRupees);
+                    // Save to localStorage for offline use
+                    try {
+                        localStorage.setItem(CACHE_KEY, JSON.stringify({
+                            users: data.users,
+                            completedTasks: data.completedTasks,
+                            totalEarned: data.totalEarned,
+                            cachedAt: Date.now()
+                        }));
+                    } catch(e) {}
+                })
+                .catch(function() {
+                    // Backend offline — cached values already shown above, nothing more to do
+                });
         }
 
         function formatCount(n) {

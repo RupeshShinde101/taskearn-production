@@ -4,5 +4,8 @@ providers = ["python"]
 [build.python]
 pythonVersion = "3.11"
 
+[variables]
+PIP_REQUIREMENTS = "backend/requirements.txt"
+
 [start]
 cmd = "sh start.sh"

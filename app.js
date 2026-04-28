@@ -225,18 +225,21 @@ function showNotification(message, type = 'info', duration = 5000) {
         navigator.vibrate(type === 'error' ? [100, 50, 100] : [80]);
     }
 
-    // Play notification sound using Web Audio API
+    // Play notification sound using Web Audio API (only after user gesture)
     try {
-        var ac = window._notifAudioCtx || (window._notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
-        var osc = ac.createOscillator();
-        var gain = ac.createGain();
-        osc.connect(gain);
-        gain.connect(ac.destination);
-        gain.gain.value = 0.08;
-        osc.frequency.value = type === 'error' ? 300 : type === 'success' ? 800 : 600;
-        osc.type = 'sine';
-        osc.start();
-        osc.stop(ac.currentTime + 0.15);
+        if (window._userHasInteracted) {
+            var ac = window._notifAudioCtx || (window._notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
+            if (ac.state === 'suspended') ac.resume();
+            var osc = ac.createOscillator();
+            var gain = ac.createGain();
+            osc.connect(gain);
+            gain.connect(ac.destination);
+            gain.gain.value = 0.08;
+            osc.frequency.value = type === 'error' ? 300 : type === 'success' ? 800 : 600;
+            osc.type = 'sine';
+            osc.start();
+            osc.stop(ac.currentTime + 0.15);
+        }
     } catch (e) {}
 
     // Create notification container if it doesn't exist
@@ -6147,6 +6150,17 @@ function setupEventListeners() {
     if (!document.querySelector('.modal.active')) {
         document.body.classList.remove('modal-open');
     }
+
+    // Track first user gesture so AudioContext can be created legally
+    function _markUserInteracted() {
+        window._userHasInteracted = true;
+        document.removeEventListener('click', _markUserInteracted);
+        document.removeEventListener('touchstart', _markUserInteracted);
+        document.removeEventListener('keydown', _markUserInteracted);
+    }
+    document.addEventListener('click', _markUserInteracted, { once: true, passive: true });
+    document.addEventListener('touchstart', _markUserInteracted, { once: true, passive: true });
+    document.addEventListener('keydown', _markUserInteracted, { once: true, passive: true });
 }
 
 // ========================================

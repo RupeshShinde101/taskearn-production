@@ -5887,6 +5887,30 @@ function toggleMobileMenu() {
     document.getElementById('mobileMenu')?.classList.toggle('active');
 }
 
+function hardRefreshApp() {
+    toggleMobileMenu();
+    // Tell service worker to skip waiting and take over immediately
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(function(reg) {
+            if (reg && reg.waiting) {
+                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
+            // Clear all SW caches then reload
+            if ('caches' in window) {
+                caches.keys().then(function(keys) {
+                    Promise.all(keys.map(function(k) { return caches.delete(k); })).then(function() {
+                        location.reload(true);
+                    });
+                });
+            } else {
+                location.reload(true);
+            }
+        }).catch(function() { location.reload(true); });
+    } else {
+        location.reload(true);
+    }
+}
+
 function scrollToSection(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
     // Refresh map tiles after scrolling to map section

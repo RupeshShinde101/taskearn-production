@@ -648,7 +648,7 @@
                         ...currentTask,
                         ...taskData
                     };
-                    console.log('? Loaded task from localStorage:', currentTask);
+                    console.log('✅ Loaded task from localStorage:', currentTask);
                 } catch (e) {
                     console.error('Error parsing saved task:', e);
                 }
@@ -676,7 +676,7 @@
                             if (t.pickup && t.pickup.lat) {
                                 currentTask.location = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address };
                             }
-                            console.log('? Loaded task from API tracking:', currentTask);
+                            console.log('✅ Loaded task from API tracking:', currentTask);
                         }
                     } catch (e) {
                         console.warn('Tracking API fetch failed:', e.message);
@@ -765,7 +765,7 @@
                     }
                     return;
                 }
-                console.log('? Backend: Task marked completed, poster notified');
+                console.log('✅ Backend: Task marked completed, poster notified');
             } catch (err) {
                 alert('Network error. Please check connection and try again.');
                 console.error('Backend complete failed:', err.message);
@@ -1040,9 +1040,9 @@
                     displayLocationInfo();
                 }
 
-                console.log('? Map initialized successfully');
+                console.log('✅ Map initialized successfully');
             } catch (error) {
-                console.error('? Map error:', error);
+                console.error('❌ Map error:', error);
             }
         }
 

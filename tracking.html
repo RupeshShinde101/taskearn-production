@@ -742,7 +742,7 @@
         const mapboxToken = window.MAPBOX_TOKEN || 'pk.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
         
         if (mapboxToken.includes('XXX')) {
-            console.warn('??  Mapbox token not configured. Set MAPBOX_TOKEN environment variable.');
+            console.warn('⚠️  Mapbox token not configured. Set MAPBOX_TOKEN environment variable.');
         }
         
         mapboxgl.accessToken = mapboxToken;

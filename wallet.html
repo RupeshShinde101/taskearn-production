@@ -1097,7 +1097,7 @@
             const userStr = localStorage.getItem('taskearn_user') || localStorage.getItem('taskearn_current_user');
             const token = localStorage.getItem('taskearn_token');
             
-            console.log('?? Wallet Auth Check:');
+            console.log('🔐 Wallet Auth Check:');
             console.log('  - User Data:', userStr ? 'Found' : 'Not found');
             console.log('  - Token:', token ? 'Found' : 'Not found');
             
@@ -1113,11 +1113,11 @@
             const isLoggedIn = checkUserLogin();
             
             if (!isLoggedIn) {
-                console.log('? Not logged in - showing login form');
+                console.log('❌ Not logged in - showing login form');
                 document.getElementById('loginRequired').style.display = 'block';
                 document.getElementById('walletContent').style.display = 'none';
             } else {
-                console.log('? Logged in - showing wallet');
+                console.log('✅ Logged in - showing wallet');
                 document.getElementById('loginRequired').style.display = 'none';
                 document.getElementById('walletContent').style.display = 'block';
                 loadWallet();
@@ -1130,12 +1130,12 @@
             const password = document.getElementById('walletLoginPassword').value.trim();
             
             if (!email) {
-                showToast('? Please enter email');
+                showToast('⚠️ Please enter email');
                 return;
             }
             
             if (!password) {
-                showToast('? Please enter password');
+                showToast('⚠️ Please enter password');
                 return;
             }
             
@@ -1143,8 +1143,8 @@
                 const result = await AuthAPI.login(email, password);
                 
                 if (result && result.success) {
-                    console.log('? Wallet login successful');
-                    showToast('? Welcome back! Loading your wallet...');
+                    console.log('✅ Wallet login successful');
+                    showToast('👋 Welcome back! Loading your wallet...');
                     
                     // Clear form
                     document.getElementById('walletLoginEmail').value = '';
@@ -1161,7 +1161,7 @@
                 }
             } catch (e) {
                 console.error('Login error:', e);
-                showToast('? Connection error. Please try again.');
+                showToast('⚠️ Connection error. Please try again.');
             }
         }
         
@@ -1312,7 +1312,7 @@
             const note = document.getElementById('cashbackNote');
             if (amount >= 500) {
                 const cashback = amount * 0.02;
-                note.innerHTML = `?? You'll get ₹${cashback.toFixed(2)} cashback!`;
+                note.innerHTML = `🎁 You'll get ₹${cashback.toFixed(2)} cashback!`;
                 note.style.display = 'block';
             } else {
                 note.style.display = 'none';
@@ -1487,7 +1487,7 @@
                     }, 1000);
                 } else {
                     console.log('[WALLET] ? Payment verification failed:', verifyData.message);
-                    showToast('? Payment verification failed: ' + (verifyData.message || 'Please contact support'));
+                    showToast('❌ Payment verification failed: ' + (verifyData.message || 'Please contact support'));
                 }
             } catch (error) {
                 console.error('[WALLET] Verification error:', error);
@@ -1619,7 +1619,7 @@
         function copyReferralCode() {
             const code = document.getElementById('referralCode').textContent;
             navigator.clipboard.writeText(code).then(() => {
-                showToast('? Referral code copied!');
+                showToast('✅ Referral code copied!');
             });
         }
         
@@ -1629,8 +1629,8 @@
                 const result = await HelperAPI.getDashboard();
                 if (result && result.success) {
                     const d = result.dashboard;
-                    document.getElementById('todayEarnings').textContent = '?' + d.todayEarnings;
-                    document.getElementById('weekEarnings').textContent = '?' + d.weekEarnings;
+                    document.getElementById('todayEarnings').textContent = '₹' + d.todayEarnings;
+                    document.getElementById('weekEarnings').textContent = '₹' + d.weekEarnings;
                     document.getElementById('monthTasks').textContent = d.monthTasks;
                     
                     // Update level badge
@@ -1661,7 +1661,7 @@
         
         // SOS
         function showSOS() {
-            if (confirm('?? Are you in an emergency situation?')) {
+            if (confirm('🆘 Are you in an emergency situation?')) {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(async (pos) => {
                         try {
@@ -1671,18 +1671,18 @@
                                 pos.coords.longitude
                             );
                             if (result && result.success) {
-                                showToast('?? SOS Alert Sent! Help is on the way.');
+                                showToast('🆘 SOS Alert Sent! Help is on the way.');
                             } else {
                                 // Local SOS - just show confirmation
-                                showToast('?? SOS Alert Recorded! Location: ' + pos.coords.latitude.toFixed(4) + ', ' + pos.coords.longitude.toFixed(4));
+                                showToast('🆘 SOS Alert Recorded! Location: ' + pos.coords.latitude.toFixed(4) + ', ' + pos.coords.longitude.toFixed(4));
                             }
                         } catch (e) {
                             // Offline SOS
-                            showToast('?? SOS Alert Recorded! Location saved locally.');
+                            showToast('🆘 SOS Alert Recorded! Location saved locally.');
                         }
                     });
                 } else {
-                    showToast('?? SOS Alert! Please call emergency services.');
+                    showToast('🆘 SOS Alert! Please call emergency services.');
                 }
             }
         }

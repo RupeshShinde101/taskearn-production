@@ -17,7 +17,7 @@
 function isMobileDevice() {
     const userAgent = navigator.userAgent || navigator.vendor || window.opera;
     const isMobile = /android|webos|iphone|ipad|ipot|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
-    console.log('� User-Agent substring:', userAgent.substring(0, 100));
+    console.log('📱 User-Agent substring:', userAgent.substring(0, 100));
     console.log('📱 Detected as mobile:', isMobile ? '✅ YES' : '❌ NO');
     return isMobile;
 }

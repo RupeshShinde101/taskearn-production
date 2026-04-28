@@ -1038,10 +1038,10 @@ const KYCAPI = {
 
 // Push Notifications API
 const PushAPI = {
-    getVapidKey: () => apiRequest('/api/push/vapid-key'),
-    subscribe: (payload) => apiRequest('/api/push/subscribe', { method: 'POST', body: JSON.stringify(payload) }),
-    unsubscribe: () => apiRequest('/api/push/unsubscribe', { method: 'POST' }),
-    test: () => apiRequest('/api/push/test', { method: 'POST' })
+    getVapidKey: () => apiRequest('/push/vapid-key'),
+    subscribe: (payload) => apiRequest('/push/subscribe', { method: 'POST', body: JSON.stringify(payload) }),
+    unsubscribe: () => apiRequest('/push/unsubscribe', { method: 'POST' }),
+    test: () => apiRequest('/push/test', { method: 'POST' })
 };
 
 // Export for use

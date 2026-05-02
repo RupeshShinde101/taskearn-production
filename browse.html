@@ -27,7 +27,7 @@
     </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="styles.css?v=20260428b">
-    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_spacing">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_homeflow">
     <script>
         (function() {
             var ua = navigator.userAgent.toLowerCase();
@@ -193,13 +193,13 @@
             </div>
 
             <!-- AI Recommended Tasks Section -->
-            <div id="recommendedSection" style="display:none;margin-top:28px;">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <div id="recommendedSection" class="ai-recommended-section" style="display:none;margin-top:28px;">
+                <div class="ai-recommended-header">
                     <span style="font-size:22px;">✨</span>
-                    <h3 style="margin:0;font-size:17px;font-weight:700;color:#1e293b;">Recommended For You</h3>
-                    <span style="background:#6366f1;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;letter-spacing:.5px;">AI Matched</span>
+                    <h3>Recommended For You</h3>
+                    <span class="ai-recommended-badge">AI Matched</span>
                 </div>
-                <div id="recommendedTasksList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;"></div>
+                <div id="recommendedTasksList" class="ai-recommended-grid"></div>
             </div>
         </div>
     </section>
@@ -388,26 +388,48 @@
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script src="api-client.js?v=20260502_audit"></script>
-    <script src="shared.js?v=20260502_spacing"></script>
+    <script src="shared.js?v=20260502_homeflow"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="razorpay.js?v=20260404_accept_v2"></script>
-    <script src="app.js?v=20260502_spacing"></script>
+    <script src="app.js?v=20260502_homeflow"></script>
     <script>
-        // Auto-apply ?category= from URL on load (linked from index.html category cards)
+        // Auto-apply filters from URL on load (linked from index.html / categories.html)
+        // Supported params: category, dist, min, max
         (function () {
             var params = new URLSearchParams(window.location.search);
-            var cat = params.get('category');
-            if (!cat) return;
-            // Sanitize: only allow [a-z]
-            if (!/^[a-z]+$/.test(cat)) return;
+            var cat  = params.get('category');
+            var dist = params.get('dist');
+            var minB = params.get('min');
+            var maxB = params.get('max');
+            // Bail if nothing to do
+            if (!cat && !dist && !minB && !maxB) return;
+            // Sanitize
+            if (cat  && !/^[a-z]+$/.test(cat))  cat  = null;
+            if (dist && !/^[0-9]+$/.test(dist)) dist = null;
+            if (minB && !/^[0-9]+$/.test(minB)) minB = null;
+            if (maxB && !/^[0-9]+$/.test(maxB)) maxB = null;
+
             var attempts = 0;
             function tryApply() {
                 attempts++;
                 var sel = document.getElementById('filterCategory');
-                if (sel) {
-                    // Confirm option exists
+                if (sel && cat) {
                     var opt = sel.querySelector('option[value="' + cat + '"]');
                     if (opt) sel.value = cat;
+                }
+                if (dist) {
+                    var distEl = document.getElementById('filterDistance');
+                    var distLbl = document.getElementById('distanceValue');
+                    if (distEl) distEl.value = dist;
+                    if (distLbl) distLbl.textContent = dist;
+                }
+                if (minB) {
+                    var mn = document.getElementById('minBudget');
+                    if (mn) mn.value = minB;
+                }
+                if (maxB) {
+                    var mx = document.getElementById('maxBudget');
+                    if (mx) mx.value = maxB;
                 }
                 var hasTasks = (typeof window.tasks !== 'undefined' && window.tasks && window.tasks.length > 0);
                 if (sel && hasTasks && typeof window.applyFilters === 'function') {

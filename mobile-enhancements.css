@@ -1115,3 +1115,75 @@ input:invalid:not(:placeholder-shown) {
   .tasks-list-fullwidth .task-card,
   .tasks-list-aligned   .task-card { padding: 16px !important; }
 }
+/* ===================================================================
+ * 30. HOME FILTER-ONLY LAYOUT (no task list on home)
+ * =================================================================== */
+.find-tasks-home .home-filter-only {
+  display: block !important;
+  height: auto !important;
+}
+.find-tasks-home .home-filter-only > .tasks-sidebar {
+  max-width: 560px;
+  margin: 0 auto;
+  width: 100%;
+}
+.find-tasks-home .tasks-filter {
+  padding: 28px !important;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+.find-tasks-home .home-filter-hint {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted, #64748b);
+}
+@media (max-width: 480px) {
+  .find-tasks-home .tasks-filter { padding: 20px !important; }
+}
+
+/* ===================================================================
+ * 31. AI RECOMMENDED SECTION - mobile-safe responsive
+ * =================================================================== */
+.ai-recommended-section {
+  padding-bottom: 24px;
+}
+.ai-recommended-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.ai-recommended-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1e293b;
+}
+[data-theme="dark"] .ai-recommended-header h3 { color: #e7eaf2; }
+.ai-recommended-badge {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  letter-spacing: .5px;
+}
+.ai-recommended-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  gap: 16px;
+}
+@media (max-width: 768px) {
+  .ai-recommended-section { margin-top: 20px; }
+  .ai-recommended-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+}
+/* Clear bottom tab bar on mobile so the section is fully visible */
+@media (max-width: 768px) {
+  .ai-recommended-section { padding-bottom: 96px; }
+}

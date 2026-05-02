@@ -148,7 +148,7 @@
         }
     </script>
     <link rel="stylesheet" href="styles.css?v=20260428b">
-    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_spacing">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_homeflow">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
@@ -415,22 +415,22 @@
     </section>
 
     <!-- Find Tasks Section with Map -->
-    <section class="find-tasks" id="find-tasks">
+    <section class="find-tasks find-tasks-home" id="find-tasks">
         <div class="container">
             <div class="section-header animate-on-scroll">
                 <span class="section-badge">Earn Money</span>
                 <h2>Find Tasks <span class="gradient-text">Near You</span></h2>
-                <p>Browse available tasks on the map and start earning today</p>
+                <p>Set your filters and browse all available tasks on the next page</p>
             </div>
-            
-            <div class="tasks-wrapper">
+
+            <div class="tasks-wrapper home-filter-only">
                 <div class="tasks-sidebar">
                     <div class="tasks-filter">
                         <div class="filter-header">
                             <h3><i class="fas fa-filter"></i> Filters</h3>
-                            <button class="clear-filters" onclick="clearFilters()">Clear All</button>
+                            <button class="clear-filters" type="button" onclick="homeClearFilters()">Clear All</button>
                         </div>
-                        
+
                         <div class="filter-group">
                             <label>Category</label>
                             <select id="filterCategory">
@@ -466,13 +466,13 @@
                                 <option value="other">Other</option>
                             </select>
                         </div>
-                        
+
                         <div class="filter-group">
                             <label>Distance</label>
-                            <input type="range" id="filterDistance" min="1" max="50" value="10" aria-label="Filter distance in km">
+                            <input type="range" id="filterDistance" min="1" max="50" value="10" aria-label="Filter distance in km" oninput="document.getElementById('distanceValue').textContent=this.value">
                             <span class="range-value"><span id="distanceValue">10</span> km</span>
                         </div>
-                        
+
                         <div class="filter-group">
                             <label>Budget Range</label>
                             <div class="budget-inputs">
@@ -481,20 +481,45 @@
                                 <input type="number" id="maxBudget" placeholder="Max ₹" aria-label="Maximum budget">
                             </div>
                         </div>
-                        
-                        <button class="btn btn-primary btn-block" onclick="applyFilters()">
-                            <i class="fas fa-search"></i> Apply Filters
-                        </button>
-                    </div>
-                </div>
 
-                <!-- Task cards aligned next to the filter box (max 6, see app.js INITIAL_SHOW) -->
-                <div class="tasks-list-fullwidth tasks-list-aligned" id="tasksList">
-                    <!-- Tasks will be dynamically loaded here -->
+                        <button class="btn btn-primary btn-block" type="button" onclick="homeApplyFilters()">
+                            <i class="fas fa-search"></i> Browse Matching Tasks
+                        </button>
+                        <p class="home-filter-hint">You'll be taken to the Browse page with your filters applied.</p>
+                    </div>
                 </div>
             </div>
         </div>
     </section>
+
+    <script>
+        // Home page: apply filters by redirecting to browse.html with query params
+        function homeApplyFilters() {
+            try {
+                var cat = document.getElementById('filterCategory').value || 'all';
+                var dist = document.getElementById('filterDistance').value || '';
+                var minB = document.getElementById('minBudget').value || '';
+                var maxB = document.getElementById('maxBudget').value || '';
+                var qs = [];
+                if (cat && cat !== 'all' && /^[a-z]+$/.test(cat)) qs.push('category=' + encodeURIComponent(cat));
+                if (dist && /^[0-9]+$/.test(dist)) qs.push('dist=' + encodeURIComponent(dist));
+                if (minB && /^[0-9]+$/.test(minB)) qs.push('min=' + encodeURIComponent(minB));
+                if (maxB && /^[0-9]+$/.test(maxB)) qs.push('max=' + encodeURIComponent(maxB));
+                window.location.href = 'browse.html' + (qs.length ? ('₹' + qs.join('&')) : '');
+            } catch (e) {
+                window.location.href = 'browse.html';
+            }
+        }
+        function homeClearFilters() {
+            try {
+                document.getElementById('filterCategory').value = 'all';
+                document.getElementById('filterDistance').value = 10;
+                document.getElementById('distanceValue').textContent = '10';
+                document.getElementById('minBudget').value = '';
+                document.getElementById('maxBudget').value = '';
+            } catch (e) {}
+        }
+    </script>
 
     <!-- Categories Section -->
     <section class="categories" id="categories">
@@ -1311,7 +1336,7 @@
     
     <!-- API Client for Python Backend -->
     <script src="api-client.js?v=20260502_mojifix2"></script>
-    <script src="shared.js?v=20260502_spacing"></script>
+    <script src="shared.js?v=20260502_homeflow"></script>
     
     <!-- Google Sign-In -->
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
@@ -1319,7 +1344,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260502_spacing"></script>
+    <script src="app.js?v=20260502_homeflow"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>

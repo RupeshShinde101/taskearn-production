@@ -3681,7 +3681,6 @@ def get_user_reviews(user_id):
 
 def generate_referral_code(user_id):
     """Generate unique referral code"""
-    import hashlib
     hash_input = f"{user_id}{secrets.token_hex(4)}"
     return 'TE' + hashlib.md5(hash_input.encode()).hexdigest()[:6].upper()
 
@@ -4021,9 +4020,6 @@ def get_helper_dashboard():
 # ========================================
 # RAZORPAY PAYMENT INTEGRATION
 # ========================================
-
-import hashlib
-import hmac
 
 # Try to import razorpay, but don't fail if not available
 try:
@@ -4538,9 +4534,6 @@ def verify_wallet_topup():
         
         # Verify signature
         try:
-            import hmac
-            import hashlib
-            
             # Create signature verification string
             verify_string = f"{order_id}|{payment_id}"
             generated_signature = hmac.new(

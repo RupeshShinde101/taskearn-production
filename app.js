@@ -885,7 +885,7 @@ async function loadRecommendedTasks() {
             const total = (t.price + t.serviceCharge).toFixed(0);
             const catLabel = formatCategory ? formatCategory(t.category) : t.category;
             return `
-            <div class="task-card recommended-task-card" onclick="openTask(${t.id})">
+            <div class="task-card recommended-task-card" onclick="openTaskDetail(${t.id})">
                 <div class="task-card-top">
                     <span class="task-category-badge">${catLabel}</span>
                     <span class="task-price-badge">₹${total}</span>
@@ -1136,8 +1136,9 @@ function getTimeAgo(dateString) {
 }
 
 function escapeHtml(text) {
+    if (text == null) return '';
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = String(text);
     return div.innerHTML;
 }
 
@@ -2094,10 +2095,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 // ========================================
 // PUSH NOTIFICATION FEATURE REMOVED
 
-function escapeHtml(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 // PUSH NOTIFICATIONS feature removed
 
 
@@ -2597,7 +2594,7 @@ function renderTasks(filtered = null) {
                 <i class="fas fa-search"></i>
                 <h3>No tasks found</h3>
                 <p>Try adjusting your filters or check back later</p>
-                <button class="btn btn-primary" onclick="showSection('upload-task')" style="margin-top: 15px; padding: 10px 24px;">
+                <button class="btn btn-primary" onclick="window.location.href='posted.html'" style="margin-top: 15px; padding: 10px 24px;">
                     <i class="fas fa-plus"></i> Post a Task
                 </button>
             </div>
@@ -5527,7 +5524,7 @@ function renderDashboard() {
         if (walletWarningEl) {
             walletWarningEl.innerHTML = `
                 <div class="alert alert-warning" style="margin-bottom: 15px; padding: 12px; border-radius: 6px; background-color: #fff3cd; border-left: 4px solid #ffc107; display: flex; justify-content: space-between; align-items: center;">
-                    <span><i class="fas fa-exclamation-triangle"></i> Wallet balance is low (₹${currentUser.wallet || 0}). <a href="#" onclick="openWalletModal(); return false;" style="text-decoration: underline; font-weight: bold;">Top up now</a></span>
+                    <span><i class="fas fa-exclamation-triangle"></i> Wallet balance is low (₹${currentUser.wallet || 0}). <a href="wallet.html" style="text-decoration: underline; font-weight: bold;">Top up now</a></span>
                     <button type="button" class="close" onclick="this.parentElement.style.display='none';" style="background: none; border: none; cursor: pointer; font-size: 20px;">&times;</button>
                 </div>
             `;

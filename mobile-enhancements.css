@@ -893,3 +893,33 @@ input:invalid:not(:placeholder-shown) {
 @media (max-width: 480px) {
   .categories-toggle-btn { width: 100%; justify-content: center; }
 }
+
+/* ===================================================================
+ * 26. CATEGORIES CTA BUTTON (replaces in-page toggle)
+ * =================================================================== */
+.categories-cta-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 32px 0 8px;
+}
+.categories-cta-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 32px !important;
+  font-size: 1.05rem !important;
+  border-radius: 14px !important;
+  min-height: 52px;
+  text-decoration: none;
+  box-shadow: 0 8px 22px rgba(99, 102, 241, 0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.categories-cta-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.38);
+}
+.categories-cta-btn i:last-child { transition: transform 0.2s ease; }
+.categories-cta-btn:hover i:last-child { transform: translateX(4px); }
+@media (max-width: 480px) {
+  .categories-cta-btn { width: 100%; justify-content: center; padding: 14px 20px !important; }
+}

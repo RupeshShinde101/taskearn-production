@@ -1,9 +1,10 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260502e';
+const CACHE_NAME = 'workmate4u-v20260502f';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
+  '/categories.html',
   '/posted.html',
   '/accepted.html',
   '/completed.html',

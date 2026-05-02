@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#3b6dff" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)">
+    <title>Popular Task Categories - Workmate4u</title>
+    <meta name="description" content="Explore all task categories on Workmate4u — from household chores and delivery to tutoring, repairs, photography, and more. Pick a category to view available tasks near you.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://workmate4u.com/categories.html">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_categories2">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
+    <link rel="manifest" href="manifest.json">
+    <style>
+        .categories-hero {
+            background: var(--gradient);
+            color: #fff;
+            padding: 100px 20px 50px;
+            text-align: center;
+        }
+        .categories-hero h1 { font-size: clamp(1.8rem, 4vw, 2.5rem); margin-bottom: 12px; }
+        .categories-hero p { font-size: clamp(0.95rem, 2vw, 1.1rem); opacity: 0.9; max-width: 620px; margin: 0 auto; }
+        .categories-page-wrap { padding: 50px 20px 80px; max-width: 1200px; margin: 0 auto; }
+        .categories-page-wrap .categories-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; }
+        .categories-page-wrap .category-card {
+            background: var(--surface, #fff);
+            border: 1px solid var(--border, #e2e8f0);
+            border-radius: 16px;
+            padding: 28px 22px;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+            cursor: pointer;
+        }
+        .categories-page-wrap .category-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.10);
+            border-color: var(--brand-500, #6366f1);
+        }
+        .categories-page-wrap .category-card h3 { margin: 14px 0 6px; font-size: 1.05rem; }
+        .categories-page-wrap .category-card p { color: var(--text-muted, #64748b); font-size: 0.88rem; margin: 0 0 10px; line-height: 1.5; }
+        .categories-page-wrap .task-count {
+            display: inline-block;
+            margin-top: auto;
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--brand-700, #4338ca);
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+        .back-link {
+            display: inline-flex; align-items: center; gap: 8px;
+            margin-bottom: 24px;
+            color: var(--brand-600, #4f46e5);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+    <script>
+        (function() {
+            var ua = navigator.userAgent.toLowerCase();
+            var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+            if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; }
+            else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; }
+        })();
+    </script>
+    <script src="mobile-enhancements.js?v=20260502_categories2" defer></script>
+</head>
+<body>
+<script>if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}</script>
+    <div class="page-loader" id="pageLoader"></div>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="logo"><i class="fas fa-tasks"></i><span>Workmate<span class="highlight">4u</span></span></a>
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="browse.html">Find Tasks</a></li>
+                <li><a href="help.html">Help</a></li>
+            </ul>
+            <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
+        </div>
+    </nav>
+
+    <section class="categories-hero">
+        <h1>Popular Task Categories</h1>
+        <p>Pick a category to see all available tasks of that type near you. Tasks shown are real, posted by users, and ready to accept.</p>
+    </section>
+
+    <main class="categories-page-wrap">
+        <a href="index.html" class="back-link"><i class="fas fa-arrow-left"></i> Back to Home</a>
+
+        <div class="categories-grid">
+            <a class="category-card" href="browse.html?category=household">
+                <div class="category-icon household"><i class="fas fa-home"></i></div>
+                <h3>Household Chores</h3>
+                <p>Laundry, Cleaning, Organizing</p>
+                <span class="task-count" data-cat="household">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=delivery">
+                <div class="category-icon delivery"><i class="fas fa-shipping-fast"></i></div>
+                <h3>Delivery Services</h3>
+                <p>Parcels, Groceries, Medicines, Tiffin</p>
+                <span class="task-count" data-cat="delivery">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=tutoring">
+                <div class="category-icon tutoring"><i class="fas fa-graduation-cap"></i></div>
+                <h3>Online Tutoring</h3>
+                <p>JEE, NEET, Board Exams, Languages</p>
+                <span class="task-count" data-cat="tutoring">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=transport">
+                <div class="category-icon transport"><i class="fas fa-car"></i></div>
+                <h3>Pick &amp; Drop</h3>
+                <p>Railway Station, Airport, Events</p>
+                <span class="task-count" data-cat="transport">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=vehicle">
+                <div class="category-icon vehicle"><i class="fas fa-car-side"></i></div>
+                <h3>Vehicle Services</h3>
+                <p>Car Wash, Bike Wash, Detailing</p>
+                <span class="task-count" data-cat="vehicle">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=repair">
+                <div class="category-icon repair"><i class="fas fa-tools"></i></div>
+                <h3>Repairs &amp; Mechanical</h3>
+                <p>Plumbing, Electrical, Appliances</p>
+                <span class="task-count" data-cat="repair">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=photography">
+                <div class="category-icon photography"><i class="fas fa-camera"></i></div>
+                <h3>Photography</h3>
+                <p>Weddings, Events, Pre-wedding</p>
+                <span class="task-count" data-cat="photography">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=freelance">
+                <div class="category-icon freelance"><i class="fas fa-laptop-code"></i></div>
+                <h3>Freelance Services</h3>
+                <p>Design, Writing, Development</p>
+                <span class="task-count" data-cat="freelance">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=waste">
+                <div class="category-icon waste"><i class="fas fa-recycle"></i></div>
+                <h3>Waste Collection</h3>
+                <p>Garbage, Recycling, Junk Removal</p>
+                <span class="task-count" data-cat="waste">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=cleaning">
+                <div class="category-icon" style="background:linear-gradient(135deg,#10b981,#34d399);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-broom"></i></div>
+                <h3>Cleaning Services</h3>
+                <p>Deep clean, Office, Sofa, Kitchen</p>
+                <span class="task-count" data-cat="cleaning">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=cooking">
+                <div class="category-icon" style="background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-utensils"></i></div>
+                <h3>Cooking &amp; Chef</h3>
+                <p>Home meals, Parties, Bulk cooking</p>
+                <span class="task-count" data-cat="cooking">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=petcare">
+                <div class="category-icon" style="background:linear-gradient(135deg,#ec4899,#f472b6);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-paw"></i></div>
+                <h3>Pet Care</h3>
+                <p>Walking, Sitting, Grooming</p>
+                <span class="task-count" data-cat="petcare">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=gardening">
+                <div class="category-icon" style="background:linear-gradient(135deg,#16a34a,#4ade80);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-leaf"></i></div>
+                <h3>Gardening &amp; Lawn</h3>
+                <p>Mowing, Plants, Landscaping</p>
+                <span class="task-count" data-cat="gardening">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=shopping">
+                <div class="category-icon" style="background:linear-gradient(135deg,#8b5cf6,#a78bfa);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-shopping-bag"></i></div>
+                <h3>Shopping &amp; Errands</h3>
+                <p>Grocery runs, Bill payments</p>
+                <span class="task-count" data-cat="shopping">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=eventhelp">
+                <div class="category-icon" style="background:linear-gradient(135deg,#06b6d4,#22d3ee);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-glass-cheers"></i></div>
+                <h3>Event Help</h3>
+                <p>Setup, Servers, Decoration</p>
+                <span class="task-count" data-cat="eventhelp">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=moving">
+                <div class="category-icon" style="background:linear-gradient(135deg,#dc2626,#f87171);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-truck"></i></div>
+                <h3>Moving &amp; Packing</h3>
+                <p>Home shifting, Office relocate</p>
+                <span class="task-count" data-cat="moving">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=techsupport">
+                <div class="category-icon" style="background:linear-gradient(135deg,#0ea5e9,#38bdf8);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-laptop-medical"></i></div>
+                <h3>Tech Support</h3>
+                <p>PC repair, WiFi setup, Software</p>
+                <span class="task-count" data-cat="techsupport">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=beauty">
+                <div class="category-icon" style="background:linear-gradient(135deg,#db2777,#f9a8d4);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-spa"></i></div>
+                <h3>Beauty &amp; Wellness</h3>
+                <p>Salon at home, Massage, Makeup</p>
+                <span class="task-count" data-cat="beauty">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=laundry">
+                <div class="category-icon" style="background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-tshirt"></i></div>
+                <h3>Laundry &amp; Ironing</h3>
+                <p>Wash, Dry clean, Press</p>
+                <span class="task-count" data-cat="laundry">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=catering">
+                <div class="category-icon" style="background:linear-gradient(135deg,#ea580c,#fb923c);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-concierge-bell"></i></div>
+                <h3>Catering Services</h3>
+                <p>Functions, Office lunches</p>
+                <span class="task-count" data-cat="catering">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=babysitting">
+                <div class="category-icon" style="background:linear-gradient(135deg,#f43f5e,#fb7185);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-baby"></i></div>
+                <h3>Babysitting</h3>
+                <p>Childcare, School pickup</p>
+                <span class="task-count" data-cat="babysitting">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=eldercare">
+                <div class="category-icon" style="background:linear-gradient(135deg,#0d9488,#2dd4bf);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-hand-holding-heart"></i></div>
+                <h3>Elder Care</h3>
+                <p>Companionship, Daily help</p>
+                <span class="task-count" data-cat="eldercare">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=fitness">
+                <div class="category-icon" style="background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-dumbbell"></i></div>
+                <h3>Fitness Training</h3>
+                <p>Personal trainer, Yoga, Zumba</p>
+                <span class="task-count" data-cat="fitness">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=painting">
+                <div class="category-icon" style="background:linear-gradient(135deg,#0891b2,#22d3ee);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-paint-roller"></i></div>
+                <h3>Painting &amp; Decor</h3>
+                <p>Walls, Interior, Wallpaper</p>
+                <span class="task-count" data-cat="painting">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=electrician">
+                <div class="category-icon" style="background:linear-gradient(135deg,#eab308,#facc15);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-bolt"></i></div>
+                <h3>Electrician</h3>
+                <p>Wiring, Switches, Fans, AC</p>
+                <span class="task-count" data-cat="electrician">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=plumbing">
+                <div class="category-icon" style="background:linear-gradient(135deg,#0369a1,#0ea5e9);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-faucet"></i></div>
+                <h3>Plumbing</h3>
+                <p>Leaks, Taps, Drains, Fittings</p>
+                <span class="task-count" data-cat="plumbing">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=carpentry">
+                <div class="category-icon" style="background:linear-gradient(135deg,#92400e,#d97706);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-hammer"></i></div>
+                <h3>Carpentry</h3>
+                <p>Furniture, Doors, Repairs</p>
+                <span class="task-count" data-cat="carpentry">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=tailoring">
+                <div class="category-icon" style="background:linear-gradient(135deg,#be185d,#ec4899);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-cut"></i></div>
+                <h3>Tailoring &amp; Alterations</h3>
+                <p>Stitching, Alterations, Custom</p>
+                <span class="task-count" data-cat="tailoring">View tasks</span>
+            </a>
+            <a class="category-card" href="browse.html?category=other">
+                <div class="category-icon" style="background:linear-gradient(135deg,#475569,#94a3b8);color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;"><i class="fas fa-ellipsis-h"></i></div>
+                <h3>Other</h3>
+                <p>Anything not listed above</p>
+                <span class="task-count" data-cat="other">View tasks</span>
+            </a>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-bottom">
+                <p>&copy; 2026 Workmate4u India. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="api-client.js?v=20260502_audit"></script>
+    <script src="shared.js?v=20260502_browse2"></script>
+    <script src="app.js?v=20260502_audit"></script>
+    <!-- Live task counts per category -->
+    <script>
+        (function () {
+            function applyCounts(map) {
+                document.querySelectorAll('.task-count[data-cat]').forEach(function (el) {
+                    var cat = el.getAttribute('data-cat');
+                    var n = map[cat] || 0;
+                    el.textContent = n === 0 ? 'No tasks yet' : (n + ' task' + (n === 1 ? '' : 's'));
+                    if (n > 0) el.style.background = 'rgba(16,185,129,0.12)', el.style.color = '#047857';
+                });
+            }
+            function loadCounts() {
+                if (typeof apiRequest !== 'function') return;
+                apiRequest('/tasks').then(function (res) {
+                    var list = (res && res.data && (res.data.tasks || res.data)) || [];
+                    if (!Array.isArray(list)) return;
+                    var counts = {};
+                    list.forEach(function (t) {
+                        if (!t || t.status !== 'active') return;
+                        var c = t.category || 'other';
+                        counts[c] = (counts[c] || 0) + 1;
+                    });
+                    applyCounts(counts);
+                }).catch(function (e) {
+                    console.warn('Could not load category counts:', e);
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', loadCounts);
+            } else {
+                loadCounts();
+            }
+        })();
+    </script>
+<script src="sw-register.js?v=20260420_recovery"></script>
+</body>
+</html>

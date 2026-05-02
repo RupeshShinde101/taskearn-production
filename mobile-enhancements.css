@@ -1298,3 +1298,86 @@ input:invalid:not(:placeholder-shown) {
 @media (max-width: 768px) {
   .faq-section[style] { padding-top: 48px !important; padding-bottom: 48px !important; }
 }
+/* ===================================================================
+ * 33. REVIEWS - "COMING SOON" LAUNCH CARD (replaces fake testimonials)
+ * =================================================================== */
+.reviews-launch-card {
+  max-width: 720px;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: 20px;
+  padding: 48px 40px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+.reviews-launch-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(600px 200px at 50% -10%, rgba(99,102,241,0.10), transparent 60%);
+  pointer-events: none;
+}
+.reviews-launch-icon {
+  width: 72px; height: 72px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.30);
+}
+.reviews-launch-card h3 {
+  font-size: 1.5rem;
+  margin: 0 0 10px;
+  color: #0f172a;
+}
+.reviews-launch-card > p {
+  color: #475569;
+  margin: 0 auto 22px;
+  max-width: 560px;
+  line-height: 1.6;
+}
+.reviews-launch-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto 26px;
+  max-width: 520px;
+  text-align: left;
+  display: grid;
+  gap: 10px;
+}
+.reviews-launch-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #1e293b;
+  font-size: 0.97rem;
+  line-height: 1.5;
+}
+.reviews-launch-list i {
+  color: #10b981;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.reviews-launch-cta { margin-top: 8px; }
+.reviews-launch-cta .btn { padding: 12px 28px; }
+
+@media (max-width: 600px) {
+  .reviews-launch-card { padding: 32px 22px; border-radius: 16px; }
+  .reviews-launch-icon { width: 60px; height: 60px; font-size: 24px; }
+  .reviews-launch-card h3 { font-size: 1.25rem; }
+}
+
+/* Dark mode */
+[data-theme="dark"] .reviews-launch-card {
+  background: #131a30;
+  border-color: rgba(139, 134, 245, 0.25);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+[data-theme="dark"] .reviews-launch-card h3 { color: #f1f5f9; }
+[data-theme="dark"] .reviews-launch-card > p { color: #cbd5e1; }
+[data-theme="dark"] .reviews-launch-list li { color: #e2e8f0; }

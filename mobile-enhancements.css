@@ -923,3 +923,137 @@ input:invalid:not(:placeholder-shown) {
 @media (max-width: 480px) {
   .categories-cta-btn { width: 100%; justify-content: center; padding: 14px 20px !important; }
 }
+/* ===================================================================
+ * 27. DESKTOP POLISH - modals, toasts, spacing
+ * Loaded after styles.css. Pure visual layer; no JS/structural changes.
+ * =================================================================== */
+
+/* ---- 27a. Tighten oversized desktop section spacing ---- */
+@media (min-width: 769px) {
+  section { padding: 64px 0 !important; }
+  .hero { padding: 96px 20px 56px !important; min-height: auto !important; }
+  .footer { padding: 56px 0 24px !important; }
+  /* Reduce gap between consecutive sections */
+  section + section { padding-top: 48px !important; }
+  /* Section header less bottom margin */
+  .section-header { margin-bottom: 36px !important; }
+}
+
+/* ---- 27b. Modal polish (desktop) ---- */
+@media (min-width: 769px) {
+  .modal { padding: 32px !important; }
+  .modal-content {
+    padding: 32px !important;
+    border-radius: 18px !important;
+    max-width: 480px;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18), 0 6px 18px rgba(15, 23, 42, 0.08);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+  }
+  .modal-large { max-width: 640px !important; }
+  .modal-content h2 {
+    font-size: 1.5rem !important;
+    margin-bottom: 18px !important;
+    padding-right: 48px;
+  }
+  .modal-close {
+    top: 14px !important;
+    right: 14px !important;
+    width: 36px !important;
+    height: 36px !important;
+    background: rgba(15, 23, 42, 0.06) !important;
+    transition: background 160ms ease, transform 160ms ease, color 160ms ease;
+  }
+  .modal-close:hover {
+    background: var(--danger, #dc2626) !important;
+    color: #fff !important;
+    transform: rotate(90deg);
+  }
+  .modal-footer {
+    margin-top: 20px !important;
+    padding-top: 16px !important;
+  }
+}
+/* Dark-mode modal */
+[data-theme="dark"] .modal-content {
+  background: var(--surface, #141a33) !important;
+  border-color: var(--border, #23284a) !important;
+  color: var(--text, #e7eaf2);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), 0 6px 18px rgba(0, 0, 0, 0.35) !important;
+}
+[data-theme="dark"] .modal-close {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text, #e7eaf2) !important;
+}
+
+/* ---- 27c. Toast notification polish (all viewports) ---- */
+.toast {
+  bottom: 24px !important;
+  right: 24px !important;
+  padding: 14px 22px !important;
+  border-radius: 14px !important;
+  font-size: 0.95rem !important;
+  font-weight: 500;
+  max-width: min(420px, calc(100vw - 32px));
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28), 0 4px 12px rgba(15, 23, 42, 0.16) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transform: translateX(calc(100% + 32px)) !important;
+  transition: transform 280ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease !important;
+  opacity: 0;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.toast.show {
+  transform: translateX(0) !important;
+  opacity: 1;
+}
+.toast i {
+  font-size: 1.15rem !important;
+  flex-shrink: 0;
+  color: #34d399 !important;
+}
+/* Variant tints (auto-detect via emoji prefix isn't reliable; rely on class if added later) */
+.toast.success { background: linear-gradient(135deg, #047857 0%, #10b981 100%) !important; }
+.toast.success i { color: #ecfdf5 !important; }
+.toast.error,
+.toast.danger { background: linear-gradient(135deg, #991b1b 0%, #ef4444 100%) !important; }
+.toast.error i,
+.toast.danger i { color: #fee2e2 !important; }
+.toast.warning { background: linear-gradient(135deg, #92400e 0%, #f59e0b 100%) !important; }
+.toast.warning i { color: #fffbeb !important; }
+.toast.info { background: linear-gradient(135deg, #075985 0%, #0ea5e9 100%) !important; }
+.toast.info i { color: #e0f2fe !important; }
+@media (max-width: 480px) {
+  .toast {
+    bottom: 88px !important; /* clear bottom tab bar */
+    right: 12px !important;
+    left: 12px !important;
+    max-width: none;
+    transform: translateY(calc(100% + 100px)) !important;
+  }
+  .toast.show { transform: translateY(0) !important; }
+}
+
+/* ---- 27d. Reduce empty space in CTA / tutorial / categories sections on desktop ---- */
+@media (min-width: 769px) {
+  .tutorial-cta,
+  .categories-cta-wrap {
+    margin-top: 8px;
+    margin-bottom: 8px;
+  }
+  .tutorial-cta { padding: 40px 32px !important; }
+}
+
+/* ---- 27e. Reduce gap below hero on desktop ---- */
+@media (min-width: 769px) {
+  .hero + section { padding-top: 56px !important; }
+}
+
+/* ---- 27f. Notification dropdown polish (desktop) ---- */
+@media (min-width: 769px) {
+  .notification-dropdown {
+    box-shadow: 0 16px 48px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+    border-radius: 14px !important;
+  }
+}

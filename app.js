@@ -2107,6 +2107,10 @@ function initializeMap() {
         const container = document.getElementById('map');
         if (!container) {
             console.log('ℹ️ No #map container on this page, skipping map init');
+            // Still resolve the user's GPS location so distance calculations
+            // on task cards (home page, etc.) are accurate instead of
+            // defaulting to Delhi.
+            try { getUserLocation(); } catch (e) { console.warn('GPS bootstrap failed:', e.message); }
             return;
         }
 
@@ -2182,11 +2186,15 @@ function getUserLocation() {
             showToast('📍 Location found!');
             
             placeUserMarker(userLocation, position.coords.accuracy);
-            map.setView([userLocation.lat, userLocation.lng], 14);
-            renderTasks();
+            if (typeof map !== 'undefined' && map) {
+                map.setView([userLocation.lat, userLocation.lng], 14);
+            }
+            try { renderTasks(); } catch (e) {}
             
-            // Start watching position
-            startLocationWatch();
+            // Start watching position (only meaningful when a map exists)
+            if (typeof map !== 'undefined' && map) {
+                startLocationWatch();
+            }
         },
         function(error) {
             // Error handling
@@ -2299,6 +2307,8 @@ function setGPSStatus(status, text) {
 }
 
 function placeUserMarker(location, accuracy = 100) {
+    // No-op when there is no map on the current page (e.g. home page)
+    if (typeof map === 'undefined' || !map) return;
     // Remove existing
     if (userMarker) {
         map.removeLayer(userMarker);
@@ -2573,6 +2583,23 @@ function showTaskListSkeletons() {
 function renderTasks(filtered = null) {
     const container = document.getElementById('tasksList');
     if (!container) return;
+
+    // Sticky filter: when called with no explicit list, honor the
+    // current Category dropdown. This prevents auto-refreshes
+    // (every 60s) from wiping the filter the user (or a ?category=
+    // URL param) just applied — fixes "every category page shows
+    // the same task" bug on browse.html.
+    if (!filtered) {
+        try {
+            const sel = document.getElementById('filterCategory');
+            if (sel && sel.value && sel.value !== 'all'
+                && typeof window.applyFilters === 'function'
+                && Array.isArray(tasks) && tasks.length > 0) {
+                window.applyFilters();
+                return;
+            }
+        } catch (e) { /* fall through to default render */ }
+    }
 
     // Filter: Show only active, non-expired tasks
     let list = filtered || tasks.filter(t => {

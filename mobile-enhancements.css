@@ -1187,3 +1187,114 @@ input:invalid:not(:placeholder-shown) {
 @media (max-width: 768px) {
   .ai-recommended-section { padding-bottom: 96px; }
 }
+/* ===================================================================
+ * 32. ALTERNATING SECTION BACKGROUNDS + GENEROUS SPACING (home page)
+ * Subtle stripe pattern so users see when a new section begins.
+ * =================================================================== */
+/* Pull section spacing tokens; section padding raised slightly */
+@media (min-width: 769px) {
+  .find-tasks,
+  .how-it-works,
+  .watch-tutorial,
+  .my-tasks,
+  .upload-task,
+  .categories,
+  .testimonials,
+  .faq-section,
+  .tutorial-cta {
+    padding-top: 72px !important;
+    padding-bottom: 72px !important;
+  }
+}
+@media (max-width: 768px) {
+  .find-tasks,
+  .how-it-works,
+  .watch-tutorial,
+  .my-tasks,
+  .upload-task,
+  .categories,
+  .testimonials,
+  .faq-section,
+  .tutorial-cta {
+    padding-top: 48px !important;
+    padding-bottom: 48px !important;
+  }
+}
+
+/* Default surface for every section (light mode) */
+.find-tasks,
+.how-it-works,
+.watch-tutorial,
+.my-tasks,
+.upload-task,
+.categories,
+.testimonials,
+.faq-section,
+.tutorial-cta {
+  background: #ffffff !important;
+  position: relative;
+}
+
+/* Alternating soft tint - gradient stripes for visual rhythm */
+.how-it-works,
+.watch-tutorial   { background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important; }
+
+.my-tasks         { background: #ffffff !important; }
+
+.upload-task      { background: linear-gradient(180deg, #eef4ff 0%, #f5f3ff 100%) !important; }
+
+.find-tasks       { background: #ffffff !important; }
+
+.categories       { background: linear-gradient(180deg, #fefce8 0%, #fff7ed 100%) !important; }
+
+.testimonials     { background: #ffffff !important; }
+
+.faq-section      { background: linear-gradient(180deg, #f0f9ff 0%, #ecfeff 100%) !important; }
+
+/* Soft divider between sections - very subtle line */
+.find-tasks::before,
+.how-it-works::before,
+.watch-tutorial::before,
+.my-tasks::before,
+.upload-task::before,
+.categories::before,
+.testimonials::before,
+.faq-section::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 50%;
+  width: 80px; height: 4px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.35), transparent);
+  border-radius: 2px;
+}
+/* Hide top divider on the very first section after hero (clean transition) */
+.hero + section::before { display: none; }
+
+/* Dark mode - replace tints with slightly different surface shades */
+[data-theme="dark"] .find-tasks,
+[data-theme="dark"] .my-tasks,
+[data-theme="dark"] .testimonials {
+  background: #0b1020 !important;
+}
+[data-theme="dark"] .how-it-works,
+[data-theme="dark"] .watch-tutorial { background: #0f1530 !important; }
+[data-theme="dark"] .upload-task    { background: #141a33 !important; }
+[data-theme="dark"] .categories     { background: #131a30 !important; }
+[data-theme="dark"] .faq-section    { background: #0f1530 !important; }
+[data-theme="dark"] .find-tasks::before,
+[data-theme="dark"] .how-it-works::before,
+[data-theme="dark"] .watch-tutorial::before,
+[data-theme="dark"] .my-tasks::before,
+[data-theme="dark"] .upload-task::before,
+[data-theme="dark"] .categories::before,
+[data-theme="dark"] .testimonials::before,
+[data-theme="dark"] .faq-section::before {
+  background: linear-gradient(90deg, transparent, rgba(139, 134, 245, 0.35), transparent);
+}
+
+/* Override the inline padding on the FAQ section (home) */
+.faq-section[style] { padding-top: 72px !important; padding-bottom: 72px !important; }
+@media (max-width: 768px) {
+  .faq-section[style] { padding-top: 48px !important; padding-bottom: 48px !important; }
+}

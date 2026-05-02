@@ -191,7 +191,7 @@
                     <i class="fas fa-paper-plane"></i> Send Feedback
                 </button>
                 <p class="helper" style="text-align:center; margin-top:0.9rem;">
-                    Your feedback opens in your email app and goes to <strong>info@workmate4u.com</strong>.
+                    Your feedback is sent securely to <strong>info@workmate4u.com</strong>.
                 </p>
             </form>
         </div>
@@ -199,7 +199,7 @@
         <div class="card success-state" id="successState">
             <div class="success-icon"><i class="fas fa-check"></i></div>
             <h2>Thanks for your feedback!</h2>
-            <p>Your email app should have opened with your message ready to send. If it didn't, just email <a href="mailto:info@workmate4u.com">info@workmate4u.com</a> directly. Real reviews like yours will start appearing on our home page once we verify them post-launch.</p>
+            <p id="successMsg">Your feedback has been sent to our team at <a href="mailto:info@workmate4u.com">info@workmate4u.com</a>. Real reviews like yours will start appearing on our home page once we verify them post-launch.</p>
             <a href="index.html" class="submit-btn" style="display:inline-flex; width:auto; padding:0.85rem 1.6rem; text-decoration:none;">
                 <i class="fas fa-home"></i> Back to Home
             </a>
@@ -245,46 +245,83 @@
             var email = document.getElementById('email').value.trim();
             var topic = document.getElementById('topic').value;
             var message = msg.value.trim();
-            var consent = document.getElementById('consent').checked ? 'Yes' : 'No';
+            var consent = document.getElementById('consent').checked;
 
             if (!name || !email || !message) { alert('Please fill all required fields.'); return; }
 
-            // Build a clean email body
-            var body =
-                'Workmate4u Feedback\n' +
-                '====================\n\n' +
-                'Rating: ' + rating + ' / 5 star' + (rating === 1 ? '' : 's') + '\n' +
-                'Role: ' + roleEl.value + '\n' +
-                'Name: ' + name + '\n' +
-                'City: ' + (city || '-') + '\n' +
-                'Email: ' + email + '\n' +
-                'Topic: ' + topic + '\n' +
-                'Public review consent: ' + consent + '\n\n' +
-                'Message:\n' + message + '\n';
-
-            var subject = '[Workmate4u Feedback] ' + topic + ' (' + rating + 'star) - ' + name;
-            var mailto = 'mailto:info@workmate4u.com'
-                + '?subject=' + encodeURIComponent(subject)
-                + '&body=' + encodeURIComponent(body);
-
-            // Save a local copy so nothing is lost
+            // Save a local backup so nothing is lost on network failure
             try {
                 var saved = JSON.parse(localStorage.getItem('w4u_feedback_drafts') || '[]');
                 saved.push({ ts: new Date().toISOString(), rating: rating, role: roleEl.value, name: name, city: city, email: email, topic: topic, message: message, consent: consent });
                 localStorage.setItem('w4u_feedback_drafts', JSON.stringify(saved.slice(-20)));
             } catch (err) { /* ignore */ }
 
-            // Open email client
-            window.location.href = mailto;
+            // Resolve API base
+            var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+                ? 'http://localhost:5000/api'
+                : 'https://taskearn-production-production.up.railway.app/api';
 
-            // Show success state
-            setTimeout(function () {
+            var btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+
+            var payload = {
+                rating: rating,
+                role: roleEl.value,
+                name: name,
+                city: city,
+                email: email,
+                topic: topic,
+                message: message,
+                consent: consent
+            };
+
+            fetch(API_BASE + '/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(function (res) { return res.json().then(function (j) { return { ok: res.ok, body: j }; }); })
+            .then(function (r) {
+                if (!r.ok || !r.body || r.body.success === false) {
+                    throw new Error((r.body && r.body.message) || 'Server rejected the submission');
+                }
+                // Success
                 document.getElementById('formCard').style.display = 'none';
                 document.getElementById('successState').classList.add('show');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
-            }, 350);
+            })
+            .catch(function (err) {
+                console.warn('[feedback] API send failed:', err);
+                // Fallback: open user's email app so the message isn't lost
+                var body =
+                    'Workmate4u Feedback\n====================\n\n' +
+                    'Rating: ' + rating + ' / 5\n' +
+                    'Role: ' + roleEl.value + '\n' +
+                    'Name: ' + name + '\n' +
+                    'City: ' + (city || '-') + '\n' +
+                    'Email: ' + email + '\n' +
+                    'Topic: ' + topic + '\n' +
+                    'Public review consent: ' + (consent ? 'Yes' : 'No') + '\n\n' +
+                    'Message:\n' + message + '\n';
+                var subject = '[Workmate4u Feedback] ' + topic + ' (' + rating + 'star) - ' + name;
+                var mailto = 'mailto:info@workmate4u.com'
+                    + '?subject=' + encodeURIComponent(subject)
+                    + '&body=' + encodeURIComponent(body);
+                document.getElementById('successMsg').innerHTML =
+                    "We couldn't reach our server, so we've opened your email app as a backup. " +
+                    "Just press <strong>Send</strong> there and your feedback will reach <a href=\"mailto:info@workmate4u.com\">info@workmate4u.com</a>.";
+                window.location.href = mailto;
+                document.getElementById('formCard').style.display = 'none';
+                document.getElementById('successState').classList.add('show');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            })
+            .finally(function () {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Feedback';
+            });
         });
     </script>
-    <script src="sw-register.js?v=20260502_feedback"></script>
+    <script src="sw-register.js?v=20260502_feedbackapi"></script>
 </body>
 </html>

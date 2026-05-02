@@ -399,6 +399,26 @@ def init_postgres_db():
                 created_at TIMESTAMP NOT NULL
             )
         ''')
+
+        # Feedback / reviews table (from /feedback.html submissions)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS feedback (
+                id SERIAL PRIMARY KEY,
+                rating INTEGER NOT NULL,
+                role VARCHAR(40),
+                name VARCHAR(120) NOT NULL,
+                city VARCHAR(80),
+                email VARCHAR(200) NOT NULL,
+                topic VARCHAR(60),
+                message TEXT NOT NULL,
+                consent_public BOOLEAN DEFAULT FALSE,
+                user_id VARCHAR(50),
+                ip_address VARCHAR(64),
+                user_agent VARCHAR(255),
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMP NOT NULL
+            )
+        ''')
         
         # Admin audit log table - tracks all admin actions
         cursor.execute('''

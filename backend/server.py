@@ -5120,6 +5120,147 @@ def get_contact_messages():
 
 
 # ========================================
+# FEEDBACK / REVIEWS API (public form on /feedback.html)
+# ========================================
+
+@app.route('/api/feedback', methods=['POST'])
+@rate_limit('5 per minute')
+def submit_feedback():
+    """Save a feedback / review form submission and email it to support."""
+    data = request.get_json(silent=True) or {}
+
+    # Validate / coerce
+    try:
+        rating = int(data.get('rating') or 0)
+    except (TypeError, ValueError):
+        rating = 0
+    if rating < 1 or rating > 5:
+        return jsonify({'success': False, 'message': 'Rating must be between 1 and 5'}), 400
+
+    name = (data.get('name') or '').strip()
+    email = (data.get('email') or '').strip()
+    message = (data.get('message') or '').strip()
+    role = (data.get('role') or '').strip()[:40]
+    city = (data.get('city') or '').strip()[:80]
+    topic = (data.get('topic') or 'General').strip()[:60]
+    consent_public = bool(data.get('consent'))
+
+    if not name or not email or not message:
+        return jsonify({'success': False, 'message': 'Name, email and message are required'}), 400
+    if '@' not in email or len(email) > 200:
+        return jsonify({'success': False, 'message': 'Valid email required'}), 400
+    if len(name) > 120:
+        return jsonify({'success': False, 'message': 'Name too long'}), 400
+    if len(message) > 5000:
+        return jsonify({'success': False, 'message': 'Message too long (max 5000 chars)'}), 400
+
+    # Optional auth
+    user_id = None
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header[7:]
+        if token:
+            try:
+                with get_db() as (cursor, conn):
+                    cursor.execute(f'SELECT id FROM users WHERE session_token = {PH}', (token,))
+                    row = cursor.fetchone()
+                    if row:
+                        user_id = dict_from_row(row)['id']
+            except Exception:
+                pass
+
+    ip_addr = (request.headers.get('X-Forwarded-For') or request.remote_addr or '')[:64]
+    user_agent = (request.headers.get('User-Agent') or '')[:255]
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    # Save to DB
+    feedback_id = None
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                INSERT INTO feedback (rating, role, name, city, email, topic, message,
+                                      consent_public, user_id, ip_address, user_agent,
+                                      status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                RETURNING id
+            ''', (rating, role, name, city, email, topic, message,
+                  consent_public, user_id, ip_addr, user_agent, 'pending', now))
+            row = cursor.fetchone()
+            if row:
+                feedback_id = dict_from_row(row).get('id')
+    except Exception as e:
+        print(f"[feedback] DB insert error: {e}")
+        # Don't bail — still try email so the message isn't lost
+
+    # Email notification to support
+    email_sent = False
+    if config.SENDGRID_API_KEY:
+        try:
+            from sendgrid import SendGridAPIClient
+            from sendgrid.helpers.mail import Mail
+            stars = '★' * rating + '☆' * (5 - rating)
+            safe_msg = (message
+                        .replace('&', '&amp;')
+                        .replace('<', '&lt;')
+                        .replace('>', '&gt;')
+                        .replace('\n', '<br>'))
+            html = f'''
+                <h2>New Workmate4u Feedback</h2>
+                <p><strong>Rating:</strong> {stars} ({rating}/5)<br>
+                   <strong>Role:</strong> {role or '-'}<br>
+                   <strong>Topic:</strong> {topic}<br>
+                   <strong>Name:</strong> {name}<br>
+                   <strong>City:</strong> {city or '-'}<br>
+                   <strong>Email:</strong> <a href="mailto:{email}">{email}</a><br>
+                   <strong>Public review consent:</strong> {'Yes' if consent_public else 'No'}<br>
+                   <strong>User ID:</strong> {user_id or 'guest'}<br>
+                   <strong>IP:</strong> {ip_addr or '-'}<br>
+                   <strong>Submitted:</strong> {now}</p>
+                <hr>
+                <p style="white-space:pre-wrap; font-size:1.02rem; line-height:1.6;">{safe_msg}</p>
+                <hr>
+                <p style="color:#64748b;font-size:0.85rem;">Feedback ID: {feedback_id or 'n/a'}</p>
+            '''
+            subject = f'[Feedback {rating}★] {topic} - {name}'
+            mail = Mail(
+                from_email=config.FROM_EMAIL,
+                to_emails='info@workmate4u.com',
+                subject=subject,
+                html_content=html
+            )
+            mail.reply_to = email  # so admin can hit Reply
+            sg = SendGridAPIClient(config.SENDGRID_API_KEY)
+            sg.send(mail)
+            email_sent = True
+        except Exception as e:
+            print(f"[feedback] SendGrid error: {e}")
+    else:
+        print(f"[feedback] SendGrid not configured — feedback {feedback_id} saved to DB only")
+
+    return jsonify({
+        'success': True,
+        'message': 'Thanks! Your feedback has been received.',
+        'id': feedback_id,
+        'emailed': email_sent
+    }), 200
+
+
+@app.route('/api/admin/feedback', methods=['GET'])
+@require_auth
+def get_feedback_list():
+    """Admin: list all feedback submissions."""
+    try:
+        if request.user_id != '1':
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        with get_db() as (cursor, conn):
+            cursor.execute('SELECT * FROM feedback ORDER BY created_at DESC LIMIT 200')
+            rows = [dict_from_row(r) for r in cursor.fetchall()]
+        return jsonify({'success': True, 'feedback': rows}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ========================================
 # NOTIFICATIONS API
 # ========================================
 

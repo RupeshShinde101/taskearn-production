@@ -1,0 +1,463 @@
+/* ===================================================================
+ * Workmate4u — Mobile UX Enhancement Layer
+ * Loaded AFTER styles.css. Purely additive: introduces design tokens,
+ * refined card system, skeletons, mobile sheets, dark-mode polish,
+ * larger tap targets, AA contrast fixes, and pull-to-refresh visuals.
+ *
+ * Nothing here removes existing styles — it only adds opt-in classes
+ * and tightens a handful of specific selectors that previously caused
+ * cramped/over-padded mobile rendering.
+ * =================================================================== */
+
+/* ----------- 1. DESIGN TOKENS (8-pt scale, color, card, motion) ---- */
+:root {
+  /* Spacing scale (8-pt) */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-7: 28px; --s-8: 32px;
+  --s-10: 40px; --s-12: 48px;
+
+  /* Radius scale */
+  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 22px; --r-pill: 999px;
+
+  /* Brand scale */
+  --brand-50:#eef4ff;  --brand-100:#dbe6ff; --brand-200:#b9cdff;
+  --brand-500:#3b6dff; --brand-600:#2952e8; --brand-700:#1f3fbf;
+
+  /* Semantic */
+  --c-success:#16a34a; --c-warn:#f59e0b; --c-danger:#dc2626; --c-info:#0ea5e9;
+
+  /* Surfaces */
+  --bg:           #ffffff;
+  --bg-soft:      #f7f8fb;
+  --surface:      #ffffff;
+  --surface-alt:  #f1f3f8;
+  --border:       #e6e8ec;
+  --border-soft:  #eef0f3;
+
+  /* Text (AA-compliant on white) */
+  --text:         #0f172a;
+  --text-muted:   #475569;
+  --text-faint:   #64748b;
+
+  /* Card system */
+  --card-pad:     14px;
+  --card-radius:  var(--r-lg);
+  --card-shadow:  0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+  --card-shadow-hover: 0 6px 20px rgba(15,23,42,.08), 0 2px 6px rgba(15,23,42,.05);
+  --card-border:  1px solid var(--border-soft);
+
+  /* Motion */
+  --t-fast: 150ms cubic-bezier(.2,.8,.2,1);
+  --t-base: 220ms cubic-bezier(.2,.8,.2,1);
+  --t-slow: 360ms cubic-bezier(.2,.8,.2,1);
+
+  /* Z-index */
+  --z-tabbar: 999;
+  --z-sticky: 50;
+  --z-modal: 1000;
+  --z-toast: 1100;
+}
+
+/* Dark-mode token overrides */
+[data-theme="dark"] {
+  --bg:          #0b1020;
+  --bg-soft:     #0f1530;
+  --surface:     #141a33;
+  --surface-alt: #1a2140;
+  --border:      #23284a;
+  --border-soft: #1d2342;
+
+  --text:        #e7eaf2;
+  --text-muted:  #b3bccf;
+  --text-faint:  #8a93ad;
+
+  --card-shadow: 0 1px 3px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.3);
+  --card-shadow-hover: 0 8px 24px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+  --card-border: 1px solid var(--border);
+}
+
+/* ----------- 2. GLOBAL POLISH (safe, non-destructive) -------------- */
+* { -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+img, video, svg { max-width: 100%; height: auto; }
+button, [role="button"], a.btn { touch-action: manipulation; }
+
+/* iOS overscroll bounce on body fixes — but allow within scroll containers */
+html, body { overscroll-behavior-y: contain; }
+
+/* Modal backdrop: glassy blur (premium feel) */
+.modal.active {
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+          backdrop-filter: blur(6px) saturate(140%);
+  background: rgba(15, 23, 42, 0.4);
+}
+[data-theme="dark"] .modal.active {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* Make scrollbars subtle on desktop */
+@media (min-width: 769px) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+}
+
+/* ----------- 3. CARD SYSTEM (use .uicard for new cards) ------------ */
+.uicard {
+  background: var(--surface);
+  border-radius: var(--card-radius);
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  padding: var(--card-pad);
+  transition: box-shadow var(--t-base), transform var(--t-base);
+}
+.uicard:active { transform: scale(.99); }
+.uicard.is-tappable:hover { box-shadow: var(--card-shadow-hover); }
+
+/* Tighten existing cards on small screens to fix over-padding */
+@media (max-width: 480px) {
+  .task-card, .my-task-card, .feature-card, .testimonial-card,
+  .profile-card, .wallet-card, .stat-card, .dashboard-nav-card {
+    padding: 14px !important;
+    border-radius: var(--r-lg) !important;
+  }
+  .container { padding-left: 16px; padding-right: 16px; }
+  /* Tighten section vertical padding on phones */
+  section, .section { padding-top: 28px !important; padding-bottom: 28px !important; }
+}
+
+/* ----------- 4. TYPOGRAPHY (AA contrast + tighter mobile sizes) ---- */
+@media (max-width: 480px) {
+  h1 { font-size: 26px; line-height: 1.2; }
+  h2 { font-size: 22px; line-height: 1.25; }
+  h3 { font-size: 18px; line-height: 1.3; }
+  body, p { font-size: 15px; line-height: 1.5; }
+  .small, small, .caption { font-size: 13px; }
+}
+.muted { color: var(--text-muted); }
+.faint { color: var(--text-faint); }
+
+/* ----------- 5. SKELETON LOADERS ----------------------------------- */
+.skel {
+  display: block;
+  background: linear-gradient(90deg,
+    var(--surface-alt) 25%, var(--border-soft) 37%, var(--surface-alt) 63%);
+  background-size: 400% 100%;
+  animation: skel-shimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+  height: 14px;
+}
+.skel.skel-line  { height: 12px; margin: 6px 0; }
+.skel.skel-title { height: 18px; width: 60%; margin: 8px 0; }
+.skel.skel-block { height: 80px; }
+.skel.skel-circle{ width: 44px; height: 44px; border-radius: 50%; }
+.skel-row { display:flex; gap: 12px; align-items:center; }
+.skel-card {
+  padding: var(--card-pad);
+  background: var(--surface);
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+@keyframes skel-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
+}
+
+/* ----------- 6. EMPTY STATES --------------------------------------- */
+.empty-state-v2 {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+}
+.empty-state-v2 .empty-icon {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: var(--surface-alt);
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+}
+.empty-state-v2 .empty-icon i {
+  font-size: 32px; color: var(--text-faint);
+}
+.empty-state-v2 h3 { margin: 0 0 6px; font-size: 18px; color: var(--text); }
+.empty-state-v2 p  { margin: 0 0 16px; font-size: 14px; }
+.empty-state-v2 .btn { min-height: 44px; }
+
+/* ----------- 7. MOBILE SHEET (full-screen modal pattern) ----------- */
+@media (max-width: 768px) {
+  .modal.modal-sheet > .modal-content,
+  .modal.modal-fullscreen > .modal-content {
+    position: fixed;
+    inset: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    transform: translateY(0) !important;
+    overflow-y: auto;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+  /* Sticky sheet header */
+  .modal-sheet .sheet-header,
+  .modal-fullscreen .sheet-header {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .sheet-header .sheet-back {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-alt); border: 0; color: var(--text);
+    font-size: 16px;
+  }
+  .sheet-header .sheet-title { font-size: 17px; font-weight: 600; flex: 1; margin: 0; }
+  /* Sticky sheet bottom CTA */
+  .sheet-cta {
+    position: sticky; bottom: 0; z-index: 4;
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+    background: var(--surface);
+    border-top: 1px solid var(--border-soft);
+  }
+  .sheet-cta .btn { width: 100%; min-height: 48px; font-size: 16px; }
+}
+
+/* ----------- 8. STICKY HEADER + BACK BUTTON (per-page) ------------- */
+.app-header {
+  position: sticky; top: 0; z-index: var(--z-sticky);
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-soft);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+          backdrop-filter: blur(10px) saturate(140%);
+}
+.app-header .app-back {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-alt); color: var(--text);
+  text-decoration: none; border: 0; font-size: 16px; cursor: pointer;
+}
+.app-header .app-back:active { transform: scale(.92); }
+.app-header h1, .app-header .app-title {
+  font-size: 17px; font-weight: 600; margin: 0; flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.app-header .app-action {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--text); border: 0;
+}
+
+/* ----------- 9. TOUCH TARGETS (≥44px) ------------------------------ */
+@media (max-width: 768px) {
+  .btn, .btn-sm, button.btn-icon, .icon-btn,
+  .nav-links a, .bottom-tab-bar a {
+    min-height: 44px;
+  }
+  .btn-icon, .icon-btn {
+    min-width: 44px;
+  }
+  /* Form fields easier to tap */
+  input[type="text"], input[type="email"], input[type="tel"],
+  input[type="number"], input[type="password"], select, textarea {
+    min-height: 44px;
+    font-size: 16px; /* prevents iOS zoom */
+  }
+}
+
+/* ----------- 10. PULL-TO-REFRESH visuals --------------------------- */
+.ptr-spinner {
+  position: fixed;
+  top: 0; left: 50%;
+  transform: translate(-50%, -120%);
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgba(15,23,42,.18);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--brand-500);
+  z-index: var(--z-toast);
+  transition: transform var(--t-base);
+}
+.ptr-spinner.is-pulling { transform: translate(-50%, 12px); }
+.ptr-spinner.is-refreshing { transform: translate(-50%, 12px); }
+.ptr-spinner.is-refreshing i { animation: ptr-spin 0.8s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+
+/* ----------- 11. BOTTOM TAB BAR (refinements) ---------------------- */
+[data-theme="dark"] .bottom-tab-bar {
+  background: rgba(20, 26, 51, 0.92);
+  box-shadow: 0 -1px 20px rgba(0,0,0,.3), 0 -1px 0 rgba(255,255,255,.05);
+}
+.bottom-tab-bar a span {
+  font-weight: 600; letter-spacing: .02em;
+}
+@media (max-width: 360px) {
+  .bottom-tab-bar a { padding: 4px 8px; font-size: 9.5px; }
+  .bottom-tab-bar a i { font-size: 18px; }
+}
+/* Press feedback on tab items */
+.bottom-tab-bar a:active:not(.tab-post-btn) { transform: scale(.94); }
+
+/* ----------- 12. THEME TOGGLE WIDGET ------------------------------- */
+.theme-toggle {
+  display: inline-flex;
+  background: var(--surface-alt);
+  border-radius: var(--r-pill);
+  padding: 4px;
+  gap: 2px;
+}
+.theme-toggle button {
+  border: 0; background: transparent; cursor: pointer;
+  padding: 8px 14px; border-radius: var(--r-pill);
+  color: var(--text-muted); font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px;
+}
+.theme-toggle button.is-active {
+  background: var(--surface); color: var(--text);
+  box-shadow: 0 1px 3px rgba(15,23,42,.08);
+}
+[data-theme="dark"] .theme-toggle button.is-active {
+  background: var(--brand-600); color: #fff;
+}
+
+/* ----------- 13. QUICK-ACTION PILLS (Zomato-style row) ------------- */
+.quick-actions {
+  display: flex; gap: 10px;
+  overflow-x: auto;
+  padding: 4px 16px 12px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.quick-actions::-webkit-scrollbar { display: none; }
+.quick-actions a {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-pill);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px; font-weight: 600;
+  scroll-snap-align: start;
+  min-height: 40px;
+  box-shadow: var(--card-shadow);
+}
+.quick-actions a i { color: var(--brand-500); font-size: 14px; }
+.quick-actions a:active { transform: scale(.97); }
+
+/* ----------- 14. GREETING STRIP ------------------------------------ */
+.greeting-strip {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--surface);
+}
+.greeting-strip .hi {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.greeting-strip .hi b { font-size: 16px; color: var(--text); }
+.greeting-strip .hi small { color: var(--text-muted); font-size: 12px; }
+.greeting-strip .wallet-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  background: var(--brand-50);
+  color: var(--brand-700);
+  border-radius: var(--r-pill);
+  font-weight: 700;
+  text-decoration: none;
+  font-size: 14px;
+  min-height: 40px;
+}
+[data-theme="dark"] .greeting-strip .wallet-pill {
+  background: rgba(59,109,255,.12); color: var(--brand-200);
+}
+
+/* ----------- 15. HORIZONTAL SCROLL CARD ROW ------------------------ */
+.h-scroll {
+  display: flex; gap: 12px;
+  overflow-x: auto; padding: 4px 16px 16px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.h-scroll::-webkit-scrollbar { display: none; }
+.h-scroll > * {
+  flex: 0 0 78%;
+  scroll-snap-align: start;
+}
+@media (min-width: 480px) {
+  .h-scroll > * { flex: 0 0 60%; }
+}
+@media (min-width: 768px) {
+  .h-scroll > * { flex: 0 0 40%; }
+}
+
+/* ----------- 16. SAFE-AREA HELPERS --------------------------------- */
+.safe-top    { padding-top:    max(12px, env(safe-area-inset-top)); }
+.safe-bottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.safe-x      { padding-left: max(16px, env(safe-area-inset-left));
+               padding-right:max(16px, env(safe-area-inset-right)); }
+
+/* ----------- 17. UTILITY CLASSES (lightweight) --------------------- */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-1 { gap: var(--s-1); }  .gap-2 { gap: var(--s-2); }
+.gap-3 { gap: var(--s-3); }  .gap-4 { gap: var(--s-4); }
+.mt-1 { margin-top: var(--s-1); }   .mt-2 { margin-top: var(--s-2); }
+.mt-3 { margin-top: var(--s-3); }   .mt-4 { margin-top: var(--s-4); }
+.mb-1 { margin-bottom: var(--s-1); }.mb-2 { margin-bottom: var(--s-2); }
+.mb-3 { margin-bottom: var(--s-3); }.mb-4 { margin-bottom: var(--s-4); }
+.text-muted { color: var(--text-muted); }
+.text-faint { color: var(--text-faint); }
+.hide-on-mobile { }
+@media (max-width: 768px) { .hide-on-mobile { display: none !important; } }
+.show-on-mobile { display: none !important; }
+@media (max-width: 768px) { .show-on-mobile { display: initial !important; } }
+
+/* ----------- 18. FORM INTERACTION POLISH --------------------------- */
+input:focus-visible, select:focus-visible, textarea:focus-visible,
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+}
+input:invalid:not(:placeholder-shown) {
+  border-color: var(--c-danger) !important;
+}
+
+/* ----------- 19. PERFORMANCE: reduce motion respect ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ----------- 20. FAB Z-FIX over tab bar ---------------------------- */
+.bottom-tab-bar { z-index: var(--z-tabbar); }
+
+/* ----------- 21. NOTIFICATION DRAWER POLISH ------------------------ */
+@media (max-width: 768px) {
+  .notification-list .notification-item {
+    border-radius: var(--r-md);
+    padding: 14px;
+  }
+}
+
+/* ----------- 22. RIPPLE-LIKE PRESS ON BUTTONS ---------------------- */
+.btn:active:not(:disabled) { transform: translateY(1px) scale(.99); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }

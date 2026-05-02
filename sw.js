@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260502c';
+const CACHE_NAME = 'workmate4u-v20260502d';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -9,12 +9,23 @@ const STATIC_ASSETS = [
   '/completed.html',
   '/profile.html',
   '/wallet.html',
+  '/chat.html',
+  '/notifications.html',
+  '/referral.html',
+  '/task-in-progress.html',
+  '/voice-call.html',
+  '/poster-live-tracking.html',
+  '/payment-qr.html',
+  '/tracking.html',
+  '/cookies.html',
   '/help.html',
   '/styles.css',
+  '/mobile-enhancements.css',
   '/app.js',
   '/api-client.js',
   '/sw-register.js',
   '/shared.js',
+  '/mobile-enhancements.js',
   '/favicon.svg',
   '/icon-192x192.png',
   '/icon-512x512.png'

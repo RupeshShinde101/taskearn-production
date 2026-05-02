@@ -148,7 +148,7 @@
         }
     </script>
     <link rel="stylesheet" href="styles.css?v=20260428b">
-    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_polish">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_findgrid">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
@@ -488,13 +488,10 @@
                     </div>
                 </div>
 
-                <!-- Map removed from home page. Use browse.html for the full map view. -->
-            </div>
-            
-            <!-- Push Notification Banner removed -->
-
-            <div class="tasks-list-fullwidth" id="tasksList">
-                <!-- Tasks will be dynamically loaded here -->
+                <!-- Task cards aligned next to the filter box (max 6, see app.js INITIAL_SHOW) -->
+                <div class="tasks-list-fullwidth tasks-list-aligned" id="tasksList">
+                    <!-- Tasks will be dynamically loaded here -->
+                </div>
             </div>
         </div>
     </section>
@@ -1322,7 +1319,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260502_polish"></script>
+    <script src="app.js?v=20260502_findgrid"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>

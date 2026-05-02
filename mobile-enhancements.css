@@ -1094,3 +1094,24 @@ input:invalid:not(:placeholder-shown) {
     margin-top: 16px !important;
   }
 }
+/* ===================================================================
+ * 29. TASK CARD GRID BREATHING ROOM
+ * =================================================================== */
+.tasks-list-fullwidth { gap: 24px !important; }
+.tasks-list-aligned   { gap: 24px !important; }
+@media (min-width: 769px) {
+  .tasks-list-aligned { gap: 28px !important; row-gap: 32px !important; }
+}
+@media (max-width: 768px) {
+  .tasks-list-fullwidth,
+  .tasks-list-aligned { gap: 18px !important; }
+}
+/* Slight inner padding lift for cards so content doesn't feel cramped */
+.tasks-list-fullwidth .task-card,
+.tasks-list-aligned   .task-card {
+  padding: 20px !important;
+}
+@media (max-width: 480px) {
+  .tasks-list-fullwidth .task-card,
+  .tasks-list-aligned   .task-card { padding: 16px !important; }
+}

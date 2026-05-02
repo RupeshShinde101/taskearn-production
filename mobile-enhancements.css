@@ -793,3 +793,56 @@ input:invalid:not(:placeholder-shown) {
   font-size: 14px;
 }
 
+
+
+/* ===================================================================
+ * 24. WATCH TUTORIAL CTA (replaces old How It Works section)
+ * =================================================================== */
+.watch-tutorial { padding: clamp(48px, 8vw, 80px) 0; }
+.tutorial-cta {
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: center;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 20px;
+  padding: clamp(28px, 5vw, 48px) clamp(20px, 4vw, 40px);
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+.tutorial-cta::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at top right, rgba(108, 92, 231, .08), transparent 60%);
+  pointer-events: none;
+}
+.tutorial-cta-icon {
+  width: 72px; height: 72px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px;
+  box-shadow: 0 12px 28px rgba(108, 92, 231, 0.35);
+}
+.tutorial-cta .section-badge { display: inline-block; margin-bottom: 12px; }
+.tutorial-cta h2 { font-size: clamp(1.5rem, 4vw, 2rem); margin-bottom: 12px; }
+.tutorial-cta p {
+  color: var(--text-muted, #64748b);
+  max-width: 460px; margin: 0 auto 24px;
+  font-size: clamp(0.95rem, 2.2vw, 1.05rem);
+  line-height: 1.6;
+}
+.tutorial-cta-btn {
+  display: inline-flex !important; align-items: center; gap: 10px;
+  padding: 14px 32px !important;
+  font-size: 1rem !important;
+  border-radius: 12px !important;
+}
+.tutorial-cta-btn i { font-size: 0.9em; }
+@media (max-width: 480px) {
+  .tutorial-cta { padding: 28px 18px; border-radius: 16px; }
+  .tutorial-cta-icon { width: 60px; height: 60px; font-size: 26px; }
+}

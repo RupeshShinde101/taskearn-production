@@ -27,7 +27,7 @@
     </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="styles.css?v=20260428b">
-    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_tutorial">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_categories">
     <script>
         (function() {
             var ua = navigator.userAgent.toLowerCase();
@@ -392,6 +392,37 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     <script src="app.js?v=20260502_audit"></script>
+    <script>
+        // Auto-apply ?category= from URL on load (linked from index.html category cards)
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            var cat = params.get('category');
+            if (!cat) return;
+            // Sanitize: only allow [a-z]
+            if (!/^[a-z]+$/.test(cat)) return;
+            var attempts = 0;
+            function tryApply() {
+                attempts++;
+                var sel = document.getElementById('filterCategory');
+                if (sel) {
+                    // Confirm option exists
+                    var opt = sel.querySelector('option[value="' + cat + '"]');
+                    if (opt) sel.value = cat;
+                }
+                var hasTasks = (typeof window.tasks !== 'undefined' && window.tasks && window.tasks.length > 0);
+                if (sel && hasTasks && typeof window.applyFilters === 'function') {
+                    try { window.applyFilters(); } catch (e) { console.warn('applyFilters failed:', e); }
+                    return;
+                }
+                if (attempts < 60) setTimeout(tryApply, 250); // up to ~15s
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', tryApply);
+            } else {
+                tryApply();
+            }
+        })();
+    </script>
     <script>(function(){var l=document.getElementById('pageLoader');if(l){l.classList.add('active');window.addEventListener('load',function(){l.classList.remove('active');l.classList.add('done');setTimeout(function(){l.remove()},600)})}})()</script>
 <script src="sw-register.js?v=20260420_recovery"></script>
 </body>

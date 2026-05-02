@@ -148,7 +148,7 @@
         }
     </script>
     <link rel="stylesheet" href="styles.css?v=20260428b">
-    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_tutorial">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_categories">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
@@ -535,81 +535,117 @@
             <img src="icon-192x192.png" alt="Freelance delivery services India - hire delivery freelancers on Workmate4u" width="48" height="48" loading="lazy" style="display:none;">
             <img src="icon-192x192.png" alt="Freelance tutoring jobs India - hire online tutors on Workmate4u" width="48" height="48" loading="lazy" style="display:none;">
             <img src="icon-192x192.png" alt="Home repair freelancers India - plumbing, electrical services on Workmate4u" width="48" height="48" loading="lazy" style="display:none;">
-            <div class="categories-grid stagger-children" id="categoriesGrid">
-                <div class="category-card animate-on-scroll" data-category="household" onclick="filterByCategory('household')">
+
+            <!-- Toggle button: collapses category cards by default -->
+            <div class="categories-toggle-wrap">
+                <button type="button" class="btn btn-primary categories-toggle-btn"
+                        id="categoriesToggleBtn"
+                        aria-expanded="false"
+                        aria-controls="categoriesGrid"
+                        onclick="toggleCategoriesGrid()">
+                    <i class="fas fa-th-large"></i>
+                    <span class="toggle-label">Show Popular Categories</span>
+                    <i class="fas fa-chevron-down toggle-chevron"></i>
+                </button>
+            </div>
+
+            <div class="categories-grid stagger-children collapsed" id="categoriesGrid" hidden>
+                <a class="category-card animate-on-scroll" data-category="household" href="browse.html?category=household">
                     <div class="category-icon household">
                         <i class="fas fa-home"></i>
                     </div>
                     <h3>Household Chores</h3>
                     <p>Laundry, Cleaning, Organizing</p>
                     <span class="task-count" id="count-household">0 tasks</span>
-                </div>
-                <div class="category-card animate-on-scroll" data-category="delivery" onclick="filterByCategory('delivery')">
+                </a>
+                <a class="category-card animate-on-scroll" data-category="delivery" href="browse.html?category=delivery">
                     <div class="category-icon delivery">
                         <i class="fas fa-shipping-fast"></i>
                     </div>
                     <h3>Delivery Services</h3>
                     <p>Parcels, Groceries, Medicines, Tiffin</p>
                     <span class="task-count" id="count-delivery">0 tasks</span>
-                </div>
-                <div class="category-card animate-on-scroll" data-category="tutoring" onclick="filterByCategory('tutoring')">
+                </a>
+                <a class="category-card animate-on-scroll" data-category="tutoring" href="browse.html?category=tutoring">
                     <div class="category-icon tutoring">
                         <i class="fas fa-graduation-cap"></i>
                     </div>
                     <h3>Online Tutoring</h3>
                     <p>JEE, NEET, Board Exams, Languages</p>
                     <span class="task-count" id="count-tutoring">0 tasks</span>
-                </div>
-                <div class="category-card animate-on-scroll" data-category="transport" onclick="filterByCategory('transport')">
+                </a>
+                <a class="category-card animate-on-scroll" data-category="transport" href="browse.html?category=transport">
                     <div class="category-icon transport">
                         <i class="fas fa-car"></i>
                     </div>
                     <h3>Pick & Drop</h3>
                     <p>Railway Station, Airport, Events</p>
                     <span class="task-count" id="count-transport">0 tasks</span>
-                </div>
-                <div class="category-card animate-on-scroll" data-category="vehicle" onclick="filterByCategory('vehicle')">
+                </a>
+                <a class="category-card animate-on-scroll" data-category="vehicle" href="browse.html?category=vehicle">
                     <div class="category-icon vehicle">
                         <i class="fas fa-car-side"></i>
                     </div>
                     <h3>Vehicle Services</h3>
                     <p>Car Wash, Bike Wash, Detailing</p>
                     <span class="task-count" id="count-vehicle">0 tasks</span>
-                </div>
-                <div class="category-card animate-on-scroll" data-category="repair" onclick="filterByCategory('repair')">
+                </a>
+                <a class="category-card animate-on-scroll" data-category="repair" href="browse.html?category=repair">
                     <div class="category-icon repair">
                         <i class="fas fa-tools"></i>
                     </div>
                     <h3>Repairs & Mechanical</h3>
                     <p>Plumbing, Electrical, Appliances</p>
                     <span class="task-count" id="count-repair">0 tasks</span>
-                </div>
-                <div class="category-card animate-on-scroll" data-category="photography" onclick="filterByCategory('photography')">
+                </a>
+                <a class="category-card animate-on-scroll" data-category="photography" href="browse.html?category=photography">
                     <div class="category-icon photography">
                         <i class="fas fa-camera"></i>
                     </div>
                     <h3>Photography</h3>
                     <p>Weddings, Events, Pre-wedding</p>
                     <span class="task-count" id="count-photography">0 tasks</span>
-                </div>
-                <div class="category-card animate-on-scroll" data-category="freelance" onclick="filterByCategory('freelance')">
+                </a>
+                <a class="category-card animate-on-scroll" data-category="freelance" href="browse.html?category=freelance">
                     <div class="category-icon freelance">
                         <i class="fas fa-laptop-code"></i>
                     </div>
                     <h3>Freelance Services</h3>
                     <p>Design, Writing, Development</p>
                     <span class="task-count" id="count-freelance">0 tasks</span>
-                </div>
-                <div class="category-card animate-on-scroll" data-category="waste" onclick="filterByCategory('waste')">
+                </a>
+                <a class="category-card animate-on-scroll" data-category="waste" href="browse.html?category=waste">
                     <div class="category-icon waste">
                         <i class="fas fa-recycle"></i>
                     </div>
                     <h3>Waste Collection</h3>
                     <p>Garbage, Recycling, Junk Removal</p>
                     <span class="task-count" id="count-waste">0 tasks</span>
-                </div>
+                </a>
             </div>
         </div>
+        <script>
+            function toggleCategoriesGrid() {
+                var grid = document.getElementById('categoriesGrid');
+                var btn = document.getElementById('categoriesToggleBtn');
+                if (!grid || !btn) return;
+                var isOpen = !grid.hasAttribute('hidden');
+                if (isOpen) {
+                    grid.setAttribute('hidden', '');
+                    grid.classList.add('collapsed');
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.classList.remove('open');
+                    btn.querySelector('.toggle-label').textContent = 'Show Popular Categories';
+                } else {
+                    grid.removeAttribute('hidden');
+                    // animate in
+                    requestAnimationFrame(function () { grid.classList.remove('collapsed'); });
+                    btn.setAttribute('aria-expanded', 'true');
+                    btn.classList.add('open');
+                    btn.querySelector('.toggle-label').textContent = 'Hide Categories';
+                }
+            }
+        </script>
     </section>
 
     <!-- Testimonials Section -->

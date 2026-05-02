@@ -846,3 +846,50 @@ input:invalid:not(:placeholder-shown) {
   .tutorial-cta { padding: 28px 18px; border-radius: 16px; }
   .tutorial-cta-icon { width: 60px; height: 60px; font-size: 26px; }
 }
+
+/* ===================================================================
+ * 25. POPULAR CATEGORIES • collapsible toggle
+ * =================================================================== */
+.categories-toggle-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0 8px;
+}
+.categories-toggle-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 28px !important;
+  font-size: 1rem !important;
+  border-radius: 12px !important;
+  min-height: 48px;
+}
+.categories-toggle-btn .toggle-chevron {
+  transition: transform 0.25s ease;
+  font-size: 0.85em;
+}
+.categories-toggle-btn.open .toggle-chevron {
+  transform: rotate(180deg);
+}
+.categories-grid.collapsed {
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+.categories-grid {
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  margin-top: 24px;
+}
+/* Make category-card behave like a link without underline */
+.categories-grid a.category-card {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  cursor: pointer;
+}
+.categories-grid a.category-card:hover {
+  text-decoration: none;
+}
+@media (max-width: 480px) {
+  .categories-toggle-btn { width: 100%; justify-content: center; }
+}

@@ -2592,11 +2592,8 @@ function renderTasks(filtered = null) {
         container.innerHTML = `
             <div class="empty-state">
                 <i class="fas fa-search"></i>
-                <h3>No tasks found</h3>
-                <p>Try adjusting your filters or check back later</p>
-                <button class="btn btn-primary" onclick="window.location.href='posted.html'" style="margin-top: 15px; padding: 10px 24px;">
-                    <i class="fas fa-plus"></i> Post a Task
-                </button>
+                <h3>No tasks available</h3>
+                <p>No nearby tasks match your filters right now. Try widening your distance or budget range, or check back later.</p>
             </div>
         `;
         return;

@@ -32,6 +32,15 @@ SKIP_DIRS = {'.git', '.venv', '.venv-1', 'node_modules', '__pycache__', 'backend
 
 # Ordered: longer/more-specific patterns first.
 RUPEE_PATTERNS = [
+    # Quoted single rupee literals in JS:  '?' + ...   "?" + ...
+    (re.compile(r"'\?'(\s*\+)"), r"'₹'\1"),
+    (re.compile(r'"\?"(\s*\+)'), r'"₹"\1'),
+    # placeholder/value attributes: placeholder="Min ?"  value="Max ?"
+    (re.compile(r'(placeholder|value|title|alt|aria-label)="([^"]*?)\?"'),
+     lambda m: f'{m.group(1)}="{m.group(2)}₹"' if m.group(2).rstrip().endswith(('Min','Max','₹','Rs','Rs.','Amount','Budget')) or 'Min' in m.group(2) or 'Max' in m.group(2) else m.group(0)),
+    (re.compile(r"(placeholder|value|title|alt|aria-label)='([^']*?)\?'"),
+     lambda m: f"{m.group(1)}='{m.group(2)}₹'" if 'Min' in m.group(2) or 'Max' in m.group(2) else m.group(0)),
+    # Standard digit-following patterns
     (re.compile(r'(?<=[\s\(\[])\?(?=\d)'), '₹'),       # "  ?500"  "(?100"
     (re.compile(r'(?<=[+\-/|>])\?(?=\d)'), '₹'),       # "+?50" "-?500" "|?40"
     (re.compile(r'^\?(?=\d)', re.MULTILINE), '₹'),     # "?100" line start

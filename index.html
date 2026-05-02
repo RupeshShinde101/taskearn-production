@@ -506,9 +506,9 @@
                         <div class="filter-group">
                             <label>Budget Range</label>
                             <div class="budget-inputs">
-                                <input type="number" id="minBudget" placeholder="Min ?" aria-label="Minimum budget">
+                                <input type="number" id="minBudget" placeholder="Min ₹" aria-label="Minimum budget">
                                 <span>-</span>
-                                <input type="number" id="maxBudget" placeholder="Max ?" aria-label="Maximum budget">
+                                <input type="number" id="maxBudget" placeholder="Max ₹" aria-label="Maximum budget">
                             </div>
                         </div>
                         
@@ -1433,7 +1433,7 @@
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20260502_mojifix"></script>
+    <script src="api-client.js?v=20260502_mojifix2"></script>
     <script src="shared.js?v=20260404_accept_v2"></script>
     
     <!-- Google Sign-In -->
@@ -1442,7 +1442,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260502_mojifix"></script>
+    <script src="app.js?v=20260502_mojifix2"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>
@@ -1535,10 +1535,10 @@
         }
 
         function formatRupees(n) {
-            if (n >= 10000000) return '?' + (n / 10000000).toFixed(1).replace(/\.0$/, '') + 'Cr+';
-            if (n >= 100000) return '?' + (n / 100000).toFixed(1).replace(/\.0$/, '') + 'L+';
-            if (n >= 1000) return '?' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K+';
-            return '?' + n + '+';
+            if (n >= 10000000) return '₹' + (n / 10000000).toFixed(1).replace(/\.0$/, '') + 'Cr+';
+            if (n >= 100000) return '₹' + (n / 100000).toFixed(1).replace(/\.0$/, '') + 'L+';
+            if (n >= 1000) return '₹' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K+';
+            return '₹' + n + '+';
         }
 
         function animateValue(el, target, formatter) {

@@ -49,7 +49,21 @@ console.log('🔒 Force mobile proxy:', FORCE_MOBILE_PROXY);
 
 // If not pre-set by inline HTML script, determine it now
 if (!API_BASE_URL) {
-    if (MOBILE && ON_NETLIFY) {
+    var __host = (window.location.hostname || '').toLowerCase();
+    var IS_LOCAL = __host === 'localhost' || __host === '127.0.0.1' || __host === '0.0.0.0';
+    var IS_STAGING = __host.indexOf('staging') !== -1 || __host.indexOf('deploy-preview') !== -1;
+
+    if (IS_LOCAL) {
+        // Local development: hit local Flask
+        API_BASE_URL = 'http://localhost:5000/api';
+        console.log('💻 Local dev: using http://localhost:5000/api');
+    } else if (IS_STAGING) {
+        // Staging / PR previews: hit staging Railway service
+        // (override here once you create the staging Railway URL)
+        API_BASE_URL = window.STAGING_API_URL
+            || 'https://taskearn-production-staging.up.railway.app/api';
+        console.log('🧪 Staging: using', API_BASE_URL);
+    } else if (MOBILE && ON_NETLIFY) {
         API_BASE_URL = '/.netlify/functions/api-proxy/api';
         console.log('📱 Mobile on Netlify: Using proxy');
     } else {

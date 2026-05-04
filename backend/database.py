@@ -573,6 +573,23 @@ def init_postgres_db():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_image TEXT
         ''')
 
+        # Phone OTP table (separate from password_resets, with phone column)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS phone_otps (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(20) NOT NULL,
+                phone VARCHAR(20) NOT NULL,
+                otp VARCHAR(10) NOT NULL,
+                attempts INT DEFAULT 0,
+                used BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                expires_at TIMESTAMP NOT NULL
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_phone_otps_user ON phone_otps(user_id, used, expires_at)
+        ''')
+
         # Language preference
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(10) DEFAULT 'en'

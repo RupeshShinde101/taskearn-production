@@ -1053,6 +1053,165 @@ def forgot_password():
     })
 
 
+# ============================================================
+# Phone OTP verification (separate from email/password reset OTP)
+# ============================================================
+def _normalize_phone(raw):
+    """Strip spaces/dashes, default +91 for 10-digit Indian numbers."""
+    if not raw:
+        return None
+    s = ''.join(ch for ch in str(raw) if ch.isdigit() or ch == '+')
+    if not s:
+        return None
+    if s.startswith('+'):
+        return s
+    if len(s) == 10:
+        return '+91' + s
+    if len(s) == 12 and s.startswith('91'):
+        return '+' + s
+    return s
+
+
+def _send_sms_otp(phone, otp):
+    """Send OTP via Fast2SMS if FAST2SMS_API_KEY set, else log to console.
+    Returns (success, message). Never raises."""
+    api_key = os.environ.get('FAST2SMS_API_KEY', '').strip()
+    if not api_key:
+        # Dev/staging fallback: log only. NOT secure for production.
+        print(f"[SMS-OTP-DEV] phone={phone} otp={otp}  (set FAST2SMS_API_KEY to enable real SMS)", flush=True)
+        return True, 'logged'
+    try:
+        import requests
+        # Fast2SMS OTP route — DLT-exempt, India only.
+        # Strip +91 / leading 91 — Fast2SMS expects bare 10-digit number.
+        digits = ''.join(ch for ch in phone if ch.isdigit())
+        if digits.startswith('91') and len(digits) == 12:
+            digits = digits[2:]
+        if len(digits) != 10:
+            return False, 'Invalid Indian phone number (need 10 digits)'
+        resp = requests.post(
+            'https://www.fast2sms.com/dev/bulkV2',
+            headers={'authorization': api_key, 'Content-Type': 'application/json'},
+            json={
+                'route': 'otp',
+                'variables_values': str(otp),
+                'numbers': digits,
+            },
+            timeout=10,
+        )
+        data = resp.json() if resp.headers.get('Content-Type', '').startswith('application/json') else {}
+        if resp.status_code == 200 and data.get('return') is True:
+            return True, 'sent'
+        return False, data.get('message') or f'SMS provider error ({resp.status_code})'
+    except Exception as e:
+        print(f"[SMS-OTP-ERR] {e}", flush=True)
+        return False, 'SMS service unavailable, try again'
+
+
+@app.route('/api/auth/send-phone-otp', methods=['POST'])
+@require_auth
+@rate_limit('3 per minute')
+def send_phone_otp():
+    """Generate + send a 6-digit OTP to the user's phone.
+    Body: {phone?: string}  — if omitted, uses the phone already on the user record.
+    """
+    data = request.get_json(silent=True) or {}
+    raw_phone = data.get('phone') or ''
+    user_id = request.user_id
+
+    user = get_user_by_id(user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+
+    phone = _normalize_phone(raw_phone) or _normalize_phone(user.get('phone'))
+    if not phone:
+        return jsonify({'success': False, 'message': 'Phone number is required'}), 400
+
+    # Generate 6-digit OTP
+    otp = ''.join(secrets.choice('0123456789') for _ in range(6))
+    expires_at = datetime.datetime.now() + datetime.timedelta(minutes=10)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        # Invalidate prior unused OTPs for this user
+        cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE user_id = {PH} AND used = FALSE", (user_id,))
+        cursor.execute(
+            f"INSERT INTO phone_otps (user_id, phone, otp, expires_at) VALUES ({PH}, {PH}, {PH}, {PH})",
+            (user_id, phone, otp, expires_at),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    ok, msg = _send_sms_otp(phone, otp)
+    if not ok:
+        return jsonify({'success': False, 'message': msg}), 502
+
+    masked = phone[:3] + '****' + phone[-2:]
+    return jsonify({'success': True, 'message': f'OTP sent to {masked}', 'maskedPhone': masked})
+
+
+@app.route('/api/auth/verify-phone-otp', methods=['POST'])
+@require_auth
+@rate_limit('10 per minute')
+def verify_phone_otp():
+    """Verify the 6-digit phone OTP. On success: sets users.phone_verified=TRUE
+    and updates users.phone to the verified number."""
+    data = request.get_json(silent=True) or {}
+    otp = (data.get('otp') or '').strip()
+    if not otp or not otp.isdigit() or len(otp) != 6:
+        return jsonify({'success': False, 'message': 'Enter the 6-digit OTP'}), 400
+
+    user_id = request.user_id
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"SELECT id, phone, otp, attempts, used, expires_at FROM phone_otps "
+            f"WHERE user_id = {PH} AND used = FALSE ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'No OTP requested. Tap Send OTP first.'}), 400
+        rec = dict_from_row(row)
+        if rec['attempts'] >= 5:
+            cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
+            conn.commit()
+            return jsonify({'success': False, 'message': 'Too many attempts. Request a new OTP.'}), 400
+        # Compare expiry — handle both datetime and string
+        exp = rec['expires_at']
+        if isinstance(exp, str):
+            try:
+                exp = datetime.datetime.fromisoformat(exp)
+            except Exception:
+                exp = None
+        if exp and datetime.datetime.now() > exp:
+            cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
+            conn.commit()
+            return jsonify({'success': False, 'message': 'OTP expired. Request a new one.'}), 400
+        if rec['otp'] != otp:
+            cursor.execute(f"UPDATE phone_otps SET attempts = attempts + 1 WHERE id = {PH}", (rec['id'],))
+            conn.commit()
+            return jsonify({'success': False, 'message': 'Incorrect OTP'}), 400
+
+        # Success
+        cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
+        cursor.execute(
+            f"UPDATE users SET phone = {PH}, phone_verified = TRUE WHERE id = {PH}",
+            (rec['phone'], user_id),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    user = get_user_by_id(user_id)
+    return jsonify({'success': True, 'message': 'Phone verified', 'user': user_to_response(user)})
+
+
 @app.route('/api/auth/verify-otp', methods=['POST'])
 @rate_limit('5 per minute')
 def verify_otp():
@@ -3161,6 +3320,25 @@ def request_withdrawal():
     account_number = data.get('accountNumber', '').strip()
     ifsc_code = data.get('ifscCode', '').strip().upper()
     
+    # Eligibility gate: phone OTP verified + KYC approved are mandatory.
+    # This protects against money mules / fake accounts laundering wallet credits.
+    user = get_user_by_id(request.user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    if not bool(user.get('phone_verified')):
+        return jsonify({
+            'success': False,
+            'message': 'Verify your mobile number before withdrawing.',
+            'requiresVerification': 'phone'
+        }), 403
+    if (user.get('kyc_status') or 'none') != 'approved':
+        return jsonify({
+            'success': False,
+            'message': 'Complete KYC verification before withdrawing. Go to Profile → Identity Verification.',
+            'requiresVerification': 'kyc',
+            'kycStatus': user.get('kyc_status') or 'none'
+        }), 403
+
     # Validation
     if amount < 100:
         return jsonify({'success': False, 'message': 'Minimum withdrawal amount is ₹100'}), 400

@@ -554,6 +554,24 @@ const AuthAPI = {
         const result = await apiRequest('/auth/send-verification-otp', { method: 'POST' });
         return result.data;
     },
+
+    // Phone OTP — send a 6-digit code to the user's phone
+    async sendPhoneOTP(phone) {
+        const result = await apiRequest('/auth/send-phone-otp', {
+            method: 'POST',
+            body: JSON.stringify(phone ? { phone } : {})
+        });
+        return result.data;
+    },
+
+    // Phone OTP — verify the 6-digit code
+    async verifyPhoneOTP(otp) {
+        const result = await apiRequest('/auth/verify-phone-otp', {
+            method: 'POST',
+            body: JSON.stringify({ otp })
+        });
+        return result.data;
+    },
     
     // Verify email with OTP
     async verifyEmail(otp) {

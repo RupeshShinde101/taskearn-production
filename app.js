@@ -5135,7 +5135,17 @@ function renderProfileUI() {
     var fe = document.getElementById('fieldEmail');
     if (fe) fe.textContent = currentUser.email || '—';
     var fp = document.getElementById('fieldPhone');
-    if (fp) fp.textContent = currentUser.phone || 'Not provided';
+    if (fp) {
+        var phoneText = currentUser.phone || 'Not provided';
+        var verified = !!currentUser.phoneVerified;
+        var badge = verified
+            ? '<span style="margin-left:8px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#dcfce7;color:#16a34a;"><i class="fas fa-check-circle"></i> Verified</span>'
+            : '<span style="margin-left:8px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#fef3c7;color:#d97706;">Not verified</span>';
+        var verifyBtn = verified
+            ? ''
+            : '<button type="button" onclick="openPhoneVerifyModal()" style="margin-left:8px;padding:4px 10px;border-radius:6px;border:1px solid #2563eb;background:#2563eb;color:#fff;font-size:11px;font-weight:600;cursor:pointer;">Verify Now</button>';
+        fp.innerHTML = '<span>' + (phoneText) + '</span>' + badge + verifyBtn;
+    }
     var fd = document.getElementById('fieldDOB');
     if (fd) fd.textContent = currentUser.dob ? new Date(currentUser.dob).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not provided';
     var fw = document.getElementById('fieldWallet');
@@ -6928,6 +6938,135 @@ window.blockUser = blockUser;
 window.unblockUser = unblockUser;
 window.requestPushPermission = requestPushPermission;
 window.initPushNotifications = initPushNotifications;
+
+// ========================================
+// Phone OTP verification (lazy-injected modal)
+// ========================================
+function _phoneVerifyEnsureModal() {
+    if (document.getElementById('phoneVerifyModal')) return;
+    var html = ''
+        + '<div class="modal" id="phoneVerifyModal" role="dialog" aria-modal="true" aria-label="Verify Phone">'
+        + '  <div class="modal-content" style="max-width:420px;">'
+        + '    <div class="modal-header">'
+        + '      <h2><i class="fas fa-mobile-alt"></i> Verify Mobile Number</h2>'
+        + '      <button class="modal-close" onclick="closePhoneVerifyModal()" aria-label="Close"><i class="fas fa-times"></i></button>'
+        + '    </div>'
+        + '    <div class="modal-body" id="phoneVerifyBody" style="padding:18px;">'
+        + '      <p style="margin:0 0 12px;color:#64748b;font-size:14px;">Enter your 10-digit Indian mobile number. We\'ll send a one-time code by SMS.</p>'
+        + '      <div class="form-group" id="phoneVerifyStep1">'
+        + '        <label for="phoneVerifyInput">Mobile Number</label>'
+        + '        <input type="tel" id="phoneVerifyInput" placeholder="+91 98765 43210" inputmode="numeric" autocomplete="tel" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:15px;">'
+        + '        <button class="btn btn-primary btn-block" id="phoneVerifySendBtn" onclick="sendPhoneOTP()" style="margin-top:14px;">Send OTP</button>'
+        + '      </div>'
+        + '      <div class="form-group" id="phoneVerifyStep2" style="display:none;">'
+        + '        <p id="phoneVerifyMaskMsg" style="margin:0 0 10px;font-size:13px;color:#16a34a;"></p>'
+        + '        <label for="phoneVerifyOtp">6-digit OTP</label>'
+        + '        <input type="tel" id="phoneVerifyOtp" placeholder="● ● ● ● ● ●" maxlength="6" inputmode="numeric" autocomplete="one-time-code" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:18px;letter-spacing:4px;text-align:center;">'
+        + '        <button class="btn btn-primary btn-block" id="phoneVerifyConfirmBtn" onclick="confirmPhoneOTP()" style="margin-top:14px;">Verify</button>'
+        + '        <button class="btn btn-block" onclick="resetPhoneOTP()" style="margin-top:8px;background:transparent;color:#2563eb;border:none;cursor:pointer;font-size:13px;">Use a different number</button>'
+        + '      </div>'
+        + '      <div id="phoneVerifyError" style="display:none;background:#fee2e2;color:#b91c1c;padding:8px 10px;border-radius:6px;font-size:13px;margin-top:10px;"></div>'
+        + '    </div>'
+        + '  </div>'
+        + '</div>';
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    document.body.appendChild(div.firstChild);
+}
+
+function openPhoneVerifyModal() {
+    _phoneVerifyEnsureModal();
+    resetPhoneOTP();
+    // Pre-fill from currentUser
+    var input = document.getElementById('phoneVerifyInput');
+    if (input && typeof currentUser !== 'undefined' && currentUser && currentUser.phone) {
+        input.value = currentUser.phone;
+    }
+    var modal = document.getElementById('phoneVerifyModal');
+    if (modal) modal.classList.add('active');
+}
+
+function closePhoneVerifyModal() {
+    var modal = document.getElementById('phoneVerifyModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function resetPhoneOTP() {
+    var s1 = document.getElementById('phoneVerifyStep1');
+    var s2 = document.getElementById('phoneVerifyStep2');
+    if (s1) s1.style.display = '';
+    if (s2) s2.style.display = 'none';
+    var err = document.getElementById('phoneVerifyError');
+    if (err) err.style.display = 'none';
+    var otp = document.getElementById('phoneVerifyOtp');
+    if (otp) otp.value = '';
+}
+
+function _phoneVerifyShowError(msg) {
+    var err = document.getElementById('phoneVerifyError');
+    if (err) { err.textContent = msg; err.style.display = 'block'; }
+}
+
+async function sendPhoneOTP() {
+    var phone = (document.getElementById('phoneVerifyInput').value || '').trim();
+    if (!phone) { _phoneVerifyShowError('Enter your mobile number'); return; }
+    var digits = phone.replace(/\D/g, '');
+    if (digits.length < 10) { _phoneVerifyShowError('Enter a valid 10-digit number'); return; }
+
+    var btn = document.getElementById('phoneVerifySendBtn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+        var res = await AuthAPI.sendPhoneOTP(phone);
+        if (res && res.success) {
+            document.getElementById('phoneVerifyStep1').style.display = 'none';
+            document.getElementById('phoneVerifyStep2').style.display = '';
+            document.getElementById('phoneVerifyMaskMsg').textContent =
+                'OTP sent to ' + (res.maskedPhone || phone) + '. Check your messages.';
+            var otpEl = document.getElementById('phoneVerifyOtp');
+            if (otpEl) otpEl.focus();
+        } else {
+            _phoneVerifyShowError((res && res.message) || 'Could not send OTP');
+        }
+    } catch (e) {
+        _phoneVerifyShowError((e && e.message) || 'Network error. Try again.');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Send OTP';
+    }
+}
+
+async function confirmPhoneOTP() {
+    var otp = (document.getElementById('phoneVerifyOtp').value || '').trim();
+    if (!/^\d{6}$/.test(otp)) { _phoneVerifyShowError('Enter the 6-digit OTP'); return; }
+    var btn = document.getElementById('phoneVerifyConfirmBtn');
+    btn.disabled = true; btn.textContent = 'Verifying…';
+    try {
+        var res = await AuthAPI.verifyPhoneOTP(otp);
+        if (res && res.success) {
+            // Persist updated user
+            if (res.user) {
+                try {
+                    currentUser = res.user;
+                    localStorage.setItem('taskearn_user', JSON.stringify(res.user));
+                } catch (_) {}
+            }
+            closePhoneVerifyModal();
+            if (typeof showToast === 'function') showToast('✅ Mobile number verified');
+            if (typeof renderProfileUI === 'function') renderProfileUI();
+        } else {
+            _phoneVerifyShowError((res && res.message) || 'Verification failed');
+        }
+    } catch (e) {
+        _phoneVerifyShowError((e && e.message) || 'Network error. Try again.');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Verify';
+    }
+}
+
+window.openPhoneVerifyModal = openPhoneVerifyModal;
+window.closePhoneVerifyModal = closePhoneVerifyModal;
+window.sendPhoneOTP = sendPhoneOTP;
+window.confirmPhoneOTP = confirmPhoneOTP;
+window.resetPhoneOTP = resetPhoneOTP;
 window.loadRecommendedTasks = loadRecommendedTasks;
 window.enablePushAndSubscribe = enablePushAndSubscribe;
 window.testPushNotification = testPushNotification;

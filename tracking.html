@@ -22,7 +22,7 @@
     
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="mobile-enhancements.css?v=20260502_feedbackapi">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260503_phoneotp">
     
     <style>
         /* Tracking Page Specific Styles */
@@ -746,7 +746,7 @@
         const mapboxToken = window.MAPBOX_TOKEN || 'pk.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
         
         if (mapboxToken.includes('XXX')) {
-            console.warn('⚠️  Mapbox token not configured. Set MAPBOX_TOKEN environment variable.');
+            console.warn('âš ï¸  Mapbox token not configured. Set MAPBOX_TOKEN environment variable.');
         }
         
         mapboxgl.accessToken = mapboxToken;
@@ -899,7 +899,7 @@
                                 <div class="task-select-info">
                                     <h4>${task.title}</h4>
                                     <p>${task.status === 'accepted' ? 'In Progress' : 'Waiting for helper'}</p>
-                                    <span class="task-price">₹${task.price}</span>
+                                    <span class="task-price">â‚¹${task.price}</span>
                                 </div>
                                 <i class="fas fa-chevron-right"></i>
                             </div>
@@ -1100,7 +1100,7 @@
                     </div>
                     <div class="task-detail-row">
                         <span>Payment</span>
-                        <span style="color: var(--success);">₹${data.price}</span>
+                        <span style="color: var(--success);">â‚¹${data.price}</span>
                     </div>
                 </div>
 

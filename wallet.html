@@ -1699,6 +1699,42 @@
                 alert('Your account is suspended until ' + endTime + '. You cannot withdraw during suspension.');
                 return;
             }
+
+            // KYC + Phone verification gate (mirrors backend enforcement).
+            // Pull the freshest user record before deciding to avoid stale localStorage.
+            try {
+                let me = null;
+                if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
+                    const r = await AuthAPI.getCurrentUser();
+                    if (r && r.success && r.user) me = r.user;
+                }
+                if (!me) {
+                    try { me = JSON.parse(localStorage.getItem('taskearn_user') || 'null'); } catch (_) { me = null; }
+                }
+                if (me) {
+                    if (!me.phoneVerified) {
+                        if (confirm('Verify your mobile number before withdrawing.\n\nGo to Profile to verify now?')) {
+                            window.location.href = 'profile.html#kycCard';
+                        }
+                        return;
+                    }
+                    if ((me.kycStatus || 'none') !== 'approved') {
+                        const status = me.kycStatus || 'none';
+                        const msg = status === 'pending'
+                            ? 'Your KYC is under review. You can withdraw once it is approved.'
+                            : status === 'rejected'
+                                ? 'Your previous KYC was rejected. Please re-submit valid documents.'
+                                : 'Complete KYC verification before withdrawing.';
+                        if (confirm(msg + '\n\nGo to Profile to update KYC?')) {
+                            window.location.href = 'profile.html#kycCard';
+                        }
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('Eligibility check failed, falling back to server-side gate:', e);
+            }
+
             // Fetch real balance from server
             try {
                 const result = await WalletAPI.get();

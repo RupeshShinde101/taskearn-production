@@ -327,6 +327,42 @@ async function apiRequest(endpoint, options = {}) {
             };
         }
         
+        // ===== NEW: Reverse fallback =====
+        // If we hit Railway directly (not through proxy) and it failed with a
+        // network error, try the Netlify proxy as a backup. This rescues users
+        // on Indian ISPs (Jio/Airtel/BSNL) where direct Fastly/Railway routing
+        // is intermittently blocked. The proxy goes through Netlify's edge,
+        // which has clean global routing.
+        if (!isUsingProxy && isNetworkError && ON_NETLIFY) {
+            console.warn('⚠️ Direct Railway failed. Retrying via Netlify proxy...');
+            const proxyUrl = `/.netlify/functions/api-proxy/api${endpoint}`;
+            try {
+                const proxyResponse = await fetch(proxyUrl, {
+                    ...options,
+                    headers,
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+                let proxyData;
+                try {
+                    proxyData = await proxyResponse.json();
+                } catch (parseError) {
+                    proxyData = { success: false, message: 'Invalid response' };
+                }
+                console.log('✅ Netlify proxy fallback successful');
+                // Mark this client to use proxy for subsequent requests in this session
+                // (avoids repeating the failed direct call for every API hit)
+                if (proxyResponse.ok) {
+                    API_BASE_URL = '/.netlify/functions/api-proxy/api';
+                    console.log('🔁 Switched API_BASE_URL to proxy for rest of session');
+                }
+                return { success: proxyResponse.ok, status: proxyResponse.status, data: proxyData };
+            } catch (proxyError) {
+                console.error('❌ Netlify proxy fallback also failed:', proxyError.message);
+                // fall through to generic error handler below
+            }
+        }
+
         // For desktop or if proxy failed for other reasons, try fallback
         if (isUsingProxy && isNetworkError && !MOBILE) {
             console.warn('⚠️ Desktop proxy request failed. Falling back to Railway...');

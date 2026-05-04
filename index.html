@@ -1366,29 +1366,37 @@
             // Fetch fresh from backend; update + re-cache if newer
             // Use environment-aware base URL set by api-client.js
             var statsBase = (window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api').replace(/\/$/, '');
+            var onNetlify = /netlify\.app|workmate4u|taskearn/.test(location.hostname);
+
+            function applyStats(data) {
+                if (!data || !data.success) return;
+                var usersEl = document.getElementById('heroStatUsers');
+                var tasksEl = document.getElementById('heroStatTasks');
+                var earnedEl = document.getElementById('heroStatEarned');
+                animateValue(usersEl, data.users, formatCount);
+                animateValue(tasksEl, data.completedTasks, formatCount);
+                animateValue(earnedEl, data.totalEarned, formatRupees);
+                try {
+                    localStorage.setItem(CACHE_KEY, JSON.stringify({
+                        users: data.users,
+                        completedTasks: data.completedTasks,
+                        totalEarned: data.totalEarned,
+                        cachedAt: Date.now()
+                    }));
+                } catch(e) {}
+            }
+
             fetch(statsBase + '/platform-stats')
                 .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    if (!data.success) return;
-                    // Only re-animate if values have changed
-                    var usersEl = document.getElementById('heroStatUsers');
-                    var tasksEl = document.getElementById('heroStatTasks');
-                    var earnedEl = document.getElementById('heroStatEarned');
-                    animateValue(usersEl, data.users, formatCount);
-                    animateValue(tasksEl, data.completedTasks, formatCount);
-                    animateValue(earnedEl, data.totalEarned, formatRupees);
-                    // Save to localStorage for offline use
-                    try {
-                        localStorage.setItem(CACHE_KEY, JSON.stringify({
-                            users: data.users,
-                            completedTasks: data.completedTasks,
-                            totalEarned: data.totalEarned,
-                            cachedAt: Date.now()
-                        }));
-                    } catch(e) {}
-                })
+                .then(applyStats)
                 .catch(function() {
-                    // Backend offline • cached values already shown above, nothing more to do
+                    // Direct call failed (Indian ISP blocking Fastly/Railway is common).
+                    // Retry via Netlify proxy if we are on a Netlify deploy.
+                    if (!onNetlify) return;
+                    fetch('/.netlify/functions/api-proxy/api/platform-stats')
+                        .then(function(r) { return r.json(); })
+                        .then(applyStats)
+                        .catch(function() { /* both failed; cached values stay */ });
                 });
         }
 

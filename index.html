@@ -1364,7 +1364,9 @@
             } catch(e) {}
 
             // Fetch fresh from backend; update + re-cache if newer
-            fetch('https://taskearn-production-production.up.railway.app/api/platform-stats')
+            // Use environment-aware base URL set by api-client.js
+            var statsBase = (window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api').replace(/\/$/, '');
+            fetch(statsBase + '/platform-stats')
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (!data.success) return;

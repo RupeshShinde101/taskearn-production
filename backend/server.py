@@ -7957,10 +7957,13 @@ def platform_stats():
     """Return real-time platform statistics for the hero section (public, cached)."""
     try:
         with get_db() as (cursor, conn):
+            # Count tasks in any "finished work" state. After a task is paid by the
+            # poster it transitions completed -> paid, so we must include both to
+            # avoid the counter shrinking over time.
             cursor.execute(f'''
                 SELECT
                     (SELECT COUNT(*) FROM users) AS total_users,
-                    (SELECT COUNT(*) FROM tasks WHERE status = 'completed') AS completed_tasks,
+                    (SELECT COUNT(*) FROM tasks WHERE status IN ('completed', 'paid')) AS completed_tasks,
                     (SELECT COALESCE(SUM(total_earned), 0) FROM wallets) AS total_earned
             ''')
             row = cursor.fetchone()

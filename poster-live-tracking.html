@@ -153,6 +153,10 @@
                 attribution: '© OpenStreetMap',
                 maxZoom: 19
             }).addTo(map);
+            // Force redraw after layout settles
+            setTimeout(() => { try { map.invalidateSize(); } catch(_){} }, 250);
+            setTimeout(() => { try { map.invalidateSize(); } catch(_){} }, 800);
+            window.addEventListener('resize', () => { try { map.invalidateSize(); } catch(_){} });
         }
 
         function setHelperCard(helper) {

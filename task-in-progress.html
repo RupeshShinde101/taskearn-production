@@ -1185,6 +1185,10 @@
                 }
 
                 console.log('✅ Map initialized successfully');
+                // Force tile redraw after layout/safe-area-insets settle (mobile)
+                setTimeout(() => { try { map.invalidateSize(); } catch(_){} }, 250);
+                setTimeout(() => { try { map.invalidateSize(); } catch(_){} }, 800);
+                window.addEventListener('resize', () => { try { map.invalidateSize(); } catch(_){} });
             } catch (error) {
                 console.error('❌ Map error:', error);
             }

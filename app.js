@@ -2120,6 +2120,9 @@ function initializeMap() {
         setTimeout(() => {
             if (map) map.invalidateSize();
         }, 300);
+        setTimeout(() => { if (map) try { map.invalidateSize(); } catch(_){} }, 1000);
+        // Re-flow tiles on viewport changes (mobile rotation, resize)
+        window.addEventListener('resize', () => { if (map) try { map.invalidateSize(); } catch(_){} });
 
         console.log('✅ Map initialized');
 
@@ -2811,6 +2814,9 @@ function openTaskDetail(taskId) {
             L.marker([task.location.lat, task.location.lng], {
                 icon: getTaskIcon(task.category)
             }).addTo(miniMap);
+            // Modal animates in — Leaflet caches initial 0px container; force redraw after layout settles
+            setTimeout(() => { try { miniMap.invalidateSize(); } catch(_){} }, 250);
+            setTimeout(() => { try { miniMap.invalidateSize(); } catch(_){} }, 600);
         }
     }, 200);
 }

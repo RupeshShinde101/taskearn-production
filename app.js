@@ -4775,13 +4775,24 @@ async function verifyEmailOTP() {
         
         if (data.success) {
             closeModal('emailVerifyModal');
-            showToast('✅ Email verified! Welcome to Workmate4u!');
-            if (currentUser) currentUser.email_verified = true;
-            
+            showToast('✅ Email verified!');
+            if (currentUser) {
+                currentUser.email_verified = true;
+                currentUser.emailVerified = true;
+            }
             updateNavForUser();
             const tasksLoaded = await loadTasksFromServer();
             setTimeout(() => renderDashboard(), 100);
-            setTimeout(showOnboarding, 500);
+
+            // Now require phone verification — chained flow.
+            // Skip if user has already verified phone (e.g. resuming a stalled signup).
+            if (currentUser && !currentUser.phoneVerified && currentUser.phone) {
+                setTimeout(function () {
+                    openPhoneVerifyModal({ phone: currentUser.phone, autoSend: true, required: true });
+                }, 400);
+            } else {
+                setTimeout(showOnboarding, 500);
+            }
         } else {
             showToast('❌ ' + (data.message || 'Invalid code. Please try again.'));
             // Clear OTP inputs
@@ -6644,6 +6655,13 @@ async function submitCompleteProfile(e) {
             saveCurrentSession(currentUser);
             closeModal('completeProfileModal');
             showToast('✅ Profile updated successfully!');
+            // After Google signup completes profile with a phone, ask user
+            // to verify it via OTP. Required to enable withdrawals.
+            if (currentUser && currentUser.phone && !currentUser.phoneVerified) {
+                setTimeout(function () {
+                    openPhoneVerifyModal({ phone: currentUser.phone, autoSend: true, required: true });
+                }, 400);
+            }
         } else {
             showToast('❌ ' + ((result.data && result.data.message) || 'Update failed'), 'error');
         }
@@ -6974,16 +6992,23 @@ function _phoneVerifyEnsureModal() {
     document.body.appendChild(div.firstChild);
 }
 
-function openPhoneVerifyModal() {
+function openPhoneVerifyModal(opts) {
+    opts = opts || {};
     _phoneVerifyEnsureModal();
     resetPhoneOTP();
-    // Pre-fill from currentUser
+    // Pre-fill from currentUser or explicit phone
     var input = document.getElementById('phoneVerifyInput');
-    if (input && typeof currentUser !== 'undefined' && currentUser && currentUser.phone) {
-        input.value = currentUser.phone;
-    }
+    var phone = opts.phone || (typeof currentUser !== 'undefined' && currentUser && currentUser.phone) || '';
+    if (input && phone) input.value = phone;
+    // If forced (post-signup) hide the close button so the user can't skip easily
+    var closeBtn = document.querySelector('#phoneVerifyModal .modal-close');
+    if (closeBtn) closeBtn.style.display = opts.required ? 'none' : '';
     var modal = document.getElementById('phoneVerifyModal');
     if (modal) modal.classList.add('active');
+    // Auto-send OTP if requested and we have a phone
+    if (opts.autoSend && phone) {
+        setTimeout(function () { sendPhoneOTP(); }, 200);
+    }
 }
 
 function closePhoneVerifyModal() {
@@ -7052,6 +7077,14 @@ async function confirmPhoneOTP() {
             closePhoneVerifyModal();
             if (typeof showToast === 'function') showToast('✅ Mobile number verified');
             if (typeof renderProfileUI === 'function') renderProfileUI();
+            // If this was the post-signup chained flow, show onboarding next.
+            if (typeof showOnboarding === 'function' &&
+                document.querySelector('#phoneVerifyModal .modal-close[style*="none"]') === null) {
+                // (close was hidden during the required flow; once verified, run onboarding)
+            }
+            if (typeof showOnboarding === 'function') {
+                setTimeout(showOnboarding, 300);
+            }
         } else {
             _phoneVerifyShowError((res && res.message) || 'Verification failed');
         }

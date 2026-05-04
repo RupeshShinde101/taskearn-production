@@ -4052,6 +4052,153 @@ async function completeTask(taskId) {
     renderDashboard();
 }
 
+// =============================================================
+// RATE & REVIEW MODAL — used by both poster and helper after a
+// task is paid/completed. Calls POST /api/task/<id>/rate.
+// =============================================================
+function openRateUserModal(opts) {
+    opts = opts || {};
+    var taskId = opts.taskId;
+    var taskTitle = opts.taskTitle || 'this task';
+    var otherName = opts.otherName || 'the other party';
+    var role = opts.role || 'helper'; // 'helper' (rating helper) | 'poster'
+    if (!taskId) { showToast('Missing task ID for rating'); return; }
+
+    // Has the current user already rated this task locally? Avoid re-prompts.
+    try {
+        var ratedKey = 'rated_tasks_' + (currentUser && currentUser.id ? currentUser.id : 'anon');
+        var rated = JSON.parse(localStorage.getItem(ratedKey) || '[]');
+        if (rated.indexOf(String(taskId)) !== -1) return;
+    } catch (e) {}
+
+    var existing = document.getElementById('rateUserOverlay');
+    if (existing) existing.remove();
+
+    var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    var card = isDark ? '#1e293b' : '#ffffff';
+    var titleC = isDark ? '#f1f5f9' : '#1e293b';
+    var bodyC = isDark ? '#cbd5e1' : '#64748b';
+    var inputBg = isDark ? '#0f172a' : '#f8fafc';
+    var inputBorder = isDark ? '#334155' : '#e2e8f0';
+    var skipBg = isDark ? '#334155' : '#f1f5f9';
+    var skipC = isDark ? '#f1f5f9' : '#64748b';
+
+    var overlay = document.createElement('div');
+    overlay.id = 'rateUserOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10060;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+    function starRow(name, label) {
+        var html = '<div style="margin-bottom:14px;text-align:left;">' +
+            '<div style="font-size:13px;color:' + bodyC + ';margin-bottom:6px;font-weight:500;">' + label + '</div>' +
+            '<div class="rate-stars" data-field="' + name + '" style="display:flex;gap:6px;">';
+        for (var i = 1; i <= 5; i++) {
+            html += '<i class="far fa-star rate-star" data-val="' + i + '" style="cursor:pointer;font-size:24px;color:#f59e0b;"></i>';
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    overlay.innerHTML = '<div style="background:' + card + ';border-radius:18px;max-width:440px;width:100%;padding:24px;box-shadow:0 12px 36px rgba(0,0,0,0.35);max-height:90vh;overflow-y:auto;">' +
+        '<div style="text-align:center;margin-bottom:18px;">' +
+            '<div style="width:60px;height:60px;border-radius:50%;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">' +
+                '<i class="fas fa-star" style="font-size:26px;color:#f59e0b;"></i>' +
+            '</div>' +
+            '<h3 style="color:' + titleC + ';margin-bottom:6px;font-size:1.2rem;">Rate ' + escapeHtml(otherName) + '</h3>' +
+            '<p style="color:' + bodyC + ';font-size:13px;">How was your experience with "' + escapeHtml(taskTitle) + '"?</p>' +
+        '</div>' +
+        starRow('rating', 'Overall rating') +
+        starRow('punctuality', 'Punctuality') +
+        starRow('communication', 'Communication') +
+        starRow('quality', role === 'poster' ? 'Task clarity & fairness' : 'Quality of work') +
+        '<div style="margin-bottom:14px;text-align:left;">' +
+            '<div style="font-size:13px;color:' + bodyC + ';margin-bottom:6px;font-weight:500;">Write a short review (optional)</div>' +
+            '<textarea id="rateReviewText" maxlength="500" rows="3" placeholder="Share your honest experience..." ' +
+                'style="width:100%;padding:10px 12px;background:' + inputBg + ';color:' + titleC + ';border:1px solid ' + inputBorder + ';border-radius:10px;font-family:inherit;font-size:14px;resize:vertical;"></textarea>' +
+        '</div>' +
+        '<div style="display:flex;gap:10px;">' +
+            '<button id="rateSkipBtn" style="flex:1;background:' + skipBg + ';color:' + skipC + ';padding:11px;border-radius:10px;font-weight:600;border:none;cursor:pointer;">Skip</button>' +
+            '<button id="rateSubmitBtn" style="flex:2;background:linear-gradient(135deg,#6366f1,#0ea5e9);color:#fff;padding:11px;border-radius:10px;font-weight:600;border:none;cursor:pointer;">Submit Review</button>' +
+        '</div>' +
+    '</div>';
+    document.body.appendChild(overlay);
+
+    var values = { rating: 5, punctuality: 5, communication: 5, quality: 5 };
+    function paint() {
+        overlay.querySelectorAll('.rate-stars').forEach(function(row) {
+            var field = row.getAttribute('data-field');
+            var v = values[field] || 0;
+            row.querySelectorAll('.rate-star').forEach(function(s) {
+                var sv = parseInt(s.getAttribute('data-val'), 10);
+                s.className = 'rate-star ' + (sv <= v ? 'fas fa-star' : 'far fa-star');
+            });
+        });
+    }
+    overlay.querySelectorAll('.rate-star').forEach(function(s) {
+        s.addEventListener('click', function() {
+            var row = s.closest('.rate-stars');
+            var field = row.getAttribute('data-field');
+            values[field] = parseInt(s.getAttribute('data-val'), 10);
+            paint();
+        });
+    });
+    paint();
+
+    document.getElementById('rateSkipBtn').onclick = function() { overlay.remove(); };
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    document.getElementById('rateSubmitBtn').onclick = async function() {
+        var btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+        var review = (document.getElementById('rateReviewText').value || '').trim();
+        try {
+            var res;
+            if (typeof RatingsAPI !== 'undefined' && RatingsAPI.rate) {
+                res = await RatingsAPI.rate(taskId, values.rating, review, {
+                    punctuality: values.punctuality,
+                    communication: values.communication,
+                    quality: values.quality
+                });
+            } else {
+                var token = localStorage.getItem('taskearn_token');
+                var apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) || 'https://taskearn-production-production.up.railway.app/api';
+                var resp = await fetch(apiBase + '/task/' + taskId + '/rate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': token ? ('Bearer ' + token) : '' },
+                    body: JSON.stringify({ rating: values.rating, review: review, punctuality: values.punctuality, communication: values.communication, quality: values.quality })
+                });
+                res = await resp.json();
+            }
+            if (res && (res.success || res.message === 'Rating submitted successfully')) {
+                showToast('✅ Thanks for your review!');
+                try {
+                    var key = 'rated_tasks_' + (currentUser && currentUser.id ? currentUser.id : 'anon');
+                    var arr = JSON.parse(localStorage.getItem(key) || '[]');
+                    arr.push(String(taskId));
+                    localStorage.setItem(key, JSON.stringify(arr));
+                } catch(e) {}
+                overlay.remove();
+                try { if (typeof loadProfileReviews === 'function') loadProfileReviews(); } catch(e) {}
+            } else {
+                var msg = (res && res.message) ? res.message : 'Could not submit rating';
+                if (msg === 'Already rated') {
+                    showToast('You have already rated this task.');
+                    overlay.remove();
+                } else {
+                    showToast('❌ ' + msg);
+                    btn.disabled = false;
+                    btn.innerHTML = 'Submit Review';
+                }
+            }
+        } catch (err) {
+            console.error('Rating submit failed:', err);
+            showToast('❌ Could not submit rating. Try again later.');
+            btn.disabled = false;
+            btn.innerHTML = 'Submit Review';
+        }
+    };
+}
+window.openRateUserModal = openRateUserModal;
+
 /**
  * Show "Payment Done" pop-up for the poster after paying
  */
@@ -4091,8 +4238,8 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
                 </div>
             </div>
             
-            <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard();">
-                <i class="fas fa-check"></i> Done
+            <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard(); openRateUserModal({ taskId: ${task.id}, taskTitle: ${JSON.stringify(task.title || '')}, otherName: ${JSON.stringify((task.acceptedBy && task.acceptedBy.name) || (task.accepted_by_name) || 'the helper')}, role: 'poster' });">
+                <i class="fas fa-star"></i> Rate Helper
             </button>
         </div>
     `;
@@ -4162,8 +4309,8 @@ function checkAndShowPaymentReceived() {
                         </div>
                     </div>
                     
-                    <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard();">
-                        <i class="fas fa-check"></i> Great!
+                    <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard(); openRateUserModal({ taskId: ${task.id}, taskTitle: ${JSON.stringify(task.title || '')}, otherName: ${JSON.stringify((task.postedBy && task.postedBy.name) || 'the poster')}, role: 'helper' });">
+                        <i class="fas fa-star"></i> Rate Poster
                     </button>
                 </div>
             `;

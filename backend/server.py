@@ -359,7 +359,104 @@ def screen_task_content(title, description, category):
     if _re.search(r'(₹|rs\.?|inr)\s*\d{1,3}\s*(per|each|/)\s*(email|account|signup|sign[- ]?up|otp|click|like|follower|review)', text):
         return False, 'Per-unit micro-payments for accounts/OTPs/clicks/reviews are not allowed.'
 
+    # Additional hard-block scam categories
+    extra_blocks = [
+        # Advance-fee / fake-job scams
+        (r'\b(registration|joining|training|security|refundable)\s*(fee|deposit|amount|charge)\b',
+         'Charging registration/security/joining fees from helpers is prohibited.'),
+        (r'\b(pay|deposit|send|transfer)\b[^.]{0,30}\b(first|upfront|in\s*advance|before\s*start)\b',
+         'Tasks requiring upfront payment from the helper are not allowed.'),
+
+        # Money / value transfer scams
+        (r'\b(gift\s*card|itunes\s*card|amazon\s*voucher|paytm\s*voucher|google\s*play\s*card)\b',
+         'Gift-card / voucher purchase tasks are not allowed (common scam vector).'),
+        (r'\b(western\s*union|moneygram|wire\s*transfer)\b',
+         'Wire-transfer / money-remittance tasks are not allowed.'),
+        (r'\b(double|2x|triple)\s*your\s*(money|investment|amount)\b',
+         'Investment doubling / get-rich-quick tasks are prohibited.'),
+        (r'\b(guaranteed)\s*(returns?|profit|income|earning)\b',
+         'Guaranteed-return investment tasks are prohibited.'),
+        (r'\b(mlm|multi[- ]level|pyramid|ponzi|chain\s*scheme|matrix\s*scheme)\b',
+         'MLM / pyramid / chain schemes are prohibited.'),
+        (r'\b(recharge|deposit)\b[^.]{0,20}\b(usdt|btc|trx|binance|crypto)\b',
+         'Crypto recharge / deposit tasks are prohibited.'),
+
+        # Account / OTP / KYC theft (additional patterns)
+        (r'\bshare\s*(your\s*)?(otp|cvv|pin|password|net[- ]?banking|atm\s*pin)\b',
+         'Sharing of OTP/PIN/CVV/banking credentials is strictly prohibited.'),
+        (r'\b(give|tell|send)\s*(me\s*)?(your\s*)?(aadhaar|pan|bank|otp|cvv|pin)\b[^.]{0,20}(number|details|copy|photo)?',
+         'Asking helpers for Aadhaar/PAN/bank/OTP details is prohibited.'),
+
+        # Fake documents / fraudulent services
+        (r'\b(fake|duplicate|forged?)\s*(aadhaar|pan|certificate|degree|marksheet|id|licence|license|passport)\b',
+         'Fake/forged document tasks are illegal and prohibited.'),
+        (r'\b(buy|sell)\s*(fake|stolen)\b',
+         'Sale of fake/stolen goods is prohibited.'),
+
+        # Misleading "earn from home" / no-work scams
+        (r'\bearn\s*(₹|rs\.?|inr)?\s*\d{3,}\s*(per\s*)?(day|hour|hr)\b[^.]{0,40}\b(home|mobile|copy[- ]paste|just\s*refer|no\s*work)\b',
+         'Misleading earn-from-home / no-work tasks are not allowed.'),
+        (r'\b(get\s*rich\s*quick|easy\s*money|no\s*work\s*required)\b',
+         'Misleading earnings claims are not allowed.'),
+
+        # Platform-bypass / cash-only outside the app
+        (r'\b(pay|paid|payment)\b[^.]{0,15}\b(outside|off)\b[^.]{0,15}\b(app|platform|workmate)\b',
+         'Tasks asking to pay outside the platform are not allowed.'),
+        (r'\b(skip|bypass|avoid)\b[^.]{0,15}\b(commission|platform|service\s*charge)\b',
+         'Bypassing platform commission is not allowed.'),
+        (r'\bcash\s*only\b[^.]{0,30}\b(outside|hand|direct)\b',
+         'Cash-only / off-platform payment tasks are not allowed.'),
+
+        # Weapons / drugs / illegal services (extra)
+        (r'\b(gun|pistol|firearm|ammunition|knife\s*for\s*sale|country\s*made)\b',
+         'Weapons-related tasks are prohibited.'),
+        (r'\b(mdma|lsd|ganja|hashish|opium|brown\s*sugar)\b',
+         'Drug-related tasks are prohibited.'),
+    ]
+    for rx, reason in extra_blocks:
+        try:
+            if _re.search(rx, text, _re.IGNORECASE):
+                return False, reason
+        except _re.error:
+            continue
+
+    # Phone / email in title or description → forces in-app contact (anti-bypass)
+    if _re.search(r'(?:\+?91[\s\-]?)?[6-9]\d{9}', text):
+        return False, 'Sharing phone numbers in the task is not allowed. Helpers can contact you through in-app chat.'
+    if _re.search(r'[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}', text):
+        return False, 'Sharing email addresses in the task is not allowed. Use in-app chat instead.'
+    # Whatsapp/telegram links
+    if _re.search(r'\b(?:wa\.me|t\.me|telegram\.me|chat\.whatsapp\.com)\b', text):
+        return False, 'External chat links (WhatsApp/Telegram) are not allowed in tasks.'
+
     return True, ''
+
+
+def flag_task_content(title, description):
+    """Soft-flag suspicious-but-ambiguous tasks for admin review.
+    Returns (flagged: bool, reason: str). Task is still posted; admin sees it in fraud alerts.
+    """
+    import re as _re
+    text = ' '.join([str(title or ''), str(description or '')]).lower()
+    if not text.strip():
+        return False, ''
+
+    soft_patterns = [
+        (r'\b(deposit|advance|token\s*amount)\b', 'Mentions deposit/advance — review for advance-fee scam.'),
+        (r'\b(refer|referral)\b[^.]{0,20}\b(earn|bonus|reward)\b', 'Referral-earning language — possible MLM.'),
+        (r'\b(work\s*from\s*home|wfh)\b[^.]{0,30}\b(earn|income|salary|₹|rs)\b', 'Generic WFH earnings claim — review.'),
+        (r'\b(easy|simple)\s*(work|task|job)\b[^.]{0,20}\b(high|good)\s*(pay|earnings?)\b', 'Vague high-pay easy-work claim.'),
+        (r'\b(urgent|immediate)\s*(payment|cash|money)\b', 'Urgent-payment language — review for pressure tactics.'),
+        (r'\b(survey|surveys)\b[^.]{0,20}\b(earn|pay|reward)\b', 'Paid-survey task — verify legitimacy.'),
+        (r'\b(data\s*entry)\b[^.]{0,30}\b(₹|rs\.?|inr)?\s*\d{3,}', 'High-pay data-entry — common scam template.'),
+    ]
+    for rx, reason in soft_patterns:
+        try:
+            if _re.search(rx, text, _re.IGNORECASE):
+                return True, reason
+        except _re.error:
+            continue
+    return False, ''
 
 
 def get_service_charge(category):
@@ -1710,7 +1807,12 @@ def create_task():
                 'policyViolation': True,
                 'reason': reason
             }), 422
-        
+
+        # Soft-flag (post still goes through, but admin sees it for review)
+        soft_flagged, soft_reason = flag_task_content(data.get('title', ''), data.get('description', ''))
+        if soft_flagged:
+            print(f"⚠️  Task flagged for admin review: {soft_reason}")
+
         print(f"📝 Creating task: '{data.get('title')}'")
         print(f"   Category: {data.get('category')}")
         print(f"   Description: {data.get('description')}")
@@ -1730,13 +1832,21 @@ def create_task():
             
             print(f"   Posted at: {posted_at}")
             print(f"   Expires at: {expires_at}")
-            
+
+            # Lazily ensure flag_reason column exists (used for admin soft-flag review)
+            try:
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS flag_reason TEXT")
+                conn.commit()
+            except Exception:
+                try: conn.rollback()
+                except Exception: pass
+
             # Insert task
             print('   Executing INSERT query...')
             cursor.execute(f'''
                 INSERT INTO tasks (title, description, category, location_lat, location_lng, 
-                                  location_address, price, service_charge, posted_by, posted_at, expires_at, status)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active')
+                                  location_address, price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
             ''', (
                 html_escape(data['title']),
                 html_escape(data['description']),
@@ -1748,7 +1858,8 @@ def create_task():
                 service_charge,
                 request.user_id,
                 posted_at,
-                expires_at
+                expires_at,
+                soft_reason if soft_flagged else None
             ))
             print('   ✅ INSERT query executed successfully')
             

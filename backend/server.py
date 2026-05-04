@@ -1115,42 +1115,65 @@ def send_phone_otp():
     """Generate + send a 6-digit OTP to the user's phone.
     Body: {phone?: string}  — if omitted, uses the phone already on the user record.
     """
-    data = request.get_json(silent=True) or {}
-    raw_phone = data.get('phone') or ''
-    user_id = request.user_id
-
-    user = get_user_by_id(user_id)
-    if not user:
-        return jsonify({'success': False, 'message': 'User not found'}), 404
-
-    phone = _normalize_phone(raw_phone) or _normalize_phone(user.get('phone'))
-    if not phone:
-        return jsonify({'success': False, 'message': 'Phone number is required'}), 400
-
-    # Generate 6-digit OTP
-    otp = ''.join(secrets.choice('0123456789') for _ in range(6))
-    expires_at = datetime.datetime.now() + datetime.timedelta(minutes=10)
-
-    conn = get_db()
-    cursor = conn.cursor()
     try:
-        # Invalidate prior unused OTPs for this user
-        cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE user_id = {PH} AND used = FALSE", (user_id,))
-        cursor.execute(
-            f"INSERT INTO phone_otps (user_id, phone, otp, expires_at) VALUES ({PH}, {PH}, {PH}, {PH})",
-            (user_id, phone, otp, expires_at),
-        )
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+        data = request.get_json(silent=True) or {}
+        raw_phone = data.get('phone') or ''
+        user_id = request.user_id
 
-    ok, msg = _send_sms_otp(phone, otp)
-    if not ok:
-        return jsonify({'success': False, 'message': msg}), 502
+        user = get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
 
-    masked = phone[:3] + '****' + phone[-2:]
-    return jsonify({'success': True, 'message': f'OTP sent to {masked}', 'maskedPhone': masked})
+        phone = _normalize_phone(raw_phone) or _normalize_phone(user.get('phone'))
+        if not phone:
+            return jsonify({'success': False, 'message': 'Phone number is required'}), 400
+
+        # Generate 6-digit OTP
+        otp = ''.join(secrets.choice('0123456789') for _ in range(6))
+        expires_at = datetime.datetime.now() + datetime.timedelta(minutes=10)
+
+        conn = get_db()
+        cursor = conn.cursor()
+        try:
+            # Ensure phone_otps table exists (defensive — covers DBs that pre-date the migration)
+            try:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS phone_otps (
+                        id SERIAL PRIMARY KEY,
+                        user_id VARCHAR(20) NOT NULL,
+                        phone VARCHAR(20) NOT NULL,
+                        otp VARCHAR(10) NOT NULL,
+                        attempts INT DEFAULT 0,
+                        used BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        expires_at TIMESTAMP NOT NULL
+                    )
+                ''')
+                conn.commit()
+            except Exception as _e:
+                print(f"[PHONE-OTP] table create check: {_e}", flush=True)
+                conn.rollback()
+            # Invalidate prior unused OTPs for this user
+            cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE user_id = {PH} AND used = FALSE", (user_id,))
+            cursor.execute(
+                f"INSERT INTO phone_otps (user_id, phone, otp, expires_at) VALUES ({PH}, {PH}, {PH}, {PH})",
+                (user_id, phone, otp, expires_at),
+            )
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+        ok, msg = _send_sms_otp(phone, otp)
+        if not ok:
+            return jsonify({'success': False, 'message': msg}), 502
+
+        masked = phone[:3] + '****' + phone[-2:]
+        return jsonify({'success': True, 'message': f'OTP sent to {masked}', 'maskedPhone': masked})
+    except Exception as e:
+        import traceback
+        print(f"[PHONE-OTP-ERR] {e}\n{traceback.format_exc()}", flush=True)
+        return jsonify({'success': False, 'message': f'Server error: {str(e)[:200]}'}), 500
 
 
 @app.route('/api/auth/verify-phone-otp', methods=['POST'])
@@ -1165,51 +1188,60 @@ def verify_phone_otp():
         return jsonify({'success': False, 'message': 'Enter the 6-digit OTP'}), 400
 
     user_id = request.user_id
-    conn = get_db()
-    cursor = conn.cursor()
     try:
-        cursor.execute(
-            f"SELECT id, phone, otp, attempts, used, expires_at FROM phone_otps "
-            f"WHERE user_id = {PH} AND used = FALSE ORDER BY id DESC LIMIT 1",
-            (user_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return jsonify({'success': False, 'message': 'No OTP requested. Tap Send OTP first.'}), 400
-        rec = dict_from_row(row)
-        if rec['attempts'] >= 5:
-            cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
-            conn.commit()
-            return jsonify({'success': False, 'message': 'Too many attempts. Request a new OTP.'}), 400
-        # Compare expiry — handle both datetime and string
-        exp = rec['expires_at']
-        if isinstance(exp, str):
-            try:
-                exp = datetime.datetime.fromisoformat(exp)
-            except Exception:
-                exp = None
-        if exp and datetime.datetime.now() > exp:
-            cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
-            conn.commit()
-            return jsonify({'success': False, 'message': 'OTP expired. Request a new one.'}), 400
-        if rec['otp'] != otp:
-            cursor.execute(f"UPDATE phone_otps SET attempts = attempts + 1 WHERE id = {PH}", (rec['id'],))
-            conn.commit()
-            return jsonify({'success': False, 'message': 'Incorrect OTP'}), 400
+        conn = get_db()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                f"SELECT id, phone, otp, attempts, used, expires_at FROM phone_otps "
+                f"WHERE user_id = {PH} AND used = FALSE ORDER BY id DESC LIMIT 1",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': 'No OTP requested. Tap Send OTP first.'}), 400
+            # Build dict from known SELECT order (avoid dict_from_row dependency)
+            rec = {
+                'id': row[0], 'phone': row[1], 'otp': row[2],
+                'attempts': row[3] or 0, 'used': row[4], 'expires_at': row[5],
+            }
+            if rec['attempts'] >= 5:
+                cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
+                conn.commit()
+                return jsonify({'success': False, 'message': 'Too many attempts. Request a new OTP.'}), 400
+            # Compare expiry — handle both datetime and string
+            exp = rec['expires_at']
+            if isinstance(exp, str):
+                try:
+                    exp = datetime.datetime.fromisoformat(exp)
+                except Exception:
+                    exp = None
+            if exp and datetime.datetime.now() > exp:
+                cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
+                conn.commit()
+                return jsonify({'success': False, 'message': 'OTP expired. Request a new one.'}), 400
+            if rec['otp'] != otp:
+                cursor.execute(f"UPDATE phone_otps SET attempts = attempts + 1 WHERE id = {PH}", (rec['id'],))
+                conn.commit()
+                return jsonify({'success': False, 'message': 'Incorrect OTP'}), 400
 
-        # Success
-        cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
-        cursor.execute(
-            f"UPDATE users SET phone = {PH}, phone_verified = TRUE WHERE id = {PH}",
-            (rec['phone'], user_id),
-        )
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+            # Success
+            cursor.execute(f"UPDATE phone_otps SET used = TRUE WHERE id = {PH}", (rec['id'],))
+            cursor.execute(
+                f"UPDATE users SET phone = {PH}, phone_verified = TRUE WHERE id = {PH}",
+                (rec['phone'], user_id),
+            )
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
 
-    user = get_user_by_id(user_id)
-    return jsonify({'success': True, 'message': 'Phone verified', 'user': user_to_response(user)})
+        user = get_user_by_id(user_id)
+        return jsonify({'success': True, 'message': 'Phone verified', 'user': user_to_response(user)})
+    except Exception as e:
+        import traceback
+        print(f"[VERIFY-PHONE-OTP-ERR] {e}\n{traceback.format_exc()}", flush=True)
+        return jsonify({'success': False, 'message': f'Server error: {str(e)[:200]}'}), 500
 
 
 @app.route('/api/auth/verify-otp', methods=['POST'])

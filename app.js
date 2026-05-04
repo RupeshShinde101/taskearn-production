@@ -6477,12 +6477,19 @@ async function initGoogleSignIn() {
     
     if (!window.GOOGLE_CLIENT_ID) {
         try {
-            // Use direct fetch to avoid apiRequest auth issues
-            const API_BASE = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
-            const resp = await fetch(API_BASE + '/config/google-client-id');
-            const configResp = await resp.json();
+            // Use apiRequest so the Netlify proxy fallback kicks in if the
+            // direct Railway URL fails to resolve (Indian ISP blocks etc).
+            let configResp = null;
+            if (typeof apiRequest === 'function') {
+                const r = await apiRequest('/config/google-client-id');
+                configResp = r && r.data ? r.data : null;
+            } else {
+                const API_BASE = window.API_BASE_URL || '/.netlify/functions/api-proxy/api';
+                const resp = await fetch(API_BASE + '/config/google-client-id');
+                configResp = await resp.json();
+            }
             console.log('📦 Google client ID response:', configResp);
-            if (configResp.success && configResp.clientId) {
+            if (configResp && configResp.success && configResp.clientId) {
                 window.GOOGLE_CLIENT_ID = configResp.clientId;
             } else {
                 console.warn('❌ Google client ID not available');

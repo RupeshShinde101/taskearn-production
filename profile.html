@@ -36,7 +36,6 @@
                 <div class="notification-dropdown" id="notificationDropdown"><div class="notification-header"><h4>Notifications</h4><button onclick="event.stopPropagation(); clearAllNotifications()" class="clear-all-btn">Clear All</button></div><div class="notification-list" id="notificationList"><div class="no-notifications"><i class="fas fa-bell-slash"></i><p>No notifications yet</p></div></div><div class="notification-footer"><a href="notifications.html">View All Notifications</a></div></div>
             </div>
             <div class="nav-buttons"><button class="btn btn-outline" onclick="openModal('loginModal')">Login</button><button class="btn btn-primary" onclick="openModal('signupModal')">Sign Up</button></div>
-            <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
             <div class="hamburger" onclick="toggleMobileMenu()"><span></span><span></span><span></span></div>
         </div>
     </nav>
@@ -254,6 +253,25 @@
                         </div>
                         <button class="btn btn-danger btn-block" onclick="handleLogout()" style="margin-top: 16px;"><i class="fas fa-sign-out-alt"></i> Logout</button>
                         <button class="btn btn-block" onclick="confirmDeleteAccount()" style="margin-top: 10px; background:#fee2e2; color:#ef4444; border:1px solid #fca5a5; padding:10px; border-radius:8px; cursor:pointer; font-size:13px;"><i class="fas fa-trash-alt"></i> Delete My Account</button>
+                    </div>
+                </div>
+
+                <!-- Appearance Card -->
+                <div class="profile-card">
+                    <div class="profile-card-header">
+                        <div class="profile-card-title"><i class="fas fa-palette"></i> Appearance</div>
+                    </div>
+                    <div class="profile-card-body">
+                        <div class="profile-field" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                            <div>
+                                <div class="profile-field-label" style="margin:0;">Theme</div>
+                                <div style="font-size:12px;color:#64748b;margin-top:2px;">Switch between light and dark mode</div>
+                            </div>
+                            <div style="display:flex;gap:8px;">
+                                <button type="button" id="themeBtnLight" class="btn btn-sm" onclick="setTheme('light')" style="padding:8px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#1e293b;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:6px;"><i class="fas fa-sun"></i> Light</button>
+                                <button type="button" id="themeBtnDark" class="btn btn-sm" onclick="setTheme('dark')" style="padding:8px 14px;border-radius:8px;border:1px solid #475569;background:#1e293b;color:#f1f5f9;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:6px;"><i class="fas fa-moon"></i> Dark</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

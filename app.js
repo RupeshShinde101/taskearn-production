@@ -28,7 +28,32 @@ function toggleDarkMode() {
     localStorage.setItem('theme', isDark ? 'light' : 'dark');
     var icons = document.querySelectorAll('.dark-mode-toggle i');
     icons.forEach(function(ic) { ic.className = isDark ? 'fas fa-moon' : 'fas fa-sun'; });
+    if (typeof updateThemeButtons === 'function') updateThemeButtons();
 }
+
+// Explicit setter used by the Appearance card on profile.html
+function setTheme(mode) {
+    if (mode !== 'light' && mode !== 'dark') return;
+    document.documentElement.setAttribute('data-theme', mode);
+    localStorage.setItem('theme', mode);
+    updateThemeButtons();
+}
+
+function updateThemeButtons() {
+    var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    var lb = document.getElementById('themeBtnLight');
+    var db = document.getElementById('themeBtnDark');
+    if (lb) {
+        lb.style.outline = current === 'light' ? '2px solid #3b82f6' : 'none';
+        lb.style.outlineOffset = '2px';
+    }
+    if (db) {
+        db.style.outline = current === 'dark' ? '2px solid #60a5fa' : 'none';
+        db.style.outlineOffset = '2px';
+    }
+}
+document.addEventListener('DOMContentLoaded', function(){ try { updateThemeButtons(); } catch(_){} });
+window.setTheme = setTheme;
 
 // Global State
 let map = null;

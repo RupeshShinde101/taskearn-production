@@ -1874,7 +1874,7 @@ async function refreshWalletBalance() {
                     clearDebtSuspension();
                     console.log('✅ Debt cleared! Wallet balance >= 0');
                     showToast('🎉 Your debt has been cleared! Account restored.', 'success');
-                } else if (walletData.balance <= -500) {
+                } else if (walletData.balance < 0) {
                     setDebtSuspension(Math.abs(walletData.balance));
                 }
                 
@@ -3187,13 +3187,13 @@ function showDebtSuspendedPopup() {
     const amount = getDebtAmount();
     const msgEl = document.getElementById('debtSuspendedMessage');
     const amountEl = document.getElementById('debtSuspendedAmount');
-    if (msgEl) msgEl.textContent = 'Your wallet balance has reached -₹500 or below. You cannot accept tasks or withdraw funds until your balance is back to ₹0 or above.';
+    if (msgEl) msgEl.textContent = 'Your wallet balance is negative. You cannot accept tasks or withdraw funds until your balance is back to ₹0 or above. Add the outstanding amount to your wallet to restore your account.';
     if (amountEl) amountEl.textContent = '₹' + amount.toFixed(2);
     const modal = document.getElementById('debtSuspendedModal');
     if (modal) {
         openModal('debtSuspendedModal');
     } else {
-        showToast('⚠️ Your account is debt-suspended (balance below -₹500). Add money to bring balance to ₹0.', 'error');
+        showToast('⚠️ Your account is suspended due to a negative wallet balance. Add money to bring balance to ₹0.', 'error');
     }
 }
 

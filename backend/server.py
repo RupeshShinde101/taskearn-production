@@ -344,7 +344,7 @@ def user_to_response(user):
     wallet = get_or_create_wallet(user['id'])
     wallet_balance = float(wallet.get('balance', 0))
     wallet_low = wallet_balance < 100
-    debt_suspended = wallet_balance <= -500
+    debt_suspended = wallet_balance < 0
     
     # Check admin suspension (is_suspended=True without suspended_until)
     is_suspended = bool(user.get('is_suspended', False))
@@ -1784,8 +1784,8 @@ def accept_task(task_id):
         
         # Check debt suspension
         wallet = get_or_create_wallet(request.user_id)
-        if float(wallet.get('balance', 0)) <= -500:
-            return jsonify({'success': False, 'message': 'Your wallet balance is below -₹500. Add money to restore task acceptance.'}), 403
+        if float(wallet.get('balance', 0)) < 0:
+            return jsonify({'success': False, 'message': 'Your wallet balance is negative. Add money to bring it back to ₹0 to restore task acceptance.'}), 403
 
         with get_db() as (cursor, conn):
             # Check if task exists and is active
@@ -3189,7 +3189,7 @@ def add_money_to_wallet():
         'message': f'₹{amount} added successfully' + (f' + ₹{cashback:.2f} cashback!' if cashback > 0 else ''),
         'newBalance': new_balance,
         'cashback': cashback,
-        'debtSuspended': new_balance <= -500,
+        'debtSuspended': new_balance < 0,
         'debtCleared': debt_cleared
     })
 
@@ -3264,7 +3264,7 @@ def deduct_penalty():
         
         conn.commit()
     
-    debt_suspended = new_balance <= -500
+    debt_suspended = new_balance < 0
     print(f"💸 Penalty ₹{amount} deducted from user {request.user_id}. New balance: ₹{new_balance:.2f}. Debt suspended: {debt_suspended}")
     
     return jsonify({
@@ -3310,7 +3310,7 @@ def earn_to_wallet():
         'success': True,
         'message': f'₹{amount} added to earnings',
         'newBalance': new_balance,
-        'debtSuspended': new_balance <= -500
+        'debtSuspended': new_balance < 0
     })
 
 

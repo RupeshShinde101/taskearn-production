@@ -2838,9 +2838,11 @@ async function viewUserReviews(userId, userName) {
     `;
     
     try {
-        const result = await TasksAPI.makeRequest(`/api/user/${encodeURIComponent(userId)}/reviews`);
-        const reviews = result.data?.reviews || [];
-        const stats = result.data?.stats || {};
+        const data = (typeof RatingsAPI !== 'undefined' && RatingsAPI.getReviews)
+            ? await RatingsAPI.getReviews(userId)
+            : (await apiRequest(`/user/${encodeURIComponent(userId)}/reviews`, { method: 'GET' })).data;
+        const reviews = data?.reviews || [];
+        const stats = data?.stats || {};
         
         let reviewsHtml = '';
         if (reviews.length === 0) {

@@ -3239,6 +3239,45 @@ function showKYCRequiredPopup(action) {
 window.isKYCVerified = isKYCVerified;
 window.showKYCRequiredPopup = showKYCRequiredPopup;
 
+// ---------- Client-side spam / fraud content screen ----------
+// Mirrors backend screen_task_content; backend is the source of truth.
+function clientScreenTaskContent(title, description) {
+    var text = ((title || '') + ' ' + (description || '')).toLowerCase();
+    if (!text.trim()) return '';
+    var rules = [
+        [/\b(create|make|open|register|sign[- ]?up|generate|bulk)\b[^.]{0,40}\b(email|emails|gmail|yahoo|outlook|hotmail|account|accounts|id|ids|profile|profiles)\b/i,
+            'Bulk account or email creation tasks are not allowed.'],
+        [/\b(per|each|\/)\s*(email|account|id|signup|sign[- ]?up|profile)\b/i,
+            'Tasks paying per account/email creation are not allowed.'],
+        [/\b(sell|buy|rent|hire)\b[^.]{0,30}\b(account|accounts|gmail|whatsapp|instagram|facebook|telegram|otp|sim|number)\b/i,
+            'Buying or selling accounts/credentials is prohibited.'],
+        [/\b(receive|share|forward|read|provide|give|sell)\b[^.]{0,30}\b(otp|otps|one[- ]time[- ]password|verification\s*code|sms\s*code)\b/i,
+            'OTP/verification-code sharing tasks are prohibited.'],
+        [/\botp\s*(work|task|job|earn)\b/i, 'OTP-based earning tasks are prohibited.'],
+        [/\b(use|share|rent|sell)\b[^.]{0,30}\b(aadhaar|aadhar|pan\s*card|kyc|bank\s*account|upi\s*id)\b/i,
+            'Sharing or renting personal KYC documents is prohibited.'],
+        [/\b(fake|paid|bulk)\b[^.]{0,20}\b(reviews?|ratings?|likes?|followers?|subscribers?|comments?|votes?)\b/i,
+            'Fake review / engagement / follower tasks are prohibited.'],
+        [/\b(click|watch)\s*(ads|advertisements|videos)\s*(bot|farm|loop)\b/i, 'Click-fraud tasks are prohibited.'],
+        [/\b(usdt|btc|bitcoin|crypto|forex)\b[^.]{0,30}\b(investment|trade|trading|deposit|recharge|profit|earn)\b/i,
+            'Crypto/forex investment tasks are not permitted.'],
+        [/\b(money\s*mule|transfer\s*money|launder|cash[- ]out)\b/i, 'Money transfer / mule activity is prohibited.'],
+        [/\b(hack|crack|bypass|unlock)\b[^.]{0,30}\b(password|account|server|whatsapp|instagram|facebook|gmail|wifi|otp)\b/i,
+            'Hacking or unauthorized access tasks are prohibited.'],
+        [/\b(escort|webcam\s*model|adult\s*content|nude|sex\s*chat|drugs?|weed|cocaine|heroin)\b/i,
+            'Adult/illicit-content tasks are not allowed.'],
+        [/\b(captcha\s*solving|typing\s*captcha)\b/i, 'Captcha-solving/spam tasks are not allowed.'],
+        [/\b(spam|spamming)\b[^.]{0,20}\b(email|sms|whatsapp|message)\b/i, 'Spam/bulk messaging tasks are not allowed.'],
+        [/(₹|rs\.?|inr)\s*\d{1,3}\s*(per|each|\/)\s*(email|account|signup|sign[- ]?up|otp|click|like|follower|review)/i,
+            'Per-unit micro-payments for accounts/OTPs/clicks/reviews are not allowed.']
+    ];
+    for (var i = 0; i < rules.length; i++) {
+        if (rules[i][0].test(text)) return rules[i][1];
+    }
+    return '';
+}
+window.clientScreenTaskContent = clientScreenTaskContent;
+
 
 function setTimerSuspension(suspendedUntilISO) {
     // Cache server suspension time as ms timestamp
@@ -4433,6 +4472,17 @@ async function handleTaskSubmit(event) {
         return;
     }
 
+    // Client-side spam/fraud screening (defense-in-depth — server enforces too)
+    try {
+        var _title = (document.getElementById('modalTaskTitle')?.value || '');
+        var _desc = (document.getElementById('modalTaskDescription')?.value || '');
+        var _violation = clientScreenTaskContent(_title, _desc);
+        if (_violation) {
+            showToast('🚫 ' + _violation, 7000);
+            return;
+        }
+    } catch (e) { /* non-blocking */ }
+
     // Check if user has API token for server sync
     const hasApiToken = localStorage.getItem('taskearn_token');
     if (!hasApiToken) {
@@ -4528,6 +4578,11 @@ async function handleTaskSubmit(event) {
                 if (result.needsKyc) {
                     closeModal('postTaskModal');
                     showKYCRequiredPopup('post tasks');
+                    return;
+                }
+                if (result.policyViolation) {
+                    closeModal('postTaskModal');
+                    showToast('🚫 ' + (result.message || 'Task violates content policy and was blocked.'), 7000);
                     return;
                 }
                 if (result.message && result.message.includes('token')) {

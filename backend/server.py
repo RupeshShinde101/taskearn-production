@@ -290,6 +290,78 @@ def validate_password(password):
     return True, "Valid"
 
 
+def screen_task_content(title, description, category):
+    """Screen task content for spam/fraud/abuse patterns.
+    Returns (allowed: bool, reason: str). When allowed is False, the task must be rejected.
+    Patterns target: bulk account creation, OTP/SMS-for-hire, click farms, money mule,
+    selling personal documents/KYC, crypto pump scams, fake reviews, and explicitly illegal work.
+    """
+    import re as _re
+    text = ' '.join([str(title or ''), str(description or '')]).lower()
+    if not text.strip():
+        return True, ''
+
+    # Each entry: (compiled_regex, reason). Order matters — first hit wins.
+    patterns = [
+        # Bulk email / account creation (the example case)
+        (r'\b(create|make|open|register|sign[- ]?up|generate|bulk)\b[^.]{0,40}\b(email|emails|gmail|yahoo|outlook|hotmail|account|accounts|id|ids|profile|profiles)\b',
+         'Bulk account or email creation tasks are not allowed (anti-spam policy).'),
+        (r'\b(per|each|/)\s*(email|account|id|signup|sign[- ]?up|profile)\b',
+         'Tasks paying per account/email creation are not allowed.'),
+
+        # Selling / buying accounts or credentials
+        (r'\b(sell|buy|rent|hire)\b[^.]{0,30}\b(account|accounts|gmail|whatsapp|instagram|facebook|telegram|otp|sim|number)\b',
+         'Buying or selling accounts/credentials is prohibited.'),
+
+        # OTP / SMS verification work
+        (r'\b(receive|share|forward|read|provide|give|sell)\b[^.]{0,30}\b(otp|otps|one[- ]time[- ]password|verification\s*code|sms\s*code)\b',
+         'OTP/verification-code sharing tasks are prohibited.'),
+        (r'\botp\s*(work|task|job|earn)\b', 'OTP-based earning tasks are prohibited.'),
+
+        # KYC / Aadhaar / PAN abuse
+        (r'\b(use|share|rent|sell)\b[^.]{0,30}\b(aadhaar|aadhar|pan\s*card|kyc|bank\s*account|upi\s*id)\b',
+         'Sharing or renting personal KYC documents is prohibited.'),
+
+        # Click farm / fake engagement
+        (r'\b(fake|paid|bulk)\b[^.]{0,20}\b(reviews?|ratings?|likes?|followers?|subscribers?|comments?|votes?)\b',
+         'Fake review / engagement / follower tasks are prohibited.'),
+        (r'\b(click|watch)\s*(ads|advertisements|videos)\s*(bot|farm|loop)\b',
+         'Click-fraud tasks are prohibited.'),
+
+        # Crypto / investment / money mule
+        (r'\b(usdt|btc|bitcoin|crypto|forex)\b[^.]{0,30}\b(investment|trade|trading|deposit|recharge|profit|earn)\b',
+         'Crypto/forex investment tasks are not permitted on Workmate4u.'),
+        (r'\b(money\s*mule|transfer\s*money|launder|cash[- ]out)\b',
+         'Money transfer / mule activity is strictly prohibited.'),
+
+        # Hacking / illegal access
+        (r'\b(hack|crack|bypass|unlock)\b[^.]{0,30}\b(password|account|server|whatsapp|instagram|facebook|gmail|wifi|otp)\b',
+         'Hacking or unauthorized access tasks are prohibited.'),
+
+        # Adult / illicit
+        (r'\b(escort|webcam\s*model|adult\s*content|nude|sex\s*chat|drugs?|weed|cocaine|heroin)\b',
+         'Adult/illicit-content tasks are not allowed.'),
+
+        # Generic spam keywords
+        (r'\b(captcha\s*solving|typing\s*captcha)\b', 'Captcha-solving/spam tasks are not allowed.'),
+        (r'\b(spam|spamming)\b[^.]{0,20}\b(email|sms|whatsapp|message)\b',
+         'Spam/bulk messaging tasks are not allowed.'),
+    ]
+
+    for rx, reason in patterns:
+        try:
+            if _re.search(rx, text, _re.IGNORECASE):
+                return False, reason
+        except _re.error:
+            continue
+
+    # Heuristic: very low pay-per-unit phrasing ("₹10 per ...") is a strong fraud signal
+    if _re.search(r'(₹|rs\.?|inr)\s*\d{1,3}\s*(per|each|/)\s*(email|account|signup|sign[- ]?up|otp|click|like|follower|review)', text):
+        return False, 'Per-unit micro-payments for accounts/OTPs/clicks/reviews are not allowed.'
+
+    return True, ''
+
+
 def get_service_charge(category):
     """Calculate service charge based on task category"""
     service_charges = {
@@ -1612,6 +1684,32 @@ def create_task():
                 return jsonify({'success': False, 'message': 'Price must be between ₹10 and ₹50,000'}), 400
         except (ValueError, TypeError):
             return jsonify({'success': False, 'message': 'Invalid price'}), 400
+
+        # Spam / fraud content screening
+        allowed, reason = screen_task_content(data.get('title', ''), data.get('description', ''), data.get('category', ''))
+        if not allowed:
+            print(f"🚫 Task rejected by content policy: {reason}")
+            try:
+                # Best-effort flag: increment a counter so admins can spot repeat offenders
+                with get_db() as (cursor, conn):
+                    try:
+                        cursor.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS spam_attempts INTEGER DEFAULT 0")
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                    try:
+                        cursor.execute(f"UPDATE users SET spam_attempts = COALESCE(spam_attempts, 0) + 1 WHERE id = {PH}", (request.user_id,))
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+            except Exception as _e:
+                print(f"   (spam_attempts increment failed: {_e})")
+            return jsonify({
+                'success': False,
+                'message': 'This task violates our content policy and cannot be posted. ' + reason + ' If you believe this is a mistake, please contact support.',
+                'policyViolation': True,
+                'reason': reason
+            }), 422
         
         print(f"📝 Creating task: '{data.get('title')}'")
         print(f"   Category: {data.get('category')}")

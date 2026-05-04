@@ -1282,6 +1282,10 @@ input:invalid:not(:placeholder-shown) {
 [data-theme="dark"] .upload-task    { background: #141a33 !important; }
 [data-theme="dark"] .categories     { background: #131a30 !important; }
 [data-theme="dark"] .faq-section    { background: #0f1530 !important; }
+[data-theme="dark"] .tutorial-cta   { background: var(--surface) !important; border-color: var(--border) !important; }
+[data-theme="dark"] .tutorial-cta h2,
+[data-theme="dark"] .tutorial-cta h2 *:not(.gradient-text) { color: var(--text) !important; }
+[data-theme="dark"] .tutorial-cta p { color: var(--text-muted) !important; }
 [data-theme="dark"] .find-tasks::before,
 [data-theme="dark"] .how-it-works::before,
 [data-theme="dark"] .watch-tutorial::before,

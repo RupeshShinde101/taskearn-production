@@ -1857,8 +1857,13 @@ def accept_task(task_id):
 @app.route('/api/tasks/<int:task_id>/abandon', methods=['POST'])
 @require_auth
 def abandon_task(task_id):
-    """Abandon an accepted task - reverts it to active and records the release (auto-suspends if limit exceeded)"""
+    """Abandon an accepted task - reverts it to active, charges a 10% release
+    penalty to the helper's wallet (can push wallet negative -> debt suspension),
+    and records the release (auto-suspends for 48h if daily limit exceeded)."""
     try:
+        release_penalty = 0.0
+        helper_new_balance = None
+
         with get_db() as (cursor, conn):
             # Check task exists and is accepted by the current user
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}', (task_id, request.user_id, 'accepted'))
@@ -1867,11 +1872,49 @@ def abandon_task(task_id):
             if not task:
                 return jsonify({'success': False, 'message': 'Task not found or not accepted by you'}), 404
 
+            task_dict = dict_from_row(task)
+            try:
+                task_price = float(task_dict.get('price') or 0)
+                task_service = float(task_dict.get('service_charge') or 0)
+            except (TypeError, ValueError):
+                task_price = 0.0
+                task_service = 0.0
+            total_task_value = task_price + task_service
+
             # Revert task to active
             cursor.execute(f'''
                 UPDATE tasks SET status = 'active', accepted_by = NULL, accepted_at = NULL
                 WHERE id = {PH}
             ''', (task_id,))
+
+            # ===== 10% release penalty to helper wallet =====
+            # Helper releases mid-flight => 10% of total task value is deducted
+            # from helper wallet. This is allowed to push the wallet negative;
+            # debt suspension (any negative balance) will then block further
+            # actions until the helper tops up.
+            release_penalty = round(total_task_value * 0.10, 2)
+            if release_penalty > 0:
+                helper_wallet = get_or_create_wallet(request.user_id)
+                helper_balance = float(helper_wallet.get('balance', 0) or 0)
+                helper_new_balance = helper_balance - release_penalty
+                penalty_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'''
+                    UPDATE wallets
+                    SET balance = {PH}, total_spent = total_spent + {PH}, updated_at = {PH}
+                    WHERE user_id = {PH}
+                ''', (helper_new_balance, release_penalty, penalty_now, request.user_id))
+                cursor.execute(f'''
+                    INSERT INTO wallet_transactions (
+                        wallet_id, user_id, type, amount, balance_after,
+                        description, reference_id, task_id, created_at
+                    ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (
+                    helper_wallet.get('id'), request.user_id, 'penalty',
+                    release_penalty, helper_new_balance,
+                    f'Release penalty (10% of \u20b9{total_task_value:.2f} task)',
+                    f'release-penalty-{task_id}', task_id, penalty_now
+                ))
+                print(f"\u26a0\ufe0f Helper {request.user_id} released task {task_id}. Penalty \u20b9{release_penalty:.2f} -> new balance \u20b9{helper_new_balance:.2f}")
 
         # Ensure suspension columns exist before using them
         _ensure_suspension_columns()
@@ -1946,12 +1989,20 @@ def abandon_task(task_id):
             print(f"⚠️ Failed to create release notification: {notif_err}")
         
         print(f"✅ Task {task_id} abandoned by user {request.user_id} — release #{daily_count} today")
+        debt_suspended = (helper_new_balance is not None and helper_new_balance < 0)
         return jsonify({
             'success': True,
-            'message': 'Task released. It is now available for others.',
+            'message': (
+                f'Task released. \u20b9{release_penalty:.2f} (10%) was deducted as a release penalty.'
+                if release_penalty > 0 else 'Task released. It is now available for others.'
+            ),
             'dailyReleaseCount': daily_count,
             'suspended': suspended,
-            'suspendedUntil': suspended_until_iso
+            'suspendedUntil': suspended_until_iso,
+            'releasePenalty': release_penalty,
+            'newBalance': helper_new_balance,
+            'debtSuspended': debt_suspended,
+            'debtAmount': abs(helper_new_balance) if (helper_new_balance is not None and helper_new_balance < 0) else 0
         })
     except Exception as e:
         print(f"❌ Error in abandon_task: {e}")

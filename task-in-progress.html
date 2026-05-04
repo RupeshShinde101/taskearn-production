@@ -900,30 +900,14 @@
 
             const taskId = currentTask.id;
             const token = localStorage.getItem('taskearn_token') || '';
-            // Calculate total value with service charge fallback
+            // Calculate total value with service charge fallback (for UI only;
+            // backend computes the authoritative penalty inside /abandon).
             const serviceCharge = currentTask.service_charge || getServiceChargeForCategory(currentTask.category);
             const taskValue = (currentTask.price || currentTask.amount || 0) + serviceCharge;
-            const penalty = Math.round(taskValue * 0.10);
+            let penalty = Math.round(taskValue * 0.10);
 
-            // Use dedicated penalty endpoint that allows negative balance
-            if (token) {
-                try {
-                    const penaltyRes = await fetch(API_URL + '/wallet/penalty', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                        body: JSON.stringify({ amount: penalty, taskId: taskId, description: 'Task release penalty (10% of ?' + taskValue + ')' })
-                    });
-                    const penaltyResult = await penaltyRes.json();
-                    if (penaltyResult && penaltyResult.debtSuspended) {
-                        localStorage.setItem('taskearn_debt_suspended', 'true');
-                        localStorage.setItem('taskearn_debt_amount', String(penaltyResult.debtAmount || Math.abs(penaltyResult.newBalance || 0)));
-                    }
-                } catch (e) {
-                    console.warn('Penalty API failed:', e.message);
-                }
-            }
-
-            // Abandon task — server now handles release counting + auto-suspension atomically
+            // Abandon task — server deducts the 10% penalty atomically and
+            // returns the new wallet balance + debt suspension state.
             if (token && taskId) {
                 try {
                     const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {
@@ -934,6 +918,11 @@
                     if (!result.success) {
                         alert(result.message || 'Could not release task');
                         return;
+                    }
+                    if (typeof result.releasePenalty === 'number') penalty = result.releasePenalty;
+                    if (result.debtSuspended) {
+                        localStorage.setItem('taskearn_debt_suspended', 'true');
+                        localStorage.setItem('taskearn_debt_amount', String(result.debtAmount || Math.abs(result.newBalance || 0)));
                     }
                     // Save updated release count to localStorage so next modal shows correct X/3
                     if (result.dailyReleaseCount != null) {

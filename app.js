@@ -3466,8 +3466,10 @@ async function penaltyConfirmRelease() {
 
     closeModal('releasePenaltyModal');
 
-    showToast('💸 Deducting penalty...');
-    const penalty = await deductPenalty(task);
+    // Backend /tasks/<id>/abandon now deducts the 10% release penalty
+    // atomically, so we no longer call WalletAPI.penalty here. The response
+    // tells us the new balance + whether the helper is now debt-suspended.
+    showToast('💸 Releasing task...');
 
     let abandonResult = null;
     try {
@@ -3482,6 +3484,20 @@ async function penaltyConfirmRelease() {
         pendingReleaseTaskId = null;
         return;
     }
+
+    const penalty = (abandonResult && typeof abandonResult.releasePenalty === 'number')
+        ? abandonResult.releasePenalty : 0;
+
+    // Sync wallet balance + debt suspension from server response
+    if (abandonResult && typeof abandonResult.newBalance === 'number') {
+        currentUser.wallet = abandonResult.newBalance;
+        try { await updateUserData(currentUser.id, { wallet: abandonResult.newBalance }); } catch (_) {}
+        if (abandonResult.debtSuspended) {
+            setDebtSuspension(abandonResult.debtAmount || Math.abs(abandonResult.newBalance));
+            console.log('⚠️ Debt suspension activated. Amount owed:', abandonResult.debtAmount);
+        }
+    }
+    try { await refreshWalletBalance(); } catch (_) {}
 
     myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
     try {
@@ -3511,6 +3527,13 @@ async function penaltyConfirmRelease() {
         addNotification({
             title: 'Account Suspended',
             message: 'You released too many tasks today. Your account is suspended for 48 hours.',
+            type: 'error'
+        });
+    } else if (abandonResult.debtSuspended) {
+        try { showDebtSuspendedPopup(); } catch (_) {}
+        addNotification({
+            title: 'Account Suspended (Debt)',
+            message: 'Your wallet balance is negative after the release penalty. Add money to bring it to ₹0 to restore your account.',
             type: 'error'
         });
     }

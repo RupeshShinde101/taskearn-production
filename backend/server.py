@@ -1073,7 +1073,7 @@ def _normalize_phone(raw):
 
 
 def _send_sms_otp(phone, otp):
-    """Send OTP via Fast2SMS if FAST2SMS_API_KEY set, else log to console.
+    """Send OTP via Fast2SMS Quick SMS route if FAST2SMS_API_KEY set, else log to console.
     Returns (success, message). Never raises."""
     api_key = os.environ.get('FAST2SMS_API_KEY', '').strip()
     if not api_key:
@@ -1082,19 +1082,23 @@ def _send_sms_otp(phone, otp):
         return True, 'logged'
     try:
         import requests
-        # Fast2SMS OTP route — DLT-exempt, India only.
-        # Strip +91 / leading 91 — Fast2SMS expects bare 10-digit number.
+        # Fast2SMS expects bare 10-digit Indian number.
         digits = ''.join(ch for ch in phone if ch.isdigit())
         if digits.startswith('91') and len(digits) == 12:
             digits = digits[2:]
         if len(digits) != 10:
             return False, 'Invalid Indian phone number (need 10 digits)'
+        # Quick SMS route ('q') — works without OTP-route website verification.
+        # Uses transactional-style message; no template approval needed.
+        message = f'Your Workmate4u verification code is {otp}. Valid for 10 minutes. Do not share this code with anyone.'
         resp = requests.post(
             'https://www.fast2sms.com/dev/bulkV2',
             headers={'authorization': api_key, 'Content-Type': 'application/json'},
             json={
-                'route': 'otp',
-                'variables_values': str(otp),
+                'route': 'q',
+                'message': message,
+                'language': 'english',
+                'flash': 0,
                 'numbers': digits,
             },
             timeout=10,

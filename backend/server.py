@@ -6468,6 +6468,12 @@ def get_admin_dashboard_stats():
         if request.user_id != '1':
             return jsonify({'success': False, 'message': 'Unauthorized'}), 403
 
+        # Mark stale active tasks as expired so admin sees correct status
+        try:
+            cleanup_old_tasks()
+        except Exception:
+            pass
+
         with get_db() as (cursor, conn):
             now = datetime.datetime.now(datetime.timezone.utc)
             thirty_days_ago = (now - datetime.timedelta(days=30)).isoformat()
@@ -6836,7 +6842,13 @@ def admin_analytics():
     try:
         if request.user_id != '1':
             return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-        
+
+        # Mark stale active tasks as expired so analytics are accurate
+        try:
+            cleanup_old_tasks()
+        except Exception:
+            pass
+
         with get_db() as (cursor, conn):
             # Signups per day (last 30 days)
             cursor.execute('''

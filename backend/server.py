@@ -3354,17 +3354,11 @@ def request_withdrawal():
     account_number = data.get('accountNumber', '').strip()
     ifsc_code = data.get('ifscCode', '').strip().upper()
     
-    # Eligibility gate: phone OTP verified + KYC approved are mandatory.
-    # This protects against money mules / fake accounts laundering wallet credits.
+    # Eligibility gate: KYC approved is mandatory. Phone verification is optional
+    # (skipped while we evaluate SMS providers).
     user = get_user_by_id(request.user_id)
     if not user:
         return jsonify({'success': False, 'message': 'User not found'}), 404
-    if not bool(user.get('phone_verified')):
-        return jsonify({
-            'success': False,
-            'message': 'Verify your mobile number before withdrawing.',
-            'requiresVerification': 'phone'
-        }), 403
     if (user.get('kyc_status') or 'none') != 'approved':
         return jsonify({
             'success': False,

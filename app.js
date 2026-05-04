@@ -4784,15 +4784,9 @@ async function verifyEmailOTP() {
             const tasksLoaded = await loadTasksFromServer();
             setTimeout(() => renderDashboard(), 100);
 
-            // Now require phone verification — chained flow.
-            // Skip if user has already verified phone (e.g. resuming a stalled signup).
-            if (currentUser && !currentUser.phoneVerified && currentUser.phone) {
-                setTimeout(function () {
-                    openPhoneVerifyModal({ phone: currentUser.phone, autoSend: true, required: true });
-                }, 400);
-            } else {
-                setTimeout(showOnboarding, 500);
-            }
+            // Phone verification is currently optional — go straight to onboarding.
+            // Users can verify their phone later from Profile if/when desired.
+            setTimeout(showOnboarding, 500);
         } else {
             showToast('❌ ' + (data.message || 'Invalid code. Please try again.'));
             // Clear OTP inputs
@@ -6705,13 +6699,6 @@ async function submitCompleteProfile(e) {
             saveCurrentSession(currentUser);
             closeModal('completeProfileModal');
             showToast('✅ Profile updated successfully!');
-            // After Google signup completes profile with a phone, ask user
-            // to verify it via OTP. Required to enable withdrawals.
-            if (currentUser && currentUser.phone && !currentUser.phoneVerified) {
-                setTimeout(function () {
-                    openPhoneVerifyModal({ phone: currentUser.phone, autoSend: true, required: true });
-                }, 400);
-            }
         } else {
             showToast('❌ ' + ((result.data && result.data.message) || 'Update failed'), 'error');
         }

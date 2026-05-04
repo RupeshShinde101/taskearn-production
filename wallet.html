@@ -1712,12 +1712,6 @@
                     try { me = JSON.parse(localStorage.getItem('taskearn_user') || 'null'); } catch (_) { me = null; }
                 }
                 if (me) {
-                    if (!me.phoneVerified) {
-                        if (confirm('Verify your mobile number before withdrawing.\n\nGo to Profile to verify now?')) {
-                            window.location.href = 'profile.html#kycCard';
-                        }
-                        return;
-                    }
                     if ((me.kycStatus || 'none') !== 'approved') {
                         const status = me.kycStatus || 'none';
                         const msg = status === 'pending'

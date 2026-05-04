@@ -1700,7 +1700,8 @@
                 return;
             }
 
-            // KYC + Phone verification gate (mirrors backend enforcement).
+            // KYC verification gate (mirrors backend enforcement).
+            // Phone verification is optional and not enforced for withdrawals.
             // Pull the freshest user record before deciding to avoid stale localStorage.
             try {
                 let me = null;

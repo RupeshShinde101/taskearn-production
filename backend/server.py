@@ -1578,7 +1578,17 @@ def create_task():
         user_check = get_user_by_id(request.user_id)
         if user_check and not user_check.get('phone'):
             return jsonify({'success': False, 'message': 'Please add your phone number in Profile before posting tasks. It is required so task helpers can contact you.', 'needsPhone': True}), 400
-        
+
+        # KYC must be verified to post tasks
+        kyc_status_post = (user_check.get('kyc_status') if user_check else None) or 'none'
+        if kyc_status_post not in ('approved', 'verified'):
+            return jsonify({
+                'success': False,
+                'message': 'KYC verification is required before posting tasks. Please complete KYC in your Profile.',
+                'needsKyc': True,
+                'kycStatus': kyc_status_post
+            }), 403
+
         data = request.get_json()
         print(f'   Raw request data: {data}')
         
@@ -1721,6 +1731,16 @@ def accept_task(task_id):
         user_check = get_user_by_id(request.user_id)
         if user_check and not user_check.get('phone'):
             return jsonify({'success': False, 'message': 'Please add your phone number in Profile before accepting tasks. It is required so the task poster can contact you.', 'needsPhone': True}), 400
+
+        # KYC must be verified to accept tasks
+        kyc_status_acc = (user_check.get('kyc_status') if user_check else None) or 'none'
+        if kyc_status_acc not in ('approved', 'verified'):
+            return jsonify({
+                'success': False,
+                'message': 'KYC verification is required before accepting tasks. Please complete KYC in your Profile.',
+                'needsKyc': True,
+                'kycStatus': kyc_status_acc
+            }), 403
 
         # Ensure suspension columns exist
         _ensure_suspension_columns()

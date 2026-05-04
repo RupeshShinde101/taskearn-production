@@ -2996,6 +2996,14 @@ async function acceptTask(taskId) {
         return;
     }
 
+    // KYC must be verified to accept tasks
+    if (typeof isKYCVerified === 'function' && !isKYCVerified()) {
+        try { closeModal('taskDetailModal'); } catch(e) {}
+        showKYCRequiredPopup('accept tasks');
+        resetAcceptButtons();
+        return;
+    }
+
     // Find task in local array (optional — used for localStorage save only)
     var task = tasks.find(function(t) { return t.id == taskId; });
     // Don't block if task not found locally — we can still call the API
@@ -3090,7 +3098,12 @@ async function acceptTask(taskId) {
             // API returned an error
             var errorMsg = (data && data.message) ? data.message : 'Failed to accept task. Please try again.';
             console.error('❌ Accept API returned failure:', errorMsg);
-            showToast('❌ ' + errorMsg);
+            if (data && data.needsKyc) {
+                try { closeModal('taskDetailModal'); } catch(e) {}
+                showKYCRequiredPopup('accept tasks');
+            } else {
+                showToast('❌ ' + errorMsg);
+            }
             resetAcceptButtons();
         }
     } catch (err) {
@@ -3156,6 +3169,76 @@ function isAccountSuspended() {
     if (isDebtSuspended()) return true;
     return false;
 }
+
+// ---------- KYC enforcement helpers ----------
+function getCurrentKYCStatus() {
+    try {
+        var u = currentUser || {};
+        var status = (u.kycStatus || u.kyc_status || localStorage.getItem('taskearn_kyc_status') || 'none');
+        return String(status).toLowerCase();
+    } catch (e) { return 'none'; }
+}
+
+function isKYCVerified() {
+    var s = getCurrentKYCStatus();
+    return s === 'verified' || s === 'approved';
+}
+
+function showKYCRequiredPopup(action) {
+    action = action || 'continue';
+    var status = getCurrentKYCStatus();
+    var subtitle;
+    if (status === 'pending') {
+        subtitle = 'Your KYC is under review. You can ' + action + ' once it has been verified by our team.';
+    } else if (status === 'rejected') {
+        subtitle = 'Your last KYC submission was rejected. Please re-submit valid documents in your Profile to ' + action + '.';
+    } else {
+        subtitle = 'KYC verification is mandatory before you can ' + action + '. It only takes a minute — verify your identity in Profile.';
+    }
+    var existing = document.getElementById('kycRequiredOverlay');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'kycRequiredOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10050;display:flex;align-items:center;justify-content:center;padding:20px;';
+    var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    var card = isDark ? '#1e293b' : '#ffffff';
+    var titleC = isDark ? '#f1f5f9' : '#1e293b';
+    var bodyC = isDark ? '#cbd5e1' : '#64748b';
+    var closeBg = isDark ? '#334155' : '#f1f5f9';
+    var closeC = isDark ? '#f1f5f9' : '#64748b';
+    overlay.innerHTML = '<div style="background:' + card + ';border-radius:18px;max-width:400px;width:100%;padding:28px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.3);">' +
+        '<div style="width:64px;height:64px;border-radius:50%;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
+            '<i class="fas fa-id-card" style="font-size:28px;color:#f59e0b;"></i>' +
+        '</div>' +
+        '<h3 style="color:' + titleC + ';margin-bottom:8px;font-size:1.25rem;">KYC Verification Required</h3>' +
+        '<p style="color:' + bodyC + ';font-size:14px;line-height:1.6;margin-bottom:20px;">' + subtitle + '</p>' +
+        '<button id="kycGotoVerifyBtn" style="width:100%;background:linear-gradient(135deg,#6366f1,#0ea5e9);color:#fff;padding:12px;border-radius:10px;font-weight:600;border:none;cursor:pointer;margin-bottom:8px;">' +
+            (status === 'pending' ? 'View KYC Status' : 'Verify KYC Now') +
+        '</button>' +
+        '<button id="kycCloseBtn" style="width:100%;background:' + closeBg + ';color:' + closeC + ';padding:10px;border-radius:10px;font-weight:600;border:none;cursor:pointer;">Close</button>' +
+    '</div>';
+    document.body.appendChild(overlay);
+    document.getElementById('kycCloseBtn').onclick = function() { overlay.remove(); };
+    document.getElementById('kycGotoVerifyBtn').onclick = function() {
+        overlay.remove();
+        try { closeModal('postTaskModal'); } catch(e) {}
+        try { closeModal('taskDetailModal'); } catch(e) {}
+        if (typeof showPage === 'function') {
+            showPage('profile');
+            setTimeout(function() {
+                var formSec = document.getElementById('kycFormSection');
+                if (formSec && typeof formSec.scrollIntoView === 'function') formSec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 250);
+        } else {
+            window.location.href = 'profile.html#kyc';
+        }
+    };
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+}
+
+window.isKYCVerified = isKYCVerified;
+window.showKYCRequiredPopup = showKYCRequiredPopup;
+
 
 function setTimerSuspension(suspendedUntilISO) {
     // Cache server suspension time as ms timestamp
@@ -4343,6 +4426,13 @@ async function handleTaskSubmit(event) {
         return;
     }
 
+    // KYC must be verified to post tasks
+    if (typeof isKYCVerified === 'function' && !isKYCVerified()) {
+        closeModal('postTaskModal');
+        showKYCRequiredPopup('post tasks');
+        return;
+    }
+
     // Check if user has API token for server sync
     const hasApiToken = localStorage.getItem('taskearn_token');
     if (!hasApiToken) {
@@ -4435,6 +4525,11 @@ async function handleTaskSubmit(event) {
             } else {
                 serverSaveError = result.message;
                 console.warn('⚠️ Server save failed:', result.message);
+                if (result.needsKyc) {
+                    closeModal('postTaskModal');
+                    showKYCRequiredPopup('post tasks');
+                    return;
+                }
                 if (result.message && result.message.includes('token')) {
                     showToast('❌ Session expired. Please login again.');
                     setTimeout(() => {

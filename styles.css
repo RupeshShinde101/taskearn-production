@@ -86,6 +86,125 @@
     background: #0b1120;
 }
 
+/* ========================================================================
+   Dark-mode defensive overrides for inline-styled popups, modals, cards.
+   These selectors catch common hardcoded light values used inside HTML
+   `style="..."` attributes so that popups remain readable in dark mode
+   without rewriting every page. Add new patterns here as they're found.
+   ======================================================================== */
+
+/* 1. Hardcoded white modal/overlay cards */
+[data-theme="dark"] .modal > div[style*="background:#fff"],
+[data-theme="dark"] .modal > div[style*="background: #fff"],
+[data-theme="dark"] .modal > div[style*="background:white"],
+[data-theme="dark"] .modal > div[style*="background: white"],
+[data-theme="dark"] [id$="Overlay"] > div[style*="background:#fff"],
+[data-theme="dark"] [id$="Overlay"] > div[style*="background: #fff"],
+[data-theme="dark"] [id$="Overlay"] > div[style*="background:white"],
+[data-theme="dark"] [id$="Overlay"] > div[style*="background: white"] {
+    background: var(--bg-card) !important;
+    color: var(--text) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* 2. Force readable text on hardcoded dark colors INSIDE any dark modal */
+[data-theme="dark"] .modal-content [style*="color:#1e293b"],
+[data-theme="dark"] .modal-content [style*="color: #1e293b"],
+[data-theme="dark"] .modal [style*="color:#1e293b"],
+[data-theme="dark"] .modal [style*="color: #1e293b"],
+[data-theme="dark"] [id$="Overlay"] [style*="color:#1e293b"],
+[data-theme="dark"] [id$="Overlay"] [style*="color: #1e293b"],
+[data-theme="dark"] .modal-content [style*="color:#0f172a"],
+[data-theme="dark"] .modal [style*="color:#0f172a"] {
+    color: var(--text) !important;
+}
+[data-theme="dark"] .modal-content [style*="color:#64748b"],
+[data-theme="dark"] .modal-content [style*="color: #64748b"],
+[data-theme="dark"] .modal [style*="color:#64748b"],
+[data-theme="dark"] .modal [style*="color: #64748b"],
+[data-theme="dark"] [id$="Overlay"] [style*="color:#64748b"],
+[data-theme="dark"] [id$="Overlay"] [style*="color: #64748b"] {
+    color: var(--text-secondary) !important;
+}
+
+/* 3. Light-gray "secondary" buttons (close, cancel, skip etc.) */
+[data-theme="dark"] button[style*="background:#f1f5f9"],
+[data-theme="dark"] button[style*="background: #f1f5f9"],
+[data-theme="dark"] .btn[style*="background:#f1f5f9"],
+[data-theme="dark"] .btn[style*="background: #f1f5f9"] {
+    background: #334155 !important;
+    color: var(--text) !important;
+}
+
+/* 4. Light-gray sections / inline cards */
+[data-theme="dark"] [style*="background:#f8fafc"],
+[data-theme="dark"] [style*="background: #f8fafc"],
+[data-theme="dark"] [style*="background:#f0f9ff"],
+[data-theme="dark"] [style*="background: #f0f9ff"],
+[data-theme="dark"] [style*="background:#f1f5f9"]:not(button):not(.btn) {
+    background: var(--bg-card) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+}
+
+/* 5. Static content pages (help/safety/cookies/terms/privacy/tutorials/feedback)
+   typically use a `.content` wrapper with hardcoded white background. */
+[data-theme="dark"] .content,
+[data-theme="dark"] .content-card,
+[data-theme="dark"] .static-content {
+    background: var(--bg-card) !important;
+    color: var(--text) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+}
+[data-theme="dark"] .content h1,
+[data-theme="dark"] .content h2,
+[data-theme="dark"] .content h3,
+[data-theme="dark"] .content h4 {
+    color: var(--text) !important;
+}
+[data-theme="dark"] .content p,
+[data-theme="dark"] .content li,
+[data-theme="dark"] .content td,
+[data-theme="dark"] .content dd {
+    color: var(--text-secondary) !important;
+}
+
+/* 6. FAQ <details> blocks */
+[data-theme="dark"] details[style*="background: white"],
+[data-theme="dark"] details[style*="background:white"],
+[data-theme="dark"] details[style*="background:#fff"],
+[data-theme="dark"] details[style*="background: #fff"] {
+    background: var(--bg-card) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* 7. KYC / dashed upload areas */
+[data-theme="dark"] label[id$="UploadArea"],
+[data-theme="dark"] [class*="upload-area"] {
+    background: var(--bg) !important;
+    border-color: var(--border) !important;
+    color: var(--text-secondary) !important;
+}
+
+/* 8. Toasts using hardcoded dark background look fine in dark, but light
+   toasts (background:#fff) need invert. */
+[data-theme="dark"] .toast[style*="background:#fff"],
+[data-theme="dark"] .toast[style*="background: #fff"] {
+    background: var(--bg-card) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border);
+}
+
+/* 9. Generic fallback: any element with hardcoded white background that
+   ended up at the top level of a dark page. Catches stragglers but is
+   constrained to common card-shaped wrappers. */
+[data-theme="dark"] section[style*="background:#f8fafc"],
+[data-theme="dark"] section[style*="background: #f8fafc"] {
+    background: var(--bg) !important;
+}
+
+
 /* Dark mode toggle */
 .dark-mode-toggle {
     background: none;

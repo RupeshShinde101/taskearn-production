@@ -449,6 +449,68 @@
                 max-width: calc(100% - 20px);
             }
         }
+
+        /* Dark-mode overrides — keep readable contrast on every popup/card */
+        [data-theme="dark"] .location-info,
+        [data-theme="dark"] .map-btn,
+        [data-theme="dark"] .details-section,
+        [data-theme="dark"] .complete-section,
+        [data-theme="dark"] .modal-content {
+            background: #1e293b !important;
+            color: #f1f5f9 !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5) !important;
+        }
+        [data-theme="dark"] .location-info strong,
+        [data-theme="dark"] .map-btn,
+        [data-theme="dark"] .details-header h2,
+        [data-theme="dark"] .modal-title {
+            color: #f1f5f9 !important;
+        }
+        [data-theme="dark"] .modal-text {
+            color: #94a3b8 !important;
+        }
+        [data-theme="dark"] .map-btn:hover {
+            background: #334155 !important;
+        }
+        [data-theme="dark"] .modal-btn-cancel {
+            background: #334155 !important;
+            color: #f1f5f9 !important;
+        }
+        [data-theme="dark"] .modal-btn-cancel:hover {
+            background: #475569 !important;
+        }
+        [data-theme="dark"] .details-header {
+            border-bottom-color: #334155 !important;
+        }
+        /* Inline-styled penalty + suspension overlay cards */
+        [data-theme="dark"] #releasePenaltyModal > div[style*="background:#fff"],
+        [data-theme="dark"] #suspendedOverlay > div[style*="background:#fff"],
+        [data-theme="dark"] #debtSuspendedOverlay > div[style*="background:#fff"] {
+            background: #1e293b !important;
+            color: #f1f5f9 !important;
+        }
+        [data-theme="dark"] #releasePenaltyModal [style*="color:#1e293b"],
+        [data-theme="dark"] #releasePenaltyModal [style*="color: #1e293b"],
+        [data-theme="dark"] #suspendedOverlay [style*="color:#1e293b"],
+        [data-theme="dark"] #debtSuspendedOverlay [style*="color:#1e293b"] {
+            color: #f1f5f9 !important;
+        }
+        [data-theme="dark"] #releasePenaltyModal [style*="color:#64748b"],
+        [data-theme="dark"] #suspendedOverlay [style*="color:#64748b"],
+        [data-theme="dark"] #debtSuspendedOverlay [style*="color:#64748b"] {
+            color: #94a3b8 !important;
+        }
+        [data-theme="dark"] #releasePenaltyModal [style*="background:#f1f5f9"],
+        [data-theme="dark"] #suspendedOverlay [style*="background:#f1f5f9"],
+        [data-theme="dark"] #debtSuspendedOverlay [style*="background:#f1f5f9"] {
+            background: #334155 !important;
+            color: #f1f5f9 !important;
+        }
+        [data-theme="dark"] #releasePenaltyModal [style*="background:#fffbeb"] {
+            background: #422006 !important;
+            border-color: #b45309 !important;
+            color: #fde68a !important;
+        }
     </style>
 <script src="mobile-enhancements.js?v=20260502_findtasks" defer></script>
 </head>

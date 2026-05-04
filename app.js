@@ -6380,13 +6380,21 @@ function showOnboarding() {
             overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;';
             document.body.appendChild(overlay);
         }
-        overlay.innerHTML = '<div style="background:white;border-radius:20px;max-width:380px;width:100%;padding:40px 30px;text-align:center;animation:slideIn 0.3s ease;">' +
+        var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        var cardBg = isDark ? '#1e293b' : '#ffffff';
+        var titleColor = isDark ? '#f1f5f9' : '#1e293b';
+        var bodyColor = isDark ? '#cbd5e1' : '#64748b';
+        var dotInactive = isDark ? '#334155' : '#e2e8f0';
+        var btnBg = isDark ? '#334155' : '#ffffff';
+        var btnBorder = isDark ? '#475569' : '#e2e8f0';
+        var btnColor = isDark ? '#f1f5f9' : '#64748b';
+        overlay.innerHTML = '<div style="background:' + cardBg + ';border-radius:20px;max-width:380px;width:100%;padding:40px 30px;text-align:center;animation:slideIn 0.3s ease;box-shadow:0 10px 30px rgba(0,0,0,0.3);">' +
             '<div style="width:70px;height:70px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#0ea5e9);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;"><i class="fas ' + s.icon + '" style="font-size:28px;color:white;"></i></div>' +
-            '<h2 style="margin-bottom:10px;color:#1e293b;font-size:1.3rem;">' + s.title + '</h2>' +
-            '<p style="color:#64748b;margin-bottom:24px;line-height:1.6;">' + s.desc + '</p>' +
-            '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:20px;">' + steps.map(function(_, i) { return '<div style="width:8px;height:8px;border-radius:50%;background:' + (i === currentStep ? '#6366f1' : '#e2e8f0') + ';"></div>'; }).join('') + '</div>' +
+            '<h2 style="margin-bottom:10px;color:' + titleColor + ';font-size:1.3rem;">' + s.title + '</h2>' +
+            '<p style="color:' + bodyColor + ';margin-bottom:24px;line-height:1.6;">' + s.desc + '</p>' +
+            '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:20px;">' + steps.map(function(_, i) { return '<div style="width:8px;height:8px;border-radius:50%;background:' + (i === currentStep ? '#6366f1' : dotInactive) + ';"></div>'; }).join('') + '</div>' +
             '<div style="display:flex;gap:10px;justify-content:center;">' +
-            (currentStep > 0 ? '<button onclick="window._onboardPrev()" style="padding:10px 20px;border:1px solid #e2e8f0;border-radius:10px;background:white;cursor:pointer;font-weight:600;color:#64748b;">Back</button>' : '<button onclick="window._onboardSkip()" style="padding:10px 20px;border:1px solid #e2e8f0;border-radius:10px;background:white;cursor:pointer;font-weight:600;color:#64748b;">Skip</button>') +
+            (currentStep > 0 ? '<button onclick="window._onboardPrev()" style="padding:10px 20px;border:1px solid ' + btnBorder + ';border-radius:10px;background:' + btnBg + ';cursor:pointer;font-weight:600;color:' + btnColor + ';">Back</button>' : '<button onclick="window._onboardSkip()" style="padding:10px 20px;border:1px solid ' + btnBorder + ';border-radius:10px;background:' + btnBg + ';cursor:pointer;font-weight:600;color:' + btnColor + ';">Skip</button>') +
             '<button onclick="window._onboardNext()" style="padding:10px 20px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#0ea5e9);color:white;cursor:pointer;font-weight:600;">' + (currentStep === steps.length - 1 ? 'Get Started' : 'Next') + '</button>' +
             '</div></div>';
     }

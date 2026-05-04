@@ -2134,16 +2134,12 @@ def abandon_task(task_id):
 def poster_cancel_accepted_task(task_id):
     """Poster cancels an accepted task (e.g., helper unresponsive). Reverts
     the task to active so other helpers can accept it. No financial penalty
-    (poster has paid nothing yet — wallet is only debited on completion).
-    A daily cap of 3 cancellations triggers a 48-hour soft-suspension to
-    prevent abuse / wasted helper time."""
+    and no suspension — the poster has not been charged yet (escrow only
+    happens on completion). Suspension rules apply only to helpers who
+    abandon/release tasks."""
     try:
         body = request.get_json(silent=True) or {}
         reason = (body.get('reason') or '').strip()[:300]
-
-        # Ensure suspension columns exist (we reuse the same daily_releases
-        # tracking columns)
-        _ensure_suspension_columns()
 
         helper_id = None
         task_title = None
@@ -2175,50 +2171,6 @@ def poster_cancel_accepted_task(task_id):
                 WHERE id = {PH}
             ''', (task_id,))
 
-        # Track daily poster-cancel count and apply 48h suspension if abused
-        today = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
-        suspended = False
-        suspended_until_iso = None
-        daily_count = 0
-
-        with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT daily_releases, daily_release_date FROM users WHERE id = {PH}', (request.user_id,))
-            row = cursor.fetchone()
-            if row:
-                row_dict = dict_from_row(row) if not isinstance(row, dict) else row
-                current_count = int(row_dict.get('daily_releases', 0) or 0)
-                release_date = row_dict.get('daily_release_date', '')
-                if release_date != today:
-                    current_count = 0
-                daily_count = current_count + 1
-
-                if daily_count > 3:
-                    until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48)
-                    suspended_until_iso = until.isoformat()
-                    cursor.execute(f'''
-                        UPDATE users SET daily_releases = {PH}, daily_release_date = {PH},
-                            suspended_until = {PH}, is_suspended = {PH}, suspension_reason = {PH},
-                            suspended_at = {PH}
-                        WHERE id = {PH}
-                    ''', (daily_count, today, suspended_until_iso, True,
-                          'Too many task cancellations',
-                          datetime.datetime.now(datetime.timezone.utc).isoformat(), request.user_id))
-                    suspended = True
-                    import json as _json
-                    sus_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    cursor.execute(f'''
-                        INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
-                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (request.user_id, 'account_suspended',
-                          'Account Suspended ⛔',
-                          f'You cancelled {daily_count} accepted tasks today. Your account is suspended for 48 hours.',
-                          'unread', _json.dumps({'type': 'system', 'suspendedUntil': suspended_until_iso}), sus_now))
-                else:
-                    cursor.execute(f'''
-                        UPDATE users SET daily_releases = {PH}, daily_release_date = {PH}
-                        WHERE id = {PH}
-                    ''', (daily_count, today, request.user_id))
-
         # Notify the helper that the poster cancelled
         try:
             if helper_id:
@@ -2238,13 +2190,10 @@ def poster_cancel_accepted_task(task_id):
         except Exception as notif_err:
             print(f"⚠️ Failed to create poster-cancel notification: {notif_err}")
 
-        print(f"✅ Poster {request.user_id} cancelled task {task_id} (helper {helper_id}) — cancel #{daily_count} today")
+        print(f"✅ Poster {request.user_id} cancelled task {task_id} (helper {helper_id})")
         return jsonify({
             'success': True,
-            'message': 'Task released. It is now visible to other helpers.',
-            'dailyCancelCount': daily_count,
-            'suspended': suspended,
-            'suspendedUntil': suspended_until_iso
+            'message': 'Task released. It is now visible to other helpers.'
         })
     except Exception as e:
         print(f"❌ Error in poster_cancel_accepted_task: {e}")

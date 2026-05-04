@@ -6013,8 +6013,7 @@ async function posterCancelTask(taskId) {
     const helperName = task.helper_name || task.helperName || 'the helper';
     const reason = window.prompt(
         'Cancel this task and make it available again?\n\n' +
-        helperName + ' will be notified that you cancelled.\n' +
-        'Tip: cancelling more than 3 accepted tasks per day will suspend your account for 48 hours.\n\n' +
+        helperName + ' will be notified that you cancelled.\n\n' +
         'Optional reason (visible to helper):',
         ''
     );
@@ -6037,9 +6036,6 @@ async function posterCancelTask(taskId) {
             } catch (e) {}
             try { renderPostedTasks(); } catch (e) {}
             try { if (typeof loadTasks === 'function') loadTasks(); } catch (e) {}
-            if (res.suspended && res.suspendedUntil) {
-                showToast('⛔ Account suspended for 48 hours due to repeated cancellations.', 'error');
-            }
         } else {
             showToast('❌ ' + ((res && res.message) || 'Could not cancel task'), 'error');
         }

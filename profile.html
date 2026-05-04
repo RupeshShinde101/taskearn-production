@@ -251,8 +251,6 @@
                             <div class="profile-field-label">User ID</div>
                             <div class="profile-field-value profile-uid" id="fieldUserId">—</div>
                         </div>
-                        <button class="btn btn-danger btn-block" onclick="handleLogout()" style="margin-top: 16px;"><i class="fas fa-sign-out-alt"></i> Logout</button>
-                        <button class="btn btn-block" onclick="confirmDeleteAccount()" style="margin-top: 10px; background:#fee2e2; color:#ef4444; border:1px solid #fca5a5; padding:10px; border-radius:8px; cursor:pointer; font-size:13px;"><i class="fas fa-trash-alt"></i> Delete My Account</button>
                     </div>
                 </div>
 
@@ -352,6 +350,18 @@
                                 <div class="profile-field-value" id="kycVerifiedAt">—</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Danger Zone (always last) -->
+                <div class="profile-card" style="border:1px solid #fca5a5;">
+                    <div class="profile-card-header">
+                        <div class="profile-card-title" style="color:#ef4444;"><i class="fas fa-exclamation-triangle"></i> Danger Zone</div>
+                    </div>
+                    <div class="profile-card-body">
+                        <button class="btn btn-danger btn-block" onclick="handleLogout()"><i class="fas fa-sign-out-alt"></i> Logout</button>
+                        <button class="btn btn-block" onclick="confirmDeleteAccount()" style="margin-top: 10px; background:#fee2e2; color:#ef4444; border:1px solid #fca5a5; padding:10px; border-radius:8px; cursor:pointer; font-size:13px;"><i class="fas fa-trash-alt"></i> Delete My Account</button>
+                        <p style="margin:10px 0 0;font-size:12px;color:#94a3b8;text-align:center;">Deleting your account is permanent and cannot be undone.</p>
                     </div>
                 </div>
 
@@ -512,7 +522,7 @@
     <script src="shared.js?v=20260505_postnav"></script>
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
     <script src="razorpay.js?v=20260404_accept_v2"></script>
-    <script src="app.js?v=20260505_kycdebug"></script>
+    <script src="app.js?v=20260505_themefix"></script>
 <script src="sw-register.js?v=20260420_recovery"></script>
     <script src="back-button.js?v=20260505_back"></script>
 </body>

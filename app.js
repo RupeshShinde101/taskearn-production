@@ -5461,11 +5461,6 @@ function openUserProfile() {
                 <i class="fas fa-tasks"></i> My Tasks
             </button>
         </div>
-        <div style="margin-top:20px;padding-top:15px;border-top:1px solid var(--border,#e2e8f0);text-align:center;">
-            <button class="btn" onclick="confirmDeleteAccount()" style="background:#ef4444;color:white;padding:8px 20px;border:none;border-radius:8px;cursor:pointer;font-size:13px;">
-                <i class="fas fa-trash-alt"></i> Delete My Account
-            </button>
-        </div>
     `;
     
     // Create profile modal if doesn't exist

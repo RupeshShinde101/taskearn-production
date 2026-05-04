@@ -6002,6 +6002,54 @@ function renderDashboard() {
     setTimeout(() => checkAndShowPaymentReceived(), 500);
 }
 
+async function posterCancelTask(taskId) {
+    const task = (myPostedTasks || []).find(t => t.id == taskId);
+    if (!task) { showToast('Task not found'); return; }
+    if (task.status !== 'accepted') {
+        showToast('Only accepted tasks can be cancelled this way.');
+        return;
+    }
+
+    const helperName = task.helper_name || task.helperName || 'the helper';
+    const reason = window.prompt(
+        'Cancel this task and make it available again?\n\n' +
+        helperName + ' will be notified that you cancelled.\n' +
+        'Tip: cancelling more than 3 accepted tasks per day will suspend your account for 48 hours.\n\n' +
+        'Optional reason (visible to helper):',
+        ''
+    );
+    if (reason === null) return; // user clicked Cancel
+
+    showToast('Cancelling task...');
+    try {
+        const res = await TasksAPI.posterCancel(taskId, reason);
+        if (res && res.success) {
+            showToast('✅ ' + (res.message || 'Task released'));
+            try {
+                const t = myPostedTasks.find(x => x.id == taskId);
+                if (t) {
+                    t.status = 'active';
+                    t.accepted_by = null;
+                    t.accepted_at = null;
+                    delete t.helper_name; delete t.helperName;
+                    delete t.helper_phone; delete t.helperPhone;
+                }
+            } catch (e) {}
+            try { renderPostedTasks(); } catch (e) {}
+            try { if (typeof loadTasks === 'function') loadTasks(); } catch (e) {}
+            if (res.suspended && res.suspendedUntil) {
+                showToast('⛔ Account suspended for 48 hours due to repeated cancellations.', 'error');
+            }
+        } else {
+            showToast('❌ ' + ((res && res.message) || 'Could not cancel task'), 'error');
+        }
+    } catch (err) {
+        console.error('posterCancelTask failed:', err);
+        showToast('❌ Network error while cancelling task', 'error');
+    }
+}
+window.posterCancelTask = posterCancelTask;
+
 function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
@@ -6055,6 +6103,12 @@ function renderPostedTasks() {
             actionsHTML = `<div class="task-actions">
                     <button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button>
                     <button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
+                </div>`;
+        } else if (t.status === 'accepted') {
+            actionsHTML = `<div class="task-actions" style="margin-top:10px;">
+                    <button class="btn" style="width:100%;background:#ef4444;color:#fff;font-weight:600;padding:10px;border-radius:8px;border:none;" onclick="posterCancelTask(${t.id})" title="Helper unresponsive? Cancel and re-list this task">
+                        <i class="fas fa-times-circle"></i> Cancel & Re-list Task
+                    </button>
                 </div>`;
         }
 

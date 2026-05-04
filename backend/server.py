@@ -2129,6 +2129,130 @@ def abandon_task(task_id):
         return jsonify({'success': False, 'message': f'Error abandoning task: {str(e)}'}), 500
 
 
+@app.route('/api/tasks/<int:task_id>/poster-cancel', methods=['POST'])
+@require_auth
+def poster_cancel_accepted_task(task_id):
+    """Poster cancels an accepted task (e.g., helper unresponsive). Reverts
+    the task to active so other helpers can accept it. No financial penalty
+    (poster has paid nothing yet — wallet is only debited on completion).
+    A daily cap of 3 cancellations triggers a 48-hour soft-suspension to
+    prevent abuse / wasted helper time."""
+    try:
+        body = request.get_json(silent=True) or {}
+        reason = (body.get('reason') or '').strip()[:300]
+
+        # Ensure suspension columns exist (we reuse the same daily_releases
+        # tracking columns)
+        _ensure_suspension_columns()
+
+        helper_id = None
+        task_title = None
+
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'SELECT id, posted_by, accepted_by, status, title FROM tasks WHERE id = {PH}',
+                (task_id,)
+            )
+            task = cursor.fetchone()
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found'}), 404
+            task = dict_from_row(task)
+
+            if task['posted_by'] != request.user_id:
+                return jsonify({'success': False, 'message': 'Only the task poster can cancel this acceptance'}), 403
+            if task['status'] != 'accepted':
+                return jsonify({
+                    'success': False,
+                    'message': f"Cannot cancel task with status '{task['status']}'. Only accepted tasks can be released."
+                }), 400
+
+            helper_id = task['accepted_by']
+            task_title = task['title']
+
+            # Revert task to active so it shows up in browse again
+            cursor.execute(f'''
+                UPDATE tasks SET status = 'active', accepted_by = NULL, accepted_at = NULL
+                WHERE id = {PH}
+            ''', (task_id,))
+
+        # Track daily poster-cancel count and apply 48h suspension if abused
+        today = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
+        suspended = False
+        suspended_until_iso = None
+        daily_count = 0
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT daily_releases, daily_release_date FROM users WHERE id = {PH}', (request.user_id,))
+            row = cursor.fetchone()
+            if row:
+                row_dict = dict_from_row(row) if not isinstance(row, dict) else row
+                current_count = int(row_dict.get('daily_releases', 0) or 0)
+                release_date = row_dict.get('daily_release_date', '')
+                if release_date != today:
+                    current_count = 0
+                daily_count = current_count + 1
+
+                if daily_count > 3:
+                    until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48)
+                    suspended_until_iso = until.isoformat()
+                    cursor.execute(f'''
+                        UPDATE users SET daily_releases = {PH}, daily_release_date = {PH},
+                            suspended_until = {PH}, is_suspended = {PH}, suspension_reason = {PH},
+                            suspended_at = {PH}
+                        WHERE id = {PH}
+                    ''', (daily_count, today, suspended_until_iso, True,
+                          'Too many task cancellations',
+                          datetime.datetime.now(datetime.timezone.utc).isoformat(), request.user_id))
+                    suspended = True
+                    import json as _json
+                    sus_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    cursor.execute(f'''
+                        INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (request.user_id, 'account_suspended',
+                          'Account Suspended ⛔',
+                          f'You cancelled {daily_count} accepted tasks today. Your account is suspended for 48 hours.',
+                          'unread', _json.dumps({'type': 'system', 'suspendedUntil': suspended_until_iso}), sus_now))
+                else:
+                    cursor.execute(f'''
+                        UPDATE users SET daily_releases = {PH}, daily_release_date = {PH}
+                        WHERE id = {PH}
+                    ''', (daily_count, today, request.user_id))
+
+        # Notify the helper that the poster cancelled
+        try:
+            if helper_id:
+                with get_db() as (cursor, conn):
+                    import json
+                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    msg = f'The poster has cancelled "{task_title}". The task is no longer assigned to you.'
+                    if reason:
+                        msg += f' Reason: {reason}'
+                    notif_data = json.dumps({'type': 'task', 'label': '👁️ View Tasks', 'taskId': task_id})
+                    cursor.execute(f'''
+                        INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (helper_id, task_id, 'task_cancelled_by_poster',
+                          'Task Cancelled by Poster ⚠️', msg,
+                          'unread', notif_data, now))
+        except Exception as notif_err:
+            print(f"⚠️ Failed to create poster-cancel notification: {notif_err}")
+
+        print(f"✅ Poster {request.user_id} cancelled task {task_id} (helper {helper_id}) — cancel #{daily_count} today")
+        return jsonify({
+            'success': True,
+            'message': 'Task released. It is now visible to other helpers.',
+            'dailyCancelCount': daily_count,
+            'suspended': suspended,
+            'suspendedUntil': suspended_until_iso
+        })
+    except Exception as e:
+        print(f"❌ Error in poster_cancel_accepted_task: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error cancelling task: {str(e)}'}), 500
+
+
 @app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
 @require_auth
 def delete_task(task_id):

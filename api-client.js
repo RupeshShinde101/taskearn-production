@@ -741,6 +741,15 @@ const TasksAPI = {
         return result.data;
     },
 
+    // Poster cancels an accepted task (e.g. helper unresponsive) and releases it back to active
+    async posterCancel(taskId, reason) {
+        const result = await apiRequest(`/tasks/${taskId}/poster-cancel`, {
+            method: 'POST',
+            body: JSON.stringify({ reason: reason || '' })
+        });
+        return result.data;
+    },
+
     // Delete task
     async delete(taskId) {
         const result = await apiRequest(`/tasks/${taskId}`, {

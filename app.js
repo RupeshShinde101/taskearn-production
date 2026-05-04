@@ -7215,12 +7215,18 @@ async function submitKYC() {
         return;
     }
 
+    const ackEl = document.getElementById('kycAcknowledge');
+    if (!ackEl || !ackEl.checked) {
+        showToast('❌ Please tick the legal declaration to confirm the documents are genuine', 'error');
+        return;
+    }
+
     const btn = document.getElementById('kycSubmitBtn');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
 
     try {
-        const result = await KYCAPI.submit(docType, docNum, window._kycFrontBase64, window._kycBackBase64 || null);
+        const result = await KYCAPI.submit(docType, docNum, window._kycFrontBase64, window._kycBackBase64 || null, true);
         if (result.success) {
             showToast('✅ ' + (result.message || 'KYC submitted successfully!'));
             window._kycFrontBase64 = null;

@@ -307,7 +307,14 @@
                                     <button type="button" onclick="clearKYCImage('back')" style="display:block;margin:8px auto 0;background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;"><i class="fas fa-times"></i> Remove</button>
                                 </div>
                             </div>
-                            <button class="btn btn-primary btn-block" onclick="submitKYC()" id="kycSubmitBtn"><i class="fas fa-paper-plane"></i> Submit & Verify</button>
+                            <!-- Legal declaration (mandatory) -->
+                            <div class="profile-field-edit" style="margin:14px 0;padding:12px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.25);border-radius:10px;">
+                                <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13px;line-height:1.5;color:var(--text-primary,#1f2937);">
+                                    <input type="checkbox" id="kycAcknowledge" style="margin-top:3px;flex-shrink:0;width:16px;height:16px;cursor:pointer;">
+                                    <span>I confirm that the documents I am uploading are <strong>genuine, original, and belong to me</strong>. I understand that submitting fake, edited, or stolen documents is a punishable offence under the IT Act 2000 and IPC §420 (cheating &amp; forgery), and Workmate4u may permanently ban my account and report me to law enforcement.</span>
+                                </label>
+                            </div>
+                            <button class="btn btn-primary btn-block" onclick="submitKYC()" id="kycSubmitBtn"><i class="fas fa-paper-plane"></i> Submit &amp; Verify</button>
                         </div>
                         <div id="kycStatusSection" style="display:none;">
                             <div class="profile-field">
@@ -483,11 +490,11 @@
 
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-    <script src="api-client.js?v=20260505_taskwatch"></script>
+    <script src="api-client.js?v=20260505_kycfraud"></script>
     <script src="shared.js?v=20260505_taskwatch"></script>
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
     <script src="razorpay.js?v=20260404_accept_v2"></script>
-    <script src="app.js?v=20260505_taskwatch"></script>
+    <script src="app.js?v=20260505_kycfraud"></script>
 <script src="sw-register.js?v=20260420_recovery"></script>
     <script src="back-button.js?v=20260505_back"></script>
 </body>

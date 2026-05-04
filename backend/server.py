@@ -232,16 +232,113 @@ def _ensure_kyc_columns():
             if PH == '%s':
                 # PostgreSQL
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_image_back TEXT")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_image_hash TEXT")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_flag_reason TEXT")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_acknowledged_at TIMESTAMP")
             else:
                 # SQLite
                 cursor.execute("PRAGMA table_info(users)")
                 cols = [row[1] for row in cursor.fetchall()]
                 if 'kyc_document_image_back' not in cols:
                     cursor.execute("ALTER TABLE users ADD COLUMN kyc_document_image_back TEXT")
+                if 'kyc_document_image_hash' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN kyc_document_image_hash TEXT")
+                if 'kyc_flag_reason' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN kyc_flag_reason TEXT")
+                if 'kyc_acknowledged_at' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN kyc_acknowledged_at TIMESTAMP")
         _kyc_columns_ensured = True
-        print("✅ KYC back-image column verified")
+        print("✅ KYC columns verified")
     except Exception as e:
         print(f"⚠️ _ensure_kyc_columns error: {e}")
+
+
+# ==========================================================
+# KYC validation helpers (anti-fraud)
+# ==========================================================
+
+# Verhoeff algorithm tables for Aadhaar checksum (UIDAI standard)
+_VERHOEFF_D = [
+    [0,1,2,3,4,5,6,7,8,9],
+    [1,2,3,4,0,6,7,8,9,5],
+    [2,3,4,0,1,7,8,9,5,6],
+    [3,4,0,1,2,8,9,5,6,7],
+    [4,0,1,2,3,9,5,6,7,8],
+    [5,9,8,7,6,0,4,3,2,1],
+    [6,5,9,8,7,1,0,4,3,2],
+    [7,6,5,9,8,2,1,0,4,3],
+    [8,7,6,5,9,3,2,1,0,4],
+    [9,8,7,6,5,4,3,2,1,0],
+]
+_VERHOEFF_P = [
+    [0,1,2,3,4,5,6,7,8,9],
+    [1,5,7,6,2,8,3,0,9,4],
+    [5,8,0,3,7,9,6,1,4,2],
+    [8,9,1,6,0,4,3,5,2,7],
+    [9,4,5,3,1,2,6,8,7,0],
+    [4,2,8,6,5,7,3,9,0,1],
+    [2,7,9,3,8,0,6,4,1,5],
+    [7,0,4,6,9,1,3,2,5,8],
+]
+
+def _aadhaar_verhoeff_valid(num_str):
+    """Verify a 12-digit Aadhaar number against the Verhoeff checksum used by UIDAI."""
+    try:
+        if not num_str or len(num_str) != 12 or not num_str.isdigit():
+            return False
+        c = 0
+        for i, ch in enumerate(reversed(num_str)):
+            c = _VERHOEFF_D[c][_VERHOEFF_P[i % 8][int(ch)]]
+        return c == 0
+    except Exception:
+        return False
+
+
+def _kyc_image_quality_check(b64_image):
+    """Best-effort image quality check. Returns (ok, reason).
+    ok=True means image looks usable. ok=False means flag for admin review (NOT reject).
+    Uses PIL if available; if PIL is missing, accepts the image silently.
+    """
+    try:
+        import base64, io
+        # Strip data URL prefix
+        s = b64_image or ''
+        if ',' in s and s.startswith('data:'):
+            s = s.split(',', 1)[1]
+        try:
+            raw = base64.b64decode(s, validate=False)
+        except Exception:
+            return False, 'Image could not be decoded'
+        if len(raw) < 5_000:
+            return False, 'Image is too small / low-quality (likely a screenshot)'
+        try:
+            from PIL import Image  # type: ignore
+            img = Image.open(io.BytesIO(raw))
+            w, h = img.size
+            if w < 400 or h < 250:
+                return False, f'Image resolution too low ({w}x{h}); likely a screen photo'
+            return True, ''
+        except Exception:
+            # Pillow not installed — skip dimension check, still accept
+            return True, ''
+    except Exception:
+        return True, ''
+
+
+def _hash_kyc_image(b64_image):
+    """Return SHA-256 hex of the decoded image bytes (used to detect the same Aadhaar/PAN scan re-uploaded by another user)."""
+    try:
+        import base64, hashlib
+        s = b64_image or ''
+        if ',' in s and s.startswith('data:'):
+            s = s.split(',', 1)[1]
+        raw = base64.b64decode(s, validate=False)
+        if len(raw) < 1000:
+            return None
+        return hashlib.sha256(raw).hexdigest()
+    except Exception:
+        return None
+
 
 def generate_user_id():
     """Generate unique user ID"""
@@ -8360,10 +8457,10 @@ def notify_account_suspended_email(user_id, reason):
 @app.route('/api/user/kyc/submit', methods=['POST'])
 @require_auth
 def submit_kyc():
-    """Submit KYC document for verification (with document image upload)"""
-    data = request.get_json()
-    doc_type = data.get('documentType', '').strip()
-    doc_number = data.get('documentNumber', '').strip()
+    """Submit KYC document for verification (with anti-fraud checks)."""
+    data = request.get_json() or {}
+    doc_type = (data.get('documentType') or '').strip()
+    doc_number = (data.get('documentNumber') or '').strip()
     # Accept new front/back fields; fall back to legacy documentImage field
     doc_image_front = data.get('documentImageFront') or data.get('documentImage', '')
     doc_image_back = data.get('documentImageBack') or ''
@@ -8371,6 +8468,15 @@ def submit_kyc():
         doc_image_front = doc_image_front.strip()
     if doc_image_back:
         doc_image_back = doc_image_back.strip()
+    acknowledged = bool(data.get('acknowledged'))
+
+    # Mandatory legal declaration (acts as legal evidence in case of fraud)
+    if not acknowledged:
+        return jsonify({
+            'success': False,
+            'message': 'You must accept the legal declaration that the documents are genuine and belong to you. Submitting fake or stolen documents is a punishable offence under the IT Act and IPC §420.',
+            'needsAcknowledge': True
+        }), 400
 
     valid_types = ['aadhaar', 'pan', 'voter_id', 'driving_license']
     if doc_type not in valid_types:
@@ -8391,41 +8497,131 @@ def submit_kyc():
     if doc_image_back and len(doc_image_back) > 7_000_000:
         return jsonify({'success': False, 'message': 'Back image too large (max 5MB)'}), 400
 
-    # Basic format validation
+    # Format validation
     import re
-    if doc_type == 'aadhaar' and not re.match(r'^\d{12}$', doc_number):
-        return jsonify({'success': False, 'message': 'Aadhaar must be 12 digits'}), 400
-    if doc_type == 'pan' and not re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]$', doc_number.upper()):
-        return jsonify({'success': False, 'message': 'Invalid PAN format (e.g. ABCDE1234F)'}), 400
+    doc_number_norm = doc_number.upper().replace(' ', '')
+    if doc_type == 'aadhaar':
+        if not re.match(r'^\d{12}$', doc_number_norm):
+            return jsonify({'success': False, 'message': 'Aadhaar must be 12 digits'}), 400
+        # UIDAI Verhoeff checksum — rejects randomly typed 12-digit numbers
+        if not _aadhaar_verhoeff_valid(doc_number_norm):
+            return jsonify({
+                'success': False,
+                'message': 'This Aadhaar number is invalid (failed checksum). Please re-enter the correct number from your card.'
+            }), 400
+    if doc_type == 'pan':
+        if not re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]$', doc_number_norm):
+            return jsonify({'success': False, 'message': 'Invalid PAN format (e.g. ABCDE1234F)'}), 400
 
     _ensure_kyc_columns()
+
+    # Image quality check (soft — flags for review, doesn't reject)
+    flags = []
+    q_ok_front, q_reason_front = _kyc_image_quality_check(doc_image_front)
+    if not q_ok_front:
+        flags.append(f'front: {q_reason_front}')
+    if doc_image_back:
+        q_ok_back, q_reason_back = _kyc_image_quality_check(doc_image_back)
+        if not q_ok_back:
+            flags.append(f'back: {q_reason_back}')
+
+    # Duplicate-image hash detection (anti-fraud: same Aadhaar scan reused by different account)
+    front_hash = _hash_kyc_image(doc_image_front)
+    back_hash = _hash_kyc_image(doc_image_back) if doc_image_back else None
+    duplicate_user_id = None
+    try:
+        with get_db() as (cursor, conn):
+            for h in [x for x in (front_hash, back_hash) if x]:
+                cursor.execute(
+                    f"SELECT id FROM users WHERE kyc_document_image_hash = {PH} AND id != {PH} LIMIT 1",
+                    (h, request.user_id),
+                )
+                row = cursor.fetchone()
+                if row:
+                    duplicate_user_id = row[0] if not isinstance(row, dict) else row.get('id')
+                    break
+            # Same document number used by a different user
+            cursor.execute(
+                f"SELECT id FROM users WHERE kyc_document_number = {PH} AND id != {PH} LIMIT 1",
+                (doc_number_norm, request.user_id),
+            )
+            num_dup = cursor.fetchone()
+    except Exception as _e:
+        print(f"[KYC SUBMIT] dup-check failed: {_e}")
+        num_dup = None
+
+    if duplicate_user_id:
+        # Hard reject — same image already submitted by another user
+        try:
+            with get_db() as (cursor, conn):
+                cursor.execute(
+                    f"UPDATE users SET kyc_status = 'rejected', kyc_flag_reason = {PH} WHERE id = {PH}",
+                    (f'Duplicate document image (also used by user {duplicate_user_id})', request.user_id),
+                )
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', ('1', 'kyc_request', '🚨 KYC Fraud Alert',
+                      f'User {request.user_id} tried to submit a document image already used by user {duplicate_user_id}. Auto-rejected.',
+                      'unread', now))
+        except Exception:
+            pass
+        return jsonify({
+            'success': False,
+            'message': 'This document has already been submitted by another account. Submitting another person\'s documents is fraud and has been reported. If this is a mistake, contact support.',
+            'fraudDetected': True
+        }), 409
+
+    if num_dup:
+        return jsonify({
+            'success': False,
+            'message': 'This document number is already registered with another account. If you believe this is wrong, contact support.',
+        }), 409
+
+    # Decide final status: pending if any quality flag, else verified
+    final_status = 'pending' if flags else 'verified'
+    flag_reason_text = '; '.join(flags) if flags else None
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with get_db() as (cursor, conn):
-            # Auto-verify: set status to 'verified' immediately
             cursor.execute(f'''
                 UPDATE users SET kyc_document_type = {PH}, kyc_document_number = {PH},
                 kyc_document_image = {PH}, kyc_document_image_back = {PH},
-                kyc_status = 'verified', kyc_verified_at = {PH}
+                kyc_document_image_hash = {PH},
+                kyc_status = {PH}, kyc_verified_at = {PH},
+                kyc_flag_reason = {PH}, kyc_acknowledged_at = {PH}
                 WHERE id = {PH}
-            ''', (doc_type, doc_number.upper(), doc_image_front, doc_image_back or None, now, request.user_id))
+            ''', (doc_type, doc_number_norm, doc_image_front, doc_image_back or None,
+                  front_hash,
+                  final_status, (now if final_status == 'verified' else None),
+                  flag_reason_text, now,
+                  request.user_id))
 
-            # Notify user of verification
+            # Notify user
+            if final_status == 'verified':
+                user_msg = '✅ Your KYC verification has been approved!'
+            else:
+                user_msg = '📝 KYC received. Our team will review your documents shortly (usually within 24 hours).'
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (request.user_id, 'kyc_result', 'KYC Verification Update',
-                  '✅ Your KYC verification has been approved!', 'unread', now))
+            ''', (request.user_id, 'kyc_result', 'KYC Verification Update', user_msg, 'unread', now))
 
             # Log for admin
+            admin_msg = f'User {request.user_id} submitted {doc_type} — '
+            admin_msg += 'auto-verified' if final_status == 'verified' else f'pending review ({flag_reason_text})'
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', ('1', 'kyc_request', '📋 KYC Auto-Verified',
-                  f'User {request.user_id} submitted {doc_type} — auto-verified', 'unread', now))
+            ''', ('1', 'kyc_request',
+                  '📋 KYC Submitted' if final_status == 'verified' else '⚠️ KYC Needs Review',
+                  admin_msg, 'unread', now))
 
-        return jsonify({'success': True, 'message': 'KYC verified successfully! Your identity has been confirmed.'})
+        if final_status == 'verified':
+            return jsonify({'success': True, 'message': 'KYC verified successfully! Your identity has been confirmed.', 'status': 'verified'})
+        return jsonify({'success': True, 'message': 'KYC submitted. Our team will review and approve within 24 hours.', 'status': 'pending'})
     except Exception as e:
         print(f"[KYC SUBMIT] Error: {e}")
         return jsonify({'success': False, 'message': 'Failed to submit KYC'}), 500

@@ -33,3 +33,6 @@ pywebpush==1.14.0
 
 # Email Service
 sendgrid==6.11.0
+
+# Image processing for KYC quality checks (best-effort; backend works without it)
+Pillow==10.4.0

@@ -962,16 +962,9 @@ async function syncNotificationsFromServer() {
     if (!currentUser) return [];
     
     try {
-        const response = await fetch(API_BASE_URL + '/notifications', {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
-            }
-        });
-        
-        if (!response.ok) return loadNotifications(); // Fallback to local
-        
-        const result = await response.json();
+        const r = await apiRequest('/notifications', { method: 'GET' });
+        if (!r.success) return loadNotifications(); // Fallback to local
+        const result = r.data || {};
         
         if (result.success && result.notifications) {
             // Convert server format to UI format
@@ -1150,13 +1143,12 @@ function confirmDeleteAccount() {
     if (!pwd) return;
     if (!confirm('Are you absolutely sure? All your data will be permanently deleted.')) return;
     
-    fetch(API_BASE_URL + '/user/delete-account', {
+    apiRequest('/user/delete-account', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         body: JSON.stringify({ password: pwd })
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(r => {
+        const data = r.data || {};
         if (data.success) {
             alert('Account deleted. We\'re sorry to see you go.');
             localStorage.clear();
@@ -1165,7 +1157,7 @@ function confirmDeleteAccount() {
             alert(data.message || 'Failed to delete account');
         }
     })
-    .catch(() => alert('Network error. Try again.'));
+    .catch(() => alert('Could not reach the server. Please check your connection and try again.'));
 }
 
 // ========================================
@@ -1211,29 +1203,27 @@ function submitDispute(taskId) {
     const details = document.getElementById('disputeDetails').value;
     if (!reason) { alert('Please select a reason'); return; }
     
-    fetch(API_BASE_URL + '/tasks/' + taskId + '/dispute', {
+    apiRequest('/tasks/' + taskId + '/dispute', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         body: JSON.stringify({ reason, details })
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(r => {
+        const data = r.data || {};
         closeModal('disputeModal');
         alert(data.message || (data.success ? 'Dispute filed!' : 'Failed'));
     })
-    .catch(() => alert('Network error. Try again.'));
+    .catch(() => alert('Could not reach the server. Please check your connection and try again.'));
 }
 
 // ========================================
 // BOOKMARKS
 // ========================================
 function toggleBookmark(taskId, el) {
-    fetch(API_BASE_URL + '/tasks/' + taskId + '/bookmark', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+    apiRequest('/tasks/' + taskId + '/bookmark', {
+        method: 'POST'
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(r => {
+        const data = r.data || {};
         if (data.success) {
             const icon = el.querySelector('i');
             if (data.bookmarked) {
@@ -1252,13 +1242,12 @@ function toggleBookmark(taskId, el) {
 // TRANSACTION EXPORT
 // ========================================
 function exportTransactionsCSV() {
-    fetch(API_BASE_URL + '/wallet/export', {
-        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-    })
-    .then(r => {
-        if (!r.ok) throw new Error('Failed');
-        return r.blob();
-    })
+    const token = localStorage.getItem('taskearn_token');
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    // Try direct first, then proxy fallback for ISP-blocked carriers
+    fetch(API_BASE_URL + '/wallet/export', { headers })
+        .then(r => { if (!r.ok) throw new Error('Failed'); return r.blob(); })
+        .catch(() => fetch('/.netlify/functions/api-proxy/api/wallet/export', { headers }).then(r => { if (!r.ok) throw new Error('Failed'); return r.blob(); }))
     .then(blob => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -4017,24 +4006,30 @@ async function completeTask(taskId) {
         return;
     }
 
-    // Call backend FIRST to ensure DB status is updated
+    // Call backend FIRST to ensure DB status is updated.
+    // Use TasksAPI/apiRequest so we get proxy + reverse-proxy fallback (handles
+    // Indian ISP / carrier blocks of Railway DNS).
     try {
-        const response = await fetch(API_BASE_URL + `/tasks/${taskId}/complete`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
+        let result;
+        if (typeof TasksAPI !== 'undefined' && TasksAPI.complete) {
+            result = await TasksAPI.complete(taskId);
+        } else {
+            const r = await apiRequest(`/tasks/${taskId}/complete`, { method: 'POST' });
+            result = r.data || {};
+        }
+        if (!result || !result.success) {
+            const msg = (result && result.message) || 'Could not mark task as completed';
+            if (result && result.offline) {
+                showToast('📡 ' + msg, 6000);
+            } else {
+                showToast(`❌ ${msg}`);
             }
-        });
-        const result = await response.json();
-        if (!result.success) {
-            showToast(`❌ ${result.message || 'Could not mark task as completed'}`);
             return;
         }
         console.log('✅ Backend: Task marked completed, poster notified');
     } catch (e) {
-        showToast('❌ Network error. Please try again.');
-        console.error('Backend complete failed:', e.message);
+        showToast('❌ Could not reach the server. Please check your connection and try again.');
+        console.error('Backend complete failed:', e && e.message);
         return;
     }
 
@@ -4552,16 +4547,13 @@ async function executePayment(taskId) {
 
     try {
         console.log('📤 Sending payment request...');
-        const response = await fetch(API_BASE_URL + `/tasks/${taskId}/pay-helper`, {
+        // Route through apiRequest so we get the Netlify proxy reverse-fallback
+        // when Railway is blocked by the user's carrier / ISP.
+        const r = await apiRequest(`/tasks/${taskId}/pay-helper`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
-            },
             body: JSON.stringify({ taskId: taskId })
         });
-
-        const result = await response.json();
+        const result = r.data || {};
         console.log('📥 Payment response:', result);
 
         if (result.success) {

@@ -205,6 +205,56 @@
     background: var(--bg) !important;
 }
 
+/* 10. Hero section — hardcoded light gradient hides white text in dark mode */
+[data-theme="dark"] .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 25%, #1e293b 50%, #1e1b4b 75%, #0f172a 100%) !important;
+}
+[data-theme="dark"] .hero::before {
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.18) 0%, transparent 70%) !important;
+}
+[data-theme="dark"] .hero h1 { color: #f1f5f9 !important; }
+[data-theme="dark"] .hero p,
+[data-theme="dark"] .hero-text p { color: #cbd5e1 !important; }
+[data-theme="dark"] .hero-stats { border-top-color: rgba(255, 255, 255, 0.12) !important; }
+[data-theme="dark"] .stat h3 { color: #f1f5f9 !important; }
+[data-theme="dark"] .stat p { color: #cbd5e1 !important; }
+[data-theme="dark"] .badge { background: rgba(99, 102, 241, 0.25) !important; color: #c7d2fe !important; }
+
+/* 11. Inline-style low-contrast greys (color:#64748b / #94a3b8 / #475569 etc.)
+   on light-bg cards. Boost their contrast in dark mode. */
+[data-theme="dark"] [style*="color:#64748b"],
+[data-theme="dark"] [style*="color: #64748b"],
+[data-theme="dark"] [style*="color:#475569"],
+[data-theme="dark"] [style*="color: #475569"],
+[data-theme="dark"] [style*="color:#334155"],
+[data-theme="dark"] [style*="color: #334155"] {
+    color: #cbd5e1 !important;
+}
+[data-theme="dark"] [style*="color:#1e293b"],
+[data-theme="dark"] [style*="color: #1e293b"],
+[data-theme="dark"] [style*="color:#0f172a"],
+[data-theme="dark"] [style*="color: #0f172a"] {
+    color: #f1f5f9 !important;
+}
+
+/* 12. Section headings + paragraphs that rely on default body color
+   inside cards/containers should follow text variable */
+[data-theme="dark"] .section-title,
+[data-theme="dark"] .section-subtitle,
+[data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3, [data-theme="dark"] h4 {
+    color: var(--text);
+}
+
+/* 13. Common "muted" greys hardcoded inline */
+[data-theme="dark"] [style*="color:#78716c"],
+[data-theme="dark"] [style*="color: #78716c"],
+[data-theme="dark"] [style*="color:#94a3b8"],
+[data-theme="dark"] [style*="color: #94a3b8"],
+[data-theme="dark"] [style*="color:#888"],
+[data-theme="dark"] [style*="color: #888"] {
+    color: #94a3b8 !important;
+}
+
 
 /* Dark mode toggle */
 .dark-mode-toggle {

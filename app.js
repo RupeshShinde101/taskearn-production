@@ -2828,68 +2828,121 @@ function generateStars(rating) {
 async function viewUserReviews(userId, userName) {
     const content = document.getElementById('taskDetailContent');
     if (!content) return;
-    
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const theme = {
+        title: isDark ? '#f1f5f9' : '#1e293b',
+        body:  isDark ? '#cbd5e1' : '#64748b',
+        muted: isDark ? '#94a3b8' : '#94a3b8',
+        card:  isDark ? '#0f172a' : '#f8fafc',
+        cardBorder: isDark ? '#1e293b' : '#e2e8f0',
+        rowBorder: isDark ? '#1e293b' : '#f1f5f9',
+        avatarBg: isDark ? '#334155' : '#e0e7ff',
+        avatarFg: isDark ? '#cbd5e1' : '#4f46e5',
+        statBg: isDark
+            ? 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(14,165,233,0.18))'
+            : 'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(14,165,233,0.10))'
+    };
+
     content.innerHTML = `
-        <div style="padding: 20px; text-align: center;">
-            <div class="skeleton skeleton-title" style="margin: 0 auto 20px;"></div>
-            <div class="skeleton skeleton-text"></div>
-            <div class="skeleton skeleton-text short"></div>
+        <div style="padding: 30px 16px; text-align: center; color: ${theme.body};">
+            <i class="fas fa-spinner fa-spin" style="font-size: 1.6rem; color: #6366f1;"></i>
+            <p style="margin-top: 10px; font-size: 0.9rem;">Loading reviews...</p>
         </div>
     `;
-    
+
+    function starsRow(rating, size) {
+        rating = Number(rating) || 0;
+        size = size || 14;
+        let html = '<span style="display:inline-flex;gap:2px;line-height:1;">';
+        for (let i = 1; i <= 5; i++) {
+            const cls = i <= Math.round(rating) ? 'fas fa-star' : 'far fa-star';
+            html += `<i class="${cls}" style="color:#f59e0b;font-size:${size}px;"></i>`;
+        }
+        html += '</span>';
+        return html;
+    }
+
+    function fmtDate(s) {
+        if (!s) return '';
+        try {
+            const d = new Date(s);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch (e) { return ''; }
+    }
+
+    function initials(name) {
+        return (name || '?').trim().split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase() || '?';
+    }
+
     try {
         const data = (typeof RatingsAPI !== 'undefined' && RatingsAPI.getReviews)
             ? await RatingsAPI.getReviews(userId)
             : (await apiRequest(`/user/${encodeURIComponent(userId)}/reviews`, { method: 'GET' })).data;
         const reviews = data?.reviews || [];
         const stats = data?.stats || {};
-        
+        const avg = Number(stats.avgRating || 0);
+        const total = Number(stats.totalReviews || reviews.length || 0);
+
         let reviewsHtml = '';
         if (reviews.length === 0) {
             reviewsHtml = `
-                <div class="empty-state" style="padding: 30px 10px;">
-                    <i class="fas fa-star" style="font-size: 2.5rem; color: var(--gray-light); margin-bottom: 10px;"></i>
-                    <h4>No reviews yet</h4>
-                    <p style="color: var(--gray);">This user hasn't received any reviews.</p>
+                <div style="padding: 36px 16px; text-align: center; background: ${theme.card}; border:1px solid ${theme.cardBorder}; border-radius: 14px;">
+                    <i class="far fa-star" style="font-size: 2.4rem; color: ${theme.muted}; margin-bottom: 10px;"></i>
+                    <h4 style="margin:0 0 6px; color:${theme.title};">No reviews yet</h4>
+                    <p style="color:${theme.body}; font-size: 0.9rem; margin:0;">${escapeHtml(userName)} hasn't received any reviews.</p>
                 </div>
             `;
         } else {
             reviewsHtml = reviews.map(r => `
-                <div style="padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <strong style="font-size: 0.9rem;">${escapeHtml(r.rater_name || 'Anonymous')}</strong>
-                        <span style="color: var(--warning); font-size: 0.85rem;">${generateStars(r.rating)}</span>
+                <div style="display:flex; gap:12px; padding:14px; background:${theme.card}; border:1px solid ${theme.cardBorder}; border-radius:12px; margin-bottom:10px;">
+                    <div style="flex:0 0 38px; width:38px; height:38px; border-radius:50%; background:${theme.avatarBg}; color:${theme.avatarFg}; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;">
+                        ${escapeHtml(initials(r.rater_name))}
                     </div>
-                    ${r.review ? `<p style="color: var(--gray); font-size: 0.9rem; margin: 4px 0;">${escapeHtml(r.review)}</p>` : ''}
-                    <small style="color: var(--gray-light);">${escapeHtml(r.task_title || '')}</small>
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+                            <strong style="font-size:0.92rem; color:${theme.title};">${escapeHtml(r.rater_name || 'Anonymous')}</strong>
+                            ${starsRow(r.rating, 13)}
+                        </div>
+                        ${r.review ? `<p style="color:${theme.body}; font-size:0.9rem; margin:4px 0; line-height:1.45; word-wrap:break-word;">${escapeHtml(r.review)}</p>` : ''}
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
+                            ${r.task_title ? `<small style="color:${theme.muted}; font-size:0.78rem;"><i class="fas fa-briefcase" style="margin-right:4px;"></i>${escapeHtml(r.task_title)}</small>` : '<span></span>'}
+                            ${r.created_at ? `<small style="color:${theme.muted}; font-size:0.78rem;">${fmtDate(r.created_at)}</small>` : ''}
+                        </div>
+                    </div>
                 </div>
             `).join('');
         }
-        
+
         content.innerHTML = `
-            <div style="padding: 5px 0;">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-                    <button class="btn btn-outline" onclick="openTaskDetail(window._lastTaskId)" style="padding: 6px 12px; font-size: 0.85rem;">
+            <div style="padding: 4px 0;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+                    <button onclick="openTaskDetail(window._lastTaskId)" style="background:${theme.card}; color:${theme.title}; border:1px solid ${theme.cardBorder}; padding:7px 12px; border-radius:10px; font-size:0.85rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
                         <i class="fas fa-arrow-left"></i> Back
                     </button>
-                    <h3 style="margin: 0;">Reviews for ${escapeHtml(userName)}</h3>
+                    <h3 style="margin:0; color:${theme.title}; font-size:1.05rem; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Reviews for ${escapeHtml(userName)}</h3>
                 </div>
-                <div style="display: flex; gap: 20px; padding: 15px; background: var(--light); border-radius: var(--radius); margin-bottom: 15px; text-align: center;">
-                    <div style="flex: 1;">
-                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--dark);">${(stats.avgRating || 5).toFixed(1)}</div>
-                        <div style="color: var(--warning);">${generateStars(stats.avgRating || 5)}</div>
-                        <small style="color: var(--gray);">${stats.totalReviews || 0} reviews</small>
+                <div style="display:flex; align-items:center; gap:16px; padding:18px; background:${theme.statBg}; border:1px solid ${theme.cardBorder}; border-radius:14px; margin-bottom:14px;">
+                    <div style="text-align:center; min-width:80px;">
+                        <div style="font-size:2rem; font-weight:800; color:${theme.title}; line-height:1;">${avg ? avg.toFixed(1) : '—'}</div>
+                        <div style="margin-top:4px;">${starsRow(avg, 14)}</div>
+                    </div>
+                    <div style="flex:1; border-left:1px solid ${theme.cardBorder}; padding-left:16px;">
+                        <div style="color:${theme.title}; font-weight:600; margin-bottom:2px;">${total} review${total === 1 ? '' : 's'}</div>
+                        <div style="color:${theme.body}; font-size:0.85rem;">Based on completed tasks</div>
                     </div>
                 </div>
                 <div>${reviewsHtml}</div>
             </div>
         `;
     } catch (err) {
+        console.error('Load reviews failed:', err);
         content.innerHTML = `
-            <div class="empty-state" style="padding: 30px;">
-                <i class="fas fa-exclamation-circle" style="color: var(--danger);"></i>
-                <p>Could not load reviews.</p>
-                <button class="btn btn-outline" onclick="openTaskDetail(window._lastTaskId)">
+            <div style="padding: 30px 16px; text-align:center; background:${theme.card}; border:1px solid ${theme.cardBorder}; border-radius:14px;">
+                <i class="fas fa-exclamation-circle" style="color:#ef4444; font-size:1.8rem;"></i>
+                <p style="color:${theme.body}; margin:10px 0 14px;">Could not load reviews.</p>
+                <button onclick="openTaskDetail(window._lastTaskId)" style="background:${theme.card}; color:${theme.title}; border:1px solid ${theme.cardBorder}; padding:8px 14px; border-radius:10px; font-weight:600; cursor:pointer;">
                     <i class="fas fa-arrow-left"></i> Back to Task
                 </button>
             </div>
@@ -4086,10 +4139,13 @@ function openRateUserModal(opts) {
 
     function starRow(name, label) {
         var html = '<div style="margin-bottom:14px;text-align:left;">' +
-            '<div style="font-size:13px;color:' + bodyC + ';margin-bottom:6px;font-weight:500;">' + label + '</div>' +
-            '<div class="rate-stars" data-field="' + name + '" style="display:flex;gap:6px;">';
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+                '<div style="font-size:13px;color:' + bodyC + ';font-weight:500;">' + label + '</div>' +
+                '<div class="rate-label" data-for="' + name + '" style="font-size:12px;color:' + bodyC + ';font-weight:600;"></div>' +
+            '</div>' +
+            '<div class="rate-stars" data-field="' + name + '" style="display:flex;gap:8px;">';
         for (var i = 1; i <= 5; i++) {
-            html += '<i class="far fa-star rate-star" data-val="' + i + '" style="cursor:pointer;font-size:24px;color:#f59e0b;"></i>';
+            html += '<i class="far fa-star rate-star" data-val="' + i + '" style="cursor:pointer;font-size:28px;color:#f59e0b;transition:transform .12s ease;"></i>';
         }
         html += '</div></div>';
         return html;
@@ -4120,23 +4176,30 @@ function openRateUserModal(opts) {
     document.body.appendChild(overlay);
 
     var values = { rating: 5, punctuality: 5, communication: 5, quality: 5 };
-    function paint() {
+    var ratingWords = ['', 'Poor', 'Fair', 'Good', 'Great', 'Excellent'];
+    function paint(preview) {
         overlay.querySelectorAll('.rate-stars').forEach(function(row) {
             var field = row.getAttribute('data-field');
-            var v = values[field] || 0;
+            var v = (preview && preview.field === field) ? preview.val : (values[field] || 0);
             row.querySelectorAll('.rate-star').forEach(function(s) {
                 var sv = parseInt(s.getAttribute('data-val'), 10);
                 s.className = 'rate-star ' + (sv <= v ? 'fas fa-star' : 'far fa-star');
             });
+            var lbl = overlay.querySelector('.rate-label[data-for="' + field + '"]');
+            if (lbl) lbl.textContent = v ? ratingWords[v] : '';
         });
     }
-    overlay.querySelectorAll('.rate-star').forEach(function(s) {
-        s.addEventListener('click', function() {
-            var row = s.closest('.rate-stars');
-            var field = row.getAttribute('data-field');
-            values[field] = parseInt(s.getAttribute('data-val'), 10);
-            paint();
+    overlay.querySelectorAll('.rate-stars').forEach(function(row) {
+        var field = row.getAttribute('data-field');
+        row.querySelectorAll('.rate-star').forEach(function(s) {
+            var sv = parseInt(s.getAttribute('data-val'), 10);
+            s.addEventListener('mouseenter', function() { paint({ field: field, val: sv }); });
+            s.addEventListener('click', function() {
+                values[field] = sv;
+                paint();
+            });
         });
+        row.addEventListener('mouseleave', function() { paint(); });
     });
     paint();
 

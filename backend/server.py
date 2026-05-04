@@ -2132,11 +2132,10 @@ def abandon_task(task_id):
 @app.route('/api/tasks/<int:task_id>/poster-cancel', methods=['POST'])
 @require_auth
 def poster_cancel_accepted_task(task_id):
-    """Poster cancels an accepted task (e.g., helper unresponsive). Reverts
-    the task to active so other helpers can accept it. No financial penalty
-    and no suspension — the poster has not been charged yet (escrow only
-    happens on completion). Suspension rules apply only to helpers who
-    abandon/release tasks."""
+    """Poster cancels an accepted task (e.g., helper unresponsive). The task
+    is permanently deleted from the database — it will not be visible to any
+    user (poster, helper, browse, admin). The previously assigned helper is
+    notified. No financial penalty and no suspension."""
     try:
         body = request.get_json(silent=True) or {}
         reason = (body.get('reason') or '').strip()[:300]
@@ -2159,41 +2158,58 @@ def poster_cancel_accepted_task(task_id):
             if task['status'] != 'accepted':
                 return jsonify({
                     'success': False,
-                    'message': f"Cannot cancel task with status '{task['status']}'. Only accepted tasks can be released."
+                    'message': f"Cannot cancel task with status '{task['status']}'. Only accepted tasks can be cancelled."
                 }), 400
 
             helper_id = task['accepted_by']
             task_title = task['title']
 
-            # Revert task to active so it shows up in browse again
-            cursor.execute(f'''
-                UPDATE tasks SET status = 'active', accepted_by = NULL, accepted_at = NULL
-                WHERE id = {PH}
-            ''', (task_id,))
-
-        # Notify the helper that the poster cancelled
-        try:
+            # Notify helper BEFORE deletion (notification keeps task_id for reference,
+            # but task row itself will be removed). Use SAVEPOINT so a notif failure
+            # does not block the deletion.
             if helper_id:
-                with get_db() as (cursor, conn):
-                    import json
+                try:
+                    cursor.execute('SAVEPOINT sp_notify')
+                    import json as _json
                     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    msg = f'The poster has cancelled "{task_title}". The task is no longer assigned to you.'
+                    msg = f'The poster has cancelled "{task_title}". The task has been removed.'
                     if reason:
                         msg += f' Reason: {reason}'
-                    notif_data = json.dumps({'type': 'task', 'label': '👁️ View Tasks', 'taskId': task_id})
+                    notif_data = _json.dumps({'type': 'system'})
                     cursor.execute(f'''
-                        INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
-                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (helper_id, task_id, 'task_cancelled_by_poster',
+                        INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (helper_id, 'task_cancelled_by_poster',
                           'Task Cancelled by Poster ⚠️', msg,
                           'unread', notif_data, now))
-        except Exception as notif_err:
-            print(f"⚠️ Failed to create poster-cancel notification: {notif_err}")
+                    cursor.execute('RELEASE SAVEPOINT sp_notify')
+                except Exception as notif_err:
+                    print(f"⚠️ Failed to create poster-cancel notification: {notif_err}")
+                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_notify')
+                    except Exception: pass
 
-        print(f"✅ Poster {request.user_id} cancelled task {task_id} (helper {helper_id})")
+            # Permanently delete task and clean up FK references
+            for cleanup_sql in [
+                f'DELETE FROM notifications WHERE task_id = {PH}',
+                f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
+                f'DELETE FROM task_releases WHERE task_id = {PH}',
+                f'DELETE FROM reviews WHERE task_id = {PH}',
+            ]:
+                try:
+                    cursor.execute('SAVEPOINT sp_cleanup')
+                    cursor.execute(cleanup_sql, (task_id,))
+                    cursor.execute('RELEASE SAVEPOINT sp_cleanup')
+                except Exception:
+                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_cleanup')
+                    except Exception: pass
+
+            cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
+
+        print(f"✅ Poster {request.user_id} cancelled & deleted task {task_id} (helper {helper_id})")
         return jsonify({
             'success': True,
-            'message': 'Task released. It is now visible to other helpers.'
+            'message': 'Task cancelled and removed.',
+            'deleted': True
         })
     except Exception as e:
         print(f"❌ Error in poster_cancel_accepted_task: {e}")

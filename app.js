@@ -6012,8 +6012,8 @@ async function posterCancelTask(taskId) {
 
     const helperName = task.helper_name || task.helperName || 'the helper';
     const reason = window.prompt(
-        'Cancel this task and make it available again?\n\n' +
-        helperName + ' will be notified that you cancelled.\n\n' +
+        'Cancel and permanently delete this task?\n\n' +
+        helperName + ' will be notified. The task will be removed and will NOT be visible to anyone else.\n\n' +
         'Optional reason (visible to helper):',
         ''
     );
@@ -6023,15 +6023,17 @@ async function posterCancelTask(taskId) {
     try {
         const res = await TasksAPI.posterCancel(taskId, reason);
         if (res && res.success) {
-            showToast('✅ ' + (res.message || 'Task released'));
+            showToast('✅ ' + (res.message || 'Task cancelled and removed'));
             try {
-                const t = myPostedTasks.find(x => x.id == taskId);
-                if (t) {
-                    t.status = 'active';
-                    t.accepted_by = null;
-                    t.accepted_at = null;
-                    delete t.helper_name; delete t.helperName;
-                    delete t.helper_phone; delete t.helperPhone;
+                // Remove the task entirely from the poster's local list
+                if (Array.isArray(myPostedTasks)) {
+                    const idx = myPostedTasks.findIndex(x => x.id == taskId);
+                    if (idx !== -1) myPostedTasks.splice(idx, 1);
+                }
+                // Also remove from any global tasks list if present
+                if (typeof tasks !== 'undefined' && Array.isArray(tasks)) {
+                    const i2 = tasks.findIndex(x => x.id == taskId);
+                    if (i2 !== -1) tasks.splice(i2, 1);
                 }
             } catch (e) {}
             try { renderPostedTasks(); } catch (e) {}
@@ -6102,8 +6104,8 @@ function renderPostedTasks() {
                 </div>`;
         } else if (t.status === 'accepted') {
             actionsHTML = `<div class="task-actions" style="margin-top:10px;">
-                    <button class="btn" style="width:100%;background:#ef4444;color:#fff;font-weight:600;padding:10px;border-radius:8px;border:none;" onclick="posterCancelTask(${t.id})" title="Helper unresponsive? Cancel and re-list this task">
-                        <i class="fas fa-times-circle"></i> Cancel & Re-list Task
+                    <button class="btn" style="width:100%;background:#ef4444;color:#fff;font-weight:600;padding:10px;border-radius:8px;border:none;" onclick="posterCancelTask(${t.id})" title="Helper unresponsive? Cancel and delete this task">
+                        <i class="fas fa-times-circle"></i> Cancel & Delete Task
                     </button>
                 </div>`;
         }

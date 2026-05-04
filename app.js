@@ -4194,6 +4194,20 @@ function openRateUserModal(opts) {
 }
 window.openRateUserModal = openRateUserModal;
 
+// Stash a pending rating context, open the success modal, and let a simple
+// onclick wrapper trigger the rating modal. We avoid inline JSON.stringify
+// inside onclick="..." because embedded double-quotes break the attribute.
+window.__pendingRate = null;
+function triggerPendingRate() {
+    try { closeModal('taskSuccessModal'); } catch (e) {}
+    try { renderDashboard(); } catch (e) {}
+    var ctx = window.__pendingRate;
+    if (!ctx) return;
+    window.__pendingRate = null;
+    openRateUserModal(ctx);
+}
+window.triggerPendingRate = triggerPendingRate;
+
 /**
  * Show "Payment Done" pop-up for the poster after paying
  */
@@ -4233,12 +4247,18 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
                 </div>
             </div>
             
-            <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard(); openRateUserModal({ taskId: ${task.id}, taskTitle: ${JSON.stringify(task.title || '')}, otherName: ${JSON.stringify((task.acceptedBy && task.acceptedBy.name) || (task.accepted_by_name) || 'the helper')}, role: 'poster' });">
+            <button class="btn btn-primary btn-block" onclick="triggerPendingRate()">
                 <i class="fas fa-star"></i> Rate Helper
             </button>
         </div>
     `;
     document.getElementById('taskSuccessContent').innerHTML = content;
+    window.__pendingRate = {
+        taskId: task.id,
+        taskTitle: task.title || '',
+        otherName: (task.acceptedBy && task.acceptedBy.name) || task.accepted_by_name || 'the helper',
+        role: 'poster'
+    };
     openModal('taskSuccessModal');
 }
 
@@ -4304,12 +4324,18 @@ function checkAndShowPaymentReceived() {
                         </div>
                     </div>
                     
-                    <button class="btn btn-primary btn-block" onclick="closeModal('taskSuccessModal'); renderDashboard(); openRateUserModal({ taskId: ${task.id}, taskTitle: ${JSON.stringify(task.title || '')}, otherName: ${JSON.stringify((task.postedBy && task.postedBy.name) || 'the poster')}, role: 'helper' });">
+                    <button class="btn btn-primary btn-block" onclick="triggerPendingRate()">
                         <i class="fas fa-star"></i> Rate Poster
                     </button>
                 </div>
             `;
             document.getElementById('taskSuccessContent').innerHTML = content;
+            window.__pendingRate = {
+                taskId: task.id,
+                taskTitle: task.title || '',
+                otherName: (task.postedBy && task.postedBy.name) || 'the poster',
+                role: 'helper'
+            };
             openModal('taskSuccessModal');
             
             // Mark this payment as shown

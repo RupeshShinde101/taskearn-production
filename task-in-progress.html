@@ -722,6 +722,65 @@
 
         let timerInterval;
 
+        // Called when the backend reports the task no longer exists / is no
+        // longer accepted by us (e.g. poster cancelled & deleted the task).
+        let _taskGoneHandled = false;
+        function handleTaskGone() {
+            if (_taskGoneHandled) return;
+            _taskGoneHandled = true;
+            try { if (timerInterval) clearInterval(timerInterval); } catch (e) {}
+            try { if (window._taskWatchInterval) clearInterval(window._taskWatchInterval); } catch (e) {}
+            try { localStorage.removeItem('currentTask'); } catch (e) {}
+            try {
+                alert('This task was cancelled by the poster and has been removed. You will be redirected to browse tasks.');
+            } catch (e) {}
+            window.location.replace('browse.html');
+        }
+
+        // Periodically check that the task still exists and is still assigned
+        // to us. If the poster cancels & deletes it, we redirect immediately.
+        function startTaskWatch() {
+            const taskId = (taskIdFromUrl || currentTask.id);
+            if (!taskId) return;
+            const token = localStorage.getItem('taskearn_token') || '';
+            if (!token) return;
+            const userRaw = localStorage.getItem('taskearn_user');
+            const me = userRaw ? (function(){ try { return JSON.parse(userRaw); } catch(e){ return null; }})() : null;
+            const myId = me && me.id;
+
+            async function check() {
+                try {
+                    const res = await apiFetch('/tracking/' + taskId, {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    if (res.status === 404) { handleTaskGone(); return; }
+                    if (!res.ok) return; // transient — try again next tick
+                    const result = await res.json();
+                    if (!result || result.success === false) {
+                        if (/not found/i.test((result && result.message) || '')) { handleTaskGone(); return; }
+                        return;
+                    }
+                    const t = result.tracking || {};
+                    // If we are no longer the helper for this task, treat as gone
+                    if (myId && t.helper && t.helper.id && t.helper.id !== myId) {
+                        handleTaskGone();
+                        return;
+                    }
+                    if (t.status && t.status !== 'accepted' && t.status !== 'completed' && t.status !== 'pending_payment' && t.status !== 'paid') {
+                        handleTaskGone();
+                        return;
+                    }
+                } catch (e) {
+                    // network blip — ignore
+                }
+            }
+            window._taskWatchInterval = setInterval(check, 15000);
+            // Also re-check immediately when the tab becomes visible
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) check();
+            });
+        }
+
         // Load task details from localStorage or API
         async function loadTaskDetails() {
             const savedTask = localStorage.getItem('currentTask');
@@ -747,6 +806,11 @@
                         const res = await apiFetch('/tracking/' + taskId, {
                             headers: { 'Authorization': 'Bearer ' + token }
                         });
+                        // If task no longer exists (poster cancelled & deleted it), bail out
+                        if (res.status === 404) {
+                            handleTaskGone();
+                            return;
+                        }
                         const result = await res.json();
                         if (result.success && result.tracking) {
                             const t = result.tracking;
@@ -761,6 +825,9 @@
                                 currentTask.location = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address };
                             }
                             console.log('✅ Loaded task from API tracking:', currentTask);
+                        } else if (result && result.success === false && /not found/i.test(result.message || '')) {
+                            handleTaskGone();
+                            return;
                         }
                     } catch (e) {
                         console.warn('Tracking API fetch failed:', e.message);
@@ -839,9 +906,11 @@
                         'Authorization': 'Bearer ' + token
                     }
                 });
+                if (res.status === 404) { handleTaskGone(); return; }
                 const result = await res.json();
 
                 if (!result.success) {
+                    if (/not found/i.test(result.message || '')) { handleTaskGone(); return; }
                     alert(result.message || 'Could not mark task as completed');
                     if (btn) {
                         btn.disabled = false;
@@ -1033,8 +1102,10 @@
         // Initialize on page load
         window.addEventListener('load', async function() {
             await loadTaskDetails();
+            if (_taskGoneHandled) return; // task was already deleted; redirect in-flight
             showLocation();
             initializeMap();
+            startTaskWatch();
             
             // Sync suspension from server (handles cleared cache)
             try {

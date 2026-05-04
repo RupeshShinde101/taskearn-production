@@ -5911,11 +5911,18 @@ function openModal(id) {
     if (id === 'postTaskModal') {
         resetBonusOnModalOpen();
     }
-    // Re-attempt Google Sign-In init when login/signup modal opens so the
-    // button renders even if the GIS library finished loading after first call.
+    // Re-attempt Google Sign-In init when login/signup modal opens. If the
+    // GIS library hasn't finished loading yet, poll briefly until it does.
     if (id === 'loginModal' || id === 'signupModal') {
         if (typeof initGoogleSignIn === 'function') {
-            try { initGoogleSignIn(); } catch (e) { console.warn('Google init retry failed', e); }
+            const tryInit = (attempts) => {
+                if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+                    try { initGoogleSignIn(); } catch (e) { console.warn('Google init retry failed', e); }
+                } else if (attempts < 30) {
+                    setTimeout(() => tryInit(attempts + 1), 200);
+                }
+            };
+            tryInit(0);
         }
     }
 }

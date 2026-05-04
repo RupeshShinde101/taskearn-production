@@ -1102,7 +1102,12 @@ def _send_sms_otp(phone, otp):
         data = resp.json() if resp.headers.get('Content-Type', '').startswith('application/json') else {}
         if resp.status_code == 200 and data.get('return') is True:
             return True, 'sent'
-        return False, data.get('message') or f'SMS provider error ({resp.status_code})'
+        # Log the real provider response for debugging, but return a
+        # user-friendly generic message — provider-internal text like
+        # "complete website verification" is not actionable for end users.
+        provider_msg = data.get('message') or f'HTTP {resp.status_code}'
+        print(f"[SMS-OTP-PROVIDER-ERR] phone={phone} resp={provider_msg}", flush=True)
+        return False, 'OTP service is temporarily unavailable. Please try again in a few minutes.'
     except Exception as e:
         print(f"[SMS-OTP-ERR] {e}", flush=True)
         return False, 'SMS service unavailable, try again'

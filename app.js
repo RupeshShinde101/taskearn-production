@@ -6493,7 +6493,13 @@ async function initGoogleSignIn() {
         client_id: window.GOOGLE_CLIENT_ID,
         callback: handleGoogleCredentialResponse,
         auto_select: false,
-        cancel_on_tap_outside: true
+        cancel_on_tap_outside: true,
+        // FedCM is required on Chrome 121+ desktop where third-party cookies
+        // are blocked. Without these flags the Google button silently fails
+        // on desktop while still working on mobile (which uses a redirect).
+        use_fedcm_for_prompt: true,
+        use_fedcm_for_button: true,
+        ux_mode: 'popup'
     });
     
     // Render official Google buttons into both modals

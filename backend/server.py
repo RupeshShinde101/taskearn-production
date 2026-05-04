@@ -1110,7 +1110,10 @@ def _send_sms_otp(phone, otp):
         # user-friendly generic message — provider-internal text like
         # "complete website verification" is not actionable for end users.
         provider_msg = data.get('message') or f'HTTP {resp.status_code}'
-        print(f"[SMS-OTP-PROVIDER-ERR] phone={phone} resp={provider_msg}", flush=True)
+        print(f"[SMS-OTP-PROVIDER-ERR] phone={phone} status={resp.status_code} body={resp.text[:500]}", flush=True)
+        # Surface provider message in dev/staging to aid debugging; production users see generic.
+        if os.environ.get('SMS_DEBUG', '').lower() in ('1', 'true', 'yes'):
+            return False, f'SMS provider: {provider_msg}'
         return False, 'OTP service is temporarily unavailable. Please try again in a few minutes.'
     except Exception as e:
         print(f"[SMS-OTP-ERR] {e}", flush=True)

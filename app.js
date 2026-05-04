@@ -6504,9 +6504,36 @@ async function initGoogleSignIn() {
         });
     }
     
-    // Render official Google buttons into both modals.
-    // renderButton appends a child iframe; skip if already populated.
-    const loginBtn = document.getElementById('googleSignInBtn_login');
+    // Ensure each login/signup modal has a Google button container.
+    // Many pages (browse, posted, accepted, completed, profile) ship the
+    // modal HTML without the placeholder div, so create one on the fly.
+    function ensureGoogleBtnContainer(modalId, btnId) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return null;
+        let container = document.getElementById(btnId);
+        if (container) return container;
+        const content = modal.querySelector('.modal-content') || modal;
+        // Try to insert just before modal-footer if present, else append
+        container = document.createElement('div');
+        container.id = btnId;
+        container.style.cssText = 'display:flex;justify-content:center;min-height:44px;margin:14px 0;';
+        // Add divider if no .social-divider already in the modal
+        if (!content.querySelector('.social-divider')) {
+            const divider = document.createElement('div');
+            divider.className = 'social-divider';
+            divider.style.cssText = 'display:flex;align-items:center;gap:12px;margin:18px 0 14px;';
+            divider.innerHTML = '<hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"><span style="color:#94a3b8;font-size:13px;white-space:nowrap;">or continue with</span><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;">';
+            const footer = content.querySelector('.modal-footer');
+            if (footer) { content.insertBefore(divider, footer); content.insertBefore(container, footer); }
+            else { content.appendChild(divider); content.appendChild(container); }
+        } else {
+            const footer = content.querySelector('.modal-footer');
+            if (footer) content.insertBefore(container, footer);
+            else content.appendChild(container);
+        }
+        return container;
+    }
+    const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');
     if (loginBtn && !loginBtn.children.length) {
         google.accounts.id.renderButton(loginBtn, {
             type: 'standard',
@@ -6517,7 +6544,7 @@ async function initGoogleSignIn() {
         });
         console.log('✅ Google button rendered in login modal');
     }
-    const signupBtn = document.getElementById('googleSignInBtn_signup');
+    const signupBtn = ensureGoogleBtnContainer('signupModal', 'googleSignInBtn_signup');
     if (signupBtn && !signupBtn.children.length) {
         google.accounts.id.renderButton(signupBtn, {
             type: 'standard',

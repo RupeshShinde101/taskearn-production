@@ -3359,7 +3359,7 @@ def request_withdrawal():
     user = get_user_by_id(request.user_id)
     if not user:
         return jsonify({'success': False, 'message': 'User not found'}), 404
-    if (user.get('kyc_status') or 'none') != 'approved':
+    if (user.get('kyc_status') or 'none') not in ('approved', 'verified'):
         return jsonify({
             'success': False,
             'message': 'Complete KYC verification before withdrawing. Go to Profile → Identity Verification.',

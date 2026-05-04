@@ -1713,8 +1713,10 @@
                     try { me = JSON.parse(localStorage.getItem('taskearn_user') || 'null'); } catch (_) { me = null; }
                 }
                 if (me) {
-                    if ((me.kycStatus || 'none') !== 'approved') {
-                        const status = me.kycStatus || 'none';
+                    const kycStatus = (me.kycStatus || me.kyc_status || 'none').toLowerCase();
+                    const kycOk = (kycStatus === 'approved' || kycStatus === 'verified');
+                    if (!kycOk) {
+                        const status = kycStatus;
                         const msg = status === 'pending'
                             ? 'Your KYC is under review. You can withdraw once it is approved.'
                             : status === 'rejected'

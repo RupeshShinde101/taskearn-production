@@ -659,8 +659,9 @@
         // Initiate Razorpay payment
         function initiateRazorpayPayment() {
             const API_URL = 'https://taskearn-production-production.up.railway.app/api';
+            const PROXY_URL = '/.netlify/functions/api-proxy/api';
 
-            // Create order
+            // Create order with proxy fallback for ISP-blocked carriers
             fetch(API_URL + '/payments/create-order', {
                 method: 'POST',
                 headers: {
@@ -671,6 +672,11 @@
                     amount: amount
                 })
             })
+            .catch(() => fetch(PROXY_URL + '/payments/create-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: taskId, amount: amount })
+            }))
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
@@ -723,19 +729,23 @@
         // Verify payment
         function verifyPayment(response, orderId, amount) {
             const API_URL = 'https://taskearn-production-production.up.railway.app/api';
-
+            const PROXY_URL = '/.netlify/functions/api-proxy/api';
+            const body = JSON.stringify({
+                razorpay_order_id: orderId,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                task_id: taskId
+            });
             fetch(API_URL + '/payments/verify', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    razorpay_order_id: orderId,
-                    razorpay_payment_id: response.razorpay_payment_id,
-                    razorpay_signature: response.razorpay_signature,
-                    task_id: taskId
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: body
             })
+            .catch(() => fetch(PROXY_URL + '/payments/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: body
+            }))
             .then(res => res.json())
             .then(data => {
                 if (data.success) {

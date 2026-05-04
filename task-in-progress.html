@@ -700,6 +700,25 @@
 
         // API URL
         const API_URL = 'https://taskearn-production-production.up.railway.app/api';
+        // Netlify proxy fallback (used automatically when direct Railway DNS
+        // is blocked by the user's ISP/carrier — common on Indian mobile data).
+        const PROXY_URL = '/.netlify/functions/api-proxy/api';
+        async function apiFetch(path, options) {
+            options = options || {};
+            options.headers = options.headers || {};
+            const token = localStorage.getItem('taskearn_token') || '';
+            if (token && !options.headers['Authorization']) {
+                options.headers['Authorization'] = 'Bearer ' + token;
+            }
+            try {
+                const r = await fetch(API_URL + path, options);
+                return r;
+            } catch (e) {
+                // DNS / network failure — try the Netlify edge proxy
+                console.warn('Direct API failed, falling back to proxy:', e.message);
+                return await fetch(PROXY_URL + path, options);
+            }
+        }
 
         let timerInterval;
 
@@ -725,7 +744,7 @@
                 const token = localStorage.getItem('taskearn_token') || '';
                 if (token) {
                     try {
-                        const res = await fetch(API_URL + '/tracking/' + taskId, {
+                        const res = await apiFetch('/tracking/' + taskId, {
                             headers: { 'Authorization': 'Bearer ' + token }
                         });
                         const result = await res.json();
@@ -813,7 +832,7 @@
 
             // Call backend to mark completed + notify poster
             try {
-                const res = await fetch(API_URL + '/tasks/' + taskId + '/complete', {
+                const res = await apiFetch('/tasks/' + taskId + '/complete', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -832,7 +851,7 @@
                 }
                 console.log('✅ Backend: Task marked completed, poster notified');
             } catch (err) {
-                alert('Network error. Please check connection and try again.');
+                alert('Could not reach the server. Please check your connection and try again.');
                 console.error('Backend complete failed:', err.message);
                 if (btn) {
                     btn.disabled = false;
@@ -972,7 +991,7 @@
             // returns the new wallet balance + debt suspension state.
             if (token && taskId) {
                 try {
-                    const res = await fetch(API_URL + '/tasks/' + taskId + '/abandon', {
+                    const res = await apiFetch('/tasks/' + taskId + '/abandon', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
                     });
@@ -1021,7 +1040,7 @@
             try {
                 const token = localStorage.getItem('taskearn_token');
                 if (token) {
-                    const res = await fetch(API_URL + '/auth/me', {
+                    const res = await apiFetch('/auth/me', {
                         headers: { 'Authorization': 'Bearer ' + token }
                     });
                     const result = await res.json();

@@ -7227,16 +7227,22 @@ async function submitKYC() {
 
     try {
         const result = await KYCAPI.submit(docType, docNum, window._kycFrontBase64, window._kycBackBase64 || null, true);
-        if (result.success) {
+        console.log('[KYC] Server response:', result);
+        if (result && result.success) {
             showToast('✅ ' + (result.message || 'KYC submitted successfully!'));
             window._kycFrontBase64 = null;
             window._kycBackBase64 = null;
             loadKYCStatus();
         } else {
-            showToast('❌ ' + (result.message || 'KYC submission failed'), 'error');
+            const msg = (result && result.message) || 'KYC submission failed';
+            console.error('[KYC] Rejected by server:', msg, result);
+            // Use a longer-lived alert so user actually sees the reason
+            showToast('❌ ' + msg, 'error');
+            try { alert('KYC was rejected:\n\n' + msg); } catch(_) {}
         }
     } catch (err) {
-        showToast('❌ KYC submission failed', 'error');
+        console.error('[KYC] Submit failed:', err);
+        showToast('❌ KYC submission failed: ' + (err && err.message ? err.message : 'network error'), 'error');
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit & Verify';

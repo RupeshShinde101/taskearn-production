@@ -195,6 +195,39 @@ if (!MOBILE || !ON_NETLIFY) {
 }
 
 // ========================================
+// GLOBAL apiFetch — drop-in replacement for fetch() that automatically
+// falls back to the Netlify proxy when direct Railway DNS is blocked
+// (Indian carriers / restricted networks). Usage:
+//   const r = await window.apiFetch('/tasks/123/complete', { method:'POST', body: ... })
+// `path` may start with /api/... or just /tasks/... — both are handled.
+// Auth header is auto-injected if not present.
+// ========================================
+window.apiFetch = async function apiFetchGlobal(path, options) {
+    options = options || {};
+    options.headers = options.headers || {};
+    var token = localStorage.getItem('taskearn_token') || '';
+    if (token && !options.headers['Authorization']) {
+        options.headers['Authorization'] = 'Bearer ' + token;
+    }
+    if (options.body && !options.headers['Content-Type']) {
+        options.headers['Content-Type'] = 'application/json';
+    }
+    // Normalise: ensure path starts with /
+    if (path[0] !== '/') path = '/' + path;
+    // Build direct + proxy URLs from the same path. Strip /api prefix if present
+    // so we can prepend the proper base for each route.
+    var apiPath = path.indexOf('/api/') === 0 ? path.substring(4) : path;
+    var directBase = 'https://taskearn-production-production.up.railway.app/api';
+    var proxyBase = '/.netlify/functions/api-proxy/api';
+    try {
+        return await fetch(directBase + apiPath, options);
+    } catch (e) {
+        console.warn('apiFetch: direct failed, falling back to proxy:', e && e.message);
+        return await fetch(proxyBase + apiPath, options);
+    }
+};
+
+// ========================================
 // API HELPER FUNCTIONS
 // ========================================
 

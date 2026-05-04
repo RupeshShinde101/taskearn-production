@@ -28,9 +28,18 @@
             loadRazorpayScript();
         }
         
-        // Auto-detect environment and set API URL
+        // Auto-detect environment and set API URL with proxy fallback
         (function() {
             window.TASKEARN_API_URL = 'https://taskearn-production-production.up.railway.app/api';
+            window.TASKEARN_PROXY_URL = '/.netlify/functions/api-proxy/api';
+            window.apiFetchSafe = async function(url, options) {
+                try { return await fetch(url, options); }
+                catch (e) {
+                    var proxyUrl = String(url).replace(window.TASKEARN_API_URL, window.TASKEARN_PROXY_URL);
+                    console.warn('Direct API failed, falling back to proxy:', e && e.message);
+                    return await fetch(proxyUrl, options);
+                }
+            };
         })();
     </script>
     <style>
@@ -1254,7 +1263,7 @@
                 return;
             }
             
-            fetch(window.TASKEARN_API_URL + '/wallet/transactions', {
+            apiFetchSafe(window.TASKEARN_API_URL + '/wallet/transactions', {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -1348,7 +1357,7 @@
             
             try {
                 // Create Razorpay order via backend
-                const orderResponse = await fetch(window.TASKEARN_API_URL + '/payments/wallet-topup-order', {
+                const orderResponse = await apiFetchSafe(window.TASKEARN_API_URL + '/payments/wallet-topup-order', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1442,7 +1451,7 @@
                 console.log('[WALLET] Amount (paise):', amount);
                 console.log('[WALLET] Amount (rupees):', amountInRupees);
                 
-                const verifyResponse = await fetch(window.TASKEARN_API_URL + '/payments/wallet-topup-verify', {
+                const verifyResponse = await apiFetchSafe(window.TASKEARN_API_URL + '/payments/wallet-topup-verify', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

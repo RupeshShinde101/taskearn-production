@@ -692,11 +692,15 @@ async function getActiveTrackingTasks() {
     if (!token) return [];
 
     try {
-        const response = await fetch(`${window.TASKEARN_API_URL}/user/active-tracking`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        let response;
+        const opts = { headers: { 'Authorization': `Bearer ${token}` } };
+        try {
+            response = await fetch(`${window.TASKEARN_API_URL}/user/active-tracking`, opts);
+        } catch (netErr) {
+            console.warn('Direct active-tracking failed, using proxy:', netErr && netErr.message);
+            const proxy = window.TASKEARN_PROXY_URL || '/.netlify/functions/api-proxy/api';
+            response = await fetch(`${proxy}/user/active-tracking`, opts);
+        }
 
         const data = await response.json();
         return data.success ? data.tasks : [];

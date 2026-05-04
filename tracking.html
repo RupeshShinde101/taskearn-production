@@ -22,7 +22,7 @@
     
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_proxyall">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_proxyfull">
     
     <style>
         /* Tracking Page Specific Styles */
@@ -713,9 +713,19 @@
     </style>
 
     <script>
-        // Auto-detect environment and set API URL
+        // Auto-detect environment and set API URL with proxy fallback
         (function() {
             window.TASKEARN_API_URL = 'https://taskearn-production-production.up.railway.app/api';
+            window.TASKEARN_PROXY_URL = '/.netlify/functions/api-proxy/api';
+            // Wrapper that retries via Netlify proxy when direct DNS fails
+            window.apiFetchSafe = async function(url, options) {
+                try { return await fetch(url, options); }
+                catch (e) {
+                    var proxyUrl = String(url).replace(window.TASKEARN_API_URL, window.TASKEARN_PROXY_URL);
+                    console.warn('Direct API failed, falling back to proxy:', e && e.message);
+                    return await fetch(proxyUrl, options);
+                }
+            };
         })();
     </script>
 <script src="mobile-enhancements.js?v=20260502_findtasks" defer></script>
@@ -854,7 +864,7 @@
             showLoadingState();
             
             try {
-                const response = await fetch(`${window.TASKEARN_API_URL}/user/active-tracking`, {
+                const response = await apiFetchSafe(`${window.TASKEARN_API_URL}/user/active-tracking`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
@@ -887,7 +897,7 @@
             showLoadingState();
             
             try {
-                const response = await fetch(`${window.TASKEARN_API_URL}/tracking/${taskId}`, {
+                const response = await apiFetchSafe(`${window.TASKEARN_API_URL}/tracking/${taskId}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
@@ -1178,7 +1188,7 @@
             const token = localStorage.getItem('taskearn_token');
             
             try {
-                const response = await fetch(`${window.TASKEARN_API_URL}/tasks/${taskId}/complete`, {
+                const response = await apiFetchSafe(`${window.TASKEARN_API_URL}/tasks/${taskId}/complete`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -1326,7 +1336,7 @@
                 const token = localStorage.getItem('taskearn_token');
                 
                 try {
-                    const response = await fetch(`${window.TASKEARN_API_URL}/tracking/${taskId}/location`, {
+                    const response = await apiFetchSafe(`${window.TASKEARN_API_URL}/tracking/${taskId}/location`, {
                         headers: {
                             'Authorization': `Bearer ${token}`
                         }
@@ -1359,7 +1369,7 @@
             const token = localStorage.getItem('taskearn_token');
             
             try {
-                const response = await fetch(`${window.TASKEARN_API_URL}/tracking/${taskId}/location`, {
+                const response = await apiFetchSafe(`${window.TASKEARN_API_URL}/tracking/${taskId}/location`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
@@ -1566,7 +1576,7 @@
             const token = localStorage.getItem('taskearn_token');
             
             try {
-                const response = await fetch(`${window.TASKEARN_API_URL}/tracking/update-location`, {
+                const response = await apiFetchSafe(`${window.TASKEARN_API_URL}/tracking/update-location`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1626,7 +1636,7 @@
             // Notify server to stop tracking
             if (currentTaskId) {
                 const token = localStorage.getItem('taskearn_token');
-                fetch(`${window.TASKEARN_API_URL}/tracking/stop/${currentTaskId}`, {
+                apiFetchSafe(`${window.TASKEARN_API_URL}/tracking/stop/${currentTaskId}`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`

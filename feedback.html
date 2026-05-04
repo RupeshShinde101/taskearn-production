@@ -272,10 +272,11 @@
                 localStorage.setItem('w4u_feedback_drafts', JSON.stringify(saved.slice(-20)));
             } catch (err) { /* ignore */ }
 
-            // Resolve API base
+            // Resolve API base + proxy fallback
             var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
                 ? 'http://localhost:5000/api'
                 : 'https://taskearn-production-production.up.railway.app/api';
+            var PROXY_BASE = '/.netlify/functions/api-proxy/api';
 
             var btn = document.getElementById('submitBtn');
             btn.disabled = true;
@@ -296,6 +297,13 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
+            })
+            .catch(function() {
+                return fetch(PROXY_BASE + '/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
             })
             .then(function (res) { return res.json().then(function (j) { return { ok: res.ok, body: j }; }); })
             .then(function (r) {
@@ -338,6 +346,6 @@
             });
         });
     </script>
-    <script src="sw-register.js?v=20260505_proxyall"></script>
+    <script src="sw-register.js?v=20260505_proxyfull"></script>
 </body>
 </html>

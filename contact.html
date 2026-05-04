@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_proxyall">
+    <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_proxyfull">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json">
@@ -247,18 +247,22 @@
                 message: document.getElementById('contactMessage').value
             };
 
-            // Save to database via backend API
+            // Save to database via backend API (with proxy fallback)
             var token = localStorage.getItem('taskearn_token');
-            var url = (window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api') + '/contact';
-            fetch(url, {
+            var direct = (window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api') + '/contact';
+            var proxy = '/.netlify/functions/api-proxy/api/contact';
+            var opts = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': token ? 'Bearer ' + token : '' },
                 body: JSON.stringify(params)
-            }).then(function() { showSuccess(); })
-            .catch(function(err) {
-                console.warn('Backend save failed:', err);
-                showSuccess();
-            });
+            };
+            fetch(direct, opts)
+                .catch(function() { return fetch(proxy, opts); })
+                .then(function() { showSuccess(); })
+                .catch(function(err) {
+                    console.warn('Backend save failed:', err);
+                    showSuccess();
+                });
         }
 
         function showSuccess() {

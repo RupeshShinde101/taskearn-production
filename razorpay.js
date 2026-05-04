@@ -197,14 +197,22 @@ async function addMoneyToWallet(amount, onSuccess, onError) {
         let keyId = RAZORPAY_KEY_ID;
         
         try {
-            const orderResponse = await fetch(`${window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api'}/wallet/create-order`, {
+            const direct = (window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api');
+            const proxy = '/.netlify/functions/api-proxy/api';
+            const orderOpts = {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${localStorage.getItem('taskearn_token')}`
                 },
                 body: JSON.stringify({ amount: amount })
-            });
+            };
+            let orderResponse;
+            try { orderResponse = await fetch(`${direct}/wallet/create-order`, orderOpts); }
+            catch (netErr) {
+                console.warn('Direct razorpay create-order failed, using proxy:', netErr && netErr.message);
+                orderResponse = await fetch(`${proxy}/wallet/create-order`, orderOpts);
+            }
             
             const orderData = await orderResponse.json();
             if (orderData.success) {
@@ -239,7 +247,9 @@ async function addMoneyToWallet(amount, onSuccess, onError) {
                 
                 // Try to verify with backend
                 try {
-                    const verifyResponse = await fetch(`${window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api'}/wallet/verify-payment`, {
+                    const direct2 = (window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api');
+                    const proxy2 = '/.netlify/functions/api-proxy/api';
+                    const verifyOpts = {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -251,7 +261,13 @@ async function addMoneyToWallet(amount, onSuccess, onError) {
                             razorpay_signature: response.razorpay_signature,
                             amount: amount
                         })
-                    });
+                    };
+                    let verifyResponse;
+                    try { verifyResponse = await fetch(`${direct2}/wallet/verify-payment`, verifyOpts); }
+                    catch (netErr) {
+                        console.warn('Direct razorpay verify failed, using proxy:', netErr && netErr.message);
+                        verifyResponse = await fetch(`${proxy2}/wallet/verify-payment`, verifyOpts);
+                    }
                     
                     const result = await verifyResponse.json();
                     if (result.success) {

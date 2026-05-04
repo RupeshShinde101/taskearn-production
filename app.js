@@ -5911,6 +5911,13 @@ function openModal(id) {
     if (id === 'postTaskModal') {
         resetBonusOnModalOpen();
     }
+    // Re-attempt Google Sign-In init when login/signup modal opens so the
+    // button renders even if the GIS library finished loading after first call.
+    if (id === 'loginModal' || id === 'signupModal') {
+        if (typeof initGoogleSignIn === 'function') {
+            try { initGoogleSignIn(); } catch (e) { console.warn('Google init retry failed', e); }
+        }
+    }
 }
 
 function closeModal(id) {
@@ -6482,29 +6489,25 @@ async function initGoogleSignIn() {
     
     console.log('✅ Google Client ID loaded, initializing...');
     
-    // Guard: only initialize once — calling it twice causes a console warning
-    if (window._googleSignInInitialized) {
-        console.log('ℹ️ Google Sign-In already initialized, skipping');
-        return;
+    // Guard: only initialize once — calling it twice causes a console warning.
+    // But still re-render buttons each call (modals may open after first init).
+    if (!window._googleSignInInitialized) {
+        window._googleSignInInitialized = true;
+        google.accounts.id.initialize({
+            client_id: window.GOOGLE_CLIENT_ID,
+            callback: handleGoogleCredentialResponse,
+            auto_select: false,
+            cancel_on_tap_outside: true,
+            // FedCM required on Chrome 121+ desktop (third-party cookies blocked)
+            use_fedcm_for_prompt: true,
+            ux_mode: 'popup'
+        });
     }
-    window._googleSignInInitialized = true;
-
-    google.accounts.id.initialize({
-        client_id: window.GOOGLE_CLIENT_ID,
-        callback: handleGoogleCredentialResponse,
-        auto_select: false,
-        cancel_on_tap_outside: true,
-        // FedCM is required on Chrome 121+ desktop where third-party cookies
-        // are blocked. Without these flags the Google button silently fails
-        // on desktop while still working on mobile (which uses a redirect).
-        use_fedcm_for_prompt: true,
-        use_fedcm_for_button: true,
-        ux_mode: 'popup'
-    });
     
-    // Render official Google buttons into both modals
+    // Render official Google buttons into both modals.
+    // renderButton appends a child iframe; skip if already populated.
     const loginBtn = document.getElementById('googleSignInBtn_login');
-    if (loginBtn) {
+    if (loginBtn && !loginBtn.children.length) {
         google.accounts.id.renderButton(loginBtn, {
             type: 'standard',
             size: 'large',
@@ -6515,7 +6518,7 @@ async function initGoogleSignIn() {
         console.log('✅ Google button rendered in login modal');
     }
     const signupBtn = document.getElementById('googleSignInBtn_signup');
-    if (signupBtn) {
+    if (signupBtn && !signupBtn.children.length) {
         google.accounts.id.renderButton(signupBtn, {
             type: 'standard',
             size: 'large',

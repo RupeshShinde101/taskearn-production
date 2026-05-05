@@ -1389,7 +1389,7 @@
                     +   '<span class="wm-price-icon">' + icon + '</span>'
                     +   '<span class="wm-price-text">'
                     +     '<strong>' + label + '</strong> — Ola/Rapido-style fare: '
-                    +     fmtRupee(effMeta.base) + ' base + ' + fmtRupee(effMeta.perKm) + ' / km'
+                    +     fmtRupee(effMeta.base) + ' service charge + ' + fmtRupee(effMeta.perKm) + ' / km'
                     +   '</span>'
                     + '</div>';
 

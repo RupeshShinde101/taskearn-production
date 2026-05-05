@@ -576,7 +576,11 @@
     function buildTemplateText(key) {
         const items = TEMPLATES[key];
         if (!items || !items.length) return '';
-        return items.map(q => '• ' + q).join('\n');
+        // Each question gets an "Answer:" line below it so the user can fill
+        // in their reply. They can still add free-form details at the bottom.
+        const blocks = items.map((q, i) => 'Q' + (i + 1) + '. ' + q + '\nA: ');
+        blocks.push('Additional details (optional):\n');
+        return blocks.join('\n\n');
     }
 
     function wireTemplate(selectId, textareaId) {

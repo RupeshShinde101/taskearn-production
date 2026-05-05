@@ -2728,7 +2728,7 @@ function renderTasks(filtered = null) {
             <div class="task-card" data-task-id="${task.id}" onclick="onTaskCardClick(${task.id})">
                 <div class="task-card-header">
                     <span class="task-category">${formatCategory(task.category)}</span>
-                    <span class="task-price">₹${task.price + getServiceCharge(task.category)}</span>
+                    <span class="task-price">₹${(parseFloat(task.price)||0) + (task.service_charge !== undefined && task.service_charge !== null ? parseFloat(task.service_charge) : getServiceCharge(task.category))}</span>
                     ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
                 </div>
                 <h4>${escapeHtml(task.title)}</h4>
@@ -4838,8 +4838,21 @@ async function handleTaskSubmit(event) {
     
     const totalPrice = baseBudget + currentBonus;
     const category = document.getElementById('modalTaskCategory').value;
-    const serviceCharge = getServiceCharge(category);
+    // Distance-aware service charge for pick&drop / delivery / moving.
+    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
+    const serviceCharge = getServiceCharge(category, distanceKm);
     const totalPayable = totalPrice + serviceCharge;
+
+    // If a specific vehicle was chosen for ride/delivery categories, surface it
+    // on the task so only taskers with that vehicle are eligible.
+    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛜 Auto', mini: '🚗 Mini Car', sedan: '🚙 Sedan' };
+    let descriptionText = document.getElementById('modalTaskDescription').value || '';
+    if (vehicleKey && VEHICLE_LABEL[vehicleKey] && !descriptionText.includes('Required vehicle:')) {
+        descriptionText = '🚕 Required vehicle: ' + VEHICLE_LABEL[vehicleKey]
+            + '  —  Only taskers with this vehicle should accept.\n\n'
+            + descriptionText;
+    }
 
     // Resolve task location coordinates
     const addressText = document.getElementById('modalTaskLocation').value.trim();
@@ -4868,7 +4881,7 @@ async function handleTaskSubmit(event) {
     const taskData = {
         title: document.getElementById('modalTaskTitle').value,
         category: category,
-        description: document.getElementById('modalTaskDescription').value,
+        description: descriptionText,
         location: {
             lat: taskLat,
             lng: taskLng,
@@ -6654,6 +6667,12 @@ async function getModalLocation() {
             input.value = 'Current Location';
         }
         showToast('📍 Location set from GPS');
+        // Auto-trigger fair-price recompute for distance-based categories.
+        try {
+            const dropApiInput = document.getElementById('modalTaskLocation_drop');
+            if (typeof window.__wmRefreshDistance === 'function') window.__wmRefreshDistance();
+            else if (dropApiInput) dropApiInput.dispatchEvent(new Event('blur', { bubbles: true }));
+        } catch (e) {}
     } catch (err) {
         console.warn('GPS error:', err.message);
         input.value = '';

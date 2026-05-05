@@ -1381,6 +1381,8 @@
                     if (!selectedVehicle || vehicleKeys.indexOf(selectedVehicle) === -1) {
                         selectedVehicle = VEHICLE_DEFAULT[key] || vehicleKeys[0];
                     }
+                    try { window.__wmSelectedVehicle = selectedVehicle; } catch (e) {}
+                    try { window.__wmSelectedVehicle = selectedVehicle; } catch (e) {}
                     effMeta = VEHICLES[selectedVehicle];
                 }
 
@@ -1474,7 +1476,15 @@
                 hint.querySelectorAll('.wm-vehicle-chip').forEach(btn => {
                     btn.addEventListener('click', () => {
                         selectedVehicle = btn.dataset.veh;
+                        try { window.__wmSelectedVehicle = selectedVehicle; } catch (e) {}
                         update();
+                        // If pickup+drop are already set, vehicle change should re-apply
+                        // a per-vehicle suggested price (handled by the next update()),
+                        // but we also re-run updateTotalBudgetDisplay so service charge
+                        // box stays in sync.
+                        try {
+                            if (typeof window.updateTotalBudgetDisplay === 'function') window.updateTotalBudgetDisplay();
+                        } catch (e) {}
                     });
                 });
                 if (opts.applyBudget) {
@@ -1650,12 +1660,17 @@
             lastDuration = null;
             lastRouteGeo = null;
             selectedVehicle = null;
-            try { window.__wmLastDistance = null; } catch (e) {}
+            try { window.__wmLastDistance = null; window.__wmSelectedVehicle = null; } catch (e) {}
             update();
             try {
                 if (typeof window.updateTotalBudgetDisplay === 'function') window.updateTotalBudgetDisplay();
             } catch (e) {}
         });
+        // Expose a hook so other code paths (e.g. Use My Location) can ask the
+        // distance-based price hint to recompute itself.
+        if (opts.applyBudget) {
+            try { window.__wmRefreshDistance = () => refreshDistance(); } catch (e) {}
+        }
         if (dropApi) {
             dropApi.input.addEventListener('blur', () => {
                 // User typed manually — clear any prior map-picked coords

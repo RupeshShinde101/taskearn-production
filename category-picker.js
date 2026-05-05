@@ -388,6 +388,225 @@
             const el = document.getElementById(id);
             if (el) enhance(el);
         });
+        // Wire description templates (post-task + edit-task forms)
+        wireTemplate('modalTaskCategory', 'modalTaskDescription');
+        wireTemplate('editTaskCategory',  'editTaskDescription');
+    }
+
+    // --- Description templates --------------------------------------------
+    // Prompt-style placeholders that pre-fill the description textarea when
+    // the user picks a category. Helps avoid the "Need plumber" problem.
+    const TEMPLATES = {
+        plumbing: [
+            'What needs fixing? (e.g., leaking tap, clogged drain, broken flush)',
+            'Where is the issue located? (kitchen / bathroom / outside)',
+            'How long has the problem existed?',
+            'Do you have spare parts, or should the tasker bring them?',
+        ],
+        electrician: [
+            'What is the electrical issue? (no power, faulty switch, fan not working, etc.)',
+            'Which area / room is affected?',
+            'Is there a complete power outage or partial?',
+            'Any specific brand of switch / fitting required?',
+        ],
+        carpentry: [
+            'What needs to be built or repaired? (door, window, furniture, shelf...)',
+            'Material preference (wood type / plywood / MDF)?',
+            'Approximate dimensions if known?',
+            'Should the tasker bring tools and materials?',
+        ],
+        painting: [
+            'Which area needs painting? (1 room / full house / exterior wall)',
+            'Approximate square feet, if known',
+            'Type of paint preferred (emulsion / distemper / enamel)',
+            'Will you supply paint, or should the tasker?',
+        ],
+        repair: [
+            'What item needs repair? (AC, fridge, washing machine, microwave, etc.)',
+            'Brand and model, if known',
+            'What exactly is wrong with it?',
+            'Is it under warranty?',
+        ],
+        vehicle: [
+            'Vehicle type and model (car / bike / scooter)',
+            'What service is needed? (wash, puncture, battery, full service)',
+            'Where should it be done? (your location / workshop)',
+            'Any specific issue you have noticed?',
+        ],
+        household: [
+            'What chores need doing? (dishes, dusting, mopping, full cleaning)',
+            'How many rooms / size of home?',
+            'How long do you expect it will take?',
+            'Any equipment / supplies provided?',
+        ],
+        cleaning: [
+            'Type of cleaning needed (deep clean, sofa, bathroom, kitchen, full home)',
+            'Size of area in sq.ft. or rooms',
+            'Any pets / specific concerns?',
+            'Will you provide supplies, or should the tasker?',
+        ],
+        laundry: [
+            'How many items / kg of clothes?',
+            'Wash only, or wash + iron + fold?',
+            'Any delicate items needing special care?',
+            'Pickup and drop required?',
+        ],
+        gardening: [
+            'What work is needed? (mowing, trimming, planting, weeding)',
+            'Size of the area (sq.ft. or describe)',
+            'Do you have tools, or should the tasker bring them?',
+            'Any specific plants to handle carefully?',
+        ],
+        waste: [
+            'What kind of waste? (household garbage, e-waste, scrap, construction debris)',
+            'Approximate quantity (bags / kg / load)',
+            'Pickup floor / accessibility (lift available?)',
+            'How frequently — one-time or recurring?',
+        ],
+        moving: [
+            'What needs to be moved? (full home / few items / office)',
+            'Pickup floor and drop floor — is there an elevator?',
+            'Approximate distance between locations',
+            'Do you need the tasker to bring a vehicle and packing material?',
+        ],
+        delivery: [
+            'What item needs to be delivered? (size / weight)',
+            'Pickup address / area',
+            'Drop address / area',
+            'Any specific time window?',
+        ],
+        transport: [
+            'Pickup point and drop point',
+            'How many people / luggage?',
+            'Preferred vehicle type (car / auto / bike)',
+            'Date and time required',
+        ],
+        shopping: [
+            'What needs to be bought? (list of items)',
+            'Where to buy from? (specific shop / any)',
+            'Approximate budget',
+            'Where to deliver after purchase?',
+        ],
+        petcare: [
+            'What kind of pet and breed?',
+            'Service needed (walk, grooming, feeding, sitting, vet visit)',
+            'Duration / frequency',
+            'Any medical conditions or special instructions?',
+        ],
+        beauty: [
+            'Service needed (haircut, makeup, manicure, facial, threading, spa, etc.)',
+            'At-home or salon visit?',
+            'Date and time preferred',
+            'Any product preferences / allergies?',
+        ],
+        babysitting: [
+            'Age of the child / children, and how many',
+            'Duration of sitting required (hours / overnight)',
+            'Any specific tasks (feeding, study help, pickup from school)?',
+            'Any allergies or medical needs to know?',
+        ],
+        eldercare: [
+            'Age and any medical conditions to be aware of',
+            'Type of help needed (companionship, mobility, medication, meals)',
+            'How many hours / which days?',
+            'Any specific language / gender preference for the carer?',
+        ],
+        fitness: [
+            'Type of training (yoga, gym, zumba, personal trainer)',
+            'Your fitness goals (weight loss, strength, flexibility)',
+            'Preferred days and time slot',
+            'At-home or at a center?',
+        ],
+        cooking: [
+            'Cuisine and number of meals / people',
+            'Any dietary restrictions (veg / non-veg / Jain / no onion-garlic)',
+            'Will ingredients be provided or should the tasker source them?',
+            'One-time or recurring (e.g., daily tiffin)?',
+        ],
+        catering: [
+            'Type of event and number of guests',
+            'Date, time and venue',
+            'Cuisine / menu preference',
+            'Any dietary restrictions or allergies?',
+        ],
+        eventhelp: [
+            'What kind of event? (birthday, wedding, corporate, party)',
+            'How many helpers needed and for what tasks?',
+            'Date, time and venue',
+            'Any setup / decoration / hosting requirements?',
+        ],
+        photography: [
+            'Type of shoot (wedding, portrait, event, product, food)',
+            'Date, time and location',
+            'Number of hours / final deliverables (edited photos / video)?',
+            'Any reference style or specific shots wanted?',
+        ],
+        tutoring: [
+            'Subject and class / level (e.g., Class 10 Math, IELTS speaking)',
+            'How many hours per week / how often?',
+            'Online or in-person?',
+            'Specific topics or syllabus to cover?',
+        ],
+        techsupport: [
+            'Device / software involved (laptop, phone, WiFi router, printer)',
+            'What is the exact issue?',
+            'Brand / model and OS, if known',
+            'Have you tried any fixes already?',
+        ],
+        freelance: [
+            'Type of work (logo, website, content writing, video editing, etc.)',
+            'Brief on what you want and references / examples',
+            'Deadline',
+            'Budget range, if any',
+        ],
+        tailoring: [
+            'What needs to be stitched / altered? (blouse, kurta, trousers, dress)',
+            'Quantity and current measurements / fitting issue',
+            'Material — provided by you or to be sourced?',
+            'When do you need it ready?',
+        ],
+        other: [
+            'What is the task in detail?',
+            'Where does it need to be done?',
+            'How long do you think it will take?',
+            'Any specific tools, skills or materials required?',
+        ],
+    };
+
+    function buildTemplateText(key) {
+        const items = TEMPLATES[key];
+        if (!items || !items.length) return '';
+        return items.map(q => '• ' + q).join('\n');
+    }
+
+    function wireTemplate(selectId, textareaId) {
+        const sel = document.getElementById(selectId);
+        const ta  = document.getElementById(textareaId);
+        if (!sel || !ta) return;
+        if (sel.dataset.wmTplWired === '1') return;
+        sel.dataset.wmTplWired = '1';
+
+        const apply = () => {
+            const key = sel.value;
+            if (!key || key === 'all') return;
+            const tpl = buildTemplateText(key);
+            if (!tpl) return;
+            const current = (ta.value || '').trim();
+            const lastTpl = ta.dataset.wmLastTpl || '';
+            // Only overwrite if textarea is empty OR still holds the previous template
+            if (!current || current === lastTpl.trim()) {
+                ta.value = tpl;
+                ta.dataset.wmLastTpl = tpl;
+                // Notify any listeners (char counters etc.)
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            // Update placeholder always (visible if user clears the textarea)
+            ta.placeholder = tpl;
+        };
+
+        sel.addEventListener('change', apply);
+        // Apply once on load if a category is already selected (edit form)
+        if (sel.value && sel.value !== 'all') apply();
     }
 
     if (document.readyState === 'loading') {

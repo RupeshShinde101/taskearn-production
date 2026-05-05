@@ -131,6 +131,54 @@
 [data-theme="dark"] .wm-cat-option:hover, [data-theme="dark"] .wm-cat-option.active { background: rgba(139, 134, 245, 0.18); }
 [data-theme="dark"] .wm-cat-option.selected { background: rgba(139, 134, 245, 0.25); }
 [data-theme="dark"] .wm-cat-option .wm-cat-parent { background: rgba(139,134,245,.18); color: #cbd5e1; }
+
+/* Price-range hint banner --------------------------------------------- */
+.wm-price-hint {
+    margin: -8px 0 18px 0;
+    padding: 12px 14px;
+    background: linear-gradient(135deg, #eef2ff 0%, #f0f9ff 100%);
+    border: 1px solid #c7d2fe;
+    border-left: 4px solid #6366f1;
+    border-radius: 10px;
+    font-size: 0.92rem;
+    color: #1e293b;
+    line-height: 1.5;
+    animation: wmPriceFade .25s ease-out;
+}
+@keyframes wmPriceFade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.wm-price-hint-head { display: flex; align-items: flex-start; gap: 10px; }
+.wm-price-icon { font-size: 1.25rem; flex-shrink: 0; line-height: 1.2; }
+.wm-price-text { flex: 1; }
+.wm-price-text strong { color: #4f46e5; font-weight: 700; }
+.wm-price-hint-actions {
+    margin-top: 10px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+}
+.wm-price-hint-label { font-size: 0.82rem; color: #64748b; margin-right: 2px; }
+.wm-price-chip {
+    padding: 5px 12px; font-size: 0.85rem; font-weight: 600;
+    background: #fff; color: #4f46e5;
+    border: 1px solid #c7d2fe; border-radius: 999px;
+    cursor: pointer; transition: all .15s;
+}
+.wm-price-chip:hover { background: #6366f1; color: #fff; border-color: #6366f1; }
+.wm-price-chip.active { background: #4f46e5; color: #fff; border-color: #4f46e5; box-shadow: 0 2px 6px rgba(79,70,229,.3); }
+.wm-price-hint-warn {
+    margin-top: 8px; font-size: 0.8rem; color: #b45309;
+    padding-top: 8px; border-top: 1px dashed #e0e7ff;
+}
+[data-theme="dark"] .wm-price-hint {
+    background: linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(56,189,248,0.10) 100%);
+    border-color: rgba(139,134,245,0.35); border-left-color: #8b86f5;
+    color: var(--text, #e7eaf2);
+}
+[data-theme="dark"] .wm-price-text strong { color: #a5b4fc; }
+[data-theme="dark"] .wm-price-hint-label { color: #94a3b8; }
+[data-theme="dark"] .wm-price-chip {
+    background: rgba(255,255,255,0.04); color: #c7d2fe; border-color: rgba(139,134,245,0.4);
+}
+[data-theme="dark"] .wm-price-chip:hover { background: #6366f1; color: #fff; }
+[data-theme="dark"] .wm-price-hint-warn { color: #fbbf24; border-top-color: rgba(139,134,245,0.25); }
 `;
         const style = document.createElement('style');
         style.id = 'wm-cat-picker-styles';
@@ -391,6 +439,9 @@
         // Wire description templates (post-task + edit-task forms)
         wireTemplate('modalTaskCategory', 'modalTaskDescription');
         wireTemplate('editTaskCategory',  'editTaskDescription');
+        // Wire price-range suggestions (post-task + edit-task forms)
+        wirePriceHint('modalTaskCategory', { budgetInputId: 'customBudget', applyBudget: true });
+        wirePriceHint('editTaskCategory',  { applyBudget: false });
     }
 
     // --- Description templates --------------------------------------------
@@ -611,6 +662,139 @@
         sel.addEventListener('change', apply);
         // Apply once on load if a category is already selected (edit form)
         if (sel.value && sel.value !== 'all') apply();
+    }
+
+    // --- Price range suggestions ------------------------------------------
+    // Typical Indian market base-labour ranges (INR) per category.
+    // {low, high} → "Most users pay between ₹low and ₹high".
+    // {min} → minimum the platform should accept (used to flag unrealistic posts).
+    const PRICE_RANGES = {
+        plumbing:    { low: 200, high: 600,  min: 150 },
+        electrician: { low: 250, high: 700,  min: 150 },
+        carpentry:   { low: 300, high: 900,  min: 200 },
+        painting:    { low: 500, high: 2500, min: 300 },
+        repair:      { low: 300, high: 1200, min: 200 },
+        vehicle:     { low: 200, high: 800,  min: 150 },
+        household:   { low: 150, high: 500,  min: 100 },
+        cleaning:    { low: 300, high: 1500, min: 200 },
+        laundry:     { low: 100, high: 400,  min: 100 },
+        gardening:   { low: 300, high: 1000, min: 200 },
+        waste:       { low: 150, high: 500,  min: 100 },
+        moving:      { low: 800, high: 3500, min: 500 },
+        delivery:    { low: 100, high: 400,  min: 100 },
+        transport:   { low: 150, high: 800,  min: 100 },
+        shopping:    { low: 150, high: 500,  min: 100 },
+        petcare:     { low: 200, high: 700,  min: 150 },
+        beauty:      { low: 300, high: 1500, min: 200 },
+        babysitting: { low: 200, high: 800,  min: 150 },
+        eldercare:   { low: 300, high: 1200, min: 200 },
+        fitness:     { low: 300, high: 1200, min: 200 },
+        cooking:     { low: 250, high: 1000, min: 200 },
+        catering:    { low: 1500, high: 8000, min: 500 },
+        eventhelp:   { low: 500, high: 3000, min: 300 },
+        photography: { low: 1000, high: 5000, min: 500 },
+        tutoring:    { low: 200, high: 800,  min: 150 },
+        techsupport: { low: 200, high: 800,  min: 150 },
+        freelance:   { low: 300, high: 3000, min: 150 },
+        tailoring:   { low: 150, high: 700,  min: 100 },
+        other:       { low: 200, high: 800,  min: 100 },
+    };
+
+    function getUserCity() {
+        try {
+            const u = window.currentUser;
+            if (u && u.city) return String(u.city).trim();
+            const stored = localStorage.getItem('userCity') || localStorage.getItem('city');
+            if (stored) return stored;
+        } catch (e) {}
+        return 'your area';
+    }
+
+    function fmtRupee(n) { return '₹' + Number(n).toLocaleString('en-IN'); }
+
+    function wirePriceHint(selectId, opts) {
+        opts = opts || {};
+        const sel = document.getElementById(selectId);
+        if (!sel) return;
+        if (sel.dataset.wmPriceWired === '1') return;
+        sel.dataset.wmPriceWired = '1';
+
+        // Find the form-group ancestor of the select to insert the hint after.
+        const fg = sel.closest('.form-group') || sel.parentElement;
+        if (!fg) return;
+        const hint = document.createElement('div');
+        hint.className = 'wm-price-hint';
+        hint.style.display = 'none';
+        // Place after the form-row (if select is in a row) so it spans full width
+        const row = sel.closest('.form-row');
+        const anchor = row || fg;
+        anchor.parentNode.insertBefore(hint, anchor.nextSibling);
+
+        const applyValueToBudget = (amt) => {
+            const customId = opts.budgetInputId || 'customBudget';
+            const budget = document.getElementById(customId);
+            if (!budget) return;
+            budget.value = amt;
+            budget.dispatchEvent(new Event('input', { bubbles: true }));
+            // Also clear any preset .budget-option active state and refresh display
+            try {
+                document.querySelectorAll('.budget-option').forEach(o => o.classList.remove('active'));
+                if (typeof window.updateTotalBudgetDisplay === 'function') {
+                    window.updateTotalBudgetDisplay();
+                }
+            } catch (e) {}
+            budget.focus();
+        };
+
+        const update = () => {
+            const key = sel.value;
+            const range = PRICE_RANGES[key];
+            const cat = (window.WMCategories && window.WMCategories.byKey(key)) || null;
+            if (!key || key === 'all' || !range) {
+                hint.style.display = 'none';
+                return;
+            }
+            const city  = getUserCity();
+            const label = cat ? cat.label : key;
+            const icon  = cat ? cat.icon : '💡';
+            const lowFmt  = fmtRupee(range.low);
+            const highFmt = fmtRupee(range.high);
+            let html = ''
+                + '<div class="wm-price-hint-head">'
+                +   '<span class="wm-price-icon">' + icon + '</span>'
+                +   '<span class="wm-price-text">'
+                +     'Most posters in <strong>' + city + '</strong> pay '
+                +     '<strong>' + lowFmt + ' – ' + highFmt + '</strong> for ' + label + ' tasks.'
+                +   '</span>'
+                + '</div>';
+            if (opts.applyBudget) {
+                html += '<div class="wm-price-hint-actions">'
+                     +    '<span class="wm-price-hint-label">Quick set:</span>'
+                     +    '<button type="button" class="wm-price-chip" data-amt="' + range.low  + '">' + lowFmt  + '</button>'
+                     +    '<button type="button" class="wm-price-chip" data-amt="' + Math.round((range.low+range.high)/2) + '">' + fmtRupee(Math.round((range.low+range.high)/2)) + '</button>'
+                     +    '<button type="button" class="wm-price-chip" data-amt="' + range.high + '">' + highFmt + '</button>'
+                     + '</div>'
+                     + '<div class="wm-price-hint-warn">'
+                     +   'Posting below ' + fmtRupee(range.min) + ' may not get accepted by any tasker.'
+                     + '</div>';
+            }
+            hint.innerHTML = html;
+            hint.style.display = 'block';
+
+            if (opts.applyBudget) {
+                hint.querySelectorAll('.wm-price-chip').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const amt = parseInt(btn.dataset.amt, 10);
+                        if (!isNaN(amt)) applyValueToBudget(amt);
+                        hint.querySelectorAll('.wm-price-chip').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                    });
+                });
+            }
+        };
+
+        sel.addEventListener('change', update);
+        if (sel.value && sel.value !== 'all') update();
     }
 
     if (document.readyState === 'loading') {

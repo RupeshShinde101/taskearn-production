@@ -339,7 +339,16 @@
 .wm-mappicker-result-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .wm-mappicker-result-text strong { font-weight: 600; line-height: 1.3; }
 .wm-mappicker-result-text small { color: var(--gray, #64748b); font-size: 0.78rem; line-height: 1.3; }
-.wm-mappicker-result-empty { padding: 14px; text-align: center; color: var(--gray, #64748b); font-size: 0.9rem; }
+.wm-mappicker-result-dist {
+    flex-shrink: 0; align-self: center;
+    font-size: 0.72rem; font-weight: 600; color: #4f46e5;
+    background: #eef2ff; border-radius: 999px; padding: 3px 8px;
+    white-space: nowrap;
+}
+.wm-mappicker-result-empty { padding: 14px; text-align: center; color: var(--gray, #64748b); font-size: 0.9rem; line-height: 1.5; }
+.wm-mappicker-result-empty small { display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.85; }
+.wm-mappicker-result-empty .fa-spinner { color: #6366f1; margin-right: 6px; }
+[data-theme="dark"] .wm-mappicker-result-dist { background: rgba(139,134,245,0.18); color: #c7d2fe; }
 [data-theme="dark"] .wm-mappicker-results { background: var(--surface, #141a33); }
 [data-theme="dark"] .wm-mappicker-result { color: var(--text, #e7eaf2); border-bottom-color: rgba(255,255,255,0.06); }
 [data-theme="dark"] .wm-mappicker-result:hover { background: rgba(139,134,245,0.15); }
@@ -1135,22 +1144,42 @@
         const resultsEl = overlay.querySelector('#wmMapPickerResults');
         const searchInput = overlay.querySelector('#wmMapPickerSearch');
 
+        // Proximity bias point — defaults to opts.start, falls back to map center.
+        // Used both for Nominatim viewbox bias AND for sorting results by distance.
+        const getBiasPoint = () => {
+            if (opts.start && typeof opts.start.lat === 'number') return opts.start;
+            const c = map.getCenter();
+            return { lat: c.lat, lng: c.lng };
+        };
+
+        const fmtKm = (km) => km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km';
+
         const renderResults = (data) => {
             if (!data || !data.length) {
-                resultsEl.innerHTML = '<div class="wm-mappicker-result-empty">No results — try a different search.</div>';
+                resultsEl.innerHTML = '<div class="wm-mappicker-result-empty">'
+                  + '<i class="fas fa-search"></i> No results found.<br>'
+                  + '<small>Try a different spelling, add city name, or click on the map below to drop a pin.</small>'
+                  + '</div>';
                 resultsEl.classList.add('open');
                 return;
             }
+            const bias = getBiasPoint();
             resultsEl.innerHTML = data.map((d, i) => {
                 const name = d.display_name || '';
                 const head = name.split(',').slice(0, 2).join(',').trim();
                 const tail = name.split(',').slice(2).join(',').trim();
+                const lat = parseFloat(d.lat), lng = parseFloat(d.lon);
+                const dist = haversine(bias, { lat, lng });
+                const distBadge = (dist != null && dist < 200)
+                    ? '<span class="wm-mappicker-result-dist">' + fmtKm(dist) + '</span>'
+                    : '';
                 return '<button type="button" class="wm-mappicker-result" data-i="' + i + '">'
                      +   '<i class="fas fa-map-marker-alt"></i>'
                      +   '<span class="wm-mappicker-result-text">'
                      +     '<strong>' + (head || name) + '</strong>'
                      +     (tail ? '<small>' + tail + '</small>' : '')
                      +   '</span>'
+                     +   distBadge
                      + '</button>';
             }).join('');
             resultsEl.classList.add('open');
@@ -1170,32 +1199,60 @@
             });
         };
 
+        // Build a Nominatim query URL biased toward the given lat/lng.
+        // viewbox = ±0.5° (~55 km) around the bias point, bounded=0 lets
+        // results outside the box still surface but ranked lower.
         const runQuery = async (q, limit) => {
+            const bias = getBiasPoint();
+            const dx = 0.5, dy = 0.5; // ~55 km radius
+            const vb = (bias.lng - dx) + ',' + (bias.lat + dy) + ',' + (bias.lng + dx) + ',' + (bias.lat - dy);
+            const url = 'https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(q)
+                + '&format=json&limit=' + (limit || 8)
+                + '&countrycodes=in&addressdetails=0'
+                + '&viewbox=' + vb + '&bounded=0';
             try {
-                const r = await fetch('https://nominatim.openstreetmap.org/search?q='
-                    + encodeURIComponent(q) + '&format=json&limit=' + (limit || 7)
-                    + '&countrycodes=in&addressdetails=0',
-                    { headers: { 'Accept-Language': 'en' } });
-                return await r.json();
+                const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+                let data = await r.json();
+                if (!Array.isArray(data)) return [];
+                // Re-rank: results near bias point first.  Many Nominatim
+                // queries return geographically distant matches first when
+                // bounded=0; sort client-side to keep nearby ones at the top.
+                data = data.slice(0, limit || 8).map(d => {
+                    const lat = parseFloat(d.lat), lng = parseFloat(d.lon);
+                    return { d, dist: haversine(bias, { lat, lng }) || 9999 };
+                }).sort((a, b) => a.dist - b.dist).map(x => x.d);
+                return data;
             } catch (e) { return null; }
         };
 
         const doSearch = async () => {
             const q = searchInput.value.trim();
             if (q.length < 2) return;
-            resultsEl.innerHTML = '<div class="wm-mappicker-result-empty">Searching…</div>';
+            resultsEl.innerHTML = '<div class="wm-mappicker-result-empty">'
+              + '<i class="fas fa-spinner fa-spin"></i> Searching nearby…</div>';
             resultsEl.classList.add('open');
-            const data = await runQuery(q, 7);
+            const data = await runQuery(q, 8);
+            if (data === null) {
+                resultsEl.innerHTML = '<div class="wm-mappicker-result-empty">'
+                  + '<i class="fas fa-exclamation-triangle"></i> Search failed — check your internet, then retry.'
+                  + '</div>';
+                return;
+            }
             renderResults(data);
         };
 
-        // Live (debounced) suggestions while typing
+        // Live (debounced) suggestions while typing.  2-char threshold so
+        // short Indian place names like "FC", "MG", "JM" surface quickly.
         let searchTimer = null;
         searchInput.addEventListener('input', () => {
             clearTimeout(searchTimer);
             const q = searchInput.value.trim();
-            if (q.length < 3) { resultsEl.classList.remove('open'); return; }
-            searchTimer = setTimeout(doSearch, 350);
+            if (q.length < 2) { resultsEl.classList.remove('open'); return; }
+            searchTimer = setTimeout(doSearch, 300);
+        });
+        searchInput.addEventListener('focus', () => {
+            const q = searchInput.value.trim();
+            if (q.length >= 2 && resultsEl.innerHTML) resultsEl.classList.add('open');
         });
         overlay.querySelector('#wmMapPickerSearchBtn').addEventListener('click', doSearch);
         searchInput.addEventListener('keydown', e => {
@@ -1570,11 +1627,9 @@
             // Wire the drop "Pick on Map" button
             if (dropApi.mapBtn) {
                 dropApi.mapBtn.addEventListener('click', () => {
+                    // Use pickup coords as proximity bias so search finds places near pickup
                     const start = pickupCoords
-                        ? { lat: pickupCoords.lat + 0.01, lng: pickupCoords.lng + 0.01 }
-                        : ((window.modalTaskCoords && window.modalTaskCoords.lat)
-                            ? { lat: window.modalTaskCoords.lat + 0.01, lng: window.modalTaskCoords.lng + 0.01 }
-                            : null);
+                        || (window.modalTaskCoords && window.modalTaskCoords.lat ? window.modalTaskCoords : null);
                     openMapPicker({
                         title: 'Choose Drop Location',
                         start: start,

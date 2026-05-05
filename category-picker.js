@@ -179,6 +179,34 @@
 }
 [data-theme="dark"] .wm-price-chip:hover { background: #6366f1; color: #fff; }
 [data-theme="dark"] .wm-price-hint-warn { color: #fbbf24; border-top-color: rgba(139,134,245,0.25); }
+
+/* Distance pricing row -------------------------------------------------- */
+.wm-price-distance {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.6);
+    border: 1px dashed #c7d2fe;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    color: #1e293b;
+}
+.wm-price-distance i { color: #6366f1; margin-right: 6px; }
+.wm-price-distance strong { color: #4f46e5; }
+.wm-price-formula { color: #64748b; font-size: 0.8rem; margin-left: 4px; }
+.wm-price-distance-empty { color: #64748b; font-style: italic; background: rgba(255,255,255,0.4); }
+.wm-price-chip-suggest {
+    background: #4f46e5 !important; color: #fff !important; border-color: #4f46e5 !important;
+    box-shadow: 0 2px 8px rgba(79,70,229,.35);
+}
+.wm-price-chip-suggest:hover { background: #4338ca !important; border-color: #4338ca !important; }
+.wm-drop-fg .wm-drop-hint { font-size: 0.78rem; color: var(--gray, #64748b); font-weight: 400; margin-left: 4px; }
+[data-theme="dark"] .wm-price-distance {
+    background: rgba(255,255,255,0.04); border-color: rgba(139,134,245,0.35); color: var(--text, #e7eaf2);
+}
+[data-theme="dark"] .wm-price-distance i { color: #a5b4fc; }
+[data-theme="dark"] .wm-price-distance strong { color: #c7d2fe; }
+[data-theme="dark"] .wm-price-distance-empty { color: #94a3b8; background: rgba(255,255,255,0.02); }
+[data-theme="dark"] .wm-price-formula { color: #94a3b8; }
 `;
         const style = document.createElement('style');
         style.id = 'wm-cat-picker-styles';
@@ -440,7 +468,7 @@
         wireTemplate('modalTaskCategory', 'modalTaskDescription');
         wireTemplate('editTaskCategory',  'editTaskDescription');
         // Wire price-range suggestions (post-task + edit-task forms)
-        wirePriceHint('modalTaskCategory', { budgetInputId: 'customBudget', applyBudget: true });
+        wirePriceHint('modalTaskCategory', { budgetInputId: 'customBudget', pickupInputId: 'modalTaskLocation', applyBudget: true });
         wirePriceHint('editTaskCategory',  { applyBudget: false });
     }
 
@@ -712,6 +740,67 @@
 
     function fmtRupee(n) { return '₹' + Number(n).toLocaleString('en-IN'); }
 
+    // --- Distance-based pricing -------------------------------------------
+    // Per-km labour rate (₹) + base fare for travel-based categories.
+    // total = base + perKm × distance, clamped to [low, high] of category.
+    const DISTANCE_PRICING = {
+        transport: { base: 50,  perKm: 15, label: 'Pick & Drop' },
+        delivery:  { base: 40,  perKm: 20, label: 'Delivery' },
+        moving:    { base: 500, perKm: 40, label: 'Moving & Packing' },
+    };
+
+    function haversine(a, b) {
+        if (!a || !b) return null;
+        const R = 6371;
+        const toRad = d => d * Math.PI / 180;
+        const dLat = toRad(b.lat - a.lat);
+        const dLng = toRad(b.lng - a.lng);
+        const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+        const x = Math.sin(dLat/2)**2 + Math.sin(dLng/2)**2 * Math.cos(lat1) * Math.cos(lat2);
+        return 2 * R * Math.asin(Math.sqrt(x));
+    }
+
+    async function wmGeocode(addr) {
+        if (!addr || addr.length < 4) return null;
+        try {
+            const r = await fetch('https://nominatim.openstreetmap.org/search?q='
+                + encodeURIComponent(addr) + '&format=json&limit=1&countrycodes=in',
+                { headers: { 'Accept-Language': 'en' } });
+            const data = await r.json();
+            if (data && data.length) {
+                return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    // Inject a "Drop Location" form-group after the pickup field.
+    // Returns { input, getCoords, hide, show }.
+    function ensureDropField(pickupId) {
+        const pickup = document.getElementById(pickupId);
+        if (!pickup) return null;
+        const pickupFG = pickup.closest('.form-group');
+        if (!pickupFG) return null;
+        let drop = document.getElementById(pickupId + '_drop');
+        let dropFG = drop ? drop.closest('.form-group') : null;
+        if (!drop) {
+            dropFG = document.createElement('div');
+            dropFG.className = 'form-group wm-drop-fg';
+            dropFG.innerHTML =
+                '<label for="' + pickupId + '_drop"><i class="fas fa-map-marker-alt"></i> Drop Location <span class="wm-drop-hint">(used to estimate fair price)</span></label>'
+              + '<input type="text" id="' + pickupId + '_drop" placeholder="Where should the tasker drop off? (e.g., FC Road, Pune)">';
+            pickupFG.parentNode.insertBefore(dropFG, pickupFG.nextSibling);
+            drop = dropFG.querySelector('input');
+            drop.dataset.wmDropFor = pickupId;
+        }
+        return {
+            input: drop,
+            fg: dropFG,
+            show: () => { dropFG.style.display = ''; },
+            hide: () => { dropFG.style.display = 'none'; },
+        };
+    }
+
     function wirePriceHint(selectId, opts) {
         opts = opts || {};
         const sel = document.getElementById(selectId);
@@ -730,13 +819,22 @@
         const anchor = row || fg;
         anchor.parentNode.insertBefore(hint, anchor.nextSibling);
 
+        // Optional drop-location field for distance pricing
+        const pickupId = opts.pickupInputId;
+        const dropApi = (opts.applyBudget && pickupId) ? ensureDropField(pickupId) : null;
+        if (dropApi) dropApi.hide();
+
+        // Latest known geocoded coords / distance (cached on the hint element)
+        let pickupCoords = null;
+        let dropCoords   = null;
+        let lastDistance = null;
+
         const applyValueToBudget = (amt) => {
             const customId = opts.budgetInputId || 'customBudget';
             const budget = document.getElementById(customId);
             if (!budget) return;
             budget.value = amt;
             budget.dispatchEvent(new Event('input', { bubbles: true }));
-            // Also clear any preset .budget-option active state and refresh display
             try {
                 document.querySelectorAll('.budget-option').forEach(o => o.classList.remove('active'));
                 if (typeof window.updateTotalBudgetDisplay === 'function') {
@@ -752,8 +850,15 @@
             const cat = (window.WMCategories && window.WMCategories.byKey(key)) || null;
             if (!key || key === 'all' || !range) {
                 hint.style.display = 'none';
+                if (dropApi) dropApi.hide();
                 return;
             }
+            const distMeta = DISTANCE_PRICING[key];
+            // Show drop field only for distance-based categories
+            if (dropApi) {
+                if (distMeta) dropApi.show(); else dropApi.hide();
+            }
+
             const city  = getUserCity();
             const label = cat ? cat.label : key;
             const icon  = cat ? cat.icon : '💡';
@@ -767,10 +872,32 @@
                 +     '<strong>' + lowFmt + ' – ' + highFmt + '</strong> for ' + label + ' tasks.'
                 +   '</span>'
                 + '</div>';
+
+            // Distance-based suggestion (only for transport/delivery/moving)
+            let suggestedAmt = null;
+            if (distMeta && lastDistance != null) {
+                const raw = distMeta.base + distMeta.perKm * lastDistance;
+                suggestedAmt = Math.max(range.min, Math.min(range.high * 2, Math.round(raw / 10) * 10));
+                html += '<div class="wm-price-distance">'
+                     +    '<i class="fas fa-route"></i> '
+                     +    'Distance: <strong>' + lastDistance.toFixed(1) + ' km</strong>'
+                     +    ' &nbsp;·&nbsp; Fair price ≈ <strong>' + fmtRupee(suggestedAmt) + '</strong>'
+                     +    ' <span class="wm-price-formula">(' + fmtRupee(distMeta.base) + ' base + ' + fmtRupee(distMeta.perKm) + '/km)</span>'
+                     + '</div>';
+            } else if (distMeta && opts.applyBudget) {
+                html += '<div class="wm-price-distance wm-price-distance-empty">'
+                     +    '<i class="fas fa-route"></i> '
+                     +    'Enter pickup &amp; drop locations above to see a distance-based fair price.'
+                     + '</div>';
+            }
+
             if (opts.applyBudget) {
                 html += '<div class="wm-price-hint-actions">'
-                     +    '<span class="wm-price-hint-label">Quick set:</span>'
-                     +    '<button type="button" class="wm-price-chip" data-amt="' + range.low  + '">' + lowFmt  + '</button>'
+                     +    '<span class="wm-price-hint-label">Quick set:</span>';
+                if (suggestedAmt != null) {
+                    html += '<button type="button" class="wm-price-chip wm-price-chip-suggest" data-amt="' + suggestedAmt + '">' + fmtRupee(suggestedAmt) + ' (suggested)</button>';
+                }
+                html +=    '<button type="button" class="wm-price-chip" data-amt="' + range.low  + '">' + lowFmt  + '</button>'
                      +    '<button type="button" class="wm-price-chip" data-amt="' + Math.round((range.low+range.high)/2) + '">' + fmtRupee(Math.round((range.low+range.high)/2)) + '</button>'
                      +    '<button type="button" class="wm-price-chip" data-amt="' + range.high + '">' + highFmt + '</button>'
                      + '</div>'
@@ -793,7 +920,37 @@
             }
         };
 
-        sel.addEventListener('change', update);
+        // Geocode pickup + drop on blur, then refresh hint
+        const refreshDistance = async () => {
+            if (!dropApi || !DISTANCE_PRICING[sel.value]) return;
+            const pickupEl = document.getElementById(pickupId);
+            const dropEl   = dropApi.input;
+            if (!pickupEl || !dropEl) return;
+            const pTxt = (pickupEl.value || '').trim();
+            const dTxt = (dropEl.value || '').trim();
+            // Prefer existing modalTaskCoords for pickup (already geocoded by GPS)
+            try {
+                if (window.modalTaskCoords && window.modalTaskCoords.lat) {
+                    pickupCoords = window.modalTaskCoords;
+                } else if (pTxt) {
+                    pickupCoords = await wmGeocode(pTxt);
+                }
+            } catch (e) { pickupCoords = null; }
+            if (dTxt) {
+                dropCoords = await wmGeocode(dTxt);
+            } else {
+                dropCoords = null;
+            }
+            lastDistance = haversine(pickupCoords, dropCoords);
+            update();
+        };
+
+        sel.addEventListener('change', () => { lastDistance = null; update(); });
+        if (dropApi) {
+            dropApi.input.addEventListener('blur', refreshDistance);
+            const pickupEl = document.getElementById(pickupId);
+            if (pickupEl) pickupEl.addEventListener('blur', refreshDistance);
+        }
         if (sel.value && sel.value !== 'all') update();
     }
 

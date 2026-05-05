@@ -311,19 +311,24 @@
     color: var(--text, #0f172a); cursor: pointer; padding: 0 6px;
 }
 .wm-mappicker-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.wm-mappicker-search { display: flex; gap: 6px; }
-.wm-mappicker-search-box { position: relative; flex: 1; }
+.wm-mappicker-search { display: flex; gap: 6px; position: relative; z-index: 1100; }
+.wm-mappicker-search-box { position: relative; flex: 1; z-index: 1100; }
 .wm-mappicker-search input {
-    width: 100%; padding: 9px 12px; font-size: 0.95rem;
-    border: 1px solid var(--border, #e2e8f0); border-radius: 8px;
+    width: 100%; padding: 10px 14px; font-size: 0.95rem;
+    border: 1.5px solid var(--border, #e2e8f0); border-radius: 10px;
     background: var(--bg, #fff); color: var(--text, #0f172a);
-    box-sizing: border-box;
+    box-sizing: border-box; transition: border-color .15s ease, box-shadow .15s ease;
+}
+.wm-mappicker-search input:focus {
+    outline: none; border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
 }
 .wm-mappicker-results {
-    position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px);
     background: var(--surface, #fff); border: 1px solid var(--border, #e2e8f0);
-    border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18);
-    max-height: 280px; overflow-y: auto; z-index: 10;
+    border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.22);
+    max-height: 320px; overflow-y: auto;
+    z-index: 1200;  /* must beat Leaflet panes (max 700) and controls (1000) */
     display: none;
 }
 .wm-mappicker-results.open { display: block; }
@@ -358,9 +363,13 @@
     border-radius: 8px; cursor: pointer;
 }
 .wm-mappicker-search button:hover { background: var(--primary, #6366f1); color: #fff; border-color: var(--primary, #6366f1); }
-.wm-mappicker-map { width: 100%; height: 380px; min-height: 380px; flex: 0 0 380px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border, #e2e8f0); }
+.wm-mappicker-map {
+    width: 100%; height: 380px; min-height: 380px; flex: 0 0 380px;
+    border-radius: 12px; overflow: hidden; border: 1px solid var(--border, #e2e8f0);
+    position: relative; z-index: 0;  /* creates a stacking context so Leaflet panes stay below the search dropdown */
+}
 .wm-mappicker-addr {
-    background: var(--bg, #f8fafc); padding: 10px 12px; border-radius: 8px;
+    background: var(--bg, #f8fafc); padding: 10px 12px; border-radius: 10px;
     font-size: 0.88rem; line-height: 1.4; word-break: break-word;
     border: 1px solid var(--border, #e2e8f0);
 }

@@ -208,6 +208,53 @@
 [data-theme="dark"] .wm-price-distance-empty { color: #94a3b8; background: rgba(255,255,255,0.02); }
 [data-theme="dark"] .wm-price-formula { color: #94a3b8; }
 
+/* Ola/Rapido-style vehicle chips -------------------------------------- */
+.wm-vehicle-row {
+    display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 8px 0;
+}
+.wm-vehicle-chip {
+    flex: 1 1 110px; min-width: 110px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 10px 8px;
+    background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px;
+    cursor: pointer; transition: all .15s ease; font: inherit;
+}
+.wm-vehicle-chip:hover { border-color: #a5b4fc; transform: translateY(-1px); }
+.wm-vehicle-chip.active {
+    border-color: #4f46e5; background: linear-gradient(135deg, #eef2ff, #ede9fe);
+    box-shadow: 0 4px 12px rgba(79,70,229,.18);
+}
+.wm-vehicle-icon { font-size: 1.6rem; line-height: 1; }
+.wm-vehicle-label { font-size: 0.82rem; font-weight: 600; color: #1e293b; }
+.wm-vehicle-amt { font-size: 0.85rem; font-weight: 700; color: #4f46e5; }
+.wm-vehicle-amt-mute { color: #64748b; font-weight: 500; font-size: 0.78rem; }
+[data-theme="dark"] .wm-vehicle-chip {
+    background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.12);
+}
+[data-theme="dark"] .wm-vehicle-chip:hover { border-color: #8b86f5; }
+[data-theme="dark"] .wm-vehicle-chip.active {
+    background: rgba(139,134,245,0.18); border-color: #8b86f5;
+}
+[data-theme="dark"] .wm-vehicle-label { color: var(--text, #e7eaf2); }
+[data-theme="dark"] .wm-vehicle-amt { color: #c7d2fe; }
+[data-theme="dark"] .wm-vehicle-amt-mute { color: #94a3b8; }
+
+/* Inline route preview map -------------------------------------------- */
+.wm-route-map {
+    margin-top: 10px; height: 180px; border-radius: 12px; overflow: hidden;
+    border: 1px solid #e2e8f0; background: #f1f5f9;
+}
+.wm-route-pin {
+    background: transparent; border: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem;
+}
+.wm-route-pin-pickup i { color: #10b981; }
+.wm-route-pin-drop i { color: #ef4444; font-size: 1.6rem; }
+[data-theme="dark"] .wm-route-map { border-color: rgba(255,255,255,0.1); background: #0f172a; }
+
+.wm-pickup-map-btn { display: inline-flex; align-items: center; gap: 6px; }
+
 /* Pick-on-map button + modal ------------------------------------------- */
 .wm-drop-map-btn {
     display: inline-flex; align-items: center; gap: 6px;
@@ -840,6 +887,42 @@
         moving:    { base: 500, perKm: 40, label: 'Moving & Packing' },
     };
 
+    // Ola/Rapido-style vehicle classes with per-km fare and avg speed (km/h).
+    const VEHICLES = {
+        bike:  { key: 'bike',  label: 'Bike',  icon: '🏍️', base: 30,  perKm: 8,  speed: 28 },
+        auto:  { key: 'auto',  label: 'Auto',  icon: '🛺', base: 50,  perKm: 15, speed: 22 },
+        mini:  { key: 'mini',  label: 'Mini',  icon: '🚗', base: 80,  perKm: 18, speed: 30 },
+        sedan: { key: 'sedan', label: 'Sedan', icon: '🚙', base: 120, perKm: 22, speed: 32 },
+    };
+    // Which vehicles to offer per category (transport-style only).
+    const VEHICLE_OPTIONS = {
+        transport: ['bike', 'auto', 'mini', 'sedan'],
+        delivery:  ['bike', 'auto'],
+    };
+    const VEHICLE_DEFAULT = { transport: 'auto', delivery: 'bike' };
+
+    // Fetch road-network route via OSRM (free public demo server).
+    // Returns { distance(km), duration(min), geometry(GeoJSON LineString) } or null.
+    async function wmRoute(a, b) {
+        if (!a || !b) return null;
+        try {
+            const url = 'https://router.project-osrm.org/route/v1/driving/'
+                + a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat
+                + '?overview=full&geometries=geojson';
+            const r = await fetch(url);
+            const data = await r.json();
+            if (data && data.routes && data.routes.length) {
+                const rt = data.routes[0];
+                return {
+                    distance: rt.distance / 1000,
+                    duration: rt.duration / 60,
+                    geometry: rt.geometry,
+                };
+            }
+        } catch (e) {}
+        return null;
+    }
+
     function haversine(a, b) {
         if (!a || !b) return null;
         const R = 6371;
@@ -878,9 +961,9 @@
             dropFG = document.createElement('div');
             dropFG.className = 'form-group wm-drop-fg';
             dropFG.innerHTML =
-                '<label for="' + pickupId + '_drop"><i class="fas fa-flag-checkered"></i> Drop Location <span class="wm-drop-hint">(used to estimate fair price)</span></label>'
+                '<label for="' + pickupId + '_drop"><i class="fas fa-flag-checkered"></i> Drop Location</label>'
               + '<div class="location-input-wrapper">'
-              +   '<input type="text" id="' + pickupId + '_drop" placeholder="Enter the drop address (e.g., FC Road, Pune)">'
+              +   '<input type="text" id="' + pickupId + '_drop" placeholder="Where to? (e.g., FC Road, Pune)">'
               +   '<button type="button" class="location-btn wm-drop-map-btn" id="' + pickupId + '_dropMapBtn">'
               +     '<i class="fas fa-map-marked-alt"></i> Pick on Map'
               +   '</button>'
@@ -896,6 +979,26 @@
             show: () => { dropFG.style.display = ''; },
             hide: () => { dropFG.style.display = 'none'; },
         };
+    }
+
+    // Inject a "Pick on Map" button next to the pickup input (alongside the
+    // existing "Use My Location" button if present).  Returns the button el.
+    function ensurePickupMapBtn(pickupId) {
+        const pickup = document.getElementById(pickupId);
+        if (!pickup) return null;
+        const wrapper = pickup.closest('.location-input-wrapper');
+        if (!wrapper) return null;
+        let btn = document.getElementById(pickupId + '_pickupMapBtn');
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = pickupId + '_pickupMapBtn';
+            btn.className = 'location-btn wm-pickup-map-btn';
+            btn.innerHTML = '<i class="fas fa-map-marked-alt"></i> Pick on Map';
+            btn.style.display = 'none';
+            wrapper.appendChild(btn);
+        }
+        return btn;
     }
 
     // Open a Leaflet map modal for the user to click / drag a pin.
@@ -1106,11 +1209,15 @@
         const pickupId = opts.pickupInputId;
         const dropApi = (opts.applyBudget && pickupId) ? ensureDropField(pickupId) : null;
         if (dropApi) dropApi.hide();
+        const pickupMapBtn = (opts.applyBudget && pickupId) ? ensurePickupMapBtn(pickupId) : null;
 
         // Latest known geocoded coords / distance (cached on the hint element)
         let pickupCoords = null;
         let dropCoords   = null;
-        let lastDistance = null;
+        let lastDistance = null;       // km (road if route present, else haversine)
+        let lastDuration = null;       // minutes (from OSRM, else null)
+        let lastRouteGeo = null;       // GeoJSON LineString geometry (or null)
+        let selectedVehicle = null;    // selected vehicle key for transport/delivery
 
         const applyValueToBudget = (amt) => {
             const customId = opts.budgetInputId || 'customBudget';
@@ -1137,9 +1244,12 @@
                 return;
             }
             const distMeta = DISTANCE_PRICING[key];
-            // Show drop field only for distance-based categories
+            // Show drop field + pickup map button only for distance-based categories
             if (dropApi) {
                 if (distMeta) dropApi.show(); else dropApi.hide();
+            }
+            if (pickupMapBtn) {
+                pickupMapBtn.style.display = distMeta ? '' : 'none';
             }
 
             const city  = getUserCity();
@@ -1148,31 +1258,69 @@
             const lowFmt  = fmtRupee(range.low);
             const highFmt = fmtRupee(range.high);
 
-            // For distance categories, show ONLY distance-based pricing UI
-            // (skip the city-range banner + standard quick-set chips so the
-            //  user is not confused by two different prices).
+            // For distance categories, show Ola/Rapido-style pricing UI:
+            // header → vehicle chips → distance/ETA row → suggested price → mini map.
             if (distMeta) {
+                // Decide effective fare meta — vehicle override (if any) else category default.
+                const vehicleKeys = VEHICLE_OPTIONS[key];
+                let effMeta = distMeta;
+                if (vehicleKeys && vehicleKeys.length) {
+                    if (!selectedVehicle || vehicleKeys.indexOf(selectedVehicle) === -1) {
+                        selectedVehicle = VEHICLE_DEFAULT[key] || vehicleKeys[0];
+                    }
+                    effMeta = VEHICLES[selectedVehicle];
+                }
+
                 let html = ''
                     + '<div class="wm-price-hint-head">'
                     +   '<span class="wm-price-icon">' + icon + '</span>'
                     +   '<span class="wm-price-text">'
-                    +     '<strong>' + label + '</strong> is priced by distance — '
-                    +     fmtRupee(distMeta.base) + ' base fare + ' + fmtRupee(distMeta.perKm) + ' per km.'
+                    +     '<strong>' + label + '</strong> — Ola/Rapido-style fare: '
+                    +     fmtRupee(effMeta.base) + ' base + ' + fmtRupee(effMeta.perKm) + ' / km'
                     +   '</span>'
                     + '</div>';
+
+                // Vehicle chips
+                if (vehicleKeys && vehicleKeys.length) {
+                    html += '<div class="wm-vehicle-row">';
+                    vehicleKeys.forEach(vk => {
+                        const v = VEHICLES[vk];
+                        let est = '';
+                        if (lastDistance != null) {
+                            const a = Math.max(range.min, Math.round((v.base + v.perKm * lastDistance) / 10) * 10);
+                            est = '<span class="wm-vehicle-amt">' + fmtRupee(a) + '</span>';
+                        } else {
+                            est = '<span class="wm-vehicle-amt wm-vehicle-amt-mute">' + fmtRupee(v.perKm) + '/km</span>';
+                        }
+                        html += '<button type="button" class="wm-vehicle-chip'
+                             + (vk === selectedVehicle ? ' active' : '')
+                             + '" data-veh="' + vk + '">'
+                             +   '<span class="wm-vehicle-icon">' + v.icon + '</span>'
+                             +   '<span class="wm-vehicle-label">' + v.label + '</span>'
+                             +   est
+                             + '</button>';
+                    });
+                    html += '</div>';
+                }
+
                 let suggestedAmt = null;
                 if (lastDistance != null) {
-                    const raw = distMeta.base + distMeta.perKm * lastDistance;
+                    const raw = effMeta.base + effMeta.perKm * lastDistance;
                     suggestedAmt = Math.max(range.min, Math.round(raw / 10) * 10);
+                    const speed = effMeta.speed || 25;
+                    const etaMin = lastDuration != null
+                        ? Math.max(2, Math.round(lastDuration))
+                        : Math.max(2, Math.round((lastDistance / speed) * 60));
                     html += '<div class="wm-price-distance">'
                          +    '<i class="fas fa-route"></i> '
-                         +    'Distance: <strong>' + lastDistance.toFixed(1) + ' km</strong>'
+                         +    '<strong>' + lastDistance.toFixed(1) + ' km</strong>'
+                         +    ' &nbsp;·&nbsp; <i class="far fa-clock"></i> ~' + etaMin + ' min'
                          +    ' &nbsp;·&nbsp; Fair price ≈ <strong>' + fmtRupee(suggestedAmt) + '</strong>'
                          + '</div>';
                 } else if (opts.applyBudget) {
                     html += '<div class="wm-price-distance wm-price-distance-empty">'
                          +    '<i class="fas fa-route"></i> '
-                         +    'Enter pickup &amp; drop locations above (or use <i class="fas fa-map-marked-alt"></i> Pick on Map) to see a fair price.'
+                         +    'Set pickup &amp; drop (use <i class="fas fa-map-marked-alt"></i> Pick on Map) to see distance, ETA and a fair price.'
                          + '</div>';
                 }
                 if (opts.applyBudget && suggestedAmt != null) {
@@ -1181,8 +1329,20 @@
                          +    '<button type="button" class="wm-price-chip wm-price-chip-suggest" data-amt="' + suggestedAmt + '">' + fmtRupee(suggestedAmt) + '</button>'
                          + '</div>';
                 }
+                // Mini route preview map placeholder (filled after innerHTML set)
+                if (pickupCoords && dropCoords) {
+                    html += '<div class="wm-route-map" id="wmRouteMap_' + selectId + '"></div>';
+                }
                 hint.innerHTML = html;
                 hint.style.display = 'block';
+
+                // Wire vehicle chips
+                hint.querySelectorAll('.wm-vehicle-chip').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        selectedVehicle = btn.dataset.veh;
+                        update();
+                    });
+                });
                 if (opts.applyBudget) {
                     hint.querySelectorAll('.wm-price-chip').forEach(btn => {
                         btn.addEventListener('click', () => {
@@ -1192,6 +1352,39 @@
                             btn.classList.add('active');
                         });
                     });
+                }
+                // Render mini-map with route line
+                const mapDiv = document.getElementById('wmRouteMap_' + selectId);
+                if (mapDiv && pickupCoords && dropCoords && typeof L !== 'undefined') {
+                    try {
+                        const m = L.map(mapDiv, {
+                            zoomControl: false,
+                            attributionControl: false,
+                            dragging: false,
+                            scrollWheelZoom: false,
+                            doubleClickZoom: false,
+                            boxZoom: false,
+                            keyboard: false,
+                            touchZoom: false,
+                        });
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            maxZoom: 18,
+                        }).addTo(m);
+                        const pIcon = L.divIcon({ className: 'wm-route-pin wm-route-pin-pickup', html: '<i class="fas fa-circle-dot"></i>', iconSize: [22, 22], iconAnchor: [11, 11] });
+                        const dIcon = L.divIcon({ className: 'wm-route-pin wm-route-pin-drop',   html: '<i class="fas fa-map-marker-alt"></i>', iconSize: [26, 26], iconAnchor: [13, 24] });
+                        L.marker([pickupCoords.lat, pickupCoords.lng], { icon: pIcon }).addTo(m);
+                        L.marker([dropCoords.lat, dropCoords.lng], { icon: dIcon }).addTo(m);
+                        if (lastRouteGeo && lastRouteGeo.coordinates && lastRouteGeo.coordinates.length) {
+                            const latlngs = lastRouteGeo.coordinates.map(c => [c[1], c[0]]);
+                            L.polyline(latlngs, { color: '#6366f1', weight: 4, opacity: 0.85 }).addTo(m);
+                            m.fitBounds(latlngs, { padding: [20, 20] });
+                        } else {
+                            const latlngs = [[pickupCoords.lat, pickupCoords.lng], [dropCoords.lat, dropCoords.lng]];
+                            L.polyline(latlngs, { color: '#6366f1', weight: 3, opacity: 0.7, dashArray: '6 6' }).addTo(m);
+                            m.fitBounds(latlngs, { padding: [20, 20] });
+                        }
+                        setTimeout(() => m.invalidateSize(), 250);
+                    } catch (e) { /* ignore map errors */ }
                 }
                 return;
             }
@@ -1232,7 +1425,7 @@
             }
         };
 
-        // Geocode pickup + drop on blur, then refresh hint
+        // Geocode pickup + drop, fetch road route, then refresh hint
         const refreshDistance = async () => {
             if (!dropApi || !DISTANCE_PRICING[sel.value]) return;
             const pickupEl = document.getElementById(pickupId);
@@ -1242,7 +1435,9 @@
             const dTxt = (dropEl.value || '').trim();
             // Prefer cached coords (set by GPS button or map picker)
             try {
-                if (window.modalTaskCoords && window.modalTaskCoords.lat) {
+                if (dropApi.pickupCoords) {
+                    pickupCoords = dropApi.pickupCoords;
+                } else if (window.modalTaskCoords && window.modalTaskCoords.lat) {
                     pickupCoords = window.modalTaskCoords;
                 } else if (pTxt) {
                     pickupCoords = await wmGeocode(pTxt);
@@ -1255,11 +1450,31 @@
             } else {
                 dropCoords = null;
             }
-            lastDistance = haversine(pickupCoords, dropCoords);
+            // Try OSRM road route; fall back to haversine on failure
+            lastRouteGeo = null;
+            lastDuration = null;
+            if (pickupCoords && dropCoords) {
+                const route = await wmRoute(pickupCoords, dropCoords);
+                if (route) {
+                    lastDistance = route.distance;
+                    lastDuration = route.duration;
+                    lastRouteGeo = route.geometry;
+                } else {
+                    lastDistance = haversine(pickupCoords, dropCoords);
+                }
+            } else {
+                lastDistance = null;
+            }
             update();
         };
 
-        sel.addEventListener('change', () => { lastDistance = null; update(); });
+        sel.addEventListener('change', () => {
+            lastDistance = null;
+            lastDuration = null;
+            lastRouteGeo = null;
+            selectedVehicle = null;
+            update();
+        });
         if (dropApi) {
             dropApi.input.addEventListener('blur', () => {
                 // User typed manually — clear any prior map-picked coords
@@ -1267,20 +1482,46 @@
                 refreshDistance();
             });
             const pickupEl = document.getElementById(pickupId);
-            if (pickupEl) pickupEl.addEventListener('blur', refreshDistance);
+            if (pickupEl) pickupEl.addEventListener('blur', () => {
+                // Manual edit clears cached pickup coords
+                if (dropApi) dropApi.pickupCoords = null;
+                refreshDistance();
+            });
 
-            // Wire the "Pick on Map" button
+            // Wire the drop "Pick on Map" button
             if (dropApi.mapBtn) {
                 dropApi.mapBtn.addEventListener('click', () => {
-                    const start = (window.modalTaskCoords && window.modalTaskCoords.lat)
-                        ? { lat: window.modalTaskCoords.lat + 0.01, lng: window.modalTaskCoords.lng + 0.01 }
-                        : null;
+                    const start = pickupCoords
+                        ? { lat: pickupCoords.lat + 0.01, lng: pickupCoords.lng + 0.01 }
+                        : ((window.modalTaskCoords && window.modalTaskCoords.lat)
+                            ? { lat: window.modalTaskCoords.lat + 0.01, lng: window.modalTaskCoords.lng + 0.01 }
+                            : null);
                     openMapPicker({
                         title: 'Choose Drop Location',
                         start: start,
                         onConfirm: (loc) => {
                             dropApi.input.value = loc.address;
                             dropApi.dropCoords = { lat: loc.lat, lng: loc.lng };
+                            refreshDistance();
+                        }
+                    });
+                });
+            }
+
+            // Wire the pickup "Pick on Map" button
+            if (pickupMapBtn) {
+                pickupMapBtn.addEventListener('click', () => {
+                    const start = pickupCoords
+                        || (window.modalTaskCoords && window.modalTaskCoords.lat ? window.modalTaskCoords : null);
+                    openMapPicker({
+                        title: 'Choose Pickup Location',
+                        start: start,
+                        onConfirm: (loc) => {
+                            const pEl = document.getElementById(pickupId);
+                            if (pEl) pEl.value = loc.address;
+                            dropApi.pickupCoords = { lat: loc.lat, lng: loc.lng };
+                            // Also update global modalTaskCoords so other code paths see it
+                            try { window.modalTaskCoords = { lat: loc.lat, lng: loc.lng }; } catch (e) {}
                             refreshDistance();
                         }
                     });

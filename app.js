@@ -1160,6 +1160,63 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Render task description. Detects the Q&A template format produced by
+// category-picker.js and renders questions/answers as readable cards.
+// opts.compact: card-list mode → show only the answers as a short summary.
+function formatTaskDescription(text, opts) {
+    opts = opts || {};
+    if (text == null) return '';
+    const raw = String(text).trim();
+    if (!raw) return '';
+    const hasQA = /^Q\d+\./m.test(raw);
+    if (!hasQA) {
+        return escapeHtml(raw).replace(/\n/g, '<br>');
+    }
+    const lines = raw.split('\n');
+    const blocks = [];
+    let curQ = null, curA = [];
+    let extra = [], inExtra = false;
+    for (const line of lines) {
+        const qm = line.match(/^Q(\d+)\.\s*(.*)$/);
+        const am = line.match(/^A:\s*(.*)$/);
+        const exm = line.match(/^Additional details[^:]*:\s*(.*)$/i);
+        if (qm) {
+            if (curQ !== null) blocks.push({ q: curQ, a: curA.join('\n').trim() });
+            curQ = qm[2].trim(); curA = []; inExtra = false;
+        } else if (am) {
+            curA.push(am[1]);
+        } else if (exm) {
+            if (curQ !== null) { blocks.push({ q: curQ, a: curA.join('\n').trim() }); curQ = null; }
+            inExtra = true;
+            if (exm[1]) extra.push(exm[1]);
+        } else if (inExtra) {
+            extra.push(line);
+        } else if (curQ !== null) {
+            if (line.trim()) curA.push(line);
+        }
+    }
+    if (curQ !== null) blocks.push({ q: curQ, a: curA.join('\n').trim() });
+    const extraText = extra.join('\n').trim();
+
+    if (opts.compact) {
+        const parts = blocks.map(b => b.a).filter(Boolean);
+        if (extraText) parts.push(extraText);
+        return escapeHtml(parts.join(' • '));
+    }
+    let html = '<div class="task-qa">';
+    for (const b of blocks) {
+        const ans = b.a
+            ? escapeHtml(b.a).replace(/\n/g, '<br>')
+            : '<em class="qa-empty">(not answered)</em>';
+        html += `<div class="qa-item"><div class="qa-q">${escapeHtml(b.q)}</div><div class="qa-a">${ans}</div></div>`;
+    }
+    html += '</div>';
+    if (extraText) {
+        html += `<div class="qa-extra"><strong>Additional details</strong><div>${escapeHtml(extraText).replace(/\n/g, '<br>')}</div></div>`;
+    }
+    return html;
+}
+
 // ========================================
 // ACCOUNT DELETION
 // ========================================
@@ -2663,7 +2720,7 @@ function renderTasks(filtered = null) {
                     ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
                 </div>
                 <h4>${escapeHtml(task.title)}</h4>
-                <p>${escapeHtml(task.description)}</p>
+                <p class="task-desc-summary">${formatTaskDescription(task.description, { compact: true })}</p>
                 <div class="task-meta">
                     <span><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
                     ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
@@ -2756,7 +2813,7 @@ function openTaskDetail(taskId) {
         
         <div class="task-detail-body">
             <h4>Description</h4>
-            <p>${escapeHtml(task.description)}</p>
+            <div class="task-desc-full">${formatTaskDescription(task.description)}</div>
         </div>
         
         <div class="task-detail-map" id="taskDetailMap"></div>
@@ -4046,7 +4103,7 @@ function showTaskPostedSuccess(task) {
                 <span class="task-price">₹${task.price}</span>
             </div>
             <h4>${escapeHtml(task.title)}</h4>
-            <p>${escapeHtml(task.description)}</p>
+            <div class="task-desc-full">${formatTaskDescription(task.description)}</div>
             <div class="preview-meta">
                 <span><i class="fas fa-map-marker-alt"></i> ${task.location.address}</span>
                 <span><i class="fas fa-clock"></i> 12 hours left</span>

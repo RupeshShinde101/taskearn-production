@@ -2984,6 +2984,69 @@ section {
     line-height: 1.7;
 }
 
+/* Q&A description rendering -------------------------------------------- */
+.task-qa {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 4px;
+}
+.task-qa .qa-item {
+    background: var(--bg, #f8fafc);
+    border: 1px solid var(--border, #e2e8f0);
+    border-left: 3px solid var(--primary, #6366f1);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+.task-qa .qa-q {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text, #475569);
+    margin-bottom: 4px;
+    line-height: 1.4;
+}
+.task-qa .qa-a {
+    font-size: 14px;
+    color: var(--text, #1e293b);
+    line-height: 1.5;
+    word-break: break-word;
+}
+.task-qa .qa-empty {
+    color: #94a3b8;
+    font-style: italic;
+    font-size: 13px;
+}
+.qa-extra {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--bg, #f8fafc);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--text, #1e293b);
+    line-height: 1.6;
+}
+.qa-extra strong {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted, #64748b);
+    margin-bottom: 4px;
+}
+[data-theme="dark"] .task-qa .qa-item,
+[data-theme="dark"] .qa-extra {
+    background: rgba(255,255,255,0.04);
+    border-color: var(--border);
+}
+.task-desc-summary {
+    color: var(--gray, #64748b);
+    font-size: 14px;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 .task-detail-map {
     height: 200px;
     border-radius: var(--radius);

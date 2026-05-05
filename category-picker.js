@@ -1388,8 +1388,7 @@
                     + '<div class="wm-price-hint-head">'
                     +   '<span class="wm-price-icon">' + icon + '</span>'
                     +   '<span class="wm-price-text">'
-                    +     '<strong>' + label + '</strong> — Ola/Rapido-style fare: '
-                    +     fmtRupee(effMeta.base) + ' service charge + ' + fmtRupee(effMeta.perKm) + ' / km'
+                    +     '<strong>' + label + '</strong> — choose a vehicle, then set pickup &amp; drop.'
                     +   '</span>'
                     + '</div>';
 

@@ -255,6 +255,37 @@
 
 .wm-pickup-map-btn { display: inline-flex; align-items: center; gap: 6px; }
 
+/* Calculate / Recalculate fare buttons -------------------------------- */
+.wm-price-calc-btn, .wm-price-recalc {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; font-size: 0.9rem; font-weight: 600;
+    background: #fff; color: #4f46e5;
+    border: 1.5px solid #4f46e5; border-radius: 999px;
+    cursor: pointer; transition: all .15s ease;
+}
+.wm-price-calc-btn:hover, .wm-price-recalc:hover {
+    background: #4f46e5; color: #fff;
+}
+.wm-price-recalc {
+    background: transparent; color: #6366f1; border-color: #c7d2fe;
+    padding: 6px 10px; font-size: 0.82rem;
+}
+.wm-price-recalc:hover { background: #eef2ff; color: #4338ca; }
+.wm-price-distance-error {
+    color: #b91c1c !important; background: #fee2e2 !important;
+    border-color: #fca5a5 !important; font-style: normal !important;
+}
+.wm-price-distance-error i { color: #dc2626 !important; }
+[data-theme="dark"] .wm-price-calc-btn,
+[data-theme="dark"] .wm-price-recalc {
+    background: rgba(255,255,255,0.04); color: #c7d2fe; border-color: #8b86f5;
+}
+[data-theme="dark"] .wm-price-calc-btn:hover,
+[data-theme="dark"] .wm-price-recalc:hover { background: #8b86f5; color: #0f172a; }
+[data-theme="dark"] .wm-price-distance-error {
+    background: rgba(220,38,38,0.15) !important; color: #fca5a5 !important; border-color: rgba(220,38,38,0.4) !important;
+}
+
 /* Pick-on-map button + modal ------------------------------------------- */
 .wm-drop-map-btn {
     display: inline-flex; align-items: center; gap: 6px;
@@ -1218,6 +1249,8 @@
         let lastDuration = null;       // minutes (from OSRM, else null)
         let lastRouteGeo = null;       // GeoJSON LineString geometry (or null)
         let selectedVehicle = null;    // selected vehicle key for transport/delivery
+        let calculating  = false;      // true while distance/route is being fetched
+        let lastError    = null;       // user-friendly error message if calc failed
 
         const applyValueToBudget = (amt) => {
             const customId = opts.budgetInputId || 'customBudget';
@@ -1317,6 +1350,16 @@
                          +    ' &nbsp;·&nbsp; <i class="far fa-clock"></i> ~' + etaMin + ' min'
                          +    ' &nbsp;·&nbsp; Fair price ≈ <strong>' + fmtRupee(suggestedAmt) + '</strong>'
                          + '</div>';
+                } else if (calculating) {
+                    html += '<div class="wm-price-distance wm-price-distance-empty">'
+                         +    '<i class="fas fa-spinner fa-spin"></i> '
+                         +    'Calculating distance &amp; fair price…'
+                         + '</div>';
+                } else if (lastError) {
+                    html += '<div class="wm-price-distance wm-price-distance-empty wm-price-distance-error">'
+                         +    '<i class="fas fa-exclamation-triangle"></i> '
+                         +    lastError
+                         + '</div>';
                 } else if (opts.applyBudget) {
                     html += '<div class="wm-price-distance wm-price-distance-empty">'
                          +    '<i class="fas fa-route"></i> '
@@ -1327,6 +1370,16 @@
                     html += '<div class="wm-price-hint-actions">'
                          +    '<span class="wm-price-hint-label">Apply suggested price:</span>'
                          +    '<button type="button" class="wm-price-chip wm-price-chip-suggest" data-amt="' + suggestedAmt + '">' + fmtRupee(suggestedAmt) + '</button>'
+                         +    '<button type="button" class="wm-price-recalc" id="wmPriceRecalc_' + selectId + '">'
+                         +      '<i class="fas fa-sync-alt"></i> Recalculate'
+                         +    '</button>'
+                         + '</div>';
+                } else if (opts.applyBudget && !calculating) {
+                    // No distance yet — give an explicit button to trigger calculation
+                    html += '<div class="wm-price-hint-actions">'
+                         +    '<button type="button" class="wm-price-calc-btn" id="wmPriceRecalc_' + selectId + '">'
+                         +      '<i class="fas fa-calculator"></i> Calculate fair price'
+                         +    '</button>'
                          + '</div>';
                 }
                 // Mini route preview map placeholder (filled after innerHTML set)
@@ -1352,6 +1405,8 @@
                             btn.classList.add('active');
                         });
                     });
+                    const recalc = document.getElementById('wmPriceRecalc_' + selectId);
+                    if (recalc) recalc.addEventListener('click', () => refreshDistance(true));
                 }
                 // Render mini-map with route line
                 const mapDiv = document.getElementById('wmRouteMap_' + selectId);
@@ -1426,14 +1481,25 @@
         };
 
         // Geocode pickup + drop, fetch road route, then refresh hint
-        const refreshDistance = async () => {
+        const refreshDistance = async (forceShow) => {
             if (!dropApi || !DISTANCE_PRICING[sel.value]) return;
             const pickupEl = document.getElementById(pickupId);
             const dropEl   = dropApi.input;
             if (!pickupEl || !dropEl) return;
             const pTxt = (pickupEl.value || '').trim();
             const dTxt = (dropEl.value || '').trim();
-            // Prefer cached coords (set by GPS button or map picker)
+            // If neither side has any value at all and user didn't ask for it,
+            // skip silently. On forceShow (button click) we always run.
+            if (!forceShow && !pTxt && !dTxt
+                && !dropApi.pickupCoords && !dropApi.dropCoords
+                && !(window.modalTaskCoords && window.modalTaskCoords.lat)) {
+                return;
+            }
+            calculating = true;
+            lastError = null;
+            update(); // show "Calculating…" state immediately
+
+            // Resolve pickup coords
             try {
                 if (dropApi.pickupCoords) {
                     pickupCoords = dropApi.pickupCoords;
@@ -1441,15 +1507,22 @@
                     pickupCoords = window.modalTaskCoords;
                 } else if (pTxt) {
                     pickupCoords = await wmGeocode(pTxt);
+                } else {
+                    pickupCoords = null;
                 }
             } catch (e) { pickupCoords = null; }
-            if (dropApi.dropCoords) {
-                dropCoords = dropApi.dropCoords;
-            } else if (dTxt) {
-                dropCoords = await wmGeocode(dTxt);
-            } else {
-                dropCoords = null;
-            }
+
+            // Resolve drop coords
+            try {
+                if (dropApi.dropCoords) {
+                    dropCoords = dropApi.dropCoords;
+                } else if (dTxt) {
+                    dropCoords = await wmGeocode(dTxt);
+                } else {
+                    dropCoords = null;
+                }
+            } catch (e) { dropCoords = null; }
+
             // Try OSRM road route; fall back to haversine on failure
             lastRouteGeo = null;
             lastDuration = null;
@@ -1464,7 +1537,13 @@
                 }
             } else {
                 lastDistance = null;
+                if (forceShow) {
+                    if (!pickupCoords && !dropCoords) lastError = 'Could not find either location. Please refine the address or use Pick on Map.';
+                    else if (!pickupCoords) lastError = 'Could not find the pickup address. Please refine it or use Pick on Map.';
+                    else lastError = 'Could not find the drop address. Please refine it or use Pick on Map.';
+                }
             }
+            calculating = false;
             update();
         };
 

@@ -1621,9 +1621,6 @@
                     lastDistance = haversine(pickupCoords, dropCoords);
                 }
             } else {
-                    lastDistance = haversine(pickupCoords, dropCoords);
-                }
-            } else {
                 lastDistance = null;
                 if (forceShow) {
                     const pTxtNow = (document.getElementById(pickupId) || {}).value || '';

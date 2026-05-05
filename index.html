@@ -147,7 +147,7 @@
             loadRazorpayScript();
         }
     </script>
-    <link rel="stylesheet" href="styles.css?v=20260505_qa2">
+    <link rel="stylesheet" href="styles.css?v=20260505_pickfix">
     <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_darkfix2">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
@@ -988,29 +988,25 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>Task Budget (Min ₹100)</label>
-                    <div class="budget-selector">
-                        <div class="budget-option" onclick="selectBudget(this, 100)">₹100</div>
-                        <div class="budget-option" onclick="selectBudget(this, 200)">₹200</div>
-                        <div class="budget-option" onclick="selectBudget(this, 500)">₹500</div>
-                        <div class="budget-option" onclick="selectBudget(this, 1000)">₹1000</div>
-                        <input type="number" id="customBudget" placeholder="Custom ?" min="100">
+                    <label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em">(Min ₹100 — auto-filled from fair price for delivery/transport)</span></label>
+                    <div class="budget-selector budget-selector-compact">
+                        <input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="100" style="flex:1;font-size:1.05rem;padding:11px 14px;">
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label><i class="fas fa-plus-circle"></i> Add Extra Amount (Optional)</label>
+                    <label><i class="fas fa-plus-circle"></i> Nudge Budget (Optional)</label>
                     <div class="bonus-section">
-                        <p class="bonus-hint">Increase your budget to attract more taskers and get faster responses!</p>
+                        <p class="bonus-hint">Small bumps to attract taskers faster. Tap to add to your budget.</p>
                         <div class="bonus-options">
-                            <button type="button" class="bonus-btn" onclick="addBonus(50)">+₹50</button>
-                            <button type="button" class="bonus-btn" onclick="addBonus(100)">+₹100</button>
-                            <button type="button" class="bonus-btn" onclick="addBonus(200)">+₹200</button>
-                            <button type="button" class="bonus-btn" onclick="addBonus(500)">+₹500</button>
+                            <button type="button" class="bonus-btn" onclick="nudgeBudget(10)">+₹10</button>
+                            <button type="button" class="bonus-btn" onclick="nudgeBudget(20)">+₹20</button>
+                            <button type="button" class="bonus-btn" onclick="nudgeBudget(50)">+₹50</button>
+                            <button type="button" class="bonus-btn bonus-btn-minus" onclick="nudgeBudget(-10)">−₹10</button>
                         </div>
                         <div class="total-budget-display">
                             <span>Task Budget:</span>
-                            <strong id="totalBudgetDisplay">₹500</strong>
+                            <strong id="totalBudgetDisplay">₹100</strong>
                         </div>
                     </div>
                 </div>
@@ -1297,7 +1293,7 @@
     <!-- API Client for Python Backend -->
     <script src="api-client.js?v=20260505_taskwatch"></script>
     <script src="shared.js?v=20260505_postnav"></script>
-    <script src="category-picker.js?v=20260505_zfix"></script>
+    <script src="category-picker.js?v=20260505_pickfix"></script>
     
     <!-- Google Sign-In -->
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
@@ -1305,7 +1301,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260505_qa2"></script>
+    <script src="app.js?v=20260505_pickfix"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>

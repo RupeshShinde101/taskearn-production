@@ -983,16 +983,30 @@
         return 2 * R * Math.asin(Math.sqrt(x));
     }
 
-    async function wmGeocode(addr) {
+    async function wmGeocode(addr, bias) {
         if (!addr || addr.length < 4) return null;
+        // Build URL with optional viewbox bias around `bias` coords (~55 km box).
+        let url = 'https://nominatim.openstreetmap.org/search?q='
+            + encodeURIComponent(addr) + '&format=json&limit=5&countrycodes=in';
+        if (bias && typeof bias.lat === 'number' && typeof bias.lng === 'number') {
+            const d = 0.5; // ~55 km
+            const left = bias.lng - d, right = bias.lng + d;
+            const top = bias.lat + d, bottom = bias.lat - d;
+            url += '&viewbox=' + left + ',' + top + ',' + right + ',' + bottom + '&bounded=0';
+        }
         try {
-            const r = await fetch('https://nominatim.openstreetmap.org/search?q='
-                + encodeURIComponent(addr) + '&format=json&limit=1&countrycodes=in',
-                { headers: { 'Accept-Language': 'en' } });
+            const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
             const data = await r.json();
-            if (data && data.length) {
-                return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+            if (!data || !data.length) return null;
+            // Re-rank by proximity to bias, if provided.
+            if (bias && typeof bias.lat === 'number') {
+                data.sort((a, b) => {
+                    const da = haversine({ lat: parseFloat(a.lat), lng: parseFloat(a.lon) }, bias);
+                    const db = haversine({ lat: parseFloat(b.lat), lng: parseFloat(b.lon) }, bias);
+                    return da - db;
+                });
             }
+            return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         } catch (e) {}
         return null;
     }
@@ -1433,9 +1447,11 @@
                          + '</div>';
                 }
                 if (opts.applyBudget && suggestedAmt != null) {
+                    // Auto-apply suggested price to budget input.
+                    try { applyValueToBudget(suggestedAmt); } catch (e) {}
                     html += '<div class="wm-price-hint-actions">'
-                         +    '<span class="wm-price-hint-label">Apply suggested price:</span>'
-                         +    '<button type="button" class="wm-price-chip wm-price-chip-suggest" data-amt="' + suggestedAmt + '">' + fmtRupee(suggestedAmt) + '</button>'
+                         +    '<span class="wm-price-hint-label"><i class="fas fa-check-circle" style="color:#10b981"></i> Applied to your budget:</span>'
+                         +    '<strong class="wm-price-chip wm-price-chip-suggest active">' + fmtRupee(suggestedAmt) + '</strong>'
                          +    '<button type="button" class="wm-price-recalc" id="wmPriceRecalc_' + selectId + '">'
                          +      '<i class="fas fa-sync-alt"></i> Recalculate'
                          +    '</button>'
@@ -1565,20 +1581,7 @@
             lastError = null;
             update(); // show "Calculating…" state immediately
 
-            // Resolve pickup coords
-            try {
-                if (dropApi.pickupCoords) {
-                    pickupCoords = dropApi.pickupCoords;
-                } else if (window.modalTaskCoords && window.modalTaskCoords.lat) {
-                    pickupCoords = window.modalTaskCoords;
-                } else if (pTxt) {
-                    pickupCoords = await wmGeocode(pTxt);
-                } else {
-                    pickupCoords = null;
-                }
-            } catch (e) { pickupCoords = null; }
-
-            // Resolve drop coords
+            // Resolve drop coords FIRST so we can bias pickup geocoding around it.
             try {
                 if (dropApi.dropCoords) {
                     dropCoords = dropApi.dropCoords;
@@ -1588,6 +1591,22 @@
                     dropCoords = null;
                 }
             } catch (e) { dropCoords = null; }
+
+            // Resolve pickup coords (try GPS / map-pick first, then geocode w/ bias).
+            try {
+                if (dropApi.pickupCoords) {
+                    pickupCoords = dropApi.pickupCoords;
+                } else if (window.modalTaskCoords && window.modalTaskCoords.lat) {
+                    pickupCoords = window.modalTaskCoords;
+                } else if (pTxt) {
+                    // First pass: bias around drop if known.
+                    pickupCoords = await wmGeocode(pTxt, dropCoords);
+                    // Fallback: unbiased lookup.
+                    if (!pickupCoords) pickupCoords = await wmGeocode(pTxt);
+                } else {
+                    pickupCoords = null;
+                }
+            } catch (e) { pickupCoords = null; }
 
             // Try OSRM road route; fall back to haversine on failure
             lastRouteGeo = null;
@@ -1604,9 +1623,16 @@
             } else {
                 lastDistance = null;
                 if (forceShow) {
-                    if (!pickupCoords && !dropCoords) lastError = 'Could not find either location. Please refine the address or use Pick on Map.';
-                    else if (!pickupCoords) lastError = 'Could not find the pickup address. Please refine it or use Pick on Map.';
-                    else lastError = 'Could not find the drop address. Please refine it or use Pick on Map.';
+                    const pTxtNow = (document.getElementById(pickupId) || {}).value || '';
+                    if (!pickupCoords && !dropCoords) {
+                        lastError = 'Set both pickup and drop locations. Use "Use My Location" or "Pick on Map".';
+                    } else if (!pickupCoords) {
+                        lastError = pTxtNow.trim()
+                            ? 'Couldn\'t locate pickup address. Tap "Use My Location" or "Pick on Map" next to the pickup field.'
+                            : 'Pickup is empty. Tap "Use My Location" or "Pick on Map" next to the pickup field.';
+                    } else {
+                        lastError = 'Couldn\'t locate drop address. Tap "Pick on Map" next to the drop field.';
+                    }
                 }
             }
             calculating = false;
@@ -1645,7 +1671,7 @@
                         onConfirm: (loc) => {
                             dropApi.input.value = loc.address;
                             dropApi.dropCoords = { lat: loc.lat, lng: loc.lng };
-                            refreshDistance();
+                            refreshDistance(true);
                         }
                     });
                 });
@@ -1665,7 +1691,7 @@
                             dropApi.pickupCoords = { lat: loc.lat, lng: loc.lng };
                             // Also update global modalTaskCoords so other code paths see it
                             try { window.modalTaskCoords = { lat: loc.lat, lng: loc.lng }; } catch (e) {}
-                            refreshDistance();
+                            refreshDistance(true);
                         }
                     });
                 });

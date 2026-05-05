@@ -7002,6 +7002,26 @@ window.openEditTask = openEditTask;
 window.selectBudgetIncrease = selectBudgetIncrease;
 window.updateNewBudget = updateNewBudget;
 
+// Nudge customBudget by a small ± amount (replaces big bonus chips).
+function nudgeBudget(delta) {
+    const input = document.getElementById('customBudget');
+    if (!input) return;
+    const cur = parseInt(input.value, 10) || 0;
+    const next = Math.max(0, cur + delta);
+    input.value = next;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (typeof window.updateTotalBudgetDisplay === 'function') {
+        try { window.updateTotalBudgetDisplay(); } catch (e) {}
+    }
+    // Briefly highlight the input so the change is visible.
+    try {
+        input.style.transition = 'background-color .25s ease';
+        input.style.backgroundColor = '#ecfdf5';
+        setTimeout(() => { input.style.backgroundColor = ''; }, 350);
+    } catch (e) {}
+}
+window.nudgeBudget = nudgeBudget;
+
 // ========================================
 // GOOGLE SIGN-IN
 // ========================================

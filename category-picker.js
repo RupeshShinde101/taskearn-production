@@ -234,11 +234,37 @@
 }
 .wm-mappicker-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .wm-mappicker-search { display: flex; gap: 6px; }
+.wm-mappicker-search-box { position: relative; flex: 1; }
 .wm-mappicker-search input {
-    flex: 1; padding: 9px 12px; font-size: 0.95rem;
+    width: 100%; padding: 9px 12px; font-size: 0.95rem;
     border: 1px solid var(--border, #e2e8f0); border-radius: 8px;
     background: var(--bg, #fff); color: var(--text, #0f172a);
+    box-sizing: border-box;
 }
+.wm-mappicker-results {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+    background: var(--surface, #fff); border: 1px solid var(--border, #e2e8f0);
+    border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18);
+    max-height: 280px; overflow-y: auto; z-index: 10;
+    display: none;
+}
+.wm-mappicker-results.open { display: block; }
+.wm-mappicker-result {
+    display: flex; align-items: flex-start; gap: 10px;
+    width: 100%; padding: 10px 12px; text-align: left;
+    background: transparent; border: 0; border-bottom: 1px solid var(--border, #f1f5f9);
+    cursor: pointer; font-size: 0.92rem; color: var(--text, #0f172a);
+}
+.wm-mappicker-result:last-child { border-bottom: 0; }
+.wm-mappicker-result:hover { background: var(--bg, #f8fafc); }
+.wm-mappicker-result i { color: #ef4444; margin-top: 2px; flex-shrink: 0; }
+.wm-mappicker-result-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wm-mappicker-result-text strong { font-weight: 600; line-height: 1.3; }
+.wm-mappicker-result-text small { color: var(--gray, #64748b); font-size: 0.78rem; line-height: 1.3; }
+.wm-mappicker-result-empty { padding: 14px; text-align: center; color: var(--gray, #64748b); font-size: 0.9rem; }
+[data-theme="dark"] .wm-mappicker-results { background: var(--surface, #141a33); }
+[data-theme="dark"] .wm-mappicker-result { color: var(--text, #e7eaf2); border-bottom-color: rgba(255,255,255,0.06); }
+[data-theme="dark"] .wm-mappicker-result:hover { background: rgba(139,134,245,0.15); }
 .wm-mappicker-search button {
     padding: 9px 14px; border: 1px solid var(--border, #e2e8f0);
     background: var(--surface, #fff); color: var(--text, #0f172a);
@@ -895,7 +921,10 @@
           +   '</div>'
           +   '<div class="wm-mappicker-body">'
           +     '<div class="wm-mappicker-search">'
-          +       '<input type="text" placeholder="Search address or place…" id="wmMapPickerSearch">'
+          +       '<div class="wm-mappicker-search-box">'
+          +         '<input type="text" placeholder="Search address or place…" id="wmMapPickerSearch" autocomplete="off">'
+          +         '<div class="wm-mappicker-results" id="wmMapPickerResults"></div>'
+          +       '</div>'
           +       '<button type="button" id="wmMapPickerSearchBtn"><i class="fas fa-search"></i></button>'
           +       '<button type="button" id="wmMapPickerGps" title="Use my location"><i class="fas fa-crosshairs"></i></button>'
           +     '</div>'
@@ -968,29 +997,84 @@
             if (typeof opts.onConfirm === 'function') opts.onConfirm(chosen);
         });
 
-        // Search
-        const doSearch = async () => {
-            const q = overlay.querySelector('#wmMapPickerSearch').value.trim();
-            if (!q) return;
-            try {
-                const r = await fetch('https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(q) + '&format=json&limit=1&countrycodes=in',
-                    { headers: { 'Accept-Language': 'en' } });
-                const data = await r.json();
-                if (data && data.length) {
-                    const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+        // Search — shows a dropdown of top results so user can pick one
+        const resultsEl = overlay.querySelector('#wmMapPickerResults');
+        const searchInput = overlay.querySelector('#wmMapPickerSearch');
+
+        const renderResults = (data) => {
+            if (!data || !data.length) {
+                resultsEl.innerHTML = '<div class="wm-mappicker-result-empty">No results — try a different search.</div>';
+                resultsEl.classList.add('open');
+                return;
+            }
+            resultsEl.innerHTML = data.map((d, i) => {
+                const name = d.display_name || '';
+                const head = name.split(',').slice(0, 2).join(',').trim();
+                const tail = name.split(',').slice(2).join(',').trim();
+                return '<button type="button" class="wm-mappicker-result" data-i="' + i + '">'
+                     +   '<i class="fas fa-map-marker-alt"></i>'
+                     +   '<span class="wm-mappicker-result-text">'
+                     +     '<strong>' + (head || name) + '</strong>'
+                     +     (tail ? '<small>' + tail + '</small>' : '')
+                     +   '</span>'
+                     + '</button>';
+            }).join('');
+            resultsEl.classList.add('open');
+            resultsEl.querySelectorAll('.wm-mappicker-result').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const i = parseInt(btn.dataset.i, 10);
+                    const d = data[i];
+                    if (!d) return;
+                    const lat = parseFloat(d.lat), lng = parseFloat(d.lon);
                     map.setView([lat, lng], 15);
                     setMarker(lat, lng, true);
-                    chosen.address = data[0].display_name;
-                    addrEl.textContent = data[0].display_name;
-                } else {
-                    addrEl.textContent = 'No results — try a different search.';
-                }
-            } catch (e) { addrEl.textContent = 'Search failed.'; }
+                    chosen.address = d.display_name;
+                    addrEl.textContent = d.display_name;
+                    searchInput.value = (d.display_name || '').split(',').slice(0, 2).join(',');
+                    resultsEl.classList.remove('open');
+                });
+            });
         };
-        overlay.querySelector('#wmMapPickerSearchBtn').addEventListener('click', doSearch);
-        overlay.querySelector('#wmMapPickerSearch').addEventListener('keydown', e => {
-            if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+
+        const runQuery = async (q, limit) => {
+            try {
+                const r = await fetch('https://nominatim.openstreetmap.org/search?q='
+                    + encodeURIComponent(q) + '&format=json&limit=' + (limit || 7)
+                    + '&countrycodes=in&addressdetails=0',
+                    { headers: { 'Accept-Language': 'en' } });
+                return await r.json();
+            } catch (e) { return null; }
+        };
+
+        const doSearch = async () => {
+            const q = searchInput.value.trim();
+            if (q.length < 2) return;
+            resultsEl.innerHTML = '<div class="wm-mappicker-result-empty">Searching…</div>';
+            resultsEl.classList.add('open');
+            const data = await runQuery(q, 7);
+            renderResults(data);
+        };
+
+        // Live (debounced) suggestions while typing
+        let searchTimer = null;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            const q = searchInput.value.trim();
+            if (q.length < 3) { resultsEl.classList.remove('open'); return; }
+            searchTimer = setTimeout(doSearch, 350);
         });
+        overlay.querySelector('#wmMapPickerSearchBtn').addEventListener('click', doSearch);
+        searchInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+            else if (e.key === 'Escape') { resultsEl.classList.remove('open'); }
+        });
+        // Close results when clicking outside the search area
+        document.addEventListener('mousedown', function outsideClose(e) {
+            if (!overlay.contains(e.target)) return;
+            const sb = overlay.querySelector('.wm-mappicker-search-box');
+            if (sb && !sb.contains(e.target)) resultsEl.classList.remove('open');
+        });
+
         overlay.querySelector('#wmMapPickerGps').addEventListener('click', () => {
             if (!navigator.geolocation) return;
             navigator.geolocation.getCurrentPosition(p => {

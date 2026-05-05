@@ -1311,10 +1311,18 @@
         const hint = document.createElement('div');
         hint.className = 'wm-price-hint';
         hint.style.display = 'none';
-        // Place after the form-row (if select is in a row) so it spans full width
-        const row = sel.closest('.form-row');
-        const anchor = row || fg;
-        anchor.parentNode.insertBefore(hint, anchor.nextSibling);
+        // Prefer an explicit slot element (used by the post-task wizard to
+        // place the vehicle/fair-price panel on the Budget step).  Fall back
+        // to inserting after the category form-row.
+        const slot = opts.applyBudget ? document.getElementById('wmPriceHintSlot') : null;
+        if (slot) {
+            slot.appendChild(hint);
+        } else {
+            // Place after the form-row (if select is in a row) so it spans full width
+            const row = sel.closest('.form-row');
+            const anchor = row || fg;
+            anchor.parentNode.insertBefore(hint, anchor.nextSibling);
+        }
 
         // Optional drop-location field for distance pricing
         const pickupId = opts.pickupInputId;

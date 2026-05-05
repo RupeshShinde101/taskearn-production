@@ -6376,3 +6376,172 @@ section {
 [data-tooltip]:hover::after {
     opacity: 1;
 }
+
+/* ============================================
+   POST-TASK WIZARD (5-step tabbed form)
+   ============================================ */
+.wm-wizard-modal { padding-top: 18px; }
+.wm-wizard-modal h2 { margin-bottom: 14px; }
+
+.wm-step-nav {
+    display: flex;
+    gap: 6px;
+    margin: 0 0 8px 0;
+    padding: 4px;
+    background: #f1f5f9;
+    border-radius: 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.wm-step-nav::-webkit-scrollbar { display: none; }
+.wm-step-tab {
+    flex: 1 1 0;
+    min-width: 78px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 6px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: #64748b;
+    font-weight: 500;
+    transition: all 0.18s;
+    white-space: nowrap;
+}
+.wm-step-tab:hover { background: rgba(255,255,255,0.6); color: #334155; }
+.wm-step-tab.active {
+    background: #fff;
+    color: #2563eb;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    font-weight: 600;
+}
+.wm-step-tab.completed { color: #10b981; }
+.wm-step-tab.completed .wm-step-num { background: #10b981; color: #fff; }
+.wm-step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 700;
+    transition: all 0.18s;
+}
+.wm-step-tab.active .wm-step-num { background: #2563eb; color: #fff; }
+.wm-step-label { font-size: 0.72rem; line-height: 1.1; }
+
+.wm-step-progress {
+    height: 3px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    margin-bottom: 18px;
+    overflow: hidden;
+}
+.wm-step-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #2563eb, #10b981);
+    transition: width 0.3s ease;
+    border-radius: 999px;
+}
+
+.wm-step { display: none; animation: wmStepFade 0.25s ease; }
+.wm-step.active { display: block; }
+@keyframes wmStepFade {
+    from { opacity: 0; transform: translateX(8px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+.wm-step-head { margin-bottom: 14px; }
+.wm-step-head h3 {
+    margin: 0 0 4px 0;
+    font-size: 1.15rem;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.wm-step-head h3 i { color: #2563eb; }
+.wm-step-head .wm-step-sub {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.88rem;
+    line-height: 1.4;
+}
+
+.wm-step-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #e2e8f0;
+    align-items: center;
+}
+.wm-step-actions .wm-step-prev { flex: 0 0 auto; }
+.wm-step-actions .wm-step-next,
+.wm-step-actions .wm-step-submit { flex: 1 1 auto; }
+
+.wm-quick-when {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+.wm-when-chip {
+    padding: 8px 14px;
+    border: 1.5px solid #cbd5e1;
+    background: #fff;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    color: #334155;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.wm-when-chip:hover { border-color: #2563eb; color: #2563eb; }
+.wm-when-chip.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+.wm-review-summary {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+}
+.wm-review-summary .wm-review-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    font-size: 0.9rem;
+    border-bottom: 1px dashed #e2e8f0;
+}
+.wm-review-summary .wm-review-row:last-child { border-bottom: none; }
+.wm-review-summary .wm-review-label {
+    color: #64748b;
+    font-weight: 500;
+    flex: 0 0 38%;
+}
+.wm-review-summary .wm-review-value {
+    color: #0f172a;
+    font-weight: 600;
+    text-align: right;
+    flex: 1;
+    word-break: break-word;
+}
+.wm-step-error {
+    color: #dc2626;
+    font-size: 0.82rem;
+    margin-top: 6px;
+}
+
+@media (max-width: 540px) {
+    .wm-step-tab { min-width: 64px; padding: 6px 4px; font-size: 0.72rem; }
+    .wm-step-label { font-size: 0.66rem; }
+    .wm-step-num { width: 20px; height: 20px; font-size: 0.66rem; }
+    .wm-step-head h3 { font-size: 1.02rem; }
+}

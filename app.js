@@ -4846,7 +4846,7 @@ async function handleTaskSubmit(event) {
     // If a specific vehicle was chosen for ride/delivery categories, surface it
     // on the task so only taskers with that vehicle are eligible.
     const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
-    const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛜 Auto', mini: '🚗 Mini Car', sedan: '🚙 Sedan' };
+    const VEHICLE_LABEL = { bike: '\uD83C\uDFCD\uFE0F Bike', auto: '\uD83D\uDEFA Auto', mini: '\uD83D\uDE97 Mini Car', sedan: '\uD83D\uDE99 Sedan' };
     let descriptionText = document.getElementById('modalTaskDescription').value || '';
     if (vehicleKey && VEHICLE_LABEL[vehicleKey] && !descriptionText.includes('Required vehicle:')) {
         descriptionText = '🚕 Required vehicle: ' + VEHICLE_LABEL[vehicleKey]

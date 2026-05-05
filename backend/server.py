@@ -1916,9 +1916,20 @@ def create_task():
         print(f"   Price: {data.get('price')}")
         print(f"   Location: {data.get('location')}")
         
-        # Calculate service charge based on category
-        service_charge = get_service_charge(data.get('category', 'other'))
-        print(f"   Service Charge: ₹{service_charge}")
+        # Service charge: prefer client-supplied value (distance-aware for
+        # ride/delivery/moving categories) when it is a sane number; otherwise
+        # fall back to the category-only default.
+        client_sc = data.get('serviceCharge', data.get('service_charge'))
+        try:
+            client_sc_val = float(client_sc) if client_sc is not None else None
+        except (TypeError, ValueError):
+            client_sc_val = None
+        if client_sc_val is not None and 0 <= client_sc_val <= 500:
+            service_charge = client_sc_val
+            print(f"   Service Charge (from client): ₹{service_charge}")
+        else:
+            service_charge = get_service_charge(data.get('category', 'other'))
+            print(f"   Service Charge (default): ₹{service_charge}")
         print(f"   Total Display Value: ₹{float(data.get('price')) + service_charge}")
         
         with get_db() as (cursor, conn):

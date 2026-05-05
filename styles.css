@@ -6384,9 +6384,9 @@ section {
    scrolls internally instead of the whole page jumping around. */
 .modal-content.wm-wizard-modal {
     padding: 0;
-    max-width: 640px;
-    width: min(640px, calc(100vw - 24px));
-    height: min(92vh, 760px);
+    max-width: 820px;
+    width: min(820px, calc(100vw - 32px));
+    height: min(88vh, 820px);
     max-height: 92vh;
     display: flex;
     flex-direction: column;
@@ -6394,17 +6394,17 @@ section {
 }
 .wm-wizard-modal > h2 {
     margin: 0;
-    padding: 18px 24px 10px 24px;
-    font-size: 1.25rem;
+    padding: 22px 28px 12px 28px;
+    font-size: 1.35rem;
     flex: 0 0 auto;
 }
 .wm-wizard-modal > #wmStepNav,
 .wm-wizard-modal > .wm-step-nav {
-    margin: 0 24px;
+    margin: 0 28px;
     flex: 0 0 auto;
 }
 .wm-wizard-modal > .wm-step-progress {
-    margin: 8px 24px 0 24px;
+    margin: 8px 28px 0 28px;
     flex: 0 0 auto;
 }
 .wm-wizard-modal > #modalTaskForm {
@@ -6419,14 +6419,14 @@ section {
     flex: 1 1 auto;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 16px 24px 8px 24px;
+    padding: 20px 28px 12px 28px;
     min-height: 0;
 }
 .wm-wizard-modal #modalTaskForm > .wm-step:not(.active) { display: none; }
 .wm-wizard-modal .wm-step-actions {
     flex: 0 0 auto;
     margin: 0;
-    padding: 12px 24px;
+    padding: 14px 28px;
     background: #fff;
     border-top: 1px solid #e2e8f0;
     box-shadow: 0 -4px 10px rgba(15, 23, 42, 0.04);
@@ -6455,13 +6455,13 @@ section {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
-    padding: 7px 4px;
+    gap: 3px;
+    padding: 9px 8px;
     border: none;
     background: transparent;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 0.74rem;
+    font-size: 0.85rem;
     color: #64748b;
     font-weight: 500;
     transition: all 0.18s;
@@ -6482,20 +6482,20 @@ section {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     background: #e2e8f0;
     color: #475569;
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     font-weight: 700;
     transition: all 0.18s;
     flex-shrink: 0;
 }
 .wm-step-tab.active .wm-step-num { background: #2563eb; color: #fff; }
 .wm-step-label {
-    font-size: 0.7rem;
-    line-height: 1.1;
+    font-size: 0.8rem;
+    line-height: 1.15;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;

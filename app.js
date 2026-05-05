@@ -1172,14 +1172,32 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Detect a "Required vehicle: <Label>" prefix in a task description and
+// return a small descriptor for badge rendering, or null if absent.
+function getRequiredVehicle(text) {
+    if (!text) return null;
+    const m = String(text).match(/Required vehicle:\s*([^\n—\-]+)/i);
+    if (!m) return null;
+    const label = m[1].trim();
+    let key = null;
+    if (/bike/i.test(label)) key = 'bike';
+    else if (/auto/i.test(label)) key = 'auto';
+    else if (/mini/i.test(label)) key = 'mini';
+    else if (/sedan/i.test(label)) key = 'sedan';
+    return { key, label };
+}
+
 // Render task description. Detects the Q&A template format produced by
 // category-picker.js and renders questions/answers as readable cards.
 // opts.compact: card-list mode → show only the answers as a short summary.
 function formatTaskDescription(text, opts) {
     opts = opts || {};
     if (text == null) return '';
-    const raw = String(text).trim();
+    let raw = String(text).trim();
     if (!raw) return '';
+    // Strip the "Required vehicle:" prefix line — it's surfaced as a
+    // separate badge on the card; keep the description focused on the task.
+    raw = raw.replace(/^[^\n]*Required vehicle:[^\n]*\n+/i, '').trim();
     const hasQA = /^Q\d+\./m.test(raw);
     if (!hasQA) {
         return escapeHtml(raw).replace(/\n/g, '<br>');
@@ -2724,10 +2742,13 @@ function renderTasks(filtered = null) {
         const rating = task.postedBy && task.postedBy.rating ? task.postedBy.rating : null;
         const isOwn = isHelper && task.postedBy && task.postedBy.id === currentUser.id;
 
+        const _veh = getRequiredVehicle(task.description);
+        const _vehBadge = _veh ? `<span class="task-vehicle-badge" title="Required vehicle">${escapeHtml(_veh.label)}</span>` : '';
         return `
             <div class="task-card" data-task-id="${task.id}" onclick="onTaskCardClick(${task.id})">
                 <div class="task-card-header">
                     <span class="task-category">${formatCategory(task.category)}</span>
+                    ${_vehBadge}
                     <span class="task-price">₹${(parseFloat(task.price)||0) + (task.service_charge !== undefined && task.service_charge !== null ? parseFloat(task.service_charge) : getServiceCharge(task.category))}</span>
                     ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
                 </div>
@@ -2814,6 +2835,7 @@ function openTaskDetail(taskId) {
     const content = `
         <div class="task-detail-header">
             <span class="task-category">${formatCategory(task.category)}</span>
+            ${(() => { const v = getRequiredVehicle(task.description); return v ? `<span class="task-vehicle-badge" title="Required vehicle">${escapeHtml(v.label)}</span>` : ''; })()}
             ${isOwner ? '<span class="owner-badge"><i class="fas fa-user-check"></i> Your Task</span>' : ''}
             <h2>${escapeHtml(task.title)}</h2>
             <div class="task-detail-meta">
@@ -6222,6 +6244,7 @@ function renderPostedTasks() {
             <div class="my-task-card" data-task-id="${t.id}">
                 <div class="my-task-card-header">
                     <span class="task-category">${formatCategory(t.category)}</span>
+                    ${(() => { const v = getRequiredVehicle(t.description); return v ? `<span class="task-vehicle-badge" title="Required vehicle">${escapeHtml(v.label)}</span>` : ''; })()}
                     <span class="task-status ${statusClass}">${statusLabel}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
@@ -6285,6 +6308,7 @@ function renderAcceptedTasks() {
             <div class="my-task-card" style="cursor:pointer;" onclick="goToTaskInProgress(${t.id})">
                 <div class="my-task-card-header">
                     <span class="task-category">${formatCategory(t.category)}</span>
+                    ${(() => { const v = getRequiredVehicle(t.description); return v ? `<span class="task-vehicle-badge" title="Required vehicle">${escapeHtml(v.label)}</span>` : ''; })()}
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>

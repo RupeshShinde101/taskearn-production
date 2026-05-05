@@ -11,47 +11,47 @@
     // Each entry: { key, label, parent, keywords:[] }
     const CATEGORIES = [
         // Home Repairs & Maintenance
-        { key: 'plumbing',    label: 'Plumbing',              parent: 'Home Repairs',         keywords: ['tap','leak','pipe','toilet','drain','faucet','sink','geyser','flush','water'] },
-        { key: 'electrician', label: 'Electrician',           parent: 'Home Repairs',         keywords: ['wiring','switch','fan','light','bulb','mcb','fuse','socket','short circuit','power'] },
-        { key: 'carpentry',   label: 'Carpentry',             parent: 'Home Repairs',         keywords: ['wood','door','window','furniture','hinge','drawer','cabinet','shelf','assembly'] },
-        { key: 'painting',    label: 'Painting & Decor',      parent: 'Home Repairs',         keywords: ['paint','wall','color','interior','exterior','primer','whitewash','distemper'] },
-        { key: 'repair',      label: 'Repairs & Mechanical',  parent: 'Home Repairs',         keywords: ['fix','broken','mechanical','machine','appliance','ac','fridge','washing machine'] },
-        { key: 'vehicle',     label: 'Vehicle Services',      parent: 'Home Repairs',         keywords: ['car','bike','motorcycle','wash','service','puncture','tyre','battery','mechanic'] },
+        { key: 'plumbing',    label: 'Plumbing',              parent: 'Home Repairs',         icon: '🚰', keywords: ['tap','leak','pipe','toilet','drain','faucet','sink','geyser','flush','water'] },
+        { key: 'electrician', label: 'Electrician',           parent: 'Home Repairs',         icon: '⚡', keywords: ['wiring','switch','fan','light','bulb','mcb','fuse','socket','short circuit','power'] },
+        { key: 'carpentry',   label: 'Carpentry',             parent: 'Home Repairs',         icon: '🪚', keywords: ['wood','door','window','furniture','hinge','drawer','cabinet','shelf','assembly'] },
+        { key: 'painting',    label: 'Painting & Decor',      parent: 'Home Repairs',         icon: '🎨', keywords: ['paint','wall','color','interior','exterior','primer','whitewash','distemper'] },
+        { key: 'repair',      label: 'Repairs & Mechanical',  parent: 'Home Repairs',         icon: '🛠️', keywords: ['fix','broken','mechanical','machine','appliance','ac','fridge','washing machine'] },
+        { key: 'vehicle',     label: 'Vehicle Services',      parent: 'Home Repairs',         icon: '🚗', keywords: ['car','bike','motorcycle','wash','service','puncture','tyre','battery','mechanic'] },
 
         // Cleaning & Household
-        { key: 'household',   label: 'Household Chores',      parent: 'Cleaning & Household', keywords: ['chores','helper','dishes','utensils','dusting','sweeping','mopping','daily'] },
-        { key: 'cleaning',    label: 'Cleaning Services',     parent: 'Cleaning & Household', keywords: ['clean','deep clean','sofa','carpet','bathroom','kitchen','vacuum'] },
-        { key: 'laundry',     label: 'Laundry & Ironing',     parent: 'Cleaning & Household', keywords: ['wash clothes','iron','dry clean','press','ironing','fold'] },
-        { key: 'gardening',   label: 'Gardening & Lawn',      parent: 'Cleaning & Household', keywords: ['plant','garden','lawn','mowing','grass','tree','flower','soil'] },
-        { key: 'waste',       label: 'Waste Collection',      parent: 'Cleaning & Household', keywords: ['garbage','trash','dispose','scrap','recycle','dustbin','collection'] },
-        { key: 'moving',      label: 'Moving & Packing',      parent: 'Cleaning & Household', keywords: ['shift','relocate','packers','movers','boxes','furniture moving','loading'] },
+        { key: 'household',   label: 'Household Chores',      parent: 'Cleaning & Household', icon: '🏠', keywords: ['chores','helper','dishes','utensils','dusting','sweeping','mopping','daily'] },
+        { key: 'cleaning',    label: 'Cleaning Services',     parent: 'Cleaning & Household', icon: '🧽', keywords: ['clean','deep clean','sofa','carpet','bathroom','kitchen','vacuum'] },
+        { key: 'laundry',     label: 'Laundry & Ironing',     parent: 'Cleaning & Household', icon: '👕', keywords: ['wash clothes','iron','dry clean','press','ironing','fold'] },
+        { key: 'gardening',   label: 'Gardening & Lawn',      parent: 'Cleaning & Household', icon: '🌱', keywords: ['plant','garden','lawn','mowing','grass','tree','flower','soil'] },
+        { key: 'waste',       label: 'Waste Collection',      parent: 'Cleaning & Household', icon: '🗑️', keywords: ['garbage','trash','dispose','scrap','recycle','dustbin','collection'] },
+        { key: 'moving',      label: 'Moving & Packing',      parent: 'Cleaning & Household', icon: '📦', keywords: ['shift','relocate','packers','movers','boxes','furniture moving','loading'] },
 
         // Errands & Delivery
-        { key: 'delivery',    label: 'Delivery Services',     parent: 'Errands & Delivery',   keywords: ['deliver','courier','pickup','drop','parcel','package','document'] },
-        { key: 'transport',   label: 'Pick & Drop',           parent: 'Errands & Delivery',   keywords: ['drop','pick','ride','airport','station','school','transport'] },
-        { key: 'shopping',    label: 'Shopping & Errands',    parent: 'Errands & Delivery',   keywords: ['buy','grocery','market','shop','store','errand','purchase'] },
+        { key: 'delivery',    label: 'Delivery Services',     parent: 'Errands & Delivery',   icon: '🛵', keywords: ['deliver','courier','pickup','drop','parcel','package','document'] },
+        { key: 'transport',   label: 'Pick & Drop',           parent: 'Errands & Delivery',   icon: '🚕', keywords: ['drop','pick','ride','airport','station','school','transport'] },
+        { key: 'shopping',    label: 'Shopping & Errands',    parent: 'Errands & Delivery',   icon: '🛒', keywords: ['buy','grocery','market','shop','store','errand','purchase'] },
 
         // Personal Care & Family
-        { key: 'petcare',     label: 'Pet Care',              parent: 'Personal Care',        keywords: ['dog','cat','pet','walk','grooming','feed','vet','sitting'] },
-        { key: 'beauty',      label: 'Beauty & Wellness',     parent: 'Personal Care',        keywords: ['salon','haircut','makeup','spa','wax','manicure','pedicure','facial','threading'] },
-        { key: 'babysitting', label: 'Babysitting',           parent: 'Personal Care',        keywords: ['baby','kid','child','nanny','sitter','daycare','toddler'] },
-        { key: 'eldercare',   label: 'Elder Care',            parent: 'Personal Care',        keywords: ['elder','senior','old','grandma','grandpa','attendant','nursing'] },
-        { key: 'fitness',     label: 'Fitness Training',      parent: 'Personal Care',        keywords: ['gym','trainer','yoga','workout','exercise','zumba','aerobics','personal training'] },
+        { key: 'petcare',     label: 'Pet Care',              parent: 'Personal Care',        icon: '🐶', keywords: ['dog','cat','pet','walk','grooming','feed','vet','sitting'] },
+        { key: 'beauty',      label: 'Beauty & Wellness',     parent: 'Personal Care',        icon: '💅', keywords: ['salon','haircut','makeup','spa','wax','manicure','pedicure','facial','threading'] },
+        { key: 'babysitting', label: 'Babysitting',           parent: 'Personal Care',        icon: '🍼', keywords: ['baby','kid','child','nanny','sitter','daycare','toddler'] },
+        { key: 'eldercare',   label: 'Elder Care',            parent: 'Personal Care',        icon: '🧓', keywords: ['elder','senior','old','grandma','grandpa','attendant','nursing'] },
+        { key: 'fitness',     label: 'Fitness Training',      parent: 'Personal Care',        icon: '🏋️', keywords: ['gym','trainer','yoga','workout','exercise','zumba','aerobics','personal training'] },
 
         // Food & Events
-        { key: 'cooking',     label: 'Cooking & Chef',        parent: 'Food & Events',        keywords: ['cook','chef','meal','food','tiffin','recipe','kitchen help'] },
-        { key: 'catering',    label: 'Catering Services',     parent: 'Food & Events',        keywords: ['catering','party food','wedding food','event food','buffet'] },
-        { key: 'eventhelp',   label: 'Event Help',            parent: 'Food & Events',        keywords: ['event','party','wedding','decoration','setup','volunteer','host'] },
-        { key: 'photography', label: 'Photography',           parent: 'Food & Events',        keywords: ['photo','photographer','shoot','video','wedding','portrait','camera'] },
+        { key: 'cooking',     label: 'Cooking & Chef',        parent: 'Food & Events',        icon: '👨‍🍳', keywords: ['cook','chef','meal','food','tiffin','recipe','kitchen help'] },
+        { key: 'catering',    label: 'Catering Services',     parent: 'Food & Events',        icon: '🍱', keywords: ['catering','party food','wedding food','event food','buffet'] },
+        { key: 'eventhelp',   label: 'Event Help',            parent: 'Food & Events',        icon: '🎉', keywords: ['event','party','wedding','decoration','setup','volunteer','host'] },
+        { key: 'photography', label: 'Photography',           parent: 'Food & Events',        icon: '📷', keywords: ['photo','photographer','shoot','video','wedding','portrait','camera'] },
 
         // Digital & Skilled Services
-        { key: 'tutoring',    label: 'Online Tutoring',       parent: 'Digital & Skills',     keywords: ['teach','tutor','study','class','math','science','english','coaching','homework'] },
-        { key: 'techsupport', label: 'Tech Support',          parent: 'Digital & Skills',     keywords: ['computer','laptop','wifi','internet','software','printer','mobile','phone fix'] },
-        { key: 'freelance',   label: 'Freelance Services',    parent: 'Digital & Skills',     keywords: ['design','logo','website','content','writing','graphic','editing','marketing','seo'] },
-        { key: 'tailoring',   label: 'Tailoring & Alterations', parent: 'Digital & Skills',   keywords: ['stitch','sew','alter','dress','blouse','cloth','tailor','fitting'] },
+        { key: 'tutoring',    label: 'Online Tutoring',       parent: 'Digital & Skills',     icon: '📚', keywords: ['teach','tutor','study','class','math','science','english','coaching','homework'] },
+        { key: 'techsupport', label: 'Tech Support',          parent: 'Digital & Skills',     icon: '💻', keywords: ['computer','laptop','wifi','internet','software','printer','mobile','phone fix'] },
+        { key: 'freelance',   label: 'Freelance Services',    parent: 'Digital & Skills',     icon: '✍️', keywords: ['design','logo','website','content','writing','graphic','editing','marketing','seo'] },
+        { key: 'tailoring',   label: 'Tailoring & Alterations', parent: 'Digital & Skills',   icon: '🧵', keywords: ['stitch','sew','alter','dress','blouse','cloth','tailor','fitting'] },
 
         // Other
-        { key: 'other',       label: 'Other',                 parent: 'Other',                keywords: ['miscellaneous','custom'] },
+        { key: 'other',       label: 'Other',                 parent: 'Other',                icon: '✨', keywords: ['miscellaneous','custom'] },
     ];
 
     const PARENT_ORDER = ['Home Repairs','Cleaning & Household','Errands & Delivery','Personal Care','Food & Events','Digital & Skills','Other'];
@@ -263,7 +263,7 @@
             opt.dataset.value = c.key;
             opt.dataset.idx = String(idx);
             opt.setAttribute('role', 'option');
-            const icon = (c.parent && PARENT_ICONS[c.parent]) || '•';
+            const icon = c.icon || (c.parent && PARENT_ICONS[c.parent]) || '•';
             opt.innerHTML = `<span class="wm-cat-icon">${icon}</span><span class="wm-cat-label">${c.label}</span>` +
                 (showParent ? `<span class="wm-cat-parent">${c.parent}</span>` : '');
             if (selectEl.value === c.key) opt.classList.add('selected');

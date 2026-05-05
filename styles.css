@@ -6672,40 +6672,56 @@ section {
 }
 
 @media (max-width: 540px) {
+    /* Square form: side = min(viewport width, viewport height). Centered.
+       We deliberately drop full-screen "empty" treatment in favour of a
+       compact square card that fills width and matches height. */
     .modal-content.wm-wizard-modal {
-        height: 100vh;
-        max-height: 100vh;
-        width: 100vw;
-        max-width: 100vw;
-        border-radius: 0;
+        --wm-side: min(100vw, 100vh);
+        width: var(--wm-side);
+        max-width: var(--wm-side);
+        height: var(--wm-side);
+        max-height: var(--wm-side);
+        border-radius: 14px;
+        margin: auto;
     }
     /* Tighten vertical rhythm so the form feels square, not lengthy --- */
-    .wm-wizard-modal > h2 { padding: 10px 16px 4px 16px; font-size: 1.05rem; }
+    .wm-wizard-modal > h2 { padding: 10px 14px 4px 14px; font-size: 1rem; }
     .wm-wizard-modal > #wmStepNav,
-    .wm-wizard-modal > .wm-step-nav { margin: 4px 12px 0 12px; padding: 3px; }
-    .wm-wizard-modal > .wm-step-progress { margin: 6px 12px 0 12px; }
-    .wm-wizard-modal #modalTaskForm > .wm-step { padding: 10px 14px 6px 14px; }
-    .wm-wizard-modal .wm-step-actions { padding: 8px 14px; }
-    .wm-wizard-modal .wm-step-head { margin-bottom: 8px; }
-    .wm-wizard-modal .form-group { margin-bottom: 10px; }
-    .wm-step-tab { padding: 6px 2px; }
+    .wm-wizard-modal > .wm-step-nav { margin: 4px 10px 0 10px; padding: 3px; }
+    .wm-wizard-modal > .wm-step-progress { display: none; }
+    .wm-wizard-modal #modalTaskForm > .wm-step { padding: 8px 12px 4px 12px; }
+    .wm-wizard-modal .wm-step-actions { padding: 8px 12px; }
+    .wm-wizard-modal .wm-step-head { margin-bottom: 6px; }
+    .wm-wizard-modal .form-group { margin-bottom: 8px; }
+    .wm-wizard-modal .form-group label { margin-bottom: 3px; font-size: 0.82rem; }
+    .wm-wizard-modal .form-group input,
+    .wm-wizard-modal .form-group select,
+    .wm-wizard-modal .form-group textarea { padding: 8px 10px; font-size: 0.9rem; }
+    .wm-step-tab { padding: 5px 2px; }
     .wm-step-label { display: none; }
-    .wm-step-tab.active .wm-step-label { display: inline; font-size: 0.7rem; }
-    .wm-step-num { width: 24px; height: 24px; font-size: 0.78rem; }
-    .wm-step-head h3 { font-size: 1rem; margin-bottom: 2px; }
-    .wm-step-head .wm-step-sub { font-size: 0.78rem; }
-    /* Description fills remaining space on mobile basics step */
+    .wm-step-tab.active .wm-step-label { display: inline; font-size: 0.68rem; }
+    .wm-step-num { width: 22px; height: 22px; font-size: 0.74rem; }
+    .wm-step-head h3 { font-size: 0.95rem; margin-bottom: 2px; }
+    .wm-step-head .wm-step-sub { font-size: 0.74rem; line-height: 1.3; }
+    /* Description fills remaining space inside the square */
     .wm-wizard-modal .wm-step[data-step="1"] #modalTaskDescription {
-        min-height: 140px;
+        min-height: 110px;
+    }
+    .wm-review-summary {
+        padding: 10px 12px;
+        margin-bottom: 10px;
     }
     .wm-review-summary .wm-review-row {
         grid-template-columns: 1fr;
         gap: 2px;
+        padding: 6px 0;
+        font-size: 0.82rem;
     }
+    .wm-review-summary .wm-review-label { font-size: 0.74rem; }
     .wm-review-summary .wm-review-value { text-align: left; }
     .wm-vehicle-row { gap: 6px; }
-    .wm-vehicle-chip { flex: 1 1 calc(50% - 6px); min-width: 0; padding: 8px 4px; }
-    .wm-vehicle-icon { font-size: 1.4rem; }
-    .wm-vehicle-label { font-size: 0.78rem; }
-    .wm-vehicle-amt { font-size: 0.8rem; }
+    .wm-vehicle-chip { flex: 1 1 calc(50% - 6px); min-width: 0; padding: 7px 4px; }
+    .wm-vehicle-icon { font-size: 1.3rem; }
+    .wm-vehicle-label { font-size: 0.76rem; }
+    .wm-vehicle-amt { font-size: 0.78rem; }
 }

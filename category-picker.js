@@ -207,6 +207,71 @@
 [data-theme="dark"] .wm-price-distance strong { color: #c7d2fe; }
 [data-theme="dark"] .wm-price-distance-empty { color: #94a3b8; background: rgba(255,255,255,0.02); }
 [data-theme="dark"] .wm-price-formula { color: #94a3b8; }
+
+/* Pick-on-map button + modal ------------------------------------------- */
+.wm-drop-map-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.wm-mappicker-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.65);
+    z-index: 99999; display: flex; align-items: center; justify-content: center;
+    padding: 16px; animation: wmPriceFade .18s ease-out;
+}
+.wm-mappicker-modal {
+    width: 100%; max-width: 720px; max-height: 92vh;
+    background: var(--surface, #fff); color: var(--text, #0f172a);
+    border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    display: flex; flex-direction: column; overflow: hidden;
+}
+.wm-mappicker-head {
+    padding: 14px 18px; border-bottom: 1px solid var(--border, #e2e8f0);
+    display: flex; align-items: center; justify-content: space-between;
+}
+.wm-mappicker-head h3 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.wm-mappicker-close {
+    background: transparent; border: 0; font-size: 1.6rem; line-height: 1;
+    color: var(--text, #0f172a); cursor: pointer; padding: 0 6px;
+}
+.wm-mappicker-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.wm-mappicker-search { display: flex; gap: 6px; }
+.wm-mappicker-search input {
+    flex: 1; padding: 9px 12px; font-size: 0.95rem;
+    border: 1px solid var(--border, #e2e8f0); border-radius: 8px;
+    background: var(--bg, #fff); color: var(--text, #0f172a);
+}
+.wm-mappicker-search button {
+    padding: 9px 14px; border: 1px solid var(--border, #e2e8f0);
+    background: var(--surface, #fff); color: var(--text, #0f172a);
+    border-radius: 8px; cursor: pointer;
+}
+.wm-mappicker-search button:hover { background: var(--primary, #6366f1); color: #fff; border-color: var(--primary, #6366f1); }
+.wm-mappicker-map { width: 100%; height: 380px; min-height: 380px; flex: 0 0 380px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border, #e2e8f0); }
+.wm-mappicker-addr {
+    background: var(--bg, #f8fafc); padding: 10px 12px; border-radius: 8px;
+    font-size: 0.88rem; line-height: 1.4; word-break: break-word;
+    border: 1px solid var(--border, #e2e8f0);
+}
+.wm-mappicker-addr i { color: #ef4444; margin-right: 6px; }
+.wm-mappicker-foot {
+    padding: 12px 18px; border-top: 1px solid var(--border, #e2e8f0);
+    display: flex; justify-content: flex-end; gap: 8px;
+}
+.wm-mappicker-foot button {
+    padding: 9px 18px; border-radius: 8px; font-size: 0.95rem; font-weight: 600;
+    cursor: pointer; transition: all .15s;
+}
+.wm-mappicker-cancel { background: transparent; border: 1px solid var(--border, #cbd5e1); color: var(--text, #0f172a); }
+.wm-mappicker-cancel:hover { background: var(--bg, #f1f5f9); }
+.wm-mappicker-confirm { background: #6366f1; color: #fff; border: 1px solid #6366f1; }
+.wm-mappicker-confirm:hover:not(:disabled) { background: #4f46e5; border-color: #4f46e5; }
+.wm-mappicker-confirm:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 600px) {
+    .wm-mappicker-map { height: 280px; }
+}
+[data-theme="dark"] .wm-mappicker-modal { background: var(--surface, #141a33); }
+[data-theme="dark"] .wm-mappicker-search input,
+[data-theme="dark"] .wm-mappicker-search button,
+[data-theme="dark"] .wm-mappicker-addr { background: rgba(255,255,255,0.04); }
 `;
         const style = document.createElement('style');
         style.id = 'wm-cat-picker-styles';
@@ -787,8 +852,13 @@
             dropFG = document.createElement('div');
             dropFG.className = 'form-group wm-drop-fg';
             dropFG.innerHTML =
-                '<label for="' + pickupId + '_drop"><i class="fas fa-map-marker-alt"></i> Drop Location <span class="wm-drop-hint">(used to estimate fair price)</span></label>'
-              + '<input type="text" id="' + pickupId + '_drop" placeholder="Where should the tasker drop off? (e.g., FC Road, Pune)">';
+                '<label for="' + pickupId + '_drop"><i class="fas fa-flag-checkered"></i> Drop Location <span class="wm-drop-hint">(used to estimate fair price)</span></label>'
+              + '<div class="location-input-wrapper">'
+              +   '<input type="text" id="' + pickupId + '_drop" placeholder="Enter the drop address (e.g., FC Road, Pune)">'
+              +   '<button type="button" class="location-btn wm-drop-map-btn" id="' + pickupId + '_dropMapBtn">'
+              +     '<i class="fas fa-map-marked-alt"></i> Pick on Map'
+              +   '</button>'
+              + '</div>';
             pickupFG.parentNode.insertBefore(dropFG, pickupFG.nextSibling);
             drop = dropFG.querySelector('input');
             drop.dataset.wmDropFor = pickupId;
@@ -796,9 +866,138 @@
         return {
             input: drop,
             fg: dropFG,
+            mapBtn: document.getElementById(pickupId + '_dropMapBtn'),
             show: () => { dropFG.style.display = ''; },
             hide: () => { dropFG.style.display = 'none'; },
         };
+    }
+
+    // Open a Leaflet map modal for the user to click / drag a pin.
+    // Calls onConfirm({ lat, lng, address }) when the user confirms.
+    function openMapPicker(opts) {
+        opts = opts || {};
+        if (typeof L === 'undefined') {
+            alert('Map is still loading. Please try again in a moment.');
+            return;
+        }
+        // Remove any prior instance
+        const existing = document.getElementById('wmMapPicker');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'wmMapPicker';
+        overlay.className = 'wm-mappicker-overlay';
+        overlay.innerHTML =
+            '<div class="wm-mappicker-modal">'
+          +   '<div class="wm-mappicker-head">'
+          +     '<h3><i class="fas fa-map-marker-alt"></i> ' + (opts.title || 'Choose Drop Location') + '</h3>'
+          +     '<button type="button" class="wm-mappicker-close" aria-label="Close">&times;</button>'
+          +   '</div>'
+          +   '<div class="wm-mappicker-body">'
+          +     '<div class="wm-mappicker-search">'
+          +       '<input type="text" placeholder="Search address or place…" id="wmMapPickerSearch">'
+          +       '<button type="button" id="wmMapPickerSearchBtn"><i class="fas fa-search"></i></button>'
+          +       '<button type="button" id="wmMapPickerGps" title="Use my location"><i class="fas fa-crosshairs"></i></button>'
+          +     '</div>'
+          +     '<div id="wmMapPickerMap" class="wm-mappicker-map"></div>'
+          +     '<div class="wm-mappicker-addr">'
+          +       '<i class="fas fa-map-marker-alt"></i> '
+          +       '<span id="wmMapPickerAddrText">Click on the map or search to drop a pin</span>'
+          +     '</div>'
+          +   '</div>'
+          +   '<div class="wm-mappicker-foot">'
+          +     '<button type="button" class="wm-mappicker-cancel">Cancel</button>'
+          +     '<button type="button" class="wm-mappicker-confirm" disabled>Confirm Location</button>'
+          +   '</div>'
+          + '</div>';
+        document.body.appendChild(overlay);
+
+        const center = opts.start || { lat: 18.5204, lng: 73.8567 }; // Pune fallback
+        const map = L.map('wmMapPickerMap').setView([center.lat, center.lng], opts.start ? 14 : 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap', maxZoom: 19
+        }).addTo(map);
+
+        let marker = null;
+        let chosen = null;
+        const addrEl = overlay.querySelector('#wmMapPickerAddrText');
+        const confirmBtn = overlay.querySelector('.wm-mappicker-confirm');
+
+        const setMarker = async (lat, lng, skipReverse) => {
+            if (!marker) {
+                marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+                marker.on('dragend', e => {
+                    const p = e.target.getLatLng();
+                    setMarker(p.lat, p.lng);
+                });
+            } else {
+                marker.setLatLng([lat, lng]);
+            }
+            chosen = { lat, lng, address: '' };
+            confirmBtn.disabled = false;
+            if (skipReverse) return;
+            addrEl.textContent = 'Looking up address…';
+            try {
+                const r = await fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lng + '&format=json',
+                    { headers: { 'Accept-Language': 'en' } });
+                const d = await r.json();
+                chosen.address = d.display_name || (lat.toFixed(5) + ', ' + lng.toFixed(5));
+                addrEl.textContent = chosen.address;
+            } catch (e) {
+                chosen.address = lat.toFixed(5) + ', ' + lng.toFixed(5);
+                addrEl.textContent = chosen.address;
+            }
+        };
+
+        if (opts.start) setMarker(opts.start.lat, opts.start.lng);
+
+        map.on('click', e => setMarker(e.latlng.lat, e.latlng.lng));
+
+        // Force resize after modal animates in
+        setTimeout(() => map.invalidateSize(), 250);
+        setTimeout(() => map.invalidateSize(), 600);
+
+        const close = () => { try { map.remove(); } catch (e) {} overlay.remove(); };
+        overlay.querySelector('.wm-mappicker-close').addEventListener('click', close);
+        overlay.querySelector('.wm-mappicker-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+        confirmBtn.addEventListener('click', () => {
+            if (!chosen) return;
+            close();
+            if (typeof opts.onConfirm === 'function') opts.onConfirm(chosen);
+        });
+
+        // Search
+        const doSearch = async () => {
+            const q = overlay.querySelector('#wmMapPickerSearch').value.trim();
+            if (!q) return;
+            try {
+                const r = await fetch('https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(q) + '&format=json&limit=1&countrycodes=in',
+                    { headers: { 'Accept-Language': 'en' } });
+                const data = await r.json();
+                if (data && data.length) {
+                    const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+                    map.setView([lat, lng], 15);
+                    setMarker(lat, lng, true);
+                    chosen.address = data[0].display_name;
+                    addrEl.textContent = data[0].display_name;
+                } else {
+                    addrEl.textContent = 'No results — try a different search.';
+                }
+            } catch (e) { addrEl.textContent = 'Search failed.'; }
+        };
+        overlay.querySelector('#wmMapPickerSearchBtn').addEventListener('click', doSearch);
+        overlay.querySelector('#wmMapPickerSearch').addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+        });
+        overlay.querySelector('#wmMapPickerGps').addEventListener('click', () => {
+            if (!navigator.geolocation) return;
+            navigator.geolocation.getCurrentPosition(p => {
+                map.setView([p.coords.latitude, p.coords.longitude], 15);
+                setMarker(p.coords.latitude, p.coords.longitude);
+            }, () => { addrEl.textContent = 'Could not get GPS location.'; }, { enableHighAccuracy: true, timeout: 8000 });
+        });
     }
 
     function wirePriceHint(selectId, opts) {
@@ -864,6 +1063,56 @@
             const icon  = cat ? cat.icon : '💡';
             const lowFmt  = fmtRupee(range.low);
             const highFmt = fmtRupee(range.high);
+
+            // For distance categories, show ONLY distance-based pricing UI
+            // (skip the city-range banner + standard quick-set chips so the
+            //  user is not confused by two different prices).
+            if (distMeta) {
+                let html = ''
+                    + '<div class="wm-price-hint-head">'
+                    +   '<span class="wm-price-icon">' + icon + '</span>'
+                    +   '<span class="wm-price-text">'
+                    +     '<strong>' + label + '</strong> is priced by distance — '
+                    +     fmtRupee(distMeta.base) + ' base fare + ' + fmtRupee(distMeta.perKm) + ' per km.'
+                    +   '</span>'
+                    + '</div>';
+                let suggestedAmt = null;
+                if (lastDistance != null) {
+                    const raw = distMeta.base + distMeta.perKm * lastDistance;
+                    suggestedAmt = Math.max(range.min, Math.round(raw / 10) * 10);
+                    html += '<div class="wm-price-distance">'
+                         +    '<i class="fas fa-route"></i> '
+                         +    'Distance: <strong>' + lastDistance.toFixed(1) + ' km</strong>'
+                         +    ' &nbsp;·&nbsp; Fair price ≈ <strong>' + fmtRupee(suggestedAmt) + '</strong>'
+                         + '</div>';
+                } else if (opts.applyBudget) {
+                    html += '<div class="wm-price-distance wm-price-distance-empty">'
+                         +    '<i class="fas fa-route"></i> '
+                         +    'Enter pickup &amp; drop locations above (or use <i class="fas fa-map-marked-alt"></i> Pick on Map) to see a fair price.'
+                         + '</div>';
+                }
+                if (opts.applyBudget && suggestedAmt != null) {
+                    html += '<div class="wm-price-hint-actions">'
+                         +    '<span class="wm-price-hint-label">Apply suggested price:</span>'
+                         +    '<button type="button" class="wm-price-chip wm-price-chip-suggest" data-amt="' + suggestedAmt + '">' + fmtRupee(suggestedAmt) + '</button>'
+                         + '</div>';
+                }
+                hint.innerHTML = html;
+                hint.style.display = 'block';
+                if (opts.applyBudget) {
+                    hint.querySelectorAll('.wm-price-chip').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const amt = parseInt(btn.dataset.amt, 10);
+                            if (!isNaN(amt)) applyValueToBudget(amt);
+                            hint.querySelectorAll('.wm-price-chip').forEach(b => b.classList.remove('active'));
+                            btn.classList.add('active');
+                        });
+                    });
+                }
+                return;
+            }
+
+            // Non-distance categories: show city-range banner + quick-set chips
             let html = ''
                 + '<div class="wm-price-hint-head">'
                 +   '<span class="wm-price-icon">' + icon + '</span>'
@@ -873,31 +1122,10 @@
                 +   '</span>'
                 + '</div>';
 
-            // Distance-based suggestion (only for transport/delivery/moving)
-            let suggestedAmt = null;
-            if (distMeta && lastDistance != null) {
-                const raw = distMeta.base + distMeta.perKm * lastDistance;
-                suggestedAmt = Math.max(range.min, Math.min(range.high * 2, Math.round(raw / 10) * 10));
-                html += '<div class="wm-price-distance">'
-                     +    '<i class="fas fa-route"></i> '
-                     +    'Distance: <strong>' + lastDistance.toFixed(1) + ' km</strong>'
-                     +    ' &nbsp;·&nbsp; Fair price ≈ <strong>' + fmtRupee(suggestedAmt) + '</strong>'
-                     +    ' <span class="wm-price-formula">(' + fmtRupee(distMeta.base) + ' base + ' + fmtRupee(distMeta.perKm) + '/km)</span>'
-                     + '</div>';
-            } else if (distMeta && opts.applyBudget) {
-                html += '<div class="wm-price-distance wm-price-distance-empty">'
-                     +    '<i class="fas fa-route"></i> '
-                     +    'Enter pickup &amp; drop locations above to see a distance-based fair price.'
-                     + '</div>';
-            }
-
             if (opts.applyBudget) {
                 html += '<div class="wm-price-hint-actions">'
-                     +    '<span class="wm-price-hint-label">Quick set:</span>';
-                if (suggestedAmt != null) {
-                    html += '<button type="button" class="wm-price-chip wm-price-chip-suggest" data-amt="' + suggestedAmt + '">' + fmtRupee(suggestedAmt) + ' (suggested)</button>';
-                }
-                html +=    '<button type="button" class="wm-price-chip" data-amt="' + range.low  + '">' + lowFmt  + '</button>'
+                     +    '<span class="wm-price-hint-label">Quick set:</span>'
+                     +    '<button type="button" class="wm-price-chip" data-amt="' + range.low  + '">' + lowFmt  + '</button>'
                      +    '<button type="button" class="wm-price-chip" data-amt="' + Math.round((range.low+range.high)/2) + '">' + fmtRupee(Math.round((range.low+range.high)/2)) + '</button>'
                      +    '<button type="button" class="wm-price-chip" data-amt="' + range.high + '">' + highFmt + '</button>'
                      + '</div>'
@@ -928,7 +1156,7 @@
             if (!pickupEl || !dropEl) return;
             const pTxt = (pickupEl.value || '').trim();
             const dTxt = (dropEl.value || '').trim();
-            // Prefer existing modalTaskCoords for pickup (already geocoded by GPS)
+            // Prefer cached coords (set by GPS button or map picker)
             try {
                 if (window.modalTaskCoords && window.modalTaskCoords.lat) {
                     pickupCoords = window.modalTaskCoords;
@@ -936,7 +1164,9 @@
                     pickupCoords = await wmGeocode(pTxt);
                 }
             } catch (e) { pickupCoords = null; }
-            if (dTxt) {
+            if (dropApi.dropCoords) {
+                dropCoords = dropApi.dropCoords;
+            } else if (dTxt) {
                 dropCoords = await wmGeocode(dTxt);
             } else {
                 dropCoords = null;
@@ -947,9 +1177,31 @@
 
         sel.addEventListener('change', () => { lastDistance = null; update(); });
         if (dropApi) {
-            dropApi.input.addEventListener('blur', refreshDistance);
+            dropApi.input.addEventListener('blur', () => {
+                // User typed manually — clear any prior map-picked coords
+                dropApi.dropCoords = null;
+                refreshDistance();
+            });
             const pickupEl = document.getElementById(pickupId);
             if (pickupEl) pickupEl.addEventListener('blur', refreshDistance);
+
+            // Wire the "Pick on Map" button
+            if (dropApi.mapBtn) {
+                dropApi.mapBtn.addEventListener('click', () => {
+                    const start = (window.modalTaskCoords && window.modalTaskCoords.lat)
+                        ? { lat: window.modalTaskCoords.lat + 0.01, lng: window.modalTaskCoords.lng + 0.01 }
+                        : null;
+                    openMapPicker({
+                        title: 'Choose Drop Location',
+                        start: start,
+                        onConfirm: (loc) => {
+                            dropApi.input.value = loc.address;
+                            dropApi.dropCoords = { lat: loc.lat, lng: loc.lng };
+                            refreshDistance();
+                        }
+                    });
+                });
+            }
         }
         if (sel.value && sel.value !== 'all') update();
     }

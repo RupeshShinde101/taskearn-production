@@ -1621,6 +1621,9 @@
                     lastDistance = haversine(pickupCoords, dropCoords);
                 }
             } else {
+                    lastDistance = haversine(pickupCoords, dropCoords);
+                }
+            } else {
                 lastDistance = null;
                 if (forceShow) {
                     const pTxtNow = (document.getElementById(pickupId) || {}).value || '';
@@ -1636,7 +1639,14 @@
                 }
             }
             calculating = false;
+            // Expose distance globally so updateTotalBudgetDisplay() can scale the
+            // service charge for distance-based categories (Pick&Drop / Delivery / Moving).
+            try { window.__wmLastDistance = lastDistance; } catch (e) {}
             update();
+            // Re-render the service-charge box with the new distance-aware charge.
+            try {
+                if (typeof window.updateTotalBudgetDisplay === 'function') window.updateTotalBudgetDisplay();
+            } catch (e) {}
         };
 
         sel.addEventListener('change', () => {
@@ -1644,7 +1654,11 @@
             lastDuration = null;
             lastRouteGeo = null;
             selectedVehicle = null;
+            try { window.__wmLastDistance = null; } catch (e) {}
             update();
+            try {
+                if (typeof window.updateTotalBudgetDisplay === 'function') window.updateTotalBudgetDisplay();
+            } catch (e) {}
         });
         if (dropApi) {
             dropApi.input.addEventListener('blur', () => {

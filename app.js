@@ -72,11 +72,14 @@ let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
-    // Quick tasks (15-30 mins) - ₹30
-    'delivery': { charge: 30, time: '15-30 mins', level: 'Quick' },
-    'pickup': { charge: 30, time: '15-30 mins', level: 'Quick' },
-    'document': { charge: 30, time: '15-30 mins', level: 'Quick' },
-    'errand': { charge: 35, time: '30-45 mins', level: 'Quick' },
+    // Distance-based categories (Pick & Drop / Delivery / Moving): ₹10–₹40 only.
+    // The actual amount scales with distance via getServiceCharge() when available.
+    'delivery':  { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
+    'pickup':    { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
+    'transport': { charge: 15, time: '10-30 mins', level: 'Quick',  distance: true },
+    'document':  { charge: 15, time: '15-30 mins', level: 'Quick' },
+    'errand':    { charge: 20, time: '30-45 mins', level: 'Quick' },
+    'moving':    { charge: 40, time: '2-6 hours',  level: 'Heavy',  distance: true },
     
     // Medium tasks (1-2 hours) - ₹40-50
     'groceries': { charge: 40, time: '1-2 hours', level: 'Medium' },
@@ -101,7 +104,6 @@ const SERVICE_CHARGES = {
     'fitness': { charge: 70, time: '1-2 hours', level: 'Expert' },
     'photography': { charge: 70, time: '2-4 hours', level: 'Expert' },
     'painting': { charge: 70, time: '3-6 hours', level: 'Expert' },
-    'moving': { charge: 80, time: '4-8 hours', level: 'Expert' },
     'eldercare': { charge: 80, time: '4-8 hours', level: 'Expert' },
     
     // Professional/High-skill tasks - ₹90-100
@@ -113,8 +115,18 @@ const SERVICE_CHARGES = {
     'other': { charge: 50, time: '1-3 hours', level: 'Medium' }
 };
 
-function getServiceCharge(category) {
-    return SERVICE_CHARGES[category]?.charge || 50;
+function getServiceCharge(category, distanceKm) {
+    const info = SERVICE_CHARGES[category];
+    // Distance-based categories: ₹10–₹40 scaled by km when known.
+    if (info && info.distance) {
+        if (typeof distanceKm === 'number' && distanceKm > 0) {
+            const base = category === 'moving' ? 20 : 10;
+            const perKm = category === 'moving' ? 2.5 : 1.5;
+            return Math.max(10, Math.min(40, Math.round(base + perKm * distanceKm)));
+        }
+        return info.charge;
+    }
+    return info?.charge || 50;
 }
 
 function getServiceChargeInfo(category) {
@@ -6558,9 +6570,10 @@ function updateTotalBudgetDisplay() {
     
     const total = baseBudget + currentBonus;
     
-    // Get service charge based on selected category
+    // Get service charge based on selected category (distance-aware for pick&drop / delivery / moving).
     const category = document.getElementById('modalTaskCategory')?.value || 'other';
-    const serviceCharge = getServiceCharge(category);
+    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
+    const serviceCharge = getServiceCharge(category, distanceKm);
     const chargeInfo = getServiceChargeInfo(category);
     
     const totalPayable = total + serviceCharge; // What poster pays

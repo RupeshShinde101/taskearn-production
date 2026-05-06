@@ -5158,22 +5158,9 @@ function isUserBackendAuthenticated() {
     return !!localStorage.getItem('taskearn_token');
 }
 
-// Display authentication status in UI
+// Display authentication status in UI (authStatus element removed from UI)
 function updateAuthenticationStatus() {
-    const statusElement = document.getElementById('authStatus');
-    if (statusElement) {
-        if (currentUser) {
-            const isBackendAuth = isUserBackendAuthenticated();
-            if (isBackendAuth) {
-                statusElement.innerHTML = '<span style="color: #10b981;"><i class="fas fa-check-circle"></i> Connected to server</span>';
-            } else {
-                statusElement.innerHTML = '<span style="color: #f59e0b;"><i class="fas fa-exclamation-triangle"></i> Local mode - tasks won\'t sync</span>';
-            }
-            statusElement.style.display = 'block';
-        } else {
-            statusElement.style.display = 'none';
-        }
-    }
+    // Status indicator removed — no UI element to update
 }
 
 async function handleLogin(event) {

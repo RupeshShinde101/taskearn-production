@@ -744,7 +744,7 @@
         transport: [
             'Pickup point and drop point',
             'How many people / luggage?',
-            'Preferred vehicle type (car / auto / bike)',
+            'Preferred vehicle type (auto / mini / sedan)',
             'Date and time required',
         ],
         shopping: [

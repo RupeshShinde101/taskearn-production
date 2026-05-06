@@ -72,12 +72,10 @@ let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
-    // Distance-based categories (Delivery / Moving): ₹10–₹40 only.
-    // The actual amount scales with distance via getServiceCharge() when available.
-    // NOTE: Pick & Drop (transport) has NO posting fee — the rider keeps the full fare.
+    // Distance-based categories (Delivery / Moving / Pick&Drop): ₹10–₹40 scaled by km.
     'delivery':  { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
     'pickup':    { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
-    'transport': { charge: 0,  time: '10-30 mins', level: 'Free' },
+    'transport': { charge: 15, time: '10-30 mins', level: 'Quick',  distance: true },
     'document':  { charge: 15, time: '15-30 mins', level: 'Quick' },
     'errand':    { charge: 20, time: '30-45 mins', level: 'Quick' },
     'moving':    { charge: 40, time: '2-6 hours',  level: 'Heavy',  distance: true },
@@ -117,8 +115,6 @@ const SERVICE_CHARGES = {
 };
 
 function getServiceCharge(category, distanceKm) {
-    // Pick & Drop is fee-free — the rider keeps the full fare the poster pays.
-    if (category === 'transport') return 0;
     const info = SERVICE_CHARGES[category];
     // Distance-based categories: ₹10–₹40 scaled by km when known.
     if (info && info.distance) {
@@ -136,11 +132,10 @@ function getServiceChargeInfo(category) {
     return SERVICE_CHARGES[category] || SERVICE_CHARGES['other'];
 }
 
-// Returns the posting fee for a task object, honouring transport=free and
-// any saved service_charge value. Falls back to the category default.
-function getTaskPostingFee(task) {
+// Returns the per-category service charge for a task object, honouring any
+// saved service_charge value. Falls back to the category default.
+function getTaskServiceCharge(task) {
     if (!task) return 0;
-    if (task.category === 'transport') return 0;
     if (task.service_charge !== undefined && task.service_charge !== null && task.service_charge !== '') {
         return parseFloat(task.service_charge) || 0;
     }
@@ -150,11 +145,24 @@ function getTaskPostingFee(task) {
     return getServiceCharge(task.category);
 }
 
-// Returns the final task value (what the poster pays / worker earns) for a task.
+// Backward-compat alias (older code path used getTaskPostingFee for the per-category charge)
+function getTaskPostingFee(task) { return getTaskServiceCharge(task); }
+
+// Task Posting Fee = 5% platform fee charged on top of (price + service charge).
+// Pick & Drop (transport) is exempt — no 5% fee.
+function getTaskPlatformFee(task) {
+    if (!task) return 0;
+    if (task.category === 'transport') return 0;
+    const price = parseFloat(task.price || task.amount || 0) || 0;
+    const sc = getTaskServiceCharge(task);
+    return Math.round((price + sc) * 0.05 * 100) / 100;
+}
+
+// Returns the final task value the poster pays = price + service charge + platform fee.
 function getTaskFinalValue(task) {
     if (!task) return 0;
     const price = parseFloat(task.price || task.amount || 0) || 0;
-    return price + getTaskPostingFee(task);
+    return price + getTaskServiceCharge(task) + getTaskPlatformFee(task);
 }
 
 // Default location: New Delhi, India
@@ -2877,7 +2885,7 @@ function openTaskDetail(taskId) {
         <div class="task-detail-price">
             <div>
                 <h3>Your Earnings</h3>
-                <small>${task.category === 'transport' ? '₹' + parseFloat(task.price) + ' (no posting fee)' : '₹' + parseFloat(task.price) + ' + ₹' + getTaskPostingFee(task) + ' posting fee'}</small>
+                <small>₹${parseFloat(task.price)} + ₹${getTaskServiceCharge(task)} service charge${task.category === 'transport' ? '' : ' + 5% posting fee'}</small>
             </div>
             <span class="price">₹${getTaskFinalValue(task)}</span>
         </div>
@@ -6633,9 +6641,11 @@ function updateTotalBudgetDisplay() {
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
     const serviceCharge = getServiceCharge(category, distanceKm);
     const chargeInfo = getServiceChargeInfo(category);
-    
-    const totalPayable = total + serviceCharge; // What poster pays
-    const workerEarns = total + serviceCharge; // Worker gets budget + service charge
+
+    // Task Posting Fee = 5% of (budget + service charge). Free for Pick & Drop.
+    const platformFee = (category === 'transport') ? 0 : Math.round((total + serviceCharge) * 0.05 * 100) / 100;
+    const totalPayable = total + serviceCharge + platformFee; // What poster pays
+    const workerEarns = total + serviceCharge; // Worker gets budget + service charge (NOT platform fee)
     
     const displayEl = document.getElementById('totalBudgetDisplay');
     if (displayEl) {
@@ -6650,12 +6660,13 @@ function updateTotalBudgetDisplay() {
     const serviceChargeDisplay = document.getElementById('serviceChargeAmount');
     const serviceChargeLevel = document.getElementById('serviceChargeLevel');
     const serviceChargeTime = document.getElementById('serviceChargeTime');
+    const platformFeeDisplay = document.getElementById('platformFeeAmount');
     
     if (budgetDisplay) {
         budgetDisplay.textContent = '₹' + total;
     }
     if (payableDisplay) {
-        payableDisplay.textContent = '₹' + totalPayable;
+        payableDisplay.textContent = '₹' + totalPayable.toFixed(0);
     }
     if (workerEarnsDisplay) {
         workerEarnsDisplay.textContent = '₹' + workerEarns;
@@ -6669,9 +6680,14 @@ function updateTotalBudgetDisplay() {
     if (serviceChargeTime) {
         serviceChargeTime.textContent = chargeInfo.time;
     }
+    if (platformFeeDisplay) {
+        platformFeeDisplay.textContent = '₹' + platformFee.toFixed(0);
+    }
 
-    // Hide the posting-fee row entirely when the fee is 0 (Pick & Drop).
-    // The fee row is the parent .charge-row of #serviceChargeAmount.
+    // Hide platform-fee row entirely for Pick & Drop (transport).
+    const platformRow = platformFeeDisplay ? platformFeeDisplay.closest('.charge-row') : null;
+    if (platformRow) platformRow.style.display = (category === 'transport') ? 'none' : '';
+    // Always show the service-charge row (Pick & Drop still has a small distance-based service charge).
     const feeRow = serviceChargeDisplay ? serviceChargeDisplay.closest('.charge-row') : null;
     const timeRow = serviceChargeTime ? serviceChargeTime.closest('.charge-row') : null;
     if (feeRow) feeRow.style.display = serviceCharge > 0 ? '' : 'none';
@@ -7078,6 +7094,8 @@ window.shareTask = shareTask;
 window.getServiceCharge = getServiceCharge;
 window.getServiceChargeInfo = getServiceChargeInfo;
 window.getTaskPostingFee = getTaskPostingFee;
+window.getTaskServiceCharge = getTaskServiceCharge;
+window.getTaskPlatformFee = getTaskPlatformFee;
 window.getTaskFinalValue = getTaskFinalValue;
 window.navigateToTask = navigateToTask;
 window.acceptTask = acceptTask;

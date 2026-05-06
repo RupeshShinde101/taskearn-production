@@ -148,6 +148,28 @@ function getTaskServiceCharge(task) {
 // Backward-compat alias (older code path used getTaskPostingFee for the per-category charge)
 function getTaskPostingFee(task) { return getTaskServiceCharge(task); }
 
+// Check if current user has already rated a specific task (localStorage + server-synced list).
+function hasRatedTask(taskId) {
+    try {
+        var ratedKey = 'rated_tasks_' + (currentUser && currentUser.id ? currentUser.id : 'anon');
+        var rated = JSON.parse(localStorage.getItem(ratedKey) || '[]');
+        return rated.indexOf(String(taskId)) !== -1;
+    } catch(e) { return false; }
+}
+
+// Sync server-side rated task IDs into localStorage for accurate UI state.
+function syncRatedTaskIds(ids) {
+    if (!currentUser || !Array.isArray(ids)) return;
+    try {
+        var ratedKey = 'rated_tasks_' + currentUser.id;
+        var existing = JSON.parse(localStorage.getItem(ratedKey) || '[]');
+        ids.forEach(function(id) {
+            if (existing.indexOf(String(id)) === -1) existing.push(String(id));
+        });
+        localStorage.setItem(ratedKey, JSON.stringify(existing));
+    } catch(e) {}
+}
+
 // Task Posting Fee = 5% platform fee charged on top of (price + service charge).
 // Applies to ALL categories.
 function getTaskPlatformFee(task) {
@@ -936,6 +958,7 @@ let tasks = [];
 let myPostedTasks = [];
 let myAcceptedTasks = [];
 let myCompletedTasks = [];
+let myPaidPostedTasks = []; // Poster's paid/completed task history (for rating helper)
 
 // ========================================
 // LIVE CATEGORY COUNTS
@@ -1708,33 +1731,50 @@ async function loadTasksFromServer() {
                                 
                                 // Add any DB tasks not in local list (skip paid/expired)
                                 dbPosted.forEach(dbTask => {
-                                    if (dbTask.status === 'paid') return;
                                     if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
                                     if (!myPostedTasks.find(pt => pt.id === dbTask.id)) {
-                                        myPostedTasks.push({
-                                            id: dbTask.id,
-                                            title: dbTask.title,
-                                            description: dbTask.description,
-                                            category: dbTask.category,
-                                            price: parseFloat(dbTask.price),
-                                            service_charge: parseFloat(dbTask.service_charge || 0),
-                                            status: dbTask.status,
-                                            postedAt: new Date(dbTask.posted_at),
-                                            expiresAt: new Date(dbTask.expires_at),
-                                            acceptedBy: dbTask.accepted_by,
-                                            accepted_by: dbTask.accepted_by,
-                                            completedAt: dbTask.completed_at,
-                                            helper_name: dbTask.helper_name,
-                                            helper_phone: dbTask.helper_phone,
-                                            helper_rating: dbTask.helper_rating,
-                                            helper_tasks_completed: dbTask.helper_tasks_completed,
-                                            postedBy: { id: currentUser.id, name: currentUser.name },
-                                            location: {
-                                                lat: dbTask.location_lat,
-                                                lng: dbTask.location_lng,
-                                                address: dbTask.location_address
-                                            }
-                                        });
+                                        if (dbTask.status !== 'paid') {
+                                            myPostedTasks.push({
+                                                id: dbTask.id,
+                                                title: dbTask.title,
+                                                description: dbTask.description,
+                                                category: dbTask.category,
+                                                price: parseFloat(dbTask.price),
+                                                service_charge: parseFloat(dbTask.service_charge || 0),
+                                                status: dbTask.status,
+                                                postedAt: new Date(dbTask.posted_at),
+                                                expiresAt: new Date(dbTask.expires_at),
+                                                acceptedBy: dbTask.accepted_by,
+                                                accepted_by: dbTask.accepted_by,
+                                                completedAt: dbTask.completed_at,
+                                                helper_name: dbTask.helper_name,
+                                                helper_phone: dbTask.helper_phone,
+                                                helper_rating: dbTask.helper_rating,
+                                                helper_tasks_completed: dbTask.helper_tasks_completed,
+                                                postedBy: { id: currentUser.id, name: currentUser.name },
+                                                location: {
+                                                    lat: dbTask.location_lat,
+                                                    lng: dbTask.location_lng,
+                                                    address: dbTask.location_address
+                                                }
+                                            });
+                                        }
+                                    }
+                                    // Populate myPaidPostedTasks for rating history (poster side)
+                                    if (dbTask.status === 'paid') {
+                                        if (!myPaidPostedTasks.find(pt => pt.id === dbTask.id)) {
+                                            myPaidPostedTasks.push({
+                                                id: dbTask.id,
+                                                title: dbTask.title,
+                                                category: dbTask.category,
+                                                price: parseFloat(dbTask.price),
+                                                service_charge: parseFloat(dbTask.service_charge || 0),
+                                                status: 'paid',
+                                                accepted_by: dbTask.accepted_by,
+                                                helper_name: dbTask.helper_name || 'Helper',
+                                                postedAt: dbTask.posted_at
+                                            });
+                                        }
                                     }
                                 });
                                 
@@ -1787,12 +1827,11 @@ async function loadTasksFromServer() {
                                     return at;
                                 });
                                 
-                                // Add any DB tasks not in local list (skip paid and expired-accepted)
+                                // Add any DB tasks not in local list (skip expired-accepted)
                                 dbAccepted.forEach(dbTask => {
-                                    if (dbTask.status === 'paid') return;
                                     if (dbTask.status === 'accepted' && new Date(dbTask.expires_at) <= new Date()) return;
                                     if (!myAcceptedTasks.find(at => at.id == dbTask.id)) {
-                                        myAcceptedTasks.push({
+                                        const taskObj = {
                                             id: dbTask.id,
                                             title: dbTask.title,
                                             description: dbTask.description,
@@ -1803,13 +1842,23 @@ async function loadTasksFromServer() {
                                             postedAt: new Date(dbTask.posted_at),
                                             expiresAt: new Date(dbTask.expires_at),
                                             completedAt: dbTask.completed_at,
-                                            postedBy: { id: dbTask.posted_by },
+                                            postedBy: { id: dbTask.posted_by, name: dbTask.poster_name || 'Poster' },
+                                            poster_name: dbTask.poster_name || 'Poster',
                                             location: {
                                                 lat: dbTask.location_lat,
                                                 lng: dbTask.location_lng,
                                                 address: dbTask.location_address || ''
                                             }
-                                        });
+                                        };
+                                        if (dbTask.status === 'paid') {
+                                            // Paid tasks go directly to completed
+                                            if (!myCompletedTasks.find(ct => ct.id == dbTask.id)) {
+                                                taskObj.earnedAmount = getTaskFinalValue(taskObj) * 0.88;
+                                                myCompletedTasks.push(taskObj);
+                                            }
+                                        } else {
+                                            myAcceptedTasks.push(taskObj);
+                                        }
                                     }
                                 });
                                 
@@ -1841,6 +1890,11 @@ async function loadTasksFromServer() {
                                 });
                             }
                             
+                            // Sync rated task IDs from server into localStorage
+                            if (userTasksResult.ratedTaskIds) {
+                                syncRatedTaskIds(userTasksResult.ratedTaskIds);
+                            }
+
                             // Check for tasks awaiting payment
                             const tasksAwaitingPayment = myPostedTasks.filter(t => t.status === 'completed');
                             if (tasksAwaitingPayment.length > 0) {
@@ -4839,9 +4893,23 @@ async function executePayment(taskId) {
                 localStorage.setItem('taskearn_user', JSON.stringify(currentUser));
             }
 
-            // Remove paid task from myPostedTasks
+            // Remove paid task from myPostedTasks and add to paid history for rating
             const paidTask = { ...task, status: 'paid' };
             myPostedTasks = myPostedTasks.filter(t => t.id != taskId);
+            // Add to paid posted tasks history so poster can rate the helper
+            if (!myPaidPostedTasks.find(pt => pt.id == taskId)) {
+                myPaidPostedTasks.push({
+                    id: paidTask.id,
+                    title: paidTask.title,
+                    category: paidTask.category,
+                    price: paidTask.price,
+                    service_charge: paidTask.service_charge || 0,
+                    status: 'paid',
+                    accepted_by: paidTask.accepted_by || paidTask.acceptedBy,
+                    helper_name: paidTask.helper_name || paidTask.helperName || 'Helper',
+                    postedAt: paidTask.postedAt
+                });
+            }
             updateUserData(currentUser.id, {
                 postedTasks: serializeTasks(myPostedTasks)
             });
@@ -6169,6 +6237,7 @@ function renderDashboard() {
     }
     
     renderPostedTasks();
+    renderPaidPostedTasks();
     renderAcceptedTasks();
     renderCompletedTasks();
 
@@ -6398,7 +6467,7 @@ function renderCompletedTasks() {
         const amt = getTaskFinalValue(t);
         return s + (amt * 0.88);
     }, 0);
-    
+
     el.innerHTML = `
         <div style="background:linear-gradient(135deg,#10b981,#34d399);color:white;padding:25px;border-radius:15px;text-align:center;margin-bottom:20px;">
             <h3 style="margin:0;">Total Earned</h3>
@@ -6408,9 +6477,54 @@ function renderCompletedTasks() {
         ${myCompletedTasks.map(t => {
             const amt = getTaskFinalValue(t);
             const earned = t.earnedAmount || (amt * 0.88);
-            return `<div class="my-task-card"><h4>${escapeHtml(t.title)}</h4><p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(Task ₹${amt.toFixed(2)} - 12% commission)</small></p></div>`;
+            const posterName = t.poster_name || (t.postedBy && t.postedBy.name) || 'Poster';
+            const posterId = t.postedBy && t.postedBy.id ? t.postedBy.id : (t.posted_by || '');
+            const alreadyRated = hasRatedTask(t.id);
+            const rateBtn = alreadyRated
+                ? `<span style="color:#10b981;font-weight:600;font-size:13px;"><i class="fas fa-check-circle"></i> Poster Rated</span>`
+                : `<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#000;font-weight:600;font-size:13px;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;"
+                    onclick="openRateUserModal({taskId:${t.id},taskTitle:'${escapeHtml(t.title).replace(/'/g, "\\'")  }',otherName:'${escapeHtml(posterName).replace(/'/g, "\\'")  }',otherUserId:'${escapeHtml(String(posterId))}',role:'helper'})">
+                    <i class="fas fa-star"></i> Rate Poster
+                  </button>`;
+            return `<div class="my-task-card">
+                <h4>${escapeHtml(t.title)}</h4>
+                <p style="color:#888;font-size:13px;margin-bottom:6px;">Posted by: ${escapeHtml(posterName)}</p>
+                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(Task ₹${amt.toFixed(2)} - 12% commission)</small></p>
+                <div style="margin-top:10px;">${rateBtn}</div>
+            </div>`;
         }).join('')}
     `;
+}
+
+function renderPaidPostedTasks() {
+    const el = document.getElementById('myPaidPostedTasks');
+    if (!el) return;
+
+    if (myPaidPostedTasks.length === 0) {
+        el.innerHTML = '<div class="empty-state" style="padding:20px 0;"><i class="fas fa-history"></i><h3 style="font-size:15px;">No paid tasks yet</h3></div>';
+        return;
+    }
+
+    el.innerHTML = myPaidPostedTasks.map(t => {
+        const helperName = t.helper_name || 'Helper';
+        const helperId = t.accepted_by || '';
+        const alreadyRated = hasRatedTask(t.id);
+        const rateBtn = alreadyRated
+            ? `<span style="color:#10b981;font-weight:600;font-size:13px;"><i class="fas fa-check-circle"></i> Helper Rated</span>`
+            : `<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#000;font-weight:600;font-size:13px;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;"
+                onclick="openRateUserModal({taskId:${t.id},taskTitle:'${escapeHtml(t.title).replace(/'/g, "\\'")  }',otherName:'${escapeHtml(helperName).replace(/'/g, "\\'")  }',otherUserId:'${escapeHtml(String(helperId))}',role:'poster'})">
+                <i class="fas fa-star"></i> Rate Helper
+               </button>`;
+        return `<div class="my-task-card">
+            <div class="my-task-card-header">
+                <span class="task-category">${formatCategory(t.category)}</span>
+                <span class="task-status paid" style="background:#6366f1;color:#fff;">Paid</span>
+            </div>
+            <h4>${escapeHtml(t.title)}</h4>
+            <p style="color:#888;font-size:13px;margin-bottom:6px;">Completed by: <strong>${escapeHtml(helperName)}</strong></p>
+            <div style="margin-top:10px;">${rateBtn}</div>
+        </div>`;
+    }).join('');
 }
 
 // ========================================

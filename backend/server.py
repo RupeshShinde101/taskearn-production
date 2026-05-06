@@ -3120,7 +3120,7 @@ def pay_helper(task_id):
 def get_user_tasks():
     """Get current user's tasks"""
     with get_db() as (cursor, conn):
-        # Posted tasks - ALL statuses, join helper info for accepted tasks
+        # Posted tasks - ALL statuses, join helper info for accepted/completed/paid tasks
         cursor.execute(f'''
             SELECT t.*, u.name as helper_name, u.phone as helper_phone,
                    u.rating as helper_rating, u.tasks_completed as helper_tasks_completed
@@ -3129,17 +3129,28 @@ def get_user_tasks():
             WHERE t.posted_by = {PH} ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
-        
-        # Accepted tasks - ALL statuses (accepted, completed, paid)
+
+        # Accepted tasks - ALL statuses (accepted, completed, paid) with poster info
         cursor.execute(f'''
-            SELECT * FROM tasks WHERE accepted_by = {PH} AND status IN ('accepted', 'completed', 'paid') ORDER BY accepted_at DESC
+            SELECT t.*, u.name as poster_name, u.phone as poster_phone,
+                   u.rating as poster_rating
+            FROM tasks t
+            LEFT JOIN users u ON t.posted_by = u.id
+            WHERE t.accepted_by = {PH} AND t.status IN ('accepted', 'completed', 'paid')
+            ORDER BY t.accepted_at DESC
         ''', (request.user_id,))
         accepted = [dict_from_row(t) for t in cursor.fetchall()]
-    
+
+        # Task IDs the current user has already rated (to mark UI as "rated")
+        cursor.execute(f'SELECT task_id FROM helper_ratings WHERE rater_id = {PH}', (request.user_id,))
+        rated_task_ids = [str(row['task_id'] if isinstance(row, dict) else row[0])
+                          for row in cursor.fetchall()]
+
     return jsonify({
         'success': True,
         'postedTasks': posted,
-        'acceptedTasks': accepted
+        'acceptedTasks': accepted,
+        'ratedTaskIds': rated_task_ids
     })
 
 

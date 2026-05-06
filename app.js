@@ -4688,8 +4688,11 @@ async function showPaymentInvoice(taskId) {
         return;
     }
 
+    // Accepted statuses for payment: legacy completed/pending_payment + new verify_pending flow
+    const payableStatuses = ['completed', 'pending_payment', 'verify_pending'];
+
     // If local status is stale, fetch real status from server before showing error
-    if (task.status !== 'completed' && task.status !== 'pending_payment') {
+    if (!payableStatuses.includes(task.status)) {
         console.log(`⚠️ Local task status is '${task.status}', fetching real status from server...`);
         try {
             const userTasksResult = await UserAPI.getTasks();
@@ -4712,7 +4715,7 @@ async function showPaymentInvoice(taskId) {
         }
 
         // Check again after server sync
-        if (task.status !== 'completed' && task.status !== 'pending_payment') {
+        if (!payableStatuses.includes(task.status)) {
             showToast(`❌ Task status is '${task.status}', payment requires 'completed' status.`);
             return;
         }
@@ -6298,29 +6301,10 @@ async function posterCancelTask(taskId) {
 window.posterCancelTask = posterCancelTask;
 
 // ── Verify & Pay Task (Poster releases payment from task card) ─────────────
-async function verifyAndPayTask(taskId, amount, btnEl) {
-    if (!confirm('Release payment of ₹' + parseFloat(amount).toFixed(2) + ' to the helper?')) return;
-    const token = localStorage.getItem('taskearn_token');
-    if (!token) { alert('Please login first'); return; }
-    if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...'; }
-    try {
-        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/pay-helper', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
-        });
-        const result = await resp.json();
-        if (result.success) {
-            showToast('✅ Payment released! Helper has been notified.', 'success');
-            await syncUserTasksFromServer();
-            renderDashboard();
-        } else {
-            alert(result.message || 'Payment failed. Please try again.');
-            if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
-        }
-    } catch (e) {
-        alert('Network error. Please try again.');
-        if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
-    }
+// Shows the full payment invoice popup so the poster can review the breakdown.
+async function verifyAndPayTask(taskId) {
+    if (!currentUser) { alert('Please login first'); return; }
+    await showPaymentInvoice(taskId);
 }
 window.verifyAndPayTask = verifyAndPayTask;
 

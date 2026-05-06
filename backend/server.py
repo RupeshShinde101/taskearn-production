@@ -2440,6 +2440,74 @@ def poster_cancel_accepted_task(task_id):
         return jsonify({'success': False, 'message': f'Error cancelling task: {str(e)}'}), 500
 
 
+@app.route('/api/tasks/<int:task_id>', methods=['PUT'])
+@require_auth
+def update_task(task_id):
+    """Update a task (only poster can edit, only while active)"""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'SELECT posted_by, status FROM tasks WHERE id = {PH}', (task_id,))
+            task = cursor.fetchone()
+
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found'}), 404
+
+            task = dict_from_row(task)
+
+            if task['posted_by'] != request.user_id:
+                return jsonify({'success': False, 'message': 'Only the task poster can edit this task'}), 403
+
+            if task['status'] != 'active':
+                return jsonify({'success': False, 'message': 'Only active tasks can be edited'}), 400
+
+            data = request.get_json()
+
+            required = ['title', 'description', 'category', 'price']
+            for field in required:
+                if not data.get(field):
+                    return jsonify({'success': False, 'message': f'{field} is required'}), 400
+
+            if len(str(data.get('title', ''))) > 200:
+                return jsonify({'success': False, 'message': 'Title max 200 characters'}), 400
+            if len(str(data.get('description', ''))) > 5000:
+                return jsonify({'success': False, 'message': 'Description max 5000 characters'}), 400
+
+            try:
+                price = float(data['price'])
+                if price < 10 or price > 50000:
+                    return jsonify({'success': False, 'message': 'Price must be between ₹10 and ₹50,000'}), 400
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'message': 'Invalid price'}), 400
+
+            allowed, reason = screen_task_content(data.get('title', ''), data.get('description', ''), data.get('category', ''))
+            if not allowed:
+                return jsonify({'success': False, 'message': 'This task violates our content policy. ' + reason, 'policyViolation': True}), 422
+
+            location = data.get('location', {})
+            location_lat = location.get('lat')
+            location_lng = location.get('lng')
+            location_address = location.get('address', '')
+
+            cursor.execute(f'''
+                UPDATE tasks
+                SET title = {PH}, description = {PH}, category = {PH},
+                    location_lat = {PH}, location_lng = {PH}, location_address = {PH},
+                    price = {PH}
+                WHERE id = {PH}
+            ''', (data['title'], data['description'], data['category'],
+                  location_lat, location_lng, location_address,
+                  price, task_id))
+            conn.commit()
+
+        print(f"✅ Task {task_id} updated by user {request.user_id}")
+        return jsonify({'success': True, 'message': 'Task updated successfully'})
+    except Exception as e:
+        print(f"❌ Error in update_task: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error updating task: {str(e)}'}), 500
+
+
 @app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
 @require_auth
 def delete_task(task_id):

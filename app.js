@@ -4109,7 +4109,25 @@ async function saveTaskEdit(event) {
             newLng = geo.lng;
         }
     }
-    
+
+    // Persist to backend
+    try {
+        const result = await TasksAPI.update(taskId, {
+            title: newTitle,
+            category: newCategory,
+            description: newDescription,
+            price: newPrice,
+            location: { lat: newLat, lng: newLng, address: newLocation }
+        });
+        if (!result || !result.success) {
+            showToast('❌ ' + (result && result.message ? result.message : 'Failed to save task'));
+            return;
+        }
+    } catch (e) {
+        showToast('❌ Error saving task. Please try again.');
+        return;
+    }
+
     // Update in main tasks array
     const mainTask = tasks.find(t => t.id == taskId);
     if (mainTask) {

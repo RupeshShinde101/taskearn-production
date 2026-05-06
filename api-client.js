@@ -750,6 +750,15 @@ const TasksAPI = {
         return result.data;
     },
 
+    // Update task (title, description, category, location, price)
+    async update(taskId, taskData) {
+        const result = await apiRequest(`/tasks/${taskId}`, {
+            method: 'PUT',
+            body: JSON.stringify(taskData)
+        });
+        return result.data;
+    },
+
     // Delete task
     async delete(taskId) {
         const result = await apiRequest(`/tasks/${taskId}`, {

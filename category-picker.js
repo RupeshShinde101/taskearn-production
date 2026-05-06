@@ -944,8 +944,10 @@
         sedan: { key: 'sedan', label: 'Sedan', icon: '🚙', base: 120, perKm: 22, speed: 32 },
     };
     // Which vehicles to offer per category (transport-style only).
+    // NOTE: Pick & Drop (transport) excludes bikes — taskers should be auto/car only
+    // for passenger pickup. Bikes remain available for small parcel delivery.
     const VEHICLE_OPTIONS = {
-        transport: ['bike', 'auto', 'mini', 'sedan'],
+        transport: ['auto', 'mini', 'sedan'],
         delivery:  ['bike', 'auto'],
     };
     const VEHICLE_DEFAULT = { transport: 'auto', delivery: 'bike' };

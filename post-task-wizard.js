@@ -1,23 +1,22 @@
 /* ============================================
  * post-task-wizard.js
- * 5-step wizard controller for #postTaskModal
+ * 4-step wizard controller for #postTaskModal
  *
  *   Step 1: Title + Category + Description
  *   Step 2: When (date)
- *   Step 3: Location (pickup, drop auto-injected for transport/delivery/moving)
- *   Step 4: Budget (vehicle + fair price + custom budget + nudges)
- *   Step 5: Review + service charge breakdown + Post
+ *   Step 3: Location + Budget (pickup, drop auto-injected for transport/delivery/moving,
+ *           plus vehicle chips + fair-price hint + custom budget + nudges)
+ *   Step 4: Review + service charge breakdown + Post
  *
  * Per-category UX:
- *   - Step 3/4 headings adapt for transport / delivery / moving / others.
+ *   - Step 3 heading adapts for transport / delivery / moving / others.
  *   - Step 1 description placeholder is set by category-picker.js TEMPLATES.
- *   - Step 4 vehicle picker / fair-price hint is moved into #wmPriceHintSlot
- *     by category-picker.js when that slot exists.
+ *   - Vehicle picker / fair-price hint mounts into #wmPriceHintSlot on step 3.
  * ============================================ */
 (function () {
     'use strict';
 
-    const TOTAL_STEPS = 5;
+    const TOTAL_STEPS = 4;
 
     // Categories that are distance-priced (and thus need pickup + drop)
     const DISTANCE_CATS = new Set(['transport', 'delivery', 'moving']);
@@ -42,38 +41,22 @@
         const isDistance = DISTANCE_CATS.has(cat);
         const isTransport = cat === 'transport';
 
-        // Step 3 (Location) labels
+        // Step 3 (Location & Budget) labels
         const step3Label = $('wmStep3Label');
         const step3Heading = $('wmStep3Heading');
         const step3Sub = $('wmStep3Sub');
-        if (step3Label) step3Label.textContent = isDistance ? 'Pickup & Drop' : 'Location';
+        if (step3Label) step3Label.textContent = isDistance ? 'Pickup, Drop & Budget' : 'Location & Budget';
         if (step3Heading) {
             step3Heading.innerHTML = isDistance
-                ? '<i class="fas fa-route"></i> Pickup & Drop locations'
-                : '<i class="fas fa-map-marker-alt"></i> Where is the task?';
+                ? '<i class="fas fa-route"></i> Pickup, drop &amp; budget'
+                : '<i class="fas fa-map-marker-alt"></i> Location &amp; budget';
         }
         if (step3Sub) {
             step3Sub.textContent = isTransport
-                ? 'Set the pickup spot and where the rider should drop off.'
+                ? 'Set the pickup spot and drop, choose a vehicle, then confirm the fair price.'
                 : isDistance
-                    ? 'Set the pickup and drop locations to compute fair distance pricing.'
-                    : 'Enter the address where the task needs to be done.';
-        }
-
-        // Step 4 (Budget) labels
-        const step4Label = $('wmStep4Label');
-        const step4Heading = $('wmStep4Heading');
-        const step4Sub = $('wmStep4Sub');
-        if (step4Label) step4Label.textContent = isDistance ? 'Vehicle & Budget' : 'Budget';
-        if (step4Heading) {
-            step4Heading.innerHTML = isDistance
-                ? '<i class="fas fa-rupee-sign"></i> Choose vehicle & set budget'
-                : '<i class="fas fa-rupee-sign"></i> Set your budget';
-        }
-        if (step4Sub) {
-            step4Sub.textContent = isDistance
-                ? 'Pick the vehicle that fits your needs — we auto-fill a fair price based on distance.'
-                : 'Choose a fair budget. Add a small nudge to attract taskers faster.';
+                    ? 'Set pickup and drop to compute fair distance pricing, then confirm the budget.'
+                    : 'Enter the address, then choose a fair budget.';
         }
     }
 
@@ -102,7 +85,6 @@
                 const dropVal = dropEl ? (dropEl.value || '').trim() : '';
                 if (!dropVal) return 'Please set the drop location.';
             }
-        } else if (step === 4) {
             const v = parseFloat(($('customBudget') || {}).value);
             if (!v || v < 100) return 'Minimum task budget is ₹100.';
         }
@@ -345,11 +327,10 @@
             <div class="wm-step-nav" id="wmStepNav" role="tablist" aria-label="Post task steps">
                 <button type="button" class="wm-step-tab active" data-step="1" role="tab" aria-selected="true"><span class="wm-step-num">1</span><span class="wm-step-label">Basics</span></button>
                 <button type="button" class="wm-step-tab" data-step="2" role="tab" aria-selected="false"><span class="wm-step-num">2</span><span class="wm-step-label">When</span></button>
-                <button type="button" class="wm-step-tab" data-step="3" role="tab" aria-selected="false"><span class="wm-step-num">3</span><span class="wm-step-label" id="wmStep3Label">Location</span></button>
-                <button type="button" class="wm-step-tab" data-step="4" role="tab" aria-selected="false"><span class="wm-step-num">4</span><span class="wm-step-label" id="wmStep4Label">Budget</span></button>
-                <button type="button" class="wm-step-tab" data-step="5" role="tab" aria-selected="false"><span class="wm-step-num">5</span><span class="wm-step-label">Review</span></button>
+                <button type="button" class="wm-step-tab" data-step="3" role="tab" aria-selected="false"><span class="wm-step-num">3</span><span class="wm-step-label" id="wmStep3Label">Location &amp; Budget</span></button>
+                <button type="button" class="wm-step-tab" data-step="4" role="tab" aria-selected="false"><span class="wm-step-num">4</span><span class="wm-step-label">Review</span></button>
             </div>
-            <div class="wm-step-progress" aria-hidden="true"><div class="wm-step-progress-bar" id="wmStepProgressBar" style="width:20%"></div></div>
+            <div class="wm-step-progress" aria-hidden="true"><div class="wm-step-progress-bar" id="wmStepProgressBar" style="width:25%"></div></div>
             <form id="modalTaskForm" onsubmit="handleTaskSubmit(event)" novalidate>
                 <section class="wm-step active" data-step="1" role="tabpanel">
                     <div class="wm-step-head"><h3><i class="fas fa-pen"></i> What do you need help with?</h3><p class="wm-step-sub">Give your task a clear title, pick a category, and describe what you need.</p></div>
@@ -371,16 +352,13 @@
                     </div>
                 </section>
                 <section class="wm-step" data-step="3" role="tabpanel" hidden>
-                    <div class="wm-step-head"><h3 id="wmStep3Heading"><i class="fas fa-map-marker-alt"></i> Where is the task?</h3><p class="wm-step-sub" id="wmStep3Sub">Enter the address where the task needs to be done.</p></div>
+                    <div class="wm-step-head"><h3 id="wmStep3Heading"><i class="fas fa-map-marker-alt"></i> Location &amp; Budget</h3><p class="wm-step-sub" id="wmStep3Sub">Set the address, then choose a fair budget.</p></div>
                     <div class="form-group"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
-                </section>
-                <section class="wm-step" data-step="4" role="tabpanel" hidden>
-                    <div class="wm-step-head"><h3 id="wmStep4Heading"><i class="fas fa-rupee-sign"></i> Set your budget</h3><p class="wm-step-sub" id="wmStep4Sub">Choose a fair budget. Add a small nudge to attract taskers faster.</p></div>
                     <div id="wmPriceHintSlot"></div>
                     <div class="form-group"><label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em">(Min ₹100)</span></label><div class="budget-selector budget-selector-compact"><input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="100" style="flex:1;font-size:1.05rem;padding:11px 14px;"></div></div>
                     <div class="form-group"><label><i class="fas fa-plus-circle"></i> Nudge Budget (Optional)</label><div class="bonus-section"><p class="bonus-hint">Small bumps to attract taskers faster. Tap to add to your budget.</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="nudgeBudget(10)">+₹10</button><button type="button" class="bonus-btn" onclick="nudgeBudget(20)">+₹20</button><button type="button" class="bonus-btn" onclick="nudgeBudget(50)">+₹50</button><button type="button" class="bonus-btn bonus-btn-minus" onclick="nudgeBudget(-10)">−₹10</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">₹100</strong></div></div></div>
                 </section>
-                <section class="wm-step" data-step="5" role="tabpanel" hidden>
+                <section class="wm-step" data-step="4" role="tabpanel" hidden>
                     <div class="wm-step-head"><h3><i class="fas fa-receipt"></i> Review &amp; Post</h3><p class="wm-step-sub">Quick summary of what you're posting and the total amount you'll pay.</p></div>
                     <div class="wm-review-summary" id="wmReviewSummary"></div>
                     <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Service Charge</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">₹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row total"><span><strong>You Pay:</strong></span><span><strong id="totalPayable">₹150</strong></span></div><div class="charge-row" style="color:#10b981;font-size:13px;margin-top:5px;"><span>Worker Earns:</span><span><strong id="workerEarns">₹150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Service charge: Pick&Drop / Delivery ₹10–₹40 (by distance) | Medium ₹40–50 | Skilled ₹60–70 | Expert ₹70–80 | Professional ₹90–100</p></div>

@@ -147,7 +147,7 @@
             loadRazorpayScript();
         }
     </script>
-    <link rel="stylesheet" href="styles.css?v=20260505_taller">
+    <link rel="stylesheet" href="styles.css?v=20260506_4step">
     <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_uifix2">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
@@ -937,18 +937,14 @@
                 </button>
                 <button type="button" class="wm-step-tab" data-step="3" role="tab" aria-selected="false">
                     <span class="wm-step-num">3</span>
-                    <span class="wm-step-label" id="wmStep3Label">Location</span>
+                    <span class="wm-step-label" id="wmStep3Label">Location &amp; Budget</span>
                 </button>
                 <button type="button" class="wm-step-tab" data-step="4" role="tab" aria-selected="false">
                     <span class="wm-step-num">4</span>
-                    <span class="wm-step-label" id="wmStep4Label">Budget</span>
-                </button>
-                <button type="button" class="wm-step-tab" data-step="5" role="tab" aria-selected="false">
-                    <span class="wm-step-num">5</span>
                     <span class="wm-step-label">Review</span>
                 </button>
             </div>
-            <div class="wm-step-progress" aria-hidden="true"><div class="wm-step-progress-bar" id="wmStepProgressBar" style="width:20%"></div></div>
+            <div class="wm-step-progress" aria-hidden="true"><div class="wm-step-progress-bar" id="wmStepProgressBar" style="width:25%"></div></div>
 
             <form id="modalTaskForm" onsubmit="handleTaskSubmit(event)" novalidate>
                 <!-- ============ STEP 1: BASICS ============ -->
@@ -1020,11 +1016,11 @@
                     </div>
                 </section>
 
-                <!-- ============ STEP 3: LOCATION ============ -->
+                <!-- ============ STEP 3: LOCATION & BUDGET ============ -->
                 <section class="wm-step" data-step="3" role="tabpanel" hidden>
                     <div class="wm-step-head">
-                        <h3 id="wmStep3Heading"><i class="fas fa-map-marker-alt"></i> Where is the task?</h3>
-                        <p class="wm-step-sub" id="wmStep3Sub">Enter the address where the task needs to be done.</p>
+                        <h3 id="wmStep3Heading"><i class="fas fa-map-marker-alt"></i> Location &amp; Budget</h3>
+                        <p class="wm-step-sub" id="wmStep3Sub">Set the address, then choose a fair budget.</p>
                     </div>
                     <div class="form-group">
                         <label for="modalTaskLocation">Task Location</label>
@@ -1036,14 +1032,6 @@
                         </div>
                     </div>
                     <!-- Drop location is auto-injected by category-picker.js for transport/delivery/moving -->
-                </section>
-
-                <!-- ============ STEP 4: BUDGET ============ -->
-                <section class="wm-step" data-step="4" role="tabpanel" hidden>
-                    <div class="wm-step-head">
-                        <h3 id="wmStep4Heading"><i class="fas fa-rupee-sign"></i> Set your budget</h3>
-                        <p class="wm-step-sub" id="wmStep4Sub">Choose a fair budget. Add a small nudge to attract taskers faster.</p>
-                    </div>
                     <!-- Slot for category-picker.js to inject vehicle chips + fair-price hint -->
                     <div id="wmPriceHintSlot"></div>
                     <div class="form-group">
@@ -1070,8 +1058,8 @@
                     </div>
                 </section>
 
-                <!-- ============ STEP 5: REVIEW & POST ============ -->
-                <section class="wm-step" data-step="5" role="tabpanel" hidden>
+                <!-- ============ STEP 4: REVIEW & POST ============ -->
+                <section class="wm-step" data-step="4" role="tabpanel" hidden>
                     <div class="wm-step-head">
                         <h3><i class="fas fa-receipt"></i> Review &amp; Post</h3>
                         <p class="wm-step-sub">Quick summary of what you're posting and the total amount you'll pay.</p>
@@ -1368,10 +1356,10 @@
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20260505_taller"></script>
-    <script src="shared.js?v=20260505_taller"></script>
-    <script src="category-picker.js?v=20260505_taller"></script>
-    <script src="post-task-wizard.js?v=20260505_taller"></script>
+    <script src="api-client.js?v=20260506_4step"></script>
+    <script src="shared.js?v=20260506_4step"></script>
+    <script src="category-picker.js?v=20260506_4step"></script>
+    <script src="post-task-wizard.js?v=20260506_4step"></script>
     
     <!-- Google Sign-In -->
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
@@ -1379,7 +1367,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260505_taller"></script>
+    <script src="app.js?v=20260506_4step"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>

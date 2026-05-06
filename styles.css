@@ -6521,23 +6521,46 @@ section {
     from { opacity: 0; transform: translateX(8px); }
     to   { opacity: 1; transform: translateX(0); }
 }
-.wm-step-head { margin-bottom: 14px; }
+.wm-step-head { margin-bottom: 18px; }
 .wm-step-head h3 {
-    margin: 0 0 4px 0;
-    font-size: 1.08rem;
+    margin: 0 0 6px 0;
+    font-size: 1.18rem;
+    font-weight: 700;
+    line-height: 1.3;
     color: #0f172a;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
+    letter-spacing: -0.01em;
 }
 .wm-step-head h3 i { color: #2563eb; }
 .wm-step-head .wm-step-sub {
     margin: 0;
     color: #64748b;
-    font-size: 0.85rem;
-    line-height: 1.4;
+    font-size: 0.92rem;
+    line-height: 1.5;
 }
+
+/* Form inside the wizard — better breathing room and bigger labels */
+.wm-wizard-modal .form-group { margin-bottom: 16px; }
+.wm-wizard-modal .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #334155;
+    letter-spacing: 0.005em;
+}
+.wm-wizard-modal .form-group input,
+.wm-wizard-modal .form-group select,
+.wm-wizard-modal .form-group textarea {
+    padding: 11px 14px;
+    font-size: 0.95rem;
+    line-height: 1.45;
+}
+.wm-wizard-modal .form-group textarea { line-height: 1.5; }
+[data-theme="dark"] .wm-wizard-modal .form-group label { color: #cbd5e1; }
 
 .wm-step-actions {
     display: flex;

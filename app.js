@@ -1771,8 +1771,8 @@ async function syncUserTasksFromServer() {
 
             // Add DB tasks not in local list
             dbAccepted.forEach(dbTask => {
-                // Skip accepted tasks whose original expiry has passed
-                if (dbTask.status === 'accepted' && dbTask.expires_at && new Date(dbTask.expires_at) <= new Date()) return;
+                // Note: do NOT skip based on expiry — accepted tasks should always show
+                // regardless of the original posting expiry window
                 if (myAcceptedTasks.find(at => at.id == dbTask.id)) return;
                 const taskObj = {
                     id: dbTask.id, title: dbTask.title, description: dbTask.description,
@@ -1812,10 +1812,10 @@ async function syncUserTasksFromServer() {
                 }
             });
 
-            // Remove paid/completed/expired from myAcceptedTasks
+            // Remove only paid/completed from myAcceptedTasks
+            // Do NOT filter by expiry — accepted tasks stay visible until paid/completed
             myAcceptedTasks = myAcceptedTasks.filter(t => {
                 if (t.status === 'paid' || t.status === 'completed') return false;
-                if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
                 return true;
             });
 
@@ -6301,7 +6301,8 @@ async function verifyAndPayTask(taskId, amount, btnEl) {
         const result = await resp.json();
         if (result.success) {
             showToast('✅ Payment released! Helper has been notified.', 'success');
-            loadUserTasks();
+            await syncUserTasksFromServer();
+            renderDashboard();
         } else {
             alert(result.message || 'Payment failed. Please try again.');
             if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
@@ -6383,7 +6384,6 @@ window.openRatingPopup = openRatingPopup;
 function closeRatingPopup() {
     const popup = document.getElementById('taskRatingPopup');
     if (popup) popup.style.display = 'none';
-    loadUserTasks();
 }
 window.closeRatingPopup = closeRatingPopup;
 
@@ -6403,6 +6403,8 @@ async function submitTaskRating() {
         });
     } catch (e) {}
     showToast('⭐ Thank you for your rating!', 'success');
+    await syncUserTasksFromServer();
+    renderDashboard();
     closeRatingPopup();
 }
 window.submitTaskRating = submitTaskRating;
@@ -6499,10 +6501,9 @@ function renderAcceptedTasks() {
     const el = document.getElementById('myAcceptedTasks');
     if (!el) return;
 
-    // Filter out paid and expired-accepted tasks
+    // Filter out only paid tasks — expiry is irrelevant once accepted
     const visibleAcceptedTasks = myAcceptedTasks.filter(t => {
         if (t.status === 'paid') return false;
-        if (t.status === 'accepted' && getTimeLeft(t.expiresAt) === 'Expired') return false;
         return true;
     });
 

@@ -3120,22 +3120,34 @@ def pay_helper(task_id):
 def get_user_tasks():
     """Get current user's tasks"""
     with get_db() as (cursor, conn):
-        # --- 48-hour cleanup: wipe paid tasks (and their ratings) older than 48 hours ---
-        if config.USE_POSTGRES:
-            cutoff_expr = "NOW() - INTERVAL '48 hours'"
-        else:
-            cutoff_expr = "datetime('now', '-48 hours')"
-        # Delete ratings for expired paid tasks first (FK constraint)
-        cursor.execute(f'''
-            DELETE FROM helper_ratings WHERE task_id IN (
-                SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}
-            )
-        ''')
-        # Delete the expired paid tasks themselves
-        cursor.execute(f'''
-            DELETE FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}
-        ''')
-        conn.commit()
+        # --- 48-hour cleanup: wipe paid tasks older than 48 hours ---
+        # Wrapped in try/except so cleanup errors never break this endpoint.
+        try:
+            if config.USE_POSTGRES:
+                cutoff_expr = "NOW() - INTERVAL '48 hours'"
+            else:
+                cutoff_expr = "datetime('now', '-48 hours')"
+            # Collect expired paid task IDs first
+            cursor.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
+            old_task_rows = cursor.fetchall()
+            old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_task_rows]
+            if old_ids:
+                ids_str = ','.join(old_ids)
+                # Delete from all FK-referencing tables before deleting the tasks
+                for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
+                                   'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
+                    try:
+                        cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
+                    except Exception:
+                        pass  # table may not exist or already clean
+                cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
+                conn.commit()
+        except Exception as cleanup_err:
+            print(f'[/api/user/tasks] 48h cleanup skipped: {cleanup_err}')
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         # Posted tasks - ALL statuses, join helper info for accepted/completed/paid tasks
         cursor.execute(f'''

@@ -1663,6 +1663,193 @@ document.addEventListener('click', function(e) {
 // INITIALIZATION
 // ========================================
 
+// Standalone sync of the current user's posted/accepted/completed tasks from the server.
+// Called independently of TasksAPI.getAll() so tasks always appear even if the
+// global task list endpoint fails.
+async function syncUserTasksFromServer() {
+    if (!currentUser) return;
+    try {
+        const userTasksResult = await UserAPI.getTasks();
+        if (!userTasksResult || !userTasksResult.success) {
+            console.warn('syncUserTasksFromServer: API returned failure', userTasksResult);
+            return;
+        }
+
+        const cutoff48h = Date.now() - (48 * 3600 * 1000);
+
+        // ── Sync posted tasks ──────────────────────────────────────────────
+        if (userTasksResult.postedTasks && userTasksResult.postedTasks.length > 0) {
+            const dbPosted = userTasksResult.postedTasks;
+            const dbPostedMap = {};
+            dbPosted.forEach(t => { dbPostedMap[t.id] = t; });
+
+            // Update existing local tasks with fresh DB statuses
+            myPostedTasks = myPostedTasks.map(pt => {
+                const dbTask = dbPostedMap[pt.id];
+                if (!dbTask) return pt;
+                return {
+                    ...pt,
+                    status: dbTask.status,
+                    acceptedBy: dbTask.accepted_by || pt.acceptedBy,
+                    accepted_by: dbTask.accepted_by || pt.accepted_by,
+                    completedAt: dbTask.completed_at || pt.completedAt,
+                    price: parseFloat(dbTask.price) || pt.price,
+                    service_charge: parseFloat(dbTask.service_charge || 0),
+                    helper_name: dbTask.helper_name || pt.helper_name,
+                    helper_phone: dbTask.helper_phone || pt.helper_phone,
+                    helper_rating: dbTask.helper_rating || pt.helper_rating,
+                    helper_tasks_completed: dbTask.helper_tasks_completed || pt.helper_tasks_completed
+                };
+            });
+
+            // Add DB tasks not yet in local list
+            dbPosted.forEach(dbTask => {
+                if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
+                if (dbTask.status === 'paid') {
+                    // Add to paid history
+                    if (!myPaidPostedTasks.find(pt => pt.id === dbTask.id)) {
+                        myPaidPostedTasks.push({
+                            id: dbTask.id, title: dbTask.title, category: dbTask.category,
+                            price: parseFloat(dbTask.price),
+                            service_charge: parseFloat(dbTask.service_charge || 0),
+                            status: 'paid', accepted_by: dbTask.accepted_by,
+                            helper_name: dbTask.helper_name || 'Helper', postedAt: dbTask.posted_at
+                        });
+                    }
+                    return;
+                }
+                if (!myPostedTasks.find(pt => pt.id === dbTask.id)) {
+                    myPostedTasks.push({
+                        id: dbTask.id, title: dbTask.title, description: dbTask.description,
+                        category: dbTask.category, price: parseFloat(dbTask.price),
+                        service_charge: parseFloat(dbTask.service_charge || 0),
+                        status: dbTask.status,
+                        postedAt: new Date(dbTask.posted_at),
+                        expiresAt: dbTask.expires_at ? new Date(dbTask.expires_at) : new Date(Date.now() + 24 * 3600000),
+                        acceptedBy: dbTask.accepted_by, accepted_by: dbTask.accepted_by,
+                        completedAt: dbTask.completed_at,
+                        helper_name: dbTask.helper_name, helper_phone: dbTask.helper_phone,
+                        helper_rating: dbTask.helper_rating,
+                        helper_tasks_completed: dbTask.helper_tasks_completed,
+                        postedBy: { id: currentUser.id, name: currentUser.name },
+                        location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address }
+                    });
+                }
+            });
+
+            // Remove paid and expired-active tasks
+            myPostedTasks = myPostedTasks.filter(t => {
+                if (t.status === 'paid') return false;
+                if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+                return true;
+            });
+        }
+
+        // ── Sync accepted tasks ────────────────────────────────────────────
+        if (userTasksResult.acceptedTasks) {
+            const dbAccepted = userTasksResult.acceptedTasks;
+            const dbAcceptedMap = {};
+            dbAccepted.forEach(t => { dbAcceptedMap[t.id] = t; });
+
+            // Remove local tasks no longer in DB accepted list
+            myAcceptedTasks = myAcceptedTasks.filter(at => !!dbAcceptedMap[at.id]);
+
+            // Update remaining local tasks with DB data
+            myAcceptedTasks = myAcceptedTasks.map(at => {
+                const dbTask = dbAcceptedMap[at.id];
+                if (!dbTask) return at;
+                return {
+                    ...at, status: dbTask.status,
+                    completedAt: dbTask.completed_at || at.completedAt,
+                    price: parseFloat(dbTask.price) || at.price,
+                    service_charge: parseFloat(dbTask.service_charge || 0),
+                    poster_name: dbTask.poster_name || at.poster_name,
+                    poster_phone: dbTask.poster_phone || at.poster_phone,
+                    poster_email: dbTask.poster_email || at.poster_email
+                };
+            });
+
+            // Add DB tasks not in local list
+            dbAccepted.forEach(dbTask => {
+                // Skip accepted tasks whose original expiry has passed
+                if (dbTask.status === 'accepted' && dbTask.expires_at && new Date(dbTask.expires_at) <= new Date()) return;
+                if (myAcceptedTasks.find(at => at.id == dbTask.id)) return;
+                const taskObj = {
+                    id: dbTask.id, title: dbTask.title, description: dbTask.description,
+                    category: dbTask.category, price: parseFloat(dbTask.price),
+                    service_charge: parseFloat(dbTask.service_charge || 0),
+                    status: dbTask.status,
+                    postedAt: new Date(dbTask.posted_at),
+                    expiresAt: dbTask.expires_at ? new Date(dbTask.expires_at) : new Date(Date.now() + 24 * 3600000),
+                    completedAt: dbTask.completed_at,
+                    postedBy: { id: dbTask.posted_by, name: dbTask.poster_name || 'Poster' },
+                    poster_name: dbTask.poster_name || 'Poster',
+                    poster_phone: dbTask.poster_phone || '',
+                    poster_email: dbTask.poster_email || '',
+                    poster_user_id: dbTask.poster_user_id || dbTask.posted_by || '',
+                    location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address || '' }
+                };
+                if (dbTask.status === 'paid') {
+                    if (!myCompletedTasks.find(ct => ct.id == dbTask.id)) {
+                        taskObj.earnedAmount = getTaskFinalValue(taskObj) * 0.88;
+                        taskObj.paidAt = dbTask.paid_at || dbTask.completed_at || new Date().toISOString();
+                        myCompletedTasks.push(taskObj);
+                    }
+                } else {
+                    myAcceptedTasks.push(taskObj);
+                }
+            });
+
+            // Move newly-paid items from myAcceptedTasks to myCompletedTasks
+            myAcceptedTasks.filter(t => t.status === 'paid').forEach(pt => {
+                if (!myCompletedTasks.find(ct => ct.id == pt.id)) {
+                    pt.earnedAmount = getTaskFinalValue(pt) * 0.88;
+                    pt.paidAt = pt.paidAt || pt.paid_at || new Date().toISOString();
+                    myCompletedTasks.push(pt);
+                    currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
+                    currentUser.totalEarnings = Math.round(
+                        (parseFloat(currentUser.totalEarnings || 0) + pt.earnedAmount) * 100) / 100;
+                }
+            });
+
+            // Remove paid/expired from myAcceptedTasks
+            myAcceptedTasks = myAcceptedTasks.filter(t => {
+                if (t.status === 'paid') return false;
+                if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+                return true;
+            });
+
+            // Remove completed tasks older than 48h from myCompletedTasks
+            myCompletedTasks = myCompletedTasks.filter(t =>
+                !t.paidAt || new Date(t.paidAt).getTime() > cutoff48h
+            );
+        }
+
+        // ── Sync rated task IDs ────────────────────────────────────────────
+        if (userTasksResult.ratedTaskIds) {
+            syncRatedTaskIds(userTasksResult.ratedTaskIds);
+        }
+
+        // Persist to localStorage
+        updateUserData(currentUser.id, {
+            postedTasks: serializeTasks(myPostedTasks),
+            acceptedTasks: serializeTasks(myAcceptedTasks),
+            completedTasks: serializeTasks(myCompletedTasks),
+            tasksCompleted: currentUser.tasksCompleted,
+            totalEarnings: currentUser.totalEarnings
+        });
+
+        // Notify poster of tasks awaiting payment
+        const awaitingPayment = myPostedTasks.filter(t => t.status === 'completed');
+        if (awaitingPayment.length > 0) {
+            showToast(`💰 ${awaitingPayment.length} task(s) completed and awaiting your payment!`, 5000);
+        }
+
+    } catch (e) {
+        console.warn('syncUserTasksFromServer failed:', e.message);
+    }
+}
+
 // Load tasks from backend API (PRODUCTION ONLY - NO LOCAL FALLBACKS)
 async function loadTasksFromServer() {
     try {
@@ -1689,232 +1876,11 @@ async function loadTasksFromServer() {
                 console.log('📊 Server tasks after parsing:', serverTasks.length);
                 tasks = serverTasks;
                 
-                // ✅ Sync myPostedTasks and myAcceptedTasks with REAL DB statuses
-                // TasksAPI.getAll() only returns 'active' tasks, so we must call
-                // UserAPI.getTasks() to get completed/paid statuses for the current user
+                // ✅ Sync myPostedTasks and myAcceptedTasks with REAL DB statuses.
+                // Delegates to the standalone syncUserTasksFromServer() function.
                 if (currentUser) {
                     try {
-                        const userTasksResult = await UserAPI.getTasks();
-                        if (userTasksResult && userTasksResult.success) {
-                            // Sync posted tasks with real DB statuses
-                            if (userTasksResult.postedTasks && userTasksResult.postedTasks.length > 0) {
-                                const dbPosted = userTasksResult.postedTasks;
-                                console.log('🔄 Syncing posted tasks from DB:', dbPosted.length);
-                                
-                                // Build lookup map from DB
-                                const dbPostedMap = {};
-                                dbPosted.forEach(t => { dbPostedMap[t.id] = t; });
-                                
-                                // Update existing local tasks with DB status
-                                myPostedTasks = myPostedTasks.map(pt => {
-                                    const dbTask = dbPostedMap[pt.id];
-                                    if (dbTask) {
-                                        if (pt.status !== dbTask.status) {
-                                            console.log(`   Posted Task ${pt.id}: ${pt.status} → ${dbTask.status}`);
-                                        }
-                                        return {
-                                            ...pt,
-                                            status: dbTask.status,
-                                            acceptedBy: dbTask.accepted_by || pt.acceptedBy,
-                                            accepted_by: dbTask.accepted_by || pt.accepted_by,
-                                            completedAt: dbTask.completed_at || pt.completedAt,
-                                            price: parseFloat(dbTask.price) || pt.price,
-                                            service_charge: parseFloat(dbTask.service_charge || 0),
-                                            helper_name: dbTask.helper_name || pt.helper_name,
-                                            helper_phone: dbTask.helper_phone || pt.helper_phone,
-                                            helper_rating: dbTask.helper_rating || pt.helper_rating,
-                                            helper_tasks_completed: dbTask.helper_tasks_completed || pt.helper_tasks_completed
-                                        };
-                                    }
-                                    return pt;
-                                });
-                                
-                                // Add any DB tasks not in local list (skip paid/expired)
-                                dbPosted.forEach(dbTask => {
-                                    if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
-                                    if (!myPostedTasks.find(pt => pt.id === dbTask.id)) {
-                                        if (dbTask.status !== 'paid') {
-                                            myPostedTasks.push({
-                                                id: dbTask.id,
-                                                title: dbTask.title,
-                                                description: dbTask.description,
-                                                category: dbTask.category,
-                                                price: parseFloat(dbTask.price),
-                                                service_charge: parseFloat(dbTask.service_charge || 0),
-                                                status: dbTask.status,
-                                                postedAt: new Date(dbTask.posted_at),
-                                                expiresAt: new Date(dbTask.expires_at),
-                                                acceptedBy: dbTask.accepted_by,
-                                                accepted_by: dbTask.accepted_by,
-                                                completedAt: dbTask.completed_at,
-                                                helper_name: dbTask.helper_name,
-                                                helper_phone: dbTask.helper_phone,
-                                                helper_rating: dbTask.helper_rating,
-                                                helper_tasks_completed: dbTask.helper_tasks_completed,
-                                                postedBy: { id: currentUser.id, name: currentUser.name },
-                                                location: {
-                                                    lat: dbTask.location_lat,
-                                                    lng: dbTask.location_lng,
-                                                    address: dbTask.location_address
-                                                }
-                                            });
-                                        }
-                                    }
-                                    // Populate myPaidPostedTasks for rating history (poster side)
-                                    if (dbTask.status === 'paid') {
-                                        if (!myPaidPostedTasks.find(pt => pt.id === dbTask.id)) {
-                                            myPaidPostedTasks.push({
-                                                id: dbTask.id,
-                                                title: dbTask.title,
-                                                category: dbTask.category,
-                                                price: parseFloat(dbTask.price),
-                                                service_charge: parseFloat(dbTask.service_charge || 0),
-                                                status: 'paid',
-                                                accepted_by: dbTask.accepted_by,
-                                                helper_name: dbTask.helper_name || 'Helper',
-                                                postedAt: dbTask.posted_at
-                                            });
-                                        }
-                                    }
-                                });
-                                
-                                // Remove paid and expired-active tasks from myPostedTasks
-                                myPostedTasks = myPostedTasks.filter(t => {
-                                    if (t.status === 'paid') return false;
-                                    if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
-                                    return true;
-                                });
-                                
-                                updateUserData(currentUser.id, {
-                                    postedTasks: serializeTasks(myPostedTasks)
-                                });
-                            }
-                            
-                            // Sync accepted tasks with real DB statuses
-                            if (userTasksResult.acceptedTasks) {
-                                const dbAccepted = userTasksResult.acceptedTasks;
-                                console.log('🔄 Syncing accepted tasks from DB:', dbAccepted.length);
-                                
-                                const dbAcceptedMap = {};
-                                dbAccepted.forEach(t => { dbAcceptedMap[t.id] = t; });
-                                
-                                // Remove local tasks that no longer exist in DB accepted list
-                                // (e.g., tasks that were abandoned/released)
-                                myAcceptedTasks = myAcceptedTasks.filter(at => {
-                                    const stillInDb = dbAcceptedMap[at.id];
-                                    if (!stillInDb) {
-                                        console.log(`   Accepted Task ${at.id}: removed (no longer in DB accepted list)`);
-                                        return false;
-                                    }
-                                    return true;
-                                });
-                                
-                                // Update remaining local tasks with DB data
-                                myAcceptedTasks = myAcceptedTasks.map(at => {
-                                    const dbTask = dbAcceptedMap[at.id];
-                                    if (dbTask) {
-                                        if (at.status !== dbTask.status) {
-                                            console.log(`   Accepted Task ${at.id}: ${at.status} → ${dbTask.status}`);
-                                        }
-                                        return {
-                                            ...at,
-                                            status: dbTask.status,
-                                            completedAt: dbTask.completed_at || at.completedAt,
-                                            price: parseFloat(dbTask.price) || at.price,
-                                            service_charge: parseFloat(dbTask.service_charge || 0)
-                                        };
-                                    }
-                                    return at;
-                                });
-                                
-                                // Add any DB tasks not in local list (skip expired-accepted)
-                                dbAccepted.forEach(dbTask => {
-                                    if (dbTask.status === 'accepted' && new Date(dbTask.expires_at) <= new Date()) return;
-                                    if (!myAcceptedTasks.find(at => at.id == dbTask.id)) {
-                                        const taskObj = {
-                                            id: dbTask.id,
-                                            title: dbTask.title,
-                                            description: dbTask.description,
-                                            category: dbTask.category,
-                                            price: parseFloat(dbTask.price),
-                                            service_charge: parseFloat(dbTask.service_charge || 0),
-                                            status: dbTask.status,
-                                            postedAt: new Date(dbTask.posted_at),
-                                            expiresAt: new Date(dbTask.expires_at),
-                                            completedAt: dbTask.completed_at,
-                                            postedBy: { id: dbTask.posted_by, name: dbTask.poster_name || 'Poster' },
-                                            poster_name: dbTask.poster_name || 'Poster',
-                                            location: {
-                                                lat: dbTask.location_lat,
-                                                lng: dbTask.location_lng,
-                                                address: dbTask.location_address || ''
-                                            }
-                                        };
-                                        if (dbTask.status === 'paid') {
-                                            // Paid tasks go directly to completed
-                                            if (!myCompletedTasks.find(ct => ct.id == dbTask.id)) {
-                                                taskObj.earnedAmount = getTaskFinalValue(taskObj) * 0.88;
-                                                taskObj.paidAt = dbTask.paid_at || dbTask.completed_at || new Date().toISOString();
-                                                taskObj.poster_name = dbTask.poster_name || taskObj.poster_name || 'Poster';
-                                                taskObj.poster_phone = dbTask.poster_phone || '';
-                                                taskObj.poster_email = dbTask.poster_email || '';
-                                                taskObj.poster_user_id = dbTask.poster_user_id || dbTask.posted_by || '';
-                                                myCompletedTasks.push(taskObj);
-                                            }
-                                        } else {
-                                            myAcceptedTasks.push(taskObj);
-                                        }
-                                    }
-                                });
-                                
-                                // Move paid tasks to myCompletedTasks before removing
-                                const paidTasks = myAcceptedTasks.filter(t => t.status === 'paid');
-                                paidTasks.forEach(pt => {
-                                    if (!myCompletedTasks.find(ct => ct.id == pt.id)) {
-                                        const taskAmount = pt.price || 0;
-                                        pt.earnedAmount = getTaskFinalValue(pt) * 0.88;
-                                        pt.paidAt = pt.paidAt || pt.paid_at || new Date().toISOString();
-                                        myCompletedTasks.push(pt);
-                                        currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
-                                        currentUser.totalEarnings = parseFloat(currentUser.totalEarnings || 0) + pt.earnedAmount;
-                                        currentUser.totalEarnings = Math.round(currentUser.totalEarnings * 100) / 100;
-                                    }
-                                });
-                                
-                                // Remove paid and expired-accepted tasks from myAcceptedTasks
-                                myAcceptedTasks = myAcceptedTasks.filter(t => {
-                                    if (t.status === 'paid') return false;
-                                    if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
-                                    return true;
-                                });
-
-                                // Remove completed tasks older than 48 hours from localStorage
-                                const cutoff48h = Date.now() - (48 * 3600 * 1000);
-                                myCompletedTasks = myCompletedTasks.filter(t => {
-                                    if (!t.paidAt) return true; // keep if no timestamp (safety)
-                                    return new Date(t.paidAt).getTime() > cutoff48h;
-                                });
-                                
-                                updateUserData(currentUser.id, {
-                                    acceptedTasks: serializeTasks(myAcceptedTasks),
-                                    completedTasks: serializeTasks(myCompletedTasks),
-                                    tasksCompleted: currentUser.tasksCompleted,
-                                    totalEarnings: currentUser.totalEarnings
-                                });
-                            }
-                            
-                            // Sync rated task IDs from server into localStorage
-                            if (userTasksResult.ratedTaskIds) {
-                                syncRatedTaskIds(userTasksResult.ratedTaskIds);
-                            }
-
-                            // Check for tasks awaiting payment
-                            const tasksAwaitingPayment = myPostedTasks.filter(t => t.status === 'completed');
-                            if (tasksAwaitingPayment.length > 0) {
-                                console.log('💰 Tasks awaiting your payment:', tasksAwaitingPayment.length);
-                                showToast(`💰 ${tasksAwaitingPayment.length} task(s) completed and awaiting your payment!`, 5000);
-                            }
-                        }
+                        await syncUserTasksFromServer();
                     } catch (e) {
                         console.warn('Could not sync user tasks from DB:', e.message);
                     }
@@ -2225,6 +2191,16 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Event listener setup failed:', e.message);
         }
         
+        // Sync user tasks independently so they load even if getAll fails
+        if (currentUser) {
+            try {
+                await syncUserTasksFromServer();
+                renderDashboard();
+            } catch (e) {
+                console.warn('⚠️ Initial user task sync failed:', e.message);
+            }
+        }
+
         // Load tasks and category counts in PARALLEL (not serial)
         try {
             await Promise.all([

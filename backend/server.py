@@ -557,29 +557,32 @@ def flag_task_content(title, description):
 
 
 def get_service_charge(category):
-    """Calculate service charge based on task category"""
+    """Calculate posting fee based on task category. Aligned with frontend SERVICE_CHARGES.
+    Pick & Drop (transport) is free — no posting fee."""
     service_charges = {
-        # Quick tasks (15-30 mins) - ₹30
-        'delivery': 30, 'pickup': 30, 'document': 30,
+        # Free — Pick & Drop
+        'transport': 0,
+        # Quick tasks (15-30 mins) — distance-based on frontend; default flat here
+        'delivery': 15, 'pickup': 30, 'document': 30,
         'errand': 35,
-        
-        # Medium tasks (1-2 hours) - ₹40-50
+
+        # Medium tasks (1-2 hours) — ₹40-50
         'groceries': 40, 'laundry': 40, 'shopping': 40,
         'gardening': 50, 'cleaning': 50, 'cooking': 50,
-        
-        # Skilled tasks (2-4 hours) - ₹60-70
+
+        # Skilled tasks (2-4 hours) — ₹60-70
         'repair': 60, 'assembly': 60, 'tech-support': 60,
         'event-help': 60, 'tailoring': 60, 'beauty': 60, 'petcare': 60,
-        
-        # Time-intensive tasks (3-6 hours) - ₹70-80
+
+        # Time-intensive tasks (3-6 hours) — ₹70-80
         'tutoring': 70, 'babysitting': 70, 'fitness': 70,
         'photography': 70, 'painting': 70, 'moving': 80,
         'eldercare': 80,
-        
-        # Professional/High-skill tasks - ₹90-100
+
+        # Professional/High-skill tasks — ₹90-100
         'carpentry': 90, 'electrician': 100, 'plumbing': 100,
-        
-        # Vehicle related - ₹40
+
+        # Vehicle related — ₹40
         'vehicle': 40
     }
     return service_charges.get(category, 50)
@@ -8364,12 +8367,12 @@ def notify_task_completed_email(poster_id, helper_name, task_title, task_amount,
             if service_charge > 0:
                 breakdown_html += (
                     f'<tr style="border-bottom:1px solid #f3f4f6;">'
-                    f'<td style="padding:8px 0;color:#6b7280;">Service Charge</td>'
+                    f'<td style="padding:8px 0;color:#6b7280;">Posting Fee</td>'
                     f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{service_charge:.2f}</td></tr>'
                 )
             breakdown_html += (
                 f'<tr style="border-bottom:1px solid #f3f4f6;">'
-                f'<td style="padding:8px 0;color:#6b7280;">Posting Fee (5%)</td>'
+                f'<td style="padding:8px 0;color:#6b7280;">Platform Fee (5%)</td>'
                 f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{poster_fee:.2f}</td></tr>'
                 f'<tr>'
                 f'<td style="padding:10px 0;color:#111827;font-weight:700;font-size:16px;">Total to Pay</td>'
@@ -8406,7 +8409,7 @@ def notify_payment_received_email(helper_id, task_title, amount, task_amount=0, 
             if service_charge > 0:
                 breakdown_html += (
                     f'<tr style="border-bottom:1px solid #f3f4f6;">'
-                    f'<td style="padding:8px 0;color:#6b7280;">Service Charge</td>'
+                    f'<td style="padding:8px 0;color:#6b7280;">Posting Fee</td>'
                     f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{service_charge:.2f}</td></tr>'
                 )
             total_task_val = task_amount + service_charge

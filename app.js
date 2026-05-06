@@ -943,7 +943,7 @@ async function loadRecommendedTasks() {
         section.style.display = 'block';
         container.innerHTML = result.tasks.map(t => {
             const distText = t.distanceKm != null ? `${t.distanceKm.toFixed(1)} km` : '?';
-            const total = getTaskFinalValue(ted(0);
+            const total = getTaskFinalValue(t).toFixed(0);
             const catLabel = formatCategory ? formatCategory(t.category) : t.category;
             return `
             <div class="task-card recommended-task-card" onclick="openTaskDetail(${t.id})">
@@ -1794,8 +1794,7 @@ async function loadTasksFromServer() {
                                 paidTasks.forEach(pt => {
                                     if (!myCompletedTasks.find(ct => ct.id == pt.id)) {
                                         const taskAmount = pt.price || 0;
-                                        const serviceCharge = pt.service_charge || pt.serviceCharge || 0;
-                                        pt.earnedAmount = (taskAmount + serviceCharge) * 0.88;
+                                        pt.earnedAmount = getTaskFinalValue(pt) * 0.88;
                                         myCompletedTasks.push(pt);
                                         currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
                                         currentUser.totalEarnings = parseFloat(currentUser.totalEarnings || 0) + pt.earnedAmount;
@@ -5674,8 +5673,7 @@ function renderProfileUI() {
     if (!totalEarned && myCompletedTasks.length > 0) {
         totalEarned = myCompletedTasks.reduce(function(sum, t) {
             if (t.earnedAmount) return sum + t.earnedAmount;
-            var amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
-            return sum + (amt * 0.88);
+            return sum + (getTaskFinalValue(t) * 0.88);
         }, 0);
         totalEarned = Math.round(totalEarned * 100) / 100;
     }
@@ -5748,7 +5746,7 @@ function renderProfileUI() {
         var listEl = document.getElementById('earningsDetailList');
         if (listEl && myCompletedTasks.length > 0) {
             listEl.innerHTML = myCompletedTasks.slice().reverse().map(function(t) {
-                var amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
+                var amt = getTaskFinalValue(t);
                 var earned = t.earnedAmount || (amt * 0.88);
                 var date = t.completedAt ? new Date(t.completedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
                 return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border,#e2e8f0);">' +
@@ -6354,7 +6352,7 @@ function renderCompletedTasks() {
     // Calculate total earned (after 12% commission)
     const totalEarned = myCompletedTasks.reduce((s, t) => {
         if (t.earnedAmount) return s + t.earnedAmount;
-        const amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
+        const amt = getTaskFinalValue(t);
         return s + (amt * 0.88);
     }, 0);
     
@@ -6365,7 +6363,7 @@ function renderCompletedTasks() {
             <small style="opacity:0.9;">${myCompletedTasks.length} task${myCompletedTasks.length > 1 ? 's' : ''} completed (after 12% commission)</small>
         </div>
         ${myCompletedTasks.map(t => {
-            const amt = (t.price || 0) + (t.service_charge || t.serviceCharge || 0);
+            const amt = getTaskFinalValue(t);
             const earned = t.earnedAmount || (amt * 0.88);
             return `<div class="my-task-card"><h4>${escapeHtml(t.title)}</h4><p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(Task ₹${amt.toFixed(2)} - 12% commission)</small></p></div>`;
         }).join('')}

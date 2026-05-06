@@ -4020,7 +4020,7 @@ function openEditTask(taskId) {
     document.getElementById('editTaskTitle').value = task.title;
     document.getElementById('editTaskCategory').value = task.category;
     document.getElementById('editTaskDescription').value = task.description;
-    document.getElementById('editTaskLocation').value = task.location.address;
+    document.getElementById('editTaskLocation').value = task.location?.address || '';
     document.getElementById('editCurrentBudget').textContent = '₹' + task.price;
     document.getElementById('editNewBudget').textContent = '₹' + task.price;
     document.getElementById('customBudgetIncrease').value = '';
@@ -7125,6 +7125,7 @@ window.penaltyConfirmRelease = penaltyConfirmRelease;
 window.deleteTask = deleteTask;
 window.completeTask = completeTask;
 window.openEditTask = openEditTask;
+window.saveTaskEdit = saveTaskEdit;
 window.selectBudgetIncrease = selectBudgetIncrease;
 window.updateNewBudget = updateNewBudget;
 

@@ -184,7 +184,7 @@
     </script>
 <script src="mobile-enhancements.js?v=20260502_findtasks" defer></script>
 </head>
-<body>
+<body class="has-tab-bar">
 <script>if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}</script>
     <!-- Page Loading Bar -->
     <div class="page-loader" id="pageLoader"></div>
@@ -1516,5 +1516,13 @@ function declineCookies(){localStorage.setItem('cookieConsent','declined');docum
 </script>
 
 <script src="sw-register.js?v=20260420_recovery"></script>
+
+<nav class="bottom-tab-bar" aria-label="Main navigation">
+    <a href="index.html" class="active" aria-label="Home"><i class="fas fa-home"></i><span>Home</span></a>
+    <a href="browse.html" aria-label="Browse Tasks"><i class="fas fa-search"></i><span>Browse</span></a>
+    <a href="#upload-task" class="tab-post-btn" onclick="openModal('postTaskModal');return false;" aria-label="Post Task"><i class="fas fa-plus"></i></a>
+    <a href="posted.html" aria-label="My Tasks"><i class="fas fa-clipboard-list"></i><span>Tasks</span></a>
+    <a href="profile.html" aria-label="Profile"><i class="fas fa-user"></i><span>Profile</span></a>
+</nav>
 </body>
 </html>

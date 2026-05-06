@@ -2,9 +2,13 @@
 var _swWaitingWorker = null;
 
 if ('serviceWorker' in navigator) {
-  // When the new SW takes control, reload the page to load fresh assets
-  navigator.serviceWorker.addEventListener('controllerchange', function() {
-    window.location.reload();
+  // Listen for SW_UPDATED message sent by the new SW's activate event.
+  // This works for both old sw-register.js (via auto-activate/skipWaiting path)
+  // and new sw-register.js (belt-and-suspenders alongside the 'installed' check).
+  navigator.serviceWorker.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'SW_UPDATED') {
+      showUpdateBanner();
+    }
   });
 
   // Recovery: if SW is stuck in a failed state, unregister and re-register
@@ -109,20 +113,7 @@ function showUpdateBanner() {
   banner.innerHTML = '<span>New version available!</span><button id="sw-update-btn" style="background:#1a1a2e;color:#4ade80;border:none;padding:6px 16px;border-radius:8px;cursor:pointer;font-weight:600;">Refresh</button>';
   document.body.appendChild(banner);
   document.getElementById('sw-update-btn').addEventListener('click', function() {
-    // Tell the waiting SW to take over — controllerchange listener will then reload the page
-    if (_swWaitingWorker) {
-      _swWaitingWorker.postMessage({ type: 'SKIP_WAITING' });
-    } else {
-      // Fallback: clear all caches and force reload
-      (function() {
-        if ('caches' in window) {
-          caches.keys().then(function(keys) {
-            return Promise.all(keys.map(function(k) { return caches.delete(k); }));
-          }).then(function() { window.location.reload(); });
-        } else {
-          window.location.reload();
-        }
-      })();
-    }
+    // The new SW is already active (skipWaiting in install) — just hard-reload the page.
+    window.location.reload();
   });
 }

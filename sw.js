@@ -33,9 +33,12 @@ const STATIC_ASSETS = [
   '/icon-512x512.png'
 ];
 
-// Install — cache assets in background (non-blocking). Do NOT skipWaiting here —
-// we wait for the user to click "Refresh" in the update banner before taking over.
+// Install — cache assets in background (non-blocking). Call skipWaiting so the
+// new SW activates immediately: this ensures the SW_UPDATED message reaches every
+// open tab (including ones still running the old sw-register.js that waited for
+// the 'activated' state rather than 'installed').
 self.addEventListener('install', event => {
+  self.skipWaiting(); // activate immediately → triggers SW_UPDATED message on every deploy
   // Cache assets in background — don't block install on this
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {

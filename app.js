@@ -688,7 +688,16 @@ async function loadCurrentSessionAsync() {
                             return null;
                         }
                         console.log('✅ API token verified with backend');
-                        return verifyResult.user;
+                        // Merge locally-cached task data into fresh server profile so tasks
+                        // show immediately on the first render (before syncUserTasksFromServer).
+                        return {
+                            ...verifyResult.user,
+                            acceptedTasks:  apiUser.acceptedTasks  || verifyResult.user.acceptedTasks,
+                            postedTasks:    apiUser.postedTasks    || verifyResult.user.postedTasks,
+                            completedTasks: apiUser.completedTasks || verifyResult.user.completedTasks,
+                            totalEarnings:  apiUser.totalEarnings  != null ? apiUser.totalEarnings  : verifyResult.user.totalEarnings,
+                            tasksCompleted: apiUser.tasksCompleted != null ? apiUser.tasksCompleted : verifyResult.user.tasksCompleted
+                        };
                     } catch (verifyErr) {
                         // Network error — fall back to cached user so offline usage still works
                         console.warn('⚠️ Could not verify token with server (offline?), using cached session:', verifyErr.message);
@@ -1746,12 +1755,13 @@ async function syncUserTasksFromServer() {
         }
 
         // ── Sync accepted tasks ────────────────────────────────────────────
-        if (userTasksResult.acceptedTasks) {
+        if (Array.isArray(userTasksResult.acceptedTasks)) {
             const dbAccepted = userTasksResult.acceptedTasks;
             const dbAcceptedMap = {};
             dbAccepted.forEach(t => { dbAcceptedMap[t.id] = t; });
 
-            // Remove local tasks no longer in DB accepted list
+            // Only remove local tasks when DB returned a non-empty list (authoritative).
+            // An empty list from the DB is trusted — user has no accepted tasks.
             myAcceptedTasks = myAcceptedTasks.filter(at => !!dbAcceptedMap[at.id]);
 
             // Update remaining local tasks with DB data

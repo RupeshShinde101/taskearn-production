@@ -1,6 +1,6 @@
 [build]
   # Auto-stamp SW version on each deploy to bust caches
-  command = "node -e \"const fs=require('fs');const v='v'+Date.now();const f=fs.readFileSync('sw.js','utf8');fs.writeFileSync('sw.js',f.replace(/workmate4u-v[0-9]+/,'workmate4u-'+v));\""
+  command = "node -e \"const fs=require('fs');const v='v'+Date.now();const f=fs.readFileSync('sw.js','utf8');fs.writeFileSync('sw.js',f.replace(/workmate4u-v[a-zA-Z0-9]+/,'workmate4u-'+v));\""
   publish = "."
   functions = "netlify/functions"
 

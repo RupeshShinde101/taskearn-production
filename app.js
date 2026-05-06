@@ -1789,10 +1789,10 @@ async function syncUserTasksFromServer() {
                     poster_user_id: dbTask.poster_user_id || dbTask.posted_by || '',
                     location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address || '' }
                 };
-                if (dbTask.status === 'paid') {
+                if (dbTask.status === 'paid' || dbTask.status === 'completed') {
                     if (!myCompletedTasks.find(ct => ct.id == dbTask.id)) {
                         taskObj.earnedAmount = getTaskFinalValue(taskObj) * 0.88;
-                        taskObj.paidAt = dbTask.paid_at || dbTask.completed_at || new Date().toISOString();
+                        taskObj.paidAt = dbTask.paid_at || dbTask.helper_final_completed_at || dbTask.completed_at || new Date().toISOString();
                         myCompletedTasks.push(taskObj);
                     }
                 } else {
@@ -1800,11 +1800,11 @@ async function syncUserTasksFromServer() {
                 }
             });
 
-            // Move newly-paid items from myAcceptedTasks to myCompletedTasks
-            myAcceptedTasks.filter(t => t.status === 'paid').forEach(pt => {
+            // Move newly-paid/completed items from myAcceptedTasks to myCompletedTasks
+            myAcceptedTasks.filter(t => t.status === 'paid' || t.status === 'completed').forEach(pt => {
                 if (!myCompletedTasks.find(ct => ct.id == pt.id)) {
                     pt.earnedAmount = getTaskFinalValue(pt) * 0.88;
-                    pt.paidAt = pt.paidAt || pt.paid_at || new Date().toISOString();
+                    pt.paidAt = pt.paidAt || pt.paid_at || pt.helper_final_completed_at || new Date().toISOString();
                     myCompletedTasks.push(pt);
                     currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
                     currentUser.totalEarnings = Math.round(
@@ -1812,9 +1812,9 @@ async function syncUserTasksFromServer() {
                 }
             });
 
-            // Remove paid/expired from myAcceptedTasks
+            // Remove paid/completed/expired from myAcceptedTasks
             myAcceptedTasks = myAcceptedTasks.filter(t => {
-                if (t.status === 'paid') return false;
+                if (t.status === 'paid' || t.status === 'completed') return false;
                 if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
                 return true;
             });
@@ -3813,7 +3813,7 @@ function goToTaskInProgress(taskId) {
     const task = myAcceptedTasks.find(t => t.id == taskId);
     if (!task) return;
     // Only navigate for in-progress tasks, not completed/awaiting payment
-    if (task.status === 'completed' || task.status === 'pending_payment' || task.status === 'paid') return;
+    if (task.status === 'completed' || task.status === 'pending_payment' || task.status === 'paid' || task.status === 'verify_pending' || task.status === 'payment_released') return;
     // Save task data for the in-progress page
     localStorage.setItem('currentTask', JSON.stringify({
         id: task.id,
@@ -4568,7 +4568,7 @@ function checkAndShowPaymentReceived() {
     const shownPayments = JSON.parse(localStorage.getItem(paidKey) || '[]');
     
     for (const task of myAcceptedTasks) {
-        if (task.status === 'paid' && !shownPayments.includes(task.id)) {
+        if ((task.status === 'paid' || task.status === 'completed') && !shownPayments.includes(task.id)) {
             const taskAmount = task.price || 0;
             const serviceCharge = task.service_charge || task.serviceCharge || 0;
             const totalTaskValue = taskAmount + serviceCharge;
@@ -6287,13 +6287,133 @@ async function posterCancelTask(taskId) {
 }
 window.posterCancelTask = posterCancelTask;
 
-function renderPostedTasks() {
+// ── Verify & Pay Task (Poster releases payment from task card) ─────────────
+async function verifyAndPayTask(taskId, amount, btnEl) {
+    if (!confirm('Release payment of ₹' + parseFloat(amount).toFixed(2) + ' to the helper?')) return;
+    const token = localStorage.getItem('taskearn_token');
+    if (!token) { alert('Please login first'); return; }
+    if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...'; }
+    try {
+        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/pay-helper', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        });
+        const result = await resp.json();
+        if (result.success) {
+            showToast('✅ Payment released! Helper has been notified.', 'success');
+            loadUserTasks();
+        } else {
+            alert(result.message || 'Payment failed. Please try again.');
+            if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
+        }
+    } catch (e) {
+        alert('Network error. Please try again.');
+        if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
+    }
+}
+window.verifyAndPayTask = verifyAndPayTask;
+
+// ── Mark Task Completed (Helper after payment released) ────────────────────
+async function markTaskCompleted(taskId) {
+    const token = localStorage.getItem('taskearn_token');
+    if (!token) { alert('Please login first'); return; }
+    try {
+        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/mark-completed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        });
+        const result = await resp.json();
+        if (result.success) {
+            myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
+            renderAcceptedTasks();
+            openRatingPopup(taskId);
+        } else {
+            alert(result.message || 'Could not mark as completed. Please try again.');
+        }
+    } catch (e) {
+        alert('Network error. Please try again.');
+    }
+}
+window.markTaskCompleted = markTaskCompleted;
+
+// ── Rating Popup ───────────────────────────────────────────────────────────
+function openRatingPopup(taskId) {
+    let popup = document.getElementById('taskRatingPopup');
+    if (!popup) {
+        popup = document.createElement('div');
+        popup.id = 'taskRatingPopup';
+        popup.innerHTML = `
+            <div style="background:#fff;border-radius:16px;padding:30px;max-width:380px;width:90%;text-align:center;">
+                <div style="font-size:50px;margin-bottom:10px;">🌟</div>
+                <h3 style="margin:0 0 8px;">Rate the Poster</h3>
+                <p style="color:#666;font-size:14px;margin-bottom:20px;">How was your experience? (Optional)</p>
+                <input type="hidden" id="ratingTaskId">
+                <div id="starRatingRow" style="font-size:36px;margin-bottom:16px;cursor:pointer;">
+                    <span class="rating-star" data-value="1">☆</span>
+                    <span class="rating-star" data-value="2">☆</span>
+                    <span class="rating-star" data-value="3">☆</span>
+                    <span class="rating-star" data-value="4">☆</span>
+                    <span class="rating-star" data-value="5">☆</span>
+                </div>
+                <textarea id="ratingReviewText" placeholder="Write a review... (optional)" style="width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;resize:none;margin-bottom:16px;" rows="3"></textarea>
+                <div style="display:flex;gap:10px;">
+                    <button onclick="closeRatingPopup()" style="flex:1;padding:12px;background:#f0f0f0;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Skip</button>
+                    <button onclick="submitTaskRating()" style="flex:1;padding:12px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Submit</button>
+                </div>
+            </div>`;
+        popup.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;align-items:center;justify-content:center;';
+        document.body.appendChild(popup);
+        popup.querySelectorAll('.rating-star').forEach(star => {
+            star.addEventListener('click', function() {
+                const val = parseInt(this.dataset.value);
+                popup.querySelectorAll('.rating-star').forEach(s => {
+                    s.textContent = parseInt(s.dataset.value) <= val ? '★' : '☆';
+                    if (parseInt(s.dataset.value) <= val) s.classList.add('selected'); else s.classList.remove('selected');
+                });
+            });
+        });
+    }
+    document.getElementById('ratingTaskId').value = taskId;
+    popup.querySelectorAll('.rating-star').forEach(s => { s.textContent = '☆'; s.classList.remove('selected'); });
+    if (document.getElementById('ratingReviewText')) document.getElementById('ratingReviewText').value = '';
+    popup.style.display = 'flex';
+}
+window.openRatingPopup = openRatingPopup;
+
+function closeRatingPopup() {
+    const popup = document.getElementById('taskRatingPopup');
+    if (popup) popup.style.display = 'none';
+    loadUserTasks();
+}
+window.closeRatingPopup = closeRatingPopup;
+
+async function submitTaskRating() {
+    const taskId = document.getElementById('ratingTaskId')?.value;
+    const selectedStar = document.querySelector('#taskRatingPopup .rating-star.selected');
+    const rating = selectedStar ? parseInt(selectedStar.dataset.value) : 0;
+    const review = document.getElementById('ratingReviewText')?.value.trim() || '';
+    if (!rating) { closeRatingPopup(); return; }
+    const token = localStorage.getItem('taskearn_token');
+    if (!token) { closeRatingPopup(); return; }
+    try {
+        await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/rate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ rating: rating, review: review })
+        });
+    } catch (e) {}
+    showToast('⭐ Thank you for your rating!', 'success');
+    closeRatingPopup();
+}
+window.submitTaskRating = submitTaskRating;
+
+
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
     // Show active (non-expired) and accepted posted tasks
     const visiblePostedTasks = myPostedTasks.filter(t => {
-        if (t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment') return true;
+        if (t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'payment_released') return true;
         if (t.status !== 'active') return false;
         if (getTimeLeft(t.expiresAt) === 'Expired') return false;
         return true;
@@ -6306,7 +6426,7 @@ function renderPostedTasks() {
 
     el.innerHTML = visiblePostedTasks.map(t => {
         let helperHTML = '';
-        if ((t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment') && t.accepted_by) {
+        if ((t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'payment_released') && t.accepted_by) {
             const hName = t.helper_name || t.helperName || 'Helper';
             const hPhone = t.helper_phone || t.helperPhone || '';
             const hRating = t.helper_rating || t.helperRating || 0;
@@ -6334,6 +6454,8 @@ function renderPostedTasks() {
         let statusClass = t.status;
         if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
         else if (t.status === 'completed' || t.status === 'pending_payment') { statusLabel = 'Awaiting Payment'; statusClass = 'warning'; }
+        else if (t.status === 'verify_pending') { statusLabel = '⏳ Verify & Pay'; statusClass = 'warning'; }
+        else if (t.status === 'payment_released') { statusLabel = '✅ Payment Released'; statusClass = 'paid'; }
 
         let actionsHTML = '';
         if (t.status === 'active') {
@@ -6345,6 +6467,14 @@ function renderPostedTasks() {
             actionsHTML = `<div class="task-actions" style="margin-top:10px;">
                     <button class="btn" style="width:100%;background:#ef4444;color:#fff;font-weight:600;padding:10px;border-radius:8px;border:none;" onclick="posterCancelTask(${t.id})" title="Helper unresponsive? Cancel and delete this task">
                         <i class="fas fa-times-circle"></i> Cancel & Delete Task
+                    </button>
+                </div>`;
+        } else if (t.status === 'verify_pending') {
+            const totalAmt = getTaskFinalValue(t);
+            const posterCost = (totalAmt * 1.05).toFixed(2);
+            actionsHTML = `<div class="task-actions" style="margin-top:10px;">
+                    <button class="btn" style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:700;padding:12px;border-radius:10px;border:none;font-size:15px;" onclick="verifyAndPayTask(${t.id},${posterCost})">
+                        <i class="fas fa-check-circle"></i> ✅ Verify & Pay Now (₹${posterCost})
                     </button>
                 </div>`;
         }
@@ -6400,6 +6530,28 @@ function renderAcceptedTasks() {
                 </p>
                 <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${(getTaskFinalValue(t) * 0.88).toFixed(0)} (after 12% commission)</p>
             </div>`;
+        } else if (t.status === 'verify_pending') {
+            // Helper sent verification, waiting for poster to pay
+            statusHTML = '⏳ Waiting for Payment';
+            statusColor = 'warning';
+            actionHTML = `<div style="background: rgba(245,158,11, 0.1); border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                <p style="color: #d97706; margin-bottom: 8px; font-weight:600;">
+                    <i class="fas fa-hourglass-half"></i> Verification sent! Waiting for poster to pay...
+                </p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${(getTaskFinalValue(t) * 0.88).toFixed(0)} (after 12% commission)</p>
+            </div>`;
+        } else if (t.status === 'payment_released') {
+            // Payment released, helper needs to mark as completed
+            statusHTML = '💰 Payment Released';
+            statusColor = 'paid';
+            actionHTML = `<div style="background: rgba(16,185,129, 0.1); border: 1px solid #10b981; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                <p style="color: #059669; margin-bottom: 10px; font-weight:600;">
+                    <i class="fas fa-check-circle"></i> Payment received! Tap to finalize.
+                </p>
+                <button onclick="event.stopPropagation(); markTaskCompleted(${t.id})" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:8px;padding:12px;font-weight:700;font-size:15px;cursor:pointer;">
+                    <i class="fas fa-flag-checkered"></i> 🎉 Mark as Completed
+                </button>
+            </div>`;
         } else {
             // Still in progress - show action buttons
             const posterPhone = t.postedBy?.phone || '';
@@ -6436,9 +6588,34 @@ function renderCompletedTasks() {
     const cutoff48h = Date.now() - (48 * 3600 * 1000);
     const visible = myCompletedTasks.filter(t => !t.paidAt || new Date(t.paidAt).getTime() > cutoff48h);
 
-    if (visible.length === 0) {
+    // Also show payment_released tasks (pending mark-complete) from myAcceptedTasks
+    const pendingComplete = myAcceptedTasks.filter(t => t.status === 'payment_released');
+
+    if (visible.length === 0 && pendingComplete.length === 0) {
         el.innerHTML = '<div class="empty-state"><i class="fas fa-trophy"></i><h3>No completed tasks</h3></div>';
         return;
+    }
+
+    // Pending mark-complete section
+    let pendingHTML = '';
+    if (pendingComplete.length > 0) {
+        pendingHTML = `<div style="margin-bottom:20px;">
+            <h4 style="margin:0 0 12px;color:#059669;"><i class="fas fa-hand-holding-usd"></i> Payment Received — Tap to Finalize</h4>
+            ${pendingComplete.map(t => {
+                const earned = t.earnedAmount || (getTaskFinalValue(t) * 0.88);
+                return `<div class="my-task-card" style="border:2px solid #10b981;">
+                    <div class="my-task-card-header">
+                        <span class="task-category">${formatCategory(t.category)}</span>
+                        <span class="task-status" style="background:#10b981;color:#fff;">💰 Payment Released</span>
+                    </div>
+                    <h4>${escapeHtml(t.title)}</h4>
+                    <p>You'll earn: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong></p>
+                    <button onclick="markTaskCompleted(${t.id})" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:8px;padding:12px;font-weight:700;font-size:15px;cursor:pointer;margin-top:10px;">
+                        <i class="fas fa-flag-checkered"></i> 🎉 Mark as Completed
+                    </button>
+                </div>`;
+            }).join('')}
+        </div>`;
     }
 
     // Calculate total earned (after 12% commission)
@@ -6453,6 +6630,7 @@ function renderCompletedTasks() {
             <p style="font-size:2.5rem;font-weight:800;margin:10px 0;">₹${totalEarned.toFixed(2)}</p>
             <small style="opacity:0.9;">${visible.length} task${visible.length > 1 ? 's' : ''} completed (after 12% commission)</small>
         </div>
+        ${pendingHTML}
         ${visible.map(t => {
             const amt = getTaskFinalValue(t);
             const earned = t.earnedAmount || (amt * 0.88);

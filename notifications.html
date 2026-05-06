@@ -133,7 +133,11 @@
                 'task_posted': { icon: 'fa-clipboard-list', cls: 'task' },
                 'task_released': { icon: 'fa-undo', cls: 'warning' },
                 'task_expired': { icon: 'fa-clock', cls: 'warning' },
+                'task_verify_sent': { icon: 'fa-hourglass-half', cls: 'task' },
+                'task_final_completed': { icon: 'fa-trophy', cls: 'task' },
+                'verify_and_pay': { icon: 'fa-check-circle', cls: 'task' },
                 'payment_received': { icon: 'fa-rupee-sign', cls: 'payment' },
+                'payment_released': { icon: 'fa-hand-holding-usd', cls: 'payment' },
                 'payment_sent': { icon: 'fa-arrow-up', cls: 'payment' },
                 'payment_done': { icon: 'fa-check-double', cls: 'payment' },
                 'wallet_topup': { icon: 'fa-wallet', cls: 'wallet' },
@@ -191,6 +195,14 @@
                 var actionBtn = '';
                 if (data.taskId && (ntype === 'task_accepted' || (data.type === 'task'))) {
                     actionBtn = '<a href="posted.html?highlight=' + data.taskId + '" style="display:inline-block;margin-top:8px;background:#4ade80;color:#000;padding:8px 16px;border-radius:6px;font-weight:600;text-decoration:none;font-size:13px;" onclick="event.stopPropagation();"><i class="fas fa-eye"></i> View Helper</a>';
+                }
+                // Poster: Verify & Pay Now button (new flow)
+                if (ntype === 'verify_and_pay' && data.taskId) {
+                    actionBtn = '<button onclick="event.stopPropagation();verifyAndPay(' + data.taskId + ',' + (data.amount || 0) + ',this)" style="display:inline-block;margin-top:8px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;border:none;cursor:pointer;"><i class="fas fa-check-circle"></i> ✅ Verify & Pay Now</button>';
+                }
+                // Helper: Mark as Completed button (after payment released)
+                if (ntype === 'payment_released' && data.taskId) {
+                    actionBtn = '<a href="index.html?tab=accepted-tasks" onclick="event.stopPropagation();" style="display:inline-block;margin-top:8px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;"><i class="fas fa-flag-checkered"></i> 🎉 Mark as Completed</a>';
                 }
                 return '<div class="notif-item ' + readStatus + '" onclick="markRead(' + n.id + ')">' +
                     '<div class="notif-icon ' + ic.cls + '"><i class="fas ' + ic.icon + '"></i></div>' +
@@ -262,6 +274,31 @@
                 allNotifications = [];
                 renderNotifications();
             } catch(e) {}
+        }
+
+        // Poster pays for a verify_pending task from the notification button
+        async function verifyAndPay(taskId, amount, btnEl) {
+            if (!confirm('Release payment of ₹' + parseFloat(amount).toFixed(2) + ' to the helper?')) return;
+            var token = localStorage.getItem('taskearn_token');
+            if (!token) { alert('Please login first'); return; }
+            if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...'; }
+            try {
+                var resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/pay-helper', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+                });
+                var result = await resp.json();
+                if (result.success) {
+                    alert('✅ Payment released! Helper will be notified to mark the task as completed.');
+                    loadNotifications();
+                } else {
+                    alert(result.message || 'Payment failed. Please try again.');
+                    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
+                }
+            } catch(e) {
+                alert('Network error. Please try again.');
+                if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
+            }
         }
 
         loadNotifications();

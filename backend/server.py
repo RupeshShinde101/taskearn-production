@@ -222,6 +222,49 @@ def _ensure_suspension_columns():
 
 _kyc_columns_ensured = False
 
+_verify_columns_ensured = False
+
+def _ensure_verify_columns():
+    """Ensure verified_at, payment_released_at, helper_final_completed_at columns exist in tasks table"""
+    global _verify_columns_ensured
+    if _verify_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                # PostgreSQL
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP")
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS payment_released_at TIMESTAMP")
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS helper_final_completed_at TIMESTAMP")
+            else:
+                # SQLite
+                cursor.execute("PRAGMA table_info(tasks)")
+                cols = [row[1] for row in cursor.fetchall()]
+                for col, typ in [('verified_at', 'TEXT'), ('payment_released_at', 'TEXT'),
+                                  ('helper_final_completed_at', 'TEXT')]:
+                    if col not in cols:
+                        cursor.execute(f'ALTER TABLE tasks ADD COLUMN {col} {typ}')
+        _verify_columns_ensured = True
+        print("✅ Verify flow columns verified")
+    except Exception as e:
+        print(f"⚠️ _ensure_verify_columns error: {e}")
+
+
+def _ensure_helper_ratings_review():
+    """Ensure review column exists in helper_ratings table"""
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                cursor.execute("ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS review TEXT")
+            else:
+                cursor.execute("PRAGMA table_info(helper_ratings)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'review' not in cols:
+                    cursor.execute("ALTER TABLE helper_ratings ADD COLUMN review TEXT")
+    except Exception as e:
+        print(f"⚠️ _ensure_helper_ratings_review: {e}")
+
+
 def _ensure_kyc_columns():
     """Ensure kyc_document_image_back column exists in users table (one-time per process)"""
     global _kyc_columns_ensured
@@ -2722,6 +2765,227 @@ def complete_task(task_id):
         return jsonify({'success': False, 'message': f'Failed to complete task: {str(e)}'}), 500
 
 
+@app.route('/api/tasks/<int:task_id>/verify', methods=['POST'])
+@require_auth
+def verify_task(task_id):
+    """
+    NEW FLOW — Step 1: Helper clicks 'Verify Task Done'.
+    - Sets task status: accepted → verify_pending
+    - Sends 'Verify & Pay Now' notification to poster
+    - Sends confirmation notification to helper
+    """
+    try:
+        _ensure_verify_columns()
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
+            ''', (task_id, request.user_id, 'accepted'))
+            task = cursor.fetchone()
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found or not accepted by you'}), 404
+
+            task = dict_from_row(task)
+            task_amount = float(task['price'])
+            service_charge = float(task.get('service_charge', 0))
+            total_task_value = task_amount + service_charge
+            poster_id = task['posted_by']
+            helper_id = request.user_id
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            # Calculate amounts for notification
+            poster_deduction = total_task_value * 0.05
+            total_poster_cost = total_task_value + poster_deduction
+            helper_total_deduction = total_task_value * 0.12
+            helper_net_receives = total_task_value - helper_total_deduction
+
+            # Update task status to verify_pending
+            cursor.execute(f'''
+                UPDATE tasks SET status = 'verify_pending', verified_at = {PH}
+                WHERE id = {PH}
+            ''', (now, task_id))
+
+            # Get helper name
+            cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,))
+            helper_row = cursor.fetchone()
+            helper_name = (dict_from_row(helper_row) if helper_row else {}).get('name', 'Your helper')
+
+            import json
+            # Notify poster: Verify & Pay Now
+            poster_action = json.dumps({
+                'type': 'verify_and_pay',
+                'label': '✅ Verify & Pay Now',
+                'taskId': task_id,
+                'amount': round(total_poster_cost, 2)
+            })
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (poster_id, task_id, 'verify_and_pay',
+                  'Task Verified! ✅ Pay Now',
+                  f'{helper_name} has verified your task "{task["title"]}" is done. Please pay ₹{total_poster_cost:.2f} to release payment.',
+                  'unread', poster_action, now))
+
+            # Notify helper: waiting for poster
+            helper_action = json.dumps({
+                'type': 'task',
+                'label': '👁️ View Status',
+                'taskId': task_id
+            })
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (helper_id, task_id, 'task_verify_sent',
+                  'Verification Sent! ⏳',
+                  f'You marked "{task["title"]}" as done. Waiting for poster to verify and pay ₹{helper_net_receives:.2f}.',
+                  'unread', helper_action, now))
+
+        print(f"✅ Task {task_id} verified by helper {helper_id}. Status: accepted → verify_pending")
+        return jsonify({
+            'success': True,
+            'message': 'Verification sent! Waiting for poster to pay.',
+            'taskId': task_id,
+            'status': 'verify_pending',
+            'helperWillReceive': round(helper_net_receives, 2),
+            'totalPosterCost': round(total_poster_cost, 2)
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Failed to verify task: {str(e)}'}), 500
+
+
+@app.route('/api/tasks/<int:task_id>/mark-completed', methods=['POST'])
+@require_auth
+def mark_task_completed(task_id):
+    """
+    NEW FLOW — Step 3: Helper clicks 'Mark as Completed' after receiving payment.
+    - Task status: payment_released → completed (final)
+    - Increments tasks_completed + total_earnings for helper
+    - Returns showRatingPopup flag to trigger optional rating
+    - Task is deleted after 48 hours (via helper_final_completed_at)
+    """
+    try:
+        _ensure_verify_columns()
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
+            ''', (task_id, request.user_id, 'payment_released'))
+            task = cursor.fetchone()
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found or payment not yet released'}), 404
+
+            task = dict_from_row(task)
+            task_amount = float(task['price'])
+            service_charge = float(task.get('service_charge', 0))
+            total_task_value = task_amount + service_charge
+            helper_total_deduction = total_task_value * 0.12
+            helper_earnings = total_task_value - helper_total_deduction
+            helper_id = request.user_id
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            # Set final completed status with 48h expiry anchor
+            cursor.execute(f'''
+                UPDATE tasks SET status = 'completed', helper_final_completed_at = {PH}
+                WHERE id = {PH}
+            ''', (now, task_id))
+
+            # Increment tasks_completed and total_earnings for helper
+            cursor.execute(f'''
+                UPDATE users
+                SET tasks_completed = COALESCE(tasks_completed, 0) + 1,
+                    total_earnings = COALESCE(total_earnings, 0) + {PH}
+                WHERE id = {PH}
+            ''', (helper_earnings, helper_id))
+
+            # Final completion notification for helper
+            import json
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (helper_id, task_id, 'task_final_completed',
+                  'Task Completed! 🏆',
+                  f'You\'ve successfully completed "{task["title"]}" and earned ₹{helper_earnings:.2f}. Great work!',
+                  'unread', json.dumps({'type': 'task', 'taskId': task_id}), now))
+
+        print(f"✅ Task {task_id} final-completed by helper {helper_id}. Earned ₹{helper_earnings:.2f}")
+        return jsonify({
+            'success': True,
+            'message': 'Task completed! Great work!',
+            'taskId': task_id,
+            'status': 'completed',
+            'helperEarnings': round(helper_earnings, 2),
+            'showRatingPopup': True
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Failed to mark completed: {str(e)}'}), 500
+
+
+@app.route('/api/tasks/<int:task_id>/rate', methods=['POST'])
+@require_auth
+def rate_task_poster(task_id):
+    """
+    NEW FLOW — Optional step after mark-completed: Helper rates the poster.
+    Body: {rating: int(1-5), review: string (optional)}
+    """
+    try:
+        _ensure_helper_ratings_review()
+        data = request.get_json() or {}
+        rating = data.get('rating')
+        review = (data.get('review') or '').strip()[:500]
+
+        try:
+            rating = int(rating)
+            if rating < 1 or rating > 5:
+                raise ValueError()
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': 'Rating must be 1–5'}), 400
+
+        with get_db() as (cursor, conn):
+            # Verify helper completed this task
+            cursor.execute(f'''
+                SELECT id, posted_by, accepted_by, status FROM tasks
+                WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
+            ''', (task_id, request.user_id, 'completed'))
+            task = cursor.fetchone()
+            if not task:
+                return jsonify({'success': False, 'message': 'Task not found or not yet completed by you'}), 404
+
+            task = dict_from_row(task)
+            rated_id = task['posted_by']
+            rater_id = request.user_id
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            # Check if already rated
+            cursor.execute(f'SELECT id FROM helper_ratings WHERE task_id = {PH} AND rater_id = {PH}', (task_id, rater_id))
+            if cursor.fetchone():
+                return jsonify({'success': False, 'message': 'You already rated this task'}), 400
+
+            # Insert rating
+            cursor.execute(f'''
+                INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (task_id, rater_id, rated_id, rating, review, now))
+
+            # Update rated user's average rating
+            cursor.execute(f'''
+                SELECT AVG(rating) as avg_r FROM helper_ratings WHERE rated_id = {PH}
+            ''', (rated_id,))
+            avg_row = dict_from_row(cursor.fetchone())
+            avg_r = float(avg_row['avg_r'] or 5.0)
+            cursor.execute(f'UPDATE users SET rating = {PH} WHERE id = {PH}', (round(avg_r, 2), rated_id))
+
+        return jsonify({'success': True, 'message': 'Rating submitted. Thank you!'}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Failed to submit rating: {str(e)}'}), 500
+
+
 @app.route('/api/tasks/<int:task_id>/create-payment-order', methods=['POST'])
 @require_auth
 def create_payment_order(task_id):
@@ -2795,7 +3059,9 @@ def create_payment_order(task_id):
 @require_auth
 def pay_helper(task_id):
     """
-    Poster pays for completed task - ALL wallet deductions and credits happen here
+    Poster pays for verified task (NEW FLOW) or completed task (legacy flow).
+    NEW FLOW: status verify_pending → payment_released (helper must then click Mark as Completed)
+    LEGACY FLOW: status completed → paid (kept for backward compat)
     - Deduct helper commission (12%) from helper wallet
     - Deduct poster fee (5%) from poster wallet
     - Credit helper with task amount
@@ -2805,33 +3071,35 @@ def pay_helper(task_id):
     print(f"💰 Payment Processing: Task {task_id}")
     print(f"Poster (payer): {request.user_id}")
     print('='*60)
-    
+
     try:
+        _ensure_verify_columns()
         with get_db() as (cursor, conn):
             # Get task details
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH}', (task_id,))
             task = cursor.fetchone()
-            
+
             if not task:
                 print(f"❌ Task {task_id} not found")
                 return jsonify({'success': False, 'message': 'Task not found'}), 404
-            
+
             task = dict_from_row(task)
             print(f"📋 Task: {task['title']}")
             print(f"   Status: {task['status']}")
             print(f"   Posted by: {task['posted_by']}")
             print(f"   Accepted by: {task['accepted_by']}")
-            
-            # Verify task is completed
-            if task['status'] != 'completed':
-                print(f"❌ Task not completed (status: {task['status']})")
-                return jsonify({'success': False, 'message': 'Task must be completed first'}), 400
-            
+
+            # Accept verify_pending (new flow) OR completed (legacy flow)
+            is_new_flow = task['status'] == 'verify_pending'
+            if task['status'] not in ('verify_pending', 'completed'):
+                print(f"❌ Task status not payable (status: {task['status']})")
+                return jsonify({'success': False, 'message': 'Task must be verified or completed first'}), 400
+
             # Verify the poster is the one paying
             if task['posted_by'] != request.user_id:
                 print(f"❌ Only task poster can pay (poster: {task['posted_by']}, requester: {request.user_id})")
                 return jsonify({'success': False, 'message': 'Only task poster can pay'}), 403
-            
+
             helper_id = task['accepted_by']
             task_amount = float(task['price'])
             service_charge = float(task.get('service_charge', 0))
@@ -3021,62 +3289,84 @@ def pay_helper(task_id):
             print(f"   Transfer ID: {upi_transfer_result.get('transfer_id')}")
             print(f"   Amount: ₹{total_platform_income:.2f}")
             print(f"   Status: {upi_transfer_result.get('transfer_status', 'initiated')}")
-            
-            # Mark task as PAID
-            cursor.execute(f'''
-                UPDATE tasks
-                SET status = 'paid', paid_at = {PH}
-                WHERE id = {PH}
-            ''', (now, task_id))
-            
-            # Update helper's tasks_completed and total_earnings stats
+
             helper_earnings = total_task_value - helper_total_deduction
-            cursor.execute(f'''
-                UPDATE users
-                SET tasks_completed = COALESCE(tasks_completed, 0) + 1,
-                    total_earnings = COALESCE(total_earnings, 0) + {PH}
-                WHERE id = {PH}
-            ''', (helper_earnings, helper_id))
-            
-            # Update poster's tasks_posted count (if not already tracked)
+
+            if is_new_flow:
+                # NEW FLOW: payment_released — helper still needs to click "Mark as Completed"
+                cursor.execute(f'''
+                    UPDATE tasks SET status = 'payment_released', payment_released_at = {PH}
+                    WHERE id = {PH}
+                ''', (now, task_id))
+                # tasks_completed / total_earnings updated in /mark-completed instead
+            else:
+                # LEGACY FLOW: mark as paid immediately (old complete → pay path)
+                cursor.execute(f'''
+                    UPDATE tasks SET status = 'paid', paid_at = {PH}
+                    WHERE id = {PH}
+                ''', (now, task_id))
+                cursor.execute(f'''
+                    UPDATE users
+                    SET tasks_completed = COALESCE(tasks_completed, 0) + 1,
+                        total_earnings = COALESCE(total_earnings, 0) + {PH}
+                    WHERE id = {PH}
+                ''', (helper_earnings, helper_id))
+
+            # Update poster's tasks_posted count
             cursor.execute(f'''
                 UPDATE users
                 SET tasks_posted = (
-                    SELECT COUNT(*) FROM tasks WHERE posted_by = {PH} AND status IN ('accepted','completed','paid')
+                    SELECT COUNT(*) FROM tasks WHERE posted_by = {PH} AND status IN ('accepted','completed','paid','verify_pending','payment_released')
                 )
                 WHERE id = {PH}
             ''', (request.user_id, request.user_id))
-            
-            # Clear payment notification for poster
+
+            # Clear payment / verify notification for poster
             cursor.execute(f'''
                 DELETE FROM notifications
-                WHERE task_id = {PH} AND user_id = {PH} AND notification_type = {PH}
-            ''', (task_id, request.user_id, 'task_completed'))
-            
-            # Create "Payment Received" notification for helper
+                WHERE task_id = {PH} AND user_id = {PH} AND notification_type IN ('task_completed', 'verify_and_pay')
+            ''', (task_id, request.user_id))
+
             import json
-            helper_earnings = total_task_value - helper_total_deduction
-            cursor.execute(f'''
-                INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (helper_id, task_id, 'payment_received', 
-                  'Payment Received! 💰',
-                  f'You received ₹{helper_earnings:.2f} for completing "{task["title"]}".',
-                  'unread', json.dumps({'type': 'success', 'taskId': task_id, 'amount': helper_earnings}), now))
-            
+            if is_new_flow:
+                # NEW FLOW: Tell helper to mark as completed
+                helper_notif_data = json.dumps({
+                    'type': 'mark_complete',
+                    'label': '🎉 Mark as Completed',
+                    'taskId': task_id,
+                    'amount': round(helper_earnings, 2)
+                })
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (helper_id, task_id, 'payment_released',
+                      'Payment Released! 🎉 Mark as Completed',
+                      f'₹{helper_earnings:.2f} has been released to your wallet for "{task["title"]}". Tap to mark the task as completed.',
+                      'unread', helper_notif_data, now))
+            else:
+                # LEGACY FLOW: Simple payment received
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (helper_id, task_id, 'payment_received',
+                      'Payment Received! 💰',
+                      f'You received ₹{helper_earnings:.2f} for completing "{task["title"]}".',
+                      'unread', json.dumps({'type': 'success', 'taskId': task_id, 'amount': helper_earnings}), now))
+
             # Create "Payment Done" notification for poster
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (request.user_id, task_id, 'payment_done', 
+            ''', (request.user_id, task_id, 'payment_done',
                   'Payment Done! ✅',
                   f'You paid ₹{total_poster_cost:.2f} for "{task["title"]}". Helper received ₹{helper_earnings:.2f}.',
                   'unread', json.dumps({'type': 'success', 'taskId': task_id, 'amount': total_poster_cost}), now))
-            
+
             conn.commit()
-            
+
+            final_status = 'payment_released' if is_new_flow else 'paid'
             print(f"\n✅ PAYMENT COMPLETE!")
-            print(f"   Task status: completed → paid")
+            print(f"   Task status: {task['status']} → {final_status}")
             print(f"   Helper final balance: ₹{helper_new_balance:.2f}")
             print(f"   Poster final balance: ₹{poster_new_balance:.2f}")
             print(f"   Company final balance: ₹{company_new_balance:.2f}")
@@ -3089,24 +3379,26 @@ def pay_helper(task_id):
                     commission=helper_total_deduction)
             except Exception:
                 pass
-            
+
             return jsonify({
                 'success': True,
-                'message': 'Payment successful and funds transferred',
+                'message': 'Payment successful! Helper has been notified.' if is_new_flow else 'Payment successful and funds transferred',
                 'taskId': task_id,
+                'status': final_status,
                 'amount': task_amount,
                 'serviceCharge': service_charge,
                 'totalTaskValue': total_task_value,
-                'helperEarnings': total_task_value - helper_total_deduction,
+                'helperEarnings': round(helper_earnings, 2),
                 'helperCommission': helper_total_deduction,
                 'posterFee': poster_deduction,
                 'platformIncome': total_platform_income,
                 'helperNewBalance': helper_new_balance,
                 'posterNewBalance': poster_new_balance,
                 'companyNewBalance': company_new_balance,
-                'upiTransferStatus': upi_transfer_result.get('transfer_status', 'initiated')
+                'upiTransferStatus': upi_transfer_result.get('transfer_status', 'initiated'),
+                'requiresMarkComplete': is_new_flow
             }), 200
-    
+
     except Exception as e:
         print(f"❌ Payment error: {e}")
         import traceback
@@ -3149,6 +3441,32 @@ def get_user_tasks():
             except Exception:
                 pass
 
+        # --- 48-hour cleanup: also wipe completed tasks (new flow) older than 48 hours ---
+        try:
+            if config.USE_POSTGRES:
+                cutoff_expr = "NOW() - INTERVAL '48 hours'"
+            else:
+                cutoff_expr = "datetime('now', '-48 hours')"
+            cursor.execute(f"SELECT id FROM tasks WHERE status = 'completed' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
+            completed_old_rows = cursor.fetchall()
+            completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
+            if completed_old_ids:
+                ids_str = ','.join(completed_old_ids)
+                for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
+                                   'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
+                    try:
+                        cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
+                    except Exception:
+                        pass
+                cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
+                conn.commit()
+        except Exception as cleanup_err2:
+            print(f'[/api/user/tasks] completed 48h cleanup skipped: {cleanup_err2}')
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
         # Posted tasks - ALL statuses, join helper info for accepted/completed/paid tasks
         cursor.execute(f'''
             SELECT t.*, u.name as helper_name, u.phone as helper_phone,
@@ -3159,15 +3477,16 @@ def get_user_tasks():
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
 
-        # Accepted tasks - ALL statuses (accepted, completed, paid) with poster info
-        # For 'paid' tasks, only include those paid within last 48 hours (cleanup above handles older ones)
+        # Accepted tasks — include all active statuses + new flow statuses + legacy paid
+        # New flow: verify_pending, payment_released, completed
+        # Legacy flow: completed, paid
         cursor.execute(f'''
             SELECT t.*, u.name as poster_name, u.phone as poster_phone,
                    u.email as poster_email, u.id as poster_user_id,
                    u.rating as poster_rating
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.accepted_by = {PH} AND t.status IN ('accepted', 'completed', 'paid')
+            WHERE t.accepted_by = {PH} AND t.status IN ('accepted', 'completed', 'paid', 'verify_pending', 'payment_released')
             ORDER BY t.accepted_at DESC
         ''', (request.user_id,))
         accepted = [dict_from_row(t) for t in cursor.fetchall()]

@@ -586,9 +586,9 @@
 
             <!-- Action Buttons -->
             <div class="complete-section" style="display:flex;gap:12px;">
-                <button class="btn-complete" onclick="completeTask()" style="flex:1;">
-                    <i class="fas fa-check-circle"></i>
-                    Mark Completed
+                <button class="btn-complete" id="verifyBtn" onclick="verifyTask()" style="flex:1;background:linear-gradient(135deg,#f59e0b 0%,#d97706 100%);">
+                    <i class="fas fa-shield-check"></i>
+                    Verify Task Done
                 </button>
                 <button onclick="goBack()" style="flex:1;background:#ef4444;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
                     <i class="fas fa-times-circle"></i>
@@ -602,15 +602,15 @@
     <div class="modal" id="confirmModal">
         <div class="modal-content">
             <div class="modal-icon">
-                <i class="fas fa-check-circle"></i>
+                <i class="fas fa-hourglass-half" style="color:#f59e0b;"></i>
             </div>
-            <div class="modal-title">Task Completed!</div>
+            <div class="modal-title">Verification Sent! ⏳</div>
             <div class="modal-text">
-                Great job! Your task has been completed successfully.
+                The task poster has been notified to verify and release your payment. You'll receive a notification once payment is released.
             </div>
             <div class="modal-buttons">
                 <button class="modal-btn modal-btn-confirm" onclick="proceedToPayment()">
-                    Continue
+                    Got It
                 </button>
             </div>
         </div>
@@ -766,8 +766,13 @@
                         handleTaskGone();
                         return;
                     }
-                    if (t.status && t.status !== 'accepted' && t.status !== 'completed' && t.status !== 'pending_payment' && t.status !== 'paid') {
+                    if (t.status && t.status !== 'accepted' && t.status !== 'completed' && t.status !== 'pending_payment' && t.status !== 'paid' && t.status !== 'verify_pending' && t.status !== 'payment_released') {
                         handleTaskGone();
+                        return;
+                    }
+                    // If payment was released, redirect to completed tasks
+                    if (t.status === 'payment_released') {
+                        window.location.href = 'index.html?tab=accepted-tasks';
                         return;
                     }
                 } catch (e) {
@@ -873,8 +878,8 @@
 
 
 
-        // Complete task
-        async function completeTask() {
+        // Verify task done (NEW FLOW — replaces completeTask)
+        async function verifyTask() {
             const currentUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
             if (!currentUser) {
                 alert('Please login first');
@@ -894,12 +899,12 @@
             const btn = document.querySelector('.btn-complete');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Completing...';
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending Verification...';
             }
 
-            // Call backend to mark completed + notify poster
+            // Call backend to set verify_pending + notify poster
             try {
-                const res = await apiFetch('/tasks/' + taskId + '/complete', {
+                const res = await apiFetch('/tasks/' + taskId + '/verify', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -911,20 +916,20 @@
 
                 if (!result.success) {
                     if (/not found/i.test(result.message || '')) { handleTaskGone(); return; }
-                    alert(result.message || 'Could not mark task as completed');
+                    alert(result.message || 'Could not send verification');
                     if (btn) {
                         btn.disabled = false;
-                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark Task Completed';
+                        btn.innerHTML = '<i class="fas fa-shield-check"></i> Verify Task Done';
                     }
                     return;
                 }
-                console.log('✅ Backend: Task marked completed, poster notified');
+                console.log('✅ Backend: Task verification sent to poster');
             } catch (err) {
                 alert('Could not reach the server. Please check your connection and try again.');
-                console.error('Backend complete failed:', err.message);
+                console.error('Backend verify failed:', err.message);
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark Task Completed';
+                    btn.innerHTML = '<i class="fas fa-shield-check"></i> Verify Task Done';
                 }
                 return;
             }
@@ -934,8 +939,8 @@
             if (helperData.acceptedTasks) {
                 helperData.acceptedTasks = helperData.acceptedTasks.map(t => {
                     if (t.id == taskId) {
-                        t.status = 'completed';
-                        t.completedAt = new Date().toISOString();
+                        t.status = 'verify_pending';
+                        t.verifiedAt = new Date().toISOString();
                     }
                     return t;
                 });
@@ -946,11 +951,14 @@
             document.getElementById('confirmModal').classList.add('active');
         }
 
+        // Keep legacy completeTask as alias for backward compat
+        async function completeTask() { return verifyTask(); }
+
         // Proceed to payment
         function proceedToPayment() {
             // Close modal and go back to dashboard
             document.getElementById('confirmModal').classList.remove('active');
-            
+
             // Go back to accepted tasks
             window.location.href = 'index.html?tab=accepted-tasks';
         }

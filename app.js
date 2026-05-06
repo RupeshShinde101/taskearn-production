@@ -6407,7 +6407,7 @@ async function submitTaskRating() {
 }
 window.submitTaskRating = submitTaskRating;
 
-
+function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 

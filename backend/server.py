@@ -2464,12 +2464,12 @@ def update_task(task_id):
 
             required = ['title', 'description', 'category', 'price']
             for field in required:
-                if not data.get(field):
+                if field not in data or data[field] is None or (isinstance(data[field], str) and not data[field].strip()):
                     return jsonify({'success': False, 'message': f'{field} is required'}), 400
 
-            if len(str(data.get('title', ''))) > 200:
+            if not isinstance(data.get('title'), str) or len(data['title']) > 200:
                 return jsonify({'success': False, 'message': 'Title max 200 characters'}), 400
-            if len(str(data.get('description', ''))) > 5000:
+            if not isinstance(data.get('description'), str) or len(data['description']) > 5000:
                 return jsonify({'success': False, 'message': 'Description max 5000 characters'}), 400
 
             try:
@@ -2505,7 +2505,7 @@ def update_task(task_id):
         print(f"❌ Error in update_task: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'success': False, 'message': f'Error updating task: {str(e)}'}), 500
+        return jsonify({'success': False, 'message': 'Error updating task. Please try again.'}), 500
 
 
 @app.route('/api/tasks/<int:task_id>', methods=['DELETE'])

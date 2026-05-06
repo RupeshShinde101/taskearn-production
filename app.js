@@ -4120,7 +4120,7 @@ async function saveTaskEdit(event) {
             location: { lat: newLat, lng: newLng, address: newLocation }
         });
         if (!result || !result.success) {
-            showToast('❌ ' + (result && result.message ? result.message : 'Failed to save task'));
+            showToast('❌ ' + (result ? result.message || 'Failed to save task' : 'Failed to save task'));
             return;
         }
     } catch (e) {

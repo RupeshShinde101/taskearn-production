@@ -72,11 +72,12 @@ let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
-    // Distance-based categories (Pick & Drop / Delivery / Moving): ₹10–₹40 only.
+    // Distance-based categories (Delivery / Moving): ₹10–₹40 only.
     // The actual amount scales with distance via getServiceCharge() when available.
+    // NOTE: Pick & Drop (transport) has NO posting fee — the rider keeps the full fare.
     'delivery':  { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
     'pickup':    { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
-    'transport': { charge: 15, time: '10-30 mins', level: 'Quick',  distance: true },
+    'transport': { charge: 0,  time: '10-30 mins', level: 'Free' },
     'document':  { charge: 15, time: '15-30 mins', level: 'Quick' },
     'errand':    { charge: 20, time: '30-45 mins', level: 'Quick' },
     'moving':    { charge: 40, time: '2-6 hours',  level: 'Heavy',  distance: true },
@@ -116,6 +117,8 @@ const SERVICE_CHARGES = {
 };
 
 function getServiceCharge(category, distanceKm) {
+    // Pick & Drop is fee-free — the rider keeps the full fare the poster pays.
+    if (category === 'transport') return 0;
     const info = SERVICE_CHARGES[category];
     // Distance-based categories: ₹10–₹40 scaled by km when known.
     if (info && info.distance) {
@@ -131,6 +134,27 @@ function getServiceCharge(category, distanceKm) {
 
 function getServiceChargeInfo(category) {
     return SERVICE_CHARGES[category] || SERVICE_CHARGES['other'];
+}
+
+// Returns the posting fee for a task object, honouring transport=free and
+// any saved service_charge value. Falls back to the category default.
+function getTaskPostingFee(task) {
+    if (!task) return 0;
+    if (task.category === 'transport') return 0;
+    if (task.service_charge !== undefined && task.service_charge !== null && task.service_charge !== '') {
+        return parseFloat(task.service_charge) || 0;
+    }
+    if (task.serviceCharge !== undefined && task.serviceCharge !== null) {
+        return parseFloat(task.serviceCharge) || 0;
+    }
+    return getServiceCharge(task.category);
+}
+
+// Returns the final task value (what the poster pays / worker earns) for a task.
+function getTaskFinalValue(task) {
+    if (!task) return 0;
+    const price = parseFloat(task.price || task.amount || 0) || 0;
+    return price + getTaskPostingFee(task);
 }
 
 // Default location: New Delhi, India
@@ -919,7 +943,7 @@ async function loadRecommendedTasks() {
         section.style.display = 'block';
         container.innerHTML = result.tasks.map(t => {
             const distText = t.distanceKm != null ? `${t.distanceKm.toFixed(1)} km` : '?';
-            const total = (t.price + t.serviceCharge).toFixed(0);
+            const total = getTaskFinalValue(ted(0);
             const catLabel = formatCategory ? formatCategory(t.category) : t.category;
             return `
             <div class="task-card recommended-task-card" onclick="openTaskDetail(${t.id})">
@@ -2584,9 +2608,8 @@ function showRouteTo(task) {
 
 function showDistancePanel(km, mins, task) {
     const panel = document.getElementById('distanceInfo');
-    // Use service_charge from task object (set at creation), fallback to calculation
-    const serviceCharge = task.service_charge !== undefined ? parseFloat(task.service_charge) : getServiceCharge(task.category);
-    const totalEarnings = parseFloat(task.price) + serviceCharge;
+    const serviceCharge = getTaskPostingFee(task);
+    const totalEarnings = getTaskFinalValue(task);
     const chargeInfo = getServiceChargeInfo(task.category);
     
     if (panel) {
@@ -2596,7 +2619,7 @@ function showDistancePanel(km, mins, task) {
             <div class="eta">~${mins} min drive</div>
             <div class="price-info">
                 <div class="total-price">Earn: <strong>₹${totalEarnings.toFixed(0)}</strong></div>
-                <small style="color:#10b981;">₹${parseFloat(task.price).toFixed(0)} + ₹${serviceCharge.toFixed(0)} (${chargeInfo.level})</small>
+                <small style="color:#10b981;">${task.category === 'transport' ? '\u20b9' + parseFloat(task.price).toFixed(0) + ' (no posting fee)' : '\u20b9' + parseFloat(task.price).toFixed(0) + ' + \u20b9' + serviceCharge.toFixed(0) + ' (' + chargeInfo.level + ')'}</small>
             </div>
             <button class="directions-btn" onclick="openGoogleMaps(${task.location.lat}, ${task.location.lng})">
                 <i class="fas fa-directions"></i> Navigate
@@ -2749,7 +2772,7 @@ function renderTasks(filtered = null) {
                 <div class="task-card-header">
                     <span class="task-category">${formatCategory(task.category)}</span>
                     ${_vehBadge}
-                    <span class="task-price">₹${(parseFloat(task.price)||0) + (task.service_charge !== undefined && task.service_charge !== null ? parseFloat(task.service_charge) : getServiceCharge(task.category))}</span>
+                    <span class="task-price">₹${getTaskFinalValue(task)}</span>
                     ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
                 </div>
                 <h4>${escapeHtml(task.title)}</h4>
@@ -2855,9 +2878,9 @@ function openTaskDetail(taskId) {
         <div class="task-detail-price">
             <div>
                 <h3>Your Earnings</h3>
-                <small>₹${task.price} + ₹${task.service_charge !== undefined ? parseFloat(task.service_charge) : getServiceCharge(task.category)} service charge</small>
+                <small>${task.category === 'transport' ? '₹' + parseFloat(task.price) + ' (no posting fee)' : '₹' + parseFloat(task.price) + ' + ₹' + getTaskPostingFee(task) + ' posting fee'}</small>
             </div>
-            <span class="price">₹${parseFloat(task.price) + (task.service_charge !== undefined ? parseFloat(task.service_charge) : getServiceCharge(task.category))}</span>
+            <span class="price">₹${getTaskFinalValue(task)}</span>
         </div>
         
         <div class="task-poster">
@@ -6248,7 +6271,7 @@ function renderPostedTasks() {
                     <span class="task-status ${statusClass}">${statusLabel}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
-                <div class="task-meta"><span>₹${(t.price || 0) + (t.service_charge || t.serviceCharge || getServiceCharge(t.category))}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
+                <div class="task-meta"><span>₹${getTaskFinalValue(t)}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
                 ${helperHTML}
                 ${actionsHTML}
             </div>
@@ -6289,7 +6312,7 @@ function renderAcceptedTasks() {
                 <p style="color: #fbbf24; margin-bottom: 8px;">
                     <i class="fas fa-clock"></i> Waiting for task poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${((t.price || 0) + (t.service_charge || 0)) * 0.88} (after 12% commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${(getTaskFinalValue(t) * 0.88).toFixed(0)} (after 12% commission)</p>
             </div>`;
         } else {
             // Still in progress - show action buttons
@@ -6312,7 +6335,7 @@ function renderAcceptedTasks() {
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
-                <div class="task-meta"><span>₹${(t.price || 0) + (t.service_charge || t.serviceCharge || getServiceCharge(t.category))}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
+                <div class="task-meta"><span>₹${getTaskFinalValue(t)}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
                 ${actionHTML}
             </div>
         `;
@@ -6648,6 +6671,13 @@ function updateTotalBudgetDisplay() {
     if (serviceChargeTime) {
         serviceChargeTime.textContent = chargeInfo.time;
     }
+
+    // Hide the posting-fee row entirely when the fee is 0 (Pick & Drop).
+    // The fee row is the parent .charge-row of #serviceChargeAmount.
+    const feeRow = serviceChargeDisplay ? serviceChargeDisplay.closest('.charge-row') : null;
+    const timeRow = serviceChargeTime ? serviceChargeTime.closest('.charge-row') : null;
+    if (feeRow) feeRow.style.display = serviceCharge > 0 ? '' : 'none';
+    if (timeRow) timeRow.style.display = serviceCharge > 0 ? '' : 'none';
 }
 
 function resetBonusOnModalOpen() {
@@ -6996,7 +7026,7 @@ function shareTask(taskId) {
     var task = tasks.find(function(t) { return t.id == taskId; });
     if (!task) return;
 
-    var text = task.title + ' - ₹' + (task.price + getServiceCharge(task.category)) + ' on Workmate4u';
+    var text = task.title + ' - ₹' + getTaskFinalValue(task) + ' on Workmate4u';
     var url = 'https://www.workmate4u.com/browse.html';
 
     if (navigator.share) {
@@ -7047,6 +7077,10 @@ window.otpPasteHandler = otpPasteHandler;
 window.handleTaskSubmit = handleTaskSubmit;
 window.openTaskDetail = openTaskDetail;
 window.shareTask = shareTask;
+window.getServiceCharge = getServiceCharge;
+window.getServiceChargeInfo = getServiceChargeInfo;
+window.getTaskPostingFee = getTaskPostingFee;
+window.getTaskFinalValue = getTaskFinalValue;
 window.navigateToTask = navigateToTask;
 window.acceptTask = acceptTask;
 window.abandonTask = abandonTask;

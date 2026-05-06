@@ -657,6 +657,23 @@ async function loadCurrentSessionAsync() {
             if (apiToken && apiUserStr) {
                 const apiUser = JSON.parse(apiUserStr);
                 console.log('✅ Found API session for:', apiUser.name || apiUser.email);
+                // Verify token is still valid with the backend
+                if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
+                    try {
+                        const verifyResult = await AuthAPI.getCurrentUser();
+                        if (!verifyResult || !verifyResult.success || !verifyResult.user) {
+                            console.warn('⚠️ API token invalid or expired — clearing session');
+                            clearCurrentSession();
+                            return null;
+                        }
+                        console.log('✅ API token verified with backend');
+                        return verifyResult.user;
+                    } catch (verifyErr) {
+                        // Network error — fall back to cached user so offline usage still works
+                        console.warn('⚠️ Could not verify token with server (offline?), using cached session:', verifyErr.message);
+                        return apiUser;
+                    }
+                }
                 return apiUser;
             }
         } catch (e) {
@@ -3681,8 +3698,8 @@ async function migrateLocalSuspensionToServer(localUntilMs) {
 
 async function syncSuspensionFromServer() {
     try {
-        if (typeof AuthAPI === 'undefined' || !AuthAPI.me) return;
-        const result = await AuthAPI.me();
+        if (typeof AuthAPI === 'undefined' || !AuthAPI.getCurrentUser) return;
+        const result = await AuthAPI.getCurrentUser();
         if (result && result.success && result.user) {
             applySuspensionFromUser(result.user);
             console.log('✅ Suspension synced from server. Timer:', result.user.timerSuspended, 'Debt:', result.user.debtSuspended);

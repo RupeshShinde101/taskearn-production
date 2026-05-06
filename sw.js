@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260502o';
+const CACHE_NAME = 'workmate4u-v20260507a';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -33,9 +33,9 @@ const STATIC_ASSETS = [
   '/icon-512x512.png'
 ];
 
-// Install — activate INSTANTLY, cache assets in background (non-blocking)
+// Install — cache assets in background (non-blocking). Do NOT skipWaiting here —
+// we wait for the user to click "Refresh" in the update banner before taking over.
 self.addEventListener('install', event => {
-  self.skipWaiting();
   // Cache assets in background — don't block install on this
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
@@ -63,7 +63,7 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Listen for skip-waiting message from the page
+// Listen for skip-waiting message from the page (sent when user clicks "Refresh" in update banner)
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();

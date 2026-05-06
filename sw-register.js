@@ -1,5 +1,12 @@
 // Service Worker registration with auto-update detection and stuck-SW recovery
+var _swWaitingWorker = null;
+
 if ('serviceWorker' in navigator) {
+  // When the new SW takes control, reload the page to load fresh assets
+  navigator.serviceWorker.addEventListener('controllerchange', function() {
+    window.location.reload();
+  });
+
   // Recovery: if SW is stuck in a failed state, unregister and re-register
   navigator.serviceWorker.getRegistration().then(function(existing) {
     if (existing && existing.installing === null && existing.waiting === null && existing.active === null) {
@@ -8,6 +15,11 @@ if ('serviceWorker' in navigator) {
       return existing.unregister().then(function() {
         return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
       });
+    }
+    // If there's already a waiting worker on page load (e.g. user had tab open), show banner
+    if (existing && existing.waiting) {
+      _swWaitingWorker = existing.waiting;
+      showUpdateBanner();
     }
     return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
   }).then(function(reg) {
@@ -19,7 +31,9 @@ if ('serviceWorker' in navigator) {
     reg.addEventListener('updatefound', function() {
       var newWorker = reg.installing;
       newWorker.addEventListener('statechange', function() {
-        if (newWorker.state === 'activated') {
+        // Show banner when new SW is installed and waiting (ready to take over)
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          _swWaitingWorker = newWorker;
           showUpdateBanner();
         }
       });
@@ -33,11 +47,6 @@ if ('serviceWorker' in navigator) {
       }).then(function() {
         navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
       });
-    }
-  });
-  navigator.serviceWorker.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'SW_UPDATED') {
-      showUpdateBanner();
     }
   });
 }
@@ -97,6 +106,23 @@ function showUpdateBanner() {
   var banner = document.createElement('div');
   banner.id = 'sw-update-banner';
   banner.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#4ade80;color:#1a1a2e;padding:12px 24px;border-radius:12px;z-index:99999;font-family:Poppins,sans-serif;font-weight:600;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
-  banner.innerHTML = '<span>New version available!</span><button onclick="location.reload()" style="background:#1a1a2e;color:#4ade80;border:none;padding:6px 16px;border-radius:8px;cursor:pointer;font-weight:600;">Refresh</button>';
+  banner.innerHTML = '<span>New version available!</span><button id="sw-update-btn" style="background:#1a1a2e;color:#4ade80;border:none;padding:6px 16px;border-radius:8px;cursor:pointer;font-weight:600;">Refresh</button>';
   document.body.appendChild(banner);
+  document.getElementById('sw-update-btn').addEventListener('click', function() {
+    // Tell the waiting SW to take over — controllerchange listener will then reload the page
+    if (_swWaitingWorker) {
+      _swWaitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    } else {
+      // Fallback: clear all caches and force reload
+      (function() {
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+          }).then(function() { window.location.reload(); });
+        } else {
+          window.location.reload();
+        }
+      })();
+    }
+  });
 }

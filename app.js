@@ -911,7 +911,7 @@ function deserializeTask(task) {
     return {
         ...task,
         postedAt: task.postedAt ? new Date(task.postedAt) : new Date(),
-        expiresAt: task.expiresAt ? new Date(task.expiresAt) : new Date(Date.now() + 12 * 3600000)
+        expiresAt: task.expiresAt ? new Date(task.expiresAt) : new Date(Date.now() + 24 * 3600000)
     };
 }
 
@@ -4194,7 +4194,7 @@ function showTaskPostedSuccess(task) {
             </div>
         </div>
         <h2>Task Posted Successfully! 🎉</h2>
-        <p class="success-subtitle">Your task is now visible to nearby taskers for 12 hours</p>
+        <p class="success-subtitle">Your task is now visible to nearby taskers for 24 hours</p>
         
         <div class="posted-task-preview">
             <div class="preview-header">
@@ -4205,7 +4205,7 @@ function showTaskPostedSuccess(task) {
             <div class="task-desc-full">${formatTaskDescription(task.description)}</div>
             <div class="preview-meta">
                 <span><i class="fas fa-map-marker-alt"></i> ${task.location.address}</span>
-                <span><i class="fas fa-clock"></i> 12 hours left</span>
+                <span><i class="fas fa-clock"></i> 24 hours left</span>
             </div>
         </div>
         
@@ -5037,7 +5037,7 @@ async function handleTaskSubmit(event) {
         ...taskData,
         postedBy: currentUser,
         postedAt: new Date(),
-        expiresAt: new Date(Date.now() + 12 * 3600000),
+        expiresAt: new Date(Date.now() + 24 * 3600000),
         status: 'active',
         localOnly: !serverTaskId
     };

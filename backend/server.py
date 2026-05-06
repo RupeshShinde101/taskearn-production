@@ -1937,7 +1937,7 @@ def create_task():
         
         with get_db() as (cursor, conn):
             posted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=12)).isoformat()
+            expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)).isoformat()
             
             location = data.get('location', {})
             
@@ -2017,7 +2017,7 @@ def create_task():
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (request.user_id, task_id, 'task_posted',
                   'Task Posted! 📋',
-                  f'Your task "{html_escape(data["title"])}" has been posted. Budget: ₹{data["price"]}. It will expire in 12 hours.',
+                  f'Your task "{html_escape(data["title"])}" has been posted. Budget: ₹{data["price"]}. It will expire in 24 hours.',
                   'unread', notif_data, posted_at))
             
             print(f"✅ Task created successfully with ID: {task_id}")

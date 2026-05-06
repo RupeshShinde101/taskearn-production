@@ -56,7 +56,7 @@
                 ? 'Pick a date/time, then set the pickup spot and drop location.'
                 : isDistance
                     ? 'Pick a date/time, then set pickup and drop addresses.'
-                    : 'Pick a date and time, then set the location. Tasks are visible to nearby taskers for 12 hours.';
+                    : 'Pick a date and time, then set the location. Tasks are visible to nearby taskers for 24 hours.';
         }
 
         // Step 3 (Budget) labels — adapt for distance (vehicle picker shown)
@@ -358,7 +358,7 @@
                     <div class="form-group"><label for="modalTaskDescription">Description</label><textarea id="modalTaskDescription" rows="5" placeholder="Provide details about the task, any special requirements, etc." required></textarea></div>
                 </section>
                 <section class="wm-step" data-step="2" role="tabpanel" hidden>
-                    <div class="wm-step-head"><h3 id="wmStep2Heading"><i class="fas fa-calendar-alt"></i> When &amp; where?</h3><p class="wm-step-sub" id="wmStep2Sub">Pick a date and time, then set the location. Tasks are visible to nearby taskers for 12 hours.</p></div>
+                    <div class="wm-step-head"><h3 id="wmStep2Heading"><i class="fas fa-calendar-alt"></i> When &amp; where?</h3><p class="wm-step-sub" id="wmStep2Sub">Pick a date and time, then set the location. Tasks are visible to nearby taskers for 24 hours.</p></div>
                     <div class="form-group"><label for="modalTaskDate">Required by</label><input type="datetime-local" id="modalTaskDate" required></div>
                     <div class="wm-quick-when">
                         <button type="button" class="wm-when-chip" data-when="now">ASAP</button>
@@ -378,7 +378,7 @@
                     <div class="wm-step-head"><h3><i class="fas fa-receipt"></i> Review &amp; Post</h3><p class="wm-step-sub">Quick summary of what you're posting and the total amount you'll pay.</p></div>
                     <div class="wm-review-summary" id="wmReviewSummary"></div>
                     <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Charges</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">₹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row" style="color:#d97706;"><span>+ Task Posting Fee (5%):</span><span id="platformFeeAmount">₹8</span></div><div class="charge-row total"><span><strong>Final Task Value:</strong></span><span><strong id="totalPayable">₹150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Pick &amp; Drop is free. Delivery: ₹10–₹40 (by distance) | Medium ₹40–50 | Skilled ₹60–70 | Expert ₹70–80 | Professional ₹90–100</p></div>
-                    <div class="task-info-box"><i class="fas fa-info-circle"></i><div><strong>Task Visibility</strong><p>Your task will be visible to nearby taskers for 12 hours. You can edit or delete the task anytime before it's accepted.</p></div></div>
+                    <div class="task-info-box"><i class="fas fa-info-circle"></i><div><strong>Task Visibility</strong><p>Your task will be visible to nearby taskers for 24 hours. You can edit or delete the task anytime before it's accepted.</p></div></div>
                 </section>
                 <div class="wm-step-actions">
                     <button type="button" class="btn btn-secondary wm-step-prev" id="wmStepPrev" style="display:none;"><i class="fas fa-arrow-left"></i> Back</button>

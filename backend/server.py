@@ -557,10 +557,10 @@ def flag_task_content(title, description):
 
 
 def get_service_charge(category):
-    """Calculate posting fee based on task category. Aligned with frontend SERVICE_CHARGES.
-    Pick & Drop (transport) is free — no posting fee."""
+    """Return service charge for the given category. Aligned with frontend SERVICE_CHARGES.
+    Note: the 5% Task Posting Fee (platform fee) is separate and applies to all categories."""
     service_charges = {
-        # Free — Pick & Drop
+        # Pick & Drop — distance-based on frontend; 0 flat service charge on backend (platform fee still applies)
         'transport': 0,
         # Quick tasks (15-30 mins) — distance-based on frontend; default flat here
         'delivery': 15, 'pickup': 30, 'document': 30,
@@ -2636,11 +2636,8 @@ def complete_task(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
             # Calculate amounts for notification display
-            # Pick & Drop (transport) is exempt from the 5% Task Posting Fee.
-            if task.get('category') == 'transport':
-                poster_deduction = 0.0
-            else:
-                poster_deduction = total_task_value * 0.05
+            # Task Posting Fee = 5% of total task value. Applies to all categories.
+            poster_deduction = total_task_value * 0.05
             total_poster_cost = total_task_value + poster_deduction
             helper_total_deduction = total_task_value * 0.12
             helper_net_receives = total_task_value - helper_total_deduction
@@ -2847,11 +2844,8 @@ def pay_helper(task_id):
             helper_fee = total_task_value * 0.02
             helper_total_deduction = helper_commission + helper_fee
             
-            # Poster: 5% Task Posting Fee (on full amount). Pick & Drop (transport) is exempt.
-            if task.get('category') == 'transport':
-                poster_deduction = 0.0
-            else:
-                poster_deduction = total_task_value * 0.05
+            # Poster: 5% Task Posting Fee (on full amount). Applies to all categories.
+            poster_deduction = total_task_value * 0.05
             
             print(f"\n💵 PAYMENT BREAKDOWN:")
             print(f"   Base Task Price: ₹{task_amount:.2f}")

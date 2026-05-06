@@ -149,10 +149,9 @@ function getTaskServiceCharge(task) {
 function getTaskPostingFee(task) { return getTaskServiceCharge(task); }
 
 // Task Posting Fee = 5% platform fee charged on top of (price + service charge).
-// Pick & Drop (transport) is exempt — no 5% fee.
+// Applies to ALL categories.
 function getTaskPlatformFee(task) {
     if (!task) return 0;
-    if (task.category === 'transport') return 0;
     const price = parseFloat(task.price || task.amount || 0) || 0;
     const sc = getTaskServiceCharge(task);
     return Math.round((price + sc) * 0.05 * 100) / 100;
@@ -4928,7 +4927,8 @@ async function handleTaskSubmit(event) {
     // Distance-aware service charge for pick&drop / delivery / moving.
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
     const serviceCharge = getServiceCharge(category, distanceKm);
-    const totalPayable = totalPrice + serviceCharge;
+    const platformFeeForSubmit = Math.round((totalPrice + serviceCharge) * 0.05 * 100) / 100;
+    const totalPayable = totalPrice + serviceCharge + platformFeeForSubmit;
 
     // If a specific vehicle was chosen for ride/delivery categories, surface it
     // on the task so only taskers with that vehicle are eligible.
@@ -6677,8 +6677,8 @@ function updateTotalBudgetDisplay() {
     const serviceCharge = getServiceCharge(category, distanceKm);
     const chargeInfo = getServiceChargeInfo(category);
 
-    // Task Posting Fee = 5% of (budget + service charge). Free for Pick & Drop.
-    const platformFee = (category === 'transport') ? 0 : Math.round((total + serviceCharge) * 0.05 * 100) / 100;
+    // Task Posting Fee = 5% of (budget + service charge). Applies to all categories.
+    const platformFee = Math.round((total + serviceCharge) * 0.05 * 100) / 100;
     const totalPayable = total + serviceCharge + platformFee; // What poster pays
     const taskValueForHelper = total + serviceCharge; // Helper-side gross (price + service charge)
     const helperCommission = Math.round(taskValueForHelper * 0.12 * 100) / 100; // 12% platform commission on helper
@@ -6721,10 +6721,10 @@ function updateTotalBudgetDisplay() {
         platformFeeDisplay.textContent = '₹' + platformFee.toFixed(0);
     }
 
-    // Hide platform-fee row entirely for Pick & Drop (transport).
+    // Always show the platform-fee row (applies to all categories).
     const platformRow = platformFeeDisplay ? platformFeeDisplay.closest('.charge-row') : null;
-    if (platformRow) platformRow.style.display = (category === 'transport') ? 'none' : '';
-    // Always show the service-charge row (Pick & Drop still has a small distance-based service charge).
+    if (platformRow) platformRow.style.display = '';
+    // Always show the service-charge row (applies to all categories).
     const feeRow = serviceChargeDisplay ? serviceChargeDisplay.closest('.charge-row') : null;
     const timeRow = serviceChargeTime ? serviceChargeTime.closest('.charge-row') : null;
     if (feeRow) feeRow.style.display = serviceCharge > 0 ? '' : 'none';

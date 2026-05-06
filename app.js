@@ -1854,6 +1854,11 @@ async function loadTasksFromServer() {
                                             // Paid tasks go directly to completed
                                             if (!myCompletedTasks.find(ct => ct.id == dbTask.id)) {
                                                 taskObj.earnedAmount = getTaskFinalValue(taskObj) * 0.88;
+                                                taskObj.paidAt = dbTask.paid_at || dbTask.completed_at || new Date().toISOString();
+                                                taskObj.poster_name = dbTask.poster_name || taskObj.poster_name || 'Poster';
+                                                taskObj.poster_phone = dbTask.poster_phone || '';
+                                                taskObj.poster_email = dbTask.poster_email || '';
+                                                taskObj.poster_user_id = dbTask.poster_user_id || dbTask.posted_by || '';
                                                 myCompletedTasks.push(taskObj);
                                             }
                                         } else {
@@ -1868,6 +1873,7 @@ async function loadTasksFromServer() {
                                     if (!myCompletedTasks.find(ct => ct.id == pt.id)) {
                                         const taskAmount = pt.price || 0;
                                         pt.earnedAmount = getTaskFinalValue(pt) * 0.88;
+                                        pt.paidAt = pt.paidAt || pt.paid_at || new Date().toISOString();
                                         myCompletedTasks.push(pt);
                                         currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
                                         currentUser.totalEarnings = parseFloat(currentUser.totalEarnings || 0) + pt.earnedAmount;
@@ -1880,6 +1886,13 @@ async function loadTasksFromServer() {
                                     if (t.status === 'paid') return false;
                                     if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
                                     return true;
+                                });
+
+                                // Remove completed tasks older than 48 hours from localStorage
+                                const cutoff48h = Date.now() - (48 * 3600 * 1000);
+                                myCompletedTasks = myCompletedTasks.filter(t => {
+                                    if (!t.paidAt) return true; // keep if no timestamp (safety)
+                                    return new Date(t.paidAt).getTime() > cutoff48h;
                                 });
                                 
                                 updateUserData(currentUser.id, {
@@ -6443,29 +6456,34 @@ function renderCompletedTasks() {
     const el = document.getElementById('myCompletedTasks');
     if (!el) return;
 
-    if (myCompletedTasks.length === 0) {
+    // Client-side 48h guard (server already cleaned up, but protect localStorage stale data)
+    const cutoff48h = Date.now() - (48 * 3600 * 1000);
+    const visible = myCompletedTasks.filter(t => !t.paidAt || new Date(t.paidAt).getTime() > cutoff48h);
+
+    if (visible.length === 0) {
         el.innerHTML = '<div class="empty-state"><i class="fas fa-trophy"></i><h3>No completed tasks</h3></div>';
         return;
     }
 
     // Calculate total earned (after 12% commission)
-    const totalEarned = myCompletedTasks.reduce((s, t) => {
+    const totalEarned = visible.reduce((s, t) => {
         if (t.earnedAmount) return s + t.earnedAmount;
-        const amt = getTaskFinalValue(t);
-        return s + (amt * 0.88);
+        return s + (getTaskFinalValue(t) * 0.88);
     }, 0);
 
     el.innerHTML = `
         <div style="background:linear-gradient(135deg,#10b981,#34d399);color:white;padding:25px;border-radius:15px;text-align:center;margin-bottom:20px;">
             <h3 style="margin:0;">Total Earned</h3>
             <p style="font-size:2.5rem;font-weight:800;margin:10px 0;">₹${totalEarned.toFixed(2)}</p>
-            <small style="opacity:0.9;">${myCompletedTasks.length} task${myCompletedTasks.length > 1 ? 's' : ''} completed (after 12% commission)</small>
+            <small style="opacity:0.9;">${visible.length} task${visible.length > 1 ? 's' : ''} completed (after 12% commission)</small>
         </div>
-        ${myCompletedTasks.map(t => {
+        ${visible.map(t => {
             const amt = getTaskFinalValue(t);
             const earned = t.earnedAmount || (amt * 0.88);
             const posterName = t.poster_name || (t.postedBy && t.postedBy.name) || 'Poster';
-            const posterId = t.postedBy && t.postedBy.id ? t.postedBy.id : (t.posted_by || '');
+            const posterId = t.poster_user_id || (t.postedBy && t.postedBy.id) || t.posted_by || '';
+            const posterPhone = t.poster_phone || (t.postedBy && t.postedBy.phone) || '';
+            const posterEmail = t.poster_email || (t.postedBy && t.postedBy.email) || '';
             const alreadyRated = hasRatedTask(t.id);
             const rateBtn = alreadyRated
                 ? `<span style="color:#10b981;font-weight:600;font-size:13px;"><i class="fas fa-check-circle"></i> Poster Rated</span>`
@@ -6473,10 +6491,31 @@ function renderCompletedTasks() {
                     onclick="openRateUserModal({taskId:${t.id},taskTitle:'${escapeHtml(t.title).replace(/'/g, "\\'")  }',otherName:'${escapeHtml(posterName).replace(/'/g, "\\'")  }',otherUserId:'${escapeHtml(String(posterId))}',role:'helper'})">
                     <i class="fas fa-star"></i> Rate Poster
                   </button>`;
+
+            // Poster contact section
+            let contactHTML = '';
+            if (posterPhone || posterEmail) {
+                contactHTML = `<div style="background:var(--card-bg,rgba(99,102,241,0.06));border:1px solid var(--border-color,rgba(99,102,241,0.2));border-radius:10px;padding:12px;margin:10px 0;">
+                    <div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Poster Details</div>
+                    <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(posterName)}</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        ${posterPhone ? `<a href="tel:${escapeHtml(posterPhone)}" class="btn" style="flex:1;min-width:100px;background:#4ade80;color:#000;text-align:center;padding:8px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fas fa-phone"></i> Call</a>` : ''}
+                        ${posterPhone ? `<a href="https://wa.me/${posterPhone.replace(/[^0-9]/g,'')}" target="_blank" class="btn" style="flex:1;min-width:100px;background:#25D366;color:#fff;text-align:center;padding:8px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+                        ${posterEmail ? `<a href="mailto:${escapeHtml(posterEmail)}" class="btn" style="flex:1;min-width:100px;background:#6366f1;color:#fff;text-align:center;padding:8px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fas fa-envelope"></i> Email</a>` : ''}
+                    </div>
+                </div>`;
+            } else if (posterName && posterName !== 'Poster') {
+                contactHTML = `<p style="color:#888;font-size:13px;margin-bottom:6px;">Posted by: <strong>${escapeHtml(posterName)}</strong></p>`;
+            }
+
             return `<div class="my-task-card">
+                <div class="my-task-card-header">
+                    <span class="task-category">${formatCategory(t.category)}</span>
+                    <span class="task-status paid" style="background:#10b981;color:#fff;">Completed</span>
+                </div>
                 <h4>${escapeHtml(t.title)}</h4>
-                <p style="color:#888;font-size:13px;margin-bottom:6px;">Posted by: ${escapeHtml(posterName)}</p>
-                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(Task ₹${amt.toFixed(2)} - 12% commission)</small></p>
+                ${contactHTML}
+                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${amt.toFixed(2)} - 12% commission)</small></p>
                 <div style="margin-top:10px;">${rateBtn}</div>
             </div>`;
         }).join('')}

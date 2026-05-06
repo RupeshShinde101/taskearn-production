@@ -3120,6 +3120,23 @@ def pay_helper(task_id):
 def get_user_tasks():
     """Get current user's tasks"""
     with get_db() as (cursor, conn):
+        # --- 48-hour cleanup: wipe paid tasks (and their ratings) older than 48 hours ---
+        if config.USE_POSTGRES:
+            cutoff_expr = "NOW() - INTERVAL '48 hours'"
+        else:
+            cutoff_expr = "datetime('now', '-48 hours')"
+        # Delete ratings for expired paid tasks first (FK constraint)
+        cursor.execute(f'''
+            DELETE FROM helper_ratings WHERE task_id IN (
+                SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}
+            )
+        ''')
+        # Delete the expired paid tasks themselves
+        cursor.execute(f'''
+            DELETE FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}
+        ''')
+        conn.commit()
+
         # Posted tasks - ALL statuses, join helper info for accepted/completed/paid tasks
         cursor.execute(f'''
             SELECT t.*, u.name as helper_name, u.phone as helper_phone,
@@ -3131,8 +3148,10 @@ def get_user_tasks():
         posted = [dict_from_row(t) for t in cursor.fetchall()]
 
         # Accepted tasks - ALL statuses (accepted, completed, paid) with poster info
+        # For 'paid' tasks, only include those paid within last 48 hours (cleanup above handles older ones)
         cursor.execute(f'''
             SELECT t.*, u.name as poster_name, u.phone as poster_phone,
+                   u.email as poster_email, u.id as poster_user_id,
                    u.rating as poster_rating
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id

@@ -6347,6 +6347,37 @@ async function markTaskCompleted(taskId) {
 }
 window.markTaskCompleted = markTaskCompleted;
 
+// ── Verify Task Done (Helper: accepted → verify_pending) ──────────────────
+async function verifyTaskDone(taskId, btnEl) {
+    const token = localStorage.getItem('taskearn_token');
+    if (!token) { alert('Please login first'); return; }
+    if (!confirm('Have you completed this task? The poster will be notified to verify and pay.')) return;
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Sending...'; }
+    try {
+        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        });
+        const result = await resp.json();
+        if (result.success) {
+            showToast('✅ Verification sent! Waiting for poster to pay.', 'success');
+            // Update local task status so UI reflects change immediately
+            const task = myAcceptedTasks.find(t => t.id == taskId);
+            if (task) task.status = 'verify_pending';
+            renderAcceptedTasks();
+            await syncUserTasksFromServer();
+            renderDashboard();
+        } else {
+            alert(result.message || 'Could not send verification. Please try again.');
+            if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-double"></i> Verify Task Done'; }
+        }
+    } catch (e) {
+        alert('Network error. Please try again.');
+        if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-double"></i> Verify Task Done'; }
+    }
+}
+window.verifyTaskDone = verifyTaskDone;
+
 // ── Rating Popup ───────────────────────────────────────────────────────────
 function openRatingPopup(taskId) {
     let popup = document.getElementById('taskRatingPopup');
@@ -6565,14 +6596,18 @@ function renderAcceptedTasks() {
             </div>`;
         } else {
             // Still in progress - show action buttons
-            const posterPhone = t.postedBy?.phone || '';
+            const posterPhone = t.poster_phone || t.postedBy?.phone || '';
             const taskLat = t.location?.lat || '';
             const taskLng = t.location?.lng || '';
-            actionHTML = `<div class="task-actions" style="display:flex;flex-wrap:wrap;gap:8px;">
-                <button class="btn btn-success" style="flex:1;min-width:120px;" onclick="event.stopPropagation(); completeTask(${t.id})"><i class="fas fa-check"></i> Mark Complete</button>
-                <button class="btn" style="flex:1;min-width:120px;background:#ef4444;color:#fff;" onclick="event.stopPropagation(); abandonTask(${t.id})"><i class="fas fa-times"></i> Release Task</button>
-                ${posterPhone ? `<a href="tel:${escapeHtml(posterPhone)}" class="btn" style="flex:1;min-width:120px;background:#6366f1;color:#fff;text-decoration:none;text-align:center;display:inline-flex;align-items:center;justify-content:center;gap:4px;" onclick="event.stopPropagation();"><i class="fas fa-phone"></i> Contact</a>` : ''}
-                ${taskLat && taskLng ? `<button class="btn" style="flex:1;min-width:120px;background:#0ea5e9;color:#fff;" onclick="event.stopPropagation(); navigateToTask(${taskLat}, ${taskLng}, '${escapeHtml(t.title).replace(/'/g, "\\\\'")}')"><i class="fas fa-map-marker-alt"></i> Navigate</button>` : ''}
+            actionHTML = `<div style="margin-top:10px;">
+                <button onclick="event.stopPropagation(); verifyTaskDone(${t.id}, this)" style="width:100%;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;border:none;border-radius:8px;padding:12px;font-weight:700;font-size:15px;cursor:pointer;margin-bottom:8px;">
+                    <i class="fas fa-check-double"></i> Verify Task Done
+                </button>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                    ${posterPhone ? `<a href="tel:${escapeHtml(posterPhone)}" class="btn" style="flex:1;min-width:120px;background:#6366f1;color:#fff;text-decoration:none;text-align:center;display:inline-flex;align-items:center;justify-content:center;gap:4px;" onclick="event.stopPropagation();"><i class="fas fa-phone"></i> Contact</a>` : ''}
+                    ${taskLat && taskLng ? `<button class="btn" style="flex:1;min-width:120px;background:#0ea5e9;color:#fff;" onclick="event.stopPropagation(); navigateToTask(${taskLat}, ${taskLng}, '${escapeHtml(t.title).replace(/'/g, "\\\\'")}')"><i class="fas fa-map-marker-alt"></i> Navigate</button>` : ''}
+                    <button class="btn" style="flex:1;min-width:120px;background:#ef4444;color:#fff;" onclick="event.stopPropagation(); abandonTask(${t.id})"><i class="fas fa-times"></i> Release Task</button>
+                </div>
             </div>`;
         }
         

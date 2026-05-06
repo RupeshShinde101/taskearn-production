@@ -6645,7 +6645,9 @@ function updateTotalBudgetDisplay() {
     // Task Posting Fee = 5% of (budget + service charge). Free for Pick & Drop.
     const platformFee = (category === 'transport') ? 0 : Math.round((total + serviceCharge) * 0.05 * 100) / 100;
     const totalPayable = total + serviceCharge + platformFee; // What poster pays
-    const workerEarns = total + serviceCharge; // Worker gets budget + service charge (NOT platform fee)
+    const taskValueForHelper = total + serviceCharge; // Helper-side gross (price + service charge)
+    const helperCommission = Math.round(taskValueForHelper * 0.12 * 100) / 100; // 12% platform commission on helper
+    const workerEarns = taskValueForHelper - helperCommission; // Net amount credited to helper wallet
     
     const displayEl = document.getElementById('totalBudgetDisplay');
     if (displayEl) {
@@ -6669,7 +6671,7 @@ function updateTotalBudgetDisplay() {
         payableDisplay.textContent = '₹' + totalPayable.toFixed(0);
     }
     if (workerEarnsDisplay) {
-        workerEarnsDisplay.textContent = '₹' + workerEarns;
+        workerEarnsDisplay.textContent = '₹' + workerEarns.toFixed(0);
     }
     if (serviceChargeDisplay) {
         serviceChargeDisplay.textContent = '₹' + serviceCharge;

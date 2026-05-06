@@ -147,7 +147,7 @@
             loadRazorpayScript();
         }
     </script>
-    <link rel="stylesheet" href="styles.css?v=20260506_4step">
+    <link rel="stylesheet" href="styles.css?v=20260506_mobilefit">
     <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_uifix2">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
@@ -933,11 +933,11 @@
                 </button>
                 <button type="button" class="wm-step-tab" data-step="2" role="tab" aria-selected="false">
                     <span class="wm-step-num">2</span>
-                    <span class="wm-step-label">When</span>
+                    <span class="wm-step-label" id="wmStep2Label">When &amp; Where</span>
                 </button>
                 <button type="button" class="wm-step-tab" data-step="3" role="tab" aria-selected="false">
                     <span class="wm-step-num">3</span>
-                    <span class="wm-step-label" id="wmStep3Label">Location &amp; Budget</span>
+                    <span class="wm-step-label" id="wmStep3Label">Budget</span>
                 </button>
                 <button type="button" class="wm-step-tab" data-step="4" role="tab" aria-selected="false">
                     <span class="wm-step-num">4</span>
@@ -998,11 +998,11 @@
                     </div>
                 </section>
 
-                <!-- ============ STEP 2: WHEN ============ -->
+                <!-- ============ STEP 2: WHEN & WHERE ============ -->
                 <section class="wm-step" data-step="2" role="tabpanel" hidden>
                     <div class="wm-step-head">
-                        <h3><i class="fas fa-calendar-alt"></i> When do you need this done?</h3>
-                        <p class="wm-step-sub">Pick a date and time. Tasks are visible to nearby taskers for 12 hours after posting.</p>
+                        <h3 id="wmStep2Heading"><i class="fas fa-calendar-alt"></i> When &amp; where?</h3>
+                        <p class="wm-step-sub" id="wmStep2Sub">Pick a date and time, then set the location. Tasks are visible to nearby taskers for 12 hours.</p>
                     </div>
                     <div class="form-group">
                         <label for="modalTaskDate">Required by</label>
@@ -1014,15 +1014,7 @@
                         <button type="button" class="wm-when-chip" data-when="today-evening">Today evening</button>
                         <button type="button" class="wm-when-chip" data-when="tomorrow-morning">Tomorrow 9am</button>
                     </div>
-                </section>
-
-                <!-- ============ STEP 3: LOCATION & BUDGET ============ -->
-                <section class="wm-step" data-step="3" role="tabpanel" hidden>
-                    <div class="wm-step-head">
-                        <h3 id="wmStep3Heading"><i class="fas fa-map-marker-alt"></i> Location &amp; Budget</h3>
-                        <p class="wm-step-sub" id="wmStep3Sub">Set the address, then choose a fair budget.</p>
-                    </div>
-                    <div class="form-group">
+                    <div class="form-group" style="margin-top:18px;">
                         <label for="modalTaskLocation">Task Location</label>
                         <div class="location-input-wrapper">
                             <input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required>
@@ -1031,7 +1023,15 @@
                             </button>
                         </div>
                     </div>
-                    <!-- Drop location is auto-injected by category-picker.js for transport/delivery/moving -->
+                    <!-- Drop location is auto-injected here by category-picker.js for transport/delivery/moving -->
+                </section>
+
+                <!-- ============ STEP 3: VEHICLE / FAIR PRICE / BUDGET ============ -->
+                <section class="wm-step" data-step="3" role="tabpanel" hidden>
+                    <div class="wm-step-head">
+                        <h3 id="wmStep3Heading"><i class="fas fa-rupee-sign"></i> Fair price &amp; budget</h3>
+                        <p class="wm-step-sub" id="wmStep3Sub">Choose a fair budget. Add a small nudge to attract taskers faster.</p>
+                    </div>
                     <!-- Slot for category-picker.js to inject vehicle chips + fair-price hint -->
                     <div id="wmPriceHintSlot"></div>
                     <div class="form-group">
@@ -1356,10 +1356,10 @@
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20260506_4step"></script>
-    <script src="shared.js?v=20260506_4step"></script>
-    <script src="category-picker.js?v=20260506_4step"></script>
-    <script src="post-task-wizard.js?v=20260506_4step"></script>
+    <script src="api-client.js?v=20260506_mobilefit"></script>
+    <script src="shared.js?v=20260506_mobilefit"></script>
+    <script src="category-picker.js?v=20260506_mobilefit"></script>
+    <script src="post-task-wizard.js?v=20260506_mobilefit"></script>
     
     <!-- Google Sign-In -->
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
@@ -1367,7 +1367,7 @@
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260506_4step"></script>
+    <script src="app.js?v=20260506_mobilefit"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>

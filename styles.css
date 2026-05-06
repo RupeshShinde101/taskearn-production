@@ -6732,3 +6732,118 @@ section {
     .wm-vehicle-label { font-size: 0.78rem; }
     .wm-vehicle-amt { font-size: 0.8rem; }
 }
+
+/* ============================================
+ * MOBILE OVERFLOW FIXES — keep every box inside the form viewport
+ * ============================================ */
+@media (max-width: 540px) {
+    /* Hard cap so nothing escapes the modal width */
+    .wm-wizard-modal,
+    .wm-wizard-modal * {
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    .wm-wizard-modal #modalTaskForm {
+        overflow-x: hidden;
+    }
+    .wm-wizard-modal #modalTaskForm > .wm-step {
+        max-width: 100%;
+        overflow-x: hidden;
+        padding-left: 14px !important;
+        padding-right: 14px !important;
+    }
+
+    /* Location input: stack input + buttons vertically so they don't overflow */
+    .wm-wizard-modal .location-input-wrapper {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .wm-wizard-modal .location-input-wrapper input {
+        flex: 1 1 100%;
+        min-width: 0;
+        width: 100%;
+    }
+    .wm-wizard-modal .location-input-wrapper .location-btn {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 9px 10px;
+        font-size: 0.85rem;
+        white-space: nowrap;
+    }
+
+    /* Quick-when chips: 2 columns on small phones */
+    .wm-wizard-modal .wm-quick-when {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .wm-wizard-modal .wm-quick-when .wm-when-chip {
+        flex: 1 1 calc(50% - 3px);
+        min-width: 0;
+        padding: 8px 6px;
+        font-size: 0.82rem;
+        text-align: center;
+    }
+
+    /* Bonus-options: 2x2 grid so all 4 buttons fit */
+    .wm-wizard-modal .bonus-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+    }
+    .wm-wizard-modal .bonus-btn {
+        width: 100%;
+        min-width: 0;
+        padding: 9px 6px;
+        font-size: 0.88rem;
+    }
+
+    /* Budget input: full width, no pinning */
+    .wm-wizard-modal .budget-selector,
+    .wm-wizard-modal .budget-selector-compact {
+        flex-wrap: wrap;
+    }
+    .wm-wizard-modal .budget-selector input,
+    .wm-wizard-modal .budget-selector-compact input {
+        width: 100%;
+        min-width: 0;
+        flex: 1 1 100%;
+    }
+
+    /* Service charge & info boxes: contain inside form */
+    .wm-wizard-modal .service-charge-box,
+    .wm-wizard-modal .task-info-box,
+    .wm-wizard-modal .total-budget-display,
+    .wm-wizard-modal .bonus-section {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    .wm-wizard-modal .service-charge-box .charge-row {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    .wm-wizard-modal .service-charge-box .charge-note {
+        font-size: 0.72rem;
+        line-height: 1.4;
+    }
+
+    /* Long addresses in review summary: wrap & break */
+    .wm-wizard-modal .wm-review-summary,
+    .wm-wizard-modal .wm-review-value {
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    /* Drop-location form-group injected by category-picker */
+    .wm-wizard-modal .wm-drop-fg .location-input-wrapper {
+        flex-wrap: wrap;
+    }
+
+    /* Description textarea respects width */
+    .wm-wizard-modal textarea,
+    .wm-wizard-modal input,
+    .wm-wizard-modal select {
+        max-width: 100%;
+        width: 100%;
+        box-sizing: border-box;
+    }
+}

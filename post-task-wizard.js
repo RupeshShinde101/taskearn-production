@@ -3,13 +3,13 @@
  * 4-step wizard controller for #postTaskModal
  *
  *   Step 1: Title + Category + Description
- *   Step 2: When (date)
- *   Step 3: Location + Budget (pickup, drop auto-injected for transport/delivery/moving,
- *           plus vehicle chips + fair-price hint + custom budget + nudges)
+ *   Step 2: When (date) + Location (pickup, drop auto-injected for
+ *           transport/delivery/moving)
+ *   Step 3: Vehicle / fair-price hint + custom budget + nudges
  *   Step 4: Review + service charge breakdown + Post
  *
  * Per-category UX:
- *   - Step 3 heading adapts for transport / delivery / moving / others.
+ *   - Step 2 heading adapts for transport / delivery / moving / others.
  *   - Step 1 description placeholder is set by category-picker.js TEMPLATES.
  *   - Vehicle picker / fair-price hint mounts into #wmPriceHintSlot on step 3.
  * ============================================ */
@@ -41,22 +41,38 @@
         const isDistance = DISTANCE_CATS.has(cat);
         const isTransport = cat === 'transport';
 
-        // Step 3 (Location & Budget) labels
+        // Step 2 (When & Where) labels — adapt for distance categories that need pickup + drop
+        const step2Label = $('wmStep2Label');
+        const step2Heading = $('wmStep2Heading');
+        const step2Sub = $('wmStep2Sub');
+        if (step2Label) step2Label.textContent = isDistance ? 'When & Pickup' : 'When & Where';
+        if (step2Heading) {
+            step2Heading.innerHTML = isDistance
+                ? '<i class="fas fa-route"></i> When &amp; pickup'
+                : '<i class="fas fa-calendar-alt"></i> When &amp; where?';
+        }
+        if (step2Sub) {
+            step2Sub.textContent = isTransport
+                ? 'Pick a date/time, then set the pickup spot and drop location.'
+                : isDistance
+                    ? 'Pick a date/time, then set pickup and drop addresses.'
+                    : 'Pick a date and time, then set the location. Tasks are visible to nearby taskers for 12 hours.';
+        }
+
+        // Step 3 (Budget) labels — adapt for distance (vehicle picker shown)
         const step3Label = $('wmStep3Label');
         const step3Heading = $('wmStep3Heading');
         const step3Sub = $('wmStep3Sub');
-        if (step3Label) step3Label.textContent = isDistance ? 'Pickup, Drop & Budget' : 'Location & Budget';
+        if (step3Label) step3Label.textContent = isDistance ? 'Vehicle & Budget' : 'Budget';
         if (step3Heading) {
             step3Heading.innerHTML = isDistance
-                ? '<i class="fas fa-route"></i> Pickup, drop &amp; budget'
-                : '<i class="fas fa-map-marker-alt"></i> Location &amp; budget';
+                ? '<i class="fas fa-rupee-sign"></i> Vehicle, fair price &amp; budget'
+                : '<i class="fas fa-rupee-sign"></i> Fair price &amp; budget';
         }
         if (step3Sub) {
-            step3Sub.textContent = isTransport
-                ? 'Set the pickup spot and drop, choose a vehicle, then confirm the fair price.'
-                : isDistance
-                    ? 'Set pickup and drop to compute fair distance pricing, then confirm the budget.'
-                    : 'Enter the address, then choose a fair budget.';
+            step3Sub.textContent = isDistance
+                ? 'Choose a vehicle to see the fair distance price, then set your budget.'
+                : 'Choose a fair budget. Add a small nudge to attract taskers faster.';
         }
     }
 
@@ -76,7 +92,6 @@
             const when = new Date(dt).getTime();
             if (isNaN(when)) return 'Please pick a valid date and time.';
             if (when < Date.now() - 5 * 60 * 1000) return 'Please pick a future date and time.';
-        } else if (step === 3) {
             const loc = ($('modalTaskLocation').value || '').trim();
             if (!loc) return 'Please enter the task location (or use My Location / Pick on Map).';
             const cat = $('modalTaskCategory').value;
@@ -85,6 +100,7 @@
                 const dropVal = dropEl ? (dropEl.value || '').trim() : '';
                 if (!dropVal) return 'Please set the drop location.';
             }
+        } else if (step === 3) {
             const v = parseFloat(($('customBudget') || {}).value);
             if (!v || v < 100) return 'Minimum task budget is ₹100.';
         }
@@ -326,8 +342,8 @@
             <h2><i class="fas fa-plus-circle"></i> Post a New Task</h2>
             <div class="wm-step-nav" id="wmStepNav" role="tablist" aria-label="Post task steps">
                 <button type="button" class="wm-step-tab active" data-step="1" role="tab" aria-selected="true"><span class="wm-step-num">1</span><span class="wm-step-label">Basics</span></button>
-                <button type="button" class="wm-step-tab" data-step="2" role="tab" aria-selected="false"><span class="wm-step-num">2</span><span class="wm-step-label">When</span></button>
-                <button type="button" class="wm-step-tab" data-step="3" role="tab" aria-selected="false"><span class="wm-step-num">3</span><span class="wm-step-label" id="wmStep3Label">Location &amp; Budget</span></button>
+                <button type="button" class="wm-step-tab" data-step="2" role="tab" aria-selected="false"><span class="wm-step-num">2</span><span class="wm-step-label" id="wmStep2Label">When &amp; Where</span></button>
+                <button type="button" class="wm-step-tab" data-step="3" role="tab" aria-selected="false"><span class="wm-step-num">3</span><span class="wm-step-label" id="wmStep3Label">Budget</span></button>
                 <button type="button" class="wm-step-tab" data-step="4" role="tab" aria-selected="false"><span class="wm-step-num">4</span><span class="wm-step-label">Review</span></button>
             </div>
             <div class="wm-step-progress" aria-hidden="true"><div class="wm-step-progress-bar" id="wmStepProgressBar" style="width:25%"></div></div>
@@ -342,7 +358,7 @@
                     <div class="form-group"><label for="modalTaskDescription">Description</label><textarea id="modalTaskDescription" rows="5" placeholder="Provide details about the task, any special requirements, etc." required></textarea></div>
                 </section>
                 <section class="wm-step" data-step="2" role="tabpanel" hidden>
-                    <div class="wm-step-head"><h3><i class="fas fa-calendar-alt"></i> When do you need this done?</h3><p class="wm-step-sub">Pick a date and time. Tasks are visible to nearby taskers for 12 hours after posting.</p></div>
+                    <div class="wm-step-head"><h3 id="wmStep2Heading"><i class="fas fa-calendar-alt"></i> When &amp; where?</h3><p class="wm-step-sub" id="wmStep2Sub">Pick a date and time, then set the location. Tasks are visible to nearby taskers for 12 hours.</p></div>
                     <div class="form-group"><label for="modalTaskDate">Required by</label><input type="datetime-local" id="modalTaskDate" required></div>
                     <div class="wm-quick-when">
                         <button type="button" class="wm-when-chip" data-when="now">ASAP</button>
@@ -350,10 +366,10 @@
                         <button type="button" class="wm-when-chip" data-when="today-evening">Today evening</button>
                         <button type="button" class="wm-when-chip" data-when="tomorrow-morning">Tomorrow 9am</button>
                     </div>
+                    <div class="form-group" style="margin-top:18px;"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
                 </section>
                 <section class="wm-step" data-step="3" role="tabpanel" hidden>
-                    <div class="wm-step-head"><h3 id="wmStep3Heading"><i class="fas fa-map-marker-alt"></i> Location &amp; Budget</h3><p class="wm-step-sub" id="wmStep3Sub">Set the address, then choose a fair budget.</p></div>
-                    <div class="form-group"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
+                    <div class="wm-step-head"><h3 id="wmStep3Heading"><i class="fas fa-rupee-sign"></i> Fair price &amp; budget</h3><p class="wm-step-sub" id="wmStep3Sub">Choose a fair budget. Add a small nudge to attract taskers faster.</p></div>
                     <div id="wmPriceHintSlot"></div>
                     <div class="form-group"><label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em">(Min ₹100)</span></label><div class="budget-selector budget-selector-compact"><input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="100" style="flex:1;font-size:1.05rem;padding:11px 14px;"></div></div>
                     <div class="form-group"><label><i class="fas fa-plus-circle"></i> Nudge Budget (Optional)</label><div class="bonus-section"><p class="bonus-hint">Small bumps to attract taskers faster. Tap to add to your budget.</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="nudgeBudget(10)">+₹10</button><button type="button" class="bonus-btn" onclick="nudgeBudget(20)">+₹20</button><button type="button" class="bonus-btn" onclick="nudgeBudget(50)">+₹50</button><button type="button" class="bonus-btn bonus-btn-minus" onclick="nudgeBudget(-10)">−₹10</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">₹100</strong></div></div></div>

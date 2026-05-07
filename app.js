@@ -5942,6 +5942,18 @@ function toggleEarningsDetail() {
     }
 }
 
+function toggleReviewsSection() {
+    var panel = document.getElementById('reviewsCollapsible');
+    var btn = document.getElementById('reviewsToggleBtn');
+    var chevron = document.getElementById('reviewsChevron');
+    if (!panel) return;
+    var isHidden = panel.style.display === 'none' || panel.style.display === '';
+    panel.style.display = isHidden ? 'block' : 'none';
+    if (btn) btn.innerHTML = isHidden
+        ? 'Hide <i class="fas fa-chevron-up" id="reviewsChevron" style="font-size:10px;"></i>'
+        : 'Show <i class="fas fa-chevron-down" id="reviewsChevron" style="font-size:10px;"></i>';
+}
+
 async function loadProfileReviews() {
     if (!currentUser) {
         try {

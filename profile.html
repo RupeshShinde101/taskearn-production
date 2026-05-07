@@ -136,12 +136,17 @@
 
             <!-- Ratings & Reviews Section -->
             <div class="profile-card" style="margin-bottom:20px;">
-                <div class="profile-card-header">
-                    <div class="profile-card-title"><i class="fas fa-star" style="color:#f59e0b;"></i> Ratings & Reviews</div>
-                    <span id="reviewsCount" style="font-size:13px;color:var(--text-secondary,#64748b);">0 reviews</span>
+                <div class="profile-card-header" onclick="toggleReviewsSection()" style="cursor:pointer;user-select:none;">
+                    <div class="profile-card-title"><i class="fas fa-star" style="color:#f59e0b;"></i> Ratings &amp; Reviews</div>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span id="reviewsCount" style="font-size:13px;color:var(--text-secondary,#64748b);">0 reviews</span>
+                        <span id="reviewsToggleBtn" style="font-size:12px;font-weight:600;color:#6366f1;background:rgba(99,102,241,0.1);padding:4px 10px;border-radius:20px;white-space:nowrap;">Show <i class="fas fa-chevron-down" id="reviewsChevron" style="font-size:10px;"></i></span>
+                    </div>
                 </div>
-                <div class="profile-card-body" id="profileReviewsList" style="max-height:350px;overflow-y:auto;">
-                    <p style="text-align:center;color:#94a3b8;padding:20px;font-size:14px;">Loading reviews...</p>
+                <div id="reviewsCollapsible" style="display:none;">
+                    <div class="profile-card-body" id="profileReviewsList" style="max-height:350px;overflow-y:auto;">
+                        <p style="text-align:center;color:#94a3b8;padding:20px;font-size:14px;">Loading reviews...</p>
+                    </div>
                 </div>
             </div>
 

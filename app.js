@@ -186,6 +186,18 @@ function getTaskFinalValue(task) {
     return price + getTaskServiceCharge(task) + getTaskPlatformFee(task);
 }
 
+// Returns what the helper actually receives = (price + service_charge) * 0.88
+// (12% platform commission deducted from the base task value, NOT from the poster's total).
+// getTaskFinalValue already includes the 5% posting fee — multiplying it by 0.88 would
+// over-count. Always use this function for helper earnings display.
+function getHelperEarnings(task) {
+    if (!task) return 0;
+    const price = parseFloat(task.price || task.amount || 0) || 0;
+    const sc = parseFloat(task.service_charge != null ? task.service_charge :
+                          task.serviceCharge != null ? task.serviceCharge : getTaskServiceCharge(task)) || 0;
+    return Math.round((price + sc) * 0.88 * 100) / 100;
+}
+
 // Default location: New Delhi, India
 let userLocation = { lat: 28.6139, lng: 77.2090 };
 
@@ -1801,7 +1813,7 @@ async function syncUserTasksFromServer() {
                 };
                 if (dbTask.status === 'paid' || dbTask.status === 'completed') {
                     if (!myCompletedTasks.find(ct => ct.id == dbTask.id)) {
-                        taskObj.earnedAmount = getTaskFinalValue(taskObj) * 0.88;
+                        taskObj.earnedAmount = getHelperEarnings(taskObj);
                         taskObj.paidAt = dbTask.paid_at || dbTask.helper_final_completed_at || dbTask.completed_at || new Date().toISOString();
                         myCompletedTasks.push(taskObj);
                     }
@@ -1813,7 +1825,7 @@ async function syncUserTasksFromServer() {
             // Move newly-paid/completed items from myAcceptedTasks to myCompletedTasks
             myAcceptedTasks.filter(t => t.status === 'paid' || t.status === 'completed').forEach(pt => {
                 if (!myCompletedTasks.find(ct => ct.id == pt.id)) {
-                    pt.earnedAmount = getTaskFinalValue(pt) * 0.88;
+                    pt.earnedAmount = getHelperEarnings(pt);
                     pt.paidAt = pt.paidAt || pt.paid_at || pt.helper_final_completed_at || new Date().toISOString();
                     myCompletedTasks.push(pt);
                     currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
@@ -2685,7 +2697,7 @@ function showRouteTo(task) {
 function showDistancePanel(km, mins, task) {
     const panel = document.getElementById('distanceInfo');
     const serviceCharge = getTaskPostingFee(task);
-    const totalEarnings = getTaskFinalValue(task);
+    const helperEarns = getHelperEarnings(task);
     const chargeInfo = getServiceChargeInfo(task.category);
     
     if (panel) {
@@ -2694,7 +2706,7 @@ function showDistancePanel(km, mins, task) {
             <div class="distance-value">${km} km</div>
             <div class="eta">~${mins} min drive</div>
             <div class="price-info">
-                <div class="total-price">Earn: <strong>₹${totalEarnings.toFixed(0)}</strong></div>
+                <div class="total-price">Earn: <strong>₹${helperEarns.toFixed(0)}</strong></div>
                 <small style="color:#10b981;">${task.category === 'transport' ? '\u20b9' + parseFloat(task.price).toFixed(0) + ' (no posting fee)' : '\u20b9' + parseFloat(task.price).toFixed(0) + ' + \u20b9' + serviceCharge.toFixed(0) + ' (' + chargeInfo.level + ')'}</small>
             </div>
             <button class="directions-btn" onclick="openGoogleMaps(${task.location.lat}, ${task.location.lng})">
@@ -5773,7 +5785,7 @@ function renderProfileUI() {
     if (!totalEarned && myCompletedTasks.length > 0) {
         totalEarned = myCompletedTasks.reduce(function(sum, t) {
             if (t.earnedAmount) return sum + t.earnedAmount;
-            return sum + (getTaskFinalValue(t) * 0.88);
+            return sum + getHelperEarnings(t);
         }, 0);
         totalEarned = Math.round(totalEarned * 100) / 100;
     }
@@ -5847,7 +5859,7 @@ function renderProfileUI() {
         if (listEl && myCompletedTasks.length > 0) {
             listEl.innerHTML = myCompletedTasks.slice().reverse().map(function(t) {
                 var amt = getTaskFinalValue(t);
-                var earned = t.earnedAmount || (amt * 0.88);
+                var earned = t.earnedAmount || getHelperEarnings(t);
                 var date = t.completedAt ? new Date(t.completedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
                 return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border,#e2e8f0);">' +
                     '<div><div style="font-weight:600;font-size:14px;">' + (t.title || 'Task') + '</div><div style="font-size:12px;color:#94a3b8;">' + date + '</div></div>' +
@@ -6498,10 +6510,9 @@ function renderPostedTasks() {
                 </div>`;
         } else if (t.status === 'verify_pending') {
             const totalAmt = getTaskFinalValue(t);
-            const posterCost = (totalAmt * 1.05).toFixed(2);
             actionsHTML = `<div class="task-actions" style="margin-top:10px;">
-                    <button class="btn" style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:700;padding:12px;border-radius:10px;border:none;font-size:15px;" onclick="verifyAndPayTask(${t.id},${posterCost})">
-                        <i class="fas fa-check-circle"></i> ✅ Verify & Pay Now (₹${posterCost})
+                    <button class="btn" style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:700;padding:12px;border-radius:10px;border:none;font-size:15px;" onclick="verifyAndPayTask(${t.id})">
+                        <i class="fas fa-check-circle"></i> ✅ Verify & Pay Now (₹${totalAmt.toFixed(2)})
                     </button>
                 </div>`;
         }
@@ -6554,7 +6565,7 @@ function renderAcceptedTasks() {
                 <p style="color: #fbbf24; margin-bottom: 8px;">
                     <i class="fas fa-clock"></i> Waiting for task poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${(getTaskFinalValue(t) * 0.88).toFixed(0)} (after 12% commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${getHelperEarnings(t).toFixed(0)} (after 12% commission)</p>
             </div>`;
         } else if (t.status === 'verify_pending') {
             // Helper sent verification, waiting for poster to pay
@@ -6564,7 +6575,7 @@ function renderAcceptedTasks() {
                 <p style="color: #d97706; margin-bottom: 8px; font-weight:600;">
                     <i class="fas fa-hourglass-half"></i> Verification sent! Waiting for poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${(getTaskFinalValue(t) * 0.88).toFixed(0)} (after 12% commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${getHelperEarnings(t).toFixed(0)} (after 12% commission)</p>
             </div>`;
         } else if (t.status === 'payment_released') {
             // Payment released, helper needs to mark as completed

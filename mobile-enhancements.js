@@ -103,8 +103,8 @@
   };
 
   /* ---------- PULL-TO-REFRESH ----------------------------------- */
-  // Activate on main list pages where it adds value
-  var ptrPages = ['posted.html','accepted.html','completed.html','browse.html','notifications.html','wallet.html'];
+  // Only on pages where it adds value (NOT task lists or browse — conflicts with scroll)
+  var ptrPages = ['notifications.html', 'wallet.html'];
   if (ptrPages.indexOf(page) !== -1) {
     initPullToRefresh();
   }

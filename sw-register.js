@@ -1,12 +1,16 @@
 // Service Worker registration with auto-update detection and stuck-SW recovery
 var _swWaitingWorker = null;
+// Track if there was already a controller when this page loaded.
+// If not, this is a fresh install (e.g. after user cleared caches) — not an update.
+var _hadControllerOnLoad = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+// Guard to show the banner at most once per page load (prevent double-trigger).
+var _bannerShownThisLoad = false;
 
 if ('serviceWorker' in navigator) {
   // Listen for SW_UPDATED message sent by the new SW's activate event.
-  // This works for both old sw-register.js (via auto-activate/skipWaiting path)
-  // and new sw-register.js (belt-and-suspenders alongside the 'installed' check).
+  // Only show banner if there was already a controller (= real update, not fresh install).
   navigator.serviceWorker.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'SW_UPDATED') {
+    if (event.data && event.data.type === 'SW_UPDATED' && _hadControllerOnLoad) {
       showUpdateBanner();
     }
   });
@@ -36,7 +40,8 @@ if ('serviceWorker' in navigator) {
       var newWorker = reg.installing;
       newWorker.addEventListener('statechange', function() {
         // Show banner when new SW is installed and waiting (ready to take over)
-        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+        // Guard: navigator.serviceWorker.controller means old SW was serving this page
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller && _hadControllerOnLoad) {
           _swWaitingWorker = newWorker;
           showUpdateBanner();
         }
@@ -106,7 +111,9 @@ window.addEventListener('appinstalled', function() {
 })();
 
 function showUpdateBanner() {
+  if (_bannerShownThisLoad) return;
   if (document.getElementById('sw-update-banner')) return;
+  _bannerShownThisLoad = true;
   var banner = document.createElement('div');
   banner.id = 'sw-update-banner';
   banner.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#4ade80;color:#1a1a2e;padding:12px 24px;border-radius:12px;z-index:99999;font-family:Poppins,sans-serif;font-weight:600;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);';

@@ -113,7 +113,28 @@ function showUpdateBanner() {
   banner.innerHTML = '<span>New version available!</span><button id="sw-update-btn" style="background:#1a1a2e;color:#4ade80;border:none;padding:6px 16px;border-radius:8px;cursor:pointer;font-weight:600;">Refresh</button>';
   document.body.appendChild(banner);
   document.getElementById('sw-update-btn').addEventListener('click', function() {
-    // The new SW is already active (skipWaiting in install) — just hard-reload the page.
-    window.location.reload();
+    // Clear all caches, unregister SW, then reload to get fresh files
+    var clearAndReload = function() {
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          return Promise.all(names.map(function(n) { return caches.delete(n); }));
+        }).then(function() { window.location.reload(true); }).catch(function() { window.location.reload(true); });
+      } else {
+        window.location.reload(true);
+      }
+    };
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then(function(reg) {
+        if (reg) {
+          // If there's a waiting worker, activate it first
+          if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          reg.unregister().then(clearAndReload).catch(clearAndReload);
+        } else {
+          clearAndReload();
+        }
+      }).catch(clearAndReload);
+    } else {
+      clearAndReload();
+    }
   });
 }

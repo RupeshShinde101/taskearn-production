@@ -1,6 +1,6 @@
 [build]
-  # Auto-stamp SW version on each deploy to bust caches
-  command = "node -e \"const fs=require('fs');const v='v'+Date.now();const f=fs.readFileSync('sw.js','utf8');fs.writeFileSync('sw.js',f.replace(/workmate4u-v[a-zA-Z0-9]+/,'workmate4u-'+v));\""
+  # Auto-stamp SW version and HTML asset query strings on each deploy to bust caches
+  command = "node -e \"const fs=require('fs'),path=require('path');const v='v'+Date.now();const swf=fs.readFileSync('sw.js','utf8');fs.writeFileSync('sw.js',swf.replace(/workmate4u-v[a-zA-Z0-9]+/,'workmate4u-'+v));const htmlFiles=fs.readdirSync('.').filter(f=>f.endsWith('.html'));htmlFiles.forEach(file=>{let c=fs.readFileSync(file,'utf8');c=c.replace(/(['\\\"](?:styles|app|api-client|shared|category-picker|post-task-wizard|back-button|mobile-enhancements|tracking|razorpay|sw-register)\\.(?:css|js))\\?v=[^'\\\"]+/g,'$1?'+v);fs.writeFileSync(file,c);});\""
   publish = "."
   functions = "netlify/functions"
 
@@ -49,12 +49,12 @@
 [[headers]]
   for = "*.js"
   [headers.values]
-    Cache-Control = "public, max-age=3600, stale-while-revalidate=86400"
+    Cache-Control = "public, max-age=3600"
 
 [[headers]]
   for = "*.css"
   [headers.values]
-    Cache-Control = "public, max-age=3600, stale-while-revalidate=86400"
+    Cache-Control = "public, max-age=3600"
 
 # Service worker must NEVER be cached — this MUST come AFTER *.js to override it
 [[headers]]

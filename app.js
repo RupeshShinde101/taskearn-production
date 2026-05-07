@@ -7022,25 +7022,26 @@ function toggleMobileMenu() {
 
 function hardRefreshApp() {
     toggleMobileMenu();
-    // Tell service worker to skip waiting and take over immediately
+    var clearAndReload = function() {
+        if ('caches' in window) {
+            caches.keys().then(function(keys) {
+                return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+            }).then(function() { location.reload(true); }).catch(function() { location.reload(true); });
+        } else {
+            location.reload(true);
+        }
+    };
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistration().then(function(reg) {
-            if (reg && reg.waiting) {
-                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-            }
-            // Clear all SW caches then reload
-            if ('caches' in window) {
-                caches.keys().then(function(keys) {
-                    Promise.all(keys.map(function(k) { return caches.delete(k); })).then(function() {
-                        location.reload(true);
-                    });
-                });
+            if (reg) {
+                if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                reg.unregister().then(clearAndReload).catch(clearAndReload);
             } else {
-                location.reload(true);
+                clearAndReload();
             }
-        }).catch(function() { location.reload(true); });
+        }).catch(clearAndReload);
     } else {
-        location.reload(true);
+        clearAndReload();
     }
 }
 

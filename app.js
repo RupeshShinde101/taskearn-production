@@ -2210,6 +2210,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                     console.warn('⚠️ Dashboard render failed:', e.message);
                 }
 
+                // If on profile.html, load profile immediately now that currentUser is set
+                try {
+                    var _profilePage = (window.location.pathname.split('/').pop() || '').toLowerCase();
+                    if (_profilePage === 'profile.html') { loadProfilePage(); }
+                } catch (e) {}
+
                 // Prompt Google users to complete profile if phone/DOB missing
                 if (currentUser.authProvider === 'google' && (!currentUser.phone || !currentUser.dob)) {
                     setTimeout(() => showCompleteProfileModal(), 1500);
@@ -6169,16 +6175,27 @@ async function saveNewPassword() {
 (function() {
     var page = (window.location.pathname.split('/').pop() || '').toLowerCase();
     if (page === 'profile.html') {
+        function bindPhotoInput() {
+            var inp = document.getElementById('profilePhotoInput');
+            if (inp && !inp._bound) {
+                inp._bound = true;
+                inp.addEventListener('change', handleProfilePhoto);
+            }
+        }
         function initProfile() {
-            setTimeout(function() {
-                loadProfilePage();
-                // Bind file input via JS for better mobile reliability
-                var inp = document.getElementById('profilePhotoInput');
-                if (inp && !inp._bound) {
-                    inp._bound = true;
-                    inp.addEventListener('change', handleProfilePhoto);
+            // Poll until currentUser is set by the async session restore (network verify may take >300ms)
+            var _attempts = 0;
+            function _tryLoad() {
+                bindPhotoInput();
+                if (typeof currentUser !== 'undefined' && currentUser) {
+                    loadProfilePage();
+                } else if (_attempts++ < 20) {
+                    // Retry every 300ms for up to 6 seconds
+                    setTimeout(_tryLoad, 300);
                 }
-            }, 300);
+                // After max retries, if still no user — page will show login prompt via updateNavForUser
+            }
+            setTimeout(_tryLoad, 300);
         }
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initProfile);

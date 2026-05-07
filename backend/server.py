@@ -79,6 +79,7 @@ CORS(app,
      max_age=3600)
 
 app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20 MB — enough for two compressed KYC images
 
 # ========================================
 # ERROR HANDLERS — prevent raw tracebacks in production
@@ -95,6 +96,10 @@ def method_not_allowed(error):
 @app.errorhandler(500)
 def server_error(error):
     return jsonify({'success': False, 'message': 'Internal server error'}), 500
+
+@app.errorhandler(413)
+def request_too_large(error):
+    return jsonify({'success': False, 'message': 'Upload too large. Please use smaller images.'}), 413
 
 # Add security + CORS headers to all responses
 @app.after_request
@@ -9078,16 +9083,22 @@ def submit_kyc():
 @require_auth
 def get_kyc_status():
     """Get KYC verification status"""
+    _ensure_kyc_columns()
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''
                 SELECT kyc_status, kyc_document_type, kyc_document_number, kyc_verified_at,
-                       phone_verified, email_verified, kyc_document_image
+                       phone_verified, email_verified, kyc_flag_reason,
+                       CASE WHEN kyc_document_image IS NOT NULL THEN TRUE ELSE FALSE END AS has_image
                 FROM users WHERE id = {PH}
             ''', (request.user_id,))
-            row = dict_from_row(cursor.fetchone())
+            row = cursor.fetchone()
 
-        has_image = bool(row.get('kyc_document_image'))
+        if not row:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+
+        row = dict_from_row(row)
+        has_image = bool(row.get('has_image'))
         return jsonify({
             'success': True,
             'kyc': {
@@ -9097,10 +9108,12 @@ def get_kyc_status():
                 'hasDocumentImage': has_image,
                 'verifiedAt': row.get('kyc_verified_at'),
                 'phoneVerified': bool(row.get('phone_verified')),
-                'emailVerified': bool(row.get('email_verified'))
+                'emailVerified': bool(row.get('email_verified')),
+                'flagReason': row.get('kyc_flag_reason')
             }
         })
     except Exception as e:
+        print(f"[KYC STATUS] Error: {e}")
         return jsonify({'success': False, 'message': 'Failed to get KYC status'}), 500
 
 

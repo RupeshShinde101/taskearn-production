@@ -7816,11 +7816,14 @@ async function submitKYC() {
             window._kycBackBase64 = null;
             loadKYCStatus();
         } else {
-            const msg = (result && result.message) || 'KYC submission failed';
+            let msg = (result && result.message) || 'KYC submission failed';
+            // "Invalid JSON response" means the server returned a non-JSON error (e.g. 413 payload too large)
+            if (!msg || msg === 'Invalid JSON response' || msg.toLowerCase().includes('invalid json')) {
+                msg = 'Upload failed — the images may be too large. Please try photos taken at lower resolution.';
+            }
             console.error('[KYC] Rejected by server:', msg, result);
-            // Use a longer-lived alert so user actually sees the reason
             showToast('❌ ' + msg, 'error');
-            try { alert('KYC was rejected:\n\n' + msg); } catch(_) {}
+            try { alert('KYC submission failed:\n\n' + msg); } catch(_) {}
         }
     } catch (err) {
         console.error('[KYC] Submit failed:', err);
@@ -7831,19 +7834,45 @@ async function submitKYC() {
     }
 }
 
-function previewKYCImage(input, side) {
+function compressKYCImage(file) {
+    return new Promise(function(resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const MAX_W = 1200, MAX_H = 1000;
+                let w = img.width, h = img.height;
+                if (w > MAX_W || h > MAX_H) {
+                    const scale = Math.min(MAX_W / w, MAX_H / h);
+                    w = Math.round(w * scale);
+                    h = Math.round(h * scale);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', 0.82));
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+async function previewKYCImage(input, side) {
     const file = input.files[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-        showToast('❌ Image too large. Max 5MB', 'error');
+    if (file.size > 15 * 1024 * 1024) {
+        showToast('❌ Image too large. Max 15MB', 'error');
         input.value = '';
         return;
     }
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const data = e.target.result;
+    try {
+        const data = await compressKYCImage(file);
         if (side === 'back') {
             window._kycBackBase64 = data;
             const preview = document.getElementById('kycBackPreview');
@@ -7861,8 +7890,10 @@ function previewKYCImage(input, side) {
             if (preview) preview.style.display = '';
             if (uploadArea) uploadArea.style.display = 'none';
         }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+        showToast('❌ Could not process image. Please try a different file.', 'error');
+        input.value = '';
+    }
 }
 
 function clearKYCImage(side) {
@@ -7933,7 +7964,8 @@ async function loadKYCStatus() {
             } else if (status === 'rejected') {
                 badge.textContent = 'Rejected';
                 badge.style.background = '#fee2e2'; badge.style.color = '#dc2626';
-                if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626;"><i class="fas fa-times-circle"></i> Rejected</span>';
+                const reason = kyc.flagReason ? escapeHtml(kyc.flagReason) : '';
+                if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626;"><i class="fas fa-times-circle"></i> Rejected' + (reason ? ' — ' + reason : '') + '</span>';
                 if (formSection) formSection.style.display = '';
             }
         }

@@ -1731,6 +1731,21 @@ async function syncUserTasksFromServer() {
                 };
             });
 
+            // Move any already-local tasks now marked paid/completed into history
+            // (handles login case where postedTasks from API includes all statuses)
+            myPostedTasks.forEach(pt => {
+                if (pt.status === 'paid' || pt.status === 'payment_released' || pt.status === 'completed') {
+                    if (!myPaidPostedTasks.find(p => p.id === pt.id)) {
+                        myPaidPostedTasks.push({
+                            id: pt.id, title: pt.title, category: pt.category,
+                            price: pt.price, service_charge: pt.service_charge || 0,
+                            status: pt.status, accepted_by: pt.accepted_by || pt.acceptedBy,
+                            helper_name: pt.helper_name || 'Helper', postedAt: pt.postedAt
+                        });
+                    }
+                }
+            });
+
             // Add DB tasks not yet in local list
             dbPosted.forEach(dbTask => {
                 if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
@@ -5262,6 +5277,11 @@ async function handleLogin(event) {
                 // Render dashboard after tasks are fully loaded
                 setTimeout(() => renderDashboard(), 100);
                 
+                // If on profile.html, refresh profile UI (was stuck at "Loading...")
+                if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {
+                    setTimeout(() => loadProfilePage(), 150);
+                }
+                
                 return;
             } else {
                 showToast('❌ ' + (result.message || 'Login failed'));
@@ -5366,6 +5386,9 @@ async function handleSignup(event) {
                     updateNavForUser();
                     const tasksLoaded = await loadTasksFromServer();
                     setTimeout(() => renderDashboard(), 100);
+                    if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {
+                        setTimeout(() => loadProfilePage(), 150);
+                    }
                     setTimeout(showOnboarding, 500);
                 }
                 
@@ -5463,6 +5486,9 @@ async function verifyEmailOTP() {
             updateNavForUser();
             const tasksLoaded = await loadTasksFromServer();
             setTimeout(() => renderDashboard(), 100);
+            if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {
+                setTimeout(() => loadProfilePage(), 150);
+            }
 
             // Phone verification is currently optional — go straight to onboarding.
             // Users can verify their phone later from Profile if/when desired.
@@ -6732,12 +6758,19 @@ function renderPaidPostedTasks() {
     const el = document.getElementById('myPaidPostedTasks');
     if (!el) return;
 
-    if (myPaidPostedTasks.length === 0) {
+    // 48h cutoff — same window as completed tasks
+    const _paidCutoff = Date.now() - (48 * 3600 * 1000);
+    const _visiblePaid = myPaidPostedTasks.filter(t => {
+        const ts = t.completedAt || t.postedAt;
+        return !ts || new Date(ts).getTime() > _paidCutoff;
+    });
+
+    if (_visiblePaid.length === 0) {
         el.innerHTML = '<div class="empty-state" style="padding:20px 0;"><i class="fas fa-history"></i><h3 style="font-size:15px;">No paid tasks yet</h3></div>';
         return;
     }
 
-    el.innerHTML = myPaidPostedTasks.map(t => {
+    el.innerHTML = _visiblePaid.map(t => {
         const helperName = t.helper_name || 'Helper';
         const helperId = t.accepted_by || '';
         const alreadyRated = hasRatedTask(t.id);

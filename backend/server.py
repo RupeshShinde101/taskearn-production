@@ -3364,7 +3364,7 @@ def pay_helper(task_id):
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (request.user_id, task_id, 'payment_done',
                   'Payment Done! ✅',
-                  f'You paid ₹{total_poster_cost:.2f} for "{task["title"]}". Helper received ₹{helper_earnings:.2f}.',
+                  f'You paid ₹{total_poster_cost:.2f} for "{task["title"]}". Payment released to helper.',
                   'unread', json.dumps({'type': 'success', 'taskId': task_id, 'amount': total_poster_cost}), now))
 
             conn.commit()

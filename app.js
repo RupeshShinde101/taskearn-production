@@ -1011,7 +1011,7 @@ async function loadRecommendedTasks() {
         section.style.display = 'block';
         container.innerHTML = result.tasks.map(t => {
             const distText = t.distanceKm != null ? `${t.distanceKm.toFixed(1)} km` : '?';
-            const total = getTaskFinalValue(t).toFixed(0);
+            const total = Math.round(getTaskFinalValue(t));
             const catLabel = formatCategory ? formatCategory(t.category) : t.category;
             return `
             <div class="task-card recommended-task-card" onclick="openTaskDetail(${t.id})">
@@ -1208,7 +1208,7 @@ function updateNotificationUI() {
         } else {
             list.innerHTML = notifications.slice(0, 20).map(n => {
                 // Check if notification has action buttons
-                const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task');
+                const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task' || n.action.type === 'verify_and_pay' || n.action.type === 'mark_complete');
                 const actionButton = hasActions ? `
                     <button class="notification-action-btn" onclick="event.stopPropagation(); handleNotificationAction(${n.id}, '${n.action.type}', ${n.taskId || 'null'})">
                         ${n.action.label || (n.action.type === 'payment' ? 'Pay Now' : 'View')}
@@ -1597,6 +1597,14 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
         console.log(`💳 Processing payment for task ${taskId} from notification`);
         closeNotifDropdown();
         await processPaymentFromNotification(taskId, notification);
+    } else if (actionType === 'verify_and_pay' && taskId) {
+        console.log(`✅ Verify & Pay for task ${taskId} from notification`);
+        closeNotifDropdown();
+        await showPaymentInvoice(taskId);
+    } else if (actionType === 'mark_complete' && taskId) {
+        console.log(`🎉 Mark completed for task ${taskId} from notification`);
+        closeNotifDropdown();
+        await markTaskCompleted(taskId);
     } else if (actionType === 'task' && taskId) {
         console.log(`📋 Opening task ${taskId}`);
         closeNotifDropdown();
@@ -1726,14 +1734,14 @@ async function syncUserTasksFromServer() {
             // Add DB tasks not yet in local list
             dbPosted.forEach(dbTask => {
                 if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
-                if (dbTask.status === 'paid') {
-                    // Add to paid history
+                if (dbTask.status === 'paid' || dbTask.status === 'payment_released') {
+                    // Add to paid/released history (poster already paid — move out of active section)
                     if (!myPaidPostedTasks.find(pt => pt.id === dbTask.id)) {
                         myPaidPostedTasks.push({
                             id: dbTask.id, title: dbTask.title, category: dbTask.category,
                             price: parseFloat(dbTask.price),
                             service_charge: parseFloat(dbTask.service_charge || 0),
-                            status: 'paid', accepted_by: dbTask.accepted_by,
+                            status: dbTask.status, accepted_by: dbTask.accepted_by,
                             helper_name: dbTask.helper_name || 'Helper', postedAt: dbTask.posted_at
                         });
                     }
@@ -1758,9 +1766,9 @@ async function syncUserTasksFromServer() {
                 }
             });
 
-            // Remove paid and expired-active tasks
+            // Remove paid, payment_released, and expired-active tasks
             myPostedTasks = myPostedTasks.filter(t => {
-                if (t.status === 'paid') return false;
+                if (t.status === 'paid' || t.status === 'payment_released') return false;
                 if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
                 return true;
             });
@@ -2860,7 +2868,7 @@ function renderTasks(filtered = null) {
                 <div class="task-card-header">
                     <span class="task-category">${formatCategory(task.category)}</span>
                     ${_vehBadge}
-                    <span class="task-price">₹${getTaskFinalValue(task)}</span>
+                    <span class="task-price">₹${Math.round(getTaskFinalValue(task))}</span>
                     ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
                 </div>
                 <h4>${escapeHtml(task.title)}</h4>
@@ -6450,9 +6458,9 @@ function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    // Show active (non-expired) and accepted posted tasks
+    // Show active (non-expired) and accepted posted tasks (not payment_released/paid — those go to history)
     const visiblePostedTasks = myPostedTasks.filter(t => {
-        if (t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'payment_released') return true;
+        if (t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending') return true;
         if (t.status !== 'active') return false;
         if (getTimeLeft(t.expiresAt) === 'Expired') return false;
         return true;
@@ -6465,7 +6473,7 @@ function renderPostedTasks() {
 
     el.innerHTML = visiblePostedTasks.map(t => {
         let helperHTML = '';
-        if ((t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'payment_released') && t.accepted_by) {
+        if ((t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending') && t.accepted_by) {
             const hName = t.helper_name || t.helperName || 'Helper';
             const hPhone = t.helper_phone || t.helperPhone || '';
             const hRating = t.helper_rating || t.helperRating || 0;
@@ -6614,7 +6622,7 @@ function renderAcceptedTasks() {
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
-                <div class="task-meta"><span>₹${getTaskFinalValue(t)}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
+                <div class="task-meta"><span>Earn: ₹${Math.round(getHelperEarnings(t))}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
                 ${actionHTML}
             </div>
         `;
@@ -6689,10 +6697,11 @@ function renderCompletedTasks() {
 
             // Poster contact section
             let contactHTML = '';
+            const _pidBadge = posterId ? `<span style="font-size:11px;color:#888;background:rgba(99,102,241,0.12);padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:400;">ID: ${escapeHtml(String(posterId))}</span>` : '';
             if (posterPhone || posterEmail) {
                 contactHTML = `<div style="background:var(--card-bg,rgba(99,102,241,0.06));border:1px solid var(--border-color,rgba(99,102,241,0.2));border-radius:10px;padding:12px;margin:10px 0;">
                     <div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Poster Details</div>
-                    <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(posterName)}</div>
+                    <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(posterName)}${_pidBadge}</div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
                         ${posterPhone ? `<a href="tel:${escapeHtml(posterPhone)}" class="btn" style="flex:1;min-width:100px;background:#4ade80;color:#000;text-align:center;padding:8px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fas fa-phone"></i> Call</a>` : ''}
                         ${posterPhone ? `<a href="https://wa.me/${posterPhone.replace(/[^0-9]/g,'')}" target="_blank" class="btn" style="flex:1;min-width:100px;background:#25D366;color:#fff;text-align:center;padding:8px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
@@ -6700,7 +6709,9 @@ function renderCompletedTasks() {
                     </div>
                 </div>`;
             } else if (posterName && posterName !== 'Poster') {
-                contactHTML = `<p style="color:#888;font-size:13px;margin-bottom:6px;">Posted by: <strong>${escapeHtml(posterName)}</strong></p>`;
+                contactHTML = `<p style="color:#888;font-size:13px;margin-bottom:6px;">Posted by: <strong>${escapeHtml(posterName)}</strong>${_pidBadge}</p>`;
+            } else if (posterId) {
+                contactHTML = `<p style="color:#888;font-size:13px;margin-bottom:6px;">Poster ID: <strong>${escapeHtml(String(posterId))}</strong></p>`;
             }
 
             return `<div class="my-task-card">

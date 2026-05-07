@@ -5769,6 +5769,15 @@ function openUserProfile() {
 var _photoJustUploaded = false;
 
 function loadProfilePage() {
+    // Fast-path: if currentUser not yet set by async session restore,
+    // read the cached user from localStorage so the profile renders instantly
+    // instead of waiting 1-3 seconds for the Railway token-verify round-trip.
+    if (!currentUser) {
+        try {
+            const _cached = localStorage.getItem('taskearn_user');
+            if (_cached) currentUser = JSON.parse(_cached);
+        } catch (_e) {}
+    }
     if (!currentUser) return;
     
     // Render from currentUser immediately, then refresh from server
@@ -5814,9 +5823,13 @@ function renderProfileUI() {
     if (nameEl) nameEl.textContent = currentUser.name || 'User';
     
     var sinceEl = document.getElementById('profileMemberSince');
-    if (sinceEl && currentUser.joinedAt) {
-        sinceEl.innerHTML = '<i class="fas fa-calendar-alt"></i> Member since ' +
-            new Date(currentUser.joinedAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long' });
+    if (sinceEl) {
+        if (currentUser.joinedAt) {
+            sinceEl.innerHTML = '<i class="fas fa-calendar-alt"></i> Member since ' +
+                new Date(currentUser.joinedAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long' });
+        } else {
+            sinceEl.innerHTML = '<i class="fas fa-calendar-alt"></i> Member';
+        }
     }
     
     // Stats — use server-computed values first, fall back to client-side

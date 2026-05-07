@@ -5943,6 +5943,12 @@ function toggleEarningsDetail() {
 }
 
 async function loadProfileReviews() {
+    if (!currentUser) {
+        try {
+            const _c = localStorage.getItem('taskearn_user');
+            if (_c) currentUser = JSON.parse(_c);
+        } catch (_e) {}
+    }
     if (!currentUser) return;
     var container = document.getElementById('profileReviewsList');
     if (!container) return;
@@ -5954,13 +5960,17 @@ async function loadProfileReviews() {
             var reviews = data.reviews || [];
             var stats = data.stats || {};
             
+            // Backend returns camelCase keys: totalReviews, avgRating
+            var totalReviews = stats.totalReviews || stats.total_reviews || 0;
+            var avgRating = stats.avgRating || stats.avg_rating || null;
+            
             // Update rating stat with server value
             var sr = document.getElementById('statRating');
-            if (sr && stats.avg_rating) sr.textContent = parseFloat(stats.avg_rating).toFixed(1);
+            if (sr && avgRating) sr.textContent = parseFloat(avgRating).toFixed(1);
             
             // Update reviews count
             var rc = document.getElementById('reviewsCount');
-            if (rc) rc.textContent = (stats.total_reviews || 0) + ' review' + ((stats.total_reviews || 0) !== 1 ? 's' : '');
+            if (rc) rc.textContent = totalReviews + ' review' + (totalReviews !== 1 ? 's' : '');
             
             if (reviews.length === 0) {
                 container.innerHTML = '<p style="text-align:center;color:#94a3b8;padding:20px;font-size:14px;">No reviews yet. Complete tasks to get reviews!</p>';

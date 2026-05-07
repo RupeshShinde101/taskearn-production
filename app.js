@@ -1734,8 +1734,8 @@ async function syncUserTasksFromServer() {
             // Add DB tasks not yet in local list
             dbPosted.forEach(dbTask => {
                 if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
-                if (dbTask.status === 'paid' || dbTask.status === 'payment_released') {
-                    // Add to paid/released history (poster already paid — move out of active section)
+                if (dbTask.status === 'paid' || dbTask.status === 'payment_released' || dbTask.status === 'completed') {
+                    // Add to paid/released/completed history (task done — move out of active section)
                     if (!myPaidPostedTasks.find(pt => pt.id === dbTask.id)) {
                         myPaidPostedTasks.push({
                             id: dbTask.id, title: dbTask.title, category: dbTask.category,
@@ -1766,9 +1766,9 @@ async function syncUserTasksFromServer() {
                 }
             });
 
-            // Remove paid, payment_released, and expired-active tasks
+            // Remove completed, paid, payment_released, and expired-active tasks
             myPostedTasks = myPostedTasks.filter(t => {
-                if (t.status === 'paid' || t.status === 'payment_released') return false;
+                if (t.status === 'paid' || t.status === 'payment_released' || t.status === 'completed') return false;
                 if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
                 return true;
             });
@@ -6458,9 +6458,9 @@ function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    // Show active (non-expired) and accepted posted tasks (not payment_released/paid — those go to history)
+    // Show active (non-expired) and accepted posted tasks (not completed/payment_released/paid — those go to history)
     const visiblePostedTasks = myPostedTasks.filter(t => {
-        if (t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending') return true;
+        if (t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending') return true;
         if (t.status !== 'active') return false;
         if (getTimeLeft(t.expiresAt) === 'Expired') return false;
         return true;
@@ -6473,7 +6473,7 @@ function renderPostedTasks() {
 
     el.innerHTML = visiblePostedTasks.map(t => {
         let helperHTML = '';
-        if ((t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending') && t.accepted_by) {
+        if ((t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending') && t.accepted_by) {
             const hName = t.helper_name || t.helperName || 'Helper';
             const hPhone = t.helper_phone || t.helperPhone || '';
             const hRating = t.helper_rating || t.helperRating || 0;

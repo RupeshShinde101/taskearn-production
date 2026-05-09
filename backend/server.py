@@ -905,6 +905,27 @@ def register():
     """Register a new user"""
     data = request.get_json()
     
+    # ---- TRIAL MODE CHECKS ----
+    if config.TRIAL_ACTIVE:
+        import datetime as _dt
+        # Check invite code
+        invite_code = (data.get('invite_code') or '').strip().upper()
+        if invite_code != config.TRIAL_INVITE_CODE.upper():
+            return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.'}), 403
+        # Check trial end date
+        try:
+            end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
+        except ValueError:
+            end_date = _dt.date.today() + _dt.timedelta(days=30)
+        if _dt.date.today() > end_date:
+            return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
+        # Check user cap
+        with get_db() as (cursor, conn):
+            cursor.execute('SELECT COUNT(*) as cnt FROM users')
+            row = dict_from_row(cursor.fetchone())
+            if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
+                return jsonify({'success': False, 'message': 'All 100 trial spots are taken. We\'ll notify you when we launch publicly!'}), 403
+
     # Validate required fields
     required = ['name', 'email', 'password', 'dob']
     for field in required:
@@ -1006,6 +1027,45 @@ def register():
         'requiresVerification': True
     }
     return jsonify(response), 201
+
+
+# -----------------------------------------------------------------------
+# TRIAL STATUS ENDPOINT — public, no auth needed
+# Returns whether trial is active, slots remaining, and end date.
+# -----------------------------------------------------------------------
+@app.route('/api/trial/status', methods=['GET'])
+def trial_status():
+    """Return current trial status (public endpoint)"""
+    import datetime as _dt
+    if not config.TRIAL_ACTIVE:
+        return jsonify({'trial': False})
+
+    now_date = _dt.date.today()
+    try:
+        end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
+    except ValueError:
+        end_date = now_date + _dt.timedelta(days=30)
+
+    expired = now_date > end_date
+
+    with get_db() as (cursor, conn):
+        cursor.execute('SELECT COUNT(*) as cnt FROM users')
+        row = dict_from_row(cursor.fetchone())
+        total_users = row['cnt'] or 0
+
+    slots_remaining = max(0, config.TRIAL_MAX_USERS - total_users)
+    full = total_users >= config.TRIAL_MAX_USERS
+
+    return jsonify({
+        'trial': True,
+        'active': not expired and not full,
+        'expired': expired,
+        'full': full,
+        'slotsRemaining': slots_remaining,
+        'totalUsers': total_users,
+        'maxUsers': config.TRIAL_MAX_USERS,
+        'endDate': config.TRIAL_END_DATE,
+    })
 
 
 @app.route('/api/auth/login', methods=['POST'])

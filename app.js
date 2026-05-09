@@ -2125,6 +2125,45 @@ async function refreshWalletBalance() {
 
 document.addEventListener('DOMContentLoaded', async function() {
     try {
+        // Check trial status — show closed overlay if trial is full or expired
+        (async function checkTrialStatus() {
+            try {
+                var apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ||
+                    (typeof window.TASKEARN_API_URL !== 'undefined' && window.TASKEARN_API_URL) ||
+                    'https://taskearn-production-production.up.railway.app/api';
+                var resp = await fetch(apiBase + '/trial/status');
+                if (!resp.ok) return; // trial endpoint missing → trial not active
+                var data = await resp.json();
+                if (!data.trial) return; // trial mode disabled by admin
+
+                // Show slim banner with slots remaining (always visible during active trial)
+                if (data.active && !document.getElementById('trial-slots-banner')) {
+                    var bar = document.createElement('div');
+                    bar.id = 'trial-slots-banner';
+                    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:89999;background:linear-gradient(90deg,#6366f1,#8b5cf6);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:6px 16px;letter-spacing:0.01em;';
+                    bar.innerHTML = '🚀 Beta Trial &nbsp;|&nbsp; <strong>' + data.slotsRemaining + ' of ' + data.maxUsers + '</strong> spots remaining &nbsp;&middot;&nbsp; Closes <strong>' + data.endDate + '</strong>';
+                    document.body.insertBefore(bar, document.body.firstChild);
+                }
+
+                // Full or expired — block new signups with overlay
+                if (!data.active) {
+                    var msg = data.expired
+                        ? 'The 30-day beta trial has ended.'
+                        : 'All 100 beta spots have been taken.';
+                    // Disable all signup buttons & forms instead of a hard block overlay
+                    document.querySelectorAll('#signupModal, [onclick*="signupModal"], [data-modal="signupModal"]').forEach(function(el) {
+                        el.style.pointerEvents = 'none'; el.style.opacity = '0.5';
+                    });
+                    // Show closed banner
+                    var closedBar = document.createElement('div');
+                    closedBar.id = 'trial-closed-banner';
+                    closedBar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:89999;background:#dc2626;color:#fff;text-align:center;font-size:13px;font-weight:600;padding:8px 16px;';
+                    closedBar.innerHTML = '🔒 Trial Closed &mdash; ' + msg + ' Public launch coming soon!';
+                    document.body.insertBefore(closedBar, document.body.firstChild);
+                }
+            } catch (e) { /* silently ignore — trial status fetch is non-critical */ }
+        })();
+
         console.log('🚀 Workmate4u Starting...');
         console.log('📦 localStorage available:', STORAGE_AVAILABLE);
         console.log('🔑 API Token:', localStorage.getItem('taskearn_token') ? 'EXISTS (✅)' : 'MISSING (❌)');
@@ -5313,6 +5352,7 @@ async function handleSignup(event) {
 
     const firstName = document.getElementById('signupFirstName').value.trim();
     const lastName = document.getElementById('signupLastName').value.trim();
+    const inviteCode = (document.getElementById('signupInviteCode')?.value || '').trim().toUpperCase();
     const email = document.getElementById('signupEmail').value.trim();
     const password = document.getElementById('signupPassword').value;
     const phone = document.getElementById('signupPhone')?.value || '';
@@ -5354,7 +5394,8 @@ async function handleSignup(event) {
                 email: email,
                 password: password,
                 phone: phone,
-                dob: dob
+                dob: dob,
+                invite_code: inviteCode
             });
             
             if (result.success) {

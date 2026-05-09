@@ -1948,16 +1948,11 @@ async function loadTasksFromServer() {
     try {
         console.log('📡 Loading tasks from backend server...');
         showTaskListSkeletons();
-        console.log('🔑 API Token exists:', !!localStorage.getItem('taskearn_token'));
-        console.log('🌐 API URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : window.TASKEARN_API_URL);
         
         if (typeof TasksAPI !== 'undefined' && TasksAPI.getAll) {
-            console.log('🚀 Calling TasksAPI.getAll...');
             const result = await TasksAPI.getAll();
-            console.log('📥 Raw server response:', JSON.stringify(result, null, 2));
             
             if (result.success && result.tasks) {
-                console.log('✅ Tasks received:', result.tasks.length);
                 
                 // Map server tasks with proper date parsing
                 const serverTasks = result.tasks.map(t => ({
@@ -1968,19 +1963,6 @@ async function loadTasksFromServer() {
                 
                 console.log('📊 Server tasks after parsing:', serverTasks.length);
                 tasks = serverTasks;
-                
-                // ✅ Sync myPostedTasks and myAcceptedTasks with REAL DB statuses.
-                // Delegates to the standalone syncUserTasksFromServer() function.
-                if (currentUser) {
-                    try {
-                        await syncUserTasksFromServer();
-                    } catch (e) {
-                        console.warn('Could not sync user tasks from DB:', e.message);
-                    }
-                }
-                
-                console.log('✅ Loaded', serverTasks.length, 'tasks from server');
-                console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
                 renderDashboard();
                 addTaskMarkers();

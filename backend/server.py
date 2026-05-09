@@ -121,6 +121,7 @@ def add_security_headers(response):
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=(self)'
+    response.headers['Content-Security-Policy'] = "default-src 'none'"
     
     # Cache headers for API responses
     if request.path.startswith('/api/'):
@@ -1859,12 +1860,12 @@ def get_tasks():
                 try:
                     poster_id = task.get('posted_by')
                     if poster_id:
-                        cursor.execute(f'SELECT name, phone, rating, tasks_posted FROM users WHERE id = {PH}', (poster_id,))
+                        # Do NOT fetch phone — this is a public endpoint
+                        cursor.execute(f'SELECT name, rating, tasks_posted FROM users WHERE id = {PH}', (poster_id,))
                         user_row = cursor.fetchone()
                         if user_row:
                             user = dict_from_row(user_row)
                             poster_name = user.get('name', 'Anonymous')
-                            poster_phone = user.get('phone', '')
                             poster_rating = float(user.get('rating', 5.0))
                             poster_tasks = int(user.get('tasks_posted', 0))
                 except:
@@ -1885,7 +1886,7 @@ def get_tasks():
                     'postedBy': {
                         'id': task.get('posted_by'),
                         'name': poster_name,
-                        'phone': poster_phone,
+                        # phone deliberately omitted — only exposed on accepted-task auth'd routes
                         'rating': poster_rating,
                         'tasksPosted': poster_tasks
                     },
@@ -1914,7 +1915,7 @@ def get_tasks():
         traceback.print_exc()
         return jsonify({
             'success': False,
-            'message': f'Error fetching tasks: {str(e)}'
+            'message': 'Failed to load tasks. Please try again.'
         }), 500
 
 
@@ -1939,7 +1940,7 @@ def get_category_counts():
         return jsonify({'success': True, 'counts': counts})
     except Exception as e:
         print(f"[GET /api/tasks/category-counts] Error: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': 'Failed to load category counts.'}), 500
 
 
 @app.route('/api/tasks', methods=['POST'])
@@ -2147,7 +2148,7 @@ def create_task():
         import traceback
         traceback.print_exc()
         print('='*60)
-        return jsonify({'success': False, 'message': f'Task creation failed: {str(e)}'}), 500
+        return jsonify({'success': False, 'message': 'Task creation failed. Please try again.'}), 500
 
 
 @app.route('/api/tasks/<int:task_id>/accept', methods=['POST'])

@@ -2136,13 +2136,23 @@ document.addEventListener('DOMContentLoaded', async function() {
                 var data = await resp.json();
                 if (!data.trial) return; // trial mode disabled by admin
 
-                // Show slim banner with slots remaining — fixed at bottom, dismissible
+                // Show centred popup card with slots remaining — dismissible
                 if (data.active && !document.getElementById('trial-slots-banner') && !sessionStorage.getItem('trial-banner-dismissed')) {
-                    var bar = document.createElement('div');
-                    bar.id = 'trial-slots-banner';
-                    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:89999;background:linear-gradient(90deg,#6366f1,#8b5cf6);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:7px 44px 7px 16px;letter-spacing:0.01em;box-shadow:0 -2px 10px rgba(0,0,0,0.18);';
-                    bar.innerHTML = '🚀 Beta Trial &nbsp;|&nbsp; <strong>' + data.slotsRemaining + ' of ' + data.maxUsers + '</strong> spots remaining &nbsp;&middot;&nbsp; Closes <strong>' + data.endDate + '</strong><button onclick="sessionStorage.setItem(\'trial-banner-dismissed\',\'1\');this.parentElement.remove()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,0.8);font-size:18px;cursor:pointer;line-height:1;padding:0 4px;" aria-label="Dismiss">&times;</button>';
-                    document.body.appendChild(bar);
+                    var overlay = document.createElement('div');
+                    overlay.id = 'trial-slots-banner';
+                    overlay.style.cssText = 'position:fixed;inset:0;z-index:89999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);';
+                    overlay.innerHTML = '<div style="position:relative;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:18px;padding:28px 32px 24px;max-width:320px;width:90%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.35);">' +
+                        '<button onclick="sessionStorage.setItem(\'trial-banner-dismissed\',\'1\');document.getElementById(\'trial-slots-banner\').remove()" style="position:absolute;top:12px;right:14px;background:rgba(255,255,255,0.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;" aria-label="Dismiss">&times;</button>' +
+                        '<div style="font-size:38px;margin-bottom:10px;">🚀</div>' +
+                        '<div style="font-size:17px;font-weight:700;margin-bottom:6px;">Closed Beta Trial</div>' +
+                        '<div style="font-size:28px;font-weight:800;margin:8px 0;"><strong>' + data.slotsRemaining + '</strong> <span style="font-size:15px;font-weight:500;">of ' + data.maxUsers + ' spots left</span></div>' +
+                        '<div style="font-size:13px;opacity:0.85;margin-bottom:18px;">Closes on <strong>' + data.endDate + '</strong></div>' +
+                        '<button onclick="sessionStorage.setItem(\'trial-banner-dismissed\',\'1\');document.getElementById(\'trial-slots-banner\').remove()" style="background:#fff;color:#6366f1;border:none;padding:10px 28px;border-radius:999px;font-weight:700;font-size:14px;cursor:pointer;">Got it!</button>' +
+                    '</div>';
+                    overlay.addEventListener('click', function(e) {
+                        if (e.target === overlay) { sessionStorage.setItem('trial-banner-dismissed','1'); overlay.remove(); }
+                    });
+                    document.body.appendChild(overlay);
                 }
 
                 // Full or expired — block new signups with overlay

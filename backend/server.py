@@ -9341,6 +9341,11 @@ def google_login():
                 last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
             else:
+                # Check if this email/google_id was previously deleted by admin
+                cursor.execute(f'SELECT email FROM deleted_accounts WHERE email = {PH} OR google_id = {PH}', (email, google_id))
+                if cursor.fetchone():
+                    return jsonify({'success': False, 'message': 'This account has been removed. Contact support if you believe this is a mistake.'}), 403
+
                 # Check if email already registered (link accounts)
                 cursor.execute(f'SELECT id FROM users WHERE email = {PH}', (email,))
                 email_user = cursor.fetchone()

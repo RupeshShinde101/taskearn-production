@@ -512,6 +512,19 @@ def init_postgres_db():
                 UNIQUE(user_id)
             )
         ''')
+
+        # Deleted accounts blocklist — prevents re-registration via Google or email
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS deleted_accounts (
+                email VARCHAR(255) PRIMARY KEY,
+                google_id VARCHAR(255),
+                deleted_at TIMESTAMP DEFAULT NOW()
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id
+            ON deleted_accounts (google_id) WHERE google_id IS NOT NULL
+        ''')
         
         # Commit CREATE TABLEs and ensure clean transaction state for ALTER TABLEs
         conn.commit()
@@ -1004,6 +1017,15 @@ def init_sqlite_db():
         except Exception as e:
             print(f"[DB] ⚠️  User column migration error: {e}")
         
+        # Deleted accounts blocklist (SQLite)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS deleted_accounts (
+                email TEXT PRIMARY KEY,
+                google_id TEXT,
+                deleted_at TEXT
+            )
+        ''')
+
         try:
             cursor.execute('PRAGMA table_info(tasks)')
             columns = [row[1] for row in cursor.fetchall()]

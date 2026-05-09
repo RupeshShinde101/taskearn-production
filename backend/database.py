@@ -612,6 +612,13 @@ def init_postgres_db():
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE
         ''')
+
+        # Admin flag column
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE
+        ''')
+        # Grant admin to system user (id='1') if not already set
+        cursor.execute("UPDATE users SET is_admin = TRUE WHERE id = '1' AND (is_admin IS NULL OR is_admin = FALSE)")
         
         # Ensure service_charge column exists in tasks table (migration)
         print("[DB] Adding service_charge column to tasks table if missing...")
@@ -1025,6 +1032,16 @@ def init_sqlite_db():
                 deleted_at TEXT
             )
         ''')
+
+        try:
+            cursor.execute('PRAGMA table_info(users)')
+            user_columns = [row[1] for row in cursor.fetchall()]
+            if 'is_admin' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0')
+                cursor.execute("UPDATE users SET is_admin = 1 WHERE id = '1'")
+                print("[DB] \u2705 is_admin column added")
+        except Exception as e:
+            print(f"[DB] \u26a0\ufe0f  is_admin migration error: {e}")
 
         try:
             cursor.execute('PRAGMA table_info(tasks)')

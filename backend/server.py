@@ -51,7 +51,7 @@ if _has_limiter:
         get_remote_address,
         app=app,
         default_limits=[],
-        storage_uri="memory://"
+        storage_uri=os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
     )
 else:
     limiter = None
@@ -772,6 +772,35 @@ def require_auth(f):
         
         request.user_id = user_id
         request.user_email = payload['email']
+        return f(*args, **kwargs)
+    return decorated
+
+
+def require_admin(f):
+    """Decorator to require admin privileges (is_admin=True in DB)"""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # First ensure the user is authenticated
+        auth_header = request.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '')
+        if not token:
+            return jsonify({'success': False, 'message': 'Authentication required'}), 401
+        payload = verify_jwt_token(token)
+        if not payload:
+            return jsonify({'success': False, 'message': 'Invalid or expired token'}), 401
+        user_id = payload['user_id']
+        request.user_id = user_id
+        request.user_email = payload['email']
+        # Check is_admin flag
+        try:
+            with get_db() as (cursor, conn):
+                cursor.execute(f'SELECT is_admin FROM users WHERE id = {PH}', (user_id,))
+                row = cursor.fetchone()
+                if not row or not dict_from_row(row).get('is_admin'):
+                    return jsonify({'success': False, 'message': 'Admin access required'}), 403
+        except Exception:
+            return jsonify({'success': False, 'message': 'Admin access required'}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -6121,11 +6150,9 @@ def health_check():
 
 
 @app.route('/api/diagnostic', methods=['GET'])
-@require_auth
+@require_admin
 def diagnostic():
     """Diagnostic endpoint - admin only"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     return jsonify({
         'success': True,
         'message': 'Flask API is running correctly',
@@ -6135,11 +6162,9 @@ def diagnostic():
 
 
 @app.route('/api/init-db', methods=['POST'])
-@require_auth
+@require_admin
 def init_database_endpoint():
     """Manually initialize database tables - admin only"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         init_db()
         return jsonify({
@@ -6287,12 +6312,10 @@ def submit_contact_message():
 
 
 @app.route('/api/admin/contact-messages', methods=['GET'])
-@require_auth
+@require_admin
 def get_contact_messages():
     """Get all contact messages (admin only)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         with get_db() as (cursor, conn):
             cursor.execute(f'SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 100')
             messages = [dict_from_row(row) for row in cursor.fetchall()]
@@ -6428,12 +6451,10 @@ def submit_feedback():
 
 
 @app.route('/api/admin/feedback', methods=['GET'])
-@require_auth
+@require_admin
 def get_feedback_list():
     """Admin: list all feedback submissions."""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         with get_db() as (cursor, conn):
             cursor.execute('SELECT * FROM feedback ORDER BY created_at DESC LIMIT 200')
             rows = [dict_from_row(r) for r in cursor.fetchall()]
@@ -6566,13 +6587,11 @@ def clear_task_notifications(task_id):
 # ========================================
 
 @app.route('/api/admin/bank-details', methods=['POST'])
-@require_auth
+@require_admin
 def update_bank_details():
     """Update company bank details for settlements"""
     try:
         # Only admin can update bank details (user_id = 1)
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         data = request.get_json()
         account_number = data.get('account_number', '').strip()
@@ -6622,12 +6641,10 @@ def update_bank_details():
 
 
 @app.route('/api/admin/bank-details', methods=['GET'])
-@require_auth
+@require_admin
 def get_bank_details():
     """Get company bank details (masked)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
             cursor.execute('SELECT * FROM company_bank_details WHERE is_active = TRUE LIMIT 1')
@@ -6932,12 +6949,10 @@ def create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_h
 
 
 @app.route('/api/admin/process-settlement', methods=['POST'])
-@require_auth
+@require_admin
 def process_settlement():
     """Process platform settlement - transfer to bank account"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
             # Get bank details
@@ -7068,12 +7083,10 @@ def process_settlement():
 
 
 @app.route('/api/admin/settlements', methods=['GET'])
-@require_auth
+@require_admin
 def get_settlements():
     """Get settlement history"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         limit = request.args.get('limit', 30, type=int)
         offset = request.args.get('offset', 0, type=int)
@@ -7123,12 +7136,10 @@ def get_settlements():
 
 
 @app.route('/api/admin/settlement-stats', methods=['GET'])
-@require_auth
+@require_admin
 def get_settlement_stats():
     """Get settlement statistics"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
             # Get company wallet balance
@@ -7179,13 +7190,10 @@ def get_settlement_stats():
 
 
 @app.route('/api/admin/dashboard-stats', methods=['GET'])
-@require_auth
+@require_admin
 def get_admin_dashboard_stats():
     """Get comprehensive admin dashboard statistics with real data"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         # Mark stale active tasks as expired so admin sees correct status
         try:
             cleanup_old_tasks()
@@ -7398,12 +7406,10 @@ def log_admin_action(cursor, admin_id, action, resource_type, resource_id=None, 
 # ========================================
 
 @app.route('/api/admin/audit-log', methods=['GET'])
-@require_auth
+@require_admin
 def get_audit_log():
     """Get admin audit log entries"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         limit = min(int(request.args.get('limit', 50)), 200)
         offset = int(request.args.get('offset', 0))
@@ -7430,12 +7436,10 @@ def get_audit_log():
 # ========================================
 
 @app.route('/api/admin/refund', methods=['POST'])
-@require_auth
+@require_admin
 def admin_manual_refund():
     """Admin manually credits a user's wallet"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         data = request.get_json()
         target_user_id = data.get('user_id', '').strip()
@@ -7495,12 +7499,10 @@ def admin_manual_refund():
 # ========================================
 
 @app.route('/api/admin/tasks/<int:task_id>/hide', methods=['POST'])
-@require_auth
+@require_admin
 def admin_hide_task(task_id):
     """Admin hides/removes an inappropriate task"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         data = request.get_json() or {}
         reason = data.get('reason', 'Removed by admin').strip()
@@ -7526,12 +7528,10 @@ def admin_hide_task(task_id):
 
 
 @app.route('/api/admin/tasks/<int:task_id>/restore', methods=['POST'])
-@require_auth
+@require_admin
 def admin_restore_task(task_id):
     """Admin restores a hidden task back to active"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
             cursor.execute(f'SELECT id, status FROM tasks WHERE id = {PH}', (task_id,))
@@ -7554,13 +7554,10 @@ def admin_restore_task(task_id):
 # ========================================
 
 @app.route('/api/admin/analytics', methods=['GET'])
-@require_auth
+@require_admin
 def admin_analytics():
     """Get platform analytics for admin dashboard"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         # Mark stale active tasks as expired so analytics are accurate
         try:
             cleanup_old_tasks()
@@ -7642,13 +7639,10 @@ def admin_analytics():
 # ========================================
 
 @app.route('/api/admin/users/<user_id>/suspend', methods=['POST'])
-@require_auth
+@require_admin
 def admin_suspend_user(user_id):
     """Admin suspends a user (with optional duration)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         _ensure_suspension_columns()
         data = request.get_json() or {}
         reason = data.get('reason', 'Suspended by admin').strip()
@@ -7697,13 +7691,10 @@ def admin_suspend_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>/unsuspend', methods=['POST'])
-@require_auth
+@require_admin
 def admin_unsuspend_user(user_id):
     """Admin unsuspends a user"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         _ensure_suspension_columns()
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -7736,13 +7727,10 @@ def admin_unsuspend_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>/ban', methods=['POST'])
-@require_auth
+@require_admin
 def admin_ban_user(user_id):
     """Admin permanently bans a user (blocks login + all actions)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         _ensure_suspension_columns()
         data = request.get_json() or {}
         reason = data.get('reason', 'Banned by admin').strip()
@@ -7777,13 +7765,10 @@ def admin_ban_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>/unban', methods=['POST'])
-@require_auth
+@require_admin
 def admin_unban_user(user_id):
     """Admin lifts a permanent ban"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         _ensure_suspension_columns()
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -7816,13 +7801,10 @@ def admin_unban_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>', methods=['DELETE'])
-@require_auth
+@require_admin
 def admin_delete_user(user_id):
     """Admin permanently deletes a user and all their data"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         if user_id == '1':
             return jsonify({'success': False, 'message': 'Cannot delete admin user'}), 400
 
@@ -7851,13 +7833,10 @@ def admin_delete_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>/adjust-balance', methods=['POST'])
-@require_auth
+@require_admin
 def admin_adjust_balance(user_id):
     """Admin adjusts a user's wallet balance (add or deduct)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         data = request.get_json() or {}
         amount = float(data.get('amount', 0))
         reason = data.get('reason', '').strip()
@@ -7912,38 +7891,65 @@ def delete_account():
     """Delete user account and all associated data (GDPR right to be forgotten)"""
     data = request.get_json() or {}
     password = data.get('password', '')
-    
-    if not password:
-        return jsonify({'success': False, 'message': 'Password required to confirm deletion'}), 400
-    
+
     try:
         with get_db() as (cursor, conn):
-            # Verify password
-            cursor.execute(f'SELECT password_hash FROM users WHERE id = {PH}', (request.user_id,))
-            user = dict_from_row(cursor.fetchone())
+            # Fetch user: need password_hash, auth_provider, email, google_id
+            cursor.execute(
+                f'SELECT password_hash, auth_provider, email, google_id FROM users WHERE id = {PH}',
+                (request.user_id,)
+            )
+            user = cursor.fetchone()
             if not user:
                 return jsonify({'success': False, 'message': 'User not found'}), 404
-            
-            from werkzeug.security import check_password_hash
-            if not check_password_hash(user['password_hash'], password):
-                return jsonify({'success': False, 'message': 'Incorrect password'}), 401
-            
+            user = dict_from_row(user)
+
+            auth_provider = user.get('auth_provider', 'email')
+            user_email = user.get('email')
+            google_id = user.get('google_id')
+
+            # Password check: email users must provide correct password;
+            # Google-only users are already authenticated via JWT — skip password check
+            if auth_provider != 'google':
+                if not password:
+                    return jsonify({'success': False, 'message': 'Password required to confirm deletion'}), 400
+                from werkzeug.security import check_password_hash
+                if not check_password_hash(user['password_hash'], password):
+                    return jsonify({'success': False, 'message': 'Incorrect password'}), 401
+
             # Check for active tasks
-            cursor.execute(f"SELECT COUNT(*) as cnt FROM tasks WHERE (posted_by = {PH} OR accepted_by = {PH}) AND status IN ('active', 'accepted')", 
-                          (request.user_id, request.user_id))
+            cursor.execute(
+                f"SELECT COUNT(*) as cnt FROM tasks WHERE (posted_by = {PH} OR accepted_by = {PH}) AND status IN ('active', 'accepted')",
+                (request.user_id, request.user_id)
+            )
             active = dict_from_row(cursor.fetchone())
             if active and active['cnt'] > 0:
                 return jsonify({'success': False, 'message': 'Cannot delete account with active tasks. Complete or cancel them first.'}), 400
-            
+
             # Check for pending withdrawals
-            cursor.execute(f"SELECT COUNT(*) as cnt FROM withdrawal_requests WHERE user_id = {PH} AND status = 'pending'", (request.user_id,))
+            cursor.execute(
+                f"SELECT COUNT(*) as cnt FROM withdrawal_requests WHERE user_id = {PH} AND status = 'pending'",
+                (request.user_id,)
+            )
             pending = dict_from_row(cursor.fetchone())
             if pending and pending['cnt'] > 0:
                 return jsonify({'success': False, 'message': 'Cannot delete account with pending withdrawals.'}), 400
-            
+
             uid = request.user_id
-            
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            # Block the email/google_id so this user cannot re-register via Google
+            if user_email:
+                try:
+                    cursor.execute(
+                        f"INSERT INTO deleted_accounts (email, google_id, deleted_at) VALUES ({PH}, {PH}, {PH}) ON CONFLICT (email) DO NOTHING",
+                        (user_email, google_id, now)
+                    )
+                except Exception as e:
+                    print(f"[DELETE ACCOUNT] Warning: could not write deleted_accounts: {e}")
+
             # Delete user data in order (foreign key safe)
+            cursor.execute(f'DELETE FROM phone_otps WHERE user_id = {PH}', (uid,))
             cursor.execute(f'DELETE FROM notifications WHERE user_id = {PH}', (uid,))
             cursor.execute(f'DELETE FROM chat_messages WHERE sender_id = {PH} OR receiver_id = {PH}', (uid, uid))
             cursor.execute(f'DELETE FROM helper_ratings WHERE helper_id = {PH} OR rater_id = {PH}', (uid, uid))
@@ -7956,20 +7962,20 @@ def delete_account():
             cursor.execute(f'DELETE FROM withdrawal_requests WHERE user_id = {PH}', (uid,))
             cursor.execute(f'DELETE FROM sos_alerts WHERE user_id = {PH}', (uid,))
             cursor.execute(f'DELETE FROM contact_messages WHERE user_id = {PH}', (uid,))
-            
+
             # Anonymize completed tasks (keep for records but remove PII)
             cursor.execute(f"UPDATE tasks SET posted_by = NULL WHERE posted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
             cursor.execute(f"UPDATE tasks SET accepted_by = NULL WHERE accepted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
-            
+
             # Delete the user
             cursor.execute(f'DELETE FROM users WHERE id = {PH}', (uid,))
-            
+
             conn.commit()
-            
-            print(f"🗑️ Account deleted: user {uid}")
-        
+
+            print(f"🗑️ Account deleted: user {uid} ({user_email})")
+
         return jsonify({'success': True, 'message': 'Account deleted successfully'}), 200
-        
+
     except Exception as e:
         print(f"❌ Error deleting account: {e}")
         return jsonify({'success': False, 'message': 'Failed to delete account'}), 500
@@ -8053,11 +8059,9 @@ def get_user_disputes():
 
 
 @app.route('/api/admin/disputes', methods=['GET'])
-@require_auth
+@require_admin
 def admin_get_disputes():
     """Admin: get all disputes"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
     try:
         with get_db() as (cursor, conn):
@@ -8077,11 +8081,9 @@ def admin_get_disputes():
 
 
 @app.route('/api/admin/disputes/<int:dispute_id>/resolve', methods=['POST'])
-@require_auth
+@require_admin
 def admin_resolve_dispute(dispute_id):
     """Admin: resolve a dispute"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
     data = request.get_json()
     decision = data.get('decision', '').strip()
@@ -8614,7 +8616,7 @@ def get_blocked_users():
 # ========================================
 
 @app.route('/api/admin/reports', methods=['GET'])
-@require_auth
+@require_admin
 def get_reports():
     """Get all user reports (admin)"""
     status = request.args.get('status', 'pending')
@@ -8639,7 +8641,7 @@ def get_reports():
 
 
 @app.route('/api/admin/reports/<int:report_id>/resolve', methods=['POST'])
-@require_auth
+@require_admin
 def resolve_report(report_id):
     """Resolve a user report (admin)"""
     data = request.get_json()
@@ -8711,7 +8713,7 @@ def get_categories():
 
 
 @app.route('/api/admin/categories', methods=['POST'])
-@require_auth
+@require_admin
 def create_category():
     """Create a new task category (admin)"""
     data = request.get_json()
@@ -8746,7 +8748,7 @@ def create_category():
 
 
 @app.route('/api/admin/categories/<int:category_id>', methods=['PUT'])
-@require_auth
+@require_admin
 def update_category(category_id):
     """Update a task category (admin)"""
     data = request.get_json()
@@ -8780,7 +8782,7 @@ def update_category(category_id):
 
 
 @app.route('/api/admin/categories/<int:category_id>', methods=['DELETE'])
-@require_auth
+@require_admin
 def delete_category(category_id):
     """Soft-delete a task category (admin)"""
     try:
@@ -9179,11 +9181,9 @@ def get_kyc_status():
 
 
 @app.route('/api/admin/user/<user_id>/kyc', methods=['GET'])
-@require_auth
+@require_admin
 def admin_get_user_kyc(user_id):
     """Admin: get user KYC details including document image"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''
@@ -9214,7 +9214,7 @@ def admin_get_user_kyc(user_id):
 
 
 @app.route('/api/admin/kyc/<user_id>/verify', methods=['POST'])
-@require_auth
+@require_admin
 def admin_verify_kyc(user_id):
     """Admin: approve or reject KYC (admin)"""
     data = request.get_json()

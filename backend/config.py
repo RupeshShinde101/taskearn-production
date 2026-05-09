@@ -23,8 +23,8 @@ class Config:
     else:
         print("🔐 SECRET_KEY loaded from environment")
     
-    # JWT Settings
-    JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 24))
+    # JWT Settings — default 4h; set JWT_EXPIRATION_HOURS env var to override
+    JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 4))
     
     # Database URL
     # Format: postgresql://user:password@host:port/database

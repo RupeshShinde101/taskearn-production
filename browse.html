@@ -417,7 +417,7 @@
                 var sel = document.getElementById('filterCategory');
                 if (sel && cat) {
                     var opt = sel.querySelector('option[value="' + cat + '"]');
-                    if (opt) sel.value = cat;
+                    if (opt) { sel.value = cat; sel.dispatchEvent(new Event('change', { bubbles: true })); }
                 }
                 if (dist) {
                     var distEl = document.getElementById('filterDistance');

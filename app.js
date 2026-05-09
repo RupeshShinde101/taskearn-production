@@ -7009,7 +7009,8 @@ function applyFilters() {
 }
 
 function clearFilters() {
-    document.getElementById('filterCategory').value = 'all';
+    var _catEl = document.getElementById('filterCategory');
+    if (_catEl) { _catEl.value = 'all'; _catEl.dispatchEvent(new Event('change', { bubbles: true })); }
     document.getElementById('filterDistance').value = 10;
     document.getElementById('distanceValue').textContent = '10';
     document.getElementById('minBudget').value = '';
@@ -7021,7 +7022,8 @@ function clearFilters() {
 }
 
 function filterByCategory(cat) {
-    document.getElementById('filterCategory').value = cat;
+    var _catEl2 = document.getElementById('filterCategory');
+    if (_catEl2) { _catEl2.value = cat; _catEl2.dispatchEvent(new Event('change', { bubbles: true })); }
     applyFilters();
     scrollToSection('find-tasks');
 }

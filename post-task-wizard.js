@@ -427,6 +427,12 @@
     }
 
     if (document.readyState === 'loading') {
+        // Upgrade legacy modal HTML NOW (synchronously) while the DOM is already available
+        // (scripts at bottom of <body> can access the DOM even before DOMContentLoaded).
+        // This ensures category-picker.js's autoInit() — which fires on DOMContentLoaded,
+        // after this registration — will find the new #modalTaskCategory from the wizard
+        // markup rather than the stale legacy <select> that gets destroyed by the upgrade.
+        autoUpgradeLegacyModal();
         document.addEventListener('DOMContentLoaded', init);
     } else {
         init();

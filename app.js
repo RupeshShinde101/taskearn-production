@@ -7355,7 +7355,7 @@ function setupEventListeners() {
     // Close modals on backdrop click
     document.querySelectorAll('.modal').forEach(m => {
         m.onclick = function(e) {
-            if (e.target === this) {
+            if (e.target === this && !this.getAttribute('data-required')) {
                 this.classList.remove('active');
                 if (!document.querySelector('.modal.active')) {
                     document.body.classList.remove('modal-open');
@@ -7368,8 +7368,10 @@ function setupEventListeners() {
     // Escape key
     document.onkeydown = function(e) {
         if (e.key === 'Escape') {
-            document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active'));
-            document.body.classList.remove('modal-open');
+            document.querySelectorAll('.modal.active').forEach(m => {
+                if (!m.getAttribute('data-required')) m.classList.remove('active');
+            });
+            if (!document.querySelector('.modal.active')) document.body.classList.remove('modal-open');
             clearRoute();
         }
     };
@@ -7857,11 +7859,11 @@ function showCompleteProfileModal() {
                     <i class="fas fa-check"></i> Save & Continue
                 </button>
             </form>
-            <button onclick="closeModal('completeProfileModal')" style="width:100%;margin-top:8px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:13px;padding:8px;">
-                I'll do this later
-            </button>
         </div>`;
+    modal.setAttribute('data-required', '1');
     document.body.appendChild(modal);
+    // Prevent backdrop click from dismissing
+    modal.onclick = function(e) { if (e.target === modal) e.stopImmediatePropagation(); };
 }
 
 async function submitCompleteProfile(e) {

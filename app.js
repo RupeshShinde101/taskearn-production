@@ -7781,16 +7781,39 @@ async function handleGoogleCredentialResponse(response) {
         showToast('❌ Google login cancelled', 'error');
         return;
     }
-    
+
+    // If the Google button is in the signup modal, grab the invite code
+    const signupModal = document.getElementById('signupModal');
+    const inviteField = document.getElementById('signupInviteCode');
+    const isSignupContext = signupModal && signupModal.classList.contains('active');
+    let inviteCode = '';
+
+    if (isSignupContext && inviteField) {
+        inviteCode = inviteField.value.trim().toUpperCase();
+        if (!inviteCode) {
+            // Scroll to and highlight the invite code field
+            inviteField.focus();
+            inviteField.style.borderColor = '#ef4444';
+            inviteField.style.boxShadow = '0 0 0 3px rgba(239,68,68,0.2)';
+            setTimeout(() => {
+                inviteField.style.borderColor = '';
+                inviteField.style.boxShadow = '';
+            }, 3000);
+            showToast('❌ Please enter your invite code first', 'error');
+            return;
+        }
+    }
+
     try {
-        // Send the ID token to our backend
+        // Send the ID token (and invite code if present) to our backend
         const result = await apiRequest('/auth/google', {
             method: 'POST',
             body: JSON.stringify({
-                credential: response.credential
+                credential: response.credential,
+                invite_code: inviteCode
             })
         });
-        
+
         if (result.success && result.data && result.data.success) {
             // Store token - data is nested inside result.data
             if (result.data.token) {

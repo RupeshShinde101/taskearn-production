@@ -9303,6 +9303,7 @@ def google_login():
     """Login or register via Google ID token"""
     data = request.get_json()
     id_token = data.get('credential', '')
+    invite_code = (data.get('invite_code') or '').strip().upper()
 
     if not id_token:
         return jsonify({'success': False, 'message': 'Google credential is required'}), 400
@@ -9337,7 +9338,7 @@ def google_login():
             existing = cursor.fetchone()
 
             if existing:
-                # Existing Google user — login
+                # Existing Google user — login (no invite code needed)
                 user_id = dict_from_row(existing)['id']
                 last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
@@ -9347,7 +9348,7 @@ def google_login():
                 if cursor.fetchone():
                     return jsonify({'success': False, 'message': 'This account has been removed. Contact support if you believe this is a mistake.'}), 403
 
-                # Check if email already registered (link accounts)
+                # Check if email already registered (link accounts — also no invite needed)
                 cursor.execute(f'SELECT id FROM users WHERE email = {PH}', (email,))
                 email_user = cursor.fetchone()
 
@@ -9358,7 +9359,26 @@ def google_login():
                         WHERE id = {PH}
                     ''', (google_id, user_id))
                 else:
-                    # New user — register
+                    # Brand-new user — apply trial checks before creating account
+                    if config.TRIAL_ACTIVE:
+                        import datetime as _dt
+                        # Validate invite code
+                        if invite_code != config.TRIAL_INVITE_CODE.upper():
+                            return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.', 'needsInviteCode': True}), 403
+                        # Check trial end date
+                        try:
+                            end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
+                        except ValueError:
+                            end_date = _dt.date.today() + _dt.timedelta(days=30)
+                        if _dt.date.today() > end_date:
+                            return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
+                        # Check user cap
+                        cursor.execute('SELECT COUNT(*) as cnt FROM users')
+                        row = dict_from_row(cursor.fetchone())
+                        if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
+                            return jsonify({'success': False, 'message': "All trial spots are taken. We'll notify you when we launch publicly!"}), 403
+
+                    # Register new Google user
                     user_id = generate_user_id()
                     joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
                     # Google users get a random password (they never use it)

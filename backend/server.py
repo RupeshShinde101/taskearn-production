@@ -221,6 +221,8 @@ PH = get_placeholder()
 # ========================================
 
 _suspension_columns_ensured = False
+_last_cleanup_time = None  # throttle cleanup_old_tasks to at most once per 5 min
+_last_user_tasks_cleanup = None  # throttle 48h cleanup in /api/user/tasks
 
 def _ensure_suspension_columns():
     """Ensure suspension-related columns exist in the users table (one-time check per process)"""
@@ -1864,72 +1866,65 @@ def get_tasks():
     limit = request.args.get('limit', 20, type=int)
     limit = min(max(limit, 1), 100)  # clamp 1-100
     
-    print(f"\n[GET /api/tasks] Fetching tasks at {now}")
-    
-    # Mark expired tasks and notify posters on each fetch
+    # Throttle cleanup: run at most once every 5 minutes per process
+    global _last_cleanup_time
     try:
-        cleanup_old_tasks()
+        _now_dt = datetime.datetime.now(datetime.timezone.utc)
+        if _last_cleanup_time is None or (_now_dt - _last_cleanup_time).total_seconds() > 300:
+            _last_cleanup_time = _now_dt
+            try:
+                cleanup_old_tasks()
+            except Exception:
+                pass
     except Exception:
         pass
     
     try:
         with get_db() as (cursor, conn):
-            # Build query
-            base_where = f"WHERE status = 'active' AND expires_at > {PH}"
+            # Build query — JOIN users to avoid N+1 queries per task
+            base_where = f"WHERE t.status = 'active' AND t.expires_at > {PH}"
             
             if page is not None:
                 # Paginated mode
-                cursor.execute(f'SELECT COUNT(*) as total FROM tasks {base_where}', (now,))
+                cursor.execute(f'SELECT COUNT(*) as total FROM tasks t {base_where}', (now,))
                 total = dict_from_row(cursor.fetchone())['total']
                 
                 offset = (page - 1) * limit
                 cursor.execute(f'''
-                    SELECT id, title, description, category, location_lat, location_lng, 
-                           location_address, price, service_charge, posted_by, posted_at, expires_at, status
-                    FROM tasks
+                    SELECT t.id, t.title, t.description, t.category,
+                           t.location_lat, t.location_lng, t.location_address,
+                           t.price, t.service_charge, t.posted_by, t.posted_at, t.expires_at, t.status,
+                           COALESCE(u.name, 'Anonymous') AS poster_name,
+                           COALESCE(u.rating, 5.0)       AS poster_rating,
+                           COALESCE(u.tasks_posted, 0)   AS poster_tasks
+                    FROM tasks t
+                    LEFT JOIN users u ON u.id = t.posted_by
                     {base_where}
-                    ORDER BY posted_at DESC
+                    ORDER BY t.posted_at DESC
                     LIMIT {PH} OFFSET {PH}
                 ''', (now, limit, offset))
             else:
-                # Legacy: return all (with safety limit)
+                # Legacy: return all active (with safety limit), single JOIN
                 total = None
                 cursor.execute(f'''
-                    SELECT id, title, description, category, location_lat, location_lng, 
-                           location_address, price, service_charge, posted_by, posted_at, expires_at, status
-                    FROM tasks
+                    SELECT t.id, t.title, t.description, t.category,
+                           t.location_lat, t.location_lng, t.location_address,
+                           t.price, t.service_charge, t.posted_by, t.posted_at, t.expires_at, t.status,
+                           COALESCE(u.name, 'Anonymous') AS poster_name,
+                           COALESCE(u.rating, 5.0)       AS poster_rating,
+                           COALESCE(u.tasks_posted, 0)   AS poster_tasks
+                    FROM tasks t
+                    LEFT JOIN users u ON u.id = t.posted_by
                     {base_where}
-                    ORDER BY posted_at DESC
+                    ORDER BY t.posted_at DESC
                     LIMIT 200
                 ''', (now,))
             
             rows = cursor.fetchall()
-            print(f"[GET /api/tasks] Found {len(rows)} active tasks")
             
             task_list = []
-            for task in rows:
-                task = dict_from_row(task)
-                
-                # Get poster info separately
-                poster_name = 'Anonymous'
-                poster_phone = ''
-                poster_rating = 5.0
-                poster_tasks = 0
-                
-                try:
-                    poster_id = task.get('posted_by')
-                    if poster_id:
-                        # Do NOT fetch phone — this is a public endpoint
-                        cursor.execute(f'SELECT name, rating, tasks_posted FROM users WHERE id = {PH}', (poster_id,))
-                        user_row = cursor.fetchone()
-                        if user_row:
-                            user = dict_from_row(user_row)
-                            poster_name = user.get('name', 'Anonymous')
-                            poster_rating = float(user.get('rating', 5.0))
-                            poster_tasks = int(user.get('tasks_posted', 0))
-                except:
-                    pass  # Use defaults if user not found
-                
+            for row in rows:
+                task = dict_from_row(row)
                 task_list.append({
                     'id': task['id'],
                     'title': task['title'],
@@ -1941,24 +1936,19 @@ def get_tasks():
                         'address': task['location_address']
                     },
                     'price': float(task['price']),
-                    'service_charge': float(task.get('service_charge', 0)),
+                    'service_charge': float(task.get('service_charge') or 0),
                     'postedBy': {
                         'id': task.get('posted_by'),
-                        'name': poster_name,
-                        # phone deliberately omitted — only exposed on accepted-task auth'd routes
-                        'rating': poster_rating,
-                        'tasksPosted': poster_tasks
+                        'name': task['poster_name'],
+                        'rating': float(task['poster_rating']),
+                        'tasksPosted': int(task['poster_tasks'])
                     },
                     'postedAt': task['posted_at'],
                     'expiresAt': task['expires_at'],
                     'status': task['status']
                 })
         
-        print(f"[GET /api/tasks] Returning {len(task_list)} tasks to client")
-        response = {
-            'success': True,
-            'tasks': task_list
-        }
+        response = {'success': True, 'tasks': task_list}
         if total is not None:
             response['pagination'] = {
                 'page': page,
@@ -3532,61 +3522,71 @@ def pay_helper(task_id):
 @require_auth
 def get_user_tasks():
     """Get current user's tasks"""
-    with get_db() as (cursor, conn):
-        # --- 48-hour cleanup: wipe paid tasks older than 48 hours ---
-        # Wrapped in try/except so cleanup errors never break this endpoint.
-        try:
-            if config.USE_POSTGRES:
-                cutoff_expr = "NOW() - INTERVAL '48 hours'"
-            else:
-                cutoff_expr = "datetime('now', '-48 hours')"
-            # Collect expired paid task IDs first
-            cursor.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
-            old_task_rows = cursor.fetchall()
-            old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_task_rows]
-            if old_ids:
-                ids_str = ','.join(old_ids)
-                # Delete from all FK-referencing tables before deleting the tasks
-                for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                   'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
-                    try:
-                        cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
-                    except Exception:
-                        pass  # table may not exist or already clean
-                cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
-                conn.commit()
-        except Exception as cleanup_err:
-            print(f'[/api/user/tasks] 48h cleanup skipped: {cleanup_err}')
-            try:
-                conn.rollback()
-            except Exception:
-                pass
+    # Throttle the 48h cleanup: run at most once every 5 minutes per process
+    global _last_user_tasks_cleanup
+    _run_48h_cleanup = False
+    try:
+        import datetime as _dt_utc
+        _now_utc = _dt_utc.datetime.now(_dt_utc.timezone.utc)
+        if _last_user_tasks_cleanup is None or (_now_utc - _last_user_tasks_cleanup).total_seconds() > 300:
+            _last_user_tasks_cleanup = _now_utc
+            _run_48h_cleanup = True
+    except Exception:
+        pass
 
-        # --- 48-hour cleanup: also wipe completed tasks (new flow) older than 48 hours ---
-        try:
-            if config.USE_POSTGRES:
-                cutoff_expr = "NOW() - INTERVAL '48 hours'"
-            else:
-                cutoff_expr = "datetime('now', '-48 hours')"
-            cursor.execute(f"SELECT id FROM tasks WHERE status = 'completed' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
-            completed_old_rows = cursor.fetchall()
-            completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
-            if completed_old_ids:
-                ids_str = ','.join(completed_old_ids)
-                for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                   'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
-                    try:
-                        cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
-                    except Exception:
-                        pass
-                cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
-                conn.commit()
-        except Exception as cleanup_err2:
-            print(f'[/api/user/tasks] completed 48h cleanup skipped: {cleanup_err2}')
+    with get_db() as (cursor, conn):
+        if _run_48h_cleanup:
+            # --- 48-hour cleanup: wipe paid tasks older than 48 hours ---
             try:
-                conn.rollback()
-            except Exception:
-                pass
+                if config.USE_POSTGRES:
+                    cutoff_expr = "NOW() - INTERVAL '48 hours'"
+                else:
+                    cutoff_expr = "datetime('now', '-48 hours')"
+                cursor.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
+                old_task_rows = cursor.fetchall()
+                old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_task_rows]
+                if old_ids:
+                    ids_str = ','.join(old_ids)
+                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
+                                       'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
+                        try:
+                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
+                        except Exception:
+                            pass
+                    cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
+                    conn.commit()
+            except Exception as cleanup_err:
+                print(f'[/api/user/tasks] 48h cleanup skipped: {cleanup_err}')
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+            # --- 48-hour cleanup: also wipe completed tasks (new flow) older than 48 hours ---
+            try:
+                if config.USE_POSTGRES:
+                    cutoff_expr = "NOW() - INTERVAL '48 hours'"
+                else:
+                    cutoff_expr = "datetime('now', '-48 hours')"
+                cursor.execute(f"SELECT id FROM tasks WHERE status = 'completed' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
+                completed_old_rows = cursor.fetchall()
+                completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
+                if completed_old_ids:
+                    ids_str = ','.join(completed_old_ids)
+                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
+                                       'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
+                        try:
+                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
+                        except Exception:
+                            pass
+                    cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
+                    conn.commit()
+            except Exception as cleanup_err2:
+                print(f'[/api/user/tasks] completed 48h cleanup skipped: {cleanup_err2}')
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
         # Posted tasks - ALL statuses, join helper info for accepted/completed/paid tasks
         cursor.execute(f'''

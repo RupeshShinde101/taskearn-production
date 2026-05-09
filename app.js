@@ -1068,6 +1068,11 @@ async function loadRecommendedTasks() {
 }
 
 async function loadCategoryCounts() {
+    // If tasks are already loaded locally, compute from them — no extra API call
+    if (tasks && tasks.length > 0) {
+        updateCategoryCardsFromTasks();
+        return;
+    }
     try {
         if (typeof TasksAPI !== 'undefined' && TasksAPI.getCategoryCounts) {
             const result = await TasksAPI.getCategoryCounts();
@@ -1076,7 +1081,6 @@ async function loadCategoryCounts() {
                 return;
             }
         }
-        // Fallback: compute from already-loaded tasks array
         updateCategoryCardsFromTasks();
     } catch (e) {
         console.warn('Category counts fetch failed, using local tasks:', e.message);
@@ -1924,6 +1928,16 @@ async function syncUserTasksFromServer() {
             showToast(`💰 ${awaitingPayment.length} task(s) completed and awaiting your payment!`, 5000);
         }
 
+        // Derive userActiveTask from synced data — avoids a separate /user/active-task API call
+        try {
+            const _activeFromSync = myAcceptedTasks.find(function(t) { return t.status === 'accepted'; });
+            userActiveTask = _activeFromSync
+                ? { id: _activeFromSync.id, title: _activeFromSync.title, price: _activeFromSync.price,
+                    category: _activeFromSync.category, acceptedAt: _activeFromSync.acceptedAt }
+                : null;
+            refreshActiveTaskBanner();
+        } catch (_e) {}
+
     } catch (e) {
         console.warn('syncUserTasksFromServer failed:', e.message);
     }
@@ -2325,30 +2339,24 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Event listener setup failed:', e.message);
         }
         
-        // Sync user tasks independently so they load even if getAll fails
-        if (currentUser) {
-            try {
-                await syncUserTasksFromServer();
-                renderDashboard();
-            } catch (e) {
-                console.warn('⚠️ Initial user task sync failed:', e.message);
-            }
-        }
-
-        // Load tasks and category counts in PARALLEL (not serial)
+        // Load all server data in parallel (tasks + user tasks + suspension in one batch)
         try {
-            await Promise.all([
-                loadTasksFromServer().catch(e => console.warn('⚠️ Could not load tasks from server:', e.message)),
-                loadCategoryCounts().catch(e => console.warn('⚠️ Category counts failed:', e.message))
-            ]);
+            const parallelLoads = [
+                loadTasksFromServer().catch(e => console.warn('⚠️ Could not load tasks from server:', e.message))
+            ];
+            if (currentUser) {
+                parallelLoads.push(
+                    syncUserTasksFromServer().catch(e => console.warn('⚠️ User task sync failed:', e.message))
+                );
+            }
+            await Promise.all(parallelLoads);
         } catch (e) {
             console.warn('⚠️ Parallel load failed:', e.message);
         }
-
-        // Check user's active accepted task (one-task-at-a-time enforcement)
-        if (currentUser) {
-            fetchUserActiveTask().catch(e => console.warn('⚠️ Active task check failed:', e.message));
-        }
+        // Category counts derived from now-loaded tasks array — no extra API call
+        try { updateCategoryCardsFromTasks(); } catch (e) {}
+        // userActiveTask already derived inside syncUserTasksFromServer
+        if (currentUser) { renderDashboard(); }
 
         // Load AI recommended tasks (after main tasks so userLocation is set)
         loadRecommendedTasks().catch(e => console.log('Recommendations unavailable:', e.message));

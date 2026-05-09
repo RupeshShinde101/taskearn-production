@@ -2308,7 +2308,20 @@ def accept_task(task_id):
             # Can't accept own task
             if task['posted_by'] == request.user_id:
                 return jsonify({'success': False, 'message': 'Cannot accept your own task'}), 400
-            
+
+            # Enforce one task at a time: helper cannot accept a new task while one is already active
+            cursor.execute(f'SELECT id, title FROM tasks WHERE accepted_by = {PH} AND status = {PH}', (request.user_id, 'accepted'))
+            existing_task = cursor.fetchone()
+            if existing_task:
+                existing_task = dict_from_row(existing_task)
+                return jsonify({
+                    'success': False,
+                    'message': 'You already have an active task in progress. Complete or release your current task before accepting a new one.',
+                    'hasActiveTask': True,
+                    'activeTaskId': existing_task['id'],
+                    'activeTaskTitle': existing_task['title']
+                }), 409
+
             # Accept task
             accepted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cursor.execute(f'''
@@ -3684,6 +3697,38 @@ def get_user_active_tracking():
         'success': True,
         'tasks': tasks
     })
+
+
+@app.route('/api/user/active-task', methods=['GET'])
+@require_auth
+def get_user_active_task():
+    """Return the current user's active accepted task (as helper), if any.
+    Used by the browse page to enforce the one-task-at-a-time rule."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, title, price, category, accepted_at
+                FROM tasks WHERE accepted_by = {PH} AND status = {PH}
+                LIMIT 1
+            ''', (request.user_id, 'accepted'))
+            task = cursor.fetchone()
+            if task:
+                task = dict_from_row(task)
+                return jsonify({
+                    'success': True,
+                    'hasActiveTask': True,
+                    'task': {
+                        'id': task['id'],
+                        'title': task['title'],
+                        'price': float(task['price']),
+                        'category': task['category'],
+                        'acceptedAt': task['accepted_at']
+                    }
+                })
+            return jsonify({'success': True, 'hasActiveTask': False, 'task': None})
+    except Exception as e:
+        print(f'❌ Error in get_user_active_task: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ========================================

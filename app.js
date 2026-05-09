@@ -979,6 +979,7 @@ let tasks = [];
 let myPostedTasks = [];
 let myAcceptedTasks = [];
 let myCompletedTasks = [];
+let userActiveTask = null; // Helper's current active (accepted) task — enforces one task at a time
 let myPaidPostedTasks = []; // Poster's paid/completed task history (for rating helper)
 
 // ========================================
@@ -988,6 +989,39 @@ let myPaidPostedTasks = []; // Poster's paid/completed task history (for rating 
 // ========================================
 // AI-MATCHED RECOMMENDED TASKS
 // ========================================
+
+// ========================================
+// ONE TASK AT A TIME
+// ========================================
+
+async function fetchUserActiveTask() {
+    if (!currentUser) { userActiveTask = null; refreshActiveTaskBanner(); return; }
+    try {
+        const result = await apiRequest('/user/active-task', { method: 'GET' });
+        if (result && result.success !== undefined) {
+            userActiveTask = (result.hasActiveTask && result.task) ? result.task : null;
+        }
+    } catch (e) {
+        console.warn('⚠️ Could not fetch active task:', e.message);
+    }
+    refreshActiveTaskBanner();
+}
+
+function refreshActiveTaskBanner() {
+    var banner = document.getElementById('activeTaskBanner');
+    if (!banner) return;
+    if (userActiveTask) {
+        banner.innerHTML =
+            '<div class="active-task-alert">' +
+            '<i class="fas fa-clock"></i>' +
+            '<span><strong>Active task:</strong> ' + escapeHtml(userActiveTask.title || '') + '</span>' +
+            '<a href="task-in-progress.html?taskId=' + userActiveTask.id + '" class="active-task-alert-link">' +
+            '<i class="fas fa-arrow-right"></i> Continue</a></div>';
+        banner.style.display = 'block';
+    } else {
+        banner.style.display = 'none';
+    }
+}
 
 async function loadRecommendedTasks() {
     const container = document.getElementById('recommendedTasksList');
@@ -2311,6 +2345,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Parallel load failed:', e.message);
         }
 
+        // Check user's active accepted task (one-task-at-a-time enforcement)
+        if (currentUser) {
+            fetchUserActiveTask().catch(e => console.warn('⚠️ Active task check failed:', e.message));
+        }
+
         // Load AI recommended tasks (after main tasks so userLocation is set)
         loadRecommendedTasks().catch(e => console.log('Recommendations unavailable:', e.message));
 
@@ -2948,9 +2987,9 @@ function renderTasks(filtered = null) {
                     ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
                     <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft}</span>
                 </div>
-                ${!isOwn ? `<button class="task-card-accept-btn" data-accept-task-id="${task.id}">
-                    <i class="fas fa-check"></i> Accept Task
-                </button>` : ''}
+                ${!isOwn ? (userActiveTask
+                    ? `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`
+                    : `<button class="task-card-accept-btn" data-accept-task-id="${task.id}"><i class="fas fa-check"></i> Accept Task</button>`) : ''}
             </div>
         `;
     }).join('');
@@ -3092,9 +3131,9 @@ function openTaskDetail(taskId) {
             <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
                 <i class="fas fa-map-marker-alt"></i> Navigate
             </button>
-            <button class="btn btn-primary modal-accept-btn" data-accept-task-id="${task.id}" style="flex: 1; padding: 12px; margin: 5px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="acceptTask(${task.id})">
-                <i class="fas fa-check"></i> Accept
-            </button>
+            ${userActiveTask
+                ? `<a href="task-in-progress.html?taskId=${userActiveTask.id}" class="btn btn-primary" style="flex: 1; padding: 12px; margin: 5px; background: #f59e0b; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px;"><i class="fas fa-arrow-right"></i> View Active Task</a>`
+                : `<button class="btn btn-primary modal-accept-btn" data-accept-task-id="${task.id}" style="flex: 1; padding: 12px; margin: 5px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="acceptTask(${task.id})"><i class="fas fa-check"></i> Accept</button>`}
             ` : ''}
         </div>
     `;
@@ -3456,6 +3495,13 @@ async function acceptTask(taskId) {
             if (data && data.needsKyc) {
                 try { closeModal('taskDetailModal'); } catch(e) {}
                 showKYCRequiredPopup('accept tasks');
+            } else if (data && data.hasActiveTask) {
+                // User already has an active task — update local state and refresh UI
+                userActiveTask = { id: data.activeTaskId, title: data.activeTaskTitle };
+                refreshActiveTaskBanner();
+                try { closeModal('taskDetailModal'); } catch(e) {}
+                showToast('⚠️ You already have an active task. Complete it before accepting another.');
+                renderTasks();
             } else {
                 showToast('❌ ' + errorMsg);
             }
@@ -4017,7 +4063,10 @@ async function penaltyConfirmRelease() {
 
     showToast('✅ Task released. ₹' + penalty + ' penalty deducted from wallet.');
     pendingReleaseTaskId = null;
+    userActiveTask = null;
+    refreshActiveTaskBanner();
     renderDashboard();
+    renderTasks();
 }
 
 async function abandonTask(taskId) {
@@ -5328,7 +5377,10 @@ async function handleLogin(event) {
                 // ✅ FIX: Load tasks from server FIRST, then render UI
                 // This ensures the marketplace shows newly posted tasks from other accounts
                 const tasksLoaded = await loadTasksFromServer();
-                
+
+                // Check active task state for one-task-at-a-time enforcement
+                fetchUserActiveTask().catch(e => console.warn('Active task check failed:', e.message));
+
                 // Render dashboard after tasks are fully loaded
                 setTimeout(() => renderDashboard(), 100);
                 

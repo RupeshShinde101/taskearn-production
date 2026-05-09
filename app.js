@@ -6512,8 +6512,9 @@ window.closeRatingPopup = closeRatingPopup;
 
 async function submitTaskRating() {
     const taskId = document.getElementById('ratingTaskId')?.value;
-    const selectedStar = document.querySelector('#taskRatingPopup .rating-star.selected');
-    const rating = selectedStar ? parseInt(selectedStar.dataset.value) : 0;
+    // querySelectorAll returns all selected stars (1 through N); take the last one's value
+    const selectedStars = document.querySelectorAll('#taskRatingPopup .rating-star.selected');
+    const rating = selectedStars.length ? parseInt(selectedStars[selectedStars.length - 1].dataset.value) : 0;
     const review = document.getElementById('ratingReviewText')?.value.trim() || '';
     if (!rating) { closeRatingPopup(); return; }
     const token = localStorage.getItem('taskearn_token');

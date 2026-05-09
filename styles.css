@@ -6696,8 +6696,10 @@ section {
 
 @media (max-width: 540px) {
     .modal-content.wm-wizard-modal {
-        height: 100vh;
-        max-height: 100vh;
+        /* dvh = dynamic viewport height: shrinks when virtual keyboard opens,
+           keeping the Next button always visible above the keyboard */
+        height: 100dvh;
+        max-height: 100dvh;
         width: 100vw;
         max-width: 100vw;
         border-radius: 0;

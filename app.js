@@ -2136,13 +2136,13 @@ document.addEventListener('DOMContentLoaded', async function() {
                 var data = await resp.json();
                 if (!data.trial) return; // trial mode disabled by admin
 
-                // Show slim banner with slots remaining (always visible during active trial)
-                if (data.active && !document.getElementById('trial-slots-banner')) {
+                // Show slim banner with slots remaining — fixed at bottom, dismissible
+                if (data.active && !document.getElementById('trial-slots-banner') && !sessionStorage.getItem('trial-banner-dismissed')) {
                     var bar = document.createElement('div');
                     bar.id = 'trial-slots-banner';
-                    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:89999;background:linear-gradient(90deg,#6366f1,#8b5cf6);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:6px 16px;letter-spacing:0.01em;';
-                    bar.innerHTML = '🚀 Beta Trial &nbsp;|&nbsp; <strong>' + data.slotsRemaining + ' of ' + data.maxUsers + '</strong> spots remaining &nbsp;&middot;&nbsp; Closes <strong>' + data.endDate + '</strong>';
-                    document.body.insertBefore(bar, document.body.firstChild);
+                    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:89999;background:linear-gradient(90deg,#6366f1,#8b5cf6);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:7px 44px 7px 16px;letter-spacing:0.01em;box-shadow:0 -2px 10px rgba(0,0,0,0.18);';
+                    bar.innerHTML = '🚀 Beta Trial &nbsp;|&nbsp; <strong>' + data.slotsRemaining + ' of ' + data.maxUsers + '</strong> spots remaining &nbsp;&middot;&nbsp; Closes <strong>' + data.endDate + '</strong><button onclick="sessionStorage.setItem(\'trial-banner-dismissed\',\'1\');this.parentElement.remove()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,0.8);font-size:18px;cursor:pointer;line-height:1;padding:0 4px;" aria-label="Dismiss">&times;</button>';
+                    document.body.appendChild(bar);
                 }
 
                 // Full or expired — block new signups with overlay
@@ -2154,12 +2154,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                     document.querySelectorAll('#signupModal, [onclick*="signupModal"], [data-modal="signupModal"]').forEach(function(el) {
                         el.style.pointerEvents = 'none'; el.style.opacity = '0.5';
                     });
-                    // Show closed banner
+                    // Show closed banner at bottom
                     var closedBar = document.createElement('div');
                     closedBar.id = 'trial-closed-banner';
-                    closedBar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:89999;background:#dc2626;color:#fff;text-align:center;font-size:13px;font-weight:600;padding:8px 16px;';
+                    closedBar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:89999;background:#dc2626;color:#fff;text-align:center;font-size:13px;font-weight:600;padding:8px 16px;box-shadow:0 -2px 10px rgba(0,0,0,0.18);';
                     closedBar.innerHTML = '🔒 Trial Closed &mdash; ' + msg + ' Public launch coming soon!';
-                    document.body.insertBefore(closedBar, document.body.firstChild);
+                    document.body.appendChild(closedBar);
                 }
             } catch (e) { /* silently ignore — trial status fetch is non-critical */ }
         })();

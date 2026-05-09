@@ -183,6 +183,36 @@ except Exception as e:
     print(f"⚠️  Error initializing database: {e}")
     print("   Database may already be initialized or connection issue")
 
+def ensure_platform_account():
+    """Create the platform system account (user_id='1') if it doesn't exist.
+    This account holds company revenue (commission, platform_fee, penalty income).
+    """
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f"SELECT id FROM users WHERE id = {PH}", ('1',))
+            if not cursor.fetchone():
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f"""
+                    INSERT INTO users (id, name, email, password_hash, joined_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                """, ('1', 'Platform Account', 'platform@internal.taskern', 'PLATFORM_NO_AUTH', now))
+                print("✅ Platform user account created (id='1')")
+            cursor.execute(f"SELECT id FROM wallets WHERE user_id = {PH}", ('1',))
+            if not cursor.fetchone():
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f"""
+                    INSERT INTO wallets (user_id, balance, total_added, total_spent, total_earned, total_cashback, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                """, ('1', 0, 0, 0, 0, 0, now))
+                print("✅ Platform wallet created (user_id='1')")
+    except Exception as e:
+        print(f"⚠️  Could not ensure platform account: {e}")
+
+try:
+    ensure_platform_account()
+except Exception as e:
+    print(f"⚠️  Platform account setup failed: {e}")
+
 # Placeholder for SQL queries (? for SQLite, %s for PostgreSQL)
 PH = get_placeholder()
 

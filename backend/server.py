@@ -2213,103 +2213,99 @@ def create_task():
 @app.route('/api/tasks/<int:task_id>/accept', methods=['POST'])
 @require_auth
 def accept_task(task_id):
-    """Accept a task"""
+    """Accept a task — all checks + write done in a single DB connection"""
+    import json as _json_acc
     try:
-        # Check phone number is set (required to contact task poster)
-        user_check = get_user_by_id(request.user_id)
-        if user_check and not user_check.get('phone'):
-            return jsonify({'success': False, 'message': 'Please add your phone number in Profile before accepting tasks. It is required so the task poster can contact you.', 'needsPhone': True}), 400
-
-        # KYC must be verified to accept tasks
-        kyc_status_acc = (user_check.get('kyc_status') if user_check else None) or 'none'
-        if kyc_status_acc not in ('approved', 'verified'):
-            return jsonify({
-                'success': False,
-                'message': 'KYC verification is required before accepting tasks. Please complete KYC in your Profile.',
-                'needsKyc': True,
-                'kycStatus': kyc_status_acc
-            }), 403
-
-        # Ensure suspension columns exist
+        # _ensure_suspension_columns is guarded by a flag; noop after first call
         _ensure_suspension_columns()
 
-        # Server-side suspension check (admin + timer + ban)
-        cursor_user = None
+        poster_id = None
+        helper_name = 'Someone'
+        task = None
+
         with get_db() as (cursor, conn):
-            try:
-                cursor.execute(f'SELECT is_suspended, suspended_until, suspension_reason, is_banned FROM users WHERE id = {PH}', (request.user_id,))
-            except Exception:
-                # Fallback if is_banned column doesn't exist yet
-                conn.rollback()
-                cursor.execute(f'SELECT is_suspended, suspended_until, suspension_reason FROM users WHERE id = {PH}', (request.user_id,))
-            cursor_user = cursor.fetchone()
-        
-        if cursor_user:
-            user_dict = dict_from_row(cursor_user) if not isinstance(cursor_user, dict) else cursor_user
-            
-            # Check permanent ban first
-            if user_dict.get('is_banned'):
+            # ── 1. Fetch user + wallet balance in one query ──────────────────
+            cursor.execute(f'''
+                SELECT u.id, u.name, u.phone, u.kyc_status,
+                       u.is_suspended, u.suspended_until, u.suspension_reason, u.is_banned,
+                       COALESCE(w.balance, 0) AS wallet_balance
+                FROM users u
+                LEFT JOIN wallets w ON w.user_id = u.id
+                WHERE u.id = {PH}
+            ''', (request.user_id,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            u = dict_from_row(user_row)
+
+            # ── 2. Phone check ────────────────────────────────────────────────
+            if not u.get('phone'):
+                return jsonify({
+                    'success': False,
+                    'message': 'Please add your phone number in Profile before accepting tasks. It is required so the task poster can contact you.',
+                    'needsPhone': True
+                }), 400
+
+            # ── 3. KYC check ─────────────────────────────────────────────────
+            kyc_status_acc = u.get('kyc_status') or 'none'
+            if kyc_status_acc not in ('approved', 'verified'):
+                return jsonify({
+                    'success': False,
+                    'message': 'KYC verification is required before accepting tasks. Please complete KYC in your Profile.',
+                    'needsKyc': True,
+                    'kycStatus': kyc_status_acc
+                }), 403
+
+            # ── 4. Ban / suspension checks ───────────────────────────────────
+            if u.get('is_banned'):
                 return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
-            
-            # Check admin suspension (is_suspended=True without suspended_until = permanent admin suspension)
-            is_suspended = user_dict.get('is_suspended', False)
-            sus_until = user_dict.get('suspended_until')
-            sus_reason = user_dict.get('suspension_reason', '')
-            
+
+            is_suspended = u.get('is_suspended', False)
+            sus_until = u.get('suspended_until')
+            sus_reason = u.get('suspension_reason', '')
+
             if is_suspended and not sus_until:
-                # Admin-imposed suspension (no expiry) — block
                 return jsonify({'success': False, 'message': f'Your account is suspended by admin. Reason: {sus_reason or "Contact support"}'}), 403
-            
+
             if sus_until:
                 try:
-                    if isinstance(sus_until, str):
-                        sus_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
-                    else:
-                        sus_dt = sus_until
+                    sus_dt = datetime.datetime.fromisoformat(str(sus_until).replace('Z', '+00:00')) if isinstance(sus_until, str) else sus_until
                     if sus_dt.tzinfo is None:
                         sus_dt = sus_dt.replace(tzinfo=datetime.timezone.utc)
                     if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
                         return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
                     else:
-                        # Timer suspension expired — clear it and notify user
+                        # Timer expired — clear inline (non-critical)
                         try:
-                            with get_db() as (cur2, conn2):
-                                cur2.execute(f'UPDATE users SET is_suspended = {PH}, suspended_until = {PH}, suspension_reason = {PH} WHERE id = {PH}',
-                                             (False, None, None, request.user_id))
-                                import json as _json2
-                                _now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                                cur2.execute(f'''
-                                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
-                                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                                ''', (request.user_id, 'account_restored',
-                                      'Account Restored! ✅',
-                                      'Your suspension period has ended. You can now accept tasks again.',
-                                      'unread', _json2.dumps({'type': 'system'}), _now))
+                            _now_s = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            cursor.execute(f'UPDATE users SET is_suspended = {PH}, suspended_until = {PH}, suspension_reason = {PH} WHERE id = {PH}',
+                                           (False, None, None, request.user_id))
+                            cursor.execute(f'''
+                                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                            ''', (request.user_id, 'account_restored', 'Account Restored! ✅',
+                                  'Your suspension period has ended. You can now accept tasks again.',
+                                  'unread', _json_acc.dumps({'type': 'system'}), _now_s))
                         except Exception:
-                            pass  # Non-critical, continue allowing task acceptance
-                except:
+                            pass
+                except Exception:
                     pass
-        
-        # Check debt suspension
-        wallet = get_or_create_wallet(request.user_id)
-        if float(wallet.get('balance', 0)) < 0:
-            return jsonify({'success': False, 'message': 'Your wallet balance is negative. Add money to bring it back to ₹0 to restore task acceptance.'}), 403
 
-        with get_db() as (cursor, conn):
-            # Check if task exists and is active
+            # ── 5. Wallet debt check ─────────────────────────────────────────
+            if float(u.get('wallet_balance', 0)) < 0:
+                return jsonify({'success': False, 'message': 'Your wallet balance is negative. Add money to bring it back to ₹0 to restore task acceptance.'}), 403
+
+            # ── 6. Fetch task (must be active) ───────────────────────────────
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
-            task = cursor.fetchone()
-            
-            if not task:
+            task_row = cursor.fetchone()
+            if not task_row:
                 return jsonify({'success': False, 'message': 'Task not found or already taken'}), 404
-            
-            task = dict_from_row(task)
-            
-            # Can't accept own task
+            task = dict_from_row(task_row)
+
             if task['posted_by'] == request.user_id:
                 return jsonify({'success': False, 'message': 'Cannot accept your own task'}), 400
 
-            # Enforce one task at a time: helper cannot accept a new task while one is already active
+            # ── 7. One-task-at-a-time check ──────────────────────────────────
             cursor.execute(f'SELECT id, title FROM tasks WHERE accepted_by = {PH} AND status = {PH}', (request.user_id, 'accepted'))
             existing_task = cursor.fetchone()
             if existing_task:
@@ -2322,52 +2318,39 @@ def accept_task(task_id):
                     'activeTaskTitle': existing_task['title']
                 }), 409
 
-            # Accept task
+            # ── 8. Accept + notify (all in same transaction) ─────────────────
+            helper_name = u.get('name') or 'Someone'
             accepted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cursor.execute(f'''
                 UPDATE tasks SET status = 'accepted', accepted_by = {PH}, accepted_at = {PH}
                 WHERE id = {PH}
             ''', (request.user_id, accepted_at, task_id))
-            
-            # Create notification for task poster
+
             poster_id = task['posted_by']
-            cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (request.user_id,))
-            helper_row = cursor.fetchone()
-            helper_name = (dict_from_row(helper_row) if helper_row else {}).get('name', 'Someone')
-            
-            import json
-            action_data = json.dumps({
-                'type': 'task',
-                'label': '👁️ View Task',
-                'taskId': task_id
-            })
+            action_data = _json_acc.dumps({'type': 'task', 'label': '👁️ View Task', 'taskId': task_id})
+
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (poster_id, task_id, 'task_accepted',
-                  'Task Accepted! 🎉',
+            ''', (poster_id, task_id, 'task_accepted', 'Task Accepted! 🎉',
                   f'{helper_name} has accepted your task "{task["title"]}". Budget: ₹{task["price"]}',
                   'unread', action_data, accepted_at))
-            
-            # Create confirmation notification for helper
+
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (request.user_id, task_id, 'task_assigned',
-                  'Task Assigned! 📌',
+            ''', (request.user_id, task_id, 'task_assigned', 'Task Assigned! 📌',
                   f'You accepted "{task["title"]}". Budget: ₹{task["price"]}. Complete it before the poster cancels!',
                   'unread', action_data, accepted_at))
 
-        # Send email notification to poster
+        # ── 9. Email (non-critical, outside DB block) ─────────────────────────
         try:
             notify_task_accepted_email(poster_id, helper_name, task['title'])
         except Exception:
             pass
-        
-        return jsonify({
-            'success': True,
-            'message': 'Task accepted successfully'
-        })
+
+        return jsonify({'success': True, 'message': 'Task accepted successfully'})
+
     except Exception as e:
         print(f"❌ Error in accept_task: {e}")
         import traceback
@@ -4141,7 +4124,6 @@ def get_or_create_wallet(user_id):
             wallet = cursor.fetchone()
         
         wallet_dict = dict_from_row(wallet)
-        print(f"[DEBUG] get_or_create_wallet for {user_id}: {wallet_dict}")
         return wallet_dict
 
 

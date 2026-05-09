@@ -431,52 +431,6 @@ initIndexedDB().then(dbAvailable => {
     }
 });
 
-// ========================================
-// SECURE PASSWORD HASHING (Web Crypto API)
-// ========================================
-
-// Generate cryptographically secure random salt
-function generateSalt(length = 16) {
-    const array = new Uint8Array(length);
-    crypto.getRandomValues(array);
-    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-// Hash password with salt using SHA-256
-async function hashPassword(password, salt) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(salt + password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
-    return hashHex;
-}
-
-// Create secure password hash with new salt
-async function createPasswordHash(password) {
-    const salt = generateSalt();
-    const hash = await hashPassword(password, salt);
-    return { salt, hash };
-}
-
-// Verify password against stored hash
-async function verifyPassword(password, storedSalt, storedHash) {
-    const hash = await hashPassword(password, storedSalt);
-    return hash === storedHash;
-}
-
-// Generate secure session token
-function generateSessionToken() {
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-// Generate unique user ID
-function generateUserId() {
-    return 'TE' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
-}
-
 // Get all registered users (with IndexedDB fallback)
 async function getStoredUsersAsync() {
     // Try localStorage first
@@ -575,60 +529,7 @@ function saveUsers(users) {
     }
 }
 
-// Get user by email
-function getUserByEmail(email) {
-    const users = getStoredUsers();
-    return Object.values(users).find(u => u.email.toLowerCase() === email.toLowerCase());
-}
-
-// Get user by email (async with IndexedDB fallback)
-async function getUserByEmailAsync(email) {
-    const users = await getStoredUsersAsync();
-    return Object.values(users).find(u => u.email.toLowerCase() === email.toLowerCase());
-}
-
-// Register new user with secure password hashing
-async function registerUser(userData) {
-    // Use async to get users from both localStorage and IndexedDB
-    const users = await getStoredUsersAsync();
-    const userId = generateUserId();
-    
-    // Hash password with salt using SHA-256
-    const { salt, hash } = await createPasswordHash(userData.password);
-    
-    const newUser = {
-        id: userId,
-        name: userData.name,
-        email: userData.email.toLowerCase(),
-        passwordHash: hash,      // Store hash, never plain password
-        passwordSalt: salt,      // Store salt for verification
-        phone: userData.phone || '',
-        dob: userData.dob,
-        rating: 5.0,
-        tasksPosted: 0,
-        tasksCompleted: 0,
-        totalEarnings: 0,
-        joinedAt: new Date().toISOString(),
-        sessionToken: generateSessionToken(), // Secure session token
-        postedTasks: [],
-        acceptedTasks: [],
-        completedTasks: []
-    };
-    
-    users[userId] = newUser;
-    
-    // Save to both localStorage and IndexedDB
-    const saved = await saveUsersAsync(users);
-    if (!saved) {
-        console.error('❌ Failed to save user data!');
-    } else {
-        console.log('✅ New user registered:', newUser.email);
-    }
-    
-    return newUser;
-}
-
-// Update user data
+// Serialize task for storage (convert dates to ISO strings, remove circular refs)
 async function updateUserData(userId, updates) {
     const users = await getStoredUsersAsync();
     // Create user entry if it doesn't exist yet (e.g., registered via backend API)
@@ -827,94 +728,6 @@ function clearCurrentSession() {
     }
 }
 
-// Validate login with secure password verification
-async function validateLogin(email, password) {
-    // Use async version to check both localStorage and IndexedDB
-    const user = await getUserByEmailAsync(email);
-    if (!user) {
-        console.log('❌ Login failed: No user found with email:', email);
-        return null;
-    }
-    
-    console.log('🔐 Found user, verifying password for:', user.name);
-    
-    // Support legacy plain-text passwords (migration)
-    if (user.password && !user.passwordHash) {
-        console.log('🔄 Legacy password detected, checking...');
-        if (user.password === password) {
-            // Migrate to hashed password
-            await migrateUserPassword(user.id, password);
-            return await getUserByEmailAsync(email); // Return updated user
-        }
-        console.log('❌ Legacy password mismatch');
-        return null;
-    }
-    
-    // Verify hashed password
-    if (user.passwordHash && user.passwordSalt) {
-        console.log('🔐 Verifying hashed password...');
-        const isValid = await verifyPassword(password, user.passwordSalt, user.passwordHash);
-        if (isValid) {
-            console.log('✅ Password verified successfully');
-            // Refresh session token on login
-            const users = await getStoredUsersAsync();
-            users[user.id].sessionToken = generateSessionToken();
-            users[user.id].lastLogin = new Date().toISOString();
-            await saveUsersAsync(users);
-            return users[user.id];
-        } else {
-            console.log('❌ Password hash mismatch');
-        }
-    } else {
-        console.log('❌ No password hash found for user');
-    }
-    
-    return null;
-}
-
-// Migrate legacy plain-text password to hashed
-async function migrateUserPassword(userId, plainPassword) {
-    const users = await getStoredUsersAsync();
-    if (users[userId]) {
-        const { salt, hash } = await createPasswordHash(plainPassword);
-        users[userId].passwordHash = hash;
-        users[userId].passwordSalt = salt;
-        users[userId].sessionToken = generateSessionToken();
-        delete users[userId].password; // Remove plain-text password
-        await saveUsersAsync(users);
-        console.log('✅ User password migrated to secure hash');
-    }
-}
-
-// Debug function to reset a user's password (for troubleshooting)
-async function resetUserPassword(email, newPassword) {
-    const users = await getStoredUsersAsync();
-    const user = Object.values(users).find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (user) {
-        const { salt, hash } = await createPasswordHash(newPassword);
-        users[user.id].passwordHash = hash;
-        users[user.id].passwordSalt = salt;
-        await saveUsersAsync(users);
-        console.log('✅ Password reset for:', email);
-        return true;
-    }
-    console.log('❌ User not found:', email);
-    return false;
-}
-
-// Debug: List all users
-async function debugListUsers() {
-    const users = await getStoredUsersAsync();
-    console.log('=== All Registered Users ===');
-    Object.values(users).forEach(u => {
-        console.log(`- ${u.name} (${u.email}) - ID: ${u.id}`);
-        console.log(`  Has passwordHash: ${!!u.passwordHash}, Has salt: ${!!u.passwordSalt}`);
-    });
-    return users;
-}
-
-// Debug functions removed from window scope for production security
-
 // Serialize task for storage (convert dates to ISO strings, remove circular refs)
 function serializeTask(task) {
     return {
@@ -968,31 +781,13 @@ function deserializeTasks(tasks) {
     return tasks.map(t => deserializeTask(t));
 }
 
-// Task Data - Initially empty, loaded from server
-// Demo tasks are only shown if server is unavailable
+// Task data — loaded from server on init
 let tasks = [];
-
-// Demo tasks for offline/fallback mode
-// PRODUCTION MODE - NO DEMO DATA
-// All data comes from the production API backend
-
 let myPostedTasks = [];
 let myAcceptedTasks = [];
 let myCompletedTasks = [];
 let userActiveTask = null; // Helper's current active (accepted) task — enforces one task at a time
 let myPaidPostedTasks = []; // Poster's paid/completed task history (for rating helper)
-
-// ========================================
-// LIVE CATEGORY COUNTS
-// ========================================
-
-// ========================================
-// AI-MATCHED RECOMMENDED TASKS
-// ========================================
-
-// ========================================
-// ONE TASK AT A TIME
-// ========================================
 
 async function fetchUserActiveTask() {
     if (!currentUser) { userActiveTask = null; refreshActiveTaskBanner(); return; }
@@ -5280,9 +5075,6 @@ async function handleTaskSubmit(event) {
     // Show success modal with edit option
     showTaskPostedSuccess(newTask);
 }
-
-// Check if backend API is healthy and available
-async function checkBackendHealth() { return false; }
 
 // Check if user has proper backend authentication
 function isUserBackendAuthenticated() {

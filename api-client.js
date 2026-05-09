@@ -617,7 +617,7 @@ const AuthAPI = {
     
     // Check if logged in
     isLoggedIn() {
-        return !!authToken;
+        return !!localStorage.getItem('taskearn_token');
     },
     
     // Get stored user
@@ -1155,15 +1155,6 @@ const KYCAPI = {
     }
 };
 
-// Push Notifications API removed — stub returns to keep any cached
-// frontend code from crashing if it still tries to call PushAPI methods.
-const PushAPI = {
-    getVapidKey: async () => ({ success: false, message: 'Push notifications removed' }),
-    subscribe:   async () => ({ success: false, message: 'Push notifications removed' }),
-    unsubscribe: async () => ({ success: false, message: 'Push notifications removed' }),
-    test:        async () => ({ success: false, message: 'Push notifications removed' })
-};
-
 // Export for use
 window.AuthAPI = AuthAPI;
 window.UserAPI = UserAPI;
@@ -1180,14 +1171,11 @@ window.SearchAPI = SearchAPI;
 window.ReportAPI = ReportAPI;
 window.CategoriesAPI = CategoriesAPI;
 window.KYCAPI = KYCAPI;
-window.PushAPI = PushAPI;
 window.checkBackendHealth = checkBackendHealth;
 
 // Log backend status on load
 checkBackendHealth().then(healthy => {
-    if (healthy) {
-        console.log('✅ Backend server connected');
-    } else {
-        console.warn('⚠️ Backend server not available. Run: python backend/server.py');
+    if (!healthy) {
+        console.warn('⚠️ Backend server not available');
     }
 });

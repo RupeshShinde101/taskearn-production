@@ -70,6 +70,10 @@ let isGPSActive = false;
 let modalTaskCoords = null; // Stores picked location for task posting
 let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 
+// Categories that carry a distance-based service charge (Delivery / Pick&Drop).
+// All other categories have NO service charge — only the 5% posting fee applies.
+const DELIVERY_CATEGORIES = new Set(['delivery', 'pickup', 'transport', 'moving']);
+
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
     // Distance-based categories (Delivery / Moving / Pick&Drop): ₹10–₹40 scaled by km.
@@ -115,8 +119,10 @@ const SERVICE_CHARGES = {
 };
 
 function getServiceCharge(category, distanceKm) {
+    // Service charge ONLY for Delivery/Pick&Drop categories.
+    if (!DELIVERY_CATEGORIES.has(category)) return 0;
     const info = SERVICE_CHARGES[category];
-    // Distance-based categories: ₹10–₹40 scaled by km when known.
+    // Distance-based: ₹10–₹40 scaled by km when known.
     if (info && info.distance) {
         if (typeof distanceKm === 'number' && distanceKm > 0) {
             const base = category === 'moving' ? 20 : 10;
@@ -125,17 +131,20 @@ function getServiceCharge(category, distanceKm) {
         }
         return info.charge;
     }
-    return info?.charge || 50;
+    return info?.charge || 0;
 }
 
 function getServiceChargeInfo(category) {
     return SERVICE_CHARGES[category] || SERVICE_CHARGES['other'];
 }
 
-// Returns the per-category service charge for a task object, honouring any
-// saved service_charge value. Falls back to the category default.
+// Returns the per-category service charge for a task object.
+// Service charge ONLY applies to Delivery/Pick&Drop categories.
+// All other categories return 0 regardless of any stored value.
 function getTaskServiceCharge(task) {
     if (!task) return 0;
+    // Non-delivery categories: always 0 (override any legacy stored value)
+    if (!DELIVERY_CATEGORIES.has(task.category)) return 0;
     if (task.service_charge !== undefined && task.service_charge !== null && task.service_charge !== '') {
         return parseFloat(task.service_charge) || 0;
     }
@@ -3140,23 +3149,25 @@ function openTaskDetail(taskId) {
             <div class="price-breakdown-row">
                 <span>Budget</span><span>₹${parseFloat(task.price).toFixed(2)}</span>
             </div>
+            ${getTaskServiceCharge(task) > 0 ? `
             <div class="price-breakdown-row">
-                <span>Service Charge</span><span>+₹${getTaskServiceCharge(task).toFixed(2)}</span>
+                <span>Service Charge <small>(Delivery/Distance)</small></span><span>+₹${getTaskServiceCharge(task).toFixed(2)}</span>
             </div>
             <div class="price-breakdown-row price-breakdown-subtotal">
                 <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
-            </div>
+            </div>` : ''}
             <div class="price-breakdown-row" style="color:#f59e0b;">
-                <span>Posting Fee (5%)</span><span>+₹${getTaskPlatformFee(task).toFixed(2)}</span>
+                <span>Platform Fee (5%)</span><span>+₹${getTaskPlatformFee(task).toFixed(2)}</span>
             </div>
             <div class="price-breakdown-row price-breakdown-total">
                 <h3>Total You Pay</h3><span class="price">₹${Math.round(getTaskFinalValue(task))}</span>
             </div>
         </div>` : `
         <div class="task-detail-price task-detail-price-breakdown">
+            ${getTaskServiceCharge(task) > 0 ? `
             <div class="price-breakdown-row" style="color:var(--text-secondary);">
                 <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
-            </div>
+            </div>` : ''}
             <div class="price-breakdown-row price-breakdown-total">
                 <div><h3>You Earn</h3><small>After 12% platform commission</small></div>
                 <span class="price">₹${Math.round(getHelperEarnings(task))}</span>
@@ -4975,16 +4986,17 @@ async function showPaymentInvoice(taskId) {
                     <span style="color: #ccc;">Budget (Task Price)</span>
                     <span style="color: #fff; font-weight: 600;">₹${taskAmount.toFixed(2)}</span>
                 </div>
+                ${serviceCharge > 0 ? `
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <span style="color: #ccc;">Service Charge</span>
-                    <span style="color: #fbbf24; font-weight: 600;">${serviceCharge > 0 ? '+₹' + serviceCharge.toFixed(2) : '₹0.00'}</span>
+                    <span style="color: #ccc;">Service Charge <span style="font-size:11px;opacity:0.7;">(Delivery/Distance)</span></span>
+                    <span style="color: #fbbf24; font-weight: 600;">+₹${serviceCharge.toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 700;">
                     <span style="color: #fff;">Task Value</span>
                     <span style="color: #fff;">₹${totalTaskValue.toFixed(2)}</span>
-                </div>
+                </div>` : ''}
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <span style="color: #ccc;">Posting Fee (5%)</span>
+                    <span style="color: #ccc;">Platform Fee (5%)</span>
                     <span style="color: #fbbf24; font-weight: 600;">+₹${posterFee.toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; padding: 12px 0 0 0; border-top: 2px solid rgba(139, 92, 246, 0.4); font-size: 18px; font-weight: 800;">
@@ -6931,7 +6943,7 @@ function renderCompletedTasks() {
         pendingHTML = `<div style="margin-bottom:20px;">
             <h4 style="margin:0 0 12px;color:#059669;"><i class="fas fa-hand-holding-usd"></i> Payment Received — Tap to Finalize</h4>
             ${pendingComplete.map(t => {
-                const earned = t.earnedAmount || (getTaskFinalValue(t) * 0.88);
+                const earned = t.earnedAmount || Math.round(getHelperEarnings(t) * 100) / 100;
                 return `<div class="my-task-card" style="border:2px solid #10b981;">
                     <div class="my-task-card-header">
                         <span class="task-category">${formatCategory(t.category)}</span>
@@ -6950,7 +6962,7 @@ function renderCompletedTasks() {
     // Calculate total earned (after 12% commission)
     const totalEarned = visible.reduce((s, t) => {
         if (t.earnedAmount) return s + t.earnedAmount;
-        return s + (getTaskFinalValue(t) * 0.88);
+        return s + Math.round(getHelperEarnings(t) * 100) / 100;
     }, 0);
 
     el.innerHTML = `
@@ -7349,10 +7361,11 @@ function updateTotalBudgetDisplay() {
     
     const total = baseBudget + currentBonus;
     
-    // Get service charge based on selected category (distance-aware for pick&drop / delivery / moving).
+    // Get service charge based on selected category.
+    // Service charge ONLY for Delivery/Pick&Drop categories; 0 for everything else.
     const category = document.getElementById('modalTaskCategory')?.value || 'other';
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const serviceCharge = getServiceCharge(category, distanceKm);
+    const serviceCharge = getServiceCharge(category, distanceKm); // 0 for non-delivery
     const chargeInfo = getServiceChargeInfo(category);
 
     // Task Posting Fee = 5% of (budget + service charge). Applies to all categories.
@@ -7402,9 +7415,9 @@ function updateTotalBudgetDisplay() {
     // Always show the platform-fee row (applies to all categories).
     const platformRow = platformFeeDisplay ? platformFeeDisplay.closest('.charge-row') : null;
     if (platformRow) platformRow.style.display = '';
-    // Always show the service-charge row (applies to all categories).
-    const feeRow = serviceChargeDisplay ? serviceChargeDisplay.closest('.charge-row') : null;
-    const timeRow = serviceChargeTime ? serviceChargeTime.closest('.charge-row') : null;
+    // Show service-charge row ONLY for Delivery/Pick&Drop categories.
+    const feeRow = document.getElementById('serviceChargeRow');
+    const timeRow = document.getElementById('serviceChargeTimeRow');
     if (feeRow) feeRow.style.display = serviceCharge > 0 ? '' : 'none';
     if (timeRow) timeRow.style.display = serviceCharge > 0 ? '' : 'none';
 }

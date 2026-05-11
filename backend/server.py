@@ -606,35 +606,22 @@ def flag_task_content(title, description):
 
 
 def get_service_charge(category):
-    """Return service charge for the given category. Aligned with frontend SERVICE_CHARGES.
-    Note: the 5% Task Posting Fee (platform fee) is separate and applies to all categories."""
-    service_charges = {
-        # Pick & Drop — distance-based on frontend; 0 flat service charge on backend (platform fee still applies)
-        'transport': 0,
-        # Quick tasks (15-30 mins) — distance-based on frontend; default flat here
-        'delivery': 15, 'pickup': 30, 'document': 30,
-        'errand': 35,
-
-        # Medium tasks (1-2 hours) — ₹40-50
-        'groceries': 40, 'laundry': 40, 'shopping': 40,
-        'gardening': 50, 'cleaning': 50, 'cooking': 50,
-
-        # Skilled tasks (2-4 hours) — ₹60-70
-        'repair': 60, 'assembly': 60, 'tech-support': 60,
-        'event-help': 60, 'tailoring': 60, 'beauty': 60, 'petcare': 60,
-
-        # Time-intensive tasks (3-6 hours) — ₹70-80
-        'tutoring': 70, 'babysitting': 70, 'fitness': 70,
-        'photography': 70, 'painting': 70, 'moving': 80,
-        'eldercare': 80,
-
-        # Professional/High-skill tasks — ₹90-100
-        'carpentry': 90, 'electrician': 100, 'plumbing': 100,
-
-        # Vehicle related — ₹40
-        'vehicle': 40
+    """Return service charge for the given category.
+    Service charge ONLY applies to Delivery/Pick&Drop categories (delivery, pickup, transport, moving).
+    All other categories return 0 — only the 5% platform fee applies to them.
+    Note: the 5% Platform Fee is separate and applies to ALL categories."""
+    # Only Delivery/Pick&Drop categories carry a service charge
+    DELIVERY_CATEGORIES = {'delivery', 'pickup', 'transport', 'moving'}
+    if category not in DELIVERY_CATEGORIES:
+        return 0
+    # Flat fallback on backend (frontend uses distance-aware calculation)
+    delivery_charges = {
+        'delivery': 15,
+        'pickup':   15,
+        'transport': 15,
+        'moving':   40,
     }
-    return service_charges.get(category, 50)
+    return delivery_charges.get(category, 15)
 
 
 def get_user_by_email(email):

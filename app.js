@@ -3050,12 +3050,20 @@ function renderTasks(filtered = null) {
                             </div>
                         </div>
                     </div>
-                    ${!isOwn ? (myAcceptedTasks.some(at => at.status === 'in_progress' || at.status === 'accepted')
-                        ? `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`
-                        : `<div class="tc-action-row">
-                            <button class="task-card-accept-btn tc-accept-main" data-accept-task-id="${task.id}"><i class="fas fa-check-circle"></i> Accept Task</button>
-                            <button class="tc-share-btn" onclick="event.stopPropagation(); shareTask(${task.id});" title="Share on WhatsApp"><i class="fab fa-whatsapp"></i></button>
-                           </div>`) : ''}
+                    ${!isOwn ? (() => {
+                        const myAccepted = myAcceptedTasks.find(at => at.id === task.id && (at.status === 'accepted' || at.status === 'in_progress'));
+                        if (myAccepted) {
+                            // Helper has accepted THIS task — show share button
+                            return `<div class="tc-action-row">
+                                <button class="task-card-accept-btn tc-accept-main task-card-accept-locked" disabled><i class="fas fa-check-circle"></i> Accepted</button>
+                                <button class="tc-share-btn" onclick="event.stopPropagation(); shareTask(${task.id});" title="Share task on WhatsApp"><i class="fab fa-whatsapp"></i></button>
+                            </div>`;
+                        }
+                        if (myAcceptedTasks.some(at => at.status === 'in_progress' || at.status === 'accepted')) {
+                            return `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`;
+                        }
+                        return `<button class="task-card-accept-btn" data-accept-task-id="${task.id}"><i class="fas fa-check-circle"></i> Accept Task</button>`;
+                    })() : ''}
                 </div>
             </div>
         `;

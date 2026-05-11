@@ -3675,33 +3675,89 @@ section {
 /* Empty State */
 .empty-state {
     text-align: center;
-    padding: 60px 30px;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.04) 0%, rgba(14, 165, 233, 0.04) 100%);
-    border-radius: var(--radius-lg);
-    border: 2px dashed rgba(99, 102, 241, 0.15);
+    padding: 64px 32px 56px;
+    background: linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(139,92,246,0.04) 100%);
+    border-radius: 20px;
+    border: 2px dashed rgba(99,102,241,0.18);
+    grid-column: 1 / -1;
 }
 
-.empty-state i {
-    font-size: 4rem;
-    background: var(--gradient);
+.empty-state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.12));
+    margin-bottom: 20px;
+}
+.empty-state-icon i {
+    font-size: 2rem;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-bottom: 20px;
-    opacity: 0.6;
 }
 
 .empty-state h3 {
+    font-size: 1.3rem;
+    font-weight: 700;
     margin-bottom: 10px;
     color: var(--dark);
 }
 
 .empty-state p {
     color: var(--gray);
-    margin-bottom: 25px;
-    max-width: 400px;
+    font-size: 0.97rem;
+    line-height: 1.6;
+    margin-bottom: 28px;
+    max-width: 380px;
     margin-left: auto;
     margin-right: auto;
+}
+
+.empty-state-tips {
+    display: inline-flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 28px;
+}
+.empty-state-tips span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: var(--white);
+    border: 1px solid rgba(99,102,241,0.18);
+    border-radius: 20px;
+    font-size: 0.82rem;
+    color: #6366f1;
+    font-weight: 500;
+}
+.empty-state-tips i { font-size: 0.78rem; }
+
+.empty-state-reset {
+    font-size: 0.88rem;
+    padding: 9px 22px;
+    border-color: rgba(99,102,241,0.35);
+    color: #6366f1;
+    border-radius: 10px;
+}
+.empty-state-reset:hover {
+    background: #6366f1;
+    color: #fff;
+    border-color: #6366f1;
+}
+
+[data-theme="dark"] .empty-state {
+    background: linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.06) 100%);
+    border-color: rgba(99,102,241,0.25);
+}
+[data-theme="dark"] .empty-state-tips span {
+    background: var(--card-bg);
+    border-color: rgba(99,102,241,0.25);
 }
 
 /* Responsive Design */

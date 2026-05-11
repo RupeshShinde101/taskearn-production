@@ -2932,9 +2932,15 @@ function renderTasks(filtered = null) {
     if (list.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <i class="fas fa-search"></i>
+                <div class="empty-state-icon"><i class="fas fa-magnifying-glass"></i></div>
                 <h3>No tasks available</h3>
-                <p>No nearby tasks match your filters right now. Try widening your distance or budget range, or check back later.</p>
+                <p>No nearby tasks match your filters right now.<br>Try widening your distance or budget range, or check back later.</p>
+                <div class="empty-state-tips">
+                    <span><i class="fas fa-location-dot"></i> Increase distance</span>
+                    <span><i class="fas fa-indian-rupee-sign"></i> Adjust budget</span>
+                    <span><i class="fas fa-rotate-right"></i> Refresh later</span>
+                </div>
+                <button class="btn btn-outline empty-state-reset" onclick="clearFilters()"><i class="fas fa-times-circle"></i> Clear Filters</button>
             </div>
         `;
         return;

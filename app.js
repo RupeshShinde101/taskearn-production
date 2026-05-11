@@ -2945,6 +2945,46 @@ function renderTasks(filtered = null) {
     const displayList = showAll ? list : list.slice(0, INITIAL_SHOW);
     const hasMore = list.length > INITIAL_SHOW;
 
+    // Update (or inject) the toolbar above the card grid
+    let toolbar = document.getElementById('tasksToolbar');
+    if (!toolbar) {
+        toolbar = document.createElement('div');
+        toolbar.id = 'tasksToolbar';
+        toolbar.className = 'tasks-toolbar';
+        container.parentNode.insertBefore(toolbar, container);
+    }
+    const sortVal = container.dataset.sort || 'distance';
+    toolbar.innerHTML = `
+        <div class="tt-left">
+            <span class="tt-count"><i class="fas fa-bolt" style="color:#6366f1;"></i> <strong>${list.length}</strong> tasks available</span>
+        </div>
+        <div class="tt-right">
+            <label class="tt-sort-label" for="taskSortSelect"><i class="fas fa-sort"></i> Sort:</label>
+            <select id="taskSortSelect" class="tt-sort-select" onchange="window._sortTasks(this.value)">
+                <option value="distance" ${sortVal==='distance'?'selected':''}>Nearest</option>
+                <option value="earn_desc" ${sortVal==='earn_desc'?'selected':''}>Highest Earn</option>
+                <option value="earn_asc" ${sortVal==='earn_asc'?'selected':''}>Lowest Earn</option>
+                <option value="time" ${sortVal==='time'?'selected':''}>Expiring Soon</option>
+            </select>
+        </div>
+    `;
+
+    // Sort helper
+    window._sortTasks = function(by) {
+        const c = document.getElementById('tasksList');
+        if (c) c.dataset.sort = by;
+        let sorted = [...list];
+        if (by === 'earn_desc') sorted.sort((a,b) => getHelperEarnings(b) - getHelperEarnings(a));
+        else if (by === 'earn_asc') sorted.sort((a,b) => getHelperEarnings(a) - getHelperEarnings(b));
+        else if (by === 'time') sorted.sort((a,b) => new Date(a.expiresAt) - new Date(b.expiresAt));
+        else sorted.sort((a,b) => {
+            const dA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
+            const dB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);
+            return dA - dB;
+        });
+        renderTasks(sorted);
+    };
+
     const isHelper = currentUser && currentUser.id;
     container.innerHTML = displayList.map(task => {
         const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
@@ -2959,7 +2999,7 @@ function renderTasks(filtered = null) {
         const posterInitial = posterName.charAt(0).toUpperCase();
         const posterFirstName = escapeHtml(posterName.split(' ')[0]);
         const timerClass = getTimerUrgencyClass(timeLeft);
-        const earnAmount = Math.round(getTaskFinalValue(task));
+        const earnAmount = Math.round(getHelperEarnings(task));
 
         return `
             <div class="task-card task-card-v2" data-task-id="${task.id}" data-category="${task.category}" onclick="onTaskCardClick(${task.id})">
@@ -3088,9 +3128,9 @@ function openTaskDetail(taskId) {
         <div class="task-detail-price">
             <div>
                 <h3>Your Earnings</h3>
-                <small>₹${parseFloat(task.price)} + ₹${getTaskServiceCharge(task)} service charge${task.category === 'transport' ? '' : ' + 5% posting fee'}</small>
+                <small>₹${parseFloat(task.price)} base + ₹${getTaskServiceCharge(task)} service charge, after 12% platform fee</small>
             </div>
-            <span class="price">₹${getTaskFinalValue(task)}</span>
+            <span class="price">₹${Math.round(getHelperEarnings(task))}</span>
         </div>
         
         <div class="task-poster">

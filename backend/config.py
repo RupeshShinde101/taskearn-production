@@ -43,6 +43,7 @@ class Config:
         'https://workmate4u.com,'
         'https://workmate4u.netlify.app,'
         'https://staging--workmate4u.netlify.app,'
+        'https://staging--workmate4.netlify.app,'
         'http://localhost:3000,'
         'http://localhost:8080'
     )).split(',')

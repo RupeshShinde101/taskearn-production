@@ -3031,7 +3031,7 @@ function renderTasks(filtered = null) {
                             <span class="tc-earn-amount">₹${earnAmount}</span>
                         </div>
                     </div>
-                    ${!isOwn ? (userActiveTask
+                    ${!isOwn ? (myAcceptedTasks.some(at => at.status === 'in_progress' || at.status === 'accepted')
                         ? `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`
                         : `<button class="task-card-accept-btn" data-accept-task-id="${task.id}"><i class="fas fa-check-circle"></i> Accept Task</button>`) : ''}
                 </div>

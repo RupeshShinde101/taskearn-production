@@ -349,78 +349,109 @@ function showNotification(message, type = 'info', duration = 5000) {
     if (!container) {
         container = document.createElement('div');
         container.id = 'notification-container';
-        container.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 10000;
-            max-width: 400px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        `;
+        container.style.cssText = [
+            'position:fixed',
+            'bottom:24px',
+            'left:50%',
+            'transform:translateX(-50%)',
+            'z-index:10000',
+            'display:flex',
+            'flex-direction:column',
+            'align-items:center',
+            'gap:10px',
+            'pointer-events:none',
+            'width:max-content',
+            'max-width:calc(100vw - 32px)'
+        ].join(';');
         document.body.appendChild(container);
     }
-    
+
+    // Icon + colours per type
+    const META = {
+        success: { icon: 'fa-circle-check',     bg: '#10b981', border: '#059669' },
+        error:   { icon: 'fa-circle-xmark',      bg: '#ef4444', border: '#dc2626' },
+        warning: { icon: 'fa-triangle-exclamation', bg: '#f59e0b', border: '#d97706' },
+        offline: { icon: 'fa-wifi-slash',         bg: '#64748b', border: '#475569' },
+        info:    { icon: 'fa-circle-info',        bg: '#6366f1', border: '#4f46e5' },
+    };
+    const m = META[type] || META.info;
+
     // Create notification element
     const notification = document.createElement('div');
-    const bgColor = type === 'error' ? '#ff4444' : type === 'success' ? '#44dd44' : '#4444ff';
-    const bgColor2 = type === 'error' ? '#cc0000' : type === 'success' ? '#00aa00' : '#0000cc';
-    
-    notification.style.cssText = `
-        background: linear-gradient(135deg, ${bgColor}, ${bgColor2});
-        color: white;
-        padding: 16px 20px;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        animation: slideIn 0.3s ease-out;
-        font-size: 14px;
-        line-height: 1.4;
+    notification.style.cssText = [
+        `background:${m.bg}`,
+        `border:1.5px solid ${m.border}`,
+        'color:#fff',
+        'padding:11px 16px 11px 14px',
+        'border-radius:12px',
+        'box-shadow:0 8px 24px rgba(0,0,0,0.18)',
+        'animation:toastIn 0.28s cubic-bezier(0.34,1.56,0.64,1) forwards',
+        'font-size:14px',
+        'line-height:1.4',
+        'display:flex',
+        'align-items:center',
+        'gap:10px',
+        'pointer-events:all',
+        'cursor:pointer',
+        'max-width:360px',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif'
+    ].join(';');
+
+    const safeMsg = message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    notification.innerHTML = `
+        <i class="fas ${m.icon}" style="font-size:16px;flex-shrink:0;"></i>
+        <span style="flex:1;">${safeMsg}</span>
+        <button aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:0.7;cursor:pointer;padding:0 0 0 6px;font-size:16px;line-height:1;flex-shrink:0;" onclick="this.closest('[id]').remove ? this.closest('div').remove() : null">&times;</button>
     `;
-    
-    notification.textContent = message;
     container.appendChild(notification);
     
-    // Add animation keyframes if not exists
+    // Add animation keyframes if not present
     if (!document.getElementById('notification-styles')) {
         const style = document.createElement('style');
         style.id = 'notification-styles';
         style.textContent = `
-            @keyframes slideIn {
-                from {
-                    transform: translateX(400px);
-                    opacity: 0;
-                }
-                to {
-                    transform: translateX(0);
-                    opacity: 1;
-                }
+            @keyframes toastIn {
+                from { opacity: 0; transform: translateY(16px) scale(0.95); }
+                to   { opacity: 1; transform: translateY(0)   scale(1);    }
             }
-            @keyframes slideOut {
-                from {
-                    transform: translateX(0);
-                    opacity: 1;
-                }
-                to {
-                    transform: translateX(400px);
-                    opacity: 0;
-                }
+            @keyframes toastOut {
+                from { opacity: 1; transform: translateY(0)   scale(1);    }
+                to   { opacity: 0; transform: translateY(12px) scale(0.95); }
             }
         `;
         document.head.appendChild(style);
     }
-    
+
+    container.appendChild(notification);
+
+    // Progress bar for auto-dismiss
+    const bar = document.createElement('div');
+    bar.style.cssText = [
+        'position:absolute',
+        'bottom:0',
+        'left:0',
+        `width:100%`,
+        'height:3px',
+        'background:rgba(255,255,255,0.4)',
+        'border-radius:0 0 12px 12px',
+        `transition:width ${duration}ms linear`
+    ].join(';');
+    notification.style.position = 'relative';
+    notification.style.overflow = 'hidden';
+    notification.appendChild(bar);
+    requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = '0%'; }));
+
     // Remove after duration
     const timeout = setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease-out forwards';
-        setTimeout(() => notification.remove(), 300);
+        notification.style.animation = 'toastOut 0.25s ease-in forwards';
+        setTimeout(() => notification.remove(), 250);
     }, duration);
-    
-    // Allow manual close
-    notification.style.cursor = 'pointer';
+
+    // Click dismiss
     notification.addEventListener('click', () => {
         clearTimeout(timeout);
-        notification.style.animation = 'slideOut 0.3s ease-out forwards';
-        setTimeout(() => notification.remove(), 300);
+        notification.style.animation = 'toastOut 0.25s ease-in forwards';
+        setTimeout(() => notification.remove(), 250);
     });
 }
 
@@ -1950,7 +1981,7 @@ async function loadTasksFromServer() {
                         }));
                         try {
                             if (typeof showNotification === 'function') {
-                                showNotification('⚠️ Backend offline. Showing cached tasks.', 'warning');
+                                showNotification('Offline mode — showing cached tasks.', 'offline');
                             }
                         } catch (e) {
                             console.warn('showNotification not available, using alert');
@@ -1965,7 +1996,7 @@ async function loadTasksFromServer() {
                 }
                 try {
                     if (typeof showNotification === 'function') {
-                        showNotification('⚠️ Backend offline. No cached data available.', 'warning');
+                        showNotification('Cannot reach server. No cached data found.', 'offline');
                     }
                 } catch (e) {
                     console.warn('Using alert instead of showNotification');
@@ -2015,7 +2046,7 @@ async function loadTasksFromServer() {
             console.error('❌ TasksAPI not available');
             try {
                 if (typeof showNotification === 'function') {
-                    showNotification('⚠️ Working in offline mode. Some features may be limited.', 'warning');
+                    showNotification('Working offline — some features limited.', 'offline');
                 }
             } catch (e) {
                 console.warn('showNotification not available');
@@ -2036,7 +2067,7 @@ async function loadTasksFromServer() {
                 }));
                 try {
                     if (typeof showNotification === 'function') {
-                        showNotification('⚠️ Backend unavailable. Showing cached tasks.', 'warning');
+                        showNotification('Backend unavailable — showing cached tasks.', 'offline');
                     }
                 } catch (e) {
                     console.warn('showNotification not available');
@@ -2049,19 +2080,9 @@ async function loadTasksFromServer() {
             }
         }
         
-        // Show helpful error message with troubleshooting steps
-        const errorMsg = `⚠️ Cannot connect to backend server.\n\n` +
-                        `This could be due to:\n` +
-                        `1. Railway deployment not started yet\n` +
-                        `2. Network connectivity issues\n` +
-                        `3. Backend service temporarily down\n\n` +
-                        `Using offline mode with local data.`;
         try {
             if (typeof showNotification === 'function') {
-                showNotification(errorMsg, 'error', 8000);
-            } else {
-                console.warn(errorMsg);
-                alert(errorMsg);
+                showNotification('Backend unavailable — showing offline mode.', 'offline', 7000);
             }
         } catch (e) {
             console.warn('Cannot show notification:', e);

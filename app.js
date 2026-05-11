@@ -2933,24 +2933,47 @@ function renderTasks(filtered = null) {
 
         const _veh = getRequiredVehicle(task.description);
         const _vehBadge = _veh ? `<span class="task-vehicle-badge" title="Required vehicle">${escapeHtml(_veh.label)}</span>` : '';
+
+        const posterName = (task.postedBy && task.postedBy.name) ? task.postedBy.name : 'Poster';
+        const posterInitial = posterName.charAt(0).toUpperCase();
+        const posterFirstName = escapeHtml(posterName.split(' ')[0]);
+        const timerClass = getTimerUrgencyClass(timeLeft);
+        const earnAmount = Math.round(getTaskFinalValue(task));
+
         return `
-            <div class="task-card" data-task-id="${task.id}" onclick="onTaskCardClick(${task.id})">
-                <div class="task-card-header">
-                    <span class="task-category">${formatCategory(task.category)}</span>
-                    ${_vehBadge}
-                    <span class="task-price">₹${Math.round(getTaskFinalValue(task))}</span>
-                    ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
+            <div class="task-card task-card-v2" data-task-id="${task.id}" data-category="${task.category}" onclick="onTaskCardClick(${task.id})">
+                <div class="tc-body">
+                    <div class="tc-top-row">
+                        <div class="tc-cat-chip">
+                            <i class="${getCategoryIcon(task.category)}"></i>
+                            <span>${formatCategory(task.category)}</span>
+                        </div>
+                        <div class="tc-top-right">
+                            ${_vehBadge}
+                            ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
+                        </div>
+                    </div>
+                    <h4 class="tc-title">${escapeHtml(task.title)}</h4>
+                    <p class="tc-desc">${formatTaskDescription(task.description, { compact: true })}</p>
+                    <div class="tc-stats">
+                        <span class="tc-stat tc-stat-location"><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
+                        ${rating ? `<span class="tc-stat tc-stat-rating"><i class="fas fa-star"></i> ${rating.toFixed(1)}</span>` : ''}
+                        <span class="tc-stat ${timerClass}"><i class="fas fa-clock"></i> ${timeLeft}</span>
+                    </div>
+                    <div class="tc-footer">
+                        <div class="tc-poster">
+                            <div class="tc-avatar">${posterInitial}</div>
+                            <span class="tc-poster-name">${posterFirstName}</span>
+                        </div>
+                        <div class="tc-earn">
+                            <span class="tc-earn-label">You Earn</span>
+                            <span class="tc-earn-amount">₹${earnAmount}</span>
+                        </div>
+                    </div>
+                    ${!isOwn ? (userActiveTask
+                        ? `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`
+                        : `<button class="task-card-accept-btn" data-accept-task-id="${task.id}"><i class="fas fa-check-circle"></i> Accept Task</button>`) : ''}
                 </div>
-                <h4>${escapeHtml(task.title)}</h4>
-                <p class="task-desc-summary">${formatTaskDescription(task.description, { compact: true })}</p>
-                <div class="task-meta">
-                    <span><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
-                    ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
-                    <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft}</span>
-                </div>
-                ${!isOwn ? `<button class="task-card-accept-btn" data-accept-task-id="${task.id}">
-                    <i class="fas fa-check"></i> Accept Task
-                </button>` : ''}
             </div>
         `;
     }).join('');
@@ -6232,7 +6255,43 @@ function toggleChangePassword() {
         document.getElementById('currentPassword').value = '';
         document.getElementById('newPassword2').value = '';
         document.getElementById('confirmPassword2').value = '';
+        var bar = document.getElementById('pwdStrengthBar');
+        if (bar) { bar.style.width = '0'; }
+        var txt = document.getElementById('pwdStrengthText');
+        if (txt) { txt.textContent = ''; }
     }
+}
+
+function togglePwdEye(inputId, btn) {
+    var input = document.getElementById(inputId);
+    if (!input) return;
+    var isText = input.type === 'text';
+    input.type = isText ? 'password' : 'text';
+    var icon = btn.querySelector('i');
+    if (icon) { icon.className = isText ? 'fas fa-eye' : 'fas fa-eye-slash'; }
+}
+
+function updatePwdStrengthBar(pwd) {
+    var bar = document.getElementById('pwdStrengthBar');
+    var txt = document.getElementById('pwdStrengthText');
+    if (!bar || !txt) return;
+    if (!pwd) { bar.style.width = '0'; txt.textContent = ''; return; }
+    var score = 0;
+    if (pwd.length >= 6)  score++;
+    if (pwd.length >= 10) score++;
+    if (/[A-Z]/.test(pwd)) score++;
+    if (/[0-9]/.test(pwd)) score++;
+    if (/[^A-Za-z0-9]/.test(pwd)) score++;
+    var levels = [
+        {w:'20%', c:'#ef4444', t:'Weak'},
+        {w:'40%', c:'#f59e0b', t:'Fair'},
+        {w:'65%', c:'#f59e0b', t:'Moderate'},
+        {w:'85%', c:'#10b981', t:'Strong'},
+        {w:'100%',c:'#059669', t:'Very Strong'}
+    ];
+    var l = levels[Math.min(score, 5) - 1] || levels[0];
+    bar.style.width = l.w; bar.style.background = l.c;
+    txt.textContent = l.t; txt.style.color = l.c;
 }
 
 async function saveNewPassword() {
@@ -6992,6 +7051,50 @@ function getTimeLeft(expires) {
     const h = Math.floor(diff / 3600000);
     const m = Math.floor((diff % 3600000) / 60000);
     return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+}
+
+function getCategoryIcon(cat) {
+    const icons = {
+        household: 'fas fa-home',
+        delivery: 'fas fa-truck',
+        tutoring: 'fas fa-book-open',
+        transport: 'fas fa-car',
+        vehicle: 'fas fa-wrench',
+        repair: 'fas fa-tools',
+        photography: 'fas fa-camera',
+        freelance: 'fas fa-laptop-code',
+        waste: 'fas fa-trash-alt',
+        cleaning: 'fas fa-broom',
+        cooking: 'fas fa-utensils',
+        petcare: 'fas fa-paw',
+        gardening: 'fas fa-leaf',
+        shopping: 'fas fa-shopping-bag',
+        eventhelp: 'fas fa-calendar-check',
+        moving: 'fas fa-dolly',
+        techsupport: 'fas fa-headset',
+        beauty: 'fas fa-spa',
+        laundry: 'fas fa-tshirt',
+        catering: 'fas fa-concierge-bell',
+        babysitting: 'fas fa-baby',
+        eldercare: 'fas fa-user-friends',
+        fitness: 'fas fa-dumbbell',
+        painting: 'fas fa-paint-roller',
+        electrician: 'fas fa-bolt',
+        plumbing: 'fas fa-faucet',
+        carpentry: 'fas fa-hammer',
+        tailoring: 'fas fa-cut',
+    };
+    return icons[cat] || 'fas fa-briefcase';
+}
+
+function getTimerUrgencyClass(timeLeft) {
+    if (!timeLeft || timeLeft === 'Expired') return 'tc-timer-expired';
+    // Only minutes left (no hours, no days) — very urgent
+    if (/^\d+m/.test(timeLeft) && !timeLeft.includes('h') && !timeLeft.includes('d')) return 'tc-timer-urgent';
+    // Under 3 hours
+    const hMatch = timeLeft.match(/^(\d+)h/);
+    if (hMatch && parseInt(hMatch[1]) < 3) return 'tc-timer-warning';
+    return 'tc-timer-ok';
 }
 
 function formatCategory(cat) {

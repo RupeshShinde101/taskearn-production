@@ -1489,6 +1489,162 @@ section {
     padding-right: 10px;
 }
 
+/* ========================================
+   BROWSE FILTER BAR (replaces sidebar+map)
+   ======================================== */
+.browse-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.bfb-search {
+    position: relative;
+    flex: 1 1 180px;
+    min-width: 140px;
+}
+.bfb-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-light);
+    font-size: 13px;
+    pointer-events: none;
+}
+.bfb-search input {
+    width: 100%;
+    padding: 8px 10px 8px 30px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-sizing: border-box;
+}
+.bfb-search input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: var(--white);
+}
+
+.bfb-select {
+    flex: 0 1 170px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.bfb-select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.bfb-distance {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 1 190px;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.bfb-distance i { color: var(--primary); font-size: 13px; }
+.bfb-distance input[type="range"] {
+    flex: 1;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
+.bfb-budget {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 1 190px;
+}
+.bfb-budget input {
+    width: 80px;
+    padding: 8px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+.bfb-budget input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+.bfb-budget span { color: var(--text-light); font-size: 12px; }
+
+.bfb-clear {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.15s, color 0.15s;
+}
+.bfb-clear:hover {
+    background: #fee2e2;
+    color: #dc2626;
+    border-color: #fca5a5;
+}
+
+/* Dark mode */
+[data-theme="dark"] .browse-filter-bar {
+    background: var(--card-bg);
+    border-color: var(--border);
+}
+[data-theme="dark"] .bfb-search input,
+[data-theme="dark"] .bfb-select,
+[data-theme="dark"] .bfb-budget input {
+    background: var(--bg-secondary);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+[data-theme="dark"] .bfb-clear {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+}
+[data-theme="dark"] .bfb-clear:hover {
+    background: rgba(220,38,38,0.15);
+    color: #f87171;
+    border-color: rgba(220,38,38,0.3);
+}
+
+/* Responsive filter bar */
+@media (max-width: 768px) {
+    .browse-filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .bfb-search, .bfb-select, .bfb-distance, .bfb-budget {
+        flex: 1 1 100%;
+    }
+    .bfb-budget { flex-wrap: wrap; }
+    .bfb-budget input { flex: 1; }
+    .bfb-clear { justify-content: center; }
+}
+
 /* Full-width task cards grid below map */
 .tasks-list-fullwidth {
     display: grid;

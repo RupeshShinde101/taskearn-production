@@ -3052,7 +3052,10 @@ function renderTasks(filtered = null) {
                     </div>
                     ${!isOwn ? (myAcceptedTasks.some(at => at.status === 'in_progress' || at.status === 'accepted')
                         ? `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`
-                        : `<button class="task-card-accept-btn" data-accept-task-id="${task.id}"><i class="fas fa-check-circle"></i> Accept Task</button>`) : ''}
+                        : `<div class="tc-action-row">
+                            <button class="task-card-accept-btn tc-accept-main" data-accept-task-id="${task.id}"><i class="fas fa-check-circle"></i> Accept Task</button>
+                            <button class="tc-share-btn" onclick="event.stopPropagation(); shareTask(${task.id});" title="Share on WhatsApp"><i class="fab fa-whatsapp"></i></button>
+                           </div>`) : ''}
                 </div>
             </div>
         `;
@@ -9055,6 +9058,140 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+
+// ========================================
+// HOMEPAGE ATTRACTION FEATURES
+// ========================================
+
+// 1. Hero quote rotation
+(function initHeroQuotes() {
+    function rotate() {
+        const quotes = document.querySelectorAll('.hero-quote');
+        if (!quotes.length) return;
+        let active = 0;
+        quotes.forEach((q, i) => { if (q.classList.contains('active')) active = i; });
+        quotes[active].classList.remove('active');
+        quotes[(active + 1) % quotes.length].classList.add('active');
+    }
+    if (document.querySelector('.hero-quote')) {
+        setInterval(rotate, 4000);
+    } else {
+        document.addEventListener('DOMContentLoaded', function() {
+            if (document.querySelector('.hero-quote')) setInterval(rotate, 4000);
+        });
+    }
+})();
+
+// 2. Earnings Calculator
+function updateCalc() {
+    const ratePerTask = parseInt(document.getElementById('calcCategory')?.value || 500);
+    const tasksPerDay = parseInt(document.getElementById('calcTasks')?.value || 3);
+    const hoursPerWeek = parseInt(document.getElementById('calcHours')?.value || 10);
+    const daysPerWeek = Math.max(1, Math.round(hoursPerWeek / 3));
+    const tasksPerWeek = daysPerWeek * tasksPerDay;
+    const gross = tasksPerWeek * ratePerTask * 4; // ~4 weeks
+    const net = Math.round(gross * 0.88);
+    const weekly = Math.round(net / 4);
+    const el = document.getElementById('calcMonthly');
+    const elW = document.getElementById('calcWeekly');
+    if (el) el.textContent = '₹' + net.toLocaleString('en-IN');
+    if (elW) elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
+}
+window.updateCalc = updateCalc;
+document.addEventListener('DOMContentLoaded', updateCalc);
+
+// WhatsApp share for task cards
+function shareTask(taskId) {
+    const task = (typeof tasks !== 'undefined') && tasks.find(t => t.id == taskId);
+    const title = task ? task.title : 'a task';
+    const text = encodeURIComponent(`Check out this task on Workmate4u: "${title}" — earn money helping nearby! https://workmate4u.netlify.app/browse.html`);
+    window.open('https://wa.me/?text=' + text, '_blank', 'noopener,noreferrer');
+}
+window.shareTask = shareTask;
+
+// 3. PWA Install Prompt
+let _pwaInstallEvent = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _pwaInstallEvent = e;
+    // Show prompt after 30s if user hasn't dismissed it
+    if (!sessionStorage.getItem('pwaDismissed')) {
+        setTimeout(() => {
+            const el = document.getElementById('pwaInstallPrompt');
+            if (el) el.style.display = 'flex';
+        }, 30000);
+    }
+});
+document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('pwaInstallBtn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            if (_pwaInstallEvent) {
+                _pwaInstallEvent.prompt();
+                _pwaInstallEvent.userChoice.then(() => { _pwaInstallEvent = null; });
+            }
+            dismissPwaPrompt();
+        });
+    }
+});
+function dismissPwaPrompt() {
+    const el = document.getElementById('pwaInstallPrompt');
+    if (el) el.style.display = 'none';
+    sessionStorage.setItem('pwaDismissed', '1');
+}
+window.dismissPwaPrompt = dismissPwaPrompt;
+
+// 4. Urgency indicator: pulse task cards expiring in < 2h
+(function addUrgencyPulse() {
+    function check() {
+        document.querySelectorAll('.task-card[data-task-id]').forEach(card => {
+            const id = card.dataset.taskId;
+            const task = (typeof tasks !== 'undefined') && tasks.find(t => t.id == id);
+            if (!task) return;
+            const ms = new Date(task.expiresAt) - Date.now();
+            if (ms > 0 && ms < 2 * 3600 * 1000) {
+                card.classList.add('tc-urgent');
+            } else {
+                card.classList.remove('tc-urgent');
+            }
+        });
+    }
+    setInterval(check, 60000);
+    document.addEventListener('DOMContentLoaded', () => setTimeout(check, 2000));
+})();
+
+// 5. Hero stat counter animation (update floor values with real data if available)
+function animateCounter(el, target, prefix, suffix) {
+    if (!el) return;
+    const duration = 1200;
+    const start = Date.now();
+    const from = 0;
+    function step() {
+        const p = Math.min((Date.now() - start) / duration, 1);
+        const val = Math.round(from + (target - from) * (1 - Math.pow(1 - p, 3)));
+        el.textContent = prefix + val.toLocaleString('en-IN') + suffix;
+        if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+}
+
+// Observe hero stat section and animate when in view
+(function observeHeroStats() {
+    const stats = document.getElementById('heroStatUsers');
+    if (!stats) return;
+    const obs = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+            if (e.isIntersecting) {
+                animateCounter(document.getElementById('heroStatUsers'), 500, '', '+');
+                animateCounter(document.getElementById('heroStatTasks'), 200, '', '+');
+                obs.disconnect();
+            }
+        });
+    }, { threshold: 0.5 });
+    obs.observe(stats);
+})();
+
 
 
 

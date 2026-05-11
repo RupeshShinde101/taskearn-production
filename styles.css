@@ -2023,6 +2023,20 @@ section {
     flex-direction: column;
     align-items: flex-end;
     line-height: 1;
+    gap: 3px;
+}
+
+.tc-task-val {
+    font-size: 0.7rem;
+    color: var(--text-secondary, #64748b);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.tc-earn-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
 }
 
 .tc-earn-label {
@@ -3580,6 +3594,36 @@ section {
     background: var(--light);
     border-radius: var(--radius);
     margin-bottom: 25px;
+}
+
+/* Price breakdown layout (used for both poster & helper views) */
+.task-detail-price-breakdown {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 16px 20px;
+}
+
+.price-breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 0.95rem;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.price-breakdown-row:last-child { border-bottom: none; }
+
+.price-breakdown-subtotal {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.price-breakdown-total {
+    padding-top: 12px;
+    margin-top: 4px;
+    border-top: 2px solid var(--border, #e2e8f0) !important;
+    border-bottom: none !important;
 }
 
 .task-detail-price h3 {

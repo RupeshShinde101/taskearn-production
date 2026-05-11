@@ -1042,7 +1042,7 @@ async function loadRecommendedTasks() {
         section.style.display = 'block';
         container.innerHTML = result.tasks.map(t => {
             const distText = t.distanceKm != null ? `${t.distanceKm.toFixed(1)} km` : '?';
-            const total = Math.round(getTaskFinalValue(t));
+            const total = Math.round((parseFloat(t.price)||0) + (parseFloat(t.service_charge)||0));
             const catLabel = formatCategory ? formatCategory(t.category) : t.category;
             return `
             <div class="task-card recommended-task-card" onclick="openTaskDetail(${t.id})">
@@ -3005,6 +3005,7 @@ function renderTasks(filtered = null) {
         const posterInitial = posterName.charAt(0).toUpperCase();
         const posterFirstName = escapeHtml(posterName.split(' ')[0]);
         const timerClass = getTimerUrgencyClass(timeLeft);
+        const taskValue = Math.round(parseFloat(task.price || 0) + getTaskServiceCharge(task));
         const earnAmount = Math.round(getHelperEarnings(task));
 
         return `
@@ -3033,8 +3034,11 @@ function renderTasks(filtered = null) {
                             <span class="tc-poster-name">${posterFirstName}</span>
                         </div>
                         <div class="tc-earn">
-                            <span class="tc-earn-label">You Earn</span>
-                            <span class="tc-earn-amount">₹${earnAmount}</span>
+                            <span class="tc-task-val">Task Value ₹${taskValue}</span>
+                            <div class="tc-earn-row">
+                                <span class="tc-earn-label">You Earn</span>
+                                <span class="tc-earn-amount">₹${earnAmount}</span>
+                            </div>
                         </div>
                     </div>
                     ${!isOwn ? (myAcceptedTasks.some(at => at.status === 'in_progress' || at.status === 'accepted')
@@ -3131,13 +3135,33 @@ function openTaskDetail(taskId) {
         
         <div class="task-detail-map" id="taskDetailMap"></div>
         
-        <div class="task-detail-price">
-            <div>
-                <h3>Your Earnings</h3>
-                <small>₹${parseFloat(task.price)} base + ₹${getTaskServiceCharge(task)} service charge, after 12% platform fee</small>
+        ${isOwner ? `
+        <div class="task-detail-price task-detail-price-breakdown">
+            <div class="price-breakdown-row">
+                <span>Budget</span><span>₹${parseFloat(task.price).toFixed(2)}</span>
             </div>
-            <span class="price">₹${Math.round(getHelperEarnings(task))}</span>
-        </div>
+            <div class="price-breakdown-row">
+                <span>Service Charge</span><span>+₹${getTaskServiceCharge(task).toFixed(2)}</span>
+            </div>
+            <div class="price-breakdown-row price-breakdown-subtotal">
+                <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
+            </div>
+            <div class="price-breakdown-row" style="color:#f59e0b;">
+                <span>Posting Fee (5%)</span><span>+₹${getTaskPlatformFee(task).toFixed(2)}</span>
+            </div>
+            <div class="price-breakdown-row price-breakdown-total">
+                <h3>Total You Pay</h3><span class="price">₹${Math.round(getTaskFinalValue(task))}</span>
+            </div>
+        </div>` : `
+        <div class="task-detail-price task-detail-price-breakdown">
+            <div class="price-breakdown-row" style="color:var(--text-secondary);">
+                <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
+            </div>
+            <div class="price-breakdown-row price-breakdown-total">
+                <div><h3>You Earn</h3><small>After 12% platform commission</small></div>
+                <span class="price">₹${Math.round(getHelperEarnings(task))}</span>
+            </div>
+        </div>`}
         
         <div class="task-poster">
             <div class="poster-avatar"><i class="fas fa-user"></i></div>
@@ -6789,7 +6813,7 @@ function renderPostedTasks() {
                     <span class="task-status ${statusClass}">${statusLabel}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
-                <div class="task-meta"><span>₹${getTaskFinalValue(t)}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
+                <div class="task-meta"><span>₹${Math.round((parseFloat(t.price)||0)+(parseFloat(t.service_charge)||0))}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
                 ${helperHTML}
                 ${actionsHTML}
             </div>
@@ -6937,8 +6961,8 @@ function renderCompletedTasks() {
         </div>
         ${pendingHTML}
         ${visible.map(t => {
-            const amt = getTaskFinalValue(t);
-            const earned = t.earnedAmount || (amt * 0.88);
+            const taskBaseVal = (parseFloat(t.price)||0) + (parseFloat(t.service_charge)||0);
+            const earned = t.earnedAmount || Math.round(taskBaseVal * 0.88 * 100) / 100;
             const posterName = t.poster_name || (t.postedBy && t.postedBy.name) || 'Poster';
             const posterId = t.poster_user_id || (t.postedBy && t.postedBy.id) || t.posted_by || '';
             const posterPhone = t.poster_phone || (t.postedBy && t.postedBy.phone) || '';
@@ -6977,7 +7001,7 @@ function renderCompletedTasks() {
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
                 ${contactHTML}
-                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${amt.toFixed(2)} - 12% commission)</small></p>
+                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${taskBaseVal.toFixed(2)} task value − 12% commission)</small></p>
                 <div style="margin-top:10px;">${rateBtn}</div>
             </div>`;
         }).join('')}

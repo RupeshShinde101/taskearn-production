@@ -38,7 +38,15 @@ class Config:
     
     # CORS Settings - set CORS_ORIGINS env var to comma-separated allowed origins
     # Default allows your known domains; set to '*' only for local dev
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'https://www.workmate4u.com,https://workmate4u.com,https://workmate4u.netlify.app').split(',')
+    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', (
+        'https://www.workmate4u.com,'
+        'https://workmate4u.com,'
+        'https://workmate4u.netlify.app,'
+        'https://staging--workmate4u.netlify.app,'
+        'https://staging--workmate4.netlify.app,'
+        'http://localhost:3000,'
+        'http://localhost:8080'
+    )).split(',')
     
     # Razorpay Settings
     RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '')

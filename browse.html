@@ -93,99 +93,73 @@
         </ul>
     </div>
 
-    <!-- Find Tasks Section with Map -->
+    <!-- Find Tasks Section -->
     <section class="find-tasks" id="find-tasks" style="padding-top: 90px;">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Earn Money</span>
                 <h2>Find Tasks Near You</h2>
-                <p>Browse available tasks on the map and start earning today</p>
+                <p>Browse available tasks and <span style="background:linear-gradient(90deg,#6366f1,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:600;">start earning today</span> <span style="font-size:1rem;">💰</span></p>
             </div>
-            <div class="tasks-wrapper">
-                <div class="tasks-sidebar">
-                    <div class="tasks-filter">
-                        <div class="filter-header">
-                            <h3><i class="fas fa-filter"></i> Filters</h3>
-                            <button class="clear-filters" onclick="clearFilters()">Clear All</button>
-                        </div>
-                        <div class="filter-group">
-                            <label>Search</label>
-                            <div style="position:relative;">
-                                <input type="text" id="filterSearch" placeholder="Search tasks..." oninput="applyFilters()" style="width:100%;padding:10px 36px 10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
-                                <i class="fas fa-search" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#94a3b8;"></i>
-                            </div>
-                        </div>
-                        <div class="filter-group">
-                            <label>Category</label>
-                            <select id="filterCategory">
-                                <option value="all">All Categories</option>
-                                <option value="household">Household Chores</option>
-                                <option value="delivery">Delivery Services</option>
-                                <option value="tutoring">Online Tutoring</option>
-                                <option value="transport">Pick & Drop</option>
-                                <option value="vehicle">Vehicle Services</option>
-                                <option value="repair">Repairs & Mechanical</option>
-                                <option value="photography">Photography</option>
-                                <option value="freelance">Freelance Services</option>
-                                <option value="waste">Waste Collection</option>
-                                <option value="cleaning">Cleaning Services</option>
-                                <option value="cooking">Cooking & Chef</option>
-                                <option value="petcare">Pet Care</option>
-                                <option value="gardening">Gardening & Lawn</option>
-                                <option value="shopping">Shopping & Errands</option>
-                                <option value="eventhelp">Event Help</option>
-                                <option value="moving">Moving & Packing</option>
-                                <option value="techsupport">Tech Support</option>
-                                <option value="beauty">Beauty & Wellness</option>
-                                <option value="laundry">Laundry & Ironing</option>
-                                <option value="catering">Catering Services</option>
-                                <option value="babysitting">Babysitting</option>
-                                <option value="eldercare">Elder Care</option>
-                                <option value="fitness">Fitness Training</option>
-                                <option value="painting">Painting & Decor</option>
-                                <option value="electrician">Electrician</option>
-                                <option value="plumbing">Plumbing</option>
-                                <option value="carpentry">Carpentry</option>
-                                <option value="tailoring">Tailoring & Alterations</option>
-                                <option value="other">Other</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label>Distance</label>
-                            <input type="range" id="filterDistance" min="1" max="50" value="10">
-                            <span class="range-value"><span id="distanceValue">10</span> km</span>
-                        </div>
-                        <div class="filter-group">
-                            <label>Budget Range</label>
-                            <div class="budget-inputs">
-                                <input type="number" id="minBudget" placeholder="Min ₹">
-                                <span>-</span>
-                                <input type="number" id="maxBudget" placeholder="Max ₹">
-                            </div>
-                        </div>
-                        <button class="btn btn-primary btn-block" onclick="applyFilters()">
-                            <i class="fas fa-search"></i> Apply Filters
-                        </button>
-                    </div>
+            <!-- Compact horizontal filter bar -->
+            <div class="browse-filter-bar">
+                <div class="bfb-search">
+                    <i class="fas fa-search bfb-search-icon"></i>
+                    <input type="text" id="filterSearch" placeholder="Search tasks…" oninput="applyFilters()">
                 </div>
-                <div class="tasks-map">
-                    <div class="tracking-status" id="trackingStatus">
-                        <span class="tracking-dot"></span>
-                        <span>GPS Tracking: <strong id="trackingText">Connecting...</strong></span>
-                    </div>
-                    <div id="map"></div>
-                    <div class="map-controls">
-                        <button class="map-btn" onclick="centerOnUser()" title="My Location"><i class="fas fa-crosshairs"></i></button>
-                        <button class="map-btn" onclick="toggleTracking()" id="trackingBtn" title="Toggle Live Tracking"><i class="fas fa-satellite-dish"></i></button>
-                        <button class="map-btn" onclick="zoomIn()" title="Zoom In"><i class="fas fa-plus"></i></button>
-                        <button class="map-btn" onclick="zoomOut()" title="Zoom Out"><i class="fas fa-minus"></i></button>
-                        <button class="map-btn" onclick="toggleMapType()" title="Map Type"><i class="fas fa-layer-group"></i></button>
-                    </div>
-                    <div class="distance-info" id="distanceInfo"></div>
+                <select id="filterCategory" class="bfb-select" onchange="applyFilters()">
+                    <option value="all">All Categories</option>
+                    <option value="household">Household Chores</option>
+                    <option value="delivery">Delivery Services</option>
+                    <option value="tutoring">Online Tutoring</option>
+                    <option value="transport">Pick &amp; Drop</option>
+                    <option value="vehicle">Vehicle Services</option>
+                    <option value="repair">Repairs &amp; Mechanical</option>
+                    <option value="photography">Photography</option>
+                    <option value="freelance">Freelance Services</option>
+                    <option value="waste">Waste Collection</option>
+                    <option value="cleaning">Cleaning Services</option>
+                    <option value="cooking">Cooking &amp; Chef</option>
+                    <option value="petcare">Pet Care</option>
+                    <option value="gardening">Gardening &amp; Lawn</option>
+                    <option value="shopping">Shopping &amp; Errands</option>
+                    <option value="eventhelp">Event Help</option>
+                    <option value="moving">Moving &amp; Packing</option>
+                    <option value="techsupport">Tech Support</option>
+                    <option value="beauty">Beauty &amp; Wellness</option>
+                    <option value="laundry">Laundry &amp; Ironing</option>
+                    <option value="catering">Catering Services</option>
+                    <option value="babysitting">Babysitting</option>
+                    <option value="eldercare">Elder Care</option>
+                    <option value="fitness">Fitness Training</option>
+                    <option value="painting">Painting &amp; Decor</option>
+                    <option value="electrician">Electrician</option>
+                    <option value="plumbing">Plumbing</option>
+                    <option value="carpentry">Carpentry</option>
+                    <option value="tailoring">Tailoring &amp; Alterations</option>
+                    <option value="other">Other</option>
+                </select>
+                <div class="bfb-distance">
+                    <i class="fas fa-location-dot"></i>
+                    <input type="range" id="filterDistance" min="1" max="50" value="10"
+                        oninput="document.getElementById('distanceValue').textContent=this.value; applyFilters()">
+                    <span><span id="distanceValue">10</span> km</span>
                 </div>
+                <div class="bfb-budget">
+                    <input type="number" id="minBudget" placeholder="Min ₹" onchange="applyFilters()">
+                    <span>–</span>
+                    <input type="number" id="maxBudget" placeholder="Max ₹" onchange="applyFilters()">
+                </div>
+                <button class="bfb-clear" onclick="clearFilters()"><i class="fas fa-times"></i> Clear</button>
             </div>
-            
+
             <div id="activeTaskBanner" style="display:none;margin-bottom:16px;"></div>
+
+            <!-- Hidden stubs so existing JS refs don't throw -->
+            <div id="map" style="display:none;height:0;"></div>
+            <div id="distanceInfo" style="display:none;"></div>
+            <div id="trackingStatus" style="display:none;"></div>
+
             <div class="tasks-list-fullwidth" id="tasksList">
                 <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>
                 <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>
@@ -195,7 +169,7 @@
             <!-- AI Recommended Tasks Section -->
             <div id="recommendedSection" class="ai-recommended-section" style="display:none;margin-top:28px;">
                 <div class="ai-recommended-header">
-                    <span style="font-size:22px;">✨</span>
+                    <span style="font-size:22px;">âœ¨</span>
                     <h3>Recommended For You</h3>
                     <span class="ai-recommended-badge">AI Matched</span>
                 </div>
@@ -233,7 +207,7 @@
                 </div>
                 <div class="form-group"><label for="signupEmail">Email Address</label><input type="email" id="signupEmail" placeholder="your@email.com" required></div>
                 <div class="form-group"><label for="signupPhone">Phone Number</label><input type="tel" id="signupPhone" placeholder="+91 98765 43210" required></div>
-                <div class="form-group"><label for="signupDOB">Date of Birth</label><input type="date" id="signupDOB" required><small>You must be 16 or older to use Workmate4u</small></div><div class="form-group"><label for="signupInviteCode">Invite Code <span style="color:#6366f1;font-weight:700;">*</span></label><input type="text" id="signupInviteCode" placeholder="Enter your invite code" autocomplete="off" required style="letter-spacing:2px;text-transform:uppercase;"><small style="color:#6366f1;">Closed beta — invite code required.</small></div>
+                <div class="form-group"><label for="signupDOB">Date of Birth</label><input type="date" id="signupDOB" required><small>You must be 16 or older to use Workmate4u</small></div><div class="form-group"><label for="signupInviteCode">Invite Code <span style="color:#6366f1;font-weight:700;">*</span></label><input type="text" id="signupInviteCode" placeholder="Enter your invite code" autocomplete="off" required style="letter-spacing:2px;text-transform:uppercase;"><small style="color:#6366f1;">Closed beta â€” invite code required.</small></div>
                 <div class="form-group"><label for="signupPassword">Password</label><input type="password" id="signupPassword" placeholder="Create a strong password" required></div>
                 <div class="form-group"><label class="checkbox-label"><input type="checkbox" required> I agree to the <a href="terms.html" target="_blank">Terms of Service</a> and <a href="privacy.html" target="_blank">Privacy Policy</a></label></div>
                 <button type="submit" class="btn btn-primary btn-block">Create Account</button>
@@ -365,13 +339,13 @@
                 </div>
                 <h3 style="margin-bottom:8px;color:#ef4444;">Account Debt Suspended</h3>
                 <p style="color:#64748b;font-size:14px;margin-bottom:12px;" id="debtSuspendedMessage">
-                    Your wallet balance is negative. You cannot accept tasks or withdraw funds until your balance is back to ₹0 or above. Add the outstanding amount to restore your account.
+                    Your wallet balance is negative. You cannot accept tasks or withdraw funds until your balance is back to â‚¹0 or above. Add the outstanding amount to restore your account.
                 </p>
                 <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;margin-bottom:12px;">
                     <p style="color:#64748b;font-size:13px;margin:0 0 4px;">Amount Owed</p>
-                    <p style="color:#ef4444;font-weight:800;font-size:24px;margin:0;" id="debtSuspendedAmount">₹0</p>
+                    <p style="color:#ef4444;font-weight:800;font-size:24px;margin:0;" id="debtSuspendedAmount">â‚¹0</p>
                 </div>
-                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">Add money to your wallet to bring your balance back to ₹0 or above and restore your account.</p>
+                <p style="color:#64748b;font-size:13px;margin-bottom:16px;">Add money to your wallet to bring your balance back to â‚¹0 or above and restore your account.</p>
                 <button class="btn" style="width:100%;background:var(--primary-gradient);color:#fff;padding:12px;border-radius:10px;font-weight:600;margin-bottom:8px;" onclick="closeModal('debtSuspendedModal'); window.location.href='wallet.html';">
                     Add Money Now
                 </button>
@@ -460,3 +434,6 @@
 </nav>
 </body>
 </html>
+
+
+

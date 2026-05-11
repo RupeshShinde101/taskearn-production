@@ -213,26 +213,46 @@
                 <!-- Security Card -->
                 <div class="profile-card">
                     <div class="profile-card-header">
-                        <div class="profile-card-title"><i class="fas fa-shield-alt"></i> Security</div>
+                        <div class="profile-card-title"><i class="fas fa-shield-alt"></i> Security &amp; Password</div>
                     </div>
                     <div class="profile-card-body">
-                        <div class="profile-field">
+                        <div class="profile-field" style="margin-bottom:4px;">
                             <div class="profile-field-label">Password</div>
-                            <div class="profile-field-value">••••••••</div>
+                            <div class="profile-field-value" style="display:flex;align-items:center;gap:8px;">
+                                <span style="letter-spacing:3px;font-size:18px;color:var(--gray);">••••••••</span>
+                                <span style="font-size:11px;background:#f0fdf4;color:#166534;padding:2px 8px;border-radius:12px;font-weight:600;">Protected</span>
+                            </div>
                         </div>
-                        <button class="btn btn-outline btn-block" onclick="toggleChangePassword()" id="changePwdToggle" style="margin-top:12px;"><i class="fas fa-key"></i> Change Password</button>
-                        <div id="changePasswordForm" style="display:none; margin-top:16px;">
+                        <div style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border:1px solid #bae6fd;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:12.5px;color:#075985;display:flex;gap:8px;align-items:flex-start;">
+                            <i class="fas fa-info-circle" style="margin-top:2px;flex-shrink:0;"></i>
+                            <span>Use a strong password with letters, numbers, and symbols. Change it regularly to keep your account safe.</span>
+                        </div>
+                        <button class="btn btn-outline btn-block" onclick="toggleChangePassword()" id="changePwdToggle" style="margin-top:4px;justify-content:center;"><i class="fas fa-key"></i> Change Password</button>
+                        <div id="changePasswordForm" style="display:none; margin-top:16px; border-top:1px solid var(--border,#e2e8f0); padding-top:16px;">
                             <div class="profile-field-edit">
                                 <label for="currentPassword">Current Password</label>
-                                <input type="password" id="currentPassword" placeholder="Enter current password">
+                                <div style="position:relative;">
+                                    <input type="password" id="currentPassword" placeholder="Enter your current password" style="padding-right:40px;">
+                                    <button type="button" onclick="togglePwdEye('currentPassword',this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--gray,#64748b);font-size:15px;"><i class="fas fa-eye"></i></button>
+                                </div>
                             </div>
                             <div class="profile-field-edit">
                                 <label for="newPassword2">New Password</label>
-                                <input type="password" id="newPassword2" placeholder="Enter new password">
+                                <div style="position:relative;">
+                                    <input type="password" id="newPassword2" placeholder="At least 6 characters" style="padding-right:40px;" oninput="updatePwdStrengthBar(this.value)">
+                                    <button type="button" onclick="togglePwdEye('newPassword2',this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--gray,#64748b);font-size:15px;"><i class="fas fa-eye"></i></button>
+                                </div>
+                                <div style="height:4px;border-radius:4px;background:#e2e8f0;margin-top:6px;overflow:hidden;">
+                                    <div id="pwdStrengthBar" style="height:100%;width:0;border-radius:4px;background:#ef4444;transition:all .3s;"></div>
+                                </div>
+                                <div id="pwdStrengthText" style="font-size:11px;margin-top:3px;color:#64748b;"></div>
                             </div>
                             <div class="profile-field-edit">
                                 <label for="confirmPassword2">Confirm New Password</label>
-                                <input type="password" id="confirmPassword2" placeholder="Confirm new password">
+                                <div style="position:relative;">
+                                    <input type="password" id="confirmPassword2" placeholder="Repeat new password" style="padding-right:40px;">
+                                    <button type="button" onclick="togglePwdEye('confirmPassword2',this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--gray,#64748b);font-size:15px;"><i class="fas fa-eye"></i></button>
+                                </div>
                             </div>
                             <div class="profile-edit-actions">
                                 <button class="btn btn-outline" onclick="toggleChangePassword()"><i class="fas fa-times"></i> Cancel</button>

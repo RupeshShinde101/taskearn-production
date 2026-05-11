@@ -70,6 +70,10 @@ let isGPSActive = false;
 let modalTaskCoords = null; // Stores picked location for task posting
 let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 
+// Categories that carry a distance-based service charge (Delivery / Pick&Drop).
+// All other categories have NO service charge — only the 5% posting fee applies.
+const DELIVERY_CATEGORIES = new Set(['delivery', 'pickup', 'transport', 'moving']);
+
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
     // Distance-based categories (Delivery / Moving / Pick&Drop): ₹10–₹40 scaled by km.
@@ -115,8 +119,10 @@ const SERVICE_CHARGES = {
 };
 
 function getServiceCharge(category, distanceKm) {
+    // Service charge ONLY for Delivery/Pick&Drop categories.
+    if (!DELIVERY_CATEGORIES.has(category)) return 0;
     const info = SERVICE_CHARGES[category];
-    // Distance-based categories: ₹10–₹40 scaled by km when known.
+    // Distance-based: ₹10–₹40 scaled by km when known.
     if (info && info.distance) {
         if (typeof distanceKm === 'number' && distanceKm > 0) {
             const base = category === 'moving' ? 20 : 10;
@@ -125,17 +131,20 @@ function getServiceCharge(category, distanceKm) {
         }
         return info.charge;
     }
-    return info?.charge || 50;
+    return info?.charge || 0;
 }
 
 function getServiceChargeInfo(category) {
     return SERVICE_CHARGES[category] || SERVICE_CHARGES['other'];
 }
 
-// Returns the per-category service charge for a task object, honouring any
-// saved service_charge value. Falls back to the category default.
+// Returns the per-category service charge for a task object.
+// Service charge ONLY applies to Delivery/Pick&Drop categories.
+// All other categories return 0 regardless of any stored value.
 function getTaskServiceCharge(task) {
     if (!task) return 0;
+    // Non-delivery categories: always 0 (override any legacy stored value)
+    if (!DELIVERY_CATEGORIES.has(task.category)) return 0;
     if (task.service_charge !== undefined && task.service_charge !== null && task.service_charge !== '') {
         return parseFloat(task.service_charge) || 0;
     }
@@ -349,78 +358,109 @@ function showNotification(message, type = 'info', duration = 5000) {
     if (!container) {
         container = document.createElement('div');
         container.id = 'notification-container';
-        container.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 10000;
-            max-width: 400px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        `;
+        container.style.cssText = [
+            'position:fixed',
+            'bottom:24px',
+            'left:50%',
+            'transform:translateX(-50%)',
+            'z-index:10000',
+            'display:flex',
+            'flex-direction:column',
+            'align-items:center',
+            'gap:10px',
+            'pointer-events:none',
+            'width:max-content',
+            'max-width:calc(100vw - 32px)'
+        ].join(';');
         document.body.appendChild(container);
     }
-    
+
+    // Icon + colours per type
+    const META = {
+        success: { icon: 'fa-circle-check',     bg: '#10b981', border: '#059669' },
+        error:   { icon: 'fa-circle-xmark',      bg: '#ef4444', border: '#dc2626' },
+        warning: { icon: 'fa-triangle-exclamation', bg: '#f59e0b', border: '#d97706' },
+        offline: { icon: 'fa-wifi-slash',         bg: '#64748b', border: '#475569' },
+        info:    { icon: 'fa-circle-info',        bg: '#6366f1', border: '#4f46e5' },
+    };
+    const m = META[type] || META.info;
+
     // Create notification element
     const notification = document.createElement('div');
-    const bgColor = type === 'error' ? '#ff4444' : type === 'success' ? '#44dd44' : '#4444ff';
-    const bgColor2 = type === 'error' ? '#cc0000' : type === 'success' ? '#00aa00' : '#0000cc';
-    
-    notification.style.cssText = `
-        background: linear-gradient(135deg, ${bgColor}, ${bgColor2});
-        color: white;
-        padding: 16px 20px;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        animation: slideIn 0.3s ease-out;
-        font-size: 14px;
-        line-height: 1.4;
+    notification.style.cssText = [
+        `background:${m.bg}`,
+        `border:1.5px solid ${m.border}`,
+        'color:#fff',
+        'padding:11px 16px 11px 14px',
+        'border-radius:12px',
+        'box-shadow:0 8px 24px rgba(0,0,0,0.18)',
+        'animation:toastIn 0.28s cubic-bezier(0.34,1.56,0.64,1) forwards',
+        'font-size:14px',
+        'line-height:1.4',
+        'display:flex',
+        'align-items:center',
+        'gap:10px',
+        'pointer-events:all',
+        'cursor:pointer',
+        'max-width:360px',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif'
+    ].join(';');
+
+    const safeMsg = message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    notification.innerHTML = `
+        <i class="fas ${m.icon}" style="font-size:16px;flex-shrink:0;"></i>
+        <span style="flex:1;">${safeMsg}</span>
+        <button aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:0.7;cursor:pointer;padding:0 0 0 6px;font-size:16px;line-height:1;flex-shrink:0;" onclick="this.closest('[id]').remove ? this.closest('div').remove() : null">&times;</button>
     `;
-    
-    notification.textContent = message;
     container.appendChild(notification);
     
-    // Add animation keyframes if not exists
+    // Add animation keyframes if not present
     if (!document.getElementById('notification-styles')) {
         const style = document.createElement('style');
         style.id = 'notification-styles';
         style.textContent = `
-            @keyframes slideIn {
-                from {
-                    transform: translateX(400px);
-                    opacity: 0;
-                }
-                to {
-                    transform: translateX(0);
-                    opacity: 1;
-                }
+            @keyframes toastIn {
+                from { opacity: 0; transform: translateY(16px) scale(0.95); }
+                to   { opacity: 1; transform: translateY(0)   scale(1);    }
             }
-            @keyframes slideOut {
-                from {
-                    transform: translateX(0);
-                    opacity: 1;
-                }
-                to {
-                    transform: translateX(400px);
-                    opacity: 0;
-                }
+            @keyframes toastOut {
+                from { opacity: 1; transform: translateY(0)   scale(1);    }
+                to   { opacity: 0; transform: translateY(12px) scale(0.95); }
             }
         `;
         document.head.appendChild(style);
     }
-    
+
+    container.appendChild(notification);
+
+    // Progress bar for auto-dismiss
+    const bar = document.createElement('div');
+    bar.style.cssText = [
+        'position:absolute',
+        'bottom:0',
+        'left:0',
+        `width:100%`,
+        'height:3px',
+        'background:rgba(255,255,255,0.4)',
+        'border-radius:0 0 12px 12px',
+        `transition:width ${duration}ms linear`
+    ].join(';');
+    notification.style.position = 'relative';
+    notification.style.overflow = 'hidden';
+    notification.appendChild(bar);
+    requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = '0%'; }));
+
     // Remove after duration
     const timeout = setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease-out forwards';
-        setTimeout(() => notification.remove(), 300);
+        notification.style.animation = 'toastOut 0.25s ease-in forwards';
+        setTimeout(() => notification.remove(), 250);
     }, duration);
-    
-    // Allow manual close
-    notification.style.cursor = 'pointer';
+
+    // Click dismiss
     notification.addEventListener('click', () => {
         clearTimeout(timeout);
-        notification.style.animation = 'slideOut 0.3s ease-out forwards';
-        setTimeout(() => notification.remove(), 300);
+        notification.style.animation = 'toastOut 0.25s ease-in forwards';
+        setTimeout(() => notification.remove(), 250);
     });
 }
 
@@ -840,7 +880,7 @@ async function loadRecommendedTasks() {
         section.style.display = 'block';
         container.innerHTML = result.tasks.map(t => {
             const distText = t.distanceKm != null ? `${t.distanceKm.toFixed(1)} km` : '?';
-            const total = Math.round(getTaskFinalValue(t));
+            const total = Math.round((parseFloat(t.price)||0) + (parseFloat(t.service_charge)||0));
             const catLabel = formatCategory ? formatCategory(t.category) : t.category;
             return `
             <div class="task-card recommended-task-card" onclick="openTaskDetail(${t.id})">
@@ -1775,7 +1815,7 @@ async function loadTasksFromServer() {
                         }));
                         try {
                             if (typeof showNotification === 'function') {
-                                showNotification('⚠️ Backend offline. Showing cached tasks.', 'warning');
+                                showNotification('Offline mode — showing cached tasks.', 'offline');
                             }
                         } catch (e) {
                             console.warn('showNotification not available, using alert');
@@ -1790,7 +1830,7 @@ async function loadTasksFromServer() {
                 }
                 try {
                     if (typeof showNotification === 'function') {
-                        showNotification('⚠️ Backend offline. No cached data available.', 'warning');
+                        showNotification('Cannot reach server. No cached data found.', 'offline');
                     }
                 } catch (e) {
                     console.warn('Using alert instead of showNotification');
@@ -1840,7 +1880,7 @@ async function loadTasksFromServer() {
             console.error('❌ TasksAPI not available');
             try {
                 if (typeof showNotification === 'function') {
-                    showNotification('⚠️ Working in offline mode. Some features may be limited.', 'warning');
+                    showNotification('Working offline — some features limited.', 'offline');
                 }
             } catch (e) {
                 console.warn('showNotification not available');
@@ -1861,7 +1901,7 @@ async function loadTasksFromServer() {
                 }));
                 try {
                     if (typeof showNotification === 'function') {
-                        showNotification('⚠️ Backend unavailable. Showing cached tasks.', 'warning');
+                        showNotification('Backend unavailable — showing cached tasks.', 'offline');
                     }
                 } catch (e) {
                     console.warn('showNotification not available');
@@ -1874,19 +1914,9 @@ async function loadTasksFromServer() {
             }
         }
         
-        // Show helpful error message with troubleshooting steps
-        const errorMsg = `⚠️ Cannot connect to backend server.\n\n` +
-                        `This could be due to:\n` +
-                        `1. Railway deployment not started yet\n` +
-                        `2. Network connectivity issues\n` +
-                        `3. Backend service temporarily down\n\n` +
-                        `Using offline mode with local data.`;
         try {
             if (typeof showNotification === 'function') {
-                showNotification(errorMsg, 'error', 8000);
-            } else {
-                console.warn(errorMsg);
-                alert(errorMsg);
+                showNotification('Backend unavailable — showing offline mode.', 'offline', 7000);
             }
         } catch (e) {
             console.warn('Cannot show notification:', e);
@@ -2735,9 +2765,15 @@ function renderTasks(filtered = null) {
     if (list.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <i class="fas fa-search"></i>
+                <div class="empty-state-icon"><i class="fas fa-magnifying-glass"></i></div>
                 <h3>No tasks available</h3>
-                <p>No nearby tasks match your filters right now. Try widening your distance or budget range, or check back later.</p>
+                <p>No nearby tasks match your filters right now.<br>Try widening your distance or budget range, or check back later.</p>
+                <div class="empty-state-tips">
+                    <span><i class="fas fa-location-dot"></i> Increase distance</span>
+                    <span><i class="fas fa-indian-rupee-sign"></i> Adjust budget</span>
+                    <span><i class="fas fa-rotate-right"></i> Refresh later</span>
+                </div>
+                <button class="btn btn-outline empty-state-reset" onclick="clearFilters()"><i class="fas fa-times-circle"></i> Clear Filters</button>
             </div>
         `;
         return;
@@ -2748,6 +2784,46 @@ function renderTasks(filtered = null) {
     const displayList = showAll ? list : list.slice(0, INITIAL_SHOW);
     const hasMore = list.length > INITIAL_SHOW;
 
+    // Update (or inject) the toolbar above the card grid
+    let toolbar = document.getElementById('tasksToolbar');
+    if (!toolbar) {
+        toolbar = document.createElement('div');
+        toolbar.id = 'tasksToolbar';
+        toolbar.className = 'tasks-toolbar';
+        container.parentNode.insertBefore(toolbar, container);
+    }
+    const sortVal = container.dataset.sort || 'distance';
+    toolbar.innerHTML = `
+        <div class="tt-left">
+            <span class="tt-count"><i class="fas fa-bolt" style="color:#6366f1;"></i> <strong>${list.length}</strong> tasks available</span>
+        </div>
+        <div class="tt-right">
+            <label class="tt-sort-label" for="taskSortSelect"><i class="fas fa-sort"></i> Sort:</label>
+            <select id="taskSortSelect" class="tt-sort-select" onchange="window._sortTasks(this.value)">
+                <option value="distance" ${sortVal==='distance'?'selected':''}>Nearest</option>
+                <option value="earn_desc" ${sortVal==='earn_desc'?'selected':''}>Highest Earn</option>
+                <option value="earn_asc" ${sortVal==='earn_asc'?'selected':''}>Lowest Earn</option>
+                <option value="time" ${sortVal==='time'?'selected':''}>Expiring Soon</option>
+            </select>
+        </div>
+    `;
+
+    // Sort helper
+    window._sortTasks = function(by) {
+        const c = document.getElementById('tasksList');
+        if (c) c.dataset.sort = by;
+        let sorted = [...list];
+        if (by === 'earn_desc') sorted.sort((a,b) => getHelperEarnings(b) - getHelperEarnings(a));
+        else if (by === 'earn_asc') sorted.sort((a,b) => getHelperEarnings(a) - getHelperEarnings(b));
+        else if (by === 'time') sorted.sort((a,b) => new Date(a.expiresAt) - new Date(b.expiresAt));
+        else sorted.sort((a,b) => {
+            const dA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
+            const dB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);
+            return dA - dB;
+        });
+        renderTasks(sorted);
+    };
+
     const isHelper = currentUser && currentUser.id;
     container.innerHTML = displayList.map(task => {
         const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
@@ -2757,24 +2833,62 @@ function renderTasks(filtered = null) {
 
         const _veh = getRequiredVehicle(task.description);
         const _vehBadge = _veh ? `<span class="task-vehicle-badge" title="Required vehicle">${escapeHtml(_veh.label)}</span>` : '';
+
+        const posterName = (task.postedBy && task.postedBy.name) ? task.postedBy.name : 'Poster';
+        const posterInitial = posterName.charAt(0).toUpperCase();
+        const posterFirstName = escapeHtml(posterName.split(' ')[0]);
+        const timerClass = getTimerUrgencyClass(timeLeft);
+        const taskValue = Math.round(parseFloat(task.price || 0) + getTaskServiceCharge(task));
+        const earnAmount = Math.round(getHelperEarnings(task));
+
         return `
-            <div class="task-card" data-task-id="${task.id}" onclick="onTaskCardClick(${task.id})">
-                <div class="task-card-header">
-                    <span class="task-category">${formatCategory(task.category)}</span>
-                    ${_vehBadge}
-                    <span class="task-price">₹${Math.round(getTaskFinalValue(task))}</span>
-                    ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
+            <div class="task-card task-card-v2" data-task-id="${task.id}" data-category="${task.category}" onclick="onTaskCardClick(${task.id})">
+                <div class="tc-body">
+                    <div class="tc-top-row">
+                        <div class="tc-cat-chip">
+                            <i class="${getCategoryIcon(task.category)}"></i>
+                            <span>${formatCategory(task.category)}</span>
+                        </div>
+                        <div class="tc-top-right">
+                            ${_vehBadge}
+                            ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
+                        </div>
+                    </div>
+                    <h4 class="tc-title">${escapeHtml(task.title)}</h4>
+                    <p class="tc-desc">${formatTaskDescription(task.description, { compact: true })}</p>
+                    <div class="tc-stats">
+                        <span class="tc-stat tc-stat-location"><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
+                        ${rating ? `<span class="tc-stat tc-stat-rating"><i class="fas fa-star"></i> ${rating.toFixed(1)}</span>` : ''}
+                        <span class="tc-stat ${timerClass}"><i class="fas fa-clock"></i> ${timeLeft}</span>
+                    </div>
+                    <div class="tc-footer">
+                        <div class="tc-poster">
+                            <div class="tc-avatar">${posterInitial}</div>
+                            <span class="tc-poster-name">${posterFirstName}</span>
+                        </div>
+                        <div class="tc-earn">
+                            <span class="tc-task-val">Task Value ₹${taskValue}</span>
+                            <div class="tc-earn-row">
+                                <span class="tc-earn-label">You Earn</span>
+                                <span class="tc-earn-amount">₹${earnAmount}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ${!isOwn ? (() => {
+                        const myAccepted = myAcceptedTasks.find(at => at.id === task.id && (at.status === 'accepted' || at.status === 'in_progress'));
+                        if (myAccepted) {
+                            // Helper has accepted THIS task — show share button
+                            return `<div class="tc-action-row">
+                                <button class="task-card-accept-btn tc-accept-main task-card-accept-locked" disabled><i class="fas fa-check-circle"></i> Accepted</button>
+                                <button class="tc-share-btn" onclick="event.stopPropagation(); shareTask(${task.id});" title="Share task on WhatsApp"><i class="fab fa-whatsapp"></i></button>
+                            </div>`;
+                        }
+                        if (myAcceptedTasks.some(at => at.status === 'in_progress' || at.status === 'accepted')) {
+                            return `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`;
+                        }
+                        return `<button class="task-card-accept-btn" data-accept-task-id="${task.id}"><i class="fas fa-check-circle"></i> Accept Task</button>`;
+                    })() : ''}
                 </div>
-                <h4>${escapeHtml(task.title)}</h4>
-                <p class="task-desc-summary">${formatTaskDescription(task.description, { compact: true })}</p>
-                <div class="task-meta">
-                    <span><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
-                    ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
-                    <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft}</span>
-                </div>
-                ${!isOwn ? (userActiveTask
-                    ? `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`
-                    : `<button class="task-card-accept-btn" data-accept-task-id="${task.id}"><i class="fas fa-check"></i> Accept Task</button>`) : ''}
             </div>
         `;
     }).join('');
@@ -2865,13 +2979,35 @@ function openTaskDetail(taskId) {
         
         <div class="task-detail-map" id="taskDetailMap"></div>
         
-        <div class="task-detail-price">
-            <div>
-                <h3>Your Earnings</h3>
-                <small>₹${parseFloat(task.price)} + ₹${getTaskServiceCharge(task)} service charge${task.category === 'transport' ? '' : ' + 5% posting fee'}</small>
+        ${isOwner ? `
+        <div class="task-detail-price task-detail-price-breakdown">
+            <div class="price-breakdown-row">
+                <span>Budget</span><span>₹${parseFloat(task.price).toFixed(2)}</span>
             </div>
-            <span class="price">₹${getTaskFinalValue(task)}</span>
-        </div>
+            ${getTaskServiceCharge(task) > 0 ? `
+            <div class="price-breakdown-row">
+                <span>Service Charge <small>(Delivery/Distance)</small></span><span>+₹${getTaskServiceCharge(task).toFixed(2)}</span>
+            </div>
+            <div class="price-breakdown-row price-breakdown-subtotal">
+                <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
+            </div>` : ''}
+            <div class="price-breakdown-row" style="color:#f59e0b;">
+                <span>Platform Fee (5%)</span><span>+₹${getTaskPlatformFee(task).toFixed(2)}</span>
+            </div>
+            <div class="price-breakdown-row price-breakdown-total">
+                <h3>Total You Pay</h3><span class="price">₹${Math.round(getTaskFinalValue(task))}</span>
+            </div>
+        </div>` : `
+        <div class="task-detail-price task-detail-price-breakdown">
+            ${getTaskServiceCharge(task) > 0 ? `
+            <div class="price-breakdown-row" style="color:var(--text-secondary);">
+                <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
+            </div>` : ''}
+            <div class="price-breakdown-row price-breakdown-total">
+                <div><h3>You Earn</h3><small>After 12% platform commission</small></div>
+                <span class="price">₹${Math.round(getHelperEarnings(task))}</span>
+            </div>
+        </div>`}
         
         <div class="task-poster">
             <div class="poster-avatar"><i class="fas fa-user"></i></div>
@@ -4695,16 +4831,17 @@ async function showPaymentInvoice(taskId) {
                     <span style="color: #ccc;">Budget (Task Price)</span>
                     <span style="color: #fff; font-weight: 600;">₹${taskAmount.toFixed(2)}</span>
                 </div>
+                ${serviceCharge > 0 ? `
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <span style="color: #ccc;">Service Charge</span>
-                    <span style="color: #fbbf24; font-weight: 600;">${serviceCharge > 0 ? '+₹' + serviceCharge.toFixed(2) : '₹0.00'}</span>
+                    <span style="color: #ccc;">Service Charge <span style="font-size:11px;opacity:0.7;">(Delivery/Distance)</span></span>
+                    <span style="color: #fbbf24; font-weight: 600;">+₹${serviceCharge.toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 700;">
                     <span style="color: #fff;">Task Value</span>
                     <span style="color: #fff;">₹${totalTaskValue.toFixed(2)}</span>
-                </div>
+                </div>` : ''}
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <span style="color: #ccc;">Posting Fee (5%)</span>
+                    <span style="color: #ccc;">Platform Fee (5%)</span>
                     <span style="color: #fbbf24; font-weight: 600;">+₹${posterFee.toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; padding: 12px 0 0 0; border-top: 2px solid rgba(139, 92, 246, 0.4); font-size: 18px; font-weight: 800;">
@@ -6066,7 +6203,43 @@ function toggleChangePassword() {
         document.getElementById('currentPassword').value = '';
         document.getElementById('newPassword2').value = '';
         document.getElementById('confirmPassword2').value = '';
+        var bar = document.getElementById('pwdStrengthBar');
+        if (bar) { bar.style.width = '0'; }
+        var txt = document.getElementById('pwdStrengthText');
+        if (txt) { txt.textContent = ''; }
     }
+}
+
+function togglePwdEye(inputId, btn) {
+    var input = document.getElementById(inputId);
+    if (!input) return;
+    var isText = input.type === 'text';
+    input.type = isText ? 'password' : 'text';
+    var icon = btn.querySelector('i');
+    if (icon) { icon.className = isText ? 'fas fa-eye' : 'fas fa-eye-slash'; }
+}
+
+function updatePwdStrengthBar(pwd) {
+    var bar = document.getElementById('pwdStrengthBar');
+    var txt = document.getElementById('pwdStrengthText');
+    if (!bar || !txt) return;
+    if (!pwd) { bar.style.width = '0'; txt.textContent = ''; return; }
+    var score = 0;
+    if (pwd.length >= 6)  score++;
+    if (pwd.length >= 10) score++;
+    if (/[A-Z]/.test(pwd)) score++;
+    if (/[0-9]/.test(pwd)) score++;
+    if (/[^A-Za-z0-9]/.test(pwd)) score++;
+    var levels = [
+        {w:'20%', c:'#ef4444', t:'Weak'},
+        {w:'40%', c:'#f59e0b', t:'Fair'},
+        {w:'65%', c:'#f59e0b', t:'Moderate'},
+        {w:'85%', c:'#10b981', t:'Strong'},
+        {w:'100%',c:'#059669', t:'Very Strong'}
+    ];
+    var l = levels[Math.min(score, 5) - 1] || levels[0];
+    bar.style.width = l.w; bar.style.background = l.c;
+    txt.textContent = l.t; txt.style.color = l.c;
 }
 
 async function saveNewPassword() {
@@ -6497,7 +6670,7 @@ function renderPostedTasks() {
                     <span class="task-status ${statusClass}">${statusLabel}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
-                <div class="task-meta"><span>₹${getTaskFinalValue(t)}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
+                <div class="task-meta"><span>₹${Math.round((parseFloat(t.price)||0)+(parseFloat(t.service_charge)||0))}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
                 ${helperHTML}
                 ${actionsHTML}
             </div>
@@ -6615,7 +6788,7 @@ function renderCompletedTasks() {
         pendingHTML = `<div style="margin-bottom:20px;">
             <h4 style="margin:0 0 12px;color:#059669;"><i class="fas fa-hand-holding-usd"></i> Payment Received — Tap to Finalize</h4>
             ${pendingComplete.map(t => {
-                const earned = t.earnedAmount || (getTaskFinalValue(t) * 0.88);
+                const earned = t.earnedAmount || Math.round(getHelperEarnings(t) * 100) / 100;
                 return `<div class="my-task-card" style="border:2px solid #10b981;">
                     <div class="my-task-card-header">
                         <span class="task-category">${formatCategory(t.category)}</span>
@@ -6634,7 +6807,7 @@ function renderCompletedTasks() {
     // Calculate total earned (after 12% commission)
     const totalEarned = visible.reduce((s, t) => {
         if (t.earnedAmount) return s + t.earnedAmount;
-        return s + (getTaskFinalValue(t) * 0.88);
+        return s + Math.round(getHelperEarnings(t) * 100) / 100;
     }, 0);
 
     el.innerHTML = `
@@ -6645,8 +6818,8 @@ function renderCompletedTasks() {
         </div>
         ${pendingHTML}
         ${visible.map(t => {
-            const amt = getTaskFinalValue(t);
-            const earned = t.earnedAmount || (amt * 0.88);
+            const taskBaseVal = (parseFloat(t.price)||0) + (parseFloat(t.service_charge)||0);
+            const earned = t.earnedAmount || Math.round(taskBaseVal * 0.88 * 100) / 100;
             const posterName = t.poster_name || (t.postedBy && t.postedBy.name) || 'Poster';
             const posterId = t.poster_user_id || (t.postedBy && t.postedBy.id) || t.posted_by || '';
             const posterPhone = t.poster_phone || (t.postedBy && t.postedBy.phone) || '';
@@ -6685,7 +6858,7 @@ function renderCompletedTasks() {
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
                 ${contactHTML}
-                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${amt.toFixed(2)} - 12% commission)</small></p>
+                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${taskBaseVal.toFixed(2)} task value − 12% commission)</small></p>
                 <div style="margin-top:10px;">${rateBtn}</div>
             </div>`;
         }).join('')}
@@ -6828,6 +7001,50 @@ function getTimeLeft(expires) {
     const h = Math.floor(diff / 3600000);
     const m = Math.floor((diff % 3600000) / 60000);
     return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+}
+
+function getCategoryIcon(cat) {
+    const icons = {
+        household: 'fas fa-home',
+        delivery: 'fas fa-truck',
+        tutoring: 'fas fa-book-open',
+        transport: 'fas fa-car',
+        vehicle: 'fas fa-wrench',
+        repair: 'fas fa-tools',
+        photography: 'fas fa-camera',
+        freelance: 'fas fa-laptop-code',
+        waste: 'fas fa-trash-alt',
+        cleaning: 'fas fa-broom',
+        cooking: 'fas fa-utensils',
+        petcare: 'fas fa-paw',
+        gardening: 'fas fa-leaf',
+        shopping: 'fas fa-shopping-bag',
+        eventhelp: 'fas fa-calendar-check',
+        moving: 'fas fa-dolly',
+        techsupport: 'fas fa-headset',
+        beauty: 'fas fa-spa',
+        laundry: 'fas fa-tshirt',
+        catering: 'fas fa-concierge-bell',
+        babysitting: 'fas fa-baby',
+        eldercare: 'fas fa-user-friends',
+        fitness: 'fas fa-dumbbell',
+        painting: 'fas fa-paint-roller',
+        electrician: 'fas fa-bolt',
+        plumbing: 'fas fa-faucet',
+        carpentry: 'fas fa-hammer',
+        tailoring: 'fas fa-cut',
+    };
+    return icons[cat] || 'fas fa-briefcase';
+}
+
+function getTimerUrgencyClass(timeLeft) {
+    if (!timeLeft || timeLeft === 'Expired') return 'tc-timer-expired';
+    // Only minutes left (no hours, no days) — very urgent
+    if (/^\d+m/.test(timeLeft) && !timeLeft.includes('h') && !timeLeft.includes('d')) return 'tc-timer-urgent';
+    // Under 3 hours
+    const hMatch = timeLeft.match(/^(\d+)h/);
+    if (hMatch && parseInt(hMatch[1]) < 3) return 'tc-timer-warning';
+    return 'tc-timer-ok';
 }
 
 function formatCategory(cat) {
@@ -6991,10 +7208,11 @@ function updateTotalBudgetDisplay() {
     
     const total = baseBudget + currentBonus;
     
-    // Get service charge based on selected category (distance-aware for pick&drop / delivery / moving).
+    // Get service charge based on selected category.
+    // Service charge ONLY for Delivery/Pick&Drop categories; 0 for everything else.
     const category = document.getElementById('modalTaskCategory')?.value || 'other';
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const serviceCharge = getServiceCharge(category, distanceKm);
+    const serviceCharge = getServiceCharge(category, distanceKm); // 0 for non-delivery
     const chargeInfo = getServiceChargeInfo(category);
 
     // Task Posting Fee = 5% of (budget + service charge). Applies to all categories.
@@ -7044,9 +7262,9 @@ function updateTotalBudgetDisplay() {
     // Always show the platform-fee row (applies to all categories).
     const platformRow = platformFeeDisplay ? platformFeeDisplay.closest('.charge-row') : null;
     if (platformRow) platformRow.style.display = '';
-    // Always show the service-charge row (applies to all categories).
-    const feeRow = serviceChargeDisplay ? serviceChargeDisplay.closest('.charge-row') : null;
-    const timeRow = serviceChargeTime ? serviceChargeTime.closest('.charge-row') : null;
+    // Show service-charge row ONLY for Delivery/Pick&Drop categories.
+    const feeRow = document.getElementById('serviceChargeRow');
+    const timeRow = document.getElementById('serviceChargeTimeRow');
     if (feeRow) feeRow.style.display = serviceCharge > 0 ? '' : 'none';
     if (timeRow) timeRow.style.display = serviceCharge > 0 ? '' : 'none';
 }
@@ -8684,6 +8902,140 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+
+// ========================================
+// HOMEPAGE ATTRACTION FEATURES
+// ========================================
+
+// 1. Hero quote rotation
+(function initHeroQuotes() {
+    function rotate() {
+        const quotes = document.querySelectorAll('.hero-quote');
+        if (!quotes.length) return;
+        let active = 0;
+        quotes.forEach((q, i) => { if (q.classList.contains('active')) active = i; });
+        quotes[active].classList.remove('active');
+        quotes[(active + 1) % quotes.length].classList.add('active');
+    }
+    if (document.querySelector('.hero-quote')) {
+        setInterval(rotate, 4000);
+    } else {
+        document.addEventListener('DOMContentLoaded', function() {
+            if (document.querySelector('.hero-quote')) setInterval(rotate, 4000);
+        });
+    }
+})();
+
+// 2. Earnings Calculator
+function updateCalc() {
+    const ratePerTask = parseInt(document.getElementById('calcCategory')?.value || 500);
+    const tasksPerDay = parseInt(document.getElementById('calcTasks')?.value || 3);
+    const hoursPerWeek = parseInt(document.getElementById('calcHours')?.value || 10);
+    const daysPerWeek = Math.max(1, Math.round(hoursPerWeek / 3));
+    const tasksPerWeek = daysPerWeek * tasksPerDay;
+    const gross = tasksPerWeek * ratePerTask * 4; // ~4 weeks
+    const net = Math.round(gross * 0.88);
+    const weekly = Math.round(net / 4);
+    const el = document.getElementById('calcMonthly');
+    const elW = document.getElementById('calcWeekly');
+    if (el) el.textContent = '₹' + net.toLocaleString('en-IN');
+    if (elW) elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
+}
+window.updateCalc = updateCalc;
+document.addEventListener('DOMContentLoaded', updateCalc);
+
+// WhatsApp share for task cards
+function shareTask(taskId) {
+    const task = (typeof tasks !== 'undefined') && tasks.find(t => t.id == taskId);
+    const title = task ? task.title : 'a task';
+    const text = encodeURIComponent(`Check out this task on Workmate4u: "${title}" — earn money helping nearby! https://workmate4u.netlify.app/browse.html`);
+    window.open('https://wa.me/?text=' + text, '_blank', 'noopener,noreferrer');
+}
+window.shareTask = shareTask;
+
+// 3. PWA Install Prompt
+let _pwaInstallEvent = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _pwaInstallEvent = e;
+    // Show prompt after 30s if user hasn't dismissed it
+    if (!sessionStorage.getItem('pwaDismissed')) {
+        setTimeout(() => {
+            const el = document.getElementById('pwaInstallPrompt');
+            if (el) el.style.display = 'flex';
+        }, 30000);
+    }
+});
+document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('pwaInstallBtn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            if (_pwaInstallEvent) {
+                _pwaInstallEvent.prompt();
+                _pwaInstallEvent.userChoice.then(() => { _pwaInstallEvent = null; });
+            }
+            dismissPwaPrompt();
+        });
+    }
+});
+function dismissPwaPrompt() {
+    const el = document.getElementById('pwaInstallPrompt');
+    if (el) el.style.display = 'none';
+    sessionStorage.setItem('pwaDismissed', '1');
+}
+window.dismissPwaPrompt = dismissPwaPrompt;
+
+// 4. Urgency indicator: pulse task cards expiring in < 2h
+(function addUrgencyPulse() {
+    function check() {
+        document.querySelectorAll('.task-card[data-task-id]').forEach(card => {
+            const id = card.dataset.taskId;
+            const task = (typeof tasks !== 'undefined') && tasks.find(t => t.id == id);
+            if (!task) return;
+            const ms = new Date(task.expiresAt) - Date.now();
+            if (ms > 0 && ms < 2 * 3600 * 1000) {
+                card.classList.add('tc-urgent');
+            } else {
+                card.classList.remove('tc-urgent');
+            }
+        });
+    }
+    setInterval(check, 60000);
+    document.addEventListener('DOMContentLoaded', () => setTimeout(check, 2000));
+})();
+
+// 5. Hero stat counter animation (update floor values with real data if available)
+function animateCounter(el, target, prefix, suffix) {
+    if (!el) return;
+    const duration = 1200;
+    const start = Date.now();
+    const from = 0;
+    function step() {
+        const p = Math.min((Date.now() - start) / duration, 1);
+        const val = Math.round(from + (target - from) * (1 - Math.pow(1 - p, 3)));
+        el.textContent = prefix + val.toLocaleString('en-IN') + suffix;
+        if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+}
+
+// Observe hero stat section and animate when in view
+(function observeHeroStats() {
+    const stats = document.getElementById('heroStatUsers');
+    if (!stats) return;
+    const obs = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+            if (e.isIntersecting) {
+                animateCounter(document.getElementById('heroStatUsers'), 500, '', '+');
+                animateCounter(document.getElementById('heroStatTasks'), 200, '', '+');
+                obs.disconnect();
+            }
+        });
+    }, { threshold: 0.5 });
+    obs.observe(stats);
+})();
+
 
 
 

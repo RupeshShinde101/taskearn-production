@@ -638,35 +638,22 @@ def flag_task_content(title, description):
 
 
 def get_service_charge(category):
-    """Return service charge for the given category. Aligned with frontend SERVICE_CHARGES.
-    Note: the 5% Task Posting Fee (platform fee) is separate and applies to all categories."""
-    service_charges = {
-        # Pick & Drop — distance-based on frontend; 0 flat service charge on backend (platform fee still applies)
-        'transport': 0,
-        # Quick tasks (15-30 mins) — distance-based on frontend; default flat here
-        'delivery': 15, 'pickup': 30, 'document': 30,
-        'errand': 35,
-
-        # Medium tasks (1-2 hours) — ₹40-50
-        'groceries': 40, 'laundry': 40, 'shopping': 40,
-        'gardening': 50, 'cleaning': 50, 'cooking': 50,
-
-        # Skilled tasks (2-4 hours) — ₹60-70
-        'repair': 60, 'assembly': 60, 'tech-support': 60,
-        'event-help': 60, 'tailoring': 60, 'beauty': 60, 'petcare': 60,
-
-        # Time-intensive tasks (3-6 hours) — ₹70-80
-        'tutoring': 70, 'babysitting': 70, 'fitness': 70,
-        'photography': 70, 'painting': 70, 'moving': 80,
-        'eldercare': 80,
-
-        # Professional/High-skill tasks — ₹90-100
-        'carpentry': 90, 'electrician': 100, 'plumbing': 100,
-
-        # Vehicle related — ₹40
-        'vehicle': 40
+    """Return service charge for the given category.
+    Service charge ONLY applies to Delivery/Pick&Drop categories (delivery, pickup, transport, moving).
+    All other categories return 0 — only the 5% platform fee applies to them.
+    Note: the 5% Platform Fee is separate and applies to ALL categories."""
+    # Only Delivery/Pick&Drop categories carry a service charge
+    DELIVERY_CATEGORIES = {'delivery', 'pickup', 'transport', 'moving'}
+    if category not in DELIVERY_CATEGORIES:
+        return 0
+    # Flat fallback on backend (frontend uses distance-aware calculation)
+    delivery_charges = {
+        'delivery': 15,
+        'pickup':   15,
+        'transport': 15,
+        'moving':   40,
     }
-    return service_charges.get(category, 50)
+    return delivery_charges.get(category, 15)
 
 
 def get_user_by_email(email):
@@ -3588,13 +3575,14 @@ def get_user_tasks():
                 except Exception:
                     pass
 
-        # Posted tasks - ALL statuses, join helper info for accepted/completed/paid tasks
+        # Posted tasks — exclude tasks removed/flagged by admin/AI (those are deleted or hidden)
         cursor.execute(f'''
             SELECT t.*, u.name as helper_name, u.phone as helper_phone,
                    u.rating as helper_rating, u.tasks_completed as helper_tasks_completed
             FROM tasks t
             LEFT JOIN users u ON t.accepted_by = u.id
-            WHERE t.posted_by = {PH} ORDER BY t.posted_at DESC
+            WHERE t.posted_by = {PH} AND t.status NOT IN ('removed', 'flagged', 'suspicious')
+            ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
 
@@ -6242,7 +6230,7 @@ def init_database_endpoint():
 # ========================================
 
 def cleanup_old_tasks():
-    """Delete tasks that are completed or expired (older than 30 days), and notify posters of newly expired tasks"""
+    """Delete expired tasks immediately and delete old completed/paid tasks"""
     try:
         with get_db() as (cursor, conn):
             try:
@@ -6250,7 +6238,7 @@ def cleanup_old_tasks():
                 now = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 thirty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
                 
-                # Mark active tasks as expired and notify posters
+                # Find active tasks that have expired — notify posters then DELETE immediately
                 cursor.execute(f'''
                     SELECT id, title, posted_by, price FROM tasks
                     WHERE status = 'active' AND expires_at < {PH}
@@ -6258,20 +6246,31 @@ def cleanup_old_tasks():
                 expired_tasks = [dict_from_row(r) for r in cursor.fetchall()]
                 
                 for t in expired_tasks:
-                    cursor.execute(f"UPDATE tasks SET status = 'expired' WHERE id = {PH}", (t['id'],))
+                    # Notify poster before deleting
                     notif_data = json.dumps({'type': 'task', 'taskId': t['id']})
-                    cursor.execute(f'''
-                        INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
-                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (t['posted_by'], t['id'], 'task_expired',
-                          'Task Expired ⏰',
-                          f'Your task "{t["title"]}" has expired without being accepted. You can post it again.',
-                          'unread', notif_data, now))
+                    try:
+                        cursor.execute(f'''
+                            INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (t['posted_by'], t['id'], 'task_expired',
+                              'Task Expired ⏰',
+                              f'Your task "{t["title"]}" has expired without being accepted. You can post it again.',
+                              'unread', notif_data, now))
+                    except Exception:
+                        pass
+                    # Cascade delete related records then the task itself
+                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
+                                       'location_tracking', 'sos_alerts']:
+                        try:
+                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id = {PH}', (t['id'],))
+                        except Exception:
+                            pass
+                    cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (t['id'],))
                 
                 if expired_tasks:
-                    print(f"✅ Marked {len(expired_tasks)} tasks as expired and notified posters")
+                    print(f"✅ Deleted {len(expired_tasks)} expired tasks and notified posters")
                 
-                # Delete completed tasks older than 30 days
+                # Delete completed/paid tasks older than 30 days
                 cursor.execute(f'''
                     DELETE FROM tasks 
                     WHERE (status = 'completed' OR status = 'paid')
@@ -9306,6 +9305,127 @@ def admin_verify_kyc(user_id):
         return jsonify({'success': True, 'message': f'KYC {action}d for user {user_id}'})
     except Exception as e:
         return jsonify({'success': False, 'message': 'Failed to process KYC'}), 500
+
+
+# ========================================
+# AI TEAM PANEL INTEGRATION ROUTES
+# ========================================
+
+_AI_TEAM_TOKEN = os.environ.get('WORKMATE_AI_TOKEN', 'workmate-ai-internal-2026')
+
+def _require_ai_token(f):
+    """Simple token auth for internal AI team calls (no JWT needed)."""
+    from functools import wraps
+    @wraps(f)
+    def _inner(*args, **kwargs):
+        token = request.headers.get('X-AI-Token', '')
+        if token != _AI_TEAM_TOKEN:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        return f(*args, **kwargs)
+    return _inner
+
+
+@app.route('/api/ai-team/actions', methods=['GET'])
+@require_admin
+def ai_team_actions_list():
+    """Admin: list all actions taken by the AI team (audit log entries from ai_team)."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f"""
+                SELECT id, action, resource_type, resource_id, details, created_at
+                FROM admin_audit_log
+                WHERE admin_id = 'ai_team'
+                ORDER BY created_at DESC
+                LIMIT 100
+            """)
+            rows = cursor.fetchall()
+            actions = []
+            for r in rows:
+                row = dict_from_row(r)
+                actions.append({
+                    'id':            row.get('id'),
+                    'action':        row.get('action'),
+                    'resource_type': row.get('resource_type'),
+                    'resource_id':   row.get('resource_id'),
+                    'details':       row.get('details'),
+                    'created_at':    str(row.get('created_at', ''))[:16],
+                })
+        return jsonify({'success': True, 'actions': actions})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/ai-team/flagged-tasks', methods=['GET'])
+@require_admin
+def ai_team_flagged_tasks():
+    """Admin: list all tasks currently flagged or suspicious by the AI fraud agent."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f"""
+                SELECT t.id, t.title, t.description, t.price, t.status, t.category,
+                       t.posted_at, u.name AS poster_name, u.email AS poster_email
+                FROM tasks t
+                JOIN users u ON t.posted_by = u.id
+                WHERE t.status IN ('flagged', 'suspicious', 'removed')
+                ORDER BY t.posted_at DESC
+                LIMIT 50
+            """)
+            rows = cursor.fetchall()
+            tasks = []
+            for r in rows:
+                row = dict_from_row(r)
+                tasks.append({
+                    'id':           row.get('id'),
+                    'title':        row.get('title'),
+                    'description':  str(row.get('description') or '')[:100],
+                    'price':        row.get('price'),
+                    'status':       row.get('status'),
+                    'category':     row.get('category'),
+                    'posted_at':    str(row.get('posted_at', ''))[:16],
+                    'poster_name':  row.get('poster_name'),
+                    'poster_email': row.get('poster_email'),
+                })
+        return jsonify({'success': True, 'tasks': tasks})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/ai-team/report', methods=['POST'])
+def ai_team_receive_report():
+    """AI Team Panel posts its agent reports here so admin panel can display them.
+    Auth: X-AI-Token header. No JWT required (internal service-to-service)."""
+    token = request.headers.get('X-AI-Token', '')
+    if token != _AI_TEAM_TOKEN:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
+    report = data.get('report', {})
+    if not report or not report.get('agent_id'):
+        return jsonify({'success': False, 'message': 'Invalid report payload'}), 400
+
+    try:
+        with get_db() as (cursor, conn):
+            import json as _json
+            # Store in admin_audit_log as a JSON blob for now
+            cursor.execute(f"""
+                INSERT INTO admin_audit_log
+                    (admin_id, action, resource_type, resource_id, details, created_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+            """, (
+                'ai_team',
+                f"agent_report:{report.get('status','info')}",
+                'ai_agent',
+                report.get('agent_id'),
+                _json.dumps({
+                    'title':   report.get('title', ''),
+                    'summary': report.get('summary', ''),
+                    'status':  report.get('status', 'info'),
+                    'stats':   report.get('stats', {}),
+                }, ensure_ascii=False)[:2000],
+            ))
+        return jsonify({'success': True, 'message': 'Report stored'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ========================================

@@ -345,8 +345,35 @@
         .transaction-amount.debit {
             color: #ef4444;
         }
-        
-        /* Add Money Modal */
+
+        /* Empty wallet earn CTA */
+        .wallet-earn-cta {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 28px 20px;
+            margin: 12px 0;
+            background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.1));
+            border: 1px solid rgba(99,102,241,0.25);
+            border-radius: 16px;
+            gap: 10px;
+        }
+        .wallet-earn-cta .earn-cta-icon { font-size: 2.4rem; }
+        .wallet-earn-cta h3 { margin: 0; font-size: 1.05rem; color: #fff; }
+        .wallet-earn-cta p  { margin: 0; font-size: 0.82rem; color: rgba(255,255,255,0.6); }
+        .wallet-earn-cta .btn-browse {
+            margin-top: 6px;
+            padding: 10px 28px;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-decoration: none;
+            cursor: pointer;
+        }
         .modal-overlay {
             display: none;
             position: fixed;
@@ -1213,17 +1240,29 @@
             const list = document.getElementById('transactionList');
             
             if (!transactions || transactions.length === 0) {
-                list.innerHTML = `
-                    <div class="transaction-item">
-                        <div class="transaction-icon credit">
-                            <i class="fas fa-inbox"></i>
+                const walletBalance = parseFloat(document.getElementById('walletBalance').textContent) || 0;
+                if (walletBalance === 0) {
+                    list.innerHTML = `
+                        <div class="wallet-earn-cta">
+                            <div class="earn-cta-icon">🎯</div>
+                            <h3>Your wallet is empty</h3>
+                            <p>Accept tasks near you and earn money directly to your wallet.</p>
+                            <a href="browse.html" class="btn-browse"><i class="fas fa-bolt"></i> Browse Tasks</a>
                         </div>
-                        <div class="transaction-details">
-                            <div class="transaction-title">No transactions yet</div>
-                            <div class="transaction-date">Add money to get started</div>
+                    `;
+                } else {
+                    list.innerHTML = `
+                        <div class="transaction-item">
+                            <div class="transaction-icon credit">
+                                <i class="fas fa-inbox"></i>
+                            </div>
+                            <div class="transaction-details">
+                                <div class="transaction-title">No transactions yet</div>
+                                <div class="transaction-date">Add money to get started</div>
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                }
                 return;
             }
             

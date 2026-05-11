@@ -2939,19 +2939,22 @@ function renderTasks(filtered = null) {
     });
 
     if (list.length === 0) {
+        const _allActiveTasks = tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired');
+        const _hasTasksBeyondRadius = _allActiveTasks.length > 0 && _allActiveTasks.length > list.length;
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon"><i class="fas fa-magnifying-glass"></i></div>
-                <h3>No tasks available</h3>
-                <p>No nearby tasks match your filters right now.<br>Try widening your distance or budget range, or check back later.</p>
+                <h3>No tasks found nearby</h3>
+                <p>${_hasTasksBeyondRadius ? 'There are <strong>' + _allActiveTasks.length + ' tasks</strong> available — try expanding your radius.' : 'No nearby tasks match your filters right now. Try widening your search or check back later.'}</p>
                 <div class="empty-state-tips">
-                    <span><i class="fas fa-location-dot"></i> Increase distance</span>
-                    <span><i class="fas fa-indian-rupee-sign"></i> Adjust budget</span>
-                    <span><i class="fas fa-rotate-right"></i> Refresh later</span>
+                    <button class="empty-state-tip-btn" onclick="document.getElementById('filterDistance').value=50; document.getElementById('distanceValue').textContent='50'; applyFilters();"><i class="fas fa-location-dot"></i> Expand to 50 km</button>
+                    <button class="empty-state-tip-btn" onclick="document.getElementById('minBudget').value=''; document.getElementById('maxBudget').value=''; applyFilters();"><i class="fas fa-indian-rupee-sign"></i> Clear budget</button>
+                    <button class="empty-state-tip-btn" onclick="loadTasksFromServer();"><i class="fas fa-rotate-right"></i> Refresh</button>
                 </div>
-                <button class="btn btn-outline empty-state-reset" onclick="clearFilters()"><i class="fas fa-times-circle"></i> Clear Filters</button>
+                <button class="btn btn-outline empty-state-reset" onclick="clearFilters()"><i class="fas fa-times-circle"></i> Clear All Filters</button>
             </div>
         `;
+        return;
         return;
     }
 
@@ -3041,6 +3044,8 @@ function renderTasks(filtered = null) {
                         <div class="tc-poster">
                             <div class="tc-avatar">${posterInitial}</div>
                             <span class="tc-poster-name">${posterFirstName}</span>
+                            ${task.postedBy && task.postedBy.verified ? '<span class="tc-poster-verified" title="Verified poster"><i class="fas fa-check-circle"></i></span>' : ''}
+                            ${task.postedBy && task.postedBy.tasks_posted > 0 ? `<span class="tc-poster-taskcount">${task.postedBy.tasks_posted} posted</span>` : ''}
                         </div>
                         <div class="tc-earn">
                             <span class="tc-task-val">Task Value ₹${taskValue}</span>
@@ -6673,6 +6678,19 @@ async function verifyTaskDone(taskId, btnEl) {
             renderAcceptedTasks();
             await syncUserTasksFromServer();
             renderDashboard();
+            // Share prompt — invite others to earn
+            setTimeout(() => {
+                if (localStorage.getItem('share_task_prompt_shown')) return;
+                localStorage.setItem('share_task_prompt_shown', '1');
+                const title = task ? task.title : 'a task';
+                const waText = encodeURIComponent(`I just completed "${title}" on Workmate4u and got paid! 💸\nYou can also earn money doing tasks nearby 👉 https://workmate4u.com`);
+                const el = document.createElement('div');
+                el.id = 'shareEarnPrompt';
+                el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;border-radius:14px;padding:16px 18px;z-index:9999;max-width:360px;width:calc(100% - 32px);box-shadow:0 8px 30px rgba(0,0,0,0.3);animation:slideUpPWA 0.3s ease;';
+                el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🎉</span><div style="flex:1;"><strong style="display:block;margin-bottom:2px;">Great work!</strong><span style="font-size:0.8rem;opacity:0.75;">Share your success with friends</span></div><button onclick="document.getElementById('shareEarnPrompt').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:1rem;"><i class="fas fa-times"></i></button></div><a href="https://wa.me/?text=${waText}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;background:#25D366;color:#fff;border-radius:10px;padding:10px;text-decoration:none;font-weight:700;"><i class="fab fa-whatsapp"></i> Share on WhatsApp</a>`;
+                document.body.appendChild(el);
+                setTimeout(() => { const e = document.getElementById('shareEarnPrompt'); if (e) e.remove(); }, 10000);
+            }, 2000);
         } else {
             alert(result.message || 'Could not send verification. Please try again.');
             if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-double"></i> Verify Task Done'; }
@@ -6761,12 +6779,11 @@ function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    // Show active (non-expired) and accepted posted tasks (not completed/payment_released/paid — those go to history)
+    // Show active (incl. expired) and accepted posted tasks (not completed/payment_released/paid — those go to history)
     const visiblePostedTasks = myPostedTasks.filter(t => {
         if (t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending') return true;
         if (t.status !== 'active') return false;
-        if (getTimeLeft(t.expiresAt) === 'Expired') return false;
-        return true;
+        return true; // include expired — rendered with Expired badge
     });
 
     if (visiblePostedTasks.length === 0) {
@@ -6800,15 +6817,27 @@ function renderPostedTasks() {
                 </div>`;
         }
 
+        const isExpiredTask = t.status === 'active' && getTimeLeft(t.expiresAt) === 'Expired';
         let statusLabel = t.status;
         let statusClass = t.status;
-        if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
+        if (isExpiredTask) { statusLabel = '⏰ Expired'; statusClass = 'expired'; }
+        else if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
         else if (t.status === 'completed' || t.status === 'pending_payment') { statusLabel = 'Awaiting Payment'; statusClass = 'warning'; }
         else if (t.status === 'verify_pending') { statusLabel = '⏳ Verify & Pay'; statusClass = 'warning'; }
         else if (t.status === 'payment_released') { statusLabel = '✅ Payment Released'; statusClass = 'paid'; }
 
         let actionsHTML = '';
-        if (t.status === 'active') {
+        if (isExpiredTask) {
+            actionsHTML = `<div class="task-actions" style="margin-top:10px;">
+                <div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:13px;color:#ef4444;">
+                    <i class="fas fa-clock"></i> This task expired without being accepted.
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-danger" style="flex:1;" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
+                    <button class="btn btn-primary" style="flex:1;" onclick="openEditTask(${t.id})"><i class="fas fa-rotate-right"></i> Re-post</button>
+                </div>
+            </div>`;
+        } else if (t.status === 'active') {
             actionsHTML = `<div class="task-actions">
                     <button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button>
                     <button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>

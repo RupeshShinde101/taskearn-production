@@ -173,8 +173,52 @@
         .balance-amount .currency {
             font-size: 24px;
         }
-        
-        .wallet-stats {
+
+        /* Negative balance state */
+        .balance-amount.negative { color: #ff6b6b; }
+        .balance-label.negative { color: rgba(255,107,107,0.85); }
+        .wallet-card.negative-balance {
+            background: linear-gradient(135deg, #1a0a0a 0%, #3b0f0f 50%, #1e1212 100%);
+        }
+
+        /* Negative balance alert banner */
+        .neg-balance-alert {
+            display: none;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            border-radius: 16px;
+            padding: 18px 20px;
+            margin-bottom: 16px;
+            color: #fff;
+        }
+        .neg-balance-alert .nba-top {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .neg-balance-alert .nba-icon {
+            width: 42px; height: 42px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.3rem;
+            flex-shrink: 0;
+        }
+        .neg-balance-alert h3 { margin: 0; font-size: 1rem; }
+        .neg-balance-alert p  { margin: 0; font-size: 0.8rem; opacity: 0.85; }
+        .neg-balance-alert .nba-btn {
+            width: 100%;
+            padding: 12px;
+            background: #fff;
+            color: #dc2626;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+        }
+        .neg-balance-alert .nba-btn:hover { background: rgba(255,255,255,0.9); }
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 15px;
@@ -917,6 +961,18 @@
 
         <!-- Wallet Content (shown when logged in) -->
         <div id="walletContent" style="display: none;">
+            <!-- Negative balance alert -->
+            <div class="neg-balance-alert" id="negBalanceAlert">
+                <div class="nba-top">
+                    <div class="nba-icon">⚠️</div>
+                    <div>
+                        <h3>Negative Balance</h3>
+                        <p id="negBalanceMsg">Your account has a debt of ₹0. Tasks &amp; withdrawals are blocked until cleared.</p>
+                    </div>
+                </div>
+                <button class="nba-btn" onclick="openAddMoneyModal()"><i class="fas fa-plus-circle"></i> Top Up &amp; Clear Debt</button>
+            </div>
+
             <!-- Wallet Card -->
             <div class="wallet-card">
                 <div class="wallet-header">
@@ -1229,11 +1285,36 @@
         }
         
         function updateWalletUI(wallet) {
-            document.getElementById('walletBalance').textContent = wallet.balance.toFixed(2);
+            const bal = wallet.balance;
+            const balEl = document.getElementById('walletBalance');
+            const balAmt = balEl ? balEl.parentElement : null;
+            const balLabel = document.querySelector('.balance-label');
+            const walletCard = document.querySelector('.wallet-card');
+            const negAlert = document.getElementById('negBalanceAlert');
+
+            balEl.textContent = bal.toFixed(2);
             document.getElementById('totalAdded').textContent = '₹' + wallet.totalAdded;
             document.getElementById('totalSpent').textContent = '₹' + wallet.totalSpent;
             document.getElementById('totalEarned').textContent = '₹' + wallet.totalEarned;
             document.getElementById('totalCashback').textContent = '₹' + wallet.totalCashback;
+
+            if (bal < 0) {
+                if (balAmt) balAmt.classList.add('negative');
+                if (balLabel) balLabel.classList.add('negative');
+                if (walletCard) walletCard.classList.add('negative-balance');
+                if (negAlert) {
+                    negAlert.style.display = 'block';
+                    const msg = document.getElementById('negBalanceMsg');
+                    if (msg) msg.textContent = `Your account has a debt of ₹${Math.abs(bal).toFixed(2)}. Task acceptance & withdrawals are blocked until cleared.`;
+                }
+                // Auto-open top-up modal after a short delay
+                setTimeout(() => openAddMoneyModal(), 700);
+            } else {
+                if (balAmt) balAmt.classList.remove('negative');
+                if (balLabel) balLabel.classList.remove('negative');
+                if (walletCard) walletCard.classList.remove('negative-balance');
+                if (negAlert) negAlert.style.display = 'none';
+            }
         }
         
         function renderTransactions(transactions) {
@@ -1241,8 +1322,18 @@
             
             if (!transactions || transactions.length === 0) {
                 const walletBalance = parseFloat(document.getElementById('walletBalance').textContent) || 0;
-                if (walletBalance === 0) {
-                    list.innerHTML = `
+                if (walletBalance <= 0) {
+                    const isNegative = walletBalance < 0;
+                    list.innerHTML = isNegative ? `
+                        <div class="wallet-earn-cta" style="border-color:rgba(239,68,68,0.3);background:linear-gradient(135deg,rgba(239,68,68,0.1),rgba(220,38,38,0.07));">
+                            <div class="earn-cta-icon">💸</div>
+                            <h3>Clear your debt to unlock tasks</h3>
+                            <p>Add at least ₹${Math.abs(walletBalance).toFixed(2)} to restore your account and accept tasks again.</p>
+                            <button onclick="openAddMoneyModal()" class="btn-browse" style="background:linear-gradient(135deg,#ef4444,#dc2626);">
+                                <i class="fas fa-plus-circle"></i> Add Money Now
+                            </button>
+                        </div>
+                    ` : `
                         <div class="wallet-earn-cta">
                             <div class="earn-cta-icon">🎯</div>
                             <h3>Your wallet is empty</h3>

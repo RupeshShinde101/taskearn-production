@@ -2133,6 +2133,9 @@ async function refreshWalletBalance() {
                 } else if (walletData.balance < 0) {
                     setDebtSuspension(Math.abs(walletData.balance));
                 }
+
+                // Mark walletLow on currentUser so dashboard banner shows
+                currentUser.walletLow = walletData.balance < 100;
                 
                 // Update UI if wallet display exists
                 const walletDisplay = document.querySelector('[data-wallet-balance]');
@@ -6538,14 +6541,22 @@ function switchTab(tab) {
 function renderDashboard() {
     updateAuthenticationStatus(); // Update auth status indicator
     
-    // Show wallet low warning if applicable
-    if (currentUser && currentUser.walletLow) {
+    // Show wallet low / negative balance warning if applicable
+    const walletBal = currentUser ? (currentUser.wallet || 0) : 0;
+    if (currentUser && (currentUser.walletLow || walletBal < 0)) {
         const walletWarningEl = document.getElementById('walletLowWarning');
         if (walletWarningEl) {
+            const isNegative = walletBal < 0;
+            const bgColor = isNegative ? 'rgba(239,68,68,0.1)' : '#fff3cd';
+            const borderColor = isNegative ? '#ef4444' : '#ffc107';
+            const icon = isNegative ? 'fa-circle-exclamation' : 'fa-exclamation-triangle';
+            const label = isNegative
+                ? `Your wallet balance is low. <strong>Start earning today!</strong>`
+                : `Your wallet balance is low. <strong>Start earning today!</strong>`;
             walletWarningEl.innerHTML = `
-                <div class="alert alert-warning" style="margin-bottom: 15px; padding: 12px; border-radius: 6px; background-color: #fff3cd; border-left: 4px solid #ffc107; display: flex; justify-content: space-between; align-items: center;">
-                    <span><i class="fas fa-exclamation-triangle"></i> Wallet balance is low (₹${currentUser.wallet || 0}). <a href="wallet.html" style="text-decoration: underline; font-weight: bold;">Top up now</a></span>
-                    <button type="button" class="close" onclick="this.parentElement.style.display='none';" style="background: none; border: none; cursor: pointer; font-size: 20px;">&times;</button>
+                <div class="alert alert-warning" style="margin-bottom:15px;padding:12px 16px;border-radius:10px;background:${bgColor};border-left:4px solid ${borderColor};display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                    <span style="flex:1;"><i class="fas ${icon}" style="color:${borderColor};margin-right:6px;"></i>${label} <a href="browse.html" style="text-decoration:underline;font-weight:bold;color:${borderColor};">Browse tasks →</a></span>
+                    <button type="button" onclick="this.parentElement.style.display='none';" style="background:none;border:none;cursor:pointer;font-size:18px;opacity:0.6;">&times;</button>
                 </div>
             `;
             walletWarningEl.style.display = 'block';

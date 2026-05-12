@@ -1525,6 +1525,12 @@ function toggleNotifications() {
             dropdown.style.left = 'auto';
             dropdown.style.transform = 'none';
         }
+        // Always re-render list when opening (fixes stale/empty popup)
+        updateNotificationUI();
+        // Silently refresh from server in background
+        if (typeof syncNotificationsFromServer === 'function') {
+            syncNotificationsFromServer().catch(() => {});
+        }
     }
 
     // Manage overlay
@@ -1537,12 +1543,16 @@ function toggleNotifications() {
             document.body.appendChild(overlay);
         }
         overlay.classList.add('active');
-        overlay.onmousedown = function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleNotifications();
+        // Use touchend (not touchstart) so scrolling the dropdown doesn't
+        // accidentally close it when the finger grazes the overlay area
+        overlay.ontouchend = function(e) {
+            if (e.target === overlay) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleNotifications();
+            }
         };
-        overlay.ontouchstart = function(e) {
+        overlay.onmousedown = function(e) {
             e.preventDefault();
             e.stopPropagation();
             toggleNotifications();
@@ -7295,11 +7305,18 @@ function formatCategory(cat) {
 // ========================================
 
 function openModal(id) {
-    document.getElementById(id)?.classList.add('active');
-    document.body.classList.add('modal-open');
+    // Block posting tasks when wallet is in debt
     if (id === 'postTaskModal') {
+        if (typeof isDebtSuspended === 'function' && isDebtSuspended()) {
+            try { showDebtSuspendedPopup(); } catch(e) {
+                showToast('❌ Your account has a negative balance. Top up your wallet to post tasks.');
+            }
+            return;
+        }
         resetBonusOnModalOpen();
     }
+    document.getElementById(id)?.classList.add('active');
+    document.body.classList.add('modal-open');
     // Re-attempt Google Sign-In init when login/signup modal opens. If the
     // GIS library hasn't finished loading yet, poll briefly until it does.
     if (id === 'loginModal' || id === 'signupModal') {

@@ -220,6 +220,8 @@
             letter-spacing: 0.3px;
         }
         .neg-balance-alert .nba-btn:hover { background: rgba(255,255,255,0.9); }
+
+        .wallet-stats {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 15px;
@@ -904,7 +906,55 @@
                 font-size: 11px;
             }
         }
+
+        /* Debt warning row above action buttons */
+        .debt-warning-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(239,68,68,0.12);
+            border: 1px solid rgba(239,68,68,0.35);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 14px;
+            font-size: 13px;
+            color: #fca5a5;
         }
+        .debt-warning-row i { color: #ef4444; font-size: 1.1rem; flex-shrink: 0; }
+
+        /* Shimmer loading for transactions */
+        .tx-skeleton {
+            height: 64px;
+            border-radius: 12px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.09) 50%, rgba(255,255,255,0.04) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.4s infinite;
+            margin-bottom: 10px;
+        }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+        /* Section header count pill */
+        .tx-count-pill {
+            font-size: 11px;
+            background: rgba(74,222,128,0.15);
+            color: #4ade80;
+            padding: 2px 9px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        /* Better action button colours */
+        .action-btn.add-btn  i { color: #4ade80; }
+        .action-btn.with-btn i { color: #f59e0b; }
+        .action-btn.ref-btn  i { color: #a78bfa; }
+        .action-btn.earn-btn i { color: #38bdf8; }
+        .action-btn.add-btn:hover  { border-color: #4ade80; background: rgba(74,222,128,0.15); }
+        .action-btn.with-btn:hover { border-color: #f59e0b; background: rgba(245,158,11,0.15); }
+        .action-btn.ref-btn:hover  { border-color: #a78bfa; background: rgba(167,139,250,0.15); }
+        .action-btn.earn-btn:hover { border-color: #38bdf8; background: rgba(56,189,248,0.15); }
+
+        /* KYC / debt required badge on Withdraw btn */
+        .action-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
     </style>
 <script src="mobile-enhancements.js?v=20260502_findtasks" defer></script>
 </head>
@@ -1013,20 +1063,24 @@
             </div>
 
             <!-- Action Buttons -->
+            <div id="debtWarningRow" class="debt-warning-row" style="display:none;">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>Posting tasks & withdrawals are blocked until your debt is cleared. <strong>Top up now.</strong></span>
+            </div>
             <div class="wallet-actions">
-                <div class="action-btn" onclick="openAddMoneyModal()">
-                    <i class="fas fa-plus"></i>
+                <div class="action-btn add-btn" onclick="openAddMoneyModal()">
+                    <i class="fas fa-plus-circle"></i>
                     <span>Add Money</span>
                 </div>
-                <div class="action-btn" onclick="openWithdrawalModal()">
-                    <i class="fas fa-bank"></i>
+                <div class="action-btn with-btn" onclick="openWithdrawalModal()">
+                    <i class="fas fa-university"></i>
                     <span>Withdraw</span>
                 </div>
-                <div class="action-btn" onclick="showReferralSection()">
+                <div class="action-btn ref-btn" onclick="showReferralSection()">
                     <i class="fas fa-gift"></i>
                     <span>Refer & Earn</span>
                 </div>
-                <div class="action-btn" onclick="showHelperDashboard()">
+                <div class="action-btn earn-btn" onclick="showHelperDashboard()">
                     <i class="fas fa-chart-line"></i>
                     <span>Earnings</span>
                 </div>
@@ -1081,17 +1135,14 @@
                     <div class="section-title">
                         <i class="fas fa-history"></i>
                         Recent Transactions
+                        <span class="tx-count-pill" id="txCountPill" style="display:none;"></span>
                     </div>
                     <span class="view-all" onclick="loadAllTransactions()">View All</span>
                 </div>
                 <div class="transaction-list" id="transactionList">
-                    <div class="transaction-item">
-                        <div class="transaction-icon credit">
-                            <i class="fas fa-plus"></i>
-                        </div>
-                        <div class="transaction-details">
-                            <div class="transaction-title">Loading transactions...</div>
-                            <div class="transaction-date">Please wait</div>
+                    <div class="tx-skeleton"></div>
+                    <div class="tx-skeleton" style="opacity:0.6;"></div>
+                    <div class="tx-skeleton" style="opacity:0.35;"></div>
                         </div>
                     </div>
                 </div>
@@ -1310,6 +1361,8 @@
             const balLabel = document.querySelector('.balance-label');
             const walletCard = document.querySelector('.wallet-card');
             const negAlert = document.getElementById('negBalanceAlert');
+            const debtRow = document.getElementById('debtWarningRow');
+            const withBtn = document.querySelector('.action-btn.with-btn');
 
             balEl.textContent = bal.toFixed(2);
             document.getElementById('totalAdded').textContent = '₹' + wallet.totalAdded;
@@ -1326,6 +1379,8 @@
                     const msg = document.getElementById('negBalanceMsg');
                     if (msg) msg.textContent = `Your account has a debt of ₹${Math.abs(bal).toFixed(2)}. Task acceptance & withdrawals are blocked until cleared.`;
                 }
+                if (debtRow) debtRow.style.display = 'flex';
+                if (withBtn) withBtn.style.opacity = '0.45';
                 // Auto-open top-up modal after a short delay
                 setTimeout(() => openAddMoneyModal(), 700);
             } else {
@@ -1333,11 +1388,14 @@
                 if (balLabel) balLabel.classList.remove('negative');
                 if (walletCard) walletCard.classList.remove('negative-balance');
                 if (negAlert) negAlert.style.display = 'none';
+                if (debtRow) debtRow.style.display = 'none';
+                if (withBtn) withBtn.style.opacity = '';
             }
         }
         
         function renderTransactions(transactions) {
             const list = document.getElementById('transactionList');
+            const countPill = document.getElementById('txCountPill');
             
             if (!transactions || transactions.length === 0) {
                 const walletBalance = parseFloat(document.getElementById('walletBalance').textContent) || 0;
@@ -1374,6 +1432,12 @@
                     `;
                 }
                 return;
+            }
+
+            // Update count pill
+            if (countPill) {
+                countPill.textContent = transactions.length + (transactions.length >= 20 ? '+' : '');
+                countPill.style.display = 'inline';
             }
             
             list.innerHTML = transactions.map(tx => {

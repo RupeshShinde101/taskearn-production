@@ -2031,6 +2031,17 @@ def create_task():
                 'kycStatus': kyc_status_post
             }), 403
 
+        # Block task posting when wallet is in debt (negative balance)
+        poster_wallet = get_or_create_wallet(request.user_id)
+        poster_balance = float(poster_wallet.get('balance', 0))
+        if poster_balance < 0:
+            return jsonify({
+                'success': False,
+                'message': f'Your wallet has a negative balance of ₹{abs(poster_balance):.2f}. Please top up to clear your debt before posting tasks.',
+                'debtSuspended': True,
+                'debtAmount': abs(poster_balance)
+            }), 403
+
         data = request.get_json()
         print(f'   Raw request data: {data}')
         

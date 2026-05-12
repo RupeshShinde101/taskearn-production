@@ -1127,78 +1127,65 @@ function loadNotifications() {
  * Fetch notifications from backend and sync with localStorage
  * This also parses any JSON action data from the notifications
  */
+/** Map a raw server notification row to the UI shape */
+function _mapServerNotification(n) {
+    let action = null;
+    try {
+        if (n.data && typeof n.data === 'string') action = JSON.parse(n.data);
+        else if (n.data && typeof n.data === 'object') action = n.data;
+    } catch (e) {}
+
+    const typeMap = {
+        task_completed: 'warning', task_accepted: 'success', task_assigned: 'success',
+        task_completed_helper: 'success', task_posted: 'info', task_released: 'warning',
+        task_expired: 'warning', payment_received: 'success', payment_done: 'success',
+        payment_completed: 'warning', wallet_topup: 'success', withdrawal_requested: 'info',
+        account_suspended: 'error', account_restored: 'success', account_banned: 'error'
+    };
+    return {
+        id: n.id,
+        type: typeMap[n.notification_type] || 'info',
+        title: n.title || 'Notification',
+        message: n.message || '',
+        taskId: n.task_id,
+        read: n.status === 'read',
+        createdAt: n.created_at,
+        action
+    };
+}
+
 async function syncNotificationsFromServer() {
     if (!currentUser) return [];
-    
+
     try {
         const r = await apiRequest('/notifications', { method: 'GET' });
-        if (!r.success) return loadNotifications(); // Fallback to local
-        const result = r.data || {};
-        
-        if (result.success && result.notifications) {
-            // Convert server format to UI format
-            const serverNotifications = result.notifications.map(n => {
-                // Parse action data from JSON strings
-                let action = null;
-                try {
-                    if (n.data && typeof n.data === 'string') {
-                        action = JSON.parse(n.data);
-                    } else if (n.data && typeof n.data === 'object') {
-                        action = n.data;
-                    }
-                } catch (e) {
-                    console.warn('Could not parse notification action data:', e);
-                }
-                
-                // Map notification_type to UI type
-                let uiType = 'info';
-                if (n.notification_type === 'task_completed') uiType = 'warning';
-                else if (n.notification_type === 'task_accepted') uiType = 'success';
-                else if (n.notification_type === 'task_assigned') uiType = 'success';
-                else if (n.notification_type === 'task_completed_helper') uiType = 'success';
-                else if (n.notification_type === 'task_posted') uiType = 'info';
-                else if (n.notification_type === 'task_released') uiType = 'warning';
-                else if (n.notification_type === 'task_expired') uiType = 'warning';
-                else if (n.notification_type === 'payment_received' || n.notification_type === 'payment_done') uiType = 'success';
-                else if (n.notification_type === 'payment_completed') uiType = 'warning';
-                else if (n.notification_type === 'wallet_topup') uiType = 'success';
-                else if (n.notification_type === 'withdrawal_requested') uiType = 'info';
-                else if (n.notification_type === 'account_suspended') uiType = 'error';
-                else if (n.notification_type === 'account_restored') uiType = 'success';
-                else if (n.notification_type === 'account_banned') uiType = 'error';
-                
-                return {
-                    id: n.id,
-                    type: uiType,
-                    title: n.title || 'Notification',
-                    message: n.message || '',
-                    taskId: n.task_id,
-                    read: n.status === 'read',
-                    createdAt: n.created_at,
-                    action: action
-                };
-            });
-            
-            // Merge with local notifications (keep local ones that don't exist on server)
+        const result = (r.data) || {};
+
+        if (r.success && result.success && Array.isArray(result.notifications)) {
+            const serverNotifications = result.notifications.map(_mapServerNotification);
+
+            // Keep any local-only notifications (client-side ones with timestamp IDs)
             const localNotifications = loadNotifications();
             const serverIds = new Set(serverNotifications.map(n => n.id));
-            const localOnlyNotifications = localNotifications.filter(n => !serverIds.has(n.id));
-            
-            // Combine: server notifications first, then local-only ones
-            const merged = [...serverNotifications, ...localOnlyNotifications];
-            
-            // Save to localStorage
+            const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
+            const merged = [...serverNotifications, ...localOnly];
+
             localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
             notifications = merged;
             updateNotificationUI();
-            
             return merged;
         }
     } catch (error) {
         console.warn('Could not sync notifications from server:', error.message);
     }
-    
-    return loadNotifications(); // Fallback to local
+
+    // Fallback: always ensure in-memory array matches localStorage
+    const local = loadNotifications();
+    if (local.length > 0) {
+        notifications = local;
+        updateNotificationUI();
+    }
+    return local;
 }
 
 function saveNotifications() {
@@ -1507,7 +1494,7 @@ function toggleNotifications() {
     const dropdown = document.getElementById('notificationDropdown');
     if (!dropdown) return;
 
-    // Move dropdown to body once so it escapes any stacking context
+    // Move dropdown to body once so it escapes any stacking context / overflow:hidden parents
     if (!dropdown.dataset.movedToBody) {
         document.body.appendChild(dropdown);
         dropdown.dataset.movedToBody = 'true';
@@ -1515,8 +1502,8 @@ function toggleNotifications() {
 
     const isOpen = dropdown.classList.toggle('active');
 
-    // Position dropdown near the bell icon on desktop
     if (isOpen) {
+        // Position near bell on desktop
         const bell = document.querySelector('.notification-bell');
         if (bell && window.innerWidth > 768) {
             const rect = bell.getBoundingClientRect();
@@ -1525,15 +1512,15 @@ function toggleNotifications() {
             dropdown.style.left = 'auto';
             dropdown.style.transform = 'none';
         }
-        // Always re-render list when opening (fixes stale/empty popup)
+
+        // Immediately render whatever we have in memory (fast, may be stale)
         updateNotificationUI();
-        // Silently refresh from server in background
-        if (typeof syncNotificationsFromServer === 'function') {
-            syncNotificationsFromServer().catch(() => {});
-        }
+
+        // Then fetch fresh from server and re-render
+        _fetchAndRenderNotifications();
     }
 
-    // Manage overlay
+    // Manage backdrop overlay
     let overlay = document.getElementById('notificationOverlay');
     if (isOpen) {
         if (!overlay) {
@@ -1543,22 +1530,57 @@ function toggleNotifications() {
             document.body.appendChild(overlay);
         }
         overlay.classList.add('active');
-        // Use touchend (not touchstart) so scrolling the dropdown doesn't
-        // accidentally close it when the finger grazes the overlay area
         overlay.ontouchend = function(e) {
-            if (e.target === overlay) {
-                e.preventDefault();
-                e.stopPropagation();
-                toggleNotifications();
-            }
+            if (e.target === overlay) { e.preventDefault(); e.stopPropagation(); toggleNotifications(); }
         };
         overlay.onmousedown = function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleNotifications();
+            e.preventDefault(); e.stopPropagation(); toggleNotifications();
         };
     } else if (overlay) {
         overlay.classList.remove('active');
+    }
+}
+
+/** Fetch notifications from server, update in-memory array, and re-render dropdown list */
+async function _fetchAndRenderNotifications() {
+    if (!currentUser) return;
+    const list = document.getElementById('notificationList');
+
+    // Show loading skeleton inside the list while fetching
+    if (list && (!notifications || notifications.length === 0)) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:#94a3b8;"><i class="fas fa-spinner fa-spin" style="font-size:1.4rem;"></i></div>';
+    }
+
+    try {
+        const r = await apiRequest('/notifications', { method: 'GET' });
+        const result = (r && r.data) || {};
+
+        if (r && r.success && result.success && Array.isArray(result.notifications)) {
+            const serverNotifications = result.notifications.map(_mapServerNotification);
+            const localNotifications = loadNotifications();
+            const serverIds = new Set(serverNotifications.map(n => n.id));
+            const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
+            const merged = [...serverNotifications, ...localOnly];
+
+            localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
+            notifications = merged;
+        } else if (!notifications || notifications.length === 0) {
+            // Server failed — fall back to localStorage
+            const local = loadNotifications();
+            if (local.length > 0) notifications = local;
+        }
+    } catch (e) {
+        // Network error — use localStorage if in-memory is empty
+        if (!notifications || notifications.length === 0) {
+            const local = loadNotifications();
+            if (local.length > 0) notifications = local;
+        }
+    }
+
+    // Re-render (dropdown may still be open)
+    const dropdown = document.getElementById('notificationDropdown');
+    if (dropdown && dropdown.classList.contains('active')) {
+        updateNotificationUI();
     }
 }
 

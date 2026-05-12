@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260512a';
+const CACHE_NAME = 'workmate4u-v20260512b';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -30,7 +30,8 @@ const STATIC_ASSETS = [
   '/mobile-enhancements.js',
   '/favicon.svg',
   '/icon-192x192.png',
-  '/icon-512x512.png'
+  '/icon-512x512.png',
+  '/offline.html'
 ];
 
 // Install — cache assets in background (non-blocking). Call skipWaiting so the
@@ -96,7 +97,7 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => caches.match(event.request).then(r => r || caches.match('/offline.html')))
     );
     return;
   }

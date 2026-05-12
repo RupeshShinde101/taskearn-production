@@ -5514,6 +5514,24 @@ async function handleLogin(event) {
 
                 // Subscribe to push notifications after login (non-blocking)
                 setTimeout(() => { try { initPushNotifications(); } catch (_) {} }, 3500);
+
+                // Profile completeness nudge (shown once per session)
+                setTimeout(() => {
+                    if (sessionStorage.getItem('_profileNudgeDone')) return;
+                    sessionStorage.setItem('_profileNudgeDone', '1');
+                    const missing = [];
+                    if (!currentUser.phone) missing.push('phone number');
+                    if (!currentUser.profile_photo && !currentUser.profilePhoto) missing.push('profile photo');
+                    if (!currentUser.bio) missing.push('bio');
+                    if (missing.length > 0) {
+                        const nudge = document.createElement('div');
+                        nudge.id = '_profileNudge';
+                        nudge.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:14px;padding:14px 18px;z-index:9999;max-width:360px;width:calc(100% - 32px);box-shadow:0 8px 30px rgba(0,0,0,0.3);animation:slideUpPWA 0.3s ease;display:flex;align-items:center;gap:12px;';
+                        nudge.innerHTML = '<span style="font-size:1.5rem;">👤</span><div style="flex:1;"><strong style="display:block;font-size:14px;">Complete your profile</strong><span style="font-size:12px;opacity:0.85;">Add your ' + missing.join(' & ') + ' to get more tasks</span></div><a href="profile.html" style="background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:7px 12px;text-decoration:none;font-size:12px;font-weight:700;white-space:nowrap;">Update</a><button onclick="document.getElementById(\'_profileNudge\').remove()" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:1rem;padding:0 0 0 6px;"><i class="fas fa-times"></i></button>';
+                        document.body.appendChild(nudge);
+                        setTimeout(() => { const e = document.getElementById('_profileNudge'); if (e) e.remove(); }, 8000);
+                    }
+                }, 2000);
                 
                 // If on profile.html, refresh profile UI (was stuck at "Loading...")
                 if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {

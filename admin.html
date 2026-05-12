@@ -1,0 +1,1689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel — Workmate4u</title>
+    <!-- Preconnect so DNS+TLS is done before the stylesheet request -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+    <!-- Load Font Awesome asynchronously — prevents render-blocking -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+          media="print" onload="this.media='all'" crossorigin="anonymous">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
+    <style>
+        /* ===== RESET & BASE ===== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #0ea5e9;
+            --bg: #f1f5f9;
+            --sidebar-bg: #1e293b;
+            --card: #ffffff;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --radius: 12px;
+            --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+            --shadow-md: 0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.05);
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+
+        /* ===== LOADING SPLASH ===== */
+        #loadingSplash {
+            position: fixed; inset: 0; z-index: 9999;
+            background: var(--sidebar-bg);
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+        }
+        #loadingSplash .splash-logo { width: 54px; height: 54px; border-radius: 16px; background: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 26px; color: #fff; }
+        #loadingSplash .splash-name  { font-size: 18px; font-weight: 700; color: #f1f5f9; }
+        #loadingSplash .splash-sub   { font-size: 13px; color: #64748b; margin-top: -10px; }
+        #loadingSplash .splash-bar   { width: 160px; height: 3px; background: #334155; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+        #loadingSplash .splash-bar-fill { height: 100%; width: 0; background: var(--primary); border-radius: 4px; animation: splashLoad 1s ease forwards; }
+        @keyframes splashLoad { 0%{width:0} 60%{width:80%} 100%{width:100%} }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar {
+            width: 250px; min-height: 100vh; background: var(--sidebar-bg); color: #cbd5e1;
+            display: flex; flex-direction: column; position: fixed; top: 0; left: 0; z-index: 100;
+            transition: width .25s ease;
+        }
+        .sidebar-logo {
+            padding: 22px 20px 18px; display: flex; align-items: center; gap: 12px;
+            border-bottom: 1px solid #334155;
+        }
+        .sidebar-logo .logo-icon { width: 36px; height: 36px; border-radius: 10px; background: var(--primary); display:flex; align-items:center; justify-content:center; font-size:16px; color:#fff; flex-shrink:0; }
+        .sidebar-logo .logo-text { font-weight: 700; font-size: 15px; color: #f1f5f9; }
+        .sidebar-logo .logo-sub { font-size: 11px; color: #64748b; }
+        .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+        .nav-section { padding: 8px 16px 4px; font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #475569; text-transform: uppercase; }
+        .nav-item {
+            display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer;
+            transition: all .2s; font-size: 14px; color: #94a3b8; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .nav-item:hover { background: rgba(99,102,241,.1); color: #e2e8f0; }
+        .nav-item.active { background: rgba(99,102,241,.15); color: #818cf8; border-left-color: var(--primary); font-weight: 600; }
+        .nav-item i { width: 18px; text-align: center; font-size: 15px; flex-shrink: 0; }
+        .nav-badge { margin-left: auto; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+
+        /* ===== MAIN ===== */
+        .main { margin-left: 250px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+        /* ===== TOPBAR ===== */
+        .topbar {
+            background: var(--card); border-bottom: 1px solid var(--border); padding: 0 28px;
+            height: 64px; display: flex; align-items: center; justify-content: space-between;
+            position: sticky; top: 0; z-index: 50; box-shadow: var(--shadow);
+        }
+        .topbar-title { font-size: 18px; font-weight: 700; color: var(--text); }
+        .topbar-right { display: flex; align-items: center; gap: 16px; }
+        .topbar-btn { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 6px; border-radius: 8px; transition: all .2s; }
+        .topbar-btn:hover { background: var(--bg); color: var(--primary); }
+        .admin-badge { background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
+        #loginGate { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex: 1; }
+        .login-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 40px; width: 380px; }
+        .login-card h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+        .login-card p { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+
+        /* ===== CONTENT ===== */
+        .content { padding: 28px; flex: 1; }
+        .section { display: none; }
+        .section.active { display: block; }
+
+        /* ===== STAT CARDS ===== */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); border-left: 4px solid var(--primary); }
+        .stat-card.success { border-left-color: var(--success); }
+        .stat-card.warning { border-left-color: var(--warning); }
+        .stat-card.danger  { border-left-color: var(--danger); }
+        .stat-card.info    { border-left-color: var(--info); }
+        .stat-label { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+        .stat-value { font-size: 28px; font-weight: 800; color: var(--text); }
+        .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+        /* ===== SECTION HEADER ===== */
+        .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+        .section-header h2 { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        .section-header h2 i { color: var(--primary); }
+
+        /* ===== CARD / TABLE WRAPPERS ===== */
+        .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .card-header h3 { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .card-body { padding: 20px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+        thead th { background: #f8fafc; padding: 12px 14px; text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--text-muted); border-bottom: 2px solid var(--border); white-space: nowrap; }
+        tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
+        tbody tr:hover { background: #f8fafc; }
+        tbody tr:last-child { border-bottom: none; }
+        td { padding: 12px 14px; vertical-align: middle; }
+        .empty-row { text-align: center; color: var(--text-muted); padding: 32px; font-size: 14px; }
+
+        /* ===== BADGES ===== */
+        .badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; }
+        .badge-success { background: #d1fae5; color: #065f46; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-danger  { background: #fee2e2; color: #991b1b; }
+        .badge-info    { background: #e0f2fe; color: #075985; }
+        .badge-gray    { background: #f1f5f9; color: #475569; }
+        .badge-purple  { background: #ede9fe; color: #5b21b6; }
+
+        /* ===== PROBLEM / SOLUTION COLUMNS (AI Reports) ===== */
+        .problem-cell { max-width: 260px; }
+        .problem-title { font-weight: 700; color: var(--text); font-size: 13px; margin-bottom: 3px; }
+        .problem-desc { color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+        .solution-cell { max-width: 220px; }
+        .solution-action { font-weight: 600; color: #065f46; font-size: 12.5px; display: flex; align-items: flex-start; gap: 5px; }
+        .solution-action i { color: var(--success); margin-top: 2px; flex-shrink: 0; }
+        .solution-desc { color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+
+        /* ===== BUTTONS ===== */
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; text-decoration: none; }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-success:hover { filter: brightness(1.1); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { filter: brightness(1.1); }
+        .btn-warning { background: var(--warning); color: #fff; }
+        .btn-warning:hover { filter: brightness(1.1); }
+        .btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
+        .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: #f5f3ff; }
+        .btn-sm { padding: 5px 11px; font-size: 12px; border-radius: 7px; }
+        .btn-icon { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; }
+
+        /* ===== FORM ===== */
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+        .form-control { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text); background: var(--card); transition: border-color .2s; outline: none; }
+        .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+        select.form-control { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%2364748b' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
+
+        /* ===== SEARCH BAR ===== */
+        .search-bar { position: relative; }
+        .search-bar input { padding-left: 36px; }
+        .search-bar i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 14px; }
+
+        /* ===== ALERT / NOTICE ===== */
+        .alert { border-radius: 10px; padding: 14px 18px; font-size: 13.5px; display: flex; align-items: flex-start; gap: 10px; margin-bottom: 16px; }
+        .alert i { margin-top: 2px; flex-shrink: 0; }
+        .alert-info    { background: #e0f2fe; color: #075985; border-left: 4px solid #0ea5e9; }
+        .alert-warning { background: #fef3c7; color: #92400e; border-left: 4px solid #f59e0b; }
+        .alert-danger  { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
+        .alert-success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+
+        /* ===== MODAL ===== */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: var(--card); border-radius: 16px; padding: 28px; width: 460px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px rgba(0,0,0,.2); animation: modalIn .2s ease; }
+        @keyframes modalIn { from { transform: scale(.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .modal-header h3 { font-size: 17px; font-weight: 700; }
+        .modal-close { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 6px; }
+        .modal-close:hover { color: var(--danger); background: #fee2e2; }
+        .modal-footer { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+
+        /* ===== SPINNER ===== */
+        .spinner { border: 3px solid #e2e8f0; border-top-color: var(--primary); border-radius: 50%; width: 24px; height: 24px; animation: spin .7s linear infinite; margin: 40px auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ===== LEGEND / GUIDE PILLS ===== */
+        .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+        .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+        /* ===== STATUS DOT in table ===== */
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+
+        /* ===== TOAST ===== */
+        #toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+        .toast-item { background: #1e293b; color: #f1f5f9; padding: 12px 18px; border-radius: 10px; font-size: 13.5px; max-width: 320px; box-shadow: 0 8px 24px rgba(0,0,0,.2); animation: toastIn .25s ease; display: flex; align-items: center; gap: 10px; }
+        .toast-item.success { border-left: 4px solid var(--success); }
+        .toast-item.error   { border-left: 4px solid var(--danger); }
+        @keyframes toastIn { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .sidebar { width: 0; overflow: hidden; }
+            .sidebar.open { width: 250px; }
+            .main { margin-left: 0; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+        }
+
+        /* ===== SETTINGS PAGE ===== */
+        .settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
+        .settings-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); }
+        .settings-card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+        .settings-card-header i { color: var(--primary); font-size: 16px; }
+        .settings-card-header h3 { font-size: 15px; font-weight: 700; }
+        .settings-card-body { padding: 20px; }
+        .password-strength-bar { height: 4px; border-radius: 4px; background: var(--border); margin-top: 6px; overflow: hidden; transition: all .3s; }
+        .password-strength-bar .fill { height: 100%; border-radius: 4px; transition: all .3s; }
+    </style>
+</head>
+<body>
+
+<!-- ===================== LOADING SPLASH ===================== -->
+<div id="loadingSplash">
+    <div class="splash-logo"><i class="fas fa-shield-alt"></i></div>
+    <div class="splash-name">Workmate4u</div>
+    <div class="splash-sub">Admin Panel</div>
+    <div class="splash-bar"><div class="splash-bar-fill"></div></div>
+</div>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="sidebar" id="sidebar" style="display:none;">
+    <div class="sidebar-logo">
+        <div class="logo-icon"><i class="fas fa-shield-alt"></i></div>
+        <div>
+            <div class="logo-text">Workmate4u</div>
+            <div class="logo-sub">Admin Panel</div>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-section">Overview</div>
+        <a class="nav-item active" data-section="dashboard" onclick="showSection('dashboard', this)">
+            <i class="fas fa-tachometer-alt"></i> Dashboard
+        </a>
+
+        <div class="nav-section">AI Team</div>
+        <a class="nav-item" data-section="ai-reports" onclick="showSection('ai-reports', this)">
+            <i class="fas fa-robot"></i> AI Reports
+            <span class="nav-badge" id="aiReportsBadge" style="display:none">0</span>
+        </a>
+        <a class="nav-item" data-section="flagged-tasks" onclick="showSection('flagged-tasks', this)">
+            <i class="fas fa-flag"></i> Flagged Tasks
+            <span class="nav-badge" id="flaggedBadge" style="display:none">0</span>
+        </a>
+
+        <div class="nav-section">Moderation</div>
+        <a class="nav-item" data-section="disputes" onclick="showSection('disputes', this)">
+            <i class="fas fa-gavel"></i> Disputes
+            <span class="nav-badge" id="disputesBadge" style="display:none">0</span>
+        </a>
+        <a class="nav-item" data-section="users" onclick="showSection('users', this)">
+            <i class="fas fa-users"></i> Users
+        </a>
+        <a class="nav-item" data-section="tasks" onclick="showSection('tasks', this)">
+            <i class="fas fa-tasks"></i> Tasks
+        </a>
+
+        <div class="nav-section">Finance</div>
+        <a class="nav-item" data-section="withdrawals" onclick="showSection('withdrawals', this)">
+            <i class="fas fa-university"></i> Withdrawals
+            <span class="nav-badge" id="withdrawalsBadge" style="display:none">0</span>
+        </a>
+        <a class="nav-item" data-section="settlements" onclick="showSection('settlements', this)">
+            <i class="fas fa-money-bill-wave"></i> Settlements
+        </a>
+
+        <div class="nav-section">Logs</div>
+        <a class="nav-item" data-section="audit-log" onclick="showSection('audit-log', this)">
+            <i class="fas fa-history"></i> Audit Log
+        </a>
+
+        <div class="nav-section">Account</div>
+        <a class="nav-item" data-section="settings" onclick="showSection('settings', this)">
+            <i class="fas fa-cog"></i> Settings
+        </a>
+        <a class="nav-item" onclick="adminLogout()">
+            <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
+    </nav>
+</aside>
+
+<!-- ===================== MAIN ===================== -->
+<div class="main" id="mainArea">
+
+    <!-- LOGIN GATE -->
+    <div id="loginGate">
+        <div class="login-card">
+            <h2><i class="fas fa-lock" style="color:var(--primary);margin-right:8px;"></i> Admin Login</h2>
+            <p>Sign in with your admin credentials to access the panel.</p>
+            <div class="form-group">
+                <label for="adminEmail">Email</label>
+                <input type="email" id="adminEmail" class="form-control" placeholder="admin@workmate4u.com" onkeydown="if(event.key==='Enter') adminLogin()">
+            </div>
+            <div class="form-group">
+                <label for="adminPassword">Password</label>
+                <input type="password" id="adminPassword" class="form-control" placeholder="••••••••" onkeydown="if(event.key==='Enter') adminLogin()">
+            </div>
+            <div id="loginError" class="alert alert-danger" style="display:none;margin-top:12px;">
+                <i class="fas fa-exclamation-circle"></i> <span id="loginErrorMsg">Invalid credentials</span>
+            </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:4px;padding:12px;" onclick="adminLogin()" id="loginBtn">
+                <i class="fas fa-sign-in-alt"></i> Login
+            </button>
+        </div>
+    </div>
+
+    <!-- ADMIN PANEL (hidden until logged in) -->
+    <div id="adminPanel" style="display:none;flex-direction:column;flex:1;">
+
+        <!-- TOPBAR -->
+        <div class="topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <button class="topbar-btn" onclick="document.getElementById('sidebar').classList.toggle('open')" style="display:none" id="menuToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="topbar-title" id="topbarTitle">Dashboard</div>
+            </div>
+            <div class="topbar-right">
+                <button class="topbar-btn" onclick="refreshCurrentSection()" title="Refresh">
+                    <i class="fas fa-sync-alt" id="refreshIcon"></i>
+                </button>
+                <span class="admin-badge"><i class="fas fa-shield-alt"></i> Admin</span>
+                <span id="adminName" style="font-size:13px;color:var(--text-muted);font-weight:600;"></span>
+            </div>
+        </div>
+
+        <!-- SECTIONS CONTAINER -->
+        <div class="content">
+
+            <!-- ==================== DASHBOARD ==================== -->
+            <div class="section active" id="section-dashboard">
+                <div class="stats-grid" id="dashStats">
+                    <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value" id="s-users">—</div><div class="stat-sub" id="s-users-sub"></div></div>
+                    <div class="stat-card success"><div class="stat-label">Completed Tasks</div><div class="stat-value" id="s-completed">—</div><div class="stat-sub" id="s-completed-sub"></div></div>
+                    <div class="stat-card warning"><div class="stat-label">Active Tasks</div><div class="stat-value" id="s-active">—</div><div class="stat-sub"></div></div>
+                    <div class="stat-card info"><div class="stat-label">Revenue (30d)</div><div class="stat-value" id="s-revenue">—</div><div class="stat-sub">Platform earnings</div></div>
+                    <div class="stat-card danger"><div class="stat-label">Open Disputes</div><div class="stat-value" id="s-disputes">—</div><div class="stat-sub">Needs attention</div></div>
+                    <div class="stat-card"><div class="stat-label">Flagged Tasks</div><div class="stat-value" id="s-flagged">—</div><div class="stat-sub">AI detected</div></div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="card" style="margin-bottom:20px;">
+                    <div class="card-header"><h3><i class="fas fa-bolt"></i> Quick Actions</h3></div>
+                    <div class="card-body" style="display:flex;flex-wrap:wrap;gap:10px;">
+                        <button class="btn btn-primary" onclick="showSection('ai-reports',null)"><i class="fas fa-robot"></i> View AI Reports</button>
+                        <button class="btn btn-warning" onclick="showSection('disputes',null)"><i class="fas fa-gavel"></i> Resolve Disputes</button>
+                        <button class="btn btn-danger" onclick="showSection('flagged-tasks',null)"><i class="fas fa-flag"></i> Review Flagged Tasks</button>
+                        <button class="btn btn-outline" onclick="showSection('users',null)"><i class="fas fa-users"></i> Manage Users</button>
+                        <button class="btn btn-outline" onclick="showSection('audit-log',null)"><i class="fas fa-history"></i> Audit Log</button>
+                    </div>
+                </div>
+
+                <!-- Recent Disputes -->
+                <div class="card">
+                    <div class="card-header"><h3><i class="fas fa-gavel" style="color:var(--warning);"></i> Recent Disputes</h3>
+                        <button class="btn btn-sm btn-outline" onclick="showSection('disputes',null)">View All</button>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>ID</th><th>Task</th><th>Filed By</th><th>Reason</th><th>Status</th><th>Date</th></tr></thead>
+                            <tbody id="dashDisputesTbody"><tr><td colspan="6" class="empty-row"><div class="spinner"></div></td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== AI TEAM REPORTS ==================== -->
+            <div class="section" id="section-ai-reports">
+                <div class="section-header">
+                    <h2><i class="fas fa-robot"></i> AI Team Reports</h2>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <select class="form-control" id="aiStatusFilter" onchange="loadAIReports()" style="width:160px;">
+                            <option value="">All Statuses</option>
+                            <option value="error">Error / Critical</option>
+                            <option value="warning">Warning</option>
+                            <option value="info">Info / Success</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadAIReports()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="legend">
+                    <span class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span> Error / Critical issue detected</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Warning / Suspicious activity</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#10b981;"></span> Info / Action completed successfully</span>
+                </div>
+
+                <!-- What is this? -->
+                <div class="alert alert-info" style="margin-bottom:16px;">
+                    <i class="fas fa-info-circle"></i>
+                    <div>
+                        <strong>About AI Reports:</strong> These are automated reports submitted by AI agents that monitor platform activity.
+                        Each report shows the <strong>problem identified</strong>, the <strong>action taken</strong>, the responsible agent, and the timestamp.
+                        <strong>Error</strong> reports need immediate admin attention. <strong>Warning</strong> reports need review. <strong>Info</strong> reports are informational.
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-table"></i> Report Log</h3>
+                        <span id="aiReportCount" style="font-size:13px;color:var(--text-muted);">Loading…</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:100px;">Status</th>
+                                    <th style="width:120px;">Agent</th>
+                                    <th>Problem Identified</th>
+                                    <th>Action Taken / Solution</th>
+                                    <th style="width:100px;">Resource</th>
+                                    <th style="width:130px;">Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="aiReportsTbody">
+                                <tr><td colspan="6" class="empty-row"><div class="spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== FLAGGED TASKS ==================== -->
+            <div class="section" id="section-flagged-tasks">
+                <div class="section-header">
+                    <h2><i class="fas fa-flag"></i> Flagged Tasks</h2>
+                    <button class="btn btn-primary" onclick="loadFlaggedTasks()"><i class="fas fa-sync"></i> Refresh</button>
+                </div>
+
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <div>Tasks flagged or suspended by the AI fraud detection system. Review each task and either <strong>restore</strong> it if safe, or <strong>permanently remove</strong> it if it violates platform rules.</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-shield-alt" style="color:var(--warning);"></i> Flagged / Suspicious Tasks</h3>
+                        <span id="flaggedCount" style="font-size:13px;color:var(--text-muted);">Loading…</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Task Title</th>
+                                    <th>Category</th>
+                                    <th>Poster</th>
+                                    <th>Price</th>
+                                    <th>Status</th>
+                                    <th>Why Flagged</th>
+                                    <th>Posted</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="flaggedTasksTbody">
+                                <tr><td colspan="9" class="empty-row"><div class="spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== DISPUTES ==================== -->
+            <div class="section" id="section-disputes">
+                <div class="section-header">
+                    <h2><i class="fas fa-gavel"></i> Disputes</h2>
+                    <div style="display:flex;gap:10px;">
+                        <select class="form-control" id="disputeStatusFilter" onchange="loadDisputes()" style="width:150px;">
+                            <option value="">All</option>
+                            <option value="open">Open</option>
+                            <option value="under_review">Under Review</option>
+                            <option value="resolved">Resolved</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadDisputes()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                </div>
+
+                <!-- Guide -->
+                <div class="alert alert-info" style="margin-bottom:16px;">
+                    <i class="fas fa-info-circle"></i>
+                    <div>
+                        <strong>How to resolve:</strong>
+                        Click <strong>Resolve</strong> on any open dispute. Review the reason and details, then provide a resolution decision.
+                        You can optionally issue a refund to the filer. The filer will be notified automatically.
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-list"></i> All Disputes</h3>
+                        <span id="disputeCount" style="font-size:13px;color:var(--text-muted);">Loading…</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Task</th>
+                                    <th>Filed By</th>
+                                    <th>Reason</th>
+                                    <th>Details</th>
+                                    <th>Status</th>
+                                    <th>Opened</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="disputesTbody">
+                                <tr><td colspan="8" class="empty-row"><div class="spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== USERS ==================== -->
+            <div class="section" id="section-users">
+                <div class="section-header">
+                    <h2><i class="fas fa-users"></i> User Management</h2>
+                    <div style="display:flex;gap:10px;">
+                        <div class="search-bar">
+                            <i class="fas fa-search"></i>
+                            <input type="text" class="form-control" id="userSearch" placeholder="Search by name or email…" oninput="filterUsers()" style="width:220px;">
+                        </div>
+                        <button class="btn btn-primary" onclick="loadUsers()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Joined</th>
+                                    <th>Balance</th>
+                                    <th>Earned</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTbody">
+                                <tr><td colspan="7" class="empty-row"><div class="spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== TASKS ==================== -->
+            <div class="section" id="section-tasks">
+                <div class="section-header">
+                    <h2><i class="fas fa-tasks"></i> Task Management</h2>
+                    <div style="display:flex;gap:10px;">
+                        <select class="form-control" id="taskStatusFilter" onchange="loadTasks()" style="width:150px;">
+                            <option value="">All Statuses</option>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                            <option value="flagged">Flagged</option>
+                            <option value="removed">Removed</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadTasks()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th><th>Title</th><th>Category</th><th>Poster</th><th>Price</th><th>Status</th><th>Posted</th><th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tasksTbody">
+                                <tr><td colspan="8" class="empty-row"><div class="spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== SETTLEMENTS ==================== -->
+            <div class="section" id="section-settlements">
+                <div class="section-header">
+                    <h2><i class="fas fa-money-bill-wave"></i> Settlements</h2>
+                    <button class="btn btn-primary" onclick="loadSettlements()"><i class="fas fa-sync"></i> Refresh</button>
+                </div>
+                <div class="card">
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th><th>User</th><th>Amount</th><th>Status</th><th>Requested</th><th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="settlementsTbody">
+                                <tr><td colspan="6" class="empty-row"><div class="spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== WITHDRAWALS ==================== -->
+            <div class="section" id="section-withdrawals">
+                <div class="section-header">
+                    <h2><i class="fas fa-university"></i> Withdrawal Requests</h2>
+                    <button class="btn btn-primary" onclick="loadAdminWithdrawals()"><i class="fas fa-sync"></i> Refresh</button>
+                </div>
+                <div class="card">
+                    <div style="display:flex;gap:8px;margin-bottom:12px;">
+                        <button class="btn btn-sm" id="wdFilterPending" onclick="loadAdminWithdrawals('pending')" style="background:#f59e0b;color:#fff;">Pending</button>
+                        <button class="btn btn-sm" id="wdFilterAll" onclick="loadAdminWithdrawals('')">All</button>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>#</th><th>User</th><th>Amount</th><th>Account</th><th>Status</th><th>Requested</th><th>Actions</th></tr>
+                            </thead>
+                            <tbody id="withdrawalsTbody">
+                                <tr><td colspan="7" class="empty-row"><div class="spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== AUDIT LOG ==================== -->
+            <div class="section" id="section-audit-log">
+                <div class="section-header">
+                    <h2><i class="fas fa-history"></i> Audit Log</h2>
+                    <div style="display:flex;gap:10px;">
+                        <select class="form-control" id="auditFilter" onchange="loadAuditLog()" style="width:160px;">
+                            <option value="">All Actions</option>
+                            <option value="ai_team">AI Team Only</option>
+                            <option value="human">Human Admin</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadAuditLog()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th><th>By</th><th>Action</th><th>Resource</th><th>Details</th><th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditTbody">
+                                <tr><td colspan="6" class="empty-row"><div class="spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== SETTINGS ==================== -->
+            <div class="section" id="section-settings">
+                <div class="section-header">
+                    <h2><i class="fas fa-cog"></i> Admin Settings</h2>
+                </div>
+                <div class="settings-grid">
+
+                    <!-- Change Password -->
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <i class="fas fa-key"></i>
+                            <h3>Change Password</h3>
+                        </div>
+                        <div class="settings-card-body">
+                            <div class="alert alert-info" style="margin-bottom:16px;font-size:12.5px;">
+                                <i class="fas fa-info-circle"></i>
+                                Use a strong password with letters, numbers, and symbols. Minimum 8 characters.
+                            </div>
+                            <div class="form-group">
+                                <label>Current Password</label>
+                                <input type="password" id="settingCurrentPwd" class="form-control" placeholder="Enter current password">
+                            </div>
+                            <div class="form-group">
+                                <label>New Password</label>
+                                <input type="password" id="settingNewPwd" class="form-control" placeholder="Min 8 characters" oninput="checkPwdStrength(this.value)">
+                                <div class="password-strength-bar" style="margin-top:6px;">
+                                    <div class="fill" id="pwdStrengthFill" style="width:0;background:var(--danger);"></div>
+                                </div>
+                                <div id="pwdStrengthLabel" style="font-size:11px;color:var(--text-muted);margin-top:3px;"></div>
+                            </div>
+                            <div class="form-group">
+                                <label>Confirm New Password</label>
+                                <input type="password" id="settingConfirmPwd" class="form-control" placeholder="Repeat new password">
+                            </div>
+                            <button class="btn btn-primary" style="width:100%;" onclick="changeAdminPassword()">
+                                <i class="fas fa-lock"></i> Update Password
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Platform Info -->
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <i class="fas fa-info-circle"></i>
+                            <h3>Platform Info</h3>
+                        </div>
+                        <div class="settings-card-body">
+                            <div style="display:flex;flex-direction:column;gap:12px;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+                                    <span style="font-size:13px;color:var(--text-muted);">Platform</span>
+                                    <span style="font-weight:700;font-size:13px;">Workmate4u</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+                                    <span style="font-size:13px;color:var(--text-muted);">Admin Version</span>
+                                    <span style="font-weight:700;font-size:13px;">v2.0 (2026)</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;">
+                                    <span style="font-size:13px;color:var(--text-muted);">Session</span>
+                                    <span class="badge badge-success" id="sessionUser">Active</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Suggested Implementations -->
+                    <div class="settings-card" style="grid-column: 1 / -1;">
+                        <div class="settings-card-header">
+                            <i class="fas fa-lightbulb"></i>
+                            <h3>Suggested Implementations for AI Team &amp; Admin Panel</h3>
+                        </div>
+                        <div class="settings-card-body">
+                            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">
+                                <div style="border:1.5px solid var(--border);border-radius:10px;padding:16px;">
+                                    <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="background:#ede9fe;color:#5b21b6;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;"><i class="fas fa-robot"></i></span> AI Auto-Resolution</div>
+                                    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">Allow AI agent to automatically resolve low-risk disputes (e.g. auto-refund for tasks stuck in-progress for 7+ days without update) and only escalate high-risk disputes to human admins.</p>
+                                </div>
+                                <div style="border:1.5px solid var(--border);border-radius:10px;padding:16px;">
+                                    <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="background:#fef3c7;color:#92400e;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;"><i class="fas fa-chart-line"></i></span> Real-time Analytics</div>
+                                    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">Add live charts showing: dispute rate trend, AI agent accuracy, fraud detection hit rate, top problem categories, and daily resolution time average.</p>
+                                </div>
+                                <div style="border:1.5px solid var(--border);border-radius:10px;padding:16px;">
+                                    <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="background:#d1fae5;color:#065f46;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;"><i class="fas fa-bell"></i></span> Admin Notifications</div>
+                                    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">Push or email alerts when: a new Critical AI report is posted, a dispute has been open &gt;24h, a user gets multiple flags in one day, or a settlement request needs approval.</p>
+                                </div>
+                                <div style="border:1.5px solid var(--border);border-radius:10px;padding:16px;">
+                                    <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="background:#e0f2fe;color:#075985;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;"><i class="fas fa-user-shield"></i></span> User Risk Score</div>
+                                    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">Show a calculated risk score per user (based on # disputes filed, # tasks flagged, # reports received) so admins can spot bad actors at a glance and proactively act.</p>
+                                </div>
+                                <div style="border:1.5px solid var(--border);border-radius:10px;padding:16px;">
+                                    <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="background:#fee2e2;color:#991b1b;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;"><i class="fas fa-history"></i></span> AI Agent History per Task</div>
+                                    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">Show a timeline of every AI action on a specific task (flagged → reviewed → restored/removed) so admins understand the full history without digging through audit logs.</p>
+                                </div>
+                                <div style="border:1.5px solid var(--border);border-radius:10px;padding:16px;">
+                                    <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;"><span style="background:#f0fdf4;color:#166534;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;"><i class="fas fa-file-export"></i></span> Report Export</div>
+                                    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">Let admins export AI reports, disputes, and audit logs as CSV/Excel for compliance, legal review, or sharing with stakeholders — with date range filtering.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /content -->
+    </div><!-- /adminPanel -->
+</div><!-- /main -->
+
+<!-- ==================== RESOLVE DISPUTE MODAL ==================== -->
+<div class="modal-overlay" id="resolveModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3><i class="fas fa-gavel" style="color:var(--primary);margin-right:8px;"></i> Resolve Dispute</h3>
+            <button class="modal-close" onclick="closeModal('resolveModal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="resolveModalContent">
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <div id="resolveDisputeSummary">Loading dispute details…</div>
+            </div>
+            <div class="form-group">
+                <label>Resolution Decision <span style="color:var(--danger)">*</span></label>
+                <textarea id="resolveDecision" class="form-control" rows="3" placeholder="Describe your decision clearly. e.g. 'Task was delivered as described — no refund issued.' or 'Task not completed — full refund issued to filer.'"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Refund Amount (₹) <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— Enter 0 if no refund</span></label>
+                <input type="number" id="resolveRefund" class="form-control" placeholder="0" min="0" step="0.01" value="0">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('resolveModal')">Cancel</button>
+            <button class="btn btn-success" onclick="submitResolve()"><i class="fas fa-check"></i> Submit Resolution</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== HIDE TASK MODAL ==================== -->
+<div class="modal-overlay" id="hideTaskModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3><i class="fas fa-eye-slash" style="color:var(--danger);margin-right:8px;"></i> Hide / Remove Task</h3>
+            <button class="modal-close" onclick="closeModal('hideTaskModal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="form-group">
+            <label>Reason for Removal</label>
+            <textarea id="hideTaskReason" class="form-control" rows="3" placeholder="Explain why this task is being removed (shown in audit log)…"></textarea>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('hideTaskModal')">Cancel</button>
+            <button class="btn btn-danger" onclick="submitHideTask()"><i class="fas fa-trash"></i> Remove Task</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== TOAST ==================== -->
+<div id="toast"></div>
+
+<script>
+// ================================================================
+// CONFIG
+// ================================================================
+const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:5000/api'
+    : '/api';
+
+let _token = localStorage.getItem('taskearn_token') || '';
+let _currentSection = 'dashboard';
+let _resolveDisputeId = null;
+let _hideTaskId = null;
+let _allUsers = [];
+
+// ================================================================
+// AUTH
+// ================================================================
+async function adminLogin() {
+    const email    = document.getElementById('adminEmail').value.trim();
+    const password = document.getElementById('adminPassword').value;
+    const btn      = document.getElementById('loginBtn');
+    const errBox   = document.getElementById('loginError');
+    errBox.style.display = 'none';
+
+    if (!email || !password) { showErr('Please enter email and password.'); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in…';
+
+    try {
+        const res  = await fetch(`${API}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+
+        if (data.success && data.token) {
+            // Verify admin privilege
+            const me = await fetch(`${API}/admin/dashboard-stats`, {
+                headers: { 'Authorization': `Bearer ${data.token}` }
+            });
+            if (!me.ok) { showErr('Access denied. This account does not have admin privileges.'); return; }
+            _token = data.token;
+            localStorage.setItem('taskearn_token', _token);
+            enterAdminPanel(data.user || data);
+        } else {
+            showErr(data.message || 'Invalid email or password.');
+        }
+    } catch (e) {
+        showErr('Could not connect to server. Please try again.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login';
+    }
+
+    function showErr(msg) {
+        document.getElementById('loginErrorMsg').textContent = msg;
+        errBox.style.display = 'flex';
+    }
+}
+
+function enterAdminPanel(user) {
+    document.getElementById('loginGate').style.display = 'none';
+    document.getElementById('loadingSplash').style.display = 'none';
+    document.getElementById('sidebar').style.display = 'flex';
+    const panel = document.getElementById('adminPanel');
+    panel.style.display = 'flex';
+    if (user && user.name) {
+        document.getElementById('adminName').textContent = user.name;
+        document.getElementById('sessionUser').textContent = user.name;
+    }
+    loadDashboard();
+    loadBadges();
+}
+
+function adminLogout() {
+    if (!confirm('Are you sure you want to logout?')) return;
+    localStorage.removeItem('taskearn_token');
+    location.reload();
+}
+
+// Check if already logged in — single API call to /admin/dashboard-stats validates both auth + admin role
+window.addEventListener('DOMContentLoaded', () => {
+    if (window.innerWidth <= 768) {
+        document.getElementById('menuToggle').style.display = 'flex';
+    }
+    if (_token) {
+        fetch(`${API}/admin/dashboard-stats`, { headers: { 'Authorization': `Bearer ${_token}` } })
+            .then(r => {
+                if (r.ok) {
+                    // Token is valid and user is admin — get name from /auth/me in background
+                    fetch(`${API}/auth/me`, { headers: { 'Authorization': `Bearer ${_token}` } })
+                        .then(r2 => r2.json())
+                        .then(d2 => enterAdminPanel(d2.user || {}))
+                        .catch(() => enterAdminPanel({}));
+                } else {
+                    // Not admin or token expired — show login
+                    hideSplash();
+                }
+            })
+            .catch(() => hideSplash());
+    } else {
+        hideSplash();
+    }
+});
+
+function hideSplash() {
+    const splash = document.getElementById('loadingSplash');
+    splash.style.transition = 'opacity .25s';
+    splash.style.opacity = '0';
+    setTimeout(() => { splash.style.display = 'none'; }, 260);
+}
+
+// ================================================================
+// NAVIGATION
+// ================================================================
+const SECTION_TITLES = {
+    'dashboard':    'Dashboard',
+    'ai-reports':   'AI Team Reports',
+    'flagged-tasks':'Flagged Tasks',
+    'disputes':     'Disputes',
+    'users':        'User Management',
+    'tasks':        'Task Management',
+    'settlements':  'Settlements',
+    'audit-log':    'Audit Log',
+    'settings':     'Settings'
+};
+
+function showSection(id, navEl) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('section-' + id).classList.add('active');
+    if (navEl) navEl.classList.add('active');
+    else {
+        document.querySelectorAll('.nav-item').forEach(n => {
+            if (n.dataset.section === id) n.classList.add('active');
+        });
+    }
+    document.getElementById('topbarTitle').textContent = SECTION_TITLES[id] || id;
+    _currentSection = id;
+
+    const loaders = {
+        'dashboard':    loadDashboard,
+        'ai-reports':   loadAIReports,
+        'flagged-tasks':loadFlaggedTasks,
+        'disputes':     loadDisputes,
+        'users':        loadUsers,
+        'tasks':        loadTasks,
+        'withdrawals':  () => loadAdminWithdrawals('pending'),
+        'settlements':  loadSettlements,
+        'audit-log':    loadAuditLog,
+    };
+    if (loaders[id]) loaders[id]();
+}
+
+function refreshCurrentSection() {
+    const icon = document.getElementById('refreshIcon');
+    icon.classList.add('fa-spin');
+    setTimeout(() => icon.classList.remove('fa-spin'), 1000);
+    showSection(_currentSection, null);
+}
+
+// ================================================================
+// API HELPER
+// ================================================================
+async function apiGet(path) {
+    const r = await fetch(`${API}${path}`, { headers: { 'Authorization': `Bearer ${_token}` } });
+    if (r.status === 401 || r.status === 403) { toast('Session expired. Please login again.', 'error'); adminLogout(); throw new Error('Unauthorized'); }
+    return r.json();
+}
+
+async function apiPost(path, body) {
+    const r = await fetch(`${API}${path}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    return r.json();
+}
+
+// ================================================================
+// DASHBOARD
+// ================================================================
+async function loadDashboard() {
+    try {
+        const d = await apiGet('/admin/dashboard-stats');
+        if (!d.success) return;
+        const s = d;
+        document.getElementById('s-users').textContent     = fmt(s.total_users ?? s.users ?? 0);
+        document.getElementById('s-users-sub').textContent = `+${s.new_users_30d ?? 0} this month`;
+        document.getElementById('s-completed').textContent = fmt(s.completed_tasks ?? 0);
+        document.getElementById('s-active').textContent    = fmt(s.active_tasks ?? 0);
+        document.getElementById('s-revenue').textContent   = '₹' + fmtMoney(s.revenue_30d ?? 0);
+        document.getElementById('s-disputes').textContent  = fmt(s.open_disputes ?? 0);
+        document.getElementById('s-flagged').textContent   = fmt(s.flagged_tasks ?? 0);
+    } catch(e) { console.error(e); }
+
+    // Recent disputes for dashboard
+    try {
+        const d = await apiGet('/admin/disputes');
+        const disputes = (d.disputes || []).slice(0, 5);
+        const tb = document.getElementById('dashDisputesTbody');
+        if (!disputes.length) { tb.innerHTML = '<tr><td colspan="6" class="empty-row">No disputes yet</td></tr>'; return; }
+        tb.innerHTML = disputes.map(d => `
+            <tr>
+                <td>#${d.id}</td>
+                <td>${esc(d.task_title || '—')}</td>
+                <td>${esc(d.filed_by_name || d.filed_by || '—')}</td>
+                <td>${esc(d.reason || '—')}</td>
+                <td>${statusBadge(d.status)}</td>
+                <td>${fmtDate(d.created_at)}</td>
+            </tr>`).join('');
+    } catch(e) {}
+}
+
+// ================================================================
+// BADGES (sidebar counts)
+// ================================================================
+async function loadBadges() {
+    try {
+        const d = await apiGet('/admin/disputes');
+        const open = (d.disputes || []).filter(x => x.status === 'open' || x.status === 'under_review').length;
+        if (open > 0) {
+            const el = document.getElementById('disputesBadge');
+            el.textContent = open; el.style.display = 'inline-block';
+        }
+    } catch(e) {}
+
+    try {
+        const d = await apiGet('/ai-team/flagged-tasks');
+        const cnt = (d.tasks || []).length;
+        if (cnt > 0) {
+            const el = document.getElementById('flaggedBadge');
+            el.textContent = cnt; el.style.display = 'inline-block';
+        }
+    } catch(e) {}
+
+    try {
+        const d = await apiGet('/ai-team/actions');
+        const cnt = (d.actions || []).length;
+        if (cnt > 0) {
+            const el = document.getElementById('aiReportsBadge');
+            el.textContent = cnt; el.style.display = 'inline-block';
+        }
+    } catch(e) {}
+}
+
+// ================================================================
+// AI TEAM REPORTS
+// ================================================================
+async function loadAIReports() {
+    const tb = document.getElementById('aiReportsTbody');
+    tb.innerHTML = '<tr><td colspan="6" class="empty-row"><div class="spinner"></div></td></tr>';
+    const filterStatus = document.getElementById('aiStatusFilter').value;
+
+    try {
+        const d = await apiGet('/ai-team/actions');
+        let actions = d.actions || [];
+
+        // Parse the JSON details blob stored by the backend
+        actions = actions.map(a => {
+            let details = {};
+            if (a.details && typeof a.details === 'string') {
+                try { details = JSON.parse(a.details); } catch(e) {}
+            } else if (typeof a.details === 'object' && a.details) {
+                details = a.details;
+            }
+            return { ...a, _details: details };
+        });
+
+        // Extract status from action string: "agent_report:error" → "error"
+        const extractStatus = (action) => {
+            if (!action) return 'info';
+            const parts = action.split(':');
+            return parts[1] || 'info';
+        };
+
+        // Filter
+        if (filterStatus) {
+            actions = actions.filter(a => extractStatus(a.action) === filterStatus);
+        }
+
+        document.getElementById('aiReportCount').textContent = `${actions.length} report${actions.length === 1 ? '' : 's'}`;
+
+        if (!actions.length) {
+            tb.innerHTML = '<tr><td colspan="6" class="empty-row">No AI reports found.</td></tr>';
+            return;
+        }
+
+        tb.innerHTML = actions.map(a => {
+            const status = extractStatus(a.action);
+            const details = a._details;
+
+            // --- Problem Identified ---
+            const problemTitle = details.title || a.action || 'Unknown event';
+            const problemDesc  = details.summary || '';
+
+            // --- Action / Solution ---
+            const solutionMap = {
+                'error':   'Escalated for human review',
+                'warning': 'Flagged for monitoring',
+                'info':    'Processed automatically',
+                'success': 'Resolved automatically',
+            };
+            const stats = details.stats || {};
+            const statsText = Object.entries(stats).map(([k,v]) => `${k}: ${v}`).join(' · ');
+            const solutionTitle = solutionMap[status] || 'Logged';
+            const solutionDesc  = statsText || details.resolution || '';
+
+            return `
+            <tr>
+                <td>${reportStatusBadge(status)}</td>
+                <td>
+                    <div style="font-size:12px;font-weight:700;color:var(--text);">${esc(a.resource_id || 'unknown')}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${esc(a.resource_type || '')}</div>
+                </td>
+                <td class="problem-cell">
+                    <div class="problem-title">${esc(problemTitle)}</div>
+                    ${problemDesc ? `<div class="problem-desc">${esc(problemDesc)}</div>` : ''}
+                </td>
+                <td class="solution-cell">
+                    <div class="solution-action"><i class="fas fa-check-circle"></i> ${esc(solutionTitle)}</div>
+                    ${solutionDesc ? `<div class="solution-desc">${esc(solutionDesc)}</div>` : ''}
+                </td>
+                <td>
+                    ${a.resource_type === 'task' ? `<a href="#" onclick="event.preventDefault();" style="font-size:12px;color:var(--primary);">Task #${a.resource_id}</a>` : `<span style="font-size:12px;color:var(--text-muted);">${esc(a.resource_type || '—')}</span>`}
+                </td>
+                <td style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtDate(a.created_at)}</td>
+            </tr>`;
+        }).join('');
+    } catch(e) {
+        tb.innerHTML = '<tr><td colspan="6" class="empty-row">Failed to load AI reports.</td></tr>';
+    }
+}
+
+function reportStatusBadge(status) {
+    const map = {
+        'error':   '<span class="badge badge-danger"><span class="status-dot" style="background:#ef4444;"></span>Error</span>',
+        'critical':'<span class="badge badge-danger"><span class="status-dot" style="background:#ef4444;"></span>Critical</span>',
+        'warning': '<span class="badge badge-warning"><span class="status-dot" style="background:#f59e0b;"></span>Warning</span>',
+        'info':    '<span class="badge badge-info"><span class="status-dot" style="background:#0ea5e9;"></span>Info</span>',
+        'success': '<span class="badge badge-success"><span class="status-dot" style="background:#10b981;"></span>Success</span>',
+    };
+    return map[status] || `<span class="badge badge-gray">${esc(status)}</span>`;
+}
+
+// ================================================================
+// FLAGGED TASKS
+// ================================================================
+async function loadFlaggedTasks() {
+    const tb = document.getElementById('flaggedTasksTbody');
+    tb.innerHTML = '<tr><td colspan="9" class="empty-row"><div class="spinner"></div></td></tr>';
+    try {
+        const d = await apiGet('/ai-team/flagged-tasks');
+        const tasks = d.tasks || [];
+        document.getElementById('flaggedCount').textContent = `${tasks.length} task${tasks.length === 1 ? '' : 's'}`;
+        if (!tasks.length) { tb.innerHTML = '<tr><td colspan="9" class="empty-row">No flagged tasks — great job!</td></tr>'; return; }
+        tb.innerHTML = tasks.map(t => `
+            <tr>
+                <td><span style="font-weight:700;color:var(--text-muted);">#${t.id}</span></td>
+                <td>
+                    <div style="font-weight:700;font-size:13px;">${esc(t.title || '—')}</div>
+                    <div style="font-size:11.5px;color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(t.description || '')}</div>
+                </td>
+                <td><span class="badge badge-gray">${esc(t.category || '—')}</span></td>
+                <td>
+                    <div style="font-size:13px;font-weight:600;">${esc(t.poster_name || '—')}</div>
+                    <div style="font-size:11.5px;color:var(--text-muted);">${esc(t.poster_email || '')}</div>
+                </td>
+                <td style="font-weight:700;color:var(--text);">₹${fmtMoney(t.price || 0)}</td>
+                <td>${flaggedStatusBadge(t.status)}</td>
+                <td>
+                    <div style="font-weight:600;font-size:12px;color:var(--danger);display:flex;align-items:center;gap:5px;">
+                        <i class="fas fa-robot"></i> AI Fraud Detection
+                    </div>
+                    <div style="font-size:11.5px;color:var(--text-muted);">${esc(t.flag_reason || 'Suspicious activity')}</div>
+                </td>
+                <td style="font-size:12px;color:var(--text-muted);">${fmtDate(t.posted_at)}</td>
+                <td>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-sm btn-success" onclick="restoreTask(${t.id})" title="Restore task as safe">
+                            <i class="fas fa-check"></i> Restore
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="openHideTask(${t.id})" title="Permanently remove">
+                            <i class="fas fa-trash"></i> Remove
+                        </button>
+                    </div>
+                </td>
+            </tr>`).join('');
+    } catch(e) {
+        tb.innerHTML = '<tr><td colspan="9" class="empty-row">Failed to load flagged tasks.</td></tr>';
+    }
+}
+
+function flaggedStatusBadge(s) {
+    const map = { flagged: 'badge-warning', suspicious: 'badge-warning', removed: 'badge-danger', active: 'badge-success' };
+    return `<span class="badge ${map[s]||'badge-gray'}">${esc(s || '—')}</span>`;
+}
+
+async function restoreTask(id) {
+    if (!confirm(`Restore task #${id} to active? This removes the AI flag.`)) return;
+    try {
+        const d = await apiPost(`/admin/tasks/${id}/restore`, {});
+        toast(d.message || 'Task restored', d.success ? 'success' : 'error');
+        if (d.success) loadFlaggedTasks();
+    } catch(e) { toast('Error restoring task', 'error'); }
+}
+
+function openHideTask(id) {
+    _hideTaskId = id;
+    document.getElementById('hideTaskReason').value = '';
+    document.getElementById('hideTaskModal').classList.add('open');
+}
+
+async function submitHideTask() {
+    const reason = document.getElementById('hideTaskReason').value.trim();
+    if (!reason) { toast('Please provide a reason for removal', 'error'); return; }
+    try {
+        const d = await apiPost(`/admin/tasks/${_hideTaskId}/hide`, { reason });
+        toast(d.message || 'Task removed', d.success ? 'success' : 'error');
+        if (d.success) { closeModal('hideTaskModal'); loadFlaggedTasks(); }
+    } catch(e) { toast('Error removing task', 'error'); }
+}
+
+// ================================================================
+// DISPUTES
+// ================================================================
+async function loadDisputes() {
+    const tb = document.getElementById('disputesTbody');
+    tb.innerHTML = '<tr><td colspan="8" class="empty-row"><div class="spinner"></div></td></tr>';
+    const filter = document.getElementById('disputeStatusFilter').value;
+    try {
+        const d = await apiGet('/admin/disputes');
+        let disputes = d.disputes || [];
+        if (filter) disputes = disputes.filter(x => x.status === filter);
+        document.getElementById('disputeCount').textContent = `${disputes.length} dispute${disputes.length === 1 ? '' : 's'}`;
+        if (!disputes.length) { tb.innerHTML = '<tr><td colspan="8" class="empty-row">No disputes found.</td></tr>'; return; }
+        tb.innerHTML = disputes.map(d => `
+            <tr>
+                <td><strong>#${d.id}</strong></td>
+                <td>
+                    <div style="font-weight:600;font-size:13px;">${esc(d.task_title || '—')}</div>
+                    <div style="font-size:11.5px;color:var(--text-muted);">Task #${d.task_id}</div>
+                </td>
+                <td>
+                    <div style="font-weight:600;font-size:13px;">${esc(d.filed_by_name || d.filed_by || '—')}</div>
+                </td>
+                <td>
+                    <div style="font-weight:700;font-size:13px;color:var(--danger);">${esc(d.reason || '—')}</div>
+                </td>
+                <td>
+                    <div style="font-size:12px;color:var(--text-muted);max-width:180px;">${esc(d.details || '—')}</div>
+                    ${d.resolution ? `<div style="font-size:12px;color:var(--success);margin-top:4px;"><i class="fas fa-check"></i> ${esc(d.resolution)}</div>` : ''}
+                </td>
+                <td>${disputeStatusBadge(d.status)}</td>
+                <td style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtDate(d.created_at)}</td>
+                <td>
+                    ${d.status !== 'resolved'
+                        ? `<button class="btn btn-sm btn-primary" onclick="openResolve(${d.id}, '${esc(d.task_title||'')}', '${esc(d.reason||'')}')">
+                              <i class="fas fa-gavel"></i> Resolve
+                           </button>`
+                        : `<span style="font-size:12px;color:var(--success);"><i class="fas fa-check-circle"></i> Done</span>`}
+                </td>
+            </tr>`).join('');
+    } catch(e) {
+        tb.innerHTML = '<tr><td colspan="8" class="empty-row">Failed to load disputes.</td></tr>';
+    }
+}
+
+function disputeStatusBadge(s) {
+    const map = { open: 'badge-danger', under_review: 'badge-warning', resolved: 'badge-success' };
+    return `<span class="badge ${map[s]||'badge-gray'}">${esc(s?.replace('_',' ') || '—')}</span>`;
+}
+
+function openResolve(id, taskTitle, reason) {
+    _resolveDisputeId = id;
+    document.getElementById('resolveDisputeSummary').innerHTML =
+        `<strong>Task:</strong> ${esc(taskTitle)} &nbsp;|&nbsp; <strong>Reason filed:</strong> ${esc(reason)}`;
+    document.getElementById('resolveDecision').value = '';
+    document.getElementById('resolveRefund').value = '0';
+    document.getElementById('resolveModal').classList.add('open');
+}
+
+async function submitResolve() {
+    const decision = document.getElementById('resolveDecision').value.trim();
+    const refund   = parseFloat(document.getElementById('resolveRefund').value) || 0;
+    if (!decision) { toast('Please enter a resolution decision', 'error'); return; }
+    try {
+        const d = await apiPost(`/admin/disputes/${_resolveDisputeId}/resolve`, { decision, refundAmount: refund });
+        toast(d.message || 'Dispute resolved', d.success ? 'success' : 'error');
+        if (d.success) { closeModal('resolveModal'); loadDisputes(); loadBadges(); }
+    } catch(e) { toast('Error resolving dispute', 'error'); }
+}
+
+// ================================================================
+// USERS
+// ================================================================
+async function loadUsers() {
+    const tb = document.getElementById('usersTbody');
+    tb.innerHTML = '<tr><td colspan="7" class="empty-row"><div class="spinner"></div></td></tr>';
+    try {
+        const d = await apiGet('/admin/dashboard-stats');
+        const users = d.recent_users || [];
+        _allUsers = users;
+        renderUsers(users);
+    } catch(e) {
+        tb.innerHTML = '<tr><td colspan="7" class="empty-row">Failed to load users.</td></tr>';
+    }
+}
+
+function renderUsers(users) {
+    const tb = document.getElementById('usersTbody');
+    if (!users.length) { tb.innerHTML = '<tr><td colspan="7" class="empty-row">No users found.</td></tr>'; return; }
+    tb.innerHTML = users.map(u => `
+        <tr>
+            <td>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:34px;height:34px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;">
+                        ${(u.name||'?').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                        <div style="font-weight:700;font-size:13px;">${esc(u.name||'—')}</div>
+                        <div style="font-size:11.5px;color:var(--text-muted);">ID: ${u.id}</div>
+                    </div>
+                </div>
+            </td>
+            <td style="font-size:13px;">${esc(u.email||'—')}</td>
+            <td style="font-size:12px;color:var(--text-muted);">${fmtDate(u.joined_at||u.created_at)}</td>
+            <td style="font-weight:700;">₹${fmtMoney(u.balance||0)}</td>
+            <td style="font-weight:700;color:var(--success);">₹${fmtMoney(u.total_earned||0)}</td>
+            <td>
+                ${u.is_banned ? '<span class="badge badge-danger">Banned</span>' :
+                  u.is_suspended ? '<span class="badge badge-warning">Suspended</span>' :
+                  '<span class="badge badge-success">Active</span>'}
+            </td>
+            <td>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    ${!u.is_suspended && !u.is_banned ? `<button class="btn btn-sm btn-warning" onclick="suspendUser('${u.id}')"><i class="fas fa-pause"></i> Suspend</button>` : ''}
+                    ${u.is_suspended ? `<button class="btn btn-sm btn-success" onclick="unsuspendUser('${u.id}')"><i class="fas fa-play"></i> Unsuspend</button>` : ''}
+                    ${!u.is_banned ? `<button class="btn btn-sm btn-danger" onclick="banUser('${u.id}')"><i class="fas fa-ban"></i> Ban</button>` : `<button class="btn btn-sm btn-outline" onclick="unbanUser('${u.id}')"><i class="fas fa-undo"></i> Unban</button>`}
+                </div>
+            </td>
+        </tr>`).join('');
+}
+
+function filterUsers() {
+    const q = document.getElementById('userSearch').value.toLowerCase();
+    const filtered = _allUsers.filter(u =>
+        (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q)
+    );
+    renderUsers(filtered);
+}
+
+async function suspendUser(id) {
+    const duration = prompt('Suspend for how many hours? (0 = permanent)');
+    if (duration === null) return;
+    const d = await apiPost(`/admin/users/${id}/suspend`, { hours: parseInt(duration)||0 });
+    toast(d.message || (d.success ? 'User suspended' : 'Error'), d.success ? 'success' : 'error');
+    if (d.success) loadUsers();
+}
+async function unsuspendUser(id) {
+    const d = await apiPost(`/admin/users/${id}/unsuspend`, {});
+    toast(d.message || (d.success ? 'User unsuspended' : 'Error'), d.success ? 'success' : 'error');
+    if (d.success) loadUsers();
+}
+async function banUser(id) {
+    if (!confirm('Permanently ban this user?')) return;
+    const d = await apiPost(`/admin/users/${id}/ban`, {});
+    toast(d.message || (d.success ? 'User banned' : 'Error'), d.success ? 'success' : 'error');
+    if (d.success) loadUsers();
+}
+async function unbanUser(id) {
+    const d = await apiPost(`/admin/users/${id}/unban`, {});
+    toast(d.message || (d.success ? 'User unbanned' : 'Error'), d.success ? 'success' : 'error');
+    if (d.success) loadUsers();
+}
+
+// ================================================================
+// TASKS
+// ================================================================
+async function loadTasks() {
+    const tb = document.getElementById('tasksTbody');
+    tb.innerHTML = '<tr><td colspan="8" class="empty-row"><div class="spinner"></div></td></tr>';
+    const filter = document.getElementById('taskStatusFilter').value;
+    try {
+        const d = await apiGet('/admin/dashboard-stats');
+        let tasks = d.recent_tasks || [];
+        if (filter) tasks = tasks.filter(t => t.status === filter);
+        if (!tasks.length) { tb.innerHTML = '<tr><td colspan="8" class="empty-row">No tasks found.</td></tr>'; return; }
+        tb.innerHTML = tasks.map(t => `
+            <tr>
+                <td><strong>#${t.id}</strong></td>
+                <td>
+                    <div style="font-weight:700;font-size:13px;">${esc(t.title||'—')}</div>
+                </td>
+                <td><span class="badge badge-gray">${esc(t.category||'—')}</span></td>
+                <td style="font-size:13px;">${esc(t.poster_name||'—')}</td>
+                <td style="font-weight:700;">₹${fmtMoney(t.price||0)}</td>
+                <td>${statusBadge(t.status)}</td>
+                <td style="font-size:12px;color:var(--text-muted);">${fmtDate(t.created_at||t.posted_at)}</td>
+                <td>
+                    <div style="display:flex;gap:6px;">
+                        ${t.status === 'removed'
+                            ? `<button class="btn btn-sm btn-success" onclick="restoreTask(${t.id})"><i class="fas fa-undo"></i> Restore</button>`
+                            : `<button class="btn btn-sm btn-danger" onclick="openHideTask(${t.id})"><i class="fas fa-eye-slash"></i> Hide</button>`}
+                    </div>
+                </td>
+            </tr>`).join('');
+    } catch(e) {
+        tb.innerHTML = '<tr><td colspan="8" class="empty-row">Failed to load tasks.</td></tr>';
+    }
+}
+
+// ================================================================
+// SETTLEMENTS
+// ================================================================
+// ================================================================
+// WITHDRAWALS
+// ================================================================
+async function loadAdminWithdrawals(statusFilter = 'pending') {
+    const tb = document.getElementById('withdrawalsTbody');
+    tb.innerHTML = '<tr><td colspan="7" class="empty-row"><div class="spinner"></div></td></tr>';
+    try {
+        const qs = statusFilter ? '?status=' + statusFilter : '';
+        const d = await apiGet('/admin/withdrawals' + qs);
+        const items = d.withdrawals || [];
+        const badge = document.getElementById('withdrawalsBadge');
+        if (badge) { badge.textContent = (d.pending_count || 0); badge.style.display = (d.pending_count > 0) ? '' : 'none'; }
+        if (!items.length) { tb.innerHTML = '<tr><td colspan="7" class="empty-row">No withdrawal requests.</td></tr>'; return; }
+        tb.innerHTML = items.map(w => {
+            const isPending = w.status === 'pending';
+            return `<tr>
+                <td><strong>#${w.id}</strong></td>
+                <td>
+                    <div style="font-weight:700;">${esc(w.user_name || w.user_id || '—')}</div>
+                    <div style="font-size:11.5px;color:var(--text-muted);">${esc(w.email || '')}</div>
+                </td>
+                <td style="font-weight:700;color:var(--success);">₹${fmtMoney(w.amount || 0)}</td>
+                <td style="font-size:12px;">${esc(w.account_number || '')}${w.ifsc_code ? '<br><span style="color:var(--text-muted);">' + esc(w.ifsc_code) + '</span>' : ''}</td>
+                <td>${statusBadge(w.status)}</td>
+                <td style="font-size:12px;color:var(--text-muted);">${fmtDate(w.created_at)}</td>
+                <td>
+                    ${isPending ? `
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <button class="btn btn-sm btn-primary" onclick="processWithdrawal(${w.id},'approve',this)"><i class="fas fa-check"></i> Approve</button>
+                        <button class="btn btn-sm" style="background:#ef4444;color:#fff;" onclick="processWithdrawal(${w.id},'reject',this)"><i class="fas fa-times"></i> Reject</button>
+                    </div>` : '—'}
+                </td>
+            </tr>`;
+        }).join('');
+    } catch(e) {
+        tb.innerHTML = '<tr><td colspan="7" class="empty-row">Failed to load withdrawals.</td></tr>';
+    }
+}
+
+async function processWithdrawal(id, action, btn) {
+    const label = action === 'approve' ? 'approve' : 'reject';
+    let note = '';
+    if (action === 'reject') {
+        note = prompt('Reason for rejection (optional):') || '';
+    }
+    if (!confirm(`${action === 'approve' ? 'Approve' : 'Reject'} withdrawal #${id}?`)) return;
+    if (btn) btn.disabled = true;
+    const d = await apiPost('/admin/withdrawal/process', { withdrawal_id: id, action, note });
+    toast(d.message || (d.success ? 'Done' : 'Error'), d.success ? 'success' : 'error');
+    if (d.success) loadAdminWithdrawals();
+    else if (btn) btn.disabled = false;
+}
+
+async function loadSettlements() {
+    const tb = document.getElementById('settlementsTbody');
+    tb.innerHTML = '<tr><td colspan="6" class="empty-row"><div class="spinner"></div></td></tr>';
+    try {
+        const d = await apiGet('/admin/settlements');
+        const settlements = d.settlements || [];
+        if (!settlements.length) { tb.innerHTML = '<tr><td colspan="6" class="empty-row">No settlement requests.</td></tr>'; return; }
+        tb.innerHTML = settlements.map(s => `
+            <tr>
+                <td><strong>#${s.id}</strong></td>
+                <td>
+                    <div style="font-weight:700;">${esc(s.user_name||s.user_id||'—')}</div>
+                    <div style="font-size:11.5px;color:var(--text-muted);">${esc(s.bank_account||'')}</div>
+                </td>
+                <td style="font-weight:700;color:var(--success);">₹${fmtMoney(s.amount||0)}</td>
+                <td>${statusBadge(s.status)}</td>
+                <td style="font-size:12px;color:var(--text-muted);">${fmtDate(s.created_at)}</td>
+                <td>
+                    ${s.status === 'pending'
+                        ? `<button class="btn btn-sm btn-primary" onclick="processSettlement(${s.id})"><i class="fas fa-check"></i> Process</button>`
+                        : '—'}
+                </td>
+            </tr>`).join('');
+    } catch(e) {
+        tb.innerHTML = '<tr><td colspan="6" class="empty-row">Failed to load settlements.</td></tr>';
+    }
+}
+
+async function processSettlement(id) {
+    if (!confirm(`Process settlement #${id}?`)) return;
+    const d = await apiPost('/admin/process-settlement', { settlement_id: id });
+    toast(d.message || (d.success ? 'Settlement processed' : 'Error'), d.success ? 'success' : 'error');
+    if (d.success) loadSettlements();
+}
+
+// ================================================================
+// AUDIT LOG
+// ================================================================
+async function loadAuditLog() {
+    const tb = document.getElementById('auditTbody');
+    tb.innerHTML = '<tr><td colspan="6" class="empty-row"><div class="spinner"></div></td></tr>';
+    const filter = document.getElementById('auditFilter').value;
+    try {
+        const d = await apiGet('/admin/audit-log');
+        let logs = d.logs || d.audit_log || [];
+        if (filter === 'ai_team') logs = logs.filter(l => l.admin_id === 'ai_team');
+        else if (filter === 'human') logs = logs.filter(l => l.admin_id !== 'ai_team');
+        if (!logs.length) { tb.innerHTML = '<tr><td colspan="6" class="empty-row">No audit entries found.</td></tr>'; return; }
+        tb.innerHTML = logs.map(l => `
+            <tr>
+                <td><strong>#${l.id}</strong></td>
+                <td>
+                    ${l.admin_id === 'ai_team'
+                        ? '<span class="badge badge-purple"><i class="fas fa-robot"></i> AI Team</span>'
+                        : `<span class="badge badge-info"><i class="fas fa-user"></i> ${esc(l.admin_id||'Admin')}</span>`}
+                </td>
+                <td>
+                    <code style="font-size:12px;background:#f1f5f9;padding:2px 7px;border-radius:5px;">${esc(l.action||'—')}</code>
+                </td>
+                <td>
+                    <span style="font-size:12px;"><strong>${esc(l.resource_type||'')}</strong> #${l.resource_id||'—'}</span>
+                </td>
+                <td style="font-size:12px;color:var(--text-muted);max-width:220px;">
+                    ${l.details ? (typeof l.details === 'string' && l.details.startsWith('{')
+                        ? formatDetailsBlob(l.details)
+                        : esc(l.details)) : '—'}
+                </td>
+                <td style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtDate(l.created_at)}</td>
+            </tr>`).join('');
+    } catch(e) {
+        tb.innerHTML = '<tr><td colspan="6" class="empty-row">Failed to load audit log.</td></tr>';
+    }
+}
+
+function formatDetailsBlob(jsonStr) {
+    try {
+        const d = JSON.parse(jsonStr);
+        return Object.entries(d).map(([k,v]) =>
+            `<span style="display:inline-block;margin:1px 4px 1px 0;"><strong>${esc(k)}:</strong> ${esc(String(v).slice(0,60))}</span>`
+        ).join('');
+    } catch(e) { return esc(jsonStr.slice(0, 120)); }
+}
+
+// ================================================================
+// SETTINGS — CHANGE PASSWORD
+// ================================================================
+function checkPwdStrength(pwd) {
+    const fill  = document.getElementById('pwdStrengthFill');
+    const label = document.getElementById('pwdStrengthLabel');
+    if (!pwd) { fill.style.width = '0'; label.textContent = ''; return; }
+    let score = 0;
+    if (pwd.length >= 8)  score++;
+    if (pwd.length >= 12) score++;
+    if (/[A-Z]/.test(pwd)) score++;
+    if (/[0-9]/.test(pwd)) score++;
+    if (/[^A-Za-z0-9]/.test(pwd)) score++;
+    const map = [[1,'20%','#ef4444','Weak'], [2,'40%','#f59e0b','Fair'], [3,'60%','#f59e0b','Moderate'], [4,'80%','#10b981','Strong'], [5,'100%','#059669','Very Strong']];
+    const [,width,color,text] = map[Math.min(score,5)-1] || ['','0','',''];
+    fill.style.width = width; fill.style.background = color; label.textContent = text; label.style.color = color;
+}
+
+async function changeAdminPassword() {
+    const cur  = document.getElementById('settingCurrentPwd').value;
+    const nw   = document.getElementById('settingNewPwd').value;
+    const conf = document.getElementById('settingConfirmPwd').value;
+    if (!cur)       { toast('Enter your current password', 'error'); return; }
+    if (!nw || nw.length < 8) { toast('New password must be at least 8 characters', 'error'); return; }
+    if (nw !== conf) { toast('Passwords do not match', 'error'); return; }
+    try {
+        const d = await apiPost('/user/change-password', { currentPassword: cur, newPassword: nw });
+        if (d.success) {
+            toast('Password changed successfully!', 'success');
+            document.getElementById('settingCurrentPwd').value = '';
+            document.getElementById('settingNewPwd').value = '';
+            document.getElementById('settingConfirmPwd').value = '';
+            document.getElementById('pwdStrengthFill').style.width = '0';
+            document.getElementById('pwdStrengthLabel').textContent = '';
+        } else {
+            toast(d.message || 'Failed to change password', 'error');
+        }
+    } catch(e) { toast('Error changing password', 'error'); }
+}
+
+// ================================================================
+// MODALS
+// ================================================================
+function closeModal(id) {
+    document.getElementById(id).classList.remove('open');
+}
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+// ================================================================
+// HELPERS
+// ================================================================
+function statusBadge(s) {
+    const map = {
+        active:       'badge-success',
+        completed:    'badge-success',
+        paid:         'badge-success',
+        pending:      'badge-warning',
+        open:         'badge-danger',
+        under_review: 'badge-warning',
+        resolved:     'badge-success',
+        flagged:      'badge-warning',
+        suspicious:   'badge-warning',
+        removed:      'badge-danger',
+        expired:      'badge-gray',
+        cancelled:    'badge-gray',
+    };
+    return `<span class="badge ${map[s]||'badge-gray'}">${esc(s?.replace('_',' ') || '—')}</span>`;
+}
+
+function fmtDate(str) {
+    if (!str) return '—';
+    const d = new Date(str);
+    if (isNaN(d)) return str;
+    return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
+         + ' ' + d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+}
+
+function fmtMoney(n) {
+    return parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function fmt(n) { return parseInt(n || 0).toLocaleString('en-IN'); }
+
+function esc(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ================================================================
+// TOAST NOTIFICATIONS
+// ================================================================
+function toast(msg, type = 'info') {
+    const container = document.getElementById('toast');
+    const el = document.createElement('div');
+    el.className = `toast-item ${type}`;
+    const icon = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' }[type] || 'fa-info-circle';
+    el.innerHTML = `<i class="fas ${icon}"></i> ${esc(msg)}`;
+    container.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 4000);
+}
+</script>
+</body>
+</html>

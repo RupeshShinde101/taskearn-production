@@ -9156,39 +9156,7 @@ function shareTask(taskId) {
 }
 window.shareTask = shareTask;
 
-// 3. PWA Install Prompt
-let _pwaInstallEvent = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    _pwaInstallEvent = e;
-    // Show prompt after 30s if user hasn't dismissed it
-    if (!sessionStorage.getItem('pwaDismissed')) {
-        setTimeout(() => {
-            const el = document.getElementById('pwaInstallPrompt');
-            if (el) el.style.display = 'flex';
-        }, 30000);
-    }
-});
-document.addEventListener('DOMContentLoaded', function() {
-    const btn = document.getElementById('pwaInstallBtn');
-    if (btn) {
-        btn.addEventListener('click', () => {
-            if (_pwaInstallEvent) {
-                _pwaInstallEvent.prompt();
-                _pwaInstallEvent.userChoice.then(() => { _pwaInstallEvent = null; });
-            }
-            dismissPwaPrompt();
-        });
-    }
-});
-function dismissPwaPrompt() {
-    const el = document.getElementById('pwaInstallPrompt');
-    if (el) el.style.display = 'none';
-    sessionStorage.setItem('pwaDismissed', '1');
-}
-window.dismissPwaPrompt = dismissPwaPrompt;
-
-// 4. Urgency indicator: pulse task cards expiring in < 2h
+// 3. Urgency indicator: pulse task cards expiring in < 2h
 (function addUrgencyPulse() {
     function check() {
         document.querySelectorAll('.task-card[data-task-id]').forEach(card => {

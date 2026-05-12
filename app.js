@@ -6541,22 +6541,20 @@ function switchTab(tab) {
 function renderDashboard() {
     updateAuthenticationStatus(); // Update auth status indicator
     
-    // Show wallet low / negative balance warning if applicable
+    // Show earn nudge card if wallet is low / negative
     const walletBal = currentUser ? (currentUser.wallet || 0) : 0;
     if (currentUser && (currentUser.walletLow || walletBal < 0)) {
         const walletWarningEl = document.getElementById('walletLowWarning');
         if (walletWarningEl) {
-            const isNegative = walletBal < 0;
-            const bgColor = isNegative ? 'rgba(239,68,68,0.1)' : '#fff3cd';
-            const borderColor = isNegative ? '#ef4444' : '#ffc107';
-            const icon = isNegative ? 'fa-circle-exclamation' : 'fa-exclamation-triangle';
-            const label = isNegative
-                ? `Your wallet balance is low. <strong>Start earning today!</strong>`
-                : `Your wallet balance is low. <strong>Start earning today!</strong>`;
             walletWarningEl.innerHTML = `
-                <div class="alert alert-warning" style="margin-bottom:15px;padding:12px 16px;border-radius:10px;background:${bgColor};border-left:4px solid ${borderColor};display:flex;justify-content:space-between;align-items:center;gap:10px;">
-                    <span style="flex:1;"><i class="fas ${icon}" style="color:${borderColor};margin-right:6px;"></i>${label} <a href="browse.html" style="text-decoration:underline;font-weight:bold;color:${borderColor};">Browse tasks →</a></span>
-                    <button type="button" onclick="this.parentElement.style.display='none';" style="background:none;border:none;cursor:pointer;font-size:18px;opacity:0.6;">&times;</button>
+                <div style="margin-bottom:18px;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%);color:#fff;padding:18px 20px;display:flex;align-items:center;gap:16px;box-shadow:0 4px 20px rgba(99,102,241,0.25);">
+                    <div style="width:48px;height:48px;background:rgba(255,255,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.4rem;">💼</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:700;font-size:1rem;margin-bottom:2px;">Ready to earn more?</div>
+                        <div style="font-size:0.8rem;opacity:0.85;">Tasks near you are waiting. Accept one and grow your wallet today.</div>
+                    </div>
+                    <a href="browse.html" style="flex-shrink:0;background:#fff;color:#6366f1;font-weight:700;font-size:0.82rem;padding:9px 16px;border-radius:10px;text-decoration:none;white-space:nowrap;">Browse Tasks →</a>
+                    <button onclick="this.parentElement.parentElement.style.display='none'" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:1.1rem;flex-shrink:0;padding:0 0 0 4px;"><i class="fas fa-times"></i></button>
                 </div>
             `;
             walletWarningEl.style.display = 'block';

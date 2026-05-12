@@ -1155,6 +1155,37 @@ const KYCAPI = {
     }
 };
 
+// Push Notifications API
+const PushAPI = {
+    getVapidKey: async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/push/vapid-key`);
+            return await res.json();
+        } catch (e) { return { success: false, message: e.message }; }
+    },
+    subscribe: async (subscription, lat, lng) => {
+        try {
+            const token = localStorage.getItem('taskearn_token');
+            const res = await fetch(`${API_BASE_URL}/api/push/subscribe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ subscription, lat, lng })
+            });
+            return await res.json();
+        } catch (e) { return { success: false, message: e.message }; }
+    },
+    unsubscribe: async () => {
+        try {
+            const token = localStorage.getItem('taskearn_token');
+            const res = await fetch(`${API_BASE_URL}/api/push/unsubscribe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+            });
+            return await res.json();
+        } catch (e) { return { success: false, message: e.message }; }
+    }
+};
+
 // Export for use
 window.AuthAPI = AuthAPI;
 window.UserAPI = UserAPI;

@@ -228,16 +228,55 @@
                 document.getElementById('notifEmpty').style.display = 'block';
                 return;
             }
+
+            // Try server first; fall back to localStorage cache
+            var fetched = false;
             try {
-                var url = (window.API_BASE_URL || '') + '/notifications';
+                var url = (window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api') + '/notifications';
                 var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
                 var data = await resp.json();
-                if (data.success && data.notifications) {
+                if (data.success && Array.isArray(data.notifications)) {
                     allNotifications = data.notifications;
+                    // Persist for offline fallback (keyed by user_id from JWT payload)
+                    try {
+                        var payload = JSON.parse(atob(token.split('.')[1]));
+                        if (payload && payload.user_id) {
+                            localStorage.setItem('notif_cache_' + payload.user_id, JSON.stringify(allNotifications));
+                        }
+                    } catch (_) {}
+                    fetched = true;
                 }
             } catch(e) {
                 console.warn('Notifications load failed:', e.message);
             }
+
+            // If fetch failed, try localStorage cache
+            if (!fetched) {
+                try {
+                    var payload2 = JSON.parse(atob(token.split('.')[1]));
+                    if (payload2 && payload2.user_id) {
+                        var cached = localStorage.getItem('notif_cache_' + payload2.user_id)
+                            || localStorage.getItem('notifications_' + payload2.user_id);
+                        if (cached) {
+                            var parsed = JSON.parse(cached);
+                            // Convert app.js format ({title,message,createdAt}) to server format if needed
+                            allNotifications = parsed.map(function(n) {
+                                return {
+                                    id: n.id,
+                                    notification_type: n.type || 'system',
+                                    title: n.title || 'Notification',
+                                    message: n.message || '',
+                                    status: n.read ? 'read' : 'unread',
+                                    task_id: n.taskId || null,
+                                    created_at: n.createdAt || n.created_at || new Date().toISOString(),
+                                    data: n.action ? JSON.stringify(n.action) : null
+                                };
+                            });
+                        }
+                    }
+                } catch (_) {}
+            }
+
             document.getElementById('notifLoading').style.display = 'none';
             renderNotifications();
         }

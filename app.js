@@ -960,78 +960,65 @@ function loadNotifications() {
  * Fetch notifications from backend and sync with localStorage
  * This also parses any JSON action data from the notifications
  */
+/** Map a raw server notification row to the UI shape */
+function _mapServerNotification(n) {
+    let action = null;
+    try {
+        if (n.data && typeof n.data === 'string') action = JSON.parse(n.data);
+        else if (n.data && typeof n.data === 'object') action = n.data;
+    } catch (e) {}
+
+    const typeMap = {
+        task_completed: 'warning', task_accepted: 'success', task_assigned: 'success',
+        task_completed_helper: 'success', task_posted: 'info', task_released: 'warning',
+        task_expired: 'warning', payment_received: 'success', payment_done: 'success',
+        payment_completed: 'warning', wallet_topup: 'success', withdrawal_requested: 'info',
+        account_suspended: 'error', account_restored: 'success', account_banned: 'error'
+    };
+    return {
+        id: n.id,
+        type: typeMap[n.notification_type] || 'info',
+        title: n.title || 'Notification',
+        message: n.message || '',
+        taskId: n.task_id,
+        read: n.status === 'read',
+        createdAt: n.created_at,
+        action
+    };
+}
+
 async function syncNotificationsFromServer() {
     if (!currentUser) return [];
-    
+
     try {
         const r = await apiRequest('/notifications', { method: 'GET' });
-        if (!r.success) return loadNotifications(); // Fallback to local
-        const result = r.data || {};
-        
-        if (result.success && result.notifications) {
-            // Convert server format to UI format
-            const serverNotifications = result.notifications.map(n => {
-                // Parse action data from JSON strings
-                let action = null;
-                try {
-                    if (n.data && typeof n.data === 'string') {
-                        action = JSON.parse(n.data);
-                    } else if (n.data && typeof n.data === 'object') {
-                        action = n.data;
-                    }
-                } catch (e) {
-                    console.warn('Could not parse notification action data:', e);
-                }
-                
-                // Map notification_type to UI type
-                let uiType = 'info';
-                if (n.notification_type === 'task_completed') uiType = 'warning';
-                else if (n.notification_type === 'task_accepted') uiType = 'success';
-                else if (n.notification_type === 'task_assigned') uiType = 'success';
-                else if (n.notification_type === 'task_completed_helper') uiType = 'success';
-                else if (n.notification_type === 'task_posted') uiType = 'info';
-                else if (n.notification_type === 'task_released') uiType = 'warning';
-                else if (n.notification_type === 'task_expired') uiType = 'warning';
-                else if (n.notification_type === 'payment_received' || n.notification_type === 'payment_done') uiType = 'success';
-                else if (n.notification_type === 'payment_completed') uiType = 'warning';
-                else if (n.notification_type === 'wallet_topup') uiType = 'success';
-                else if (n.notification_type === 'withdrawal_requested') uiType = 'info';
-                else if (n.notification_type === 'account_suspended') uiType = 'error';
-                else if (n.notification_type === 'account_restored') uiType = 'success';
-                else if (n.notification_type === 'account_banned') uiType = 'error';
-                
-                return {
-                    id: n.id,
-                    type: uiType,
-                    title: n.title || 'Notification',
-                    message: n.message || '',
-                    taskId: n.task_id,
-                    read: n.status === 'read',
-                    createdAt: n.created_at,
-                    action: action
-                };
-            });
-            
-            // Merge with local notifications (keep local ones that don't exist on server)
+        const result = (r.data) || {};
+
+        if (r.success && result.success && Array.isArray(result.notifications)) {
+            const serverNotifications = result.notifications.map(_mapServerNotification);
+
+            // Keep any local-only notifications (client-side ones with timestamp IDs)
             const localNotifications = loadNotifications();
             const serverIds = new Set(serverNotifications.map(n => n.id));
-            const localOnlyNotifications = localNotifications.filter(n => !serverIds.has(n.id));
-            
-            // Combine: server notifications first, then local-only ones
-            const merged = [...serverNotifications, ...localOnlyNotifications];
-            
-            // Save to localStorage
+            const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
+            const merged = [...serverNotifications, ...localOnly];
+
             localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
             notifications = merged;
             updateNotificationUI();
-            
             return merged;
         }
     } catch (error) {
         console.warn('Could not sync notifications from server:', error.message);
     }
-    
-    return loadNotifications(); // Fallback to local
+
+    // Fallback: always ensure in-memory array matches localStorage
+    const local = loadNotifications();
+    if (local.length > 0) {
+        notifications = local;
+        updateNotificationUI();
+    }
+    return local;
 }
 
 function saveNotifications() {
@@ -1340,7 +1327,7 @@ function toggleNotifications() {
     const dropdown = document.getElementById('notificationDropdown');
     if (!dropdown) return;
 
-    // Move dropdown to body once so it escapes any stacking context
+    // Move dropdown to body once so it escapes any stacking context / overflow:hidden parents
     if (!dropdown.dataset.movedToBody) {
         document.body.appendChild(dropdown);
         dropdown.dataset.movedToBody = 'true';
@@ -1348,8 +1335,8 @@ function toggleNotifications() {
 
     const isOpen = dropdown.classList.toggle('active');
 
-    // Position dropdown near the bell icon on desktop
     if (isOpen) {
+        // Position near bell on desktop
         const bell = document.querySelector('.notification-bell');
         if (bell && window.innerWidth > 768) {
             const rect = bell.getBoundingClientRect();
@@ -1358,9 +1345,15 @@ function toggleNotifications() {
             dropdown.style.left = 'auto';
             dropdown.style.transform = 'none';
         }
+
+        // Immediately render whatever we have in memory (fast, may be stale)
+        updateNotificationUI();
+
+        // Then fetch fresh from server and re-render
+        _fetchAndRenderNotifications();
     }
 
-    // Manage overlay
+    // Manage backdrop overlay
     let overlay = document.getElementById('notificationOverlay');
     if (isOpen) {
         if (!overlay) {
@@ -1370,18 +1363,57 @@ function toggleNotifications() {
             document.body.appendChild(overlay);
         }
         overlay.classList.add('active');
-        overlay.onmousedown = function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleNotifications();
+        overlay.ontouchend = function(e) {
+            if (e.target === overlay) { e.preventDefault(); e.stopPropagation(); toggleNotifications(); }
         };
-        overlay.ontouchstart = function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleNotifications();
+        overlay.onmousedown = function(e) {
+            e.preventDefault(); e.stopPropagation(); toggleNotifications();
         };
     } else if (overlay) {
         overlay.classList.remove('active');
+    }
+}
+
+/** Fetch notifications from server, update in-memory array, and re-render dropdown list */
+async function _fetchAndRenderNotifications() {
+    if (!currentUser) return;
+    const list = document.getElementById('notificationList');
+
+    // Show loading skeleton inside the list while fetching
+    if (list && (!notifications || notifications.length === 0)) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:#94a3b8;"><i class="fas fa-spinner fa-spin" style="font-size:1.4rem;"></i></div>';
+    }
+
+    try {
+        const r = await apiRequest('/notifications', { method: 'GET' });
+        const result = (r && r.data) || {};
+
+        if (r && r.success && result.success && Array.isArray(result.notifications)) {
+            const serverNotifications = result.notifications.map(_mapServerNotification);
+            const localNotifications = loadNotifications();
+            const serverIds = new Set(serverNotifications.map(n => n.id));
+            const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
+            const merged = [...serverNotifications, ...localOnly];
+
+            localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
+            notifications = merged;
+        } else if (!notifications || notifications.length === 0) {
+            // Server failed — fall back to localStorage
+            const local = loadNotifications();
+            if (local.length > 0) notifications = local;
+        }
+    } catch (e) {
+        // Network error — use localStorage if in-memory is empty
+        if (!notifications || notifications.length === 0) {
+            const local = loadNotifications();
+            if (local.length > 0) notifications = local;
+        }
+    }
+
+    // Re-render (dropdown may still be open)
+    const dropdown = document.getElementById('notificationDropdown');
+    if (dropdown && dropdown.classList.contains('active')) {
+        updateNotificationUI();
     }
 }
 
@@ -1958,6 +1990,9 @@ async function refreshWalletBalance() {
                 } else if (walletData.balance < 0) {
                     setDebtSuspension(Math.abs(walletData.balance));
                 }
+
+                // Mark walletLow on currentUser so dashboard banner shows
+                currentUser.walletLow = walletData.balance < 100;
                 
                 // Update UI if wallet display exists
                 const walletDisplay = document.querySelector('[data-wallet-balance]');
@@ -2124,6 +2159,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 if (currentUser.authProvider === 'google' && (!currentUser.phone || !currentUser.dob)) {
                     setTimeout(() => showCompleteProfileModal(), 1500);
                 }
+
+                // Subscribe to push notifications (non-blocking, after a short delay)
+                setTimeout(() => { try { initPushNotifications(); } catch (_) {} }, 3000);
             } else {
                 console.log('👤 No active session - user needs to login');
             }
@@ -2763,19 +2801,22 @@ function renderTasks(filtered = null) {
     });
 
     if (list.length === 0) {
+        const _allActiveTasks = tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired');
+        const _hasTasksBeyondRadius = _allActiveTasks.length > 0 && _allActiveTasks.length > list.length;
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon"><i class="fas fa-magnifying-glass"></i></div>
-                <h3>No tasks available</h3>
-                <p>No nearby tasks match your filters right now.<br>Try widening your distance or budget range, or check back later.</p>
+                <h3>No tasks found nearby</h3>
+                <p>${_hasTasksBeyondRadius ? 'There are <strong>' + _allActiveTasks.length + ' tasks</strong> available — try expanding your radius.' : 'No nearby tasks match your filters right now. Try widening your search or check back later.'}</p>
                 <div class="empty-state-tips">
-                    <span><i class="fas fa-location-dot"></i> Increase distance</span>
-                    <span><i class="fas fa-indian-rupee-sign"></i> Adjust budget</span>
-                    <span><i class="fas fa-rotate-right"></i> Refresh later</span>
+                    <button class="empty-state-tip-btn" onclick="document.getElementById('filterDistance').value=50; document.getElementById('distanceValue').textContent='50'; applyFilters();"><i class="fas fa-location-dot"></i> Expand to 50 km</button>
+                    <button class="empty-state-tip-btn" onclick="document.getElementById('minBudget').value=''; document.getElementById('maxBudget').value=''; applyFilters();"><i class="fas fa-indian-rupee-sign"></i> Clear budget</button>
+                    <button class="empty-state-tip-btn" onclick="loadTasksFromServer();"><i class="fas fa-rotate-right"></i> Refresh</button>
                 </div>
-                <button class="btn btn-outline empty-state-reset" onclick="clearFilters()"><i class="fas fa-times-circle"></i> Clear Filters</button>
+                <button class="btn btn-outline empty-state-reset" onclick="clearFilters()"><i class="fas fa-times-circle"></i> Clear All Filters</button>
             </div>
         `;
+        return;
         return;
     }
 
@@ -2865,6 +2906,8 @@ function renderTasks(filtered = null) {
                         <div class="tc-poster">
                             <div class="tc-avatar">${posterInitial}</div>
                             <span class="tc-poster-name">${posterFirstName}</span>
+                            ${task.postedBy && task.postedBy.verified ? '<span class="tc-poster-verified" title="Verified poster"><i class="fas fa-check-circle"></i></span>' : ''}
+                            ${task.postedBy && task.postedBy.tasks_posted > 0 ? `<span class="tc-poster-taskcount">${task.postedBy.tasks_posted} posted</span>` : ''}
                         </div>
                         <div class="tc-earn">
                             <span class="tc-task-val">Task Value ₹${taskValue}</span>
@@ -5302,6 +5345,27 @@ async function handleLogin(event) {
 
                 // Render dashboard after tasks are fully loaded
                 setTimeout(() => renderDashboard(), 100);
+
+                // Subscribe to push notifications after login (non-blocking)
+                setTimeout(() => { try { initPushNotifications(); } catch (_) {} }, 3500);
+
+                // Profile completeness nudge (shown once per session)
+                setTimeout(() => {
+                    if (sessionStorage.getItem('_profileNudgeDone')) return;
+                    sessionStorage.setItem('_profileNudgeDone', '1');
+                    const missing = [];
+                    if (!currentUser.phone) missing.push('phone number');
+                    if (!currentUser.profile_photo && !currentUser.profilePhoto) missing.push('profile photo');
+                    if (!currentUser.bio) missing.push('bio');
+                    if (missing.length > 0) {
+                        const nudge = document.createElement('div');
+                        nudge.id = '_profileNudge';
+                        nudge.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:14px;padding:14px 18px;z-index:9999;max-width:360px;width:calc(100% - 32px);box-shadow:0 8px 30px rgba(0,0,0,0.3);animation:slideUpPWA 0.3s ease;display:flex;align-items:center;gap:12px;';
+                        nudge.innerHTML = '<span style="font-size:1.5rem;">👤</span><div style="flex:1;"><strong style="display:block;font-size:14px;">Complete your profile</strong><span style="font-size:12px;opacity:0.85;">Add your ' + missing.join(' & ') + ' to get more tasks</span></div><a href="profile.html" style="background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:7px 12px;text-decoration:none;font-size:12px;font-weight:700;white-space:nowrap;">Update</a><button onclick="document.getElementById(\'_profileNudge\').remove()" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:1rem;padding:0 0 0 6px;"><i class="fas fa-times"></i></button>';
+                        document.body.appendChild(nudge);
+                        setTimeout(() => { const e = document.getElementById('_profileNudge'); if (e) e.remove(); }, 8000);
+                    }
+                }, 2000);
                 
                 // If on profile.html, refresh profile UI (was stuck at "Loading...")
                 if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {
@@ -6367,14 +6431,20 @@ function switchTab(tab) {
 function renderDashboard() {
     updateAuthenticationStatus(); // Update auth status indicator
     
-    // Show wallet low warning if applicable
-    if (currentUser && currentUser.walletLow) {
+    // Show earn nudge card if wallet is low / negative
+    const walletBal = currentUser ? (currentUser.wallet || 0) : 0;
+    if (currentUser && (currentUser.walletLow || walletBal < 0)) {
         const walletWarningEl = document.getElementById('walletLowWarning');
         if (walletWarningEl) {
             walletWarningEl.innerHTML = `
-                <div class="alert alert-warning" style="margin-bottom: 15px; padding: 12px; border-radius: 6px; background-color: #fff3cd; border-left: 4px solid #ffc107; display: flex; justify-content: space-between; align-items: center;">
-                    <span><i class="fas fa-exclamation-triangle"></i> Wallet balance is low (₹${currentUser.wallet || 0}). <a href="wallet.html" style="text-decoration: underline; font-weight: bold;">Top up now</a></span>
-                    <button type="button" class="close" onclick="this.parentElement.style.display='none';" style="background: none; border: none; cursor: pointer; font-size: 20px;">&times;</button>
+                <div style="margin-bottom:18px;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%);color:#fff;padding:18px 20px;display:flex;align-items:center;gap:16px;box-shadow:0 4px 20px rgba(99,102,241,0.25);">
+                    <div style="width:48px;height:48px;background:rgba(255,255,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.4rem;">💼</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:700;font-size:1rem;margin-bottom:2px;">Ready to earn more?</div>
+                        <div style="font-size:0.8rem;opacity:0.85;">Tasks near you are waiting. Accept one and grow your wallet today.</div>
+                    </div>
+                    <a href="browse.html" style="flex-shrink:0;background:#fff;color:#6366f1;font-weight:700;font-size:0.82rem;padding:9px 16px;border-radius:10px;text-decoration:none;white-space:nowrap;">Browse Tasks →</a>
+                    <button onclick="this.parentElement.parentElement.style.display='none'" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:1.1rem;flex-shrink:0;padding:0 0 0 4px;"><i class="fas fa-times"></i></button>
                 </div>
             `;
             walletWarningEl.style.display = 'block';
@@ -6507,6 +6577,19 @@ async function verifyTaskDone(taskId, btnEl) {
             renderAcceptedTasks();
             await syncUserTasksFromServer();
             renderDashboard();
+            // Share prompt — invite others to earn
+            setTimeout(() => {
+                if (localStorage.getItem('share_task_prompt_shown')) return;
+                localStorage.setItem('share_task_prompt_shown', '1');
+                const title = task ? task.title : 'a task';
+                const waText = encodeURIComponent(`I just completed "${title}" on Workmate4u and got paid! 💸\nYou can also earn money doing tasks nearby 👉 https://workmate4u.com`);
+                const el = document.createElement('div');
+                el.id = 'shareEarnPrompt';
+                el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;border-radius:14px;padding:16px 18px;z-index:9999;max-width:360px;width:calc(100% - 32px);box-shadow:0 8px 30px rgba(0,0,0,0.3);animation:slideUpPWA 0.3s ease;';
+                el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🎉</span><div style="flex:1;"><strong style="display:block;margin-bottom:2px;">Great work!</strong><span style="font-size:0.8rem;opacity:0.75;">Share your success with friends</span></div><button onclick="document.getElementById('shareEarnPrompt').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:1rem;"><i class="fas fa-times"></i></button></div><a href="https://wa.me/?text=${waText}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;background:#25D366;color:#fff;border-radius:10px;padding:10px;text-decoration:none;font-weight:700;"><i class="fab fa-whatsapp"></i> Share on WhatsApp</a>`;
+                document.body.appendChild(el);
+                setTimeout(() => { const e = document.getElementById('shareEarnPrompt'); if (e) e.remove(); }, 10000);
+            }, 2000);
         } else {
             alert(result.message || 'Could not send verification. Please try again.');
             if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-double"></i> Verify Task Done'; }
@@ -6595,12 +6678,11 @@ function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    // Show active (non-expired) and accepted posted tasks (not completed/payment_released/paid — those go to history)
+    // Show active (incl. expired) and accepted posted tasks (not completed/payment_released/paid — those go to history)
     const visiblePostedTasks = myPostedTasks.filter(t => {
         if (t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending') return true;
         if (t.status !== 'active') return false;
-        if (getTimeLeft(t.expiresAt) === 'Expired') return false;
-        return true;
+        return true; // include expired — rendered with Expired badge
     });
 
     if (visiblePostedTasks.length === 0) {
@@ -6634,15 +6716,27 @@ function renderPostedTasks() {
                 </div>`;
         }
 
+        const isExpiredTask = t.status === 'active' && getTimeLeft(t.expiresAt) === 'Expired';
         let statusLabel = t.status;
         let statusClass = t.status;
-        if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
+        if (isExpiredTask) { statusLabel = '⏰ Expired'; statusClass = 'expired'; }
+        else if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
         else if (t.status === 'completed' || t.status === 'pending_payment') { statusLabel = 'Awaiting Payment'; statusClass = 'warning'; }
         else if (t.status === 'verify_pending') { statusLabel = '⏳ Verify & Pay'; statusClass = 'warning'; }
         else if (t.status === 'payment_released') { statusLabel = '✅ Payment Released'; statusClass = 'paid'; }
 
         let actionsHTML = '';
-        if (t.status === 'active') {
+        if (isExpiredTask) {
+            actionsHTML = `<div class="task-actions" style="margin-top:10px;">
+                <div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:13px;color:#ef4444;">
+                    <i class="fas fa-clock"></i> This task expired without being accepted.
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-danger" style="flex:1;" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
+                    <button class="btn btn-primary" style="flex:1;" onclick="openEditTask(${t.id})"><i class="fas fa-rotate-right"></i> Re-post</button>
+                </div>
+            </div>`;
+        } else if (t.status === 'active') {
             actionsHTML = `<div class="task-actions">
                     <button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button>
                     <button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
@@ -7087,11 +7181,18 @@ function formatCategory(cat) {
 // ========================================
 
 function openModal(id) {
-    document.getElementById(id)?.classList.add('active');
-    document.body.classList.add('modal-open');
+    // Block posting tasks when wallet is in debt
     if (id === 'postTaskModal') {
+        if (typeof isDebtSuspended === 'function' && isDebtSuspended()) {
+            try { showDebtSuspendedPopup(); } catch(e) {
+                showToast('❌ Your account has a negative balance. Top up your wallet to post tasks.');
+            }
+            return;
+        }
         resetBonusOnModalOpen();
     }
+    document.getElementById(id)?.classList.add('active');
+    document.body.classList.add('modal-open');
     // Re-attempt Google Sign-In init when login/signup modal opens. If the
     // GIS library hasn't finished loading yet, poll briefly until it does.
     if (id === 'loginModal' || id === 'signupModal') {
@@ -7792,7 +7893,9 @@ async function initGoogleSignIn() {
         return container;
     }
     const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');
-    if (loginBtn && !loginBtn.children.length) {
+    if (loginBtn && !window._googleLoginBtnRendered) {
+        window._googleLoginBtnRendered = true;
+        loginBtn.innerHTML = '';
         google.accounts.id.renderButton(loginBtn, {
             type: 'standard',
             size: 'large',
@@ -7803,7 +7906,9 @@ async function initGoogleSignIn() {
         console.log('✅ Google button rendered in login modal');
     }
     const signupBtn = ensureGoogleBtnContainer('signupModal', 'googleSignInBtn_signup');
-    if (signupBtn && !signupBtn.children.length) {
+    if (signupBtn && !window._googleSignupBtnRendered) {
+        window._googleSignupBtnRendered = true;
+        signupBtn.innerHTML = '';
         google.accounts.id.renderButton(signupBtn, {
             type: 'standard',
             size: 'large',
@@ -8285,13 +8390,89 @@ async function unblockUser(userId) {
 // ========================================
 // PUSH NOTIFICATIONS
 // ========================================
-// Push notification feature has been removed.
-// Stub functions kept as no-ops to avoid breaking any cached HTML still
-// referencing them (e.g. older browser cache calling testPushNotification()).
-function initPushNotifications() {}
-function requestPushPermission() {}
-function enablePushAndSubscribe() {}
-function testPushNotification() {}
+
+/**
+ * Subscribe the current user to web push notifications.
+ * Called once after login (or when user explicitly enables them).
+ * Silently exits if the browser doesn't support push or permission is denied.
+ */
+async function initPushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    // Don't re-subscribe if we've already done it this session
+    if (sessionStorage.getItem('push_subscribed')) return;
+
+    const permission = Notification.permission;
+    if (permission === 'denied') return;
+
+    // Ask permission only if not yet granted
+    if (permission !== 'granted') {
+        const result = await Notification.requestPermission();
+        if (result !== 'granted') return;
+    }
+
+    await enablePushAndSubscribe();
+}
+
+async function enablePushAndSubscribe() {
+    try {
+        // Fetch VAPID public key from our server
+        const { success, publicKey } = await PushAPI.getVapidKey();
+        if (!success || !publicKey) return;
+
+        const reg = await navigator.serviceWorker.ready;
+
+        // Check for existing subscription first
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+            // Convert base64url public key to Uint8Array
+            const appServerKey = urlBase64ToUint8Array(publicKey);
+            sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: appServerKey
+            });
+        }
+
+        // Send subscription to our backend (with optional location)
+        let lat = null, lng = null;
+        try {
+            const pos = await new Promise((res, rej) =>
+                navigator.geolocation.getCurrentPosition(res, rej, { timeout: 3000 })
+            );
+            lat = pos.coords.latitude;
+            lng = pos.coords.longitude;
+        } catch (_) {}
+
+        await PushAPI.subscribe(sub.toJSON(), lat, lng);
+        sessionStorage.setItem('push_subscribed', '1');
+        console.log('[push] Subscribed to push notifications');
+    } catch (e) {
+        console.warn('[push] Subscribe failed:', e);
+    }
+}
+
+async function disablePushNotifications() {
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) await sub.unsubscribe();
+        await PushAPI.unsubscribe();
+        sessionStorage.removeItem('push_subscribed');
+        console.log('[push] Unsubscribed from push notifications');
+    } catch (e) {
+        console.warn('[push] Unsubscribe failed:', e);
+    }
+}
+
+/** Convert a base64url string to a Uint8Array (required by PushManager.subscribe) */
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+// Legacy no-op stubs (kept for any older cached pages that call them)
+function requestPushPermission() { initPushNotifications(); }
 function showPushBannerIfNeeded() {
     const banner = document.getElementById('pushBanner');
     if (banner) banner.style.display = 'none';
@@ -8930,17 +9111,28 @@ document.addEventListener('DOMContentLoaded', function() {
 // 2. Earnings Calculator
 function updateCalc() {
     const ratePerTask = parseInt(document.getElementById('calcCategory')?.value || 500);
-    const tasksPerDay = parseInt(document.getElementById('calcTasks')?.value || 3);
-    const hoursPerWeek = parseInt(document.getElementById('calcHours')?.value || 10);
-    const daysPerWeek = Math.max(1, Math.round(hoursPerWeek / 3));
-    const tasksPerWeek = daysPerWeek * tasksPerDay;
-    const gross = tasksPerWeek * ratePerTask * 4; // ~4 weeks
-    const net = Math.round(gross * 0.88);
-    const weekly = Math.round(net / 4);
-    const el = document.getElementById('calcMonthly');
-    const elW = document.getElementById('calcWeekly');
-    if (el) el.textContent = '₹' + net.toLocaleString('en-IN');
-    if (elW) elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
+    // Cap tasks/day at 8 — beyond that is unrealistic for a single person
+    const tasksPerDay = Math.min(8, parseInt(document.getElementById('calcTasks')?.value || 3));
+    // Direct "days per week" slider (replaces broken hours→days conversion)
+    const daysPerWeek = Math.min(7, parseInt(document.getElementById('calcDays')?.value || 5));
+
+    // ~4.33 weeks per month
+    const tasksPerMonth = Math.round(tasksPerDay * daysPerWeek * 4.33);
+    const gross = tasksPerMonth * ratePerTask;
+    // Platform deducts 12% from helper (10% commission + 2% transaction fee)
+    const platformCut = Math.round(gross * 0.12);
+    const net = gross - platformCut;
+    const weekly = Math.round(net / 4.33);
+
+    const el   = document.getElementById('calcMonthly');
+    const elW  = document.getElementById('calcWeekly');
+    const elP  = document.getElementById('calcPlatformCut');
+    const elTM = document.getElementById('calcTasksMonth');
+
+    if (el)   el.textContent  = '₹' + net.toLocaleString('en-IN');
+    if (elW)  elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
+    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (12%)';
+    if (elTM) elTM.textContent = tasksPerMonth + ' tasks/month';
 }
 window.updateCalc = updateCalc;
 document.addEventListener('DOMContentLoaded', updateCalc);
@@ -8954,39 +9146,7 @@ function shareTask(taskId) {
 }
 window.shareTask = shareTask;
 
-// 3. PWA Install Prompt
-let _pwaInstallEvent = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    _pwaInstallEvent = e;
-    // Show prompt after 30s if user hasn't dismissed it
-    if (!sessionStorage.getItem('pwaDismissed')) {
-        setTimeout(() => {
-            const el = document.getElementById('pwaInstallPrompt');
-            if (el) el.style.display = 'flex';
-        }, 30000);
-    }
-});
-document.addEventListener('DOMContentLoaded', function() {
-    const btn = document.getElementById('pwaInstallBtn');
-    if (btn) {
-        btn.addEventListener('click', () => {
-            if (_pwaInstallEvent) {
-                _pwaInstallEvent.prompt();
-                _pwaInstallEvent.userChoice.then(() => { _pwaInstallEvent = null; });
-            }
-            dismissPwaPrompt();
-        });
-    }
-});
-function dismissPwaPrompt() {
-    const el = document.getElementById('pwaInstallPrompt');
-    if (el) el.style.display = 'none';
-    sessionStorage.setItem('pwaDismissed', '1');
-}
-window.dismissPwaPrompt = dismissPwaPrompt;
-
-// 4. Urgency indicator: pulse task cards expiring in < 2h
+// 3. Urgency indicator: pulse task cards expiring in < 2h
 (function addUrgencyPulse() {
     function check() {
         document.querySelectorAll('.task-card[data-task-id]').forEach(card => {

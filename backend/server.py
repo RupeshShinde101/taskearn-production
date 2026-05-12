@@ -217,6 +217,54 @@ except Exception as e:
 PH = get_placeholder()
 
 # ========================================
+# VAPID / PUSH NOTIFICATION CONFIG
+# ========================================
+
+VAPID_PUBLIC_KEY  = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'admin@workmate4u.com')
+
+
+def send_push_to_user(user_id, title, body, url='/notifications.html'):
+    """Send a web push notification to all subscriptions for a user.
+    Silently skips if pywebpush is not installed or VAPID keys are missing."""
+    if not _has_webpush or not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'SELECT subscription_json FROM push_subscriptions WHERE user_id = {PH}',
+                (str(user_id),)
+            )
+            rows = cursor.fetchall()
+        stale_users = []
+        for row in rows:
+            sub_json = dict_from_row(row).get('subscription_json') if hasattr(row, 'keys') else row[0]
+            try:
+                sub = json.loads(sub_json)
+                webpush(
+                    subscription_info=sub,
+                    data=json.dumps({'title': title, 'body': body, 'url': url}),
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={'sub': f'mailto:{VAPID_CLAIMS_EMAIL}'}
+                )
+            except WebPushException as exc:
+                resp = exc.response
+                if resp is not None and resp.status_code in (404, 410):
+                    stale_users.append(str(user_id))
+            except Exception:
+                pass
+        if stale_users:
+            with get_db() as (cursor2, conn2):
+                cursor2.execute(
+                    f'DELETE FROM push_subscriptions WHERE user_id = {PH}',
+                    (str(user_id),)
+                )
+    except Exception as e:
+        print(f'[push] Error sending to user {user_id}: {e}')
+
+
+# ========================================
 # HELPER FUNCTIONS
 # ========================================
 
@@ -2003,6 +2051,17 @@ def create_task():
                 'kycStatus': kyc_status_post
             }), 403
 
+        # Block task posting when wallet is in debt (negative balance)
+        poster_wallet = get_or_create_wallet(request.user_id)
+        poster_balance = float(poster_wallet.get('balance', 0))
+        if poster_balance < 0:
+            return jsonify({
+                'success': False,
+                'message': f'Your wallet has a negative balance of ₹{abs(poster_balance):.2f}. Please top up to clear your debt before posting tasks.',
+                'debtSuspended': True,
+                'debtAmount': abs(poster_balance)
+            }), 403
+
         data = request.get_json()
         print(f'   Raw request data: {data}')
         
@@ -2326,8 +2385,21 @@ def accept_task(task_id):
         except Exception:
             pass
 
-        return jsonify({'success': True, 'message': 'Task accepted successfully'})
+        # Push notification to poster
+        try:
+            send_push_to_user(
+                poster_id,
+                'Task Accepted! 🎉',
+                f'{helper_name} accepted "{task["title"]}". Budget: ₹{task["price"]}',
+                '/posted.html'
+            )
+        except Exception:
+            pass
 
+        return jsonify({
+            'success': True,
+            'message': 'Task accepted successfully'
+        })
     except Exception as e:
         print(f"❌ Error in accept_task: {e}")
         import traceback
@@ -4499,12 +4571,23 @@ def request_withdrawal():
                   'unread', json.dumps({'type': 'info', 'amount': amount, 'withdrawalId': withdrawal_id}), now))
     except Exception as notif_err:
         print(f"⚠️ Failed to create withdrawal notification: {notif_err}")
-    
+
+    # Push notification confirming withdrawal request
+    try:
+        send_push_to_user(
+            request.user_id,
+            'Withdrawal Requested 🏦',
+            f'₹{amount:.2f} will be transferred to your bank account within 24 hours.',
+            '/wallet.html'
+        )
+    except Exception:
+        pass
+
     print(f"   New balance: ₹{new_balance:.2f}")
     print(f"   Withdrawal ID: {withdrawal_id}")
     print(f"   Status: pending (admin will process)")
     print('='*60 + "\n")
-    
+
     return jsonify({
         'success': True,
         'message': f'₹{amount:.2f} withdrawal request submitted! Amount will be transferred to your bank account within 24 hours.',
@@ -4599,8 +4682,138 @@ def cancel_withdrawal(withdrawal_id):
 
 
 # ========================================
-# CHAT API
+# ADMIN: PROCESS WITHDRAWAL (approve / reject)
 # ========================================
+
+@app.route('/api/admin/withdrawals', methods=['GET'])
+@require_admin
+def admin_list_withdrawals():
+    """List withdrawal requests for admin panel."""
+    status_filter = request.args.get('status', '').strip().lower()
+    PH = get_placeholder()
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            if status_filter:
+                cursor.execute(
+                    f"""SELECT wr.id, wr.user_id, wr.amount, wr.account_number, wr.ifsc_code,
+                               wr.bank_name, wr.status, wr.created_at, wr.note,
+                               u.name AS user_name, u.email
+                        FROM withdrawal_requests wr
+                        LEFT JOIN users u ON u.id = wr.user_id
+                        WHERE wr.status = {PH}
+                        ORDER BY wr.created_at DESC LIMIT 100""",
+                    (status_filter,)
+                )
+            else:
+                cursor.execute(
+                    """SELECT wr.id, wr.user_id, wr.amount, wr.account_number, wr.ifsc_code,
+                               wr.bank_name, wr.status, wr.created_at, wr.note,
+                               u.name AS user_name, u.email
+                        FROM withdrawal_requests wr
+                        LEFT JOIN users u ON u.id = wr.user_id
+                        ORDER BY wr.created_at DESC LIMIT 100"""
+                )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+            withdrawals = [dict(zip(cols, r)) for r in rows]
+
+            cursor.execute("SELECT COUNT(*) FROM withdrawal_requests WHERE status='pending'")
+            pending_count = cursor.fetchone()[0]
+
+        return jsonify({'success': True, 'withdrawals': withdrawals, 'pending_count': pending_count})
+    except Exception as e:
+        logger.error(f'admin_list_withdrawals error: {e}')
+        return jsonify({'success': False, 'message': 'Failed to load withdrawals'}), 500
+
+
+@app.route('/api/admin/withdrawal/process', methods=['POST'])
+@require_admin
+def admin_process_withdrawal():
+    """Admin approves or rejects a user withdrawal request."""
+    data = request.get_json() or {}
+    withdrawal_id = data.get('withdrawal_id')
+    action = (data.get('action') or '').strip().lower()   # 'approve' or 'reject'
+    note = (data.get('note') or '').strip()
+
+    if not withdrawal_id or action not in ('approve', 'reject'):
+        return jsonify({'success': False, 'message': 'withdrawal_id and action (approve|reject) are required'}), 400
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    with get_db() as (cursor, conn):
+        cursor.execute(f'SELECT * FROM withdrawal_requests WHERE id = {PH}', (withdrawal_id,))
+        wr = dict_from_row(cursor.fetchone())
+        if not wr:
+            return jsonify({'success': False, 'message': 'Withdrawal not found'}), 404
+        if wr['status'] != 'pending':
+            return jsonify({'success': False, 'message': f'Cannot process — status is already {wr["status"]}'}), 400
+
+        user_id = str(wr['user_id'])
+        amount = float(wr['amount'])
+
+        if action == 'approve':
+            new_status = 'completed'
+            cursor.execute(f'''
+                UPDATE withdrawal_requests SET status = {PH}, updated_at = {PH}, admin_note = {PH}
+                WHERE id = {PH}
+            ''', (new_status, now, note or 'Approved by admin', withdrawal_id))
+
+            # Create notification
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'payment_received',
+                  '💰 Withdrawal Processed!',
+                  f'Your withdrawal of ₹{amount:.0f} has been processed. It will reach your bank in 1–3 business days.',
+                  'unread', now))
+
+        else:  # reject
+            new_status = 'rejected'
+            # Refund amount back to wallet
+            wallet = get_or_create_wallet(user_id)
+            new_bal = float(wallet['balance']) + amount
+            cursor.execute(f'UPDATE wallets SET balance = {PH}, updated_at = {PH} WHERE user_id = {PH}',
+                           (new_bal, now, user_id))
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions
+                (wallet_id, user_id, type, amount, balance_after, description, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (wallet['id'], user_id, 'refund', amount, new_bal,
+                  f'Withdrawal rejected — refunded. {note}'.strip(), now))
+            cursor.execute(f'''
+                UPDATE withdrawal_requests SET status = {PH}, updated_at = {PH}, admin_note = {PH}
+                WHERE id = {PH}
+            ''', (new_status, now, note or 'Rejected by admin', withdrawal_id))
+
+            # Create notification
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'wallet_topup',
+                  '↩ Withdrawal Rejected',
+                  f'Your withdrawal of ₹{amount:.0f} was rejected and refunded to your wallet. {note}'.strip(),
+                  'unread', now))
+
+        log_admin_action(cursor, request.user_id, f'withdrawal_{action}', 'withdrawal_requests',
+                         withdrawal_id, f'{action.capitalize()} ₹{amount} withdrawal. {note}'.strip(),
+                         request.remote_addr)
+        conn.commit()
+
+    # Email + push notification (non-blocking)
+    try:
+        notify_withdrawal_processed_email(user_id, amount, new_status)
+    except Exception as e:
+        print(f'[withdrawal] email error: {e}')
+    try:
+        push_msg = (f'₹{amount:.0f} withdrawal processed — arriving in 1–3 days 🏦'
+                    if action == 'approve'
+                    else f'₹{amount:.0f} withdrawal rejected and refunded to wallet.')
+        send_push_to_user(user_id, '💰 Withdrawal Update', push_msg, '/wallet.html')
+    except Exception as e:
+        print(f'[withdrawal] push error: {e}')
+
+    return jsonify({'success': True, 'message': f'Withdrawal {action}d successfully', 'newStatus': new_status})
 
 @app.route('/api/chat/<int:task_id>/messages', methods=['GET'])
 @require_auth
@@ -5084,13 +5297,33 @@ def create_sos_alert():
         cursor.execute(f'SELECT name, phone FROM users WHERE id = {PH}', (request.user_id,))
         user = dict_from_row(cursor.fetchone())
     
-    # TODO: Send SMS/Push notification to emergency contacts
-    # TODO: Notify admin dashboard
-    
+    alert_id = cursor.lastrowid
+
+    # Notify all admins via push + in-app notification
+    try:
+        with get_db() as (cursor2, conn2):
+            cursor2.execute(f"SELECT id FROM users WHERE is_admin = TRUE OR role = 'admin'")
+            admins = cursor2.fetchall()
+        admin_ids = [str(row[0]) for row in (admins or [])]
+        sos_body = f"🆘 SOS from {user.get('name', 'User')} (ID {request.user_id}). Immediate action required."
+        now_n = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        for admin_id in admin_ids:
+            send_push_to_user(admin_id, '🆘 Emergency SOS Alert', sos_body, '/admin.html')
+            try:
+                with get_db() as (cn, co):
+                    cn.execute(f'''
+                        INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (admin_id, 'sos_alert', '🆘 SOS Alert', sos_body, 'unread', now_n))
+            except Exception:
+                pass
+    except Exception as e:
+        print(f'[SOS] Could not notify admins: {e}')
+
     return jsonify({
         'success': True,
         'message': 'SOS alert sent! Emergency contacts have been notified.',
-        'alertId': cursor.lastrowid
+        'alertId': alert_id
     })
 
 
@@ -9597,11 +9830,58 @@ def google_login():
 
 
 # ========================================
-# PUSH NOTIFICATION SUBSCRIPTIONS (FEATURE REMOVED)
+# PUSH NOTIFICATION SUBSCRIPTIONS
 # ========================================
-# All push-related endpoints, helpers, and the geo-push notifier have been
-# removed. The push_subscriptions table is left in place harmlessly. To
-# fully drop it, run: DROP TABLE IF EXISTS push_subscriptions, app_config;
+
+@app.route('/api/push/vapid-key', methods=['GET'])
+def get_vapid_key():
+    """Return the VAPID public key so the frontend can subscribe."""
+    return jsonify({'success': True, 'publicKey': VAPID_PUBLIC_KEY})
+
+
+@app.route('/api/push/subscribe', methods=['POST'])
+@require_auth
+def push_subscribe():
+    """Save (or update) a push subscription for the authenticated user."""
+    data = request.get_json() or {}
+    subscription = data.get('subscription')
+    if not subscription:
+        return jsonify({'success': False, 'message': 'No subscription object provided'}), 400
+    lat = data.get('lat')
+    lng = data.get('lng')
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with get_db() as (cursor, conn):
+            # Upsert: update subscription if user already has one
+            cursor.execute(
+                f'''INSERT INTO push_subscriptions (user_id, subscription_json, created_at, lat, lng)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                    ON CONFLICT (user_id) DO UPDATE
+                        SET subscription_json = EXCLUDED.subscription_json,
+                            lat = EXCLUDED.lat,
+                            lng = EXCLUDED.lng''',
+                (str(request.user_id), json.dumps(subscription), now, lat, lng)
+            )
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[push] subscribe error: {e}')
+        return jsonify({'success': False, 'message': 'Could not save subscription'}), 500
+
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+@require_auth
+def push_unsubscribe():
+    """Remove the push subscription for the authenticated user."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'DELETE FROM push_subscriptions WHERE user_id = {PH}',
+                (str(request.user_id),)
+            )
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[push] unsubscribe error: {e}')
+        return jsonify({'success': False, 'message': 'Error removing subscription'}), 500
 
 
 # ========================================

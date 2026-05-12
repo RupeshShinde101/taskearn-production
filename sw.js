@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260508a';
+const CACHE_NAME = 'workmate4u-v20260512b';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -30,7 +30,8 @@ const STATIC_ASSETS = [
   '/mobile-enhancements.js',
   '/favicon.svg',
   '/icon-192x192.png',
-  '/icon-512x512.png'
+  '/icon-512x512.png',
+  '/offline.html'
 ];
 
 // Install — cache assets in background (non-blocking). Call skipWaiting so the
@@ -96,7 +97,7 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => caches.match(event.request).then(r => r || caches.match('/offline.html')))
     );
     return;
   }
@@ -114,5 +115,35 @@ self.addEventListener('fetch', event => {
 });
 
 // ========================================
-// PUSH NOTIFICATIONS REMOVED
+// PUSH NOTIFICATIONS
 // ========================================
+
+// Receive a push message from the server and show a notification
+self.addEventListener('push', event => {
+  let data = { title: 'Workmate4u', body: 'You have a new notification', url: '/notifications.html' };
+  if (event.data) {
+    try { Object.assign(data, JSON.parse(event.data.text())); } catch (_) {}
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icon-192x192.png',
+      badge: '/icon-192x192.png',
+      data: { url: data.url }
+    })
+  );
+});
+
+// Open the relevant page when the user taps the notification
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/notifications.html';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      for (const client of clients) {
+        if (client.url.includes(url) && 'focus' in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
+  );
+});

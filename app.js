@@ -9231,17 +9231,28 @@ document.addEventListener('DOMContentLoaded', function() {
 // 2. Earnings Calculator
 function updateCalc() {
     const ratePerTask = parseInt(document.getElementById('calcCategory')?.value || 500);
-    const tasksPerDay = parseInt(document.getElementById('calcTasks')?.value || 3);
-    const hoursPerWeek = parseInt(document.getElementById('calcHours')?.value || 10);
-    const daysPerWeek = Math.max(1, Math.round(hoursPerWeek / 3));
-    const tasksPerWeek = daysPerWeek * tasksPerDay;
-    const gross = tasksPerWeek * ratePerTask * 4; // ~4 weeks
-    const net = Math.round(gross * 0.88);
-    const weekly = Math.round(net / 4);
-    const el = document.getElementById('calcMonthly');
-    const elW = document.getElementById('calcWeekly');
-    if (el) el.textContent = '₹' + net.toLocaleString('en-IN');
-    if (elW) elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
+    // Cap tasks/day at 8 — beyond that is unrealistic for a single person
+    const tasksPerDay = Math.min(8, parseInt(document.getElementById('calcTasks')?.value || 3));
+    // Direct "days per week" slider (replaces broken hours→days conversion)
+    const daysPerWeek = Math.min(7, parseInt(document.getElementById('calcDays')?.value || 5));
+
+    // ~4.33 weeks per month
+    const tasksPerMonth = Math.round(tasksPerDay * daysPerWeek * 4.33);
+    const gross = tasksPerMonth * ratePerTask;
+    // Platform deducts 12% from helper (10% commission + 2% transaction fee)
+    const platformCut = Math.round(gross * 0.12);
+    const net = gross - platformCut;
+    const weekly = Math.round(net / 4.33);
+
+    const el   = document.getElementById('calcMonthly');
+    const elW  = document.getElementById('calcWeekly');
+    const elP  = document.getElementById('calcPlatformCut');
+    const elTM = document.getElementById('calcTasksMonth');
+
+    if (el)   el.textContent  = '₹' + net.toLocaleString('en-IN');
+    if (elW)  elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
+    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (12%)';
+    if (elTM) elTM.textContent = tasksPerMonth + ' tasks/month';
 }
 window.updateCalc = updateCalc;
 document.addEventListener('DOMContentLoaded', updateCalc);

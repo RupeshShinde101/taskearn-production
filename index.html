@@ -113,7 +113,7 @@
         "mainEntity": [
             {"@type": "Question", "name": "What is Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Workmate4u is India's leading freelance marketplace that connects people who need tasks done with skilled freelancers nearby. You can hire freelancers for delivery, cleaning, tutoring, repairs, photography and more."}},
             {"@type": "Question", "name": "How do I hire a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Sign up for free, post your task with a description and budget, and local freelancers will accept your task. Track progress in real-time and pay securely through Razorpay."}},
-            {"@type": "Question", "name": "How much can I earn as a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Earnings depend on the tasks you complete. Freelancers earn between ₹50 to ₹10,000+ per task depending on complexity and distance. Top earners make over ₹40,000 per month."}},
+            {"@type": "Question", "name": "How much can I earn as a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Earnings depend on the tasks you complete and their availability in your area. Task budgets typically range from ₹100 to ₹2,000 per task. The platform deducts 12% from the helper's payout. A dedicated helper completing 3–5 tasks per day, 5 days a week can realistically earn ₹5,000–₹15,000 per month. Actual earnings vary by city, category, and task availability."}},
             {"@type": "Question", "name": "Is Workmate4u free to join?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, creating an account on Workmate4u is completely free. A small service charge is deducted only when a task is completed successfully."}},
             {"@type": "Question", "name": "Which cities does Workmate4u operate in?", "acceptedAnswer": {"@type": "Answer", "text": "Workmate4u operates across all major Indian cities including Mumbai, Delhi, Bangalore, Hyderabad, Pune, Chennai, Kolkata, and many more. Any location in India with internet access is supported."}},
             {"@type": "Question", "name": "Is Workmate4u safe and secure?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. All payments are processed through Razorpay (PCI-DSS compliant). Users are verified, and we have a rating system, KYC verification, and safety guidelines to protect both clients and freelancers."}}
@@ -623,24 +623,31 @@
                         </select>
                     </div>
                     <div class="calc-group">
-                        <label>Hours per Week: <strong id="calcHrsLabel">10</strong> hrs</label>
-                        <input type="range" id="calcHours" min="2" max="60" value="10" oninput="document.getElementById('calcHrsLabel').textContent=this.value; updateCalc();">
+                        <label>Working Days per Week: <strong id="calcDaysLabel">5</strong> days</label>
+                        <input type="range" id="calcDays" min="1" max="7" value="5" oninput="document.getElementById('calcDaysLabel').textContent=this.value; updateCalc();">
                     </div>
                     <div class="calc-group">
                         <label>Tasks per Day: <strong id="calcTasksLabel">3</strong></label>
-                        <input type="range" id="calcTasks" min="1" max="10" value="3" oninput="document.getElementById('calcTasksLabel').textContent=this.value; updateCalc();">
+                        <input type="range" id="calcTasks" min="1" max="8" value="3" oninput="document.getElementById('calcTasksLabel').textContent=this.value; updateCalc();">
                     </div>
                 </div>
                 <div class="calc-result">
                     <div class="calc-result-inner">
                         <div class="calc-monthly">
-                            <span class="calc-label">Estimated Monthly Earnings</span>
-                            <span class="calc-value" id="calcMonthly">₹13,200</span>
+                            <span class="calc-label">Estimated Monthly Take-Home</span>
+                            <span class="calc-value" id="calcMonthly">₹28,600</span>
                         </div>
-                        <div class="calc-breakdown">
-                            <span>After 12% platform fee</span>
-                            <span id="calcWeekly">₹3,300/week</span>
+                        <div class="calc-breakdown" style="display:flex;flex-direction:column;gap:4px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span id="calcTasksMonth">65 tasks/month</span>
+                                <span id="calcWeekly">₹6,606/week</span>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;opacity:0.75;">
+                                <span>Platform deducts</span>
+                                <span id="calcPlatformCut">₹3,900 (12%)</span>
+                            </div>
                         </div>
+                        <p style="font-size:0.75rem;opacity:0.6;margin:8px 0 12px;line-height:1.5;">Estimate based on average task prices. Actual earnings depend on task availability, your location, and acceptance rate.</p>
                         <a href="browse.html" class="btn btn-primary calc-cta-btn"><i class="fas fa-bolt"></i> Start Earning Now</a>
                     </div>
                 </div>
@@ -667,7 +674,7 @@
                 </details>
                 <details style="background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer;">
                     <summary style="font-weight: 600; font-size: 1.05rem; color: #1e293b; list-style: none; display: flex; justify-content: space-between; align-items: center;">How much can I earn as a freelancer? <i class="fas fa-chevron-down" style="color: #6c5ce7; font-size: 14px;"></i></summary>
-                    <p style="margin-top: 12px; color: #64748b; line-height: 1.7;">Earnings depend on the tasks you complete. Freelancers earn between ₹50 to ₹10,000+ per task depending on complexity and distance. Top earners make over ₹40,000 per month on Workmate4u.</p>
+                    <p style="margin-top: 12px; color: #64748b; line-height: 1.7;">Earnings depend on the tasks you complete and their availability in your area. Task budgets typically range from ₹100 to ₹2,000 per task. The platform deducts 12% from the helper's payout. A dedicated helper completing 3–5 tasks per day, 5 days a week can realistically earn ₹5,000–₹15,000 per month. Use the calculator above to estimate your income based on your category and schedule.</p>
                 </details>
                 <details style="background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer;">
                     <summary style="font-weight: 600; font-size: 1.05rem; color: #1e293b; list-style: none; display: flex; justify-content: space-between; align-items: center;">Is Workmate4u free to join? <i class="fas fa-chevron-down" style="color: #6c5ce7; font-size: 14px;"></i></summary>

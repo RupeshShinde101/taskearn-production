@@ -8057,7 +8057,9 @@ async function initGoogleSignIn() {
         return container;
     }
     const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');
-    if (loginBtn && !loginBtn.children.length) {
+    if (loginBtn && !window._googleLoginBtnRendered) {
+        window._googleLoginBtnRendered = true;
+        loginBtn.innerHTML = '';
         google.accounts.id.renderButton(loginBtn, {
             type: 'standard',
             size: 'large',
@@ -8068,7 +8070,9 @@ async function initGoogleSignIn() {
         console.log('✅ Google button rendered in login modal');
     }
     const signupBtn = ensureGoogleBtnContainer('signupModal', 'googleSignInBtn_signup');
-    if (signupBtn && !signupBtn.children.length) {
+    if (signupBtn && !window._googleSignupBtnRendered) {
+        window._googleSignupBtnRendered = true;
+        signupBtn.innerHTML = '';
         google.accounts.id.renderButton(signupBtn, {
             type: 'standard',
             size: 'large',

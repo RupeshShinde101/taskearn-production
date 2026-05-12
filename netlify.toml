@@ -26,6 +26,13 @@
   to = "/index.html"
   status = 200
 
+# Block admin.html — return 404 and prevent public access
+[[redirects]]
+  from = "/admin.html"
+  to = "/404.html"
+  status = 404
+  force = true
+
 # SPA catch-all — 404 for unknown routes
 [[redirects]]
   from = "/*"

@@ -187,6 +187,54 @@ except Exception as e:
 PH = get_placeholder()
 
 # ========================================
+# VAPID / PUSH NOTIFICATION CONFIG
+# ========================================
+
+VAPID_PUBLIC_KEY  = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'admin@workmate4u.com')
+
+
+def send_push_to_user(user_id, title, body, url='/notifications.html'):
+    """Send a web push notification to all subscriptions for a user.
+    Silently skips if pywebpush is not installed or VAPID keys are missing."""
+    if not _has_webpush or not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'SELECT subscription_json FROM push_subscriptions WHERE user_id = {PH}',
+                (str(user_id),)
+            )
+            rows = cursor.fetchall()
+        stale_users = []
+        for row in rows:
+            sub_json = dict_from_row(row).get('subscription_json') if hasattr(row, 'keys') else row[0]
+            try:
+                sub = json.loads(sub_json)
+                webpush(
+                    subscription_info=sub,
+                    data=json.dumps({'title': title, 'body': body, 'url': url}),
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={'sub': f'mailto:{VAPID_CLAIMS_EMAIL}'}
+                )
+            except WebPushException as exc:
+                resp = exc.response
+                if resp is not None and resp.status_code in (404, 410):
+                    stale_users.append(str(user_id))
+            except Exception:
+                pass
+        if stale_users:
+            with get_db() as (cursor2, conn2):
+                cursor2.execute(
+                    f'DELETE FROM push_subscriptions WHERE user_id = {PH}',
+                    (str(user_id),)
+                )
+    except Exception as e:
+        print(f'[push] Error sending to user {user_id}: {e}')
+
+
+# ========================================
 # HELPER FUNCTIONS
 # ========================================
 
@@ -2307,7 +2355,18 @@ def accept_task(task_id):
             notify_task_accepted_email(poster_id, helper_name, task['title'])
         except Exception:
             pass
-        
+
+        # Push notification to poster
+        try:
+            send_push_to_user(
+                poster_id,
+                'Task Accepted! 🎉',
+                f'{helper_name} accepted "{task["title"]}". Budget: ₹{task["price"]}',
+                '/posted.html'
+            )
+        except Exception:
+            pass
+
         return jsonify({
             'success': True,
             'message': 'Task accepted successfully'
@@ -4442,12 +4501,23 @@ def request_withdrawal():
                   'unread', json.dumps({'type': 'info', 'amount': amount, 'withdrawalId': withdrawal_id}), now))
     except Exception as notif_err:
         print(f"⚠️ Failed to create withdrawal notification: {notif_err}")
-    
+
+    # Push notification confirming withdrawal request
+    try:
+        send_push_to_user(
+            request.user_id,
+            'Withdrawal Requested 🏦',
+            f'₹{amount:.2f} will be transferred to your bank account within 24 hours.',
+            '/wallet.html'
+        )
+    except Exception:
+        pass
+
     print(f"   New balance: ₹{new_balance:.2f}")
     print(f"   Withdrawal ID: {withdrawal_id}")
     print(f"   Status: pending (admin will process)")
     print('='*60 + "\n")
-    
+
     return jsonify({
         'success': True,
         'message': f'₹{amount:.2f} withdrawal request submitted! Amount will be transferred to your bank account within 24 hours.',
@@ -9540,11 +9610,58 @@ def google_login():
 
 
 # ========================================
-# PUSH NOTIFICATION SUBSCRIPTIONS (FEATURE REMOVED)
+# PUSH NOTIFICATION SUBSCRIPTIONS
 # ========================================
-# All push-related endpoints, helpers, and the geo-push notifier have been
-# removed. The push_subscriptions table is left in place harmlessly. To
-# fully drop it, run: DROP TABLE IF EXISTS push_subscriptions, app_config;
+
+@app.route('/api/push/vapid-key', methods=['GET'])
+def get_vapid_key():
+    """Return the VAPID public key so the frontend can subscribe."""
+    return jsonify({'success': True, 'publicKey': VAPID_PUBLIC_KEY})
+
+
+@app.route('/api/push/subscribe', methods=['POST'])
+@require_auth
+def push_subscribe():
+    """Save (or update) a push subscription for the authenticated user."""
+    data = request.get_json() or {}
+    subscription = data.get('subscription')
+    if not subscription:
+        return jsonify({'success': False, 'message': 'No subscription object provided'}), 400
+    lat = data.get('lat')
+    lng = data.get('lng')
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with get_db() as (cursor, conn):
+            # Upsert: update subscription if user already has one
+            cursor.execute(
+                f'''INSERT INTO push_subscriptions (user_id, subscription_json, created_at, lat, lng)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                    ON CONFLICT (user_id) DO UPDATE
+                        SET subscription_json = EXCLUDED.subscription_json,
+                            lat = EXCLUDED.lat,
+                            lng = EXCLUDED.lng''',
+                (str(request.user_id), json.dumps(subscription), now, lat, lng)
+            )
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[push] subscribe error: {e}')
+        return jsonify({'success': False, 'message': 'Could not save subscription'}), 500
+
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+@require_auth
+def push_unsubscribe():
+    """Remove the push subscription for the authenticated user."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'DELETE FROM push_subscriptions WHERE user_id = {PH}',
+                (str(request.user_id),)
+            )
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[push] unsubscribe error: {e}')
+        return jsonify({'success': False, 'message': 'Error removing subscription'}), 500
 
 
 # ========================================

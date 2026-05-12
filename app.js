@@ -2302,6 +2302,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 if (currentUser.authProvider === 'google' && (!currentUser.phone || !currentUser.dob)) {
                     setTimeout(() => showCompleteProfileModal(), 1500);
                 }
+
+                // Subscribe to push notifications (non-blocking, after a short delay)
+                setTimeout(() => { try { initPushNotifications(); } catch (_) {} }, 3000);
             } else {
                 console.log('👤 No active session - user needs to login');
             }
@@ -5476,6 +5479,9 @@ async function handleLogin(event) {
                 
                 // Render dashboard after tasks are fully loaded
                 setTimeout(() => renderDashboard(), 100);
+
+                // Subscribe to push notifications after login (non-blocking)
+                setTimeout(() => { try { initPushNotifications(); } catch (_) {} }, 3500);
                 
                 // If on profile.html, refresh profile UI (was stuck at "Loading...")
                 if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {
@@ -8487,13 +8493,89 @@ async function unblockUser(userId) {
 // ========================================
 // PUSH NOTIFICATIONS
 // ========================================
-// Push notification feature has been removed.
-// Stub functions kept as no-ops to avoid breaking any cached HTML still
-// referencing them (e.g. older browser cache calling testPushNotification()).
-function initPushNotifications() {}
-function requestPushPermission() {}
-function enablePushAndSubscribe() {}
-function testPushNotification() {}
+
+/**
+ * Subscribe the current user to web push notifications.
+ * Called once after login (or when user explicitly enables them).
+ * Silently exits if the browser doesn't support push or permission is denied.
+ */
+async function initPushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    // Don't re-subscribe if we've already done it this session
+    if (sessionStorage.getItem('push_subscribed')) return;
+
+    const permission = Notification.permission;
+    if (permission === 'denied') return;
+
+    // Ask permission only if not yet granted
+    if (permission !== 'granted') {
+        const result = await Notification.requestPermission();
+        if (result !== 'granted') return;
+    }
+
+    await enablePushAndSubscribe();
+}
+
+async function enablePushAndSubscribe() {
+    try {
+        // Fetch VAPID public key from our server
+        const { success, publicKey } = await PushAPI.getVapidKey();
+        if (!success || !publicKey) return;
+
+        const reg = await navigator.serviceWorker.ready;
+
+        // Check for existing subscription first
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+            // Convert base64url public key to Uint8Array
+            const appServerKey = urlBase64ToUint8Array(publicKey);
+            sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: appServerKey
+            });
+        }
+
+        // Send subscription to our backend (with optional location)
+        let lat = null, lng = null;
+        try {
+            const pos = await new Promise((res, rej) =>
+                navigator.geolocation.getCurrentPosition(res, rej, { timeout: 3000 })
+            );
+            lat = pos.coords.latitude;
+            lng = pos.coords.longitude;
+        } catch (_) {}
+
+        await PushAPI.subscribe(sub.toJSON(), lat, lng);
+        sessionStorage.setItem('push_subscribed', '1');
+        console.log('[push] Subscribed to push notifications');
+    } catch (e) {
+        console.warn('[push] Subscribe failed:', e);
+    }
+}
+
+async function disablePushNotifications() {
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) await sub.unsubscribe();
+        await PushAPI.unsubscribe();
+        sessionStorage.removeItem('push_subscribed');
+        console.log('[push] Unsubscribed from push notifications');
+    } catch (e) {
+        console.warn('[push] Unsubscribe failed:', e);
+    }
+}
+
+/** Convert a base64url string to a Uint8Array (required by PushManager.subscribe) */
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+// Legacy no-op stubs (kept for any older cached pages that call them)
+function requestPushPermission() { initPushNotifications(); }
 function showPushBannerIfNeeded() {
     const banner = document.getElementById('pushBanner');
     if (banner) banner.style.display = 'none';

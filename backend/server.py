@@ -305,16 +305,19 @@ def _ensure_verify_columns():
 
 
 def _ensure_helper_ratings_review():
-    """Ensure review column exists in helper_ratings table"""
+    """Ensure review and task_title columns exist in helper_ratings table"""
     try:
         with get_db() as (cursor, conn):
             if PH == '%s':
                 cursor.execute("ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS review TEXT")
+                cursor.execute("ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS task_title TEXT")
             else:
                 cursor.execute("PRAGMA table_info(helper_ratings)")
                 cols = [row[1] for row in cursor.fetchall()]
                 if 'review' not in cols:
                     cursor.execute("ALTER TABLE helper_ratings ADD COLUMN review TEXT")
+                if 'task_title' not in cols:
+                    cursor.execute("ALTER TABLE helper_ratings ADD COLUMN task_title TEXT")
     except Exception as e:
         print(f"⚠️ _ensure_helper_ratings_review: {e}")
 
@@ -3034,10 +3037,13 @@ def mark_task_completed(task_id):
 
             task = dict_from_row(task)
             task_amount = float(task['price'])
-            service_charge = float(task.get('service_charge', 0))
-            total_task_value = task_amount + service_charge
+            # Only apply service_charge for delivery-type tasks (new pricing model: non-delivery sc=0)
             _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
-            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            _category = task.get('category', 'other')
+            _raw_sc = float(task.get('service_charge', 0))
+            service_charge = _raw_sc if _category in _DELIVERY_CATS else 0.0
+            total_task_value = task_amount + service_charge
+            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.17
             helper_total_deduction = total_task_value * _commission_rate
             helper_earnings = total_task_value - helper_total_deduction
             helper_id = request.user_id
@@ -3106,7 +3112,7 @@ def rate_task_poster(task_id):
         with get_db() as (cursor, conn):
             # Verify helper completed this task
             cursor.execute(f'''
-                SELECT id, posted_by, accepted_by, status FROM tasks
+                SELECT id, title, posted_by, accepted_by, status FROM tasks
                 WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
             ''', (task_id, request.user_id, 'completed'))
             task = cursor.fetchone()
@@ -3116,6 +3122,7 @@ def rate_task_poster(task_id):
             task = dict_from_row(task)
             rated_id = task['posted_by']
             rater_id = request.user_id
+            task_title = task.get('title', '')
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             # Check if already rated
@@ -3123,11 +3130,11 @@ def rate_task_poster(task_id):
             if cursor.fetchone():
                 return jsonify({'success': False, 'message': 'You already rated this task'}), 400
 
-            # Insert rating
+            # Insert rating (store task_title to survive task deletion)
             cursor.execute(f'''
-                INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, created_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (task_id, rater_id, rated_id, rating, review, now))
+                INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, task_title, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (task_id, rater_id, rated_id, rating, review, task_title, now))
 
             # Update rated user's average rating
             cursor.execute(f'''
@@ -3261,14 +3268,16 @@ def pay_helper(task_id):
 
             helper_id = task['accepted_by']
             task_amount = float(task['price'])
-            service_charge = float(task.get('service_charge', 0))
-            total_task_value = task_amount + service_charge  # FULL AMOUNT including service charge
-            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            
-            # Calculate deductions and credits using FULL AMOUNT
-            # Posting fee removed. Commission: 15% for delivery/pickup, 17% for all others.
+            # Only apply service_charge for delivery-type tasks (new pricing model: non-delivery sc=0)
             _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
-            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            _category = task.get('category', 'other')
+            _raw_sc = float(task.get('service_charge', 0))
+            service_charge = _raw_sc if _category in _DELIVERY_CATS else 0.0
+            total_task_value = task_amount + service_charge
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            # Commission: 15% for delivery/pickup/transport/moving, 17% for all others.
+            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.17
             helper_total_deduction = total_task_value * _commission_rate
             # helper_commission = total_task_value * 0.10  # DISABLED
             # helper_fee = total_task_value * 0.02  # DISABLED
@@ -4988,12 +4997,13 @@ def rate_user(task_id):
             return jsonify({'success': False, 'message': 'Already rated'}), 400
         
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        task_title = task.get('title', '')
         
-        # Add rating
+        # Add rating (store task_title to survive task deletion)
         cursor.execute(f'''
-            INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, punctuality, communication, quality, created_at)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (task_id, request.user_id, rated_id, rating, review, punctuality, communication, quality, now))
+            INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, punctuality, communication, quality, task_title, created_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (task_id, request.user_id, rated_id, rating, review, punctuality, communication, quality, task_title, now))
         
         # Update user's average rating
         cursor.execute(f'''
@@ -5033,10 +5043,10 @@ def get_user_reviews(user_id):
     """Get reviews for a user"""
     with get_db() as (cursor, conn):
         cursor.execute(f'''
-            SELECT hr.*, u.name as rater_name, t.title as task_title
+            SELECT hr.*, u.name as rater_name, COALESCE(t.title, hr.task_title, 'Task') as task_title
             FROM helper_ratings hr
-            JOIN users u ON hr.rater_id = u.id
-            JOIN tasks t ON hr.task_id = t.id
+            LEFT JOIN users u ON hr.rater_id = u.id
+            LEFT JOIN tasks t ON hr.task_id = t.id
             WHERE hr.rated_id = {PH}
             ORDER BY hr.created_at DESC
             LIMIT 20

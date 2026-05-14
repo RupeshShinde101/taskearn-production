@@ -6848,13 +6848,30 @@ async function submitTaskRating() {
     if (!rating) { closeRatingPopup(); return; }
     const token = localStorage.getItem('taskearn_token');
     if (!token) { closeRatingPopup(); return; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
-        await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/rate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ rating: rating, review: review })
-        });
-    } catch (e) {}
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/rate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ rating: rating, review: review })
+            });
+        } catch (netErr) {
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/rate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ rating: rating, review: review })
+            });
+        }
+        const result = await resp.json();
+        if (!result.success) {
+            console.warn('Rating submit:', result.message);
+        }
+    } catch (e) {
+        console.error('submitTaskRating error:', e);
+    }
     showToast('⭐ Thank you for your rating!', 'success');
     await syncUserTasksFromServer();
     renderDashboard();

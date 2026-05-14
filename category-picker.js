@@ -1747,4 +1747,18 @@
 
     // Expose for late-mounted forms (e.g., dynamic modals)
     window.enhanceCategoryPicker = enhance;
+
+    // Re-init all category picker wiring — call this after dynamically replacing
+    // modal HTML (e.g., autoUpgradeLegacyModal in post-task-wizard.js).
+    window.WMCategoryPickerReInit = function() {
+        const ids = ['modalTaskCategory', 'editTaskCategory', 'filterCategory'];
+        ids.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) enhance(el);
+        });
+        wireTemplate('modalTaskCategory', 'modalTaskDescription');
+        wireTemplate('editTaskCategory',  'editTaskDescription');
+        wirePriceHint('modalTaskCategory', { budgetInputId: 'customBudget', pickupInputId: 'modalTaskLocation', applyBudget: true });
+        wirePriceHint('editTaskCategory',  { applyBudget: false });
+    };
 })();

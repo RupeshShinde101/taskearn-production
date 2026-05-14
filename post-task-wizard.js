@@ -341,6 +341,12 @@
 
         mc.classList.add('modal-large', 'wm-wizard-modal');
         mc.innerHTML = WIZARD_MARKUP;
+        // Re-initialize category picker combobox on the newly-injected elements
+        // (category-picker.js already ran autoInit on the old HTML, so the new
+        // plain <select> needs a fresh enhance() pass).
+        if (typeof window.WMCategoryPickerReInit === 'function') {
+            window.WMCategoryPickerReInit();
+        }
     }
 
     const WIZARD_MARKUP = `

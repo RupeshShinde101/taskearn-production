@@ -119,32 +119,13 @@ const SERVICE_CHARGES = {
 };
 
 function getServiceCharge(category, distanceKm, vehicleKey) {
-    // Service charge ONLY for Delivery/Pick&Drop categories.
-    if (!DELIVERY_CATEGORIES.has(category)) return 0;
-    // Per-km rates matching category-picker.js VEHICLES:
-    //   bike=₹10/km, auto=₹17/km, mini=₹12/km, sedan=₹15/km, suv=₹18/km
-    const VEHICLE_RATES = {
-        bike:  { base: 20,  perKm: 10 },
-        auto:  { base: 30,  perKm: 17 },
-        mini:  { base: 60,  perKm: 20 },
-        sedan: { base: 80,  perKm: 25 },
-        suv:   { base: 120, perKm: 30 },
-    };
-    const CATEGORY_DEFAULTS = {
-        delivery: 'bike',
-        pickup:   'auto',
-        transport: 'auto',
-        moving:   'auto',
-    };
-    if (typeof distanceKm === 'number' && distanceKm > 0) {
-        const vk = (vehicleKey && VEHICLE_RATES[vehicleKey]) ? vehicleKey
-                 : (CATEGORY_DEFAULTS[category] || 'auto');
-        const r = VEHICLE_RATES[vk];
-        return Math.max(r.base, Math.round((r.base + r.perKm * distanceKm) / 10) * 10);
-    }
-    // No distance yet: return category-default base fare
-    const defVk = CATEGORY_DEFAULTS[category] || 'auto';
-    return VEHICLE_RATES[defVk].base;
+    // For delivery/pickup/transport/moving: the budget itself IS the distance-based
+    // price (auto-filled by the picker as base + perKm × distance). There is NO
+    // additional service charge on top — returning 0 prevents double-charging.
+    // Commission (15%) is deducted from the helper's payout separately.
+    if (DELIVERY_CATEGORIES.has(category)) return 0;
+    // Non-delivery categories also return 0 (no service charge on any category now).
+    return 0;
 }
 
 function getServiceChargeInfo(category) {

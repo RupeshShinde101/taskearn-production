@@ -3498,12 +3498,24 @@ def pay_helper(task_id):
             ''', (task_id, request.user_id))
 
             import json
+            # Full breakdown payload — used by the frontend "Payment Received" popup.
+            _breakdown_base = {
+                'taskId': task_id,
+                'taskTitle': task['title'],
+                'taskAmount': round(task_amount, 2),
+                'serviceCharge': round(service_charge, 2),
+                'totalTaskValue': round(total_task_value, 2),
+                'helperEarnings': round(helper_earnings, 2),
+                'commission': round(helper_total_deduction, 2),
+                'commissionPct': round(_commission_rate * 100),
+                'helperNewBalance': round(helper_new_balance, 2),
+            }
             if is_new_flow:
                 # NEW FLOW: Tell helper to mark as completed
                 helper_notif_data = json.dumps({
+                    **_breakdown_base,
                     'type': 'mark_complete',
                     'label': '🎉 Mark as Completed',
-                    'taskId': task_id,
                     'amount': round(helper_earnings, 2)
                 })
                 cursor.execute(f'''
@@ -3514,14 +3526,19 @@ def pay_helper(task_id):
                       f'₹{helper_earnings:.2f} has been released to your wallet for "{task["title"]}". Tap to mark the task as completed.',
                       'unread', helper_notif_data, now))
             else:
-                # LEGACY FLOW: Simple payment received
+                # LEGACY FLOW: Payment received
                 cursor.execute(f'''
                     INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                     VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                 ''', (helper_id, task_id, 'payment_received',
                       'Payment Received! 💰',
                       f'You received ₹{helper_earnings:.2f} for completing "{task["title"]}".',
-                      'unread', json.dumps({'type': 'success', 'taskId': task_id, 'amount': helper_earnings}), now))
+                      'unread', json.dumps({
+                          **_breakdown_base,
+                          'type': 'payment_received',
+                          'label': '💰 View Breakdown',
+                          'amount': round(helper_earnings, 2)
+                      }), now))
 
             # Create "Payment Done" notification for poster
             cursor.execute(f'''

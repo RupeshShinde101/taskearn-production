@@ -9338,7 +9338,7 @@ function updateCalc() {
 
     if (el)   el.textContent  = '₹' + net.toLocaleString('en-IN');
     if (elW)  elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
-    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (12%)';
+    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (17%)';
     if (elTM) elTM.textContent = tasksPerMonth + ' tasks/month';
 }
 window.updateCalc = updateCalc;

@@ -8678,6 +8678,8 @@ window.confirmPhoneOTP = confirmPhoneOTP;
 window.resetPhoneOTP = resetPhoneOTP;
 window.loadRecommendedTasks = loadRecommendedTasks;
 window.enablePushAndSubscribe = enablePushAndSubscribe;
+// Stub — kept for backward-compat with older cached HTML that may call this directly.
+function testPushNotification() {}
 window.testPushNotification = testPushNotification;
 window.showPushBannerIfNeeded = showPushBannerIfNeeded;
 window.loadCategoryCounts = loadCategoryCounts;

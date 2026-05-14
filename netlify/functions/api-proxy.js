@@ -40,7 +40,10 @@ exports.handler = async (event) => {
 
     // Extract the API path: /.netlify/functions/api-proxy/api/auth/login → /api/auth/login
     const path = event.path.replace('/.netlify/functions/api-proxy', '') || '/';
-    const targetUrl = `${BACKEND_URL}${path}`;
+    // Forward query string parameters (event.path never includes them)
+    const qs = event.rawQuery || Object.entries(event.queryStringParameters || {})
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+    const targetUrl = `${BACKEND_URL}${path}${qs ? '?' + qs : ''}`;
 
     try {
         // Dynamic import for node-fetch (Netlify functions use Node 18+)

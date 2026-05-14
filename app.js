@@ -71,7 +71,7 @@ let modalTaskCoords = null; // Stores picked location for task posting
 let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 
 // Categories that carry a distance-based service charge (Delivery / Pick&Drop).
-// All other categories have NO service charge — only the 5% posting fee applies.
+// All other categories have NO service charge. Commission: 15% delivery/pickup, 17% others.
 const DELIVERY_CATEGORIES = new Set(['delivery', 'pickup', 'transport', 'moving']);
 
 // Service Charge based on task category (importance & time)
@@ -118,20 +118,14 @@ const SERVICE_CHARGES = {
     'other': { charge: 50, time: '1-3 hours', level: 'Medium' }
 };
 
-function getServiceCharge(category, distanceKm) {
-    // Service charge ONLY for Delivery/Pick&Drop categories.
-    if (!DELIVERY_CATEGORIES.has(category)) return 0;
-    const info = SERVICE_CHARGES[category];
-    // Distance-based: ₹10–₹40 scaled by km when known.
-    if (info && info.distance) {
-        if (typeof distanceKm === 'number' && distanceKm > 0) {
-            const base = category === 'moving' ? 20 : 10;
-            const perKm = category === 'moving' ? 2.5 : 1.5;
-            return Math.max(10, Math.min(40, Math.round(base + perKm * distanceKm)));
-        }
-        return info.charge;
-    }
-    return info?.charge || 0;
+function getServiceCharge(category, distanceKm, vehicleKey) {
+    // For delivery/pickup/transport/moving: the budget itself IS the distance-based
+    // price (auto-filled by the picker as base + perKm × distance). There is NO
+    // additional service charge on top — returning 0 prevents double-charging.
+    // Commission (15%) is deducted from the helper's payout separately.
+    if (DELIVERY_CATEGORIES.has(category)) return 0;
+    // Non-delivery categories also return 0 (no service charge on any category now).
+    return 0;
 }
 
 function getServiceChargeInfo(category) {
@@ -179,32 +173,37 @@ function syncRatedTaskIds(ids) {
     } catch(e) {}
 }
 
-// Task Posting Fee = 5% platform fee charged on top of (price + service charge).
-// Applies to ALL categories.
-function getTaskPlatformFee(task) {
-    if (!task) return 0;
-    const price = parseFloat(task.price || task.amount || 0) || 0;
-    const sc = getTaskServiceCharge(task);
-    return Math.round((price + sc) * 0.05 * 100) / 100;
-}
+// Task Posting Fee: DISABLED. Previously 5% platform fee — commented out for future use.
+// function getTaskPlatformFee(task) {
+//     if (!task) return 0;
+//     const price = parseFloat(task.price || task.amount || 0) || 0;
+//     const sc = getTaskServiceCharge(task);
+//     return Math.round((price + sc) * 0.05 * 100) / 100;
+// }
+function getTaskPlatformFee(task) { return 0; } // DISABLED — no posting fee
 
-// Returns the final task value the poster pays = price + service charge + platform fee.
+// Returns the final task value the poster pays = price + service charge (no posting fee).
 function getTaskFinalValue(task) {
     if (!task) return 0;
     const price = parseFloat(task.price || task.amount || 0) || 0;
-    return price + getTaskServiceCharge(task) + getTaskPlatformFee(task);
+    return price + getTaskServiceCharge(task);
 }
 
-// Returns what the helper actually receives = (price + service_charge) * 0.88
-// (12% platform commission deducted from the base task value, NOT from the poster's total).
-// getTaskFinalValue already includes the 5% posting fee — multiplying it by 0.88 would
-// over-count. Always use this function for helper earnings display.
+// Commission rates: Delivery/Pickup/Transport/Moving = 15%, all others = 17%.
+const DELIVERY_COMMISSION_CATS = new Set(['delivery', 'pickup', 'transport', 'moving']);
+function getCommissionRate(category) {
+    return DELIVERY_COMMISSION_CATS.has(category) ? 0.15 : 0.17;
+}
+
+// Returns what the helper actually receives after platform commission.
+// Commission: 15% for delivery/pickup/transport/moving, 17% for all others.
+// Always uses getTaskServiceCharge() so non-delivery tasks get sc=0 (ignores any legacy stored value).
 function getHelperEarnings(task) {
     if (!task) return 0;
     const price = parseFloat(task.price || task.amount || 0) || 0;
-    const sc = parseFloat(task.service_charge != null ? task.service_charge :
-                          task.serviceCharge != null ? task.serviceCharge : getTaskServiceCharge(task)) || 0;
-    return Math.round((price + sc) * 0.88 * 100) / 100;
+    const sc = getTaskServiceCharge(task); // enforces 0 for non-delivery categories
+    const rate = getCommissionRate(task.category || 'other');
+    return Math.round((price + sc) * (1 - rate) * 100) / 100;
 }
 
 // Default location: New Delhi, India
@@ -1135,6 +1134,7 @@ function getRequiredVehicle(text) {
     if (/bike/i.test(label)) key = 'bike';
     else if (/auto/i.test(label)) key = 'auto';
     else if (/mini/i.test(label)) key = 'mini';
+    else if (/suv/i.test(label)) key = 'suv';
     else if (/sedan/i.test(label)) key = 'sedan';
     return { key, label };
 }
@@ -2677,7 +2677,7 @@ function showDistancePanel(km, mins, task) {
             <div class="eta">~${mins} min drive</div>
             <div class="price-info">
                 <div class="total-price">Earn: <strong>₹${helperEarns.toFixed(0)}</strong></div>
-                <small style="color:#10b981;">${task.category === 'transport' ? '\u20b9' + parseFloat(task.price).toFixed(0) + ' (no posting fee)' : '\u20b9' + parseFloat(task.price).toFixed(0) + ' + \u20b9' + serviceCharge.toFixed(0) + ' (' + chargeInfo.level + ')'}</small>
+                <small style="color:#10b981;">${DELIVERY_COMMISSION_CATS.has(task.category) ? '₹' + parseFloat(task.price).toFixed(0) + ' + ₹' + serviceCharge.toFixed(0) + ' (' + chargeInfo.level + ')' : '₹' + parseFloat(task.price).toFixed(0)}</small>
             </div>
             <button class="directions-btn" onclick="openGoogleMaps(${task.location.lat}, ${task.location.lng})">
                 <i class="fas fa-directions"></i> Navigate
@@ -3030,13 +3030,7 @@ function openTaskDetail(taskId) {
             ${getTaskServiceCharge(task) > 0 ? `
             <div class="price-breakdown-row">
                 <span>Service Charge <small>(Delivery/Distance)</small></span><span>+₹${getTaskServiceCharge(task).toFixed(2)}</span>
-            </div>
-            <div class="price-breakdown-row price-breakdown-subtotal">
-                <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
             </div>` : ''}
-            <div class="price-breakdown-row" style="color:#f59e0b;">
-                <span>Platform Fee (5%)</span><span>+₹${getTaskPlatformFee(task).toFixed(2)}</span>
-            </div>
             <div class="price-breakdown-row price-breakdown-total">
                 <h3>Total You Pay</h3><span class="price">₹${Math.round(getTaskFinalValue(task))}</span>
             </div>
@@ -3047,7 +3041,7 @@ function openTaskDetail(taskId) {
                 <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
             </div>` : ''}
             <div class="price-breakdown-row price-breakdown-total">
-                <div><h3>You Earn</h3><small>After 12% platform commission</small></div>
+                <div><h3>You Earn</h3><small>After ${Math.round(getCommissionRate(task.category||'other')*100)}% platform commission</small></div>
                 <span class="price">₹${Math.round(getHelperEarnings(task))}</span>
             </div>
         </div>`}
@@ -4622,7 +4616,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
     const baseAmount = task.price || 0;
     const svcCharge = task.service_charge || 0;
     const totalTaskVal = baseAmount + svcCharge;
-    const posterFee = totalTaskVal * 0.05;
+    // Posting fee DISABLED: const posterFee = totalTaskVal * 0.05;
     const content = `
         <div style="text-align: center; padding: 20px;">
             <div style="font-size: 60px; margin-bottom: 15px;">✅</div>
@@ -4639,10 +4633,6 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
                     <span style="color: #999;">Service Charge:</span>
                     <span style="font-weight: 600; color: #fbbf24;">+₹${svcCharge.toFixed(2)}</span>
                 </div>` : ''}
-                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span style="color: #999;">Posting Fee (5%):</span>
-                    <span style="font-weight: 600; color: #fbbf24;">+₹${posterFee.toFixed(2)}</span>
-                </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                     <span style="color: #999;">Total Paid:</span>
                     <span style="font-weight: 600; color: #ef4444;">-₹${totalPaid.toFixed(2)}</span>
@@ -4683,9 +4673,11 @@ function checkAndShowPaymentReceived() {
     for (const task of myAcceptedTasks) {
         if ((task.status === 'paid' || task.status === 'completed') && !shownPayments.includes(task.id)) {
             const taskAmount = task.price || 0;
-            const serviceCharge = task.service_charge || task.serviceCharge || 0;
+            const serviceCharge = getTaskServiceCharge(task); // enforces 0 for non-delivery
             const totalTaskValue = taskAmount + serviceCharge;
-            const helperEarnings = totalTaskValue * 0.88;
+            const _commRate = getCommissionRate(task.category || 'other');
+            const helperEarnings = totalTaskValue * (1 - _commRate);
+            const _commPct = Math.round(_commRate * 100);
             
             // Move paid task from accepted to completed
             myAcceptedTasks = myAcceptedTasks.filter(t => t.id != task.id);
@@ -4721,8 +4713,8 @@ function checkAndShowPaymentReceived() {
                             <span style="font-weight: 600;">₹${totalTaskValue.toFixed(2)}</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="color: #999;">Commission (12%):</span>
-                            <span style="font-weight: 600; color: #ef4444;">-₹${(totalTaskValue * 0.12).toFixed(2)}</span>
+                            <span style="color: #999;">Commission (${_commPct}%):</span>
+                            <span style="font-weight: 600; color: #ef4444;">-₹${(totalTaskValue * _commRate).toFixed(2)}</span>
                         </div>
                         <hr style="border-color: rgba(255,255,255,0.1); margin: 12px 0;">
                         <div style="display: flex; justify-content: space-between;">
@@ -4828,9 +4820,11 @@ async function showPaymentInvoice(taskId) {
     const taskAmount = task.price || 0;
     const serviceCharge = task.service_charge || 0;
     const totalTaskValue = taskAmount + serviceCharge;
-    const helperCommission = totalTaskValue * 0.12;
-    const posterFee = totalTaskValue * 0.05;
-    const totalCost = totalTaskValue + posterFee;
+    const commRate = getCommissionRate(task.category || 'other');
+    const helperCommission = totalTaskValue * commRate;
+    // Poster posting fee: DISABLED (was 5%)
+    // const posterFee = totalTaskValue * 0.05;
+    const totalCost = totalTaskValue; // No posting fee
     const helperNetReceives = totalTaskValue - helperCommission;
 
     // Fetch real wallet balance from server
@@ -4878,15 +4872,7 @@ async function showPaymentInvoice(taskId) {
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
                     <span style="color: #ccc;">Service Charge <span style="font-size:11px;opacity:0.7;">(Delivery/Distance)</span></span>
                     <span style="color: #fbbf24; font-weight: 600;">+₹${serviceCharge.toFixed(2)}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 700;">
-                    <span style="color: #fff;">Task Value</span>
-                    <span style="color: #fff;">₹${totalTaskValue.toFixed(2)}</span>
                 </div>` : ''}
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <span style="color: #ccc;">Platform Fee (5%)</span>
-                    <span style="color: #fbbf24; font-weight: 600;">+₹${posterFee.toFixed(2)}</span>
-                </div>
                 <div style="display: flex; justify-content: space-between; padding: 12px 0 0 0; border-top: 2px solid rgba(139, 92, 246, 0.4); font-size: 18px; font-weight: 800;">
                     <span style="color: #fff;">Total to Pay</span>
                     <span style="color: #ef4444;">₹${totalCost.toFixed(2)}</span>
@@ -4977,9 +4963,10 @@ async function executePayment(taskId) {
     const taskAmount = task.price || 0;
     const serviceCharge = task.service_charge || 0;
     const totalTaskValue = taskAmount + serviceCharge;
-    const helperCommission = totalTaskValue * 0.12;
-    const posterFee = totalTaskValue * 0.05;
-    const totalCost = totalTaskValue + posterFee;
+    const commRate2 = getCommissionRate(task.category || 'other');
+    const helperCommission = totalTaskValue * commRate2;
+    // Poster posting fee DISABLED: const posterFee = totalTaskValue * 0.05;
+    const totalCost = totalTaskValue; // No posting fee
     const helperNetReceives = totalTaskValue - helperCommission;
 
     try {
@@ -5090,24 +5077,25 @@ async function handleTaskSubmit(event) {
     const customBudgetValue = parseInt(document.getElementById('customBudget').value) || 0;
     let baseBudget = customBudgetValue > 0 ? customBudgetValue : selectedBudget;
     
-    // Enforce minimum ₹100
-    if (baseBudget < MIN_TASK_PRICE) {
+    const category = document.getElementById('modalTaskCategory').value;
+    // No minimum for delivery/pickup/transport — price auto-calculated from distance
+    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < MIN_TASK_PRICE) {
         baseBudget = MIN_TASK_PRICE;
         showToast('⚠️ Minimum task budget is ₹' + MIN_TASK_PRICE);
     }
     
     const totalPrice = baseBudget + currentBonus;
-    const category = document.getElementById('modalTaskCategory').value;
     // Distance-aware service charge for pick&drop / delivery / moving.
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const serviceCharge = getServiceCharge(category, distanceKm);
-    const platformFeeForSubmit = Math.round((totalPrice + serviceCharge) * 0.05 * 100) / 100;
-    const totalPayable = totalPrice + serviceCharge + platformFeeForSubmit;
+    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    const serviceCharge = getServiceCharge(category, distanceKm, vehicleKey);
+    // Posting fee DISABLED: const platformFeeForSubmit = Math.round((totalPrice + serviceCharge) * 0.05 * 100) / 100;
+    const platformFeeForSubmit = 0; // No posting fee
+    const totalPayable = totalPrice + serviceCharge; // No posting fee
 
     // If a specific vehicle was chosen for ride/delivery categories, surface it
     // on the task so only taskers with that vehicle are eligible.
-    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
-    const VEHICLE_LABEL = { bike: '\uD83C\uDFCD\uFE0F Bike', auto: '\uD83D\uDEFA Auto', mini: '\uD83D\uDE97 Mini Car', sedan: '\uD83D\uDE99 Sedan' };
+    const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛺 Auto', mini: '🚗 Mini Cab', sedan: '🚙 Sedan', suv: '🚐 SUV' };
     let descriptionText = document.getElementById('modalTaskDescription').value || '';
     if (vehicleKey && VEHICLE_LABEL[vehicleKey] && !descriptionText.includes('Required vehicle:')) {
         descriptionText = '🚕 Required vehicle: ' + VEHICLE_LABEL[vehicleKey]
@@ -6458,6 +6446,7 @@ function renderDashboard() {
 
     // Highlight task if navigated from notification
     const urlHighlight = new URLSearchParams(window.location.search).get('highlight');
+    const urlAction = new URLSearchParams(window.location.search).get('action');
     if (urlHighlight) {
         function tryHighlight() {
             const taskEl = document.querySelector(`[data-task-id="${urlHighlight}"]`);
@@ -6471,6 +6460,11 @@ function renderDashboard() {
         }
         // Retry: card may not exist until server data loads
         setTimeout(() => { if (!tryHighlight()) setTimeout(tryHighlight, 2000); }, 300);
+
+        // Auto-open payment invoice if action=pay (from verify_and_pay notification)
+        if (urlAction === 'pay') {
+            setTimeout(() => { if (typeof showPaymentInvoice === 'function') showPaymentInvoice(parseInt(urlHighlight)); }, 800);
+        }
     }
     
     // Sync notifications from server (non-blocking) so poster sees Pay Now from helper
@@ -6538,11 +6532,23 @@ window.verifyAndPayTask = verifyAndPayTask;
 async function markTaskCompleted(taskId) {
     const token = localStorage.getItem('taskearn_token');
     if (!token) { alert('Please login first'); return; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
-        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/mark-completed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
-        });
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/mark-completed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        } catch (netErr) {
+            // Direct API failed (blocked on mobile networks) — fall back to Netlify proxy
+            console.warn('Direct API failed, trying proxy:', netErr.message);
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/mark-completed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        }
         const result = await resp.json();
         if (result.success) {
             myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
@@ -6552,7 +6558,8 @@ async function markTaskCompleted(taskId) {
             alert(result.message || 'Could not mark as completed. Please try again.');
         }
     } catch (e) {
-        alert('Network error. Please try again.');
+        console.error('markTaskCompleted error:', e);
+        alert('Network error. Please check your connection and try again.');
     }
 }
 window.markTaskCompleted = markTaskCompleted;
@@ -6563,11 +6570,21 @@ async function verifyTaskDone(taskId, btnEl) {
     if (!token) { alert('Please login first'); return; }
     if (!confirm('Have you completed this task? The poster will be notified to verify and pay.')) return;
     if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Sending...'; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
-        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
-        });
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        } catch (netErr) {
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        }
         const result = await resp.json();
         if (result.success) {
             showToast('✅ Verification sent! Waiting for poster to pay.', 'success');
@@ -6660,13 +6677,30 @@ async function submitTaskRating() {
     if (!rating) { closeRatingPopup(); return; }
     const token = localStorage.getItem('taskearn_token');
     if (!token) { closeRatingPopup(); return; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
-        await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/rate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ rating: rating, review: review })
-        });
-    } catch (e) {}
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/rate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ rating: rating, review: review })
+            });
+        } catch (netErr) {
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/rate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ rating: rating, review: review })
+            });
+        }
+        const result = await resp.json();
+        if (!result.success) {
+            console.warn('Rating submit:', result.message);
+        }
+    } catch (e) {
+        console.error('submitTaskRating error:', e);
+    }
     showToast('⭐ Thank you for your rating!', 'success');
     await syncUserTasksFromServer();
     renderDashboard();
@@ -6804,7 +6838,7 @@ function renderAcceptedTasks() {
                 <p style="color: #fbbf24; margin-bottom: 8px;">
                     <i class="fas fa-clock"></i> Waiting for task poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${getHelperEarnings(t).toFixed(0)} (after 12% commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${getHelperEarnings(t).toFixed(0)} (after ${Math.round(getCommissionRate(t.category||'other')*100)}% commission)</p>
             </div>`;
         } else if (t.status === 'verify_pending') {
             // Helper sent verification, waiting for poster to pay
@@ -6814,7 +6848,7 @@ function renderAcceptedTasks() {
                 <p style="color: #d97706; margin-bottom: 8px; font-weight:600;">
                     <i class="fas fa-hourglass-half"></i> Verification sent! Waiting for poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${getHelperEarnings(t).toFixed(0)} (after 12% commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${getHelperEarnings(t).toFixed(0)} (after ${Math.round(getCommissionRate(t.category||'other')*100)}% commission)</p>
             </div>`;
         } else if (t.status === 'payment_released') {
             // Payment released, helper needs to mark as completed
@@ -6898,7 +6932,7 @@ function renderCompletedTasks() {
         </div>`;
     }
 
-    // Calculate total earned (after 12% commission)
+    // Calculate total earned (after platform commission)
     const totalEarned = visible.reduce((s, t) => {
         if (t.earnedAmount) return s + t.earnedAmount;
         return s + Math.round(getHelperEarnings(t) * 100) / 100;
@@ -6908,12 +6942,13 @@ function renderCompletedTasks() {
         <div style="background:linear-gradient(135deg,#10b981,#34d399);color:white;padding:25px;border-radius:15px;text-align:center;margin-bottom:20px;">
             <h3 style="margin:0;">Total Earned</h3>
             <p style="font-size:2.5rem;font-weight:800;margin:10px 0;">₹${totalEarned.toFixed(2)}</p>
-            <small style="opacity:0.9;">${visible.length} task${visible.length > 1 ? 's' : ''} completed (after 12% commission)</small>
+            <small style="opacity:0.9;">${visible.length} task${visible.length > 1 ? 's' : ''} completed (after platform commission)</small>
         </div>
         ${pendingHTML}
         ${visible.map(t => {
             const taskBaseVal = (parseFloat(t.price)||0) + (parseFloat(t.service_charge)||0);
-            const earned = t.earnedAmount || Math.round(taskBaseVal * 0.88 * 100) / 100;
+            const earned = t.earnedAmount || getHelperEarnings(t);
+            const _commPct2 = Math.round(getCommissionRate(t.category||'other') * 100);
             const posterName = t.poster_name || (t.postedBy && t.postedBy.name) || 'Poster';
             const posterId = t.poster_user_id || (t.postedBy && t.postedBy.id) || t.posted_by || '';
             const posterPhone = t.poster_phone || (t.postedBy && t.postedBy.phone) || '';
@@ -6952,7 +6987,7 @@ function renderCompletedTasks() {
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
                 ${contactHTML}
-                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${taskBaseVal.toFixed(2)} task value − 12% commission)</small></p>
+                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${taskBaseVal.toFixed(2)} task value − ${_commPct2}% commission)</small></p>
                 <div style="margin-top:10px;">${rateBtn}</div>
             </div>`;
         }).join('')}
@@ -7302,8 +7337,9 @@ function updateTotalBudgetDisplay() {
     const customBudget = parseInt(document.getElementById('customBudget')?.value) || 0;
     let baseBudget = customBudget > 0 ? customBudget : selectedBudget;
     
-    // Enforce minimum ₹100
-    if (baseBudget < MIN_TASK_PRICE) {
+    // ₹100 minimum only for non-distance categories; delivery/pickup use km-based price
+    const category = document.getElementById('modalTaskCategory')?.value || 'other';
+    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < MIN_TASK_PRICE) {
         baseBudget = MIN_TASK_PRICE;
     }
     
@@ -7311,17 +7347,19 @@ function updateTotalBudgetDisplay() {
     
     // Get service charge based on selected category.
     // Service charge ONLY for Delivery/Pick&Drop categories; 0 for everything else.
-    const category = document.getElementById('modalTaskCategory')?.value || 'other';
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const serviceCharge = getServiceCharge(category, distanceKm); // 0 for non-delivery
+    const vehicleKeyForCharge = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    const serviceCharge = getServiceCharge(category, distanceKm, vehicleKeyForCharge); // 0 for non-delivery
     const chargeInfo = getServiceChargeInfo(category);
 
-    // Task Posting Fee = 5% of (budget + service charge). Applies to all categories.
-    const platformFee = Math.round((total + serviceCharge) * 0.05 * 100) / 100;
-    const totalPayable = total + serviceCharge + platformFee; // What poster pays
-    const taskValueForHelper = total + serviceCharge; // Helper-side gross (price + service charge)
-    const helperCommission = Math.round(taskValueForHelper * 0.12 * 100) / 100; // 12% platform commission on helper
-    const workerEarns = taskValueForHelper - helperCommission; // Net amount credited to helper wallet
+    // Task Posting Fee: DISABLED (was 5%). No fee added to poster's total.
+    // const platformFee = Math.round((total + serviceCharge) * 0.05 * 100) / 100;
+    const platformFee = 0; // DISABLED
+    const totalPayable = total + serviceCharge; // What poster pays (no posting fee)
+    const taskValueForHelper = total + serviceCharge;
+    const commissionRate = getCommissionRate(category); // 15% delivery, 17% others
+    const helperCommission = Math.round(taskValueForHelper * commissionRate * 100) / 100;
+    const workerEarns = taskValueForHelper - helperCommission;
     
     const displayEl = document.getElementById('totalBudgetDisplay');
     if (displayEl) {
@@ -7357,12 +7395,12 @@ function updateTotalBudgetDisplay() {
         serviceChargeTime.textContent = chargeInfo.time;
     }
     if (platformFeeDisplay) {
-        platformFeeDisplay.textContent = '₹' + platformFee.toFixed(0);
+        platformFeeDisplay.textContent = '₹0';
     }
 
-    // Always show the platform-fee row (applies to all categories).
+    // Hide the platform-fee row (posting fee disabled).
     const platformRow = platformFeeDisplay ? platformFeeDisplay.closest('.charge-row') : null;
-    if (platformRow) platformRow.style.display = '';
+    if (platformRow) platformRow.style.display = 'none';
     // Show service-charge row ONLY for Delivery/Pick&Drop categories.
     const feeRow = document.getElementById('serviceChargeRow');
     const timeRow = document.getElementById('serviceChargeTimeRow');
@@ -9119,8 +9157,9 @@ function updateCalc() {
     // ~4.33 weeks per month
     const tasksPerMonth = Math.round(tasksPerDay * daysPerWeek * 4.33);
     const gross = tasksPerMonth * ratePerTask;
-    // Platform deducts 12% from helper (10% commission + 2% transaction fee)
-    const platformCut = Math.round(gross * 0.12);
+    // Platform deducts commission from helper: 17% general, 15% delivery categories
+    // Using 17% as a conservative default for the earnings calculator
+    const platformCut = Math.round(gross * 0.17);
     const net = gross - platformCut;
     const weekly = Math.round(net / 4.33);
 
@@ -9131,7 +9170,7 @@ function updateCalc() {
 
     if (el)   el.textContent  = '₹' + net.toLocaleString('en-IN');
     if (elW)  elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
-    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (12%)';
+    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (17%)';
     if (elTM) elTM.textContent = tasksPerMonth + ' tasks/month';
 }
 window.updateCalc = updateCalc;

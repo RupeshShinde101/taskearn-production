@@ -113,7 +113,7 @@
         "mainEntity": [
             {"@type": "Question", "name": "What is Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Workmate4u is India's leading freelance marketplace that connects people who need tasks done with skilled freelancers nearby. You can hire freelancers for delivery, cleaning, tutoring, repairs, photography and more."}},
             {"@type": "Question", "name": "How do I hire a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Sign up for free, post your task with a description and budget, and local freelancers will accept your task. Track progress in real-time and pay securely through Razorpay."}},
-            {"@type": "Question", "name": "How much can I earn as a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Earnings depend on the tasks you complete and their availability in your area. Task budgets typically range from ₹100 to ₹2,000 per task. The platform deducts 12% from the helper's payout. A dedicated helper completing 3–5 tasks per day, 5 days a week can realistically earn ₹5,000–₹15,000 per month. Actual earnings vary by city, category, and task availability."}},
+            {"@type": "Question", "name": "How much can I earn as a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Earnings depend on the tasks you complete and their availability in your area. Task budgets typically range from ₹100 to ₹2,000 per task. The platform deducts 15% for delivery/pickup tasks and 17% for all other categories from the helper's payout. A dedicated helper completing 3–5 tasks per day, 5 days a week can realistically earn ₹5,000–₹15,000 per month. Actual earnings vary by city, category, and task availability."}},
             {"@type": "Question", "name": "Is Workmate4u free to join?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, creating an account on Workmate4u is completely free. A small service charge is deducted only when a task is completed successfully."}},
             {"@type": "Question", "name": "Which cities does Workmate4u operate in?", "acceptedAnswer": {"@type": "Answer", "text": "Workmate4u operates across all major Indian cities including Mumbai, Delhi, Bangalore, Hyderabad, Pune, Chennai, Kolkata, and many more. Any location in India with internet access is supported."}},
             {"@type": "Question", "name": "Is Workmate4u safe and secure?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. All payments are processed through Razorpay (PCI-DSS compliant). Users are verified, and we have a rating system, KYC verification, and safety guidelines to protect both clients and freelancers."}}
@@ -644,7 +644,7 @@
                             </div>
                             <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;opacity:0.75;">
                                 <span>Platform deducts</span>
-                                <span id="calcPlatformCut">₹3,900 (12%)</span>
+                                <span id="calcPlatformCut">₹4,505 (17%)</span>
                             </div>
                         </div>
                         <p style="font-size:0.75rem;opacity:0.6;margin:8px 0 12px;line-height:1.5;">Estimate based on average task prices. Actual earnings depend on task availability, your location, and acceptance rate.</p>
@@ -674,7 +674,7 @@
                 </details>
                 <details style="background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer;">
                     <summary style="font-weight: 600; font-size: 1.05rem; color: #1e293b; list-style: none; display: flex; justify-content: space-between; align-items: center;">How much can I earn as a freelancer? <i class="fas fa-chevron-down" style="color: #6c5ce7; font-size: 14px;"></i></summary>
-                    <p style="margin-top: 12px; color: #64748b; line-height: 1.7;">Earnings depend on the tasks you complete and their availability in your area. Task budgets typically range from ₹100 to ₹2,000 per task. The platform deducts 12% from the helper's payout. A dedicated helper completing 3–5 tasks per day, 5 days a week can realistically earn ₹5,000–₹15,000 per month. Use the calculator above to estimate your income based on your category and schedule.</p>
+                    <p style="margin-top: 12px; color: #64748b; line-height: 1.7;">Earnings depend on the tasks you complete and their availability in your area. Task budgets typically range from ₹100 to ₹2,000 per task. The platform deducts 15% for delivery/pickup tasks and 17% for all other categories from the helper's payout. A dedicated helper completing 3–5 tasks per day, 5 days a week can realistically earn ₹5,000–₹15,000 per month. Use the calculator above to estimate your income based on your category and schedule.</p>
                 </details>
                 <details style="background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer;">
                     <summary style="font-weight: 600; font-size: 1.05rem; color: #1e293b; list-style: none; display: flex; justify-content: space-between; align-items: center;">Is Workmate4u free to join? <i class="fas fa-chevron-down" style="color: #6c5ce7; font-size: 14px;"></i></summary>
@@ -1171,16 +1171,16 @@
                                 <span>Est. Time:</span>
                                 <span id="serviceChargeTime">1-3 hours</span>
                             </div>
-                            <div class="charge-row" style="color: #d97706;">
-                                <span>+ Task Posting Fee (5%):</span>
-                                <span id="platformFeeAmount">₹8</span>
+                            <div class="charge-row" style="color: #d97706; display: none;">
+                                <span>+ Platform Fee:</span>
+                                <span id="platformFeeAmount">₹0</span>
                             </div>
                             <div class="charge-row total">
                                 <span><strong>Final Task Value:</strong></span>
                                 <span><strong id="totalPayable">₹158</strong></span>
                             </div>
                         </div>
-                        <p class="charge-note"><i class="fas fa-info-circle"></i> 5% Task Posting Fee applies to all categories. Service charge: Delivery/Pick&amp;Drop ₹10–₹40 (by distance) | Medium ₹40–50 | Skilled ₹60–70 | Expert ₹70–80 | Professional ₹90–100</p>
+                        <p class="charge-note"><i class="fas fa-info-circle"></i> No platform posting fee — you pay only your set budget. Service charge (delivery/pickup): ₹10–₹40 by distance.</p>
                     </div>
                     <div class="task-info-box">
                         <i class="fas fa-info-circle"></i>
@@ -1444,8 +1444,8 @@
     <!-- API Client for Python Backend -->
     <script src="api-client.js?v=20260506_hideWorker"></script>
     <script src="shared.js?v=20260506_hideWorker"></script>
-    <script src="category-picker.js?v=20260506_hideWorker"></script>
-    <script src="post-task-wizard.js?v=20260506_hideWorker"></script>
+    <script src="category-picker.js?v=20260507_reinit"></script>
+    <script src="post-task-wizard.js?v=20260507_reinit"></script>
     
     <!-- Google Sign-In -->
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>

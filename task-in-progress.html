@@ -616,6 +616,53 @@
         </div>
     </div>
 
+    <!-- Payment Received Modal (shown when poster approves & pays) -->
+    <div id="paymentReceivedOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:20000;align-items:center;justify-content:center;padding:16px;">
+        <div style="background:#1a1a2e;border:1px solid rgba(74,222,128,.35);border-radius:20px;max-width:420px;width:100%;padding:0;overflow:hidden;">
+            <!-- Green header strip -->
+            <div style="background:linear-gradient(135deg,#10b981,#059669);padding:24px;text-align:center;">
+                <div style="font-size:52px;margin-bottom:8px;">💰</div>
+                <h2 style="color:#fff;margin:0 0 4px;font-size:22px;">Payment Released!</h2>
+                <p style="color:rgba(255,255,255,.85);margin:0;font-size:13px;">The poster has approved and paid for your work</p>
+            </div>
+            <!-- Breakdown body -->
+            <div style="padding:20px;">
+                <div id="prTaskTitle" style="font-weight:600;font-size:15px;color:#f1f5f9;margin-bottom:16px;text-align:center;"></div>
+
+                <!-- Earnings breakdown -->
+                <div style="background:rgba(255,255,255,.05);border:1px solid rgba(74,222,128,.2);border-radius:12px;padding:16px;margin-bottom:14px;">
+                    <div style="font-size:11px;color:#a78bfa;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;"><i class="fas fa-receipt"></i> Earnings Breakdown</div>
+                    <div id="prBudgetRow" style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                        <span style="color:#94a3b8;">Task Budget</span>
+                        <span style="color:#f1f5f9;font-weight:600;"></span>
+                    </div>
+                    <div id="prScRow" style="display:none;flex;justify-content:space-between;margin-bottom:8px;">
+                        <span style="color:#94a3b8;">Service Charge</span>
+                        <span style="color:#fbbf24;font-weight:600;"></span>
+                    </div>
+                    <div id="prTotalRow" style="display:none;flex;justify-content:space-between;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.08);">
+                        <span style="color:#94a3b8;">Total Task Value</span>
+                        <span style="color:#f1f5f9;font-weight:600;"></span>
+                    </div>
+                    <div id="prCommRow" style="display:flex;justify-content:space-between;margin-bottom:0;padding-top:4px;border-top:1px solid rgba(255,255,255,.08);">
+                        <span style="color:#94a3b8;">Platform Commission</span>
+                        <span style="color:#ef4444;font-weight:600;"></span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;padding-top:12px;border-top:2px solid rgba(74,222,128,.4);margin-top:12px;">
+                        <span style="color:#fff;font-weight:700;font-size:16px;">You Receive</span>
+                        <span id="prEarnings" style="color:#4ade80;font-weight:800;font-size:20px;">₹0</span>
+                    </div>
+                </div>
+
+                <!-- Mark as Completed button -->
+                <button id="markCompleteBtn" onclick="markAsCompleted()" style="width:100%;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;padding:15px;border-radius:12px;font-size:16px;font-weight:700;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;">
+                    <i class="fas fa-check-circle"></i> Mark as Completed
+                </button>
+                <p style="color:#64748b;font-size:12px;text-align:center;margin:0;">Tap to confirm task completion and release to your wallet</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Release Penalty Modal -->
     <div id="releasePenaltyOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:none;align-items:center;justify-content:center;">
         <div style="background:#fff;border-radius:16px;max-width:400px;width:90%;padding:24px;text-align:center;">
@@ -772,7 +819,8 @@
                     }
                     // If payment was released, redirect to completed tasks
                     if (t.status === 'payment_released') {
-                        window.location.href = 'index.html?tab=accepted-tasks';
+                        // Show payment popup instead of silently redirecting
+                        showPaymentReleasedPopup(t);
                         return;
                     }
                 } catch (e) {
@@ -836,6 +884,9 @@
                         } else if (result && result.success === false && /not found/i.test(result.message || '')) {
                             handleTaskGone();
                             return;
+                        } else if (result.tracking && result.tracking.status === 'payment_released') {
+                            // Already paid — show popup immediately on load
+                            showPaymentReleasedPopup(result.tracking);
                         }
                     } catch (e) {
                         console.warn('Tracking API fetch failed:', e.message);
@@ -1020,6 +1071,121 @@
 
         // Keep legacy completeTask as alias for backward compat
         async function completeTask() { return verifyTask(); }
+
+        // ─── Payment Released Popup ─────────────────────────────────────────
+        let _paymentPopupShown = false;
+        function showPaymentReleasedPopup(trackingOrData) {
+            if (_paymentPopupShown) return;
+            _paymentPopupShown = true;
+
+            // Stop the polling — we already detected the status
+            if (window._taskWatchInterval) {
+                clearInterval(window._taskWatchInterval);
+                window._taskWatchInterval = null;
+            }
+
+            // Update verify button state
+            updateVerifyButtonState('payment_released');
+
+            // Populate breakdown from tracking data or from currentTask
+            const taskTitle = (trackingOrData && trackingOrData.title) || currentTask.title || 'Task';
+            const taskAmount = (trackingOrData && (trackingOrData.price || trackingOrData.taskAmount)) || currentTask.price || currentTask.amount || 0;
+            const sc = (trackingOrData && (trackingOrData.service_charge || trackingOrData.serviceCharge)) || currentTask.service_charge || 0;
+            const total = taskAmount + sc;
+
+            // Commission: 15% for delivery/transport, 17% for others
+            const cat = (currentTask.category || '').toLowerCase();
+            const isDelivery = (cat === 'delivery' || cat === 'transport' || cat === 'moving' || cat === 'pickup');
+            const commPct = isDelivery ? 15 : 17;
+            const commission = Math.round(total * commPct / 100);
+            const earned = total - commission;
+
+            // Set task title
+            const titleEl = document.getElementById('prTaskTitle');
+            if (titleEl) titleEl.textContent = taskTitle;
+
+            // Budget row
+            const budgetRow = document.getElementById('prBudgetRow');
+            if (budgetRow) budgetRow.querySelector('span:last-child').textContent = '₹' + taskAmount;
+
+            // Service charge row (only if > 0)
+            const scRow = document.getElementById('prScRow');
+            if (scRow) {
+                if (sc > 0) {
+                    scRow.style.display = 'flex';
+                    scRow.querySelector('span:last-child').textContent = '+₹' + sc;
+                }
+            }
+
+            // Total row (only if sc > 0)
+            const totalRow = document.getElementById('prTotalRow');
+            if (totalRow) {
+                if (sc > 0) {
+                    totalRow.style.display = 'flex';
+                    totalRow.querySelector('span:last-child').textContent = '₹' + total;
+                }
+            }
+
+            // Commission row
+            const commRow = document.getElementById('prCommRow');
+            if (commRow) commRow.querySelector('span:last-child').textContent = '-₹' + commission + ' (' + commPct + '%)';
+
+            // Earnings
+            const earnEl = document.getElementById('prEarnings');
+            if (earnEl) earnEl.textContent = '₹' + earned;
+
+            // Show overlay
+            const overlay = document.getElementById('paymentReceivedOverlay');
+            if (overlay) overlay.style.display = 'flex';
+        }
+
+        // Called when helper taps "Mark as Completed"
+        async function markAsCompleted() {
+            const btn = document.getElementById('markCompleteBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Marking Complete...';
+            }
+
+            const taskId = currentTask.id;
+            const token = localStorage.getItem('taskearn_token') || '';
+            const API_BASE = 'https://taskearn-production-production.up.railway.app/api';
+            const PROXY_BASE = '/.netlify/functions/api-proxy/api';
+
+            async function doMark(base) {
+                return await fetch(base + '/tasks/' + taskId + '/mark-completed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+                });
+            }
+
+            try {
+                let res;
+                try {
+                    res = await doMark(API_BASE);
+                } catch (e) {
+                    res = await doMark(PROXY_BASE);
+                }
+                const result = await res.json();
+                if (result.success || res.ok) {
+                    // Clear stored task
+                    try { localStorage.removeItem('currentTask'); } catch (e) {}
+                    window.location.href = 'index.html?tab=accepted-tasks';
+                } else {
+                    alert(result.message || 'Could not mark as completed. Please try again.');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark as Completed';
+                    }
+                }
+            } catch (err) {
+                alert('Network error. Please try again.');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark as Completed';
+                }
+            }
+        }
 
         // Proceed to payment
         function proceedToPayment() {

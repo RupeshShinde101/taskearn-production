@@ -203,11 +203,11 @@ function getCommissionRate(category) {
 
 // Returns what the helper actually receives after platform commission.
 // Commission: 15% for delivery/pickup/transport/moving, 17% for all others.
+// Always uses getTaskServiceCharge() so non-delivery tasks get sc=0 (ignores any legacy stored value).
 function getHelperEarnings(task) {
     if (!task) return 0;
     const price = parseFloat(task.price || task.amount || 0) || 0;
-    const sc = parseFloat(task.service_charge != null ? task.service_charge :
-                          task.serviceCharge != null ? task.serviceCharge : getTaskServiceCharge(task)) || 0;
+    const sc = getTaskServiceCharge(task); // enforces 0 for non-delivery categories
     const rate = getCommissionRate(task.category || 'other');
     return Math.round((price + sc) * (1 - rate) * 100) / 100;
 }
@@ -4844,7 +4844,7 @@ function checkAndShowPaymentReceived() {
     for (const task of myAcceptedTasks) {
         if ((task.status === 'paid' || task.status === 'completed') && !shownPayments.includes(task.id)) {
             const taskAmount = task.price || 0;
-            const serviceCharge = task.service_charge || task.serviceCharge || 0;
+            const serviceCharge = getTaskServiceCharge(task); // enforces 0 for non-delivery
             const totalTaskValue = taskAmount + serviceCharge;
             const _commRate = getCommissionRate(task.category || 'other');
             const helperEarnings = totalTaskValue * (1 - _commRate);

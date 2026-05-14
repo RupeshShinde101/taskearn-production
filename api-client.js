@@ -1156,32 +1156,30 @@ const KYCAPI = {
 };
 
 // Push Notifications API
+// NOTE: Uses apiRequest() so it inherits the proxy fallback and correct base URL.
+// DO NOT use fetch(`${API_BASE_URL}/api/push/...`) here — when the proxy fallback
+// switches API_BASE_URL to /.netlify/functions/api-proxy/api the path would become
+// /api/api/push/... (double /api) causing 404s.
 const PushAPI = {
     getVapidKey: async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/push/vapid-key`);
-            return await res.json();
+            const r = await apiRequest('/push/vapid-key', { method: 'GET' });
+            return r.data || { success: false };
         } catch (e) { return { success: false, message: e.message }; }
     },
     subscribe: async (subscription, lat, lng) => {
         try {
-            const token = localStorage.getItem('taskearn_token');
-            const res = await fetch(`${API_BASE_URL}/api/push/subscribe`, {
+            const r = await apiRequest('/push/subscribe', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ subscription, lat, lng })
             });
-            return await res.json();
+            return r.data || { success: false };
         } catch (e) { return { success: false, message: e.message }; }
     },
     unsubscribe: async () => {
         try {
-            const token = localStorage.getItem('taskearn_token');
-            const res = await fetch(`${API_BASE_URL}/api/push/unsubscribe`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-            });
-            return await res.json();
+            const r = await apiRequest('/push/unsubscribe', { method: 'POST', body: '{}' });
+            return r.data || { success: false };
         } catch (e) { return { success: false, message: e.message }; }
     }
 };

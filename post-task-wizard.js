@@ -82,6 +82,8 @@
                 : 'Choose a fair budget. Add a small nudge to attract taskers faster.';
         }
         updateBudgetMinLabel();
+        // Update service charge display whenever category changes
+        try { if (typeof window.updateTotalBudgetDisplay === 'function') window.updateTotalBudgetDisplay(); } catch (e) {}
     }
 
     function validateStep(step) {

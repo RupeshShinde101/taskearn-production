@@ -337,19 +337,27 @@ def _ensure_verify_columns():
 
 
 def _ensure_helper_ratings_review():
-    """Ensure review and task_title columns exist in helper_ratings table"""
+    """Ensure all optional columns exist in helper_ratings table"""
+    EXTRA_COLS = [
+        ('review',        'TEXT'),
+        ('task_title',    'TEXT'),
+        ('punctuality',   'INTEGER'),
+        ('communication', 'INTEGER'),
+        ('quality',       'INTEGER'),
+    ]
     try:
         with get_db() as (cursor, conn):
             if PH == '%s':
-                cursor.execute("ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS review TEXT")
-                cursor.execute("ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS task_title TEXT")
+                # PostgreSQL: ADD COLUMN IF NOT EXISTS is safe to run repeatedly
+                for col, typ in EXTRA_COLS:
+                    cursor.execute(f"ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS {col} {typ}")
             else:
+                # SQLite: check column list first
                 cursor.execute("PRAGMA table_info(helper_ratings)")
-                cols = [row[1] for row in cursor.fetchall()]
-                if 'review' not in cols:
-                    cursor.execute("ALTER TABLE helper_ratings ADD COLUMN review TEXT")
-                if 'task_title' not in cols:
-                    cursor.execute("ALTER TABLE helper_ratings ADD COLUMN task_title TEXT")
+                existing = {row[1] for row in cursor.fetchall()}
+                for col, typ in EXTRA_COLS:
+                    if col not in existing:
+                        cursor.execute(f"ALTER TABLE helper_ratings ADD COLUMN {col} {typ}")
     except Exception as e:
         print(f"⚠️ _ensure_helper_ratings_review: {e}")
 
@@ -3490,12 +3498,24 @@ def pay_helper(task_id):
             ''', (task_id, request.user_id))
 
             import json
+            # Full breakdown payload — used by the frontend "Payment Received" popup.
+            _breakdown_base = {
+                'taskId': task_id,
+                'taskTitle': task['title'],
+                'taskAmount': round(task_amount, 2),
+                'serviceCharge': round(service_charge, 2),
+                'totalTaskValue': round(total_task_value, 2),
+                'helperEarnings': round(helper_earnings, 2),
+                'commission': round(helper_total_deduction, 2),
+                'commissionPct': round(_commission_rate * 100),
+                'helperNewBalance': round(helper_new_balance, 2),
+            }
             if is_new_flow:
                 # NEW FLOW: Tell helper to mark as completed
                 helper_notif_data = json.dumps({
+                    **_breakdown_base,
                     'type': 'mark_complete',
                     'label': '🎉 Mark as Completed',
-                    'taskId': task_id,
                     'amount': round(helper_earnings, 2)
                 })
                 cursor.execute(f'''
@@ -3506,14 +3526,19 @@ def pay_helper(task_id):
                       f'₹{helper_earnings:.2f} has been released to your wallet for "{task["title"]}". Tap to mark the task as completed.',
                       'unread', helper_notif_data, now))
             else:
-                # LEGACY FLOW: Simple payment received
+                # LEGACY FLOW: Payment received
                 cursor.execute(f'''
                     INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                     VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                 ''', (helper_id, task_id, 'payment_received',
                       'Payment Received! 💰',
                       f'You received ₹{helper_earnings:.2f} for completing "{task["title"]}".',
-                      'unread', json.dumps({'type': 'success', 'taskId': task_id, 'amount': helper_earnings}), now))
+                      'unread', json.dumps({
+                          **_breakdown_base,
+                          'type': 'payment_received',
+                          'label': '💰 View Breakdown',
+                          'amount': round(helper_earnings, 2)
+                      }), now))
 
             # Create "Payment Done" notification for poster
             cursor.execute(f'''
@@ -5019,6 +5044,7 @@ def get_task_proofs(task_id):
 @require_auth
 def rate_user(task_id):
     """Rate a user after task completion"""
+    _ensure_helper_ratings_review()
     data = request.get_json()
     rating = int(data.get('rating', 5))
     review = data.get('review', '')

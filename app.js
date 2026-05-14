@@ -119,12 +119,15 @@ const SERVICE_CHARGES = {
 };
 
 function getServiceCharge(category, distanceKm, vehicleKey) {
-    // For delivery/pickup/transport/moving: the budget itself IS the distance-based
-    // price (auto-filled by the picker as base + perKm × distance). There is NO
-    // additional service charge on top — returning 0 prevents double-charging.
-    // Commission (15%) is deducted from the helper's payout separately.
-    if (DELIVERY_CATEGORIES.has(category)) return 0;
-    // Non-delivery categories also return 0 (no service charge on any category now).
+    // Distance-based platform service charge for Delivery and Pick & Drop.
+    // Formula: ₹10 base + ₹2/km, rounded to nearest ₹5, capped at ₹40.
+    // This is separate from the task budget (which is the worker's fare).
+    if (category === 'delivery' || category === 'transport') {
+        const km = (typeof distanceKm === 'number' && distanceKm > 0) ? distanceKm : 0;
+        const raw = 10 + 2 * km;
+        return Math.min(40, Math.max(10, Math.round(raw / 5) * 5));
+    }
+    // All other categories: no service charge.
     return 0;
 }
 
@@ -970,10 +973,16 @@ function _mapServerNotification(n) {
     const typeMap = {
         task_completed: 'warning', task_accepted: 'success', task_assigned: 'success',
         task_completed_helper: 'success', task_posted: 'info', task_released: 'warning',
-        task_expired: 'warning', payment_received: 'success', payment_done: 'success',
-        payment_completed: 'warning', wallet_topup: 'success', withdrawal_requested: 'info',
-        account_suspended: 'error', account_restored: 'success', account_banned: 'error'
+        task_expired: 'warning', payment_received: 'success', payment_released: 'success',
+        payment_done: 'success', payment_completed: 'warning', wallet_topup: 'success',
+        withdrawal_requested: 'info', account_suspended: 'error',
+        account_restored: 'success', account_banned: 'error'
     };
+    // For payment_received / payment_released notifications, inject a "View Breakdown" action
+    // so the helper can tap to see the full earnings popup from the notification bell.
+    if ((n.notification_type === 'payment_received' || n.notification_type === 'payment_released') && action) {
+        action.type = action.type || n.notification_type;
+    }
     return {
         id: n.id,
         type: typeMap[n.notification_type] || 'info',
@@ -1510,6 +1519,31 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
         console.log(`🎉 Mark completed for task ${taskId} from notification`);
         closeNotifDropdown();
         await markTaskCompleted(taskId);
+    } else if ((actionType === 'payment_received' || actionType === 'payment_released') && notification.action) {
+        // Helper tapped a "Payment Received" notification — show earnings breakdown popup
+        console.log(`💰 Showing payment received popup from notification`);
+        closeNotifDropdown();
+        const d = notification.action;
+        const taskPriceRaw = parseFloat(d.taskAmount || d.price || 0);
+        const scRaw = parseFloat(d.serviceCharge || d.service_charge || 0);
+        const totalRaw = taskPriceRaw + scRaw || parseFloat(d.totalTaskValue || d.amount || 0);
+        const earnRaw = parseFloat(d.helperEarnings || d.amount || 0);
+        const commRaw = parseFloat(d.commission || d.helperCommission || 0) || (totalRaw - earnRaw);
+        const commRate = totalRaw > 0 ? Math.round((commRaw / totalRaw) * 100) : 0;
+        let bal = parseFloat(currentUser?.wallet || 0);
+        try { const wd = await WalletAPI.get(); if (wd) bal = parseFloat(wd.balance || wd.wallet?.balance || bal); } catch(e) {}
+        showHelperPaymentPopup({
+            title: d.taskTitle || notification.message || 'Task',
+            taskId: taskId,
+            taskAmount: taskPriceRaw || (totalRaw - scRaw),
+            serviceCharge: scRaw,
+            totalTaskValue: totalRaw,
+            commission: commRaw,
+            helperEarnings: earnRaw,
+            commissionPct: commRate,
+            newBalance: bal,
+            posterName: d.posterName || 'the poster'
+        });
     } else if (actionType === 'task' && taskId) {
         console.log(`📋 Opening task ${taskId}`);
         closeNotifDropdown();
@@ -4663,7 +4697,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
  * Show "Payment Received" pop-up for the helper
  * Called when helper logs in and checks for paid tasks
  */
-function checkAndShowPaymentReceived() {
+async function checkAndShowPaymentReceived() {
     if (!currentUser) return;
     
     // Check if any accepted tasks were recently paid
@@ -4671,78 +4705,134 @@ function checkAndShowPaymentReceived() {
     const shownPayments = JSON.parse(localStorage.getItem(paidKey) || '[]');
     
     for (const task of myAcceptedTasks) {
-        if ((task.status === 'paid' || task.status === 'completed') && !shownPayments.includes(task.id)) {
-            const taskAmount = task.price || 0;
-            const serviceCharge = getTaskServiceCharge(task); // enforces 0 for non-delivery
+        if ((task.status === 'paid' || task.status === 'completed' || task.status === 'payment_released') && !shownPayments.includes(task.id)) {
+            const taskAmount = parseFloat(task.price || 0);
+            const serviceCharge = getTaskServiceCharge(task);
             const totalTaskValue = taskAmount + serviceCharge;
             const _commRate = getCommissionRate(task.category || 'other');
-            const helperEarnings = totalTaskValue * (1 - _commRate);
+            const commission = Math.round(totalTaskValue * _commRate * 100) / 100;
+            const helperEarnings = Math.round((totalTaskValue - commission) * 100) / 100;
             const _commPct = Math.round(_commRate * 100);
-            
+
             // Move paid task from accepted to completed
             myAcceptedTasks = myAcceptedTasks.filter(t => t.id != task.id);
             task.earnedAmount = helperEarnings;
             myCompletedTasks.push(task);
-            
+
             // Update profile stats
             currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
             currentUser.totalEarnings = parseFloat(currentUser.totalEarnings || 0) + helperEarnings;
             currentUser.totalEarnings = Math.round(currentUser.totalEarnings * 100) / 100;
-            
-            // Persist everything
+
             updateUserData(currentUser.id, {
                 acceptedTasks: serializeTasks(myAcceptedTasks),
                 completedTasks: serializeTasks(myCompletedTasks),
                 tasksCompleted: currentUser.tasksCompleted,
                 totalEarnings: currentUser.totalEarnings
             });
-            
-            // Refresh wallet balance from server
-            refreshWalletBalance();
-            
-            const content = `
-                <div style="text-align: center; padding: 20px;">
-                    <div style="font-size: 60px; margin-bottom: 15px;">💰</div>
-                    <h2 style="color: #4ade80; margin-bottom: 10px;">Payment Received!</h2>
-                    <p style="color: #888; margin-bottom: 20px;">You've been paid for completing a task!</p>
-                    
-                    <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; border-radius: 12px; padding: 20px; margin-bottom: 20px; text-align: left;">
-                        <h4 style="margin-bottom: 15px;">${escapeHtml(task.title)}</h4>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="color: #999;">Task Amount:</span>
-                            <span style="font-weight: 600;">₹${totalTaskValue.toFixed(2)}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="color: #999;">Commission (${_commPct}%):</span>
-                            <span style="font-weight: 600; color: #ef4444;">-₹${(totalTaskValue * _commRate).toFixed(2)}</span>
-                        </div>
-                        <hr style="border-color: rgba(255,255,255,0.1); margin: 12px 0;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <span style="font-weight: 600;">You Received:</span>
-                            <span style="font-weight: 700; font-size: 18px; color: #4ade80;">+₹${helperEarnings.toFixed(2)}</span>
-                        </div>
-                    </div>
-                    
-                    <button class="btn btn-primary btn-block" onclick="triggerPendingRate()">
-                        <i class="fas fa-star"></i> Rate Poster
-                    </button>
-                </div>
-            `;
-            document.getElementById('taskSuccessContent').innerHTML = content;
-            window.__pendingRate = {
+
+            // Fetch live wallet balance then show popup
+            let newBalance = parseFloat(currentUser.wallet || currentUser.walletBalance || 0);
+            try {
+                const walletData = await WalletAPI.get();
+                if (walletData && walletData.success !== false) {
+                    newBalance = parseFloat(walletData.balance || walletData.wallet?.balance || newBalance);
+                }
+            } catch (e) {}
+
+            showHelperPaymentPopup({
+                title: task.title,
                 taskId: task.id,
-                taskTitle: task.title || '',
-                otherName: (task.postedBy && task.postedBy.name) || 'the poster',
-                role: 'helper'
-            };
-            openModal('taskSuccessModal');
-            
-            // Mark this payment as shown
+                taskAmount,
+                serviceCharge,
+                totalTaskValue,
+                commission,
+                helperEarnings,
+                commissionPct: _commPct,
+                newBalance,
+                posterName: (task.postedBy && task.postedBy.name) || 'the poster'
+            });
+
             shownPayments.push(task.id);
             localStorage.setItem(paidKey, JSON.stringify(shownPayments));
-            break; // Show one at a time
+            break;
         }
     }
+}
+
+/**
+ * Show a rich "Payment Received" popup to the helper with full price breakdown.
+ * @param {Object} p - breakdown data
+ */
+function showHelperPaymentPopup(p) {
+    ensureTaskSuccessModal();
+    const content = `
+        <div style="padding: 20px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 56px; margin-bottom: 10px;">💰</div>
+                <h2 style="color: #4ade80; margin: 0 0 6px 0;">Payment Received!</h2>
+                <p style="color: #888; margin: 0; font-size: 14px;">You've been paid for completing a task</p>
+            </div>
+
+            <div style="background: rgba(30,30,40,.9); border: 1px solid rgba(74,222,128,.3); border-radius: 12px; padding: 16px; margin-bottom: 14px;">
+                <div style="font-weight: 600; font-size: 15px; color: #fff; margin-bottom: 2px;">${escapeHtml(p.title || '')}</div>
+                <div style="font-size: 12px; color: #888;">Task completed</div>
+            </div>
+
+            <div style="background: rgba(30,30,40,.9); border: 1px solid rgba(74,222,128,.3); border-radius: 12px; padding: 16px; margin-bottom: 14px;">
+                <div style="font-size: 12px; color: #a78bfa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;"><i class="fas fa-receipt"></i> Earnings Breakdown</div>
+
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="color:#ccc;">Task Budget</span>
+                    <span style="color:#fff; font-weight:600;">₹${p.taskAmount.toFixed(2)}</span>
+                </div>
+                ${p.serviceCharge > 0 ? `
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="color:#ccc;">Service Charge <span style="font-size:11px;opacity:.7;">(Delivery/Distance)</span></span>
+                    <span style="color:#fbbf24; font-weight:600;">+₹${p.serviceCharge.toFixed(2)}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,.07);">
+                    <span style="color:#ccc;">Total Task Value</span>
+                    <span style="color:#fff; font-weight:600;">₹${p.totalTaskValue.toFixed(2)}</span>
+                </div>` : '<div style="border-bottom:1px solid rgba(255,255,255,.07); margin-bottom:8px;"></div>'}
+
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="color:#ccc;">Platform Commission <span style="font-size:11px;opacity:.7;">(${p.commissionPct}%)</span></span>
+                    <span style="color:#ef4444; font-weight:600;">-₹${p.commission.toFixed(2)}</span>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; padding-top:10px; border-top:2px solid rgba(74,222,128,.4); font-size:18px; font-weight:800;">
+                    <span style="color:#fff;">You Received</span>
+                    <span style="color:#4ade80;">+₹${p.helperEarnings.toFixed(2)}</span>
+                </div>
+            </div>
+
+            <div style="background: rgba(30,30,40,.9); border: 1px solid rgba(74,222,128,.3); border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+                <div style="font-size: 12px; color: #a78bfa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;"><i class="fas fa-wallet"></i> Wallet</div>
+                <div style="display:flex; justify-content:space-between;">
+                    <span style="color:#ccc;">Updated Balance</span>
+                    <span style="color:#fbbf24; font-weight:700; font-size:16px;">₹${parseFloat(p.newBalance).toFixed(2)}</span>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-secondary" style="flex:1; padding:13px; border-radius:10px; background:#333; border:1px solid #555;" onclick="closeModal('taskSuccessModal');">
+                    <i class="fas fa-times"></i> Close
+                </button>
+                <button class="btn btn-primary" style="flex:1; padding:13px; border-radius:10px; background:linear-gradient(135deg,#6366f1,#4f46e5);" onclick="closeModal('taskSuccessModal'); markTaskCompleted(${JSON.stringify(p.taskId)});">
+                    <i class="fas fa-check-circle"></i> Mark as Completed
+                </button>
+            </div>
+        </div>
+    `;
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    window.__pendingRate = {
+        taskId: p.taskId,
+        taskTitle: p.title || '',
+        otherName: p.posterName || 'the poster',
+        role: 'helper'
+    };
+    openModal('taskSuccessModal');
 }
 
 /**
@@ -7931,8 +8021,7 @@ async function initGoogleSignIn() {
         return container;
     }
     const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');
-    if (loginBtn && !window._googleLoginBtnRendered) {
-        window._googleLoginBtnRendered = true;
+    if (loginBtn) {
         loginBtn.innerHTML = '';
         google.accounts.id.renderButton(loginBtn, {
             type: 'standard',
@@ -7944,8 +8033,7 @@ async function initGoogleSignIn() {
         console.log('✅ Google button rendered in login modal');
     }
     const signupBtn = ensureGoogleBtnContainer('signupModal', 'googleSignInBtn_signup');
-    if (signupBtn && !window._googleSignupBtnRendered) {
-        window._googleSignupBtnRendered = true;
+    if (signupBtn) {
         signupBtn.innerHTML = '';
         google.accounts.id.renderButton(signupBtn, {
             type: 'standard',
@@ -8675,6 +8763,8 @@ window.confirmPhoneOTP = confirmPhoneOTP;
 window.resetPhoneOTP = resetPhoneOTP;
 window.loadRecommendedTasks = loadRecommendedTasks;
 window.enablePushAndSubscribe = enablePushAndSubscribe;
+// Stub — kept for backward-compat with older cached HTML that may call this directly.
+function testPushNotification() {}
 window.testPushNotification = testPushNotification;
 window.showPushBannerIfNeeded = showPushBannerIfNeeded;
 window.loadCategoryCounts = loadCategoryCounts;
@@ -8711,6 +8801,7 @@ window.toggleNotifications = toggleNotifications;
 window.markAsRead = markAsRead;
 window.clearAllNotifications = clearAllNotifications;
 window.handleNotificationAction = handleNotificationAction;
+window.showHelperPaymentPopup = showHelperPaymentPopup;
 window.executePayment = executePayment;
 window.showPaymentInvoice = showPaymentInvoice;
 window.goToTaskInProgress = goToTaskInProgress;

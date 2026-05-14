@@ -1415,7 +1415,7 @@
                         const v = VEHICLES[vk];
                         let est = '';
                         if (lastDistance != null) {
-                            const a = Math.max(range.min, Math.round((v.base + v.perKm * lastDistance) / 10) * 10);
+                            const a = Math.max(v.base, Math.round((v.base + v.perKm * lastDistance) / 10) * 10);
                             est = '<span class="wm-vehicle-amt">' + fmtRupee(a) + '</span>';
                         } else {
                             est = '<span class="wm-vehicle-amt wm-vehicle-amt-mute">' + fmtRupee(v.perKm) + '/km</span>';
@@ -1434,7 +1434,7 @@
                 let suggestedAmt = null;
                 if (lastDistance != null) {
                     const raw = effMeta.base + effMeta.perKm * lastDistance;
-                    suggestedAmt = Math.max(range.min, Math.round(raw / 10) * 10);
+                    suggestedAmt = Math.max(effMeta.base, Math.round(raw / 10) * 10);
                     const speed = effMeta.speed || 25;
                     const etaMin = lastDuration != null
                         ? Math.max(2, Math.round(lastDuration))

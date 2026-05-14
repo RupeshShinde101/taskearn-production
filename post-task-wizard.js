@@ -21,6 +21,13 @@
     // Categories that are distance-priced (and thus need pickup + drop)
     const DISTANCE_CATS = new Set(['transport', 'pickup', 'delivery', 'moving']);
 
+    // Dynamically show/hide the "Min ₹100" label based on selected category
+    function updateBudgetMinLabel() {
+        const cat = document.getElementById('modalTaskCategory')?.value || '';
+        const lbl = document.getElementById('wmBudgetMinLabel');
+        if (lbl) lbl.style.display = DISTANCE_CATS.has(cat) ? 'none' : '';
+    }
+
     let currentStep = 1;
 
     function $(id) { return document.getElementById(id); }
@@ -74,6 +81,7 @@
                 ? 'Choose a vehicle to see the fair distance price, then set your budget.'
                 : 'Choose a fair budget. Add a small nudge to attract taskers faster.';
         }
+        updateBudgetMinLabel();
     }
 
     function validateStep(step) {
@@ -371,7 +379,7 @@
                 <section class="wm-step" data-step="3" role="tabpanel" hidden>
                     <div class="wm-step-head"><h3 id="wmStep3Heading"><i class="fas fa-rupee-sign"></i> Fair price &amp; budget</h3><p class="wm-step-sub" id="wmStep3Sub">Choose a fair budget. Add a small nudge to attract taskers faster.</p></div>
                     <div id="wmPriceHintSlot"></div>
-                    <div class="form-group"><label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em">(Min ₹100)</span></label><div class="budget-selector budget-selector-compact"><input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="100" style="flex:1;font-size:1.05rem;padding:11px 14px;"></div></div>
+                    <div class="form-group"><label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em" id="wmBudgetMinLabel">(Min ₹100)</span></label><div class="budget-selector budget-selector-compact"><input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="0" style="flex:1;font-size:1.05rem;padding:11px 14px;"></div></div>
                     <div class="form-group"><label><i class="fas fa-plus-circle"></i> Nudge Budget (Optional)</label><div class="bonus-section"><p class="bonus-hint">Small bumps to attract taskers faster. Tap to add to your budget.</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="nudgeBudget(10)">+₹10</button><button type="button" class="bonus-btn" onclick="nudgeBudget(20)">+₹20</button><button type="button" class="bonus-btn" onclick="nudgeBudget(50)">+₹50</button><button type="button" class="bonus-btn bonus-btn-minus" onclick="nudgeBudget(-10)">−₹10</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">₹100</strong></div></div></div>
                 </section>
                 <section class="wm-step" data-step="4" role="tabpanel" hidden>

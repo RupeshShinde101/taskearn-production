@@ -8021,8 +8021,7 @@ async function initGoogleSignIn() {
         return container;
     }
     const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');
-    if (loginBtn && !window._googleLoginBtnRendered) {
-        window._googleLoginBtnRendered = true;
+    if (loginBtn) {
         loginBtn.innerHTML = '';
         google.accounts.id.renderButton(loginBtn, {
             type: 'standard',
@@ -8034,8 +8033,7 @@ async function initGoogleSignIn() {
         console.log('✅ Google button rendered in login modal');
     }
     const signupBtn = ensureGoogleBtnContainer('signupModal', 'googleSignInBtn_signup');
-    if (signupBtn && !window._googleSignupBtnRendered) {
-        window._googleSignupBtnRendered = true;
+    if (signupBtn) {
         signupBtn.innerHTML = '';
         google.accounts.id.renderButton(signupBtn, {
             type: 'standard',

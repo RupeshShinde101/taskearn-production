@@ -656,8 +656,8 @@ def flag_task_content(title, description):
 def get_service_charge(category):
     """Return service charge for the given category.
     Service charge ONLY applies to Delivery/Pick&Drop categories (delivery, pickup, transport, moving).
-    All other categories return 0 — only the 5% platform fee applies to them.
-    Note: the 5% Platform Fee is separate and applies to ALL categories."""
+    All other categories return 0.
+    Commission rates: Delivery/Pickup/Transport/Moving = 15%, all others = 17%."""
     # Only Delivery/Pick&Drop categories carry a service charge
     DELIVERY_CATEGORIES = {'delivery', 'pickup', 'transport', 'moving'}
     if category not in DELIVERY_CATEGORIES:
@@ -2831,15 +2831,18 @@ def complete_task(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
             # Calculate amounts for notification display
-            # Task Posting Fee = 5% of total task value. Applies to all categories.
-            poster_deduction = total_task_value * 0.05
-            total_poster_cost = total_task_value + poster_deduction
-            helper_total_deduction = total_task_value * 0.12
+            # Task Posting Fee removed — poster pays only the task value.
+            # poster_deduction = total_task_value * 0.05  # DISABLED
+            total_poster_cost = total_task_value  # No posting fee
+            _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
+            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
             
             print(f"\n💵 AMOUNTS (for notification):")
             print(f"   Total Task Value: ₹{total_task_value:.2f}")
-            print(f"   Poster will pay: ₹{total_poster_cost:.2f}")
+            print(f"   Poster will pay: ₹{total_poster_cost:.2f} (no posting fee)")
+            print(f"   Helper commission rate: {_commission_rate*100:.0f}%")
             print(f"   Helper will receive: ₹{helper_net_receives:.2f}")
             
             # ===== UPDATE TASK STATUS TO 'completed' =====
@@ -2897,7 +2900,7 @@ def complete_task(task_id):
 
             # Send email notification to poster
             try:
-                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, poster_deduction, total_poster_cost, task_id)
+                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, 0, total_poster_cost, task_id)
             except Exception:
                 pass
             
@@ -2945,9 +2948,11 @@ def verify_task(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             # Calculate amounts for notification
-            poster_deduction = total_task_value * 0.05
-            total_poster_cost = total_task_value + poster_deduction
-            helper_total_deduction = total_task_value * 0.12
+            # poster_deduction = total_task_value * 0.05  # DISABLED — posting fee removed
+            total_poster_cost = total_task_value  # No posting fee
+            _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
+            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
 
             # Update task status to verify_pending
@@ -3031,7 +3036,9 @@ def mark_task_completed(task_id):
             task_amount = float(task['price'])
             service_charge = float(task.get('service_charge', 0))
             total_task_value = task_amount + service_charge
-            helper_total_deduction = total_task_value * 0.12
+            _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
+            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            helper_total_deduction = total_task_value * _commission_rate
             helper_earnings = total_task_value - helper_total_deduction
             helper_id = request.user_id
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -3214,10 +3221,10 @@ def pay_helper(task_id):
     Poster pays for verified task (NEW FLOW) or completed task (legacy flow).
     NEW FLOW: status verify_pending → payment_released (helper must then click Mark as Completed)
     LEGACY FLOW: status completed → paid (kept for backward compat)
-    - Deduct helper commission (12%) from helper wallet
-    - Deduct poster fee (5%) from poster wallet
-    - Credit helper with task amount
+    - Deduct helper commission (17% general / 15% delivery) from helper wallet
+    - Credit helper with task amount minus commission
     - Send platform income to Razorpay UPI
+    - Task Posting Fee: DISABLED (0%)
     """
     print(f"\n{'='*60}")
     print(f"💰 Payment Processing: Task {task_id}")
@@ -3259,27 +3266,27 @@ def pay_helper(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
             # Calculate deductions and credits using FULL AMOUNT
-            # Helper: 12% total (10% commission + 2% transaction fee)
-            helper_commission = total_task_value * 0.10
-            helper_fee = total_task_value * 0.02
-            helper_total_deduction = helper_commission + helper_fee
-            
-            # Poster: 5% Task Posting Fee (on full amount). Applies to all categories.
-            poster_deduction = total_task_value * 0.05
+            # Posting fee removed. Commission: 15% for delivery/pickup, 17% for all others.
+            _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
+            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            helper_total_deduction = total_task_value * _commission_rate
+            # helper_commission = total_task_value * 0.10  # DISABLED
+            # helper_fee = total_task_value * 0.02  # DISABLED
+            # poster_deduction = total_task_value * 0.05  # DISABLED — posting fee removed
+            poster_deduction = 0  # No posting fee
             
             print(f"\n💵 PAYMENT BREAKDOWN:")
             print(f"   Base Task Price: ₹{task_amount:.2f}")
             print(f"   Service Charge ({task.get('category', 'other')}): ₹{service_charge:.2f}")
             print(f"   ✨ TOTAL TASK VALUE: ₹{total_task_value:.2f}")
-            print(f"   Helper Commission (10% of total): ₹{helper_commission:.2f}")
-            print(f"   Helper Transaction Fee (2% of total): ₹{helper_fee:.2f}")
+            print(f"   Commission Rate ({task.get('category','other')}): {_commission_rate*100:.0f}%")
             print(f"   Helper Total Deduction: ₹{helper_total_deduction:.2f}")
-            print(f"   Poster Fee (5% of total): ₹{poster_deduction:.2f}")
+            print(f"   Poster Fee: ₹0.00 (disabled)")
             
             # ===== CHECK POSTER BALANCE FIRST =====
             poster_wallet = get_or_create_wallet(request.user_id)
             poster_balance = float(poster_wallet.get('balance', 0))
-            total_poster_cost = total_task_value + poster_deduction
+            total_poster_cost = total_task_value  # No posting fee
             
             print(f"\n👤 Poster Balance Check:")
             print(f"   Current balance: ₹{poster_balance:.2f}")
@@ -3298,8 +3305,7 @@ def pay_helper(task_id):
             
             print(f"\n👤 Poster Wallet Operations:")
             print(f"   Deducting full task value: -₹{total_task_value:.2f}")
-            print(f"   Deducting poster fee (5%): -₹{poster_deduction:.2f}")
-            print(f"   Total deduction: -₹{total_poster_cost:.2f}")
+            print(f"   Total deduction: -₹{total_poster_cost:.2f} (no posting fee)")
             print(f"   Final balance: ₹{poster_new_balance:.2f}")
             
             cursor.execute(f'''
@@ -3320,19 +3326,7 @@ def pay_helper(task_id):
                 f'Task payment to helper (INCLUDING service charge): ₹{total_task_value:.2f}',
                 f'task-payment-{task_id}', task_id, now
             ))
-            
-            # Record poster fee transaction
-            cursor.execute(f'''
-                INSERT INTO wallet_transactions (
-                    wallet_id, user_id, type, amount, balance_after,
-                    description, reference_id, task_id, created_at
-                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (
-                poster_wallet.get('id'), request.user_id, 'debit',
-                poster_deduction, poster_new_balance,
-                f'Posting fee (5% of total): ₹{poster_deduction:.2f}',
-                f'task-fee-{task_id}', task_id, now
-            ))
+            # Posting fee transaction DISABLED — poster_deduction = 0
             
             # ===== HELPER WALLET OPERATIONS (credit after poster deducted) =====
             helper_wallet = get_or_create_wallet(helper_id)
@@ -3344,7 +3338,7 @@ def pay_helper(task_id):
             print(f"\n👥 Helper Wallet Operations:")
             print(f"   Current balance: ₹{helper_balance:.2f}")
             print(f"   Adding task earning: +₹{total_task_value:.2f}")
-            print(f"   Deducting commission (12%): -₹{helper_total_deduction:.2f}")
+            print(f"   Deducting commission ({_commission_rate*100:.0f}%): -₹{helper_total_deduction:.2f}")
             print(f"   Final balance: ₹{helper_new_balance:.2f}")
             print(f"   ✨ Helper Net Earning: ₹{(total_task_value - helper_total_deduction):.2f}")
             
@@ -3376,21 +3370,21 @@ def pay_helper(task_id):
             ''', (
                 helper_wallet.get('id'), helper_id, 'deduction',
                 -helper_total_deduction, helper_new_balance,
-                f'Commission (10%) + Transaction Fee (2%): ₹{helper_total_deduction:.2f}',
+                f'Platform commission ({_commission_rate*100:.0f}%): ₹{helper_total_deduction:.2f}',
                 f'task-commission-{task_id}', task_id, now
             ))
             
             # ===== COMPANY WALLET OPERATIONS =====
-            # Company receives: Helper commission (12%) + Poster fee (5%)
-            total_platform_income = helper_total_deduction + poster_deduction
+            # Company receives: Helper commission only (posting fee disabled)
+            total_platform_income = helper_total_deduction  # no poster_deduction
             
             company_wallet = get_or_create_wallet('1')
             company_balance = float(company_wallet.get('balance', 0))
             company_new_balance = company_balance + total_platform_income
             
             print(f"\n🏢 Company/Platform Income:")
-            print(f"   Helper Commission (12%): ₹{helper_total_deduction:.2f}")
-            print(f"   Poster Fee (5%): ₹{poster_deduction:.2f}")
+            print(f"   Helper Commission ({_commission_rate*100:.0f}%): ₹{helper_total_deduction:.2f}")
+            print(f"   Poster Fee: ₹0.00 (disabled)")
             print(f"   Total Platform Income: ₹{total_platform_income:.2f}")
             print(f"   Company balance: ₹{company_balance:.2f} → ₹{company_new_balance:.2f}")
             
@@ -3410,21 +3404,10 @@ def pay_helper(task_id):
             ''', (
                 company_wallet.get('id'), '1', 'commission',
                 helper_total_deduction, company_new_balance - poster_deduction,
-                f'Helper commission (12%) from task #{task_id}: ₹{helper_total_deduction:.2f}',
+                f'Helper commission ({_commission_rate*100:.0f}%) from task #{task_id}: ₹{helper_total_deduction:.2f}',
                 f'task-commission-{task_id}', task_id, now
             ))
-            
-            cursor.execute(f'''
-                INSERT INTO wallet_transactions (
-                    wallet_id, user_id, type, amount, balance_after,
-                    description, reference_id, task_id, created_at
-                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (
-                company_wallet.get('id'), '1', 'platform_fee',
-                poster_deduction, company_new_balance,
-                f'Posting fee (5%) from task #{task_id}: ₹{poster_deduction:.2f}',
-                f'task-fee-{task_id}', task_id, now
-            ))
+            # Posting fee company transaction DISABLED
             
             # NOW: Send platform income to Razorpay UPI link (DISABLED FOR TESTING)
             print(f"\n🔄 Initiating UPI transfer to razorpay.me/@taskern...")
@@ -9098,12 +9081,7 @@ def notify_task_completed_email(poster_id, helper_name, task_title, task_amount,
                     f'<td style="padding:8px 0;color:#6b7280;">Service Charge</td>'
                     f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{service_charge:.2f}</td></tr>'
                 )
-            if poster_fee > 0:
-                breakdown_html += (
-                    f'<tr style="border-bottom:1px solid #f3f4f6;">'
-                    f'<td style="padding:8px 0;color:#6b7280;">Task Posting Fee (5%)</td>'
-                    f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{poster_fee:.2f}</td></tr>'
-                )
+            # poster_fee row removed (posting fee disabled)
             breakdown_html += (
                 f'<tr>'
                 f'<td style="padding:10px 0;color:#111827;font-weight:700;font-size:16px;">Total to Pay</td>'
@@ -9149,7 +9127,7 @@ def notify_payment_received_email(helper_id, task_title, amount, task_amount=0, 
                 f'<td style="padding:8px 0;color:#6b7280;font-weight:700;">Task Value</td>'
                 f'<td style="padding:8px 0;text-align:right;font-weight:700;color:#111827;">₹{total_task_val:.2f}</td></tr>'
                 f'<tr style="border-bottom:1px solid #f3f4f6;">'
-                f'<td style="padding:8px 0;color:#6b7280;">Platform Commission (12%)</td>'
+                f'<td style="padding:8px 0;color:#6b7280;">Platform Commission</td>'
                 f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#dc2626;">-₹{commission:.2f}</td></tr>'
                 f'<tr>'
                 f'<td style="padding:10px 0;color:#059669;font-weight:700;font-size:16px;">Your Earnings</td>'

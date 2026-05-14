@@ -5262,14 +5262,14 @@ async function handleTaskSubmit(event) {
     const customBudgetValue = parseInt(document.getElementById('customBudget').value) || 0;
     let baseBudget = customBudgetValue > 0 ? customBudgetValue : selectedBudget;
     
-    // Enforce minimum ₹100
-    if (baseBudget < MIN_TASK_PRICE) {
+    const category = document.getElementById('modalTaskCategory').value;
+    // No minimum for delivery/pickup/transport — price auto-calculated from distance
+    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < MIN_TASK_PRICE) {
         baseBudget = MIN_TASK_PRICE;
         showToast('⚠️ Minimum task budget is ₹' + MIN_TASK_PRICE);
     }
     
     const totalPrice = baseBudget + currentBonus;
-    const category = document.getElementById('modalTaskCategory').value;
     // Distance-aware service charge for pick&drop / delivery / moving.
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
     const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
@@ -7520,8 +7520,9 @@ function updateTotalBudgetDisplay() {
     const customBudget = parseInt(document.getElementById('customBudget')?.value) || 0;
     let baseBudget = customBudget > 0 ? customBudget : selectedBudget;
     
-    // Enforce minimum ₹100
-    if (baseBudget < MIN_TASK_PRICE) {
+    // ₹100 minimum only for non-distance categories; delivery/pickup use km-based price
+    const category = document.getElementById('modalTaskCategory')?.value || 'other';
+    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < MIN_TASK_PRICE) {
         baseBudget = MIN_TASK_PRICE;
     }
     
@@ -7529,7 +7530,6 @@ function updateTotalBudgetDisplay() {
     
     // Get service charge based on selected category.
     // Service charge ONLY for Delivery/Pick&Drop categories; 0 for everything else.
-    const category = document.getElementById('modalTaskCategory')?.value || 'other';
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
     const vehicleKeyForCharge = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
     const serviceCharge = getServiceCharge(category, distanceKm, vehicleKeyForCharge); // 0 for non-delivery

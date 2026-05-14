@@ -6617,6 +6617,7 @@ function renderDashboard() {
 
     // Highlight task if navigated from notification
     const urlHighlight = new URLSearchParams(window.location.search).get('highlight');
+    const urlAction = new URLSearchParams(window.location.search).get('action');
     if (urlHighlight) {
         function tryHighlight() {
             const taskEl = document.querySelector(`[data-task-id="${urlHighlight}"]`);
@@ -6630,6 +6631,11 @@ function renderDashboard() {
         }
         // Retry: card may not exist until server data loads
         setTimeout(() => { if (!tryHighlight()) setTimeout(tryHighlight, 2000); }, 300);
+
+        // Auto-open payment invoice if action=pay (from verify_and_pay notification)
+        if (urlAction === 'pay') {
+            setTimeout(() => { if (typeof showPaymentInvoice === 'function') showPaymentInvoice(parseInt(urlHighlight)); }, 800);
+        }
     }
     
     // Sync notifications from server (non-blocking) so poster sees Pay Now from helper
@@ -6697,11 +6703,23 @@ window.verifyAndPayTask = verifyAndPayTask;
 async function markTaskCompleted(taskId) {
     const token = localStorage.getItem('taskearn_token');
     if (!token) { alert('Please login first'); return; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
-        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/mark-completed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
-        });
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/mark-completed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        } catch (netErr) {
+            // Direct API failed (blocked on mobile networks) — fall back to Netlify proxy
+            console.warn('Direct API failed, trying proxy:', netErr.message);
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/mark-completed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        }
         const result = await resp.json();
         if (result.success) {
             myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
@@ -6711,7 +6729,8 @@ async function markTaskCompleted(taskId) {
             alert(result.message || 'Could not mark as completed. Please try again.');
         }
     } catch (e) {
-        alert('Network error. Please try again.');
+        console.error('markTaskCompleted error:', e);
+        alert('Network error. Please check your connection and try again.');
     }
 }
 window.markTaskCompleted = markTaskCompleted;
@@ -6722,11 +6741,21 @@ async function verifyTaskDone(taskId, btnEl) {
     if (!token) { alert('Please login first'); return; }
     if (!confirm('Have you completed this task? The poster will be notified to verify and pay.')) return;
     if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Sending...'; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
-        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
-        });
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        } catch (netErr) {
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        }
         const result = await resp.json();
         if (result.success) {
             showToast('✅ Verification sent! Waiting for poster to pay.', 'success');

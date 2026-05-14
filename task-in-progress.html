@@ -822,6 +822,7 @@
                             currentTask.id = t.taskId || taskId;
                             currentTask.title = t.title || currentTask.title;
                             currentTask.price = t.price || currentTask.price || currentTask.amount;
+                            currentTask.status = t.status || currentTask.status;
                             if (t.poster) {
                                 currentTask.providerName = t.poster.name || currentTask.providerName;
                                 currentTask.providerPhone = t.poster.phone || currentTask.providerPhone;
@@ -830,6 +831,8 @@
                                 currentTask.location = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address };
                             }
                             console.log('✅ Loaded task from API tracking:', currentTask);
+                            // Update verify button based on current task status
+                            updateVerifyButtonState(t.status);
                         } else if (result && result.success === false && /not found/i.test(result.message || '')) {
                             handleTaskGone();
                             return;
@@ -878,11 +881,42 @@
 
 
 
+        // Update verify button UI based on current task status
+        function updateVerifyButtonState(status) {
+            const btn = document.getElementById('verifyBtn');
+            if (!btn) return;
+            if (status === 'verify_pending') {
+                btn.disabled = true;
+                btn.style.background = 'linear-gradient(135deg,#94a3b8,#64748b)';
+                btn.innerHTML = '<i class="fas fa-hourglass-half"></i> Waiting for Poster to Pay...';
+            } else if (status === 'payment_released') {
+                btn.disabled = true;
+                btn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Payment Released!';
+            } else if (status === 'completed' || status === 'paid') {
+                btn.disabled = true;
+                btn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+                btn.innerHTML = '<i class="fas fa-trophy"></i> Task Completed!';
+            }
+        }
+
         // Verify task done (NEW FLOW — replaces completeTask)
         async function verifyTask() {
             const currentUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
             if (!currentUser) {
                 alert('Please login first');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // If task is already verify_pending, don't call API again
+            if (currentTask.status === 'verify_pending') {
+                alert('✅ Verification already sent! Waiting for the poster to verify and pay.');
+                return;
+            }
+            if (currentTask.status === 'payment_released') {
+                alert('🎉 Payment has been released! Go to your dashboard to mark as completed.');
+                window.location.href = 'index.html?tab=accepted-tasks';
                 return;
             }
 
@@ -896,7 +930,7 @@
             }
 
             // Disable button to prevent double-click
-            const btn = document.querySelector('.btn-complete');
+            const btn = document.getElementById('verifyBtn');
             if (btn) {
                 btn.disabled = true;
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending Verification...';
@@ -911,10 +945,40 @@
                         'Authorization': 'Bearer ' + token
                     }
                 });
-                if (res.status === 404) { handleTaskGone(); return; }
+
+                // Handle 401 — session expired, redirect to login (NOT task gone)
+                if (res.status === 401) {
+                    alert('Session expired. Please login again.');
+                    window.location.href = 'index.html';
+                    return;
+                }
+
+                // 404 with "already verify_pending" or "not accepted by you" — don't treat as task gone
+                if (res.status === 404) {
+                    const errJson = await res.json().catch(() => ({}));
+                    const msg = (errJson && errJson.message) || '';
+                    // If task status already changed (verify_pending), show friendly message
+                    if (/not accepted by you/i.test(msg) || /already/i.test(msg)) {
+                        currentTask.status = 'verify_pending';
+                        updateVerifyButtonState('verify_pending');
+                        alert('✅ Verification already sent! Waiting for the poster to pay.');
+                        return;
+                    }
+                    // Real task-gone case
+                    handleTaskGone();
+                    return;
+                }
+
                 const result = await res.json();
 
                 if (!result.success) {
+                    // "not accepted by you" means already verify_pending — handle gracefully
+                    if (/not accepted by you/i.test(result.message || '') || /already/i.test(result.message || '')) {
+                        currentTask.status = 'verify_pending';
+                        updateVerifyButtonState('verify_pending');
+                        alert('✅ Verification already sent! Waiting for the poster to pay.');
+                        return;
+                    }
                     if (/not found/i.test(result.message || '')) { handleTaskGone(); return; }
                     alert(result.message || 'Could not send verification');
                     if (btn) {
@@ -924,6 +988,7 @@
                     return;
                 }
                 console.log('✅ Backend: Task verification sent to poster');
+                currentTask.status = 'verify_pending';
             } catch (err) {
                 alert('Could not reach the server. Please check your connection and try again.');
                 console.error('Backend verify failed:', err.message);
@@ -947,6 +1012,8 @@
                 localStorage.setItem(`user_${currentUser.id}_data`, JSON.stringify(helperData));
             }
 
+            // Update button to show waiting state (prevent re-click)
+            updateVerifyButtonState('verify_pending');
             clearInterval(timerInterval);
             document.getElementById('confirmModal').classList.add('active');
         }

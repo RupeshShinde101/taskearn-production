@@ -19,7 +19,7 @@
     const TOTAL_STEPS = 4;
 
     // Categories that are distance-priced (and thus need pickup + drop)
-    const DISTANCE_CATS = new Set(['transport', 'delivery', 'moving']);
+    const DISTANCE_CATS = new Set(['transport', 'pickup', 'delivery', 'moving']);
 
     let currentStep = 1;
 
@@ -134,7 +134,7 @@
         const drop = dropEl ? (dropEl.value || '').trim() : '';
         const budget = parseFloat(($('customBudget') || {}).value) || 0;
         const veh = window.__wmSelectedVehicle;
-        const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛺 Auto', mini: '🚗 Mini Car', sedan: '🚙 Sedan' };
+        const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛺 Auto', mini: '🚗 Mini Cab', sedan: '🚙 Sedan', suv: '🚐 SUV' };
         const distance = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance.toFixed(1) + ' km' : null;
 
         const rows = [];

@@ -896,8 +896,9 @@
         gardening:   { low: 300, high: 1000, min: 200 },
         waste:       { low: 150, high: 500,  min: 100 },
         moving:      { low: 800, high: 3500, min: 500 },
-        delivery:    { low: 100, high: 400,  min: 100 },
-        transport:   { low: 150, high: 800,  min: 100 },
+        delivery:    { low: 100, high: 600,  min: 100 },  // bike ₹10/km
+        pickup:      { low: 150, high: 1500, min: 100 },  // auto ₹17/km (up to ~85km)
+        transport:   { low: 150, high: 1500, min: 100 },  // auto/cab ₹17/km+
         shopping:    { low: 150, high: 500,  min: 100 },
         petcare:     { low: 200, high: 700,  min: 150 },
         beauty:      { low: 300, high: 1500, min: 200 },
@@ -928,29 +929,32 @@
     function fmtRupee(n) { return '₹' + Number(n).toLocaleString('en-IN'); }
 
     // --- Distance-based pricing -------------------------------------------
-    // Per-km labour rate (₹) + base fare for travel-based categories.
-    // total = base + perKm × distance, clamped to [low, high] of category.
+    // Per-km rates based on actual market rates:
+    //   Bike delivery: ₹10/km | Auto/Rickshaw: ₹17/km (as per city meter)
+    //   Mini cab: ₹12/km | Sedan: ₹15/km | SUV: ₹18/km
+    // total = base + perKm × distance, rounded to nearest ₹10.
     const DISTANCE_PRICING = {
-        transport: { base: 50,  perKm: 15, label: 'Pick & Drop' },
-        delivery:  { base: 40,  perKm: 20, label: 'Delivery' },
+        transport: { base: 30,  perKm: 17, label: 'Pick & Drop' },  // auto/rickshaw default
+        pickup:    { base: 30,  perKm: 17, label: 'Pick & Drop' },  // same as transport
+        delivery:  { base: 20,  perKm: 10, label: 'Delivery' },     // bike delivery
         moving:    { base: 500, perKm: 40, label: 'Moving & Packing' },
     };
 
-    // Ola/Rapido-style vehicle classes with per-km fare and avg speed (km/h).
+    // Vehicle classes with per-km fare matching real Indian city rates.
     const VEHICLES = {
-        bike:  { key: 'bike',  label: 'Bike',  icon: '🏍️', base: 30,  perKm: 8,  speed: 28 },
-        auto:  { key: 'auto',  label: 'Auto',  icon: '🛺', base: 50,  perKm: 15, speed: 22 },
-        mini:  { key: 'mini',  label: 'Mini',  icon: '🚗', base: 80,  perKm: 18, speed: 30 },
-        sedan: { key: 'sedan', label: 'Sedan', icon: '🚙', base: 120, perKm: 22, speed: 32 },
+        bike:  { key: 'bike',  label: 'Bike',     icon: '🏍️', base: 20,  perKm: 10, speed: 28, note: 'Small parcels & documents' },
+        auto:  { key: 'auto',  label: 'Auto',     icon: '🛺', base: 30,  perKm: 17, speed: 22, note: '₹17/km — city meter rate' },
+        mini:  { key: 'mini',  label: 'Mini Cab', icon: '🚗', base: 60,  perKm: 20, speed: 30, note: 'Compact hatchback' },
+        sedan: { key: 'sedan', label: 'Sedan',    icon: '🚙', base: 80,  perKm: 25, speed: 32, note: 'Comfortable sedan' },
+        suv:   { key: 'suv',   label: 'SUV',      icon: '🚐', base: 120, perKm: 30, speed: 28, note: 'Large vehicle / 6-seater' },
     };
-    // Which vehicles to offer per category (transport-style only).
-    // NOTE: Pick & Drop (transport) excludes bikes — taskers should be auto/car only
-    // for passenger pickup. Bikes remain available for small parcel delivery.
+    // Which vehicles to offer per category.
     const VEHICLE_OPTIONS = {
-        transport: ['auto', 'mini', 'sedan'],
+        transport: ['auto', 'mini', 'sedan', 'suv'],
+        pickup:    ['auto', 'mini', 'sedan', 'suv'],
         delivery:  ['bike', 'auto'],
     };
-    const VEHICLE_DEFAULT = { transport: 'auto', delivery: 'bike' };
+    const VEHICLE_DEFAULT = { transport: 'auto', pickup: 'auto', delivery: 'bike' };
 
     // Fetch road-network route via OSRM (free public demo server).
     // Returns { distance(km), duration(min), geometry(GeoJSON LineString) } or null.

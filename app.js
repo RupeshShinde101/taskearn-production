@@ -118,20 +118,33 @@ const SERVICE_CHARGES = {
     'other': { charge: 50, time: '1-3 hours', level: 'Medium' }
 };
 
-function getServiceCharge(category, distanceKm) {
+function getServiceCharge(category, distanceKm, vehicleKey) {
     // Service charge ONLY for Delivery/Pick&Drop categories.
     if (!DELIVERY_CATEGORIES.has(category)) return 0;
-    const info = SERVICE_CHARGES[category];
-    // Distance-based: ₹10–₹40 scaled by km when known.
-    if (info && info.distance) {
-        if (typeof distanceKm === 'number' && distanceKm > 0) {
-            const base = category === 'moving' ? 20 : 10;
-            const perKm = category === 'moving' ? 2.5 : 1.5;
-            return Math.max(10, Math.min(40, Math.round(base + perKm * distanceKm)));
-        }
-        return info.charge;
+    // Per-km rates matching category-picker.js VEHICLES:
+    //   bike=₹10/km, auto=₹17/km, mini=₹12/km, sedan=₹15/km, suv=₹18/km
+    const VEHICLE_RATES = {
+        bike:  { base: 20,  perKm: 10 },
+        auto:  { base: 30,  perKm: 17 },
+        mini:  { base: 60,  perKm: 20 },
+        sedan: { base: 80,  perKm: 25 },
+        suv:   { base: 120, perKm: 30 },
+    };
+    const CATEGORY_DEFAULTS = {
+        delivery: 'bike',
+        pickup:   'auto',
+        transport: 'auto',
+        moving:   'auto',
+    };
+    if (typeof distanceKm === 'number' && distanceKm > 0) {
+        const vk = (vehicleKey && VEHICLE_RATES[vehicleKey]) ? vehicleKey
+                 : (CATEGORY_DEFAULTS[category] || 'auto');
+        const r = VEHICLE_RATES[vk];
+        return Math.max(r.base, Math.round((r.base + r.perKm * distanceKm) / 10) * 10);
     }
-    return info?.charge || 0;
+    // No distance yet: return category-default base fare
+    const defVk = CATEGORY_DEFAULTS[category] || 'auto';
+    return VEHICLE_RATES[defVk].base;
 }
 
 function getServiceChargeInfo(category) {
@@ -1307,6 +1320,7 @@ function getRequiredVehicle(text) {
     if (/bike/i.test(label)) key = 'bike';
     else if (/auto/i.test(label)) key = 'auto';
     else if (/mini/i.test(label)) key = 'mini';
+    else if (/suv/i.test(label)) key = 'suv';
     else if (/sedan/i.test(label)) key = 'sedan';
     return { key, label };
 }
@@ -5258,15 +5272,15 @@ async function handleTaskSubmit(event) {
     const category = document.getElementById('modalTaskCategory').value;
     // Distance-aware service charge for pick&drop / delivery / moving.
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const serviceCharge = getServiceCharge(category, distanceKm);
+    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    const serviceCharge = getServiceCharge(category, distanceKm, vehicleKey);
     // Posting fee DISABLED: const platformFeeForSubmit = Math.round((totalPrice + serviceCharge) * 0.05 * 100) / 100;
     const platformFeeForSubmit = 0; // No posting fee
     const totalPayable = totalPrice + serviceCharge; // No posting fee
 
     // If a specific vehicle was chosen for ride/delivery categories, surface it
     // on the task so only taskers with that vehicle are eligible.
-    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
-    const VEHICLE_LABEL = { bike: '\uD83C\uDFCD\uFE0F Bike', auto: '\uD83D\uDEFA Auto', mini: '\uD83D\uDE97 Mini Car', sedan: '\uD83D\uDE99 Sedan' };
+    const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛺 Auto', mini: '🚗 Mini Cab', sedan: '🚙 Sedan', suv: '🚐 SUV' };
     let descriptionText = document.getElementById('modalTaskDescription').value || '';
     if (vehicleKey && VEHICLE_LABEL[vehicleKey] && !descriptionText.includes('Required vehicle:')) {
         descriptionText = '🚕 Required vehicle: ' + VEHICLE_LABEL[vehicleKey]
@@ -7517,7 +7531,8 @@ function updateTotalBudgetDisplay() {
     // Service charge ONLY for Delivery/Pick&Drop categories; 0 for everything else.
     const category = document.getElementById('modalTaskCategory')?.value || 'other';
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const serviceCharge = getServiceCharge(category, distanceKm); // 0 for non-delivery
+    const vehicleKeyForCharge = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    const serviceCharge = getServiceCharge(category, distanceKm, vehicleKeyForCharge); // 0 for non-delivery
     const chargeInfo = getServiceChargeInfo(category);
 
     // Task Posting Fee: DISABLED (was 5%). No fee added to poster's total.

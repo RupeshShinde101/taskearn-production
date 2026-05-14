@@ -4819,8 +4819,8 @@ function showHelperPaymentPopup(p) {
                 <button class="btn btn-secondary" style="flex:1; padding:13px; border-radius:10px; background:#333; border:1px solid #555;" onclick="closeModal('taskSuccessModal');">
                     <i class="fas fa-times"></i> Close
                 </button>
-                <button class="btn btn-primary" style="flex:1; padding:13px; border-radius:10px;" onclick="closeModal('taskSuccessModal'); triggerPendingRate();">
-                    <i class="fas fa-star"></i> Rate Poster
+                <button class="btn btn-primary" style="flex:1; padding:13px; border-radius:10px; background:linear-gradient(135deg,#6366f1,#4f46e5);" onclick="closeModal('taskSuccessModal'); markTaskCompleted(${JSON.stringify(p.taskId)});">
+                    <i class="fas fa-check-circle"></i> Mark as Completed
                 </button>
             </div>
         </div>

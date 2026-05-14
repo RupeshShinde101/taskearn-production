@@ -119,12 +119,15 @@ const SERVICE_CHARGES = {
 };
 
 function getServiceCharge(category, distanceKm, vehicleKey) {
-    // For delivery/pickup/transport/moving: the budget itself IS the distance-based
-    // price (auto-filled by the picker as base + perKm × distance). There is NO
-    // additional service charge on top — returning 0 prevents double-charging.
-    // Commission (15%) is deducted from the helper's payout separately.
-    if (DELIVERY_CATEGORIES.has(category)) return 0;
-    // Non-delivery categories also return 0 (no service charge on any category now).
+    // Distance-based platform service charge for Delivery and Pick & Drop.
+    // Formula: ₹10 base + ₹2/km, rounded to nearest ₹5, capped at ₹40.
+    // This is separate from the task budget (which is the worker's fare).
+    if (category === 'delivery' || category === 'transport') {
+        const km = (typeof distanceKm === 'number' && distanceKm > 0) ? distanceKm : 0;
+        const raw = 10 + 2 * km;
+        return Math.min(40, Math.max(10, Math.round(raw / 5) * 5));
+    }
+    // All other categories: no service charge.
     return 0;
 }
 

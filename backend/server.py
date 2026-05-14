@@ -337,19 +337,27 @@ def _ensure_verify_columns():
 
 
 def _ensure_helper_ratings_review():
-    """Ensure review and task_title columns exist in helper_ratings table"""
+    """Ensure all optional columns exist in helper_ratings table"""
+    EXTRA_COLS = [
+        ('review',        'TEXT'),
+        ('task_title',    'TEXT'),
+        ('punctuality',   'INTEGER'),
+        ('communication', 'INTEGER'),
+        ('quality',       'INTEGER'),
+    ]
     try:
         with get_db() as (cursor, conn):
             if PH == '%s':
-                cursor.execute("ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS review TEXT")
-                cursor.execute("ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS task_title TEXT")
+                # PostgreSQL: ADD COLUMN IF NOT EXISTS is safe to run repeatedly
+                for col, typ in EXTRA_COLS:
+                    cursor.execute(f"ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS {col} {typ}")
             else:
+                # SQLite: check column list first
                 cursor.execute("PRAGMA table_info(helper_ratings)")
-                cols = [row[1] for row in cursor.fetchall()]
-                if 'review' not in cols:
-                    cursor.execute("ALTER TABLE helper_ratings ADD COLUMN review TEXT")
-                if 'task_title' not in cols:
-                    cursor.execute("ALTER TABLE helper_ratings ADD COLUMN task_title TEXT")
+                existing = {row[1] for row in cursor.fetchall()}
+                for col, typ in EXTRA_COLS:
+                    if col not in existing:
+                        cursor.execute(f"ALTER TABLE helper_ratings ADD COLUMN {col} {typ}")
     except Exception as e:
         print(f"⚠️ _ensure_helper_ratings_review: {e}")
 
@@ -5019,6 +5027,7 @@ def get_task_proofs(task_id):
 @require_auth
 def rate_user(task_id):
     """Rate a user after task completion"""
+    _ensure_helper_ratings_review()
     data = request.get_json()
     rating = int(data.get('rating', 5))
     review = data.get('review', '')

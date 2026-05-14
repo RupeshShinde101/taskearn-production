@@ -271,6 +271,7 @@ def init_postgres_db():
                 rated_id VARCHAR(50) NOT NULL REFERENCES users(id),
                 rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
                 review TEXT,
+                task_title TEXT,
                 punctuality INTEGER,
                 communication INTEGER,
                 quality INTEGER,

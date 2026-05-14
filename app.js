@@ -4697,7 +4697,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
  * Show "Payment Received" pop-up for the helper
  * Called when helper logs in and checks for paid tasks
  */
-function checkAndShowPaymentReceived() {
+async function checkAndShowPaymentReceived() {
     if (!currentUser) return;
     
     // Check if any accepted tasks were recently paid

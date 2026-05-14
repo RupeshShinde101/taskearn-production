@@ -1458,7 +1458,7 @@ function closeModal(id){var el=document.getElementById(id);if(el){el.classList.r
     <!-- Razorpay Payment Integration -->
     <script src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260514_googlefix"></script>
+    <script src="app.js?v=20260514_asyncfix"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>
@@ -1539,19 +1539,16 @@ function closeModal(id){var el=document.getElementById(id);if(el){el.classList.r
                 } catch(e) {}
             }
 
-            fetch(statsBase + '/platform-stats')
-                .catch(function() { return fetch('/.netlify/functions/api-proxy/api/platform-stats'); })
+            // On Netlify, always use the proxy first to avoid CORS pre-flight errors
+            // against the Railway origin. Fall back to direct only when not on Netlify.
+            var statsFetch = onNetlify
+                ? fetch('/.netlify/functions/api-proxy/api/platform-stats')
+                : fetch(statsBase + '/platform-stats')
+                    .catch(function() { return fetch('/.netlify/functions/api-proxy/api/platform-stats'); });
+            statsFetch
                 .then(function(r) { return r.json(); })
                 .then(applyStats)
-                .catch(function() {
-                    // Direct call failed (Indian ISP blocking Fastly/Railway is common).
-                    // Retry via Netlify proxy if we are on a Netlify deploy.
-                    if (!onNetlify) return;
-                    fetch('/.netlify/functions/api-proxy/api/platform-stats')
-                        .then(function(r) { return r.json(); })
-                        .then(applyStats)
-                        .catch(function() { /* both failed; cached values stay */ });
-                });
+                .catch(function() { /* failed; cached values stay */ });
         }
 
         function formatCount(n) {

@@ -110,7 +110,9 @@
             }
         } else if (step === 3) {
             const v = parseFloat(($('customBudget') || {}).value);
-            if (!v || v < 100) return 'Minimum task budget is ₹100.';
+            const cat3 = ($('modalTaskCategory') || {}).value || '';
+            const noMin = cat3 === 'delivery' || cat3 === 'transport';
+            if (!v || (!noMin && v < 100)) return noMin ? 'Please enter a budget.' : 'Minimum task budget is ₹100.';
         }
         return null;
     }

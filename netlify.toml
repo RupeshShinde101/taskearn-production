@@ -40,6 +40,13 @@
   to = "/404.html"
   status = 404
   force = true
+
+# AUTO-BLOCKED by WorkmateAI Security Agent 2026-05-15 12:06:54
+[[redirects]]
+  from = "/config.json"
+  to = "/404.html"
+  status = 404
+  force = true
 # SPA catch-all — 404 for unknown routes
 [[redirects]]
   from = "/*"

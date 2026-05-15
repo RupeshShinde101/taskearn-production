@@ -9637,6 +9637,119 @@ def ai_team_flagged_tasks():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/api/ai-team/reports', methods=['GET'])
+@require_admin
+def ai_team_get_reports():
+    """Admin: get agent reports optionally filtered by agent_id."""
+    agent_id = request.args.get('agent_id', '').strip()
+    limit = min(int(request.args.get('limit', 50)), 200)
+    try:
+        with get_db() as (cursor, conn):
+            if agent_id:
+                cursor.execute(f"""
+                    SELECT id, action, resource_id, details, created_at
+                    FROM admin_audit_log
+                    WHERE admin_id = 'ai_team'
+                      AND resource_type = 'ai_agent'
+                      AND action LIKE 'agent_report:%'
+                      AND resource_id = {PH}
+                    ORDER BY created_at DESC
+                    LIMIT {PH}
+                """, (agent_id, limit))
+            else:
+                cursor.execute(f"""
+                    SELECT id, action, resource_id, details, created_at
+                    FROM admin_audit_log
+                    WHERE admin_id = 'ai_team'
+                      AND resource_type = 'ai_agent'
+                      AND action LIKE 'agent_report:%'
+                    ORDER BY created_at DESC
+                    LIMIT {PH}
+                """, (limit,))
+            rows = cursor.fetchall()
+            import json as _json
+            reports = []
+            for r in rows:
+                row = dict_from_row(r)
+                try:
+                    details = _json.loads(row.get('details', '{}') or '{}')
+                except Exception:
+                    details = {}
+                reports.append({
+                    'id':         row.get('id'),
+                    'agent_id':   row.get('resource_id'),
+                    'status':     (row.get('action', '') or '').split(':')[-1],
+                    'title':      details.get('title', ''),
+                    'summary':    details.get('summary', ''),
+                    'stats':      details.get('stats', {}),
+                    'created_at': str(row.get('created_at', ''))[:16],
+                })
+        return jsonify({'success': True, 'reports': reports})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/ai-team/fixes', methods=['GET'])
+@require_admin
+def ai_team_get_fixes():
+    """Admin: get actions/fixes taken by the AI team, optionally filtered by agent_id stored in details."""
+    agent_id = request.args.get('agent_id', '').strip()
+    limit = min(int(request.args.get('limit', 50)), 200)
+    try:
+        with get_db() as (cursor, conn):
+            if agent_id:
+                # Filter: action must NOT be an agent_report, and details must contain the agent_id
+                if config.USE_POSTGRES:
+                    cursor.execute(f"""
+                        SELECT id, action, resource_type, resource_id, details, created_at
+                        FROM admin_audit_log
+                        WHERE admin_id = 'ai_team'
+                          AND action NOT LIKE 'agent_report:%'
+                          AND details::text LIKE {PH}
+                        ORDER BY created_at DESC
+                        LIMIT {PH}
+                    """, (f'%{agent_id}%', limit))
+                else:
+                    cursor.execute(f"""
+                        SELECT id, action, resource_type, resource_id, details, created_at
+                        FROM admin_audit_log
+                        WHERE admin_id = 'ai_team'
+                          AND action NOT LIKE 'agent_report:%'
+                          AND details LIKE {PH}
+                        ORDER BY created_at DESC
+                        LIMIT {PH}
+                    """, (f'%{agent_id}%', limit))
+            else:
+                cursor.execute(f"""
+                    SELECT id, action, resource_type, resource_id, details, created_at
+                    FROM admin_audit_log
+                    WHERE admin_id = 'ai_team'
+                      AND action NOT LIKE 'agent_report:%'
+                    ORDER BY created_at DESC
+                    LIMIT {PH}
+                """, (limit,))
+            rows = cursor.fetchall()
+            import json as _json
+            fixes = []
+            for r in rows:
+                row = dict_from_row(r)
+                try:
+                    details = _json.loads(row.get('details', '{}') or '{}')
+                except Exception:
+                    details = {}
+                fixes.append({
+                    'id':            row.get('id'),
+                    'action':        row.get('action'),
+                    'resource_type': row.get('resource_type'),
+                    'resource_id':   row.get('resource_id'),
+                    'details':       details,
+                    'created_at':    str(row.get('created_at', ''))[:16],
+                })
+        return jsonify({'success': True, 'fixes': fixes})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/ai-team/report', methods=['POST'])
 def ai_team_receive_report():
     """AI Team Panel posts its agent reports here so admin panel can display them.
@@ -9653,11 +9766,12 @@ def ai_team_receive_report():
     try:
         with get_db() as (cursor, conn):
             import json as _json
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             # Store in admin_audit_log as a JSON blob for now
             cursor.execute(f"""
                 INSERT INTO admin_audit_log
                     (admin_id, action, resource_type, resource_id, details, created_at)
-                VALUES (%s, %s, %s, %s, %s, NOW())
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             """, (
                 'ai_team',
                 f"agent_report:{report.get('status','info')}",
@@ -9668,7 +9782,9 @@ def ai_team_receive_report():
                     'summary': report.get('summary', ''),
                     'status':  report.get('status', 'info'),
                     'stats':   report.get('stats', {}),
-                }, ensure_ascii=False)[:2000],
+                    'fixes':   report.get('fixes', []),
+                }, ensure_ascii=False)[:4000],
+                now,
             ))
         return jsonify({'success': True, 'message': 'Report stored'})
     except Exception as e:

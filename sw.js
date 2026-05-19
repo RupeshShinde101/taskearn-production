@@ -175,7 +175,12 @@ self.addEventListener('fetch', event => {
     try {
       const response = await fetch(event.request, { signal: ctrl.signal });
       clearTimeout(tid);
-      if (response.ok) caches.open(CACHE_NAME).then(c => c.put(event.request, response.clone()));
+      // Clone BEFORE returning — once the response is handed to the browser its
+      // body is consumed and a later .clone() call inside the .then() will throw.
+      if (response.ok) {
+        const toCache = response.clone();
+        caches.open(CACHE_NAME).then(c => c.put(event.request, toCache)).catch(() => {});
+      }
       return response;
     } catch (e) {
       clearTimeout(tid);

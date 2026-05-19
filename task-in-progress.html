@@ -754,10 +754,8 @@
         const urlParams = new URLSearchParams(window.location.search);
         const taskIdFromUrl = urlParams.get('taskId') || null;
 
-        // API URL
-        const API_URL = 'https://taskearn-production-production.up.railway.app/api';
-        // Netlify proxy fallback (used automatically when direct Railway DNS
-        // is blocked by the user's ISP/carrier — common on Indian mobile data).
+        // Always route through Netlify proxy — no direct Railway call from browser.
+        // This prevents ERR_NAME_NOT_RESOLVED / TCP hangs causing RESULT_CODE_HUNG.
         const PROXY_URL = '/.netlify/functions/api-proxy/api';
         async function apiFetch(path, options) {
             options = options || {};
@@ -766,13 +764,16 @@
             if (token && !options.headers['Authorization']) {
                 options.headers['Authorization'] = 'Bearer ' + token;
             }
+            // 10-second timeout: prevents indefinite hang if proxy/server is slow
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 10000);
             try {
-                const r = await fetch(API_URL + path, options);
+                const r = await fetch(PROXY_URL + path, { ...options, signal: controller.signal });
+                clearTimeout(tid);
                 return r;
             } catch (e) {
-                // DNS / network failure — try the Netlify edge proxy
-                console.warn('Direct API failed, falling back to proxy:', e.message);
-                return await fetch(PROXY_URL + path, options);
+                clearTimeout(tid);
+                throw e;
             }
         }
 
@@ -787,10 +788,14 @@
             try { if (timerInterval) clearInterval(timerInterval); } catch (e) {}
             try { if (window._taskWatchInterval) clearInterval(window._taskWatchInterval); } catch (e) {}
             try { localStorage.removeItem('currentTask'); } catch (e) {}
+            // Use a non-blocking toast instead of alert() — alert() freezes the renderer thread
             try {
-                alert('This task was cancelled by the poster and has been removed. You will be redirected to browse tasks.');
+                const _toast = document.createElement('div');
+                _toast.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#ef4444;color:#fff;padding:18px 16px;text-align:center;font-size:14px;font-weight:600;letter-spacing:.01em;';
+                _toast.textContent = 'This task was cancelled by the poster. Redirecting...';
+                document.body.appendChild(_toast);
             } catch (e) {}
-            window.location.replace('browse.html');
+            setTimeout(() => window.location.replace('browse.html'), 2500);
         }
 
         // Periodically check that the task still exists and is still assigned
@@ -1365,36 +1370,39 @@
             // and avoids concurrent CDN + tile requests that can OOM mobile Chrome.
             setTimeout(() => { if (!_taskGoneHandled) loadMapNow(); }, 3000);
             startTaskWatch();
-            
-            // Sync suspension from server (handles cleared cache)
-            try {
-                const token = localStorage.getItem('taskearn_token');
-                if (token) {
-                    const res = await apiFetch('/auth/me', {
-                        headers: { 'Authorization': 'Bearer ' + token }
-                    });
-                    const result = await res.json();
-                    if (result && result.success && result.user) {
-                        if (result.user.timerSuspended && result.user.suspendedUntil) {
-                            localStorage.setItem('taskearn_suspended_until', String(new Date(result.user.suspendedUntil).getTime()));
-                        }
-                        if (result.user.debtSuspended) {
-                            localStorage.setItem('taskearn_debt_suspended', 'true');
-                            localStorage.setItem('taskearn_debt_amount', String(result.user.debtAmount || 0));
-                        }
-                        // Re-check suspension after sync
-                        if (isAccountSuspended()) {
-                            if (isDebtSuspended()) {
-                                showDebtSuspendedOverlay();
-                            } else {
-                                showSuspendedOverlay();
+
+            // Defer suspension sync — run after 2 s so it doesn't block the initial
+            // page render. A second API call immediately after loadTaskDetails() can
+            // push total wait time past Chrome's hung-tab threshold (30 s).
+            setTimeout(async function() {
+                try {
+                    const token = localStorage.getItem('taskearn_token');
+                    if (token) {
+                        const res = await apiFetch('/auth/me', {
+                            headers: { 'Authorization': 'Bearer ' + token }
+                        });
+                        const result = await res.json();
+                        if (result && result.success && result.user) {
+                            if (result.user.timerSuspended && result.user.suspendedUntil) {
+                                localStorage.setItem('taskearn_suspended_until', String(new Date(result.user.suspendedUntil).getTime()));
+                            }
+                            if (result.user.debtSuspended) {
+                                localStorage.setItem('taskearn_debt_suspended', 'true');
+                                localStorage.setItem('taskearn_debt_amount', String(result.user.debtAmount || 0));
+                            }
+                            if (isAccountSuspended()) {
+                                if (isDebtSuspended()) {
+                                    showDebtSuspendedOverlay();
+                                } else {
+                                    showSuspendedOverlay();
+                                }
                             }
                         }
                     }
+                } catch (e) {
+                    console.warn('Suspension sync failed:', e.message);
                 }
-            } catch (e) {
-                console.warn('Suspension sync failed:', e.message);
-            }
+            }, 2000);
         });
 
     </script>

@@ -864,7 +864,16 @@
                     const res = await apiFetch('/tracking/' + taskId, {
                         headers: { 'Authorization': 'Bearer ' + token }
                     });
-                    if (res.status === 404) { handleTaskGone(); return; }
+                    if (res.status === 404) {
+                        // Honour the same 60-second grace period as loadTaskDetails — the
+                        // visibilitychange event fires during Chrome's navigation animation
+                        // which can trigger check() within the first few seconds of page load,
+                        // before the backend has finished committing the task acceptance.
+                        const _justAccepted = currentTask.startTime &&
+                            (Date.now() - currentTask.startTime) < 60000;
+                        if (!_justAccepted) { handleTaskGone(); }
+                        return;
+                    }
                     if (!res.ok) return; // transient — try again next tick
                     const result = await res.json();
                     if (!result || result.success === false) {

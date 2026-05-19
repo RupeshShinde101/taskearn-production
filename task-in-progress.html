@@ -877,7 +877,12 @@
                     if (!res.ok) return; // transient — try again next tick
                     const result = await res.json();
                     if (!result || result.success === false) {
-                        if (/not found/i.test((result && result.message) || '')) { handleTaskGone(); return; }
+                        if (/not found/i.test((result && result.message) || '')) {
+                            // Same 60-second grace period as the 404 path above.
+                            const _jA = currentTask.startTime &&
+                                (Date.now() - currentTask.startTime) < 60000;
+                            if (!_jA) { handleTaskGone(); }
+                        }
                         return;
                     }
                     const t = result.tracking || {};

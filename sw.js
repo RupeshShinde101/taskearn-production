@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260520d';
+const CACHE_NAME = 'workmate4u-v20260520e';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -42,6 +42,11 @@ const CRITICAL_ASSETS = [
   '/task-in-progress.html',
   '/browse.html',
   '/offline.html',
+  // JS files that task-in-progress.html defers — cache them at install time so
+  // they are always available even before background caching completes.
+  '/mobile-enhancements.js',
+  '/sw-register.js',
+  '/back-button.js',
 ];
 
 // Install — cache critical pages synchronously so they're available the moment
@@ -116,8 +121,10 @@ self.addEventListener('fetch', event => {
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         return response;
       });
-      // Race: serve whichever arrives first — network (if fast) or cache after 5 s
-      const cached = await caches.match(event.request);
+      // Race: serve whichever arrives first — network (if fast) or cache after 5 s.
+      // ignoreSearch: true ensures a request for /page.html?taskId=123 still matches
+      // a cache entry stored as /page.html (query strings vary per task).
+      const cached = await caches.match(event.request, { ignoreSearch: true });
       if (cached) {
         // We have a cached copy — race the network against a 5 s timer
         const timeout = new Promise(resolve => setTimeout(() => resolve(null), 5000));
@@ -134,16 +141,45 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Same-origin static assets (JS, CSS, images): network-first (so code updates deploy instantly)
-  event.respondWith(
-    fetch(event.request)
-      .then(response => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
+  // Same-origin static assets (JS, CSS, images): cache-first with background revalidation.
+  //
+  // WHY cache-first:
+  //   Network-first with no timeout causes RESULT_CODE_HUNG — the SW respondWith promise
+  //   stays open indefinitely on a slow/stalled connection and Chrome's 30-second hung-tab
+  //   watchdog kills the renderer tab ("browser crashed").
+  //
+  // WHY ignoreSearch:
+  //   Assets are cached without query strings (e.g. /mobile-enhancements.js) but the
+  //   page requests them with version stamps (e.g. /mobile-enhancements.js?v=20260502).
+  //   Without ignoreSearch: true the match always returns null → falls to network → hangs.
+  //
+  // WHY 8-second abort:
+  //   If the asset isn't cached yet (first load before background caching completes) we
+  //   still need a hard limit so an unresponsive network doesn't hang the renderer.
+  event.respondWith((async () => {
+    const cached = await caches.match(event.request, { ignoreSearch: true });
+    if (cached) {
+      // Serve cached copy instantly; revalidate in the background so cache stays fresh.
+      fetch(event.request).then(r => {
+        if (r && r.ok) caches.open(CACHE_NAME).then(c => c.put(event.request, r));
+      }).catch(() => {});
+      return cached;
+    }
+    // Not cached — fetch with an 8-second hard timeout.
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const response = await fetch(event.request, { signal: ctrl.signal });
+      clearTimeout(tid);
+      if (response.ok) caches.open(CACHE_NAME).then(c => c.put(event.request, response.clone()));
+      return response;
+    } catch (e) {
+      clearTimeout(tid);
+      // Return an empty 200 so the browser doesn't treat it as a hanging respondWith.
+      // An empty JS/CSS file is a safe no-op; an unresolved respondWith causes RESULT_CODE_HUNG.
+      return new Response('', { status: 200, headers: { 'Content-Type': 'text/javascript' } });
+    }
+  })());
 });
 
 // ========================================

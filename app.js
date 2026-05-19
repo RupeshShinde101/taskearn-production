@@ -3382,30 +3382,43 @@ function showTaskAcceptedModal(taskId, taskTitle) {
 
     var overlay = document.createElement('div');
     overlay.id = '_taskAcceptedModal';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:100000;padding:20px;box-sizing:border-box;';
-    var titleHtml = taskTitle ? '<strong style="display:block;margin-bottom:4px;">' + taskTitle + '</strong>' : '';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100000;padding:20px;box-sizing:border-box;';
+    var titleHtml = taskTitle ? '<p style="margin:10px 0 0;font-size:14px;color:#666;line-height:1.5;">' + taskTitle + '</p>' : '';
     overlay.innerHTML =
-        '<div style="background:#fff;border-radius:20px;padding:32px 24px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);animation:_tam_in 0.25s ease;">' +
+        '<div style="background:#fff;border-radius:20px;padding:36px 24px;max-width:300px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);animation:_tam_in 0.25s ease;">' +
             '<div style="width:72px;height:72px;background:linear-gradient(135deg,#10b981,#059669);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
                 '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
             '</div>' +
-            '<h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111;">Task Accepted!</h2>' +
-            '<p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.6;">' + titleHtml + 'You have successfully accepted this task. Tap the button below to begin.</p>' +
-            '<button id="_taskAcceptedContinueBtn" style="width:100%;padding:14px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;letter-spacing:0.3px;">Continue to Task →</button>' +
+            '<h2 style="margin:0;font-size:22px;font-weight:700;color:#111;">Task Accepted!</h2>' +
+            titleHtml +
         '</div>';
     document.body.appendChild(overlay);
 
-    document.getElementById('_taskAcceptedContinueBtn').addEventListener('click', function() {
-        overlay.remove();
-        window.location.href = 'accepted.html';
-    });
+    // Auto-dismiss after 2.5 s; also dismiss on tap
+    var dismiss = function() { if (overlay.parentNode) overlay.remove(); };
+    setTimeout(dismiss, 2500);
+    overlay.addEventListener('click', dismiss);
 }
 
 async function acceptTask(taskId) {
     console.log('🎯 acceptTask called with taskId:', taskId, 'type:', typeof taskId);
 
-    // Immediate visual feedback — disable only accept-specific buttons
-    var acceptBtns = document.querySelectorAll('.task-card-accept-btn, .modal-accept-btn');
+    // Re-entrance guard — prevent a second invocation from kicking off another
+    // fetch / setTimeout / button-mutation cycle while the first is still
+    // pending. Without this, rapid double-clicks (or duplicate event handlers
+    // firing on the same tap) accumulate background fetches that keep the
+    // Netlify proxy connections open and can freeze the browser when the
+    // network is flaky.
+    if (window._acceptInFlight) {
+        console.log('⏸️ acceptTask already in-flight, ignoring duplicate call');
+        return;
+    }
+    window._acceptInFlight = true;
+
+    // Immediate visual feedback — disable only accept-specific buttons.
+    // Skip buttons that are already locked (e.g. .task-card-accept-locked)
+    // so resetAcceptButtons can't accidentally re-enable them later.
+    var acceptBtns = document.querySelectorAll('.task-card-accept-btn:not(.task-card-accept-locked), .modal-accept-btn');
     acceptBtns.forEach(function(btn) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accepting...';
@@ -3503,8 +3516,10 @@ async function acceptTask(taskId) {
                 try { if (typeof clearRoute === 'function') clearRoute(); } catch(e) {}
             } catch (e) {}
 
-            // Show acceptance popup — helper taps "Continue" to navigate
+            // Show acceptance confirmation — auto-dismisses after 2.5 s, no redirect
             showTaskAcceptedModal(taskId, task && task.title);
+            try { renderTasks(); } catch(e) {}
+            resetAcceptButtons();
             return;
 
         } else if (data && data.hasActiveTask) {
@@ -3527,20 +3542,14 @@ async function acceptTask(taskId) {
 
     } catch (err) {
         // Network failure or 12-second timeout.
-        // The request may have reached the server (response lost in transit).
-        // Navigate optimistically — task-in-progress.html verifies status via /tracking.
-        if (task) {
-            try { closeModal('taskDetailModal'); } catch(e) {}
-            showTaskAcceptedModal(taskId, task.title);
-        } else {
-            showToast('❌ Network error. Check your connection and try again.');
-            resetAcceptButtons();
-        }
+        showToast('❌ Network error. Check your connection and try again.');
+        resetAcceptButtons();
     }
 }
 
 // Reset accept buttons back to their original state
 function resetAcceptButtons() {
+    window._acceptInFlight = false;
     document.querySelectorAll('.task-card-accept-btn').forEach(function(btn) {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-check"></i> Accept Task';

@@ -3589,10 +3589,33 @@ async function acceptTask(taskId) {
                 try { if (typeof clearRoute === 'function') clearRoute(); } catch(e) {}
             } catch (e) {}
 
-            // Show acceptance confirmation — auto-dismisses after 2.5 s, no redirect
-            showTaskAcceptedModal(taskId, task && task.title);
-            try { renderTasks(); } catch(e) {}
-            resetAcceptButtons();
+            // Redirect to task-in-progress.html (the helper's working view).
+            // This is the long-standing UX — the user explicitly wants it back.
+            // Before navigating, tear down browse.html's background activity so
+            // it cannot leak memory or fire fetches into a frozen page:
+            //   - clear the 60 s auto-refresh interval
+            //   - clear the 60 s expiry/notifications timer
+            //   - remove all Leaflet markers + the route polyline
+            //   - abort any in-flight fetch via the global AbortController if present
+            try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (e) {}
+            try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (e) {}
+            try {
+                if (typeof taskMarkers !== 'undefined' && taskMarkers && taskMarkers.length) {
+                    taskMarkers.forEach(function(m) { try { if (map && map.hasLayer(m)) map.removeLayer(m); } catch(_){} });
+                    taskMarkers = [];
+                }
+            } catch (e) {}
+            try { if (typeof clearRoute === 'function') clearRoute(); } catch (e) {}
+
+            // currentTask is already pre-saved to localStorage above, so
+            // task-in-progress.html can render instantly even on a flaky network.
+            // Use location.replace so the back-button does not return to a stale
+            // browse.html that still believes the task is active.
+            try {
+                window.location.replace('task-in-progress.html?taskId=' + encodeURIComponent(taskId));
+            } catch (e) {
+                window.location.href = 'task-in-progress.html?taskId=' + encodeURIComponent(taskId);
+            }
             return;
 
         } else if (data && data.hasActiveTask) {
@@ -3615,17 +3638,26 @@ async function acceptTask(taskId) {
 
     } catch (err) {
         // Network failure or 20-second timeout. The backend may have actually
-        // accepted the task even though we never saw the response — schedule
-        // a background reconcile from the server so the UI corrects itself
-        // (the task will move out of the Active list and into Accepted)
-        // without forcing the user to reload the page.
-        showToast('⚠️ Connection is slow. Checking status...');
+        // accepted the task even though we never saw the response.
+        //
+        // Two cases:
+        //   1) The accept genuinely succeeded server-side — task-in-progress.html
+        //      will load fine, its 15 s tracking poll will confirm.
+        //   2) The accept genuinely failed — task-in-progress.html's startTaskWatch
+        //      receives "task gone / not accepted by you" and redirects back to
+        //      browse.html via handleTaskGone().
+        //
+        // Either way, redirecting is safer than staying on browse.html with a
+        // misleading "network error" toast on a task that actually got accepted.
+        // currentTask is already pre-saved to localStorage above.
+        console.warn('acceptTask timed out / errored, optimistically redirecting:', err && err.message);
+        try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (e) {}
+        try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (e) {}
         try {
-            if (typeof loadTasksFromServer === 'function') {
-                loadTasksFromServer().catch(function() {});
-            }
-        } catch(e) {}
-        resetAcceptButtons();
+            window.location.replace('task-in-progress.html?taskId=' + encodeURIComponent(taskId));
+        } catch (e) {
+            window.location.href = 'task-in-progress.html?taskId=' + encodeURIComponent(taskId);
+        }
     }
 }
 

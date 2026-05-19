@@ -3377,7 +3377,7 @@ function showTaskAcceptedModal(taskId, taskTitle) {
 
     document.getElementById('_taskAcceptedContinueBtn').addEventListener('click', function() {
         overlay.remove();
-        window.location.href = 'task-in-progress.html?taskId=' + taskId;
+        window.location.href = 'accepted.html';
     });
 }
 

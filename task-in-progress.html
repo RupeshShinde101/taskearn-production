@@ -1360,9 +1360,9 @@
             await loadTaskDetails();
             if (_taskGoneHandled) return; // task was already deleted; redirect in-flight
             showLocation();
-            // Lazy-load the map after 3 s — lets critical task info render first
-            // and avoids concurrent CDN + tile requests that can OOM mobile Chrome.
-            setTimeout(() => { if (!_taskGoneHandled) loadMapNow(); }, 3000);
+            // Map is loaded ONLY on explicit tap — auto-loading Leaflet + tiles causes OOM
+            // on low-RAM devices because tile downloads compete with page memory.
+            // The #mapPlaceholder already shows a tap-to-load button for the user.
             startTaskWatch();
 
             // Defer suspension sync — run after 2 s so it doesn't block the initial
@@ -1564,7 +1564,7 @@
             }
         }
     </script>
-<script src="sw-register.js?v=20260420_recovery"></script>
-    <script src="back-button.js?v=20260506_hideWorker"></script>
+<script defer src="sw-register.js?v=20260420_recovery"></script>
+    <script defer src="back-button.js?v=20260506_hideWorker"></script>
 </body>
 </html>

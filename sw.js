@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260520c';
+const CACHE_NAME = 'workmate4u-v20260520d';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -45,17 +45,24 @@ const CRITICAL_ASSETS = [
 ];
 
 // Install — cache critical pages synchronously so they're available the moment
-// the SW activates; cache the rest fire-and-forget in background.
+// the SW activates; cache the rest in staggered batches after a 20-second delay
+// so the background downloads don't compete for bandwidth while the user is
+// actively loading task-in-progress.html right after accepting a task.
 self.addEventListener('install', event => {
   self.skipWaiting(); // activate immediately → triggers SW_UPDATED message on every deploy
   event.waitUntil(
     caches.open(CACHE_NAME).then(async cache => {
       // Wait for critical pages first — these must be cached before clients.claim()
       await Promise.all(CRITICAL_ASSETS.map(url => cache.add(url).catch(() => {})));
-      // Cache the rest without blocking
-      STATIC_ASSETS.filter(url => !CRITICAL_ASSETS.includes(url)).forEach(url => {
-        cache.add(url).catch(() => {});
-      });
+      // Cache the rest in batches of 4 with a 20-second startup delay.
+      // Staggering prevents 27 concurrent downloads from saturating mobile bandwidth
+      // at the exact moment the user navigates to task-in-progress.html.
+      const rest = STATIC_ASSETS.filter(url => !CRITICAL_ASSETS.includes(url));
+      setTimeout(function cacheBatch(i) {
+        if (i >= rest.length) return;
+        Promise.all(rest.slice(i, i + 4).map(url => cache.add(url).catch(() => {})))
+          .finally(() => setTimeout(() => cacheBatch(i + 4), 3000));
+      }, 20000);
     })
   );
 });

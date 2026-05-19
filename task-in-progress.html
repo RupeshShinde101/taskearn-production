@@ -11,8 +11,13 @@
     <title>Task In Progress - Workmate4u</title>
     <link rel="manifest" href="manifest.json">
     <meta name="robots" content="noindex, nofollow">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Non-blocking CSS: preload then swap to stylesheet — prevents render-blocking
+         which causes RESULT_CODE_HUNG on slow mobile connections (Chrome watchdog fires
+         when renderer appears frozen for 30 s waiting on CDN downloads). -->
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" as="style" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous"></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
     <!-- Leaflet CSS/JS are loaded lazily inside loadMapNow() to avoid OOM crash on mobile -->
     <style>
         * {

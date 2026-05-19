@@ -1856,6 +1856,17 @@ async function syncUserTasksFromServer() {
 
 // Load tasks from backend API (PRODUCTION ONLY - NO LOCAL FALLBACKS)
 async function loadTasksFromServer() {
+    // Single-flight guard — prevents overlapping requests from stacking when
+    // the network is slow. Without this, the 60 s auto-refresh + acceptTask
+    // error reconcile + manual refresh button can all fire concurrently,
+    // each one re-rendering tasks + re-creating Leaflet markers. On low-RAM
+    // devices this stack of in-flight renders is a primary cause of the
+    // "Aw Snap" renderer OOM crash.
+    if (window._loadTasksInFlight) {
+        console.log('⏸️ loadTasksFromServer already in-flight, skipping');
+        return false;
+    }
+    window._loadTasksInFlight = true;
     try {
         console.log('📡 Loading tasks from backend server...');
         showTaskListSkeletons();
@@ -1889,13 +1900,20 @@ async function loadTasksFromServer() {
                             postedAt: new Date(t.postedAt),
                             expiresAt: new Date(t.expiresAt)
                         }));
+                        // Never use alert() here — it BLOCKS the renderer thread,
+                        // and Chrome's hung-tab watchdog can kill the tab with
+                        // "Aw Snap! Crashpad_NotConnectedToHandler" when the user
+                        // hits accept on a task during an offline state.
                         try {
                             if (typeof showNotification === 'function') {
                                 showNotification('Offline mode — showing cached tasks.', 'offline');
+                            } else if (typeof showToast === 'function') {
+                                showToast('⚠️ Backend offline — showing cached tasks.');
+                            } else {
+                                console.warn('Backend offline — showing cached tasks.');
                             }
                         } catch (e) {
-                            console.warn('showNotification not available, using alert');
-                            alert('⚠️ Backend offline. Showing cached tasks.');
+                            console.warn('Notification failed:', e.message);
                         }
                         renderTasks();
                         addTaskMarkers();
@@ -1907,10 +1925,13 @@ async function loadTasksFromServer() {
                 try {
                     if (typeof showNotification === 'function') {
                         showNotification('Cannot reach server. No cached data found.', 'offline');
+                    } else if (typeof showToast === 'function') {
+                        showToast('⚠️ Backend offline. No cached data available.');
+                    } else {
+                        console.warn('Backend offline. No cached data available.');
                     }
                 } catch (e) {
-                    console.warn('Using alert instead of showNotification');
-                    alert('⚠️ Backend offline. No cached data available.');
+                    console.warn('Notification failed:', e.message);
                 }
                 tasks = [];
                 renderTasks();
@@ -2001,6 +2022,8 @@ async function loadTasksFromServer() {
         tasks = [];
         renderTasks();
         return false;
+    } finally {
+        window._loadTasksInFlight = false;
     }
 }
 
@@ -2613,8 +2636,17 @@ function addTaskMarkers() {
     });
     taskMarkers = [];
 
+    // Hard cap on marker count to prevent OOM when the backend returns
+    // an unusually large task list (e.g. when filters fail server-side).
+    // 200 markers is plenty for any visible viewport; beyond that, Leaflet
+    // DivIcon DOM nodes start eating hundreds of MB on low-RAM devices and
+    // trigger renderer OOM crashes ("Aw Snap! Crashpad_NotConnectedToHandler").
+    const MAX_MARKERS = 200;
+    let _markerCount = 0;
+
     // Add markers for active, non-expired tasks
     tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired').forEach(task => {
+        if (_markerCount >= MAX_MARKERS) return;
         if (!task.location || !task.location.lat || !task.location.lng) return;
         const icon = getTaskIcon(task.category);
         const marker = L.marker([task.location.lat, task.location.lng], { icon }).addTo(map);
@@ -2627,6 +2659,7 @@ function addTaskMarkers() {
         });
 
         taskMarkers.push(marker);
+        _markerCount++;
     });
 }
 
@@ -3522,10 +3555,19 @@ async function acceptTask(taskId) {
         // misleading "Network error" toast even though the task had been
         // accepted server-side. 20 s gives the legitimate response time to
         // arrive on slow networks while still capping any true hang.
+        var _acceptTimeoutHandle = null;
         var _acceptTimeout = new Promise(function(_, reject) {
-            setTimeout(function() { reject(new Error('accept_timeout')); }, 20000);
+            _acceptTimeoutHandle = setTimeout(function() { reject(new Error('accept_timeout')); }, 20000);
         });
-        var data = await Promise.race([TasksAPI.accept(taskId), _acceptTimeout]);
+        var data;
+        try {
+            data = await Promise.race([TasksAPI.accept(taskId), _acceptTimeout]);
+        } finally {
+            // Clear the timeout once the race settles so its closure (which
+            // holds a reference to the reject() callback) is released
+            // immediately instead of lingering in memory for 20 s.
+            if (_acceptTimeoutHandle) clearTimeout(_acceptTimeoutHandle);
+        }
 
         var isSuccess = data && (data.success === true || data.message === 'Task accepted successfully');
 

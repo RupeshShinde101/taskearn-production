@@ -878,9 +878,17 @@
                         // before the backend has finished committing the task acceptance.
                         const _justAccepted = currentTask.startTime &&
                             (Date.now() - currentTask.startTime) < 60000;
-                        if (!_justAccepted) { handleTaskGone(); }
+                        if (_justAccepted) return;
+                        // Require TWO consecutive 404s before declaring the task gone.
+                        // A single 404 can happen during Railway cold starts or transient
+                        // proxy hiccups; without this we falsely kick the user back to
+                        // browse.html on flaky mobile networks.
+                        window._taskWatch404Count = (window._taskWatch404Count || 0) + 1;
+                        if (window._taskWatch404Count >= 2) { handleTaskGone(); }
                         return;
                     }
+                    // Reset the 404 streak on any non-404 response.
+                    window._taskWatch404Count = 0;
                     if (!res.ok) return; // transient — try again next tick
                     const result = await res.json();
                     if (!result || result.success === false) {
@@ -941,7 +949,14 @@
             const taskId = taskIdFromUrl || currentTask.id;
             if (taskId) {
                 const token = localStorage.getItem('taskearn_token') || '';
-                if (token) {
+                // Skip the initial /tracking fetch entirely when we already have
+                // full task data in localStorage. The periodic watch still polls
+                // every 15s, so we don't miss state changes — but on page load
+                // this saves one round-trip and avoids a confusing 404 in the
+                // console if the task was deleted while the user wasn't here.
+                const _hasLocal = currentTask && currentTask.title && currentTask.providerName &&
+                                  currentTask.providerPhone && currentTask.status;
+                if (token && !_hasLocal) {
                     try {
                         const res = await apiFetch('/tracking/' + taskId, {
                             headers: { 'Authorization': 'Bearer ' + token }
@@ -951,7 +966,12 @@
                         if (res.status === 404) {
                             const _justAccepted = currentTask.startTime &&
                                 (Date.now() - currentTask.startTime) < 60000;
-                            if (!_justAccepted) { handleTaskGone(); }
+                            // Same two-strikes rule as the periodic watch: a single
+                            // cold-start 404 should not redirect the user.
+                            if (!_justAccepted) {
+                                window._taskWatch404Count = (window._taskWatch404Count || 0) + 1;
+                                if (window._taskWatch404Count >= 2) { handleTaskGone(); }
+                            }
                             return; // use localStorage data already loaded above
                         }
                         const result = await res.json();

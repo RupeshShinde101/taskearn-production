@@ -142,12 +142,8 @@
             script.async = true;
             document.head.appendChild(script);
         }
-        // Load after DOM ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', loadRazorpayScript);
-        } else {
-            loadRazorpayScript();
-        }
+        // NOTE: Razorpay is loaded lazily by razorpay.js when a payment is triggered.
+        // Do NOT auto-load here — it causes ERR_INSUFFICIENT_RESOURCES by preloading ~20 chunks at page start.
     </script>
     <link rel="stylesheet" href="styles.css?v=20260506_hideWorker">
     <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_uifix2">

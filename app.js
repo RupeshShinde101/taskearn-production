@@ -8200,62 +8200,47 @@ async function initGoogleSignIn() {
         }
         return container;
     }
-    // Helper: inject a custom Google-styled button to avoid google.accounts.id.renderButton()
-    // which renders an <iframe src="accounts.google.com"> — that iframe's own CSP
-    // (frame-ancestors 'self', report-only) fires a console warning on every page load.
-    // A plain HTML button avoids the iframe entirely.
-    function renderCustomGoogleBtn(container, labelText) {
+    // Render Google's official Sign In button. Under mandatory FedCM (Chrome
+    // 2025+), google.accounts.id.prompt() called from a custom click handler
+    // is unreliable — Chrome silently suppresses it depending on cookie state,
+    // prior dismissals, and FedCM quota. renderButton() always works because
+    // GIS owns the click and routes it through FedCM correctly.
+    function renderOfficialGoogleBtn(container, labelText) {
         if (!container) return;
         container.innerHTML = '';
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.setAttribute('aria-label', labelText);
-        btn.style.cssText = [
-            'display:flex;align-items:center;justify-content:center;gap:10px;',
-            'width:300px;max-width:100%;height:44px;',
-            'border:1px solid #dadce0;border-radius:4px;',
-            'background:#fff;color:#3c4043;',
-            'font-family:"Google Sans",Roboto,sans-serif;font-size:14px;font-weight:500;',
-            'cursor:pointer;padding:0 16px;',
-            'transition:background 0.15s,box-shadow 0.15s;'
-        ].join('');
-        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20" height="20" aria-hidden="true">
-            <path fill="#EA4335" d="M24 9.5c3.27 0 5.86 1.13 7.84 2.96l5.83-5.83C34.2 3.19 29.44 1 24 1 14.73 1 6.88 6.67 3.38 14.77l6.81 5.29C11.94 13.9 17.5 9.5 24 9.5z"/>
-            <path fill="#4285F4" d="M46.1 24.55c0-1.67-.15-3.27-.42-4.82H24v9.12h12.42c-.54 2.87-2.16 5.3-4.6 6.93l7.18 5.58C43.1 37.56 46.1 31.5 46.1 24.55z"/>
-            <path fill="#FBBC05" d="M10.19 28.06A14.6 14.6 0 0 1 9.5 24c0-1.41.24-2.78.69-4.06L3.38 14.65A23 23 0 0 0 1 24c0 3.73.89 7.26 2.38 10.35l6.81-6.29z"/>
-            <path fill="#34A853" d="M24 47c5.44 0 10-1.79 13.33-4.85l-7.18-5.58c-1.78 1.19-4.06 1.93-6.15 1.93-6.5 0-12.06-4.4-13.81-10.44l-6.81 6.29C6.88 41.33 14.73 47 24 47z"/>
-        </svg><span>${labelText}</span>`;
-        btn.addEventListener('mouseenter', () => { btn.style.background = '#f8f9fa'; btn.style.boxShadow = '0 1px 3px rgba(0,0,0,.15)'; });
-        btn.addEventListener('mouseleave', () => { btn.style.background = '#fff'; btn.style.boxShadow = 'none'; });
-        btn.addEventListener('click', () => {
-            // prompt() shows the One Tap sign-in overlay. With ux_mode:'popup'
-            // the credential is delivered via the callback without a redirect.
-            // Under mandatory FedCM (Chrome 2025+), the only supported moment
-            // method is isDismissedMoment(); isNotDisplayed()/isSkippedMoment()
-            // and their *Reason() helpers are deprecated and trigger a
-            // GSI_LOGGER warning. Don't call them.
-            // https://developers.google.com/identity/gsi/web/guides/fedcm-migration
-            try {
-                google.accounts.id.prompt((notification) => {
-                    if (notification && notification.isDismissedMoment && notification.isDismissedMoment()) {
-                        console.info('Google prompt dismissed');
-                    }
-                });
-            } catch (e) {
-                console.warn('Google prompt failed:', e);
-            }
-        });
-        container.appendChild(btn);
+        try {
+            google.accounts.id.renderButton(container, {
+                type: 'standard',
+                theme: 'outline',
+                size: 'large',
+                text: /sign up/i.test(labelText) ? 'signup_with' : 'signin_with',
+                shape: 'rectangular',
+                logo_alignment: 'left',
+                width: 300
+            });
+        } catch (e) {
+            console.warn('Google renderButton failed:', e);
+            // Last-resort fallback: tell the user. Do NOT call prompt() here —
+            // under mandatory FedCM, prompt() from a click handler often
+            // rejects with AbortError without showing any UI, leaving the
+            // user with a button that does nothing visible.
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = labelText + ' (unavailable)';
+            btn.disabled = true;
+            btn.style.cssText = 'width:300px;max-width:100%;height:44px;border:1px solid #dadce0;border-radius:4px;background:#f1f3f4;color:#80868b;font:500 14px "Google Sans",Roboto,sans-serif;cursor:not-allowed;';
+            container.appendChild(btn);
+        }
     }
 
     const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');
     if (loginBtn) {
-        renderCustomGoogleBtn(loginBtn, 'Sign in with Google');
+        renderOfficialGoogleBtn(loginBtn, 'Sign in with Google');
         console.log('✅ Google button rendered in login modal');
     }
     const signupBtn = ensureGoogleBtnContainer('signupModal', 'googleSignInBtn_signup');
     if (signupBtn) {
-        renderCustomGoogleBtn(signupBtn, 'Sign up with Google');
+        renderOfficialGoogleBtn(signupBtn, 'Sign up with Google');
         console.log('✅ Google button rendered in signup modal');
     }
     

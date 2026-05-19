@@ -13,9 +13,7 @@
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Leaflet.js - Free OpenStreetMap (No API Key Required) -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet CSS/JS are loaded lazily inside loadMapNow() to avoid OOM crash on mobile -->
     <style>
         * {
             margin: 0;
@@ -1406,11 +1404,32 @@
         let map;
         let taskMarker;
 
-        // Lazy-load helper: hides placeholder then calls initializeMap once
+        // Lazy-load helper: dynamically injects Leaflet CSS+JS then initializes map
+        let _leafletLoading = false;
         function loadMapNow() {
+            if (map || _leafletLoading) return;
             const ph = document.getElementById('mapPlaceholder');
             if (ph) ph.style.display = 'none';
-            if (!map) initializeMap();
+            // If Leaflet already loaded (e.g. second call), init immediately
+            if (window.L) { initializeMap(); return; }
+            _leafletLoading = true;
+            // Inject Leaflet CSS
+            const css = document.createElement('link');
+            css.rel = 'stylesheet';
+            css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+            document.head.appendChild(css);
+            // Inject Leaflet JS then init map once loaded
+            const js = document.createElement('script');
+            js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+            js.onload = function() { _leafletLoading = false; initializeMap(); };
+            js.onerror = function() {
+                _leafletLoading = false;
+                const p = document.getElementById('mapPlaceholder');
+                if (p) { p.style.display = 'flex'; }
+                const a = document.getElementById('mapPlaceholderAddr');
+                if (a) a.textContent = 'Map unavailable — check your connection';
+            };
+            document.head.appendChild(js);
         }
 
         // Initialize Leaflet map

@@ -125,10 +125,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" as="style" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous"></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" as="style" onload="this.onload=null;this.rel='stylesheet'"><noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></noscript>
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
     <!-- Razorpay Checkout - Loaded dynamically -->
     <script>
@@ -1444,18 +1446,18 @@ function closeModal(id){var el=document.getElementById(id);if(el){el.classList.r
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20260506_hideWorker"></script>
-    <script src="shared.js?v=20260506_hideWorker"></script>
-    <script src="category-picker.js?v=20260514_scfix"></script>
-    <script src="post-task-wizard.js?v=20260514_scfix"></script>
+    <script defer src="api-client.js?v=20260506_hideWorker"></script>
+    <script defer src="shared.js?v=20260506_hideWorker"></script>
+    <script defer src="category-picker.js?v=20260514_scfix"></script>
+    <script defer src="post-task-wizard.js?v=20260514_scfix"></script>
     
     <!-- Google Sign-In -->
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
     
     <!-- Razorpay Payment Integration -->
-    <script src="razorpay.js?v=20260404_accept_v2"></script>
+    <script defer src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260514_markbtn"></script>
+    <script defer src="app.js?v=20260514_markbtn"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>
@@ -1600,7 +1602,7 @@ function acceptCookies(){localStorage.setItem('cookieConsent','accepted');docume
 function declineCookies(){localStorage.setItem('cookieConsent','declined');document.getElementById('cookieConsent').style.display='none';}
 </script>
 
-<script src="sw-register.js?v=20260420_recovery"></script>
+<script defer src="sw-register.js?v=20260420_recovery"></script>
 
 <nav class="bottom-tab-bar" aria-label="Main navigation">
     <a href="index.html" class="active" aria-label="Home"><i class="fas fa-home"></i><span>Home</span></a>

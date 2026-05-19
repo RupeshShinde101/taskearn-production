@@ -2277,16 +2277,22 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }, 60000);
         
-        // Event delegation for Accept Task buttons (more reliable than inline onclick)
+        // Event delegation for Accept Task buttons — fallback for any dynamically
+        // created buttons that don't have an inline onclick. Buttons that use the
+        // inline onclick (added in renderTasks) call event.stopPropagation() so
+        // they never reach this handler; this only fires for edge-case buttons.
         document.addEventListener('click', function(e) {
             var btn = e.target.closest('.task-card-accept-btn');
             if (btn) {
+                // Skip locked buttons (Task In Progress / Accepted state)
+                if (btn.classList.contains('task-card-accept-locked')) return;
+                // Skip if button already has its own inline onclick (rendered by renderTasks)
+                if (btn.hasAttribute('onclick')) return;
                 e.stopPropagation();
                 e.preventDefault();
                 var card = btn.closest('.task-card');
                 var taskId = card ? card.getAttribute('data-task-id') : null;
                 if (taskId) {
-                    console.log('🖱️ Accept button clicked via delegation, taskId:', taskId);
                     acceptTask(parseInt(taskId, 10));
                 }
                 return;
@@ -2975,7 +2981,7 @@ function renderTasks(filtered = null) {
                         if (myAcceptedTasks.some(at => at.status === 'in_progress' || at.status === 'accepted')) {
                             return `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`;
                         }
-                        return `<button class="task-card-accept-btn" data-accept-task-id="${task.id}"><i class="fas fa-check-circle"></i> Accept Task</button>`;
+                        return `<button class="task-card-accept-btn" data-accept-task-id="${task.id}" onclick="event.stopPropagation(); acceptTask(${task.id})"><i class="fas fa-check-circle"></i> Accept Task</button>`;
                     })() : ''}
                 </div>
             </div>
@@ -3489,10 +3495,10 @@ async function acceptTask(taskId) {
     } catch (e) {}
 
     try {
-        // 12-second timeout via Promise.race — prevents the accept button from
+        // 8-second timeout via Promise.race — prevents the accept button from
         // hanging forever when the proxy or Railway backend is slow to respond.
         var _acceptTimeout = new Promise(function(_, reject) {
-            setTimeout(function() { reject(new Error('accept_timeout')); }, 12000);
+            setTimeout(function() { reject(new Error('accept_timeout')); }, 8000);
         });
         var data = await Promise.race([TasksAPI.accept(taskId), _acceptTimeout]);
 
@@ -3550,9 +3556,10 @@ async function acceptTask(taskId) {
 // Reset accept buttons back to their original state
 function resetAcceptButtons() {
     window._acceptInFlight = false;
-    document.querySelectorAll('.task-card-accept-btn').forEach(function(btn) {
+    // Exclude locked buttons so their "Task In Progress" / "Accepted" state is preserved.
+    document.querySelectorAll('.task-card-accept-btn:not(.task-card-accept-locked)').forEach(function(btn) {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-check"></i> Accept Task';
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> Accept Task';
     });
     document.querySelectorAll('.modal-accept-btn').forEach(function(btn) {
         btn.disabled = false;

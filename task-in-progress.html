@@ -762,6 +762,20 @@
         // Always route through Netlify proxy — no direct Railway call from browser.
         // This prevents ERR_NAME_NOT_RESOLVED / TCP hangs causing RESULT_CODE_HUNG.
         const PROXY_URL = '/.netlify/functions/api-proxy/api';
+        // Lightweight non-blocking toast — used throughout this page.
+        // app.js is not loaded here so we define our own.
+        function _pageToast(msg, isError) {
+            var t = document.createElement('div');
+            t.style.cssText =
+                'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+                'z-index:99999;background:' + (isError ? '#ef4444' : '#10b981') + ';' +
+                'color:#fff;padding:12px 20px;border-radius:8px;font-size:14px;' +
+                'font-weight:600;max-width:90vw;text-align:center;' +
+                'box-shadow:0 4px 12px rgba(0,0,0,.3);pointer-events:none;';
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 3500);
+        }
         async function apiFetch(path, options) {
             options = options || {};
             options.headers = options.headers || {};
@@ -878,10 +892,13 @@
                         const res = await apiFetch('/tracking/' + taskId, {
                             headers: { 'Authorization': 'Bearer ' + token }
                         });
-                        // If task no longer exists (poster cancelled & deleted it), bail out
+                        // If task no longer exists — but honour a 60-second grace period
+                        // right after accept (DB write may still be in flight on slow networks).
                         if (res.status === 404) {
-                            handleTaskGone();
-                            return;
+                            const _justAccepted = currentTask.startTime &&
+                                (Date.now() - currentTask.startTime) < 60000;
+                            if (!_justAccepted) { handleTaskGone(); }
+                            return; // use localStorage data already loaded above
                         }
                         const result = await res.json();
                         if (result.success && result.tracking) {
@@ -981,18 +998,18 @@
         async function verifyTask() {
             const currentUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
             if (!currentUser) {
-                alert('Please login first');
+                _pageToast('Please login first', true);
                 window.location.href = 'index.html';
                 return;
             }
 
             // If task is already verify_pending, don't call API again
             if (currentTask.status === 'verify_pending') {
-                alert('✅ Verification already sent! Waiting for the poster to verify and pay.');
+                _pageToast('✅ Verification already sent! Waiting for the poster to pay.');
                 return;
             }
             if (currentTask.status === 'payment_released') {
-                alert('🎉 Payment has been released! Go to your dashboard to mark as completed.');
+                _pageToast('🎉 Payment has been released!');
                 window.location.href = 'index.html?tab=accepted-tasks';
                 return;
             }
@@ -1001,7 +1018,7 @@
             const token = localStorage.getItem('taskearn_token') || '';
 
             if (!token) {
-                alert('Session expired. Please login again.');
+                _pageToast('Session expired. Please login again.', true);
                 window.location.href = 'index.html';
                 return;
             }
@@ -1025,7 +1042,7 @@
 
                 // Handle 401 — session expired, redirect to login (NOT task gone)
                 if (res.status === 401) {
-                    alert('Session expired. Please login again.');
+                    _pageToast('Session expired. Please login again.', true);
                     window.location.href = 'index.html';
                     return;
                 }
@@ -1038,7 +1055,7 @@
                     if (/not accepted by you/i.test(msg) || /already/i.test(msg)) {
                         currentTask.status = 'verify_pending';
                         updateVerifyButtonState('verify_pending');
-                        alert('✅ Verification already sent! Waiting for the poster to pay.');
+                        _pageToast('✅ Verification already sent! Waiting for the poster to pay.');
                         return;
                     }
                     // Real task-gone case
@@ -1053,11 +1070,11 @@
                     if (/not accepted by you/i.test(result.message || '') || /already/i.test(result.message || '')) {
                         currentTask.status = 'verify_pending';
                         updateVerifyButtonState('verify_pending');
-                        alert('✅ Verification already sent! Waiting for the poster to pay.');
+                        _pageToast('✅ Verification already sent! Waiting for the poster to pay.');
                         return;
                     }
                     if (/not found/i.test(result.message || '')) { handleTaskGone(); return; }
-                    alert(result.message || 'Could not send verification');
+                    _pageToast(result.message || 'Could not send verification', true);
                     if (btn) {
                         btn.disabled = false;
                         btn.innerHTML = '<i class="fas fa-shield-check"></i> Verify Task Done';
@@ -1067,7 +1084,7 @@
                 console.log('✅ Backend: Task verification sent to poster');
                 currentTask.status = 'verify_pending';
             } catch (err) {
-                alert('Could not reach the server. Please check your connection and try again.');
+                _pageToast('Could not reach the server. Please check your connection and try again.', true);
                 console.error('Backend verify failed:', err.message);
                 if (btn) {
                     btn.disabled = false;
@@ -1187,14 +1204,14 @@
                     try { localStorage.removeItem('currentTask'); } catch (e) {}
                     window.location.href = 'index.html?tab=accepted-tasks';
                 } else {
-                    alert(result.message || 'Could not mark as completed. Please try again.');
+                    _pageToast(result.message || 'Could not mark as completed. Please try again.', true);
                     if (btn) {
                         btn.disabled = false;
                         btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark as Completed';
                     }
                 }
             } catch (err) {
-                alert('Network error. Please try again.');
+                _pageToast('Network error. Please try again.', true);
                 if (btn) {
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark as Completed';
@@ -1322,7 +1339,7 @@
                     });
                     const result = await res.json();
                     if (!result.success) {
-                        alert(result.message || 'Could not release task');
+                        _pageToast(result.message || 'Could not release task', true);
                         return;
                     }
                     if (typeof result.releasePenalty === 'number') penalty = result.releasePenalty;
@@ -1345,13 +1362,13 @@
                         localStorage.setItem('taskearn_suspended_until', String(new Date(result.suspendedUntil).getTime()));
                     }
                 } catch (err) {
-                    alert('Network error. Please try again.');
+                    _pageToast('Network error. Please try again.', true);
                     return;
                 }
             }
 
             clearInterval(timerInterval);
-            alert('Task released. ₹' + penalty + ' penalty deducted from your wallet.');
+            _pageToast('Task released. ₹' + penalty + ' penalty deducted from your wallet.');
             window.location.href = 'index.html';
         }
 
@@ -1517,7 +1534,7 @@
         // Open navigation to task location
         function openNavigation() {
             if (!currentTask.location) {
-                alert('Location not available');
+                _pageToast('Location not available', true);
                 return;
             }
 

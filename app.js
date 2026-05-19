@@ -3390,119 +3390,97 @@ async function acceptTask(taskId) {
         return;
     }
 
-    // Find task in local array (optional — used for localStorage save only)
+    // Find task in local array — used for localStorage pre-save and optimistic navigation
     var task = tasks.find(function(t) { return t.id == taskId; });
-    // Don't block if task not found locally — we can still call the API
+
+    // Pre-save task data to localStorage BEFORE the API call so that
+    // task-in-progress.html always has display data even when the network
+    // drops the response in transit (proxy timeout, flaky 4G, etc.).
+    try {
+        var _td = task || {};
+        var _tl = _td.location || {};
+        localStorage.setItem('currentTask', JSON.stringify({
+            id: taskId,
+            title: _td.title || '',
+            description: _td.description || '',
+            category: _td.category || '',
+            price: _td.price || 0,
+            service_charge: _td.service_charge || 0,
+            location: {
+                lat: parseFloat(_tl.lat) || 19.0760,
+                lng: parseFloat(_tl.lng) || 72.8777
+            },
+            providerId: _td.postedBy ? _td.postedBy.id : null,
+            providerName: _td.postedBy ? _td.postedBy.name : null,
+            providerPhone: _td.postedBy ? _td.postedBy.phone : null,
+            providerRating: _td.postedBy ? _td.postedBy.rating : null,
+            expiresAt: _td.expiresAt || null,
+            postedAt: _td.postedAt || null,
+            startTime: Date.now()
+        }));
+    } catch (e) {}
 
     try {
-        console.log('📡 Calling API to accept task:', taskId);
+        // 12-second timeout via Promise.race — prevents the accept button from
+        // hanging forever when the proxy or Railway backend is slow to respond.
+        var _acceptTimeout = new Promise(function(_, reject) {
+            setTimeout(function() { reject(new Error('accept_timeout')); }, 12000);
+        });
+        var data = await Promise.race([TasksAPI.accept(taskId), _acceptTimeout]);
 
-        // Call the accept API
-        var data;
-        if (typeof TasksAPI !== 'undefined' && TasksAPI.accept) {
-            data = await TasksAPI.accept(taskId);
-        } else {
-            // Fallback: direct fetch if TasksAPI unavailable
-            console.warn('⚠️ TasksAPI not available, using direct fetch');
-            var apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) || 
-                          (typeof window.TASKEARN_API_URL !== 'undefined' && window.TASKEARN_API_URL) ||
-                          'https://taskearn-production-production.up.railway.app/api';
-            var token = localStorage.getItem('taskearn_token');
-            var resp = await fetch(apiBase + '/tasks/' + taskId + '/accept', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': token ? ('Bearer ' + token) : ''
-                },
-                mode: 'cors'
-            });
-            data = await resp.json();
-            data._httpSuccess = resp.ok;
-        }
-
-        console.log('📥 Accept API response:', JSON.stringify(data));
-
-        // Accept ANY successful response — be lenient
-        var isSuccess = data && (data.success === true || data._httpSuccess === true || data.message === 'Task accepted successfully');
+        var isSuccess = data && (data.success === true || data.message === 'Task accepted successfully');
 
         if (isSuccess) {
-            console.log('✅ Task accepted successfully!');
-
-            // Update local state (non-critical)
-            if (task) {
-                task.status = 'accepted';
-                task.acceptedBy = currentUser;
-                task.acceptedAt = new Date().toISOString();
-                try { myAcceptedTasks.push(task); } catch(e) {}
-            }
-
-            // Save task data for task-in-progress page (non-critical)
+            // Update local state (non-critical — never let this block the redirect)
             try {
-                var taskData = task || {};
-                var taskLocation = (taskData.location) || {};
-                localStorage.setItem('currentTask', JSON.stringify({
-                    id: taskId,
-                    title: taskData.title || '',
-                    description: taskData.description || '',
-                    category: taskData.category || '',
-                    price: taskData.price || 0,
-                    service_charge: taskData.service_charge || 0,
-                    location: {
-                        lat: parseFloat(taskLocation.lat) || 19.0760,
-                        lng: parseFloat(taskLocation.lng) || 72.8777
-                    },
-                    providerId: taskData.postedBy ? taskData.postedBy.id : null,
-                    providerName: taskData.postedBy ? taskData.postedBy.name : null,
-                    providerPhone: taskData.postedBy ? taskData.postedBy.phone : null,
-                    providerRating: taskData.postedBy ? taskData.postedBy.rating : null,
-                    expiresAt: taskData.expiresAt || null,
-                    postedAt: taskData.postedAt || null,
-                    startTime: Date.now()
-                }));
-            } catch (e) {
-                console.warn('localStorage save failed (non-critical):', e);
-            }
-
-            // Non-blocking updates
-            try {
+                if (task) {
+                    task.status = 'accepted';
+                    task.acceptedBy = currentUser;
+                    task.acceptedAt = new Date().toISOString();
+                    myAcceptedTasks.push(task);
+                }
                 if (typeof updateUserData === 'function' && currentUser.id) {
                     updateUserData(currentUser.id, {
                         acceptedTasks: typeof serializeTasks === 'function' ? serializeTasks(myAcceptedTasks) : []
-                    }).catch(function(e) { console.warn('updateUserData failed:', e); });
+                    }).catch(function() {});
                 }
                 try { closeModal('taskDetailModal'); } catch(e) {}
                 try { if (typeof clearRoute === 'function') clearRoute(); } catch(e) {}
-            } catch (e) {
-                console.warn('Non-critical post-accept update failed:', e);
-            }
+            } catch (e) {}
 
-            // REDIRECT — this is the critical action
-            console.log('🚀 Redirecting to task-in-progress.html for task:', taskId);
+            // Redirect — this must always execute
             window.location.href = 'task-in-progress.html?taskId=' + taskId;
             return;
+
+        } else if (data && data.hasActiveTask) {
+            userActiveTask = { id: data.activeTaskId, title: data.activeTaskTitle };
+            refreshActiveTaskBanner();
+            try { closeModal('taskDetailModal'); } catch(e) {}
+            showToast('⚠️ You already have an active task. Complete it before accepting another.');
+            renderTasks();
+            resetAcceptButtons();
+
+        } else if (data && data.needsKyc) {
+            try { closeModal('taskDetailModal'); } catch(e) {}
+            showKYCRequiredPopup('accept tasks');
+            resetAcceptButtons();
+
         } else {
-            // API returned an error
-            var errorMsg = (data && data.message) ? data.message : 'Failed to accept task. Please try again.';
-            console.error('❌ Accept API returned failure:', errorMsg);
-            if (data && data.needsKyc) {
-                try { closeModal('taskDetailModal'); } catch(e) {}
-                showKYCRequiredPopup('accept tasks');
-            } else if (data && data.hasActiveTask) {
-                // User already has an active task — update local state and refresh UI
-                userActiveTask = { id: data.activeTaskId, title: data.activeTaskTitle };
-                refreshActiveTaskBanner();
-                try { closeModal('taskDetailModal'); } catch(e) {}
-                showToast('⚠️ You already have an active task. Complete it before accepting another.');
-                renderTasks();
-            } else {
-                showToast('❌ ' + errorMsg);
-            }
+            showToast('❌ ' + ((data && data.message) || 'Failed to accept task. Please try again.'));
             resetAcceptButtons();
         }
+
     } catch (err) {
-        console.error('❌ Error accepting task:', err);
-        showToast('❌ Network error. Please check your connection and try again.');
-        resetAcceptButtons();
+        // Network failure or 12-second timeout.
+        // The request may have reached the server (response lost in transit).
+        // Navigate optimistically — task-in-progress.html verifies status via /tracking.
+        if (task) {
+            try { closeModal('taskDetailModal'); } catch(e) {}
+            window.location.href = 'task-in-progress.html?taskId=' + taskId;
+        } else {
+            showToast('❌ Network error. Check your connection and try again.');
+            resetAcceptButtons();
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260520e';
+const CACHE_NAME = 'workmate4u-v20260520f';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -136,7 +136,18 @@ self.addEventListener('fetch', event => {
       // open indefinitely and Chrome's hung-tab watchdog kills the tab (RESULT_CODE_HUNG).
       const networkTimeout = new Promise(resolve => setTimeout(() => resolve(null), 10000));
       const response = await Promise.race([networkPromise.catch(() => null), networkTimeout]);
-      return response || await caches.match('/offline.html');
+      if (response) return response;
+      const offline = await caches.match('/offline.html');
+      if (offline) return offline;
+      // Final fallback: a minimal inline HTML page so respondWith always resolves
+      // to a real Response and Chrome doesn't fire RESULT_CODE_HUNG.
+      return new Response(
+        '<!doctype html><meta charset="utf-8"><title>Offline</title>' +
+        '<style>body{font-family:system-ui;padding:40px;text-align:center;color:#1e293b}</style>' +
+        '<h2>You appear to be offline</h2><p>Please check your connection and try again.</p>' +
+        '<button onclick="location.reload()" style="padding:10px 20px;background:#6366f1;color:#fff;border:0;border-radius:8px;font-weight:600">Retry</button>',
+        { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      );
     })());
     return;
   }
@@ -184,9 +195,23 @@ self.addEventListener('fetch', event => {
       return response;
     } catch (e) {
       clearTimeout(tid);
-      // Return an empty 200 so the browser doesn't treat it as a hanging respondWith.
-      // An empty JS/CSS file is a safe no-op; an unresolved respondWith causes RESULT_CODE_HUNG.
-      return new Response('', { status: 200, headers: { 'Content-Type': 'text/javascript' } });
+      // Return an empty 200 with a Content-Type that matches the requested
+      // asset extension. An unresolved respondWith causes RESULT_CODE_HUNG;
+      // returning the wrong MIME type (e.g. text/javascript for a .png) causes
+      // silent decoder errors / blank icons in the UI. Best-effort detect.
+      const ext = (url.pathname.split('.').pop() || '').toLowerCase();
+      const mime =
+        ext === 'css'  ? 'text/css' :
+        ext === 'js'   ? 'text/javascript' :
+        ext === 'json' ? 'application/json' :
+        ext === 'svg'  ? 'image/svg+xml' :
+        ext === 'png'  ? 'image/png' :
+        ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
+        ext === 'gif'  ? 'image/gif' :
+        ext === 'webp' ? 'image/webp' :
+        ext === 'ico'  ? 'image/x-icon' :
+        'application/octet-stream';
+      return new Response('', { status: 200, headers: { 'Content-Type': mime } });
     }
   })());
 });

@@ -3,6 +3,18 @@
 // Connect frontend to Python backend
 // ========================================
 
+// Silence harmless aborted-fetch rejections. Without this, every health-check /
+// task-watch AbortController abort produces an "Uncaught (in promise) AbortError"
+// red entry in DevTools. On long sessions these accumulate, retain the Response
+// + closure scope, and on low-RAM Android devices contribute to OOM tab kills.
+window.addEventListener('unhandledrejection', function(e) {
+    var r = e && e.reason;
+    if (r && (r.name === 'AbortError' || r.message === 'accept_timeout' ||
+              /aborted|signal is aborted/i.test(r.message || ''))) {
+        e.preventDefault();
+    }
+});
+
 // Production: suppress debug logs (keep console.warn and console.error)
 (function() {
     if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {

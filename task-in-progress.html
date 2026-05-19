@@ -650,11 +650,11 @@
                         <span style="color:#94a3b8;">Task Budget</span>
                         <span style="color:#f1f5f9;font-weight:600;"></span>
                     </div>
-                    <div id="prScRow" style="display:none;flex;justify-content:space-between;margin-bottom:8px;">
+                    <div id="prScRow" style="display:none;justify-content:space-between;margin-bottom:8px;">
                         <span style="color:#94a3b8;">Service Charge</span>
                         <span style="color:#fbbf24;font-weight:600;"></span>
                     </div>
-                    <div id="prTotalRow" style="display:none;flex;justify-content:space-between;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.08);">
+                    <div id="prTotalRow" style="display:none;justify-content:space-between;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.08);">
                         <span style="color:#94a3b8;">Total Task Value</span>
                         <span style="color:#f1f5f9;font-weight:600;"></span>
                     </div>
@@ -860,6 +860,13 @@
             const myId = me && me.id;
 
             async function check() {
+                // Skip if a previous check is still in flight — on a slow 2G/3G
+                // connection the 15 s tick can fire while the previous request
+                // is still pending. Without this guard the requests stack
+                // indefinitely, holding onto fetch buffers + AbortController
+                // closures, and eventually exhausts memory on low-RAM devices.
+                if (window._taskWatchInFlight) return;
+                window._taskWatchInFlight = true;
                 try {
                     const res = await apiFetch('/tracking/' + taskId, {
                         headers: { 'Authorization': 'Bearer ' + token }
@@ -903,6 +910,8 @@
                     }
                 } catch (e) {
                     // network blip — ignore
+                } finally {
+                    window._taskWatchInFlight = false;
                 }
             }
             window._taskWatchInterval = setInterval(check, 15000);

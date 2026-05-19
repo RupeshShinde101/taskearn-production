@@ -8230,7 +8230,23 @@ async function initGoogleSignIn() {
         btn.addEventListener('click', () => {
             // prompt() shows the One Tap sign-in overlay. With ux_mode:'popup'
             // the actual credential is delivered via the callback without a redirect.
-            google.accounts.id.prompt();
+            // FedCM (Chrome 121+) rejects internally with AbortError when the user
+            // dismisses the dialog — pass a notification callback so GIS doesn't
+            // surface that as an unhandled promise rejection.
+            try {
+                google.accounts.id.prompt((notification) => {
+                    if (!notification) return;
+                    if (notification.isNotDisplayed && notification.isNotDisplayed()) {
+                        console.info('Google prompt not displayed:', notification.getNotDisplayedReason && notification.getNotDisplayedReason());
+                    } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
+                        console.info('Google prompt skipped:', notification.getSkippedReason && notification.getSkippedReason());
+                    } else if (notification.isDismissedMoment && notification.isDismissedMoment()) {
+                        console.info('Google prompt dismissed:', notification.getDismissedReason && notification.getDismissedReason());
+                    }
+                });
+            } catch (e) {
+                console.warn('Google prompt failed:', e);
+            }
         });
         container.appendChild(btn);
     }

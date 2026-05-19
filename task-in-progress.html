@@ -518,6 +518,17 @@
     <div class="container">
         <!-- Map Section -->
         <div class="location-section">
+            <!-- Map placeholder shown until Leaflet tiles load (prevents OOM/crash on mobile) -->
+            <div id="mapPlaceholder" onclick="loadMapNow()" style="position:absolute;inset:0;z-index:5;background:#e4eaf4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;">
+                <div style="width:64px;height:64px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,0.12);">
+                    <i class="fas fa-map-location-dot" style="font-size:28px;color:#3b6dff;"></i>
+                </div>
+                <div style="text-align:center;padding:0 24px;">
+                    <div style="font-size:15px;font-weight:600;color:#1f2937;margin-bottom:4px;">📍 Task Location</div>
+                    <div id="mapPlaceholderAddr" style="font-size:13px;color:#4b5563;">Getting location...</div>
+                </div>
+                <div style="font-size:12px;color:#6b7280;background:white;padding:6px 18px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">Tap to view map</div>
+            </div>
             <div id="map"></div>
             <!-- Location Info Overlay -->
             <div class="location-info">
@@ -877,10 +888,17 @@
                             }
                             if (t.pickup && t.pickup.lat) {
                                 currentTask.location = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address };
+                                // Update map placeholder with real address
+                                const _phAddr = document.getElementById('mapPlaceholderAddr');
+                                if (_phAddr) _phAddr.textContent = t.pickup.address || (parseFloat(t.pickup.lat).toFixed(4) + ', ' + parseFloat(t.pickup.lng).toFixed(4));
                             }
                             console.log('✅ Loaded task from API tracking:', currentTask);
                             // Update verify button based on current task status
                             updateVerifyButtonState(t.status);
+                            // If payment already released, show the popup immediately on page load
+                            if (t.status === 'payment_released') {
+                                showPaymentReleasedPopup(t);
+                            }
                         } else if (result && result.success === false && /not found/i.test(result.message || '')) {
                             handleTaskGone();
                             return;
@@ -1336,7 +1354,7 @@
             }
 
             clearInterval(timerInterval);
-            alert('Task released. ?' + penalty + ' penalty deducted from your wallet.');
+            alert('Task released. ₹' + penalty + ' penalty deducted from your wallet.');
             window.location.href = 'index.html';
         }
 
@@ -1345,7 +1363,9 @@
             await loadTaskDetails();
             if (_taskGoneHandled) return; // task was already deleted; redirect in-flight
             showLocation();
-            initializeMap();
+            // Lazy-load the map after 3 s — lets critical task info render first
+            // and avoids concurrent CDN + tile requests that can OOM mobile Chrome.
+            setTimeout(() => { if (!_taskGoneHandled) loadMapNow(); }, 3000);
             startTaskWatch();
             
             // Sync suspension from server (handles cleared cache)
@@ -1386,8 +1406,17 @@
         let map;
         let taskMarker;
 
+        // Lazy-load helper: hides placeholder then calls initializeMap once
+        function loadMapNow() {
+            const ph = document.getElementById('mapPlaceholder');
+            if (ph) ph.style.display = 'none';
+            if (!map) initializeMap();
+        }
+
         // Initialize Leaflet map
         function initializeMap() {
+            const _ph = document.getElementById('mapPlaceholder');
+            if (_ph) _ph.style.display = 'none';
             try {
                 // Create map centered on task location or default
                 const mapCenter = currentTask.location || { lat: 28.6139, lng: 77.2090 }; // Delhi default

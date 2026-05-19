@@ -161,7 +161,11 @@ self.addEventListener('fetch', event => {
     if (cached) {
       // Serve cached copy instantly; revalidate in the background so cache stays fresh.
       fetch(event.request).then(r => {
-        if (r && r.ok) caches.open(CACHE_NAME).then(c => c.put(event.request, r));
+        // Guard: if the SW intercepted its own revalidation fetch and returned the cached
+        // copy, r.bodyUsed will already be true — skip caching to avoid the clone error.
+        if (r && r.ok && !r.bodyUsed) {
+          caches.open(CACHE_NAME).then(c => c.put(event.request, r)).catch(() => {});
+        }
       }).catch(() => {});
       return cached;
     }

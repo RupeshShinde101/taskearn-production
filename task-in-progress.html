@@ -1175,23 +1175,12 @@
 
             const taskId = currentTask.id;
             const token = localStorage.getItem('taskearn_token') || '';
-            const API_BASE = 'https://taskearn-production-production.up.railway.app/api';
-            const PROXY_BASE = '/.netlify/functions/api-proxy/api';
-
-            async function doMark(base) {
-                return await fetch(base + '/tasks/' + taskId + '/mark-completed', {
+            try {
+                let res;
+                res = await apiFetch('/tasks/' + taskId + '/mark-completed', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
                 });
-            }
-
-            try {
-                let res;
-                try {
-                    res = await doMark(API_BASE);
-                } catch (e) {
-                    res = await doMark(PROXY_BASE);
-                }
                 const result = await res.json();
                 if (result.success || res.ok) {
                     // Clear stored task

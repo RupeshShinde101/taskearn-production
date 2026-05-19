@@ -639,11 +639,14 @@ const TasksAPI = {
             method: 'GET'
         });
         
-        // Cache successful results
+        // Cache successful results — cap at 50 tasks to prevent localStorage
+        // from growing into hundreds of KB which causes "Out of Memory" on low-RAM devices.
         if (result.data && result.data.success && result.data.tasks) {
             try {
-                localStorage.setItem('cached_tasks', JSON.stringify(result.data.tasks));
-                console.log('💾 Tasks cached to localStorage');
+                const MAX_CACHED = 50;
+                const tasksToCache = result.data.tasks.slice(0, MAX_CACHED);
+                localStorage.setItem('cached_tasks', JSON.stringify(tasksToCache));
+                console.log(`💾 Tasks cached to localStorage (${tasksToCache.length}/${result.data.tasks.length})`);
             } catch (e) {
                 console.warn('⚠️ Could not cache tasks:', e);
             }

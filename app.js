@@ -72,6 +72,12 @@ let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 let _taskDetailMiniMap = null; // Leaflet mini-map inside task detail modal — kept global so it can be properly destroyed
 let _currentTaskList = []; // Tracks the currently displayed task list for sort without re-creating closures
 
+// Global interval IDs — stored so they can all be cleared on beforeunload to free memory.
+let _timerIntervalId = null;
+let _notifIntervalId = null;
+let _autoRefreshIntervalId = null;
+let _taskTimersStarted = false; // Guard: prevent startTaskTimers() from registering duplicate intervals.
+
 // Categories that carry a distance-based service charge (Delivery / Pick&Drop).
 // All other categories have NO service charge. Commission: 15% delivery/pickup, 17% others.
 const DELIVERY_CATEGORIES = new Set(['delivery', 'pickup', 'transport', 'moving']);
@@ -1011,7 +1017,7 @@ async function syncNotificationsFromServer() {
             const localNotifications = loadNotifications();
             const serverIds = new Set(serverNotifications.map(n => n.id));
             const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
-            const merged = [...serverNotifications, ...localOnly];
+            const merged = [...serverNotifications, ...localOnly].slice(0, 50); // cap to prevent OOM
 
             localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
             notifications = merged;
@@ -1033,7 +1039,9 @@ async function syncNotificationsFromServer() {
 
 function saveNotifications() {
     if (!currentUser) return;
-    localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(notifications));
+    // Keep only the 50 most recent notifications to prevent localStorage bloat.
+    const capped = notifications.slice(0, 50);
+    localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(capped));
 }
 
 function addNotification(notification) {
@@ -1404,7 +1412,7 @@ async function _fetchAndRenderNotifications() {
             const localNotifications = loadNotifications();
             const serverIds = new Set(serverNotifications.map(n => n.id));
             const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
-            const merged = [...serverNotifications, ...localOnly];
+            const merged = [...serverNotifications, ...localOnly].slice(0, 50); // cap to prevent OOM
 
             localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
             notifications = merged;
@@ -1616,7 +1624,7 @@ function notifyTaskPoster(task, acceptedBy) {
             read: false,
             createdAt: new Date().toISOString()
         });
-        localStorage.setItem(`notifications_${posterUser.id}`, JSON.stringify(posterNotifications));
+        localStorage.setItem(`notifications_${posterUser.id}`, JSON.stringify(posterNotifications.slice(0, 50))); // cap to prevent OOM
     }
 }
 
@@ -2264,7 +2272,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         // Refresh tasks from server every 60 seconds (was 30s — reduced for performance)
-        setInterval(() => {
+        _autoRefreshIntervalId = setInterval(() => {
             if (document.hidden) return; // Skip refresh when tab is not visible
             try {
                 Promise.all([
@@ -2301,11 +2309,24 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         console.log('✅ Workmate4u Ready!');
 
-        // Release Leaflet maps and GPS watcher when navigating away to free memory
+        // Release all resources when navigating away to free memory
         window.addEventListener('beforeunload', function() {
+            // Clear all timers
+            try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (_) {}
+            try { if (_notifIntervalId) { clearInterval(_notifIntervalId); _notifIntervalId = null; } } catch (_) {}
+            try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (_) {}
+            // Clear Leaflet map markers
+            try {
+                taskMarkers.forEach(function(m) { try { if (map && map.hasLayer(m)) map.removeLayer(m); } catch (_) {} });
+                taskMarkers = [];
+            } catch (_) {}
+            // Destroy Leaflet maps
             try { if (_taskDetailMiniMap) { _taskDetailMiniMap.remove(); _taskDetailMiniMap = null; } } catch (_) {}
             try { if (map) { map.remove(); map = null; } } catch (_) {}
+            // Clear GPS watcher
             try { if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; } } catch (_) {}
+            // Release large in-memory arrays
+            try { tasks = []; _currentTaskList = []; } catch (_) {}
         });
 
         // Initialize Google Sign-In (if GIS loaded before app.js)
@@ -7627,7 +7648,13 @@ function setMinDateTime() {
 }
 
 function startTaskTimers() {
-    setInterval(() => {
+    // Guard: only register intervals once per page lifecycle to avoid
+    // duplicate timer stacking which multiplies render/network work.
+    if (_taskTimersStarted) return;
+    _taskTimersStarted = true;
+
+    _timerIntervalId = setInterval(() => {
+        if (document.hidden) return; // Skip heavy work when tab is not visible
         tasks.forEach(t => {
             if (t.status === 'active' && new Date(t.expiresAt) <= new Date()) {
                 t.status = 'expired';
@@ -7645,11 +7672,15 @@ function startTaskTimers() {
         renderTasks();
         renderPostedTasks();
         renderAcceptedTasks();
-        addTaskMarkers();
+        // NOTE: addTaskMarkers() intentionally removed from this timer — re-creating
+        // all Leaflet marker objects every minute was the primary cause of
+        // "Out of Memory" crashes. Markers are updated only when fresh task data
+        // arrives from the server (loadTasksFromServer → addTaskMarkers).
     }, 60000);
 
     // Sync notifications from server every 30 seconds
-    setInterval(() => {
+    _notifIntervalId = setInterval(() => {
+        if (document.hidden) return;
         if (currentUser) {
             syncNotificationsFromServer();
         }
@@ -9282,12 +9313,14 @@ document.addEventListener('DOMContentLoaded', function() {
         quotes[active].classList.remove('active');
         quotes[(active + 1) % quotes.length].classList.add('active');
     }
-    if (document.querySelector('.hero-quote')) {
-        setInterval(rotate, 4000);
+    // Use a single DOMContentLoaded-safe initialiser — never create two intervals.
+    function start() {
+        if (document.querySelector('.hero-quote')) setInterval(rotate, 4000);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start, { once: true });
     } else {
-        document.addEventListener('DOMContentLoaded', function() {
-            if (document.querySelector('.hero-quote')) setInterval(rotate, 4000);
-        });
+        start();
     }
 })();
 

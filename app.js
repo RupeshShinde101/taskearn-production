@@ -1012,10 +1012,15 @@ function _mapServerNotification(n) {
 }
 
 async function syncNotificationsFromServer() {
-    if (!currentUser) return [];
+    // Capture user locally. The user may log out (currentUser -> null) while
+    // the apiRequest below is in-flight; without this, currentUser.id throws
+    // after the await resolves.
+    const user = currentUser;
+    if (!user) return [];
 
     try {
         const r = await apiRequest('/notifications', { method: 'GET' });
+        if (!currentUser) return []; // logged out mid-flight
         const result = (r.data) || {};
 
         if (r.success && result.success && Array.isArray(result.notifications)) {
@@ -1027,7 +1032,7 @@ async function syncNotificationsFromServer() {
             const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
             const merged = [...serverNotifications, ...localOnly].slice(0, 50); // cap to prevent OOM
 
-            localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
+            localStorage.setItem(`notifications_${user.id}`, JSON.stringify(merged));
             notifications = merged;
             updateNotificationUI();
             return merged;
@@ -1653,9 +1658,14 @@ document.addEventListener('click', function(e) {
 // Called independently of TasksAPI.getAll() so tasks always appear even if the
 // global task list endpoint fails.
 async function syncUserTasksFromServer() {
-    if (!currentUser) return;
+    // Capture user locally — same race as syncNotificationsFromServer: a
+    // logout during the in-flight UserAPI.getTasks() call would set
+    // currentUser to null and later currentUser.id accesses would throw.
+    const user = currentUser;
+    if (!user) return;
     try {
         const userTasksResult = await UserAPI.getTasks();
+        if (!currentUser) return; // logged out mid-flight
         if (!userTasksResult || !userTasksResult.success) {
             console.warn('syncUserTasksFromServer: API returned failure', userTasksResult);
             return;
@@ -1732,7 +1742,7 @@ async function syncUserTasksFromServer() {
                         helper_name: dbTask.helper_name, helper_phone: dbTask.helper_phone,
                         helper_rating: dbTask.helper_rating,
                         helper_tasks_completed: dbTask.helper_tasks_completed,
-                        postedBy: { id: currentUser.id, name: currentUser.name },
+                        postedBy: { id: user.id, name: user.name },
                         location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address }
                     });
                 }
@@ -1808,9 +1818,9 @@ async function syncUserTasksFromServer() {
                     pt.earnedAmount = getHelperEarnings(pt);
                     pt.paidAt = pt.paidAt || pt.paid_at || pt.helper_final_completed_at || new Date().toISOString();
                     myCompletedTasks.push(pt);
-                    currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
-                    currentUser.totalEarnings = Math.round(
-                        (parseFloat(currentUser.totalEarnings || 0) + pt.earnedAmount) * 100) / 100;
+                    user.tasksCompleted = (user.tasksCompleted || 0) + 1;
+                    user.totalEarnings = Math.round(
+                        (parseFloat(user.totalEarnings || 0) + pt.earnedAmount) * 100) / 100;
                 }
             });
 
@@ -1833,12 +1843,12 @@ async function syncUserTasksFromServer() {
         }
 
         // Persist to localStorage
-        updateUserData(currentUser.id, {
+        updateUserData(user.id, {
             postedTasks: serializeTasks(myPostedTasks),
             acceptedTasks: serializeTasks(myAcceptedTasks),
             completedTasks: serializeTasks(myCompletedTasks),
-            tasksCompleted: currentUser.tasksCompleted,
-            totalEarnings: currentUser.totalEarnings
+            tasksCompleted: user.tasksCompleted,
+            totalEarnings: user.totalEarnings
         });
 
         // Notify poster of tasks awaiting payment
@@ -6606,14 +6616,14 @@ async function saveNewPassword() {
 })();
 
 function logout() {
-    // Call server logout to invalidate session_token
+    // Call server logout to invalidate session_token. Route through apiRequest
+    // so the /api prefix + Netlify proxy fallback are both applied — a bare
+    // fetch('/auth/logout') resolves against the page origin (no /api) and
+    // returns 400.
     const token = localStorage.getItem('taskearn_token');
-    if (token) {
+    if (token && typeof apiRequest === 'function') {
         try {
-            fetch((typeof API_URL !== 'undefined' ? API_URL : '') + '/auth/logout', {
-                method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + token }
-            }).catch(() => {});
+            apiRequest('/auth/logout', { method: 'POST' }).catch(() => {});
         } catch (e) {}
     }
 

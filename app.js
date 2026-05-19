@@ -3516,10 +3516,14 @@ async function acceptTask(taskId) {
     } catch (e) {}
 
     try {
-        // 8-second timeout via Promise.race — prevents the accept button from
-        // hanging forever when the proxy or Railway backend is slow to respond.
+        // 20-second timeout via Promise.race — Netlify functions can take up to
+        // ~10 s on cold start + Railway round-trip on flaky carrier networks.
+        // An 8 s timeout was firing BEFORE the backend response and showing a
+        // misleading "Network error" toast even though the task had been
+        // accepted server-side. 20 s gives the legitimate response time to
+        // arrive on slow networks while still capping any true hang.
         var _acceptTimeout = new Promise(function(_, reject) {
-            setTimeout(function() { reject(new Error('accept_timeout')); }, 8000);
+            setTimeout(function() { reject(new Error('accept_timeout')); }, 20000);
         });
         var data = await Promise.race([TasksAPI.accept(taskId), _acceptTimeout]);
 
@@ -3568,8 +3572,17 @@ async function acceptTask(taskId) {
         }
 
     } catch (err) {
-        // Network failure or 12-second timeout.
-        showToast('❌ Network error. Check your connection and try again.');
+        // Network failure or 20-second timeout. The backend may have actually
+        // accepted the task even though we never saw the response — schedule
+        // a background reconcile from the server so the UI corrects itself
+        // (the task will move out of the Active list and into Accepted)
+        // without forcing the user to reload the page.
+        showToast('⚠️ Connection is slow. Checking status...');
+        try {
+            if (typeof loadTasksFromServer === 'function') {
+                loadTasksFromServer().catch(function() {});
+            }
+        } catch(e) {}
         resetAcceptButtons();
     }
 }

@@ -3346,6 +3346,41 @@ function navigateToTask(lat, lng, taskTitle) {
     closeModal('taskDetailModal');
 }
 
+// Show a confirmation popup after a task is accepted.
+// The helper must tap "Continue to Task" to navigate — no automatic redirect.
+function showTaskAcceptedModal(taskId, taskTitle) {
+    var old = document.getElementById('_taskAcceptedModal');
+    if (old) old.remove();
+
+    // Inject animation keyframe once
+    if (!document.getElementById('_tam_style')) {
+        var s = document.createElement('style');
+        s.id = '_tam_style';
+        s.textContent = '@keyframes _tam_in{from{transform:scale(0.85);opacity:0}to{transform:scale(1);opacity:1}}';
+        document.head.appendChild(s);
+    }
+
+    var overlay = document.createElement('div');
+    overlay.id = '_taskAcceptedModal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:100000;padding:20px;box-sizing:border-box;';
+    var titleHtml = taskTitle ? '<strong style="display:block;margin-bottom:4px;">' + taskTitle + '</strong>' : '';
+    overlay.innerHTML =
+        '<div style="background:#fff;border-radius:20px;padding:32px 24px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);animation:_tam_in 0.25s ease;">' +
+            '<div style="width:72px;height:72px;background:linear-gradient(135deg,#10b981,#059669);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
+                '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+            '</div>' +
+            '<h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111;">Task Accepted!</h2>' +
+            '<p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.6;">' + titleHtml + 'You have successfully accepted this task. Tap the button below to begin.</p>' +
+            '<button id="_taskAcceptedContinueBtn" style="width:100%;padding:14px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;letter-spacing:0.3px;">Continue to Task →</button>' +
+        '</div>';
+    document.body.appendChild(overlay);
+
+    document.getElementById('_taskAcceptedContinueBtn').addEventListener('click', function() {
+        overlay.remove();
+        window.location.href = 'task-in-progress.html?taskId=' + taskId;
+    });
+}
+
 async function acceptTask(taskId) {
     console.log('🎯 acceptTask called with taskId:', taskId, 'type:', typeof taskId);
 
@@ -3448,8 +3483,8 @@ async function acceptTask(taskId) {
                 try { if (typeof clearRoute === 'function') clearRoute(); } catch(e) {}
             } catch (e) {}
 
-            // Redirect — this must always execute
-            window.location.href = 'task-in-progress.html?taskId=' + taskId;
+            // Show acceptance popup — helper taps "Continue" to navigate
+            showTaskAcceptedModal(taskId, task && task.title);
             return;
 
         } else if (data && data.hasActiveTask) {
@@ -3476,7 +3511,7 @@ async function acceptTask(taskId) {
         // Navigate optimistically — task-in-progress.html verifies status via /tracking.
         if (task) {
             try { closeModal('taskDetailModal'); } catch(e) {}
-            window.location.href = 'task-in-progress.html?taskId=' + taskId;
+            showTaskAcceptedModal(taskId, task.title);
         } else {
             showToast('❌ Network error. Check your connection and try again.');
             resetAcceptButtons();

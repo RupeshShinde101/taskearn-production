@@ -22,12 +22,8 @@
             script.async = true;
             document.head.appendChild(script);
         }
-        // Load after DOM ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', loadRazorpayScript);
-        } else {
-            loadRazorpayScript();
-        }
+        // NOTE: Razorpay is loaded lazily by razorpay.js when a payment is triggered.
+        // Do NOT auto-load here — it causes ERR_INSUFFICIENT_RESOURCES by preloading ~20 chunks at page start.
         
         // Auto-detect environment and set API URL with proxy fallback
         (function() {

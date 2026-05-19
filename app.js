@@ -69,6 +69,8 @@ let gpsWatchId = null;
 let isGPSActive = false;
 let modalTaskCoords = null; // Stores picked location for task posting
 let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
+let _taskDetailMiniMap = null; // Leaflet mini-map inside task detail modal — kept global so it can be properly destroyed
+let _currentTaskList = []; // Tracks the currently displayed task list for sort without re-creating closures
 
 // Categories that carry a distance-based service charge (Delivery / Pick&Drop).
 // All other categories have NO service charge. Commission: 15% delivery/pickup, 17% others.
@@ -2292,7 +2294,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
 
         console.log('✅ Workmate4u Ready!');
-        
+
+        // Release Leaflet maps and GPS watcher when navigating away to free memory
+        window.addEventListener('beforeunload', function() {
+            try { if (_taskDetailMiniMap) { _taskDetailMiniMap.remove(); _taskDetailMiniMap = null; } } catch (_) {}
+            try { if (map) { map.remove(); map = null; } } catch (_) {}
+            try { if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; } } catch (_) {}
+        });
+
         // Initialize Google Sign-In (if GIS loaded before app.js)
         setTimeout(() => initGoogleSignIn(), 500);
     } catch (error) {
@@ -2799,6 +2808,23 @@ function showTaskListSkeletons() {
     `).join('');
 }
 
+// Standalone sort handler — uses _currentTaskList so renderTasks doesn't have to
+// re-create a closure (and capture a large array) on every call.
+window._sortTasks = function(by) {
+    const c = document.getElementById('tasksList');
+    if (c) c.dataset.sort = by;
+    let sorted = [..._currentTaskList];
+    if (by === 'earn_desc') sorted.sort((a, b) => getHelperEarnings(b) - getHelperEarnings(a));
+    else if (by === 'earn_asc') sorted.sort((a, b) => getHelperEarnings(a) - getHelperEarnings(b));
+    else if (by === 'time') sorted.sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
+    else sorted.sort((a, b) => {
+        const dA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
+        const dB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);
+        return dA - dB;
+    });
+    renderTasks(sorted);
+};
+
 function renderTasks(filtered = null) {
     const container = document.getElementById('tasksList');
     if (!container) return;
@@ -2851,7 +2877,6 @@ function renderTasks(filtered = null) {
             </div>
         `;
         return;
-        return;
     }
 
     const INITIAL_SHOW = 6;
@@ -2884,20 +2909,7 @@ function renderTasks(filtered = null) {
     `;
 
     // Sort helper
-    window._sortTasks = function(by) {
-        const c = document.getElementById('tasksList');
-        if (c) c.dataset.sort = by;
-        let sorted = [...list];
-        if (by === 'earn_desc') sorted.sort((a,b) => getHelperEarnings(b) - getHelperEarnings(a));
-        else if (by === 'earn_asc') sorted.sort((a,b) => getHelperEarnings(a) - getHelperEarnings(b));
-        else if (by === 'time') sorted.sort((a,b) => new Date(a.expiresAt) - new Date(b.expiresAt));
-        else sorted.sort((a,b) => {
-            const dA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
-            const dB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);
-            return dA - dB;
-        });
-        renderTasks(sorted);
-    };
+    _currentTaskList = list; // update module-level reference (no closure needed)
 
     const isHelper = currentUser && currentUser.id;
     container.innerHTML = displayList.map(task => {
@@ -3135,24 +3147,32 @@ function openTaskDetail(taskId) {
     console.log('✅ Modal content updated with Navigate and Accept buttons');
     openModal('taskDetailModal');
 
-    // Mini map
+    // Mini map — destroy any previous instance before creating a new one to prevent memory leaks
     setTimeout(() => {
+        try {
+            if (_taskDetailMiniMap) {
+                _taskDetailMiniMap.remove();
+                _taskDetailMiniMap = null;
+            }
+        } catch (_) {}
         const el = document.getElementById('taskDetailMap');
-        if (el && !el._leaflet_id) {
-            const miniMap = L.map('taskDetailMap', {
+        if (el) {
+            // Clear the leaflet_id flag so Leaflet allows re-initialisation on the same element
+            delete el._leaflet_id;
+            _taskDetailMiniMap = L.map('taskDetailMap', {
                 center: [task.location.lat, task.location.lng],
                 zoom: 15,
                 zoomControl: false,
                 dragging: false,
                 scrollWheelZoom: false
             });
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(_taskDetailMiniMap);
             L.marker([task.location.lat, task.location.lng], {
                 icon: getTaskIcon(task.category)
-            }).addTo(miniMap);
+            }).addTo(_taskDetailMiniMap);
             // Modal animates in — Leaflet caches initial 0px container; force redraw after layout settles
-            setTimeout(() => { try { miniMap.invalidateSize(); } catch(_){} }, 250);
-            setTimeout(() => { try { miniMap.invalidateSize(); } catch(_){} }, 600);
+            setTimeout(() => { try { _taskDetailMiniMap && _taskDetailMiniMap.invalidateSize(); } catch(_){} }, 250);
+            setTimeout(() => { try { _taskDetailMiniMap && _taskDetailMiniMap.invalidateSize(); } catch(_){} }, 600);
         }
     }, 200);
 }
@@ -7349,6 +7369,11 @@ function openModal(id) {
 
 function closeModal(id) {
     document.getElementById(id)?.classList.remove('active');
+    // Destroy the mini Leaflet map when the task-detail modal is closed to free memory
+    if (id === 'taskDetailModal' && _taskDetailMiniMap) {
+        try { _taskDetailMiniMap.remove(); } catch (_) {}
+        _taskDetailMiniMap = null;
+    }
     // Only unlock scroll when no modal is open
     if (!document.querySelector('.modal.active')) {
         document.body.classList.remove('modal-open');

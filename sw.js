@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260519a';
+const CACHE_NAME = 'workmate4u-v20260519b';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -88,17 +88,30 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // HTML pages: network-first (always fresh)
+  // HTML pages: network-first with 5-second timeout.
+  // Without the timeout, a slow/stalled mobile connection holds the SW respondWith
+  // promise open for 30 s+, causing Chrome to fire RESULT_CODE_HUNG and kill the tab.
+  // If the network doesn't answer in 5 s we serve the cached version instantly; the
+  // network fetch continues in the background and updates the cache for the next load.
   if (event.request.headers.get('accept')?.includes('text/html') || url.pathname.endsWith('.html')) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(event.request).then(r => r || caches.match('/offline.html')))
-    );
+    event.respondWith((async () => {
+      // Kick off the network fetch immediately so it updates the cache in background
+      const networkPromise = fetch(event.request).then(response => {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        return response;
+      });
+      // Race: serve whichever arrives first — network (if fast) or cache after 5 s
+      const cached = await caches.match(event.request);
+      if (cached) {
+        // We have a cached copy — race the network against a 5 s timer
+        const timeout = new Promise(resolve => setTimeout(() => resolve(null), 5000));
+        const winner = await Promise.race([networkPromise.catch(() => null), timeout]);
+        return winner || cached; // cached is already the freshest we have locally
+      }
+      // No cache yet (first-ever load) — wait for network, no timeout fallback
+      return networkPromise.catch(() => caches.match('/offline.html'));
+    })());
     return;
   }
 

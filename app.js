@@ -8229,19 +8229,16 @@ async function initGoogleSignIn() {
         btn.addEventListener('mouseleave', () => { btn.style.background = '#fff'; btn.style.boxShadow = 'none'; });
         btn.addEventListener('click', () => {
             // prompt() shows the One Tap sign-in overlay. With ux_mode:'popup'
-            // the actual credential is delivered via the callback without a redirect.
-            // FedCM (Chrome 121+) rejects internally with AbortError when the user
-            // dismisses the dialog — pass a notification callback so GIS doesn't
-            // surface that as an unhandled promise rejection.
+            // the credential is delivered via the callback without a redirect.
+            // Under mandatory FedCM (Chrome 2025+), the only supported moment
+            // method is isDismissedMoment(); isNotDisplayed()/isSkippedMoment()
+            // and their *Reason() helpers are deprecated and trigger a
+            // GSI_LOGGER warning. Don't call them.
+            // https://developers.google.com/identity/gsi/web/guides/fedcm-migration
             try {
                 google.accounts.id.prompt((notification) => {
-                    if (!notification) return;
-                    if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-                        console.info('Google prompt not displayed:', notification.getNotDisplayedReason && notification.getNotDisplayedReason());
-                    } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-                        console.info('Google prompt skipped:', notification.getSkippedReason && notification.getSkippedReason());
-                    } else if (notification.isDismissedMoment && notification.isDismissedMoment()) {
-                        console.info('Google prompt dismissed:', notification.getDismissedReason && notification.getDismissedReason());
+                    if (notification && notification.isDismissedMoment && notification.isDismissedMoment()) {
+                        console.info('Google prompt dismissed');
                     }
                 });
             } catch (e) {

@@ -1,6 +1,6 @@
 // DEPLOY_VERSION: Update this string on each deploy to bust caches automatically.
 // The browser detects byte-level changes to sw.js and triggers an update.
-const CACHE_NAME = 'workmate4u-v20260520b';
+const CACHE_NAME = 'workmate4u-v20260520c';
 const STATIC_ASSETS = [
   '/index.html',
   '/browse.html',
@@ -34,20 +34,28 @@ const STATIC_ASSETS = [
   '/offline.html'
 ];
 
-// Install — cache assets in background (non-blocking). Call skipWaiting so the
-// new SW activates immediately: this ensures the SW_UPDATED message reaches every
-// open tab (including ones still running the old sw-register.js that waited for
-// the 'activated' state rather than 'installed').
+// Critical pages that MUST be cached before the SW takes control.
+// task-in-progress.html is the redirect target immediately after task accept —
+// if it isn't cached yet when the user navigates there, the SW falls into the
+// no-cache branch (no timeout) and Chrome's hung-tab watchdog can kill the tab.
+const CRITICAL_ASSETS = [
+  '/task-in-progress.html',
+  '/browse.html',
+  '/offline.html',
+];
+
+// Install — cache critical pages synchronously so they're available the moment
+// the SW activates; cache the rest fire-and-forget in background.
 self.addEventListener('install', event => {
   self.skipWaiting(); // activate immediately → triggers SW_UPDATED message on every deploy
-  // Cache assets in background — don't block install on this
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      // Fire-and-forget: cache each asset individually, failures are fine
-      STATIC_ASSETS.forEach(url => {
+    caches.open(CACHE_NAME).then(async cache => {
+      // Wait for critical pages first — these must be cached before clients.claim()
+      await Promise.all(CRITICAL_ASSETS.map(url => cache.add(url).catch(() => {})));
+      // Cache the rest without blocking
+      STATIC_ASSETS.filter(url => !CRITICAL_ASSETS.includes(url)).forEach(url => {
         cache.add(url).catch(() => {});
       });
-      return Promise.resolve(); // Resolve immediately — don't wait for caching
     })
   );
 });
@@ -109,8 +117,12 @@ self.addEventListener('fetch', event => {
         const winner = await Promise.race([networkPromise.catch(() => null), timeout]);
         return winner || cached; // cached is already the freshest we have locally
       }
-      // No cache yet (first-ever load) — wait for network, no timeout fallback
-      return networkPromise.catch(() => caches.match('/offline.html'));
+      // No cache yet — wait for network with a 10-second safety timeout.
+      // Without the timeout, a slow CDN response keeps the respondWith promise
+      // open indefinitely and Chrome's hung-tab watchdog kills the tab (RESULT_CODE_HUNG).
+      const networkTimeout = new Promise(resolve => setTimeout(() => resolve(null), 10000));
+      const response = await Promise.race([networkPromise.catch(() => null), networkTimeout]);
+      return response || await caches.match('/offline.html');
     })());
     return;
   }

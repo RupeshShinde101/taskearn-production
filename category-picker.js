@@ -1075,7 +1075,13 @@
     function openMapPicker(opts) {
         opts = opts || {};
         if (typeof L === 'undefined') {
-            alert('Map is still loading. Please try again in a moment.');
+            try {
+                if (typeof window.showToast === 'function') {
+                    window.showToast('Map is still loading. Please try again in a moment.', 'error');
+                } else {
+                    console.warn('Map is still loading.');
+                }
+            } catch (e) {}
             return;
         }
         // Remove any prior instance

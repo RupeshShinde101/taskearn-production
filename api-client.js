@@ -229,12 +229,27 @@ window.apiFetch = async function apiFetchGlobal(path, options) {
     var directBase = IS_LOCAL
         ? 'http://localhost:5000/api'
         : (ON_NETLIFY ? proxyBase : 'https://taskearn-production-production.up.railway.app/api');
+
+    // 15-second hard timeout per request. Without this, a stalled mobile
+    // connection can keep the fetch hanging indefinitely, exhausting the
+    // browser's max-concurrent-connections pool and freezing the UI.
+    function _doFetch(url, timeoutMs) {
+        if (options.signal) {
+            // Caller supplied their own AbortController — respect it.
+            return fetch(url, options);
+        }
+        var controller = new AbortController();
+        var tid = setTimeout(function() { controller.abort(); }, timeoutMs || 15000);
+        var opts = Object.assign({}, options, { signal: controller.signal });
+        return fetch(url, opts).finally(function() { clearTimeout(tid); });
+    }
+
     try {
-        return await fetch(directBase + apiPath, options);
+        return await _doFetch(directBase + apiPath, 15000);
     } catch (e) {
         if (!ON_NETLIFY && directBase !== proxyBase) {
             console.warn('apiFetch: direct failed, falling back to proxy:', e && e.message);
-            return await fetch(proxyBase + apiPath, options);
+            return await _doFetch(proxyBase + apiPath, 15000);
         }
         throw e;
     }

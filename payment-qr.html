@@ -636,7 +636,7 @@
 
         // Payment expired
         function paymentExpired() {
-            alert('Payment time expired. Please try again.');
+            _pageAlert('Payment time expired. Please try again.');
             window.history.back();
         }
 
@@ -682,13 +682,13 @@
                 if (data.success) {
                     openRazorpayCheckout(data);
                 } else {
-                    alert('Error: ' + data.message);
+                    _pageAlert('Error: ' + data.message);
                     document.getElementById('paymentModal').classList.remove('active');
                 }
             })
             .catch(err => {
                 console.error('Error:', err);
-                alert('Failed to initiate payment');
+                _pageAlert('Failed to initiate payment');
                 document.getElementById('paymentModal').classList.remove('active');
             });
         }
@@ -751,12 +751,12 @@
                 if (data.success) {
                     paymentSuccess();
                 } else {
-                    alert('Payment verification failed: ' + data.message);
+                    _pageAlert('Payment verification failed: ' + data.message);
                 }
             })
             .catch(err => {
                 console.error('Error:', err);
-                alert('Payment verification error');
+                _pageAlert('Payment verification error');
             });
         }
 
@@ -764,7 +764,7 @@
         function paymentSuccess() {
             // Clear current task from localStorage
             localStorage.removeItem('currentTask');
-            alert('Payment successful! Task completed and payment received.');
+            _pageAlert('Payment successful! Task completed and payment received.');
             window.location.href = 'wallet.html';
         }
 
@@ -787,11 +787,35 @@
 
         // Call support
         function callSupport() {
-            alert('Calling support team...\n+91 XXXX-XXXX-XXXX');
+            _pageAlert('Calling support team...\n+91 XXXX-XXXX-XXXX');
             closeHelp();
         }
     </script>
 <script src="sw-register.js?v=20260420_recovery"></script>
     <script src="back-button.js?v=20260506_hideWorker"></script>
+<script>
+/* ---- _pageAlert: non-blocking replacement for alert() (auto-injected) ---- */
+(function(){
+  if (typeof window._pageAlert === 'function') return;
+  window._pageAlert = function(msg, opts){
+    try {
+      if (typeof window.showToast === 'function') { window.showToast(msg, (opts && opts.kind) || 'info', (opts && opts.ms) || 3500); return; }
+    } catch(e) {}
+    try {
+      var t = document.createElement('div');
+      t.setAttribute('role', 'status');
+      t.style.cssText =
+        'position:fixed;top:18px;left:50%;transform:translateX(-50%);' +
+        'z-index:2147483647;background:rgba(15,23,42,.95);color:#fff;' +
+        'padding:14px 22px;border-radius:10px;font-size:14px;font-weight:600;' +
+        'line-height:1.45;max-width:90vw;white-space:pre-wrap;text-align:center;' +
+        'box-shadow:0 10px 30px rgba(0,0,0,.4);pointer-events:none;';
+      t.textContent = String(msg == null ? '' : msg);
+      document.body.appendChild(t);
+      setTimeout(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, (opts && opts.ms) || 3500);
+    } catch(e) { try { console.warn(msg); } catch(_) {} }
+  };
+})();
+</script>
 </body>
 </html>

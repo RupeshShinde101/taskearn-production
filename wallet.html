@@ -1422,10 +1422,10 @@
                     showToast && showToast('✅ ' + d.message, 'success');
                     loadWallet();
                 } else {
-                    alert(d.message || 'Could not cancel');
+                    _pageAlert(d.message || 'Could not cancel');
                     if (btn) btn.disabled = false;
                 }
-            } catch (e) { alert('Network error'); if (btn) btn.disabled = false; }
+            } catch (e) { _pageAlert('Network error'); if (btn) btn.disabled = false; }
         }
         
         function updateWalletUI(wallet) {
@@ -1991,7 +1991,7 @@
             const suspendedUntil = localStorage.getItem('taskearn_suspended_until');
             if (suspendedUntil && Date.now() < parseInt(suspendedUntil)) {
                 const endTime = new Date(parseInt(suspendedUntil)).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-                alert('Your account is suspended until ' + endTime + '. You cannot withdraw during suspension.');
+                _pageAlert('Your account is suspended until ' + endTime + '. You cannot withdraw during suspension.');
                 return;
             }
 
@@ -2184,5 +2184,29 @@
     <a href="posted.html" aria-label="My Tasks"><i class="fas fa-clipboard-list"></i><span>Tasks</span></a>
     <a href="profile.html" aria-label="Profile"><i class="fas fa-user"></i><span>Profile</span></a>
 </nav>
+<script>
+/* ---- _pageAlert: non-blocking replacement for alert() (auto-injected) ---- */
+(function(){
+  if (typeof window._pageAlert === 'function') return;
+  window._pageAlert = function(msg, opts){
+    try {
+      if (typeof window.showToast === 'function') { window.showToast(msg, (opts && opts.kind) || 'info', (opts && opts.ms) || 3500); return; }
+    } catch(e) {}
+    try {
+      var t = document.createElement('div');
+      t.setAttribute('role', 'status');
+      t.style.cssText =
+        'position:fixed;top:18px;left:50%;transform:translateX(-50%);' +
+        'z-index:2147483647;background:rgba(15,23,42,.95);color:#fff;' +
+        'padding:14px 22px;border-radius:10px;font-size:14px;font-weight:600;' +
+        'line-height:1.45;max-width:90vw;white-space:pre-wrap;text-align:center;' +
+        'box-shadow:0 10px 30px rgba(0,0,0,.4);pointer-events:none;';
+      t.textContent = String(msg == null ? '' : msg);
+      document.body.appendChild(t);
+      setTimeout(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, (opts && opts.ms) || 3500);
+    } catch(e) { try { console.warn(msg); } catch(_) {} }
+  };
+})();
+</script>
 </body>
 </html>

@@ -10,8 +10,10 @@
     <meta name="keywords" content="Workmate4u browse tasks, find tasks nearby, earn money tasks, Workmate4u.com">
     <meta name="robots" content="noindex, nofollow">
     <link rel="canonical" href="https://workmate4u.com/browse.html">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" as="style" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous"></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
     <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <script>
@@ -32,8 +34,14 @@
         (function() {
             var ua = navigator.userAgent.toLowerCase();
             var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
-            if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; }
-            else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; }
+        // Always use proxy on Netlify (workmate4u.com / *.netlify.app).
+        // Browser never resolves Railway's domain — prevents ERR_NAME_NOT_RESOLVED.
+        var h = location.hostname;
+        if (h.indexOf('workmate4u.com') !== -1 || h.indexOf('netlify.app') !== -1 || h.indexOf('netlify.live') !== -1) {
+            window.API_BASE_URL = '/.netlify/functions/api-proxy/api';
+            window.FORCE_MOBILE_PROXY = true;
+        }
+        // Local dev: api-client.js will set API_BASE_URL to localhost/Railway
         })();
     </script>
 <script src="mobile-enhancements.js?v=20260502_findtasks" defer></script>
@@ -361,13 +369,13 @@
 
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-    <script src="api-client.js?v=20260506_hideWorker"></script>
-    <script src="shared.js?v=20260506_hideWorker"></script>
-    <script src="category-picker.js?v=20260514_scfix"></script>
-    <script src="post-task-wizard.js?v=20260514_scfix"></script>
+    <script defer src="api-client.js?v=20260506_hideWorker"></script>
+    <script defer src="shared.js?v=20260506_hideWorker"></script>
+    <script defer src="category-picker.js?v=20260514_scfix"></script>
+    <script defer src="post-task-wizard.js?v=20260514_scfix"></script>
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
-    <script src="razorpay.js?v=20260404_accept_v2"></script>
-    <script src="app.js?v=20260506_hideWorker"></script>
+    <script defer src="razorpay.js?v=20260404_accept_v2"></script>
+    <script defer src="app.js?v=20260506_hideWorker"></script>
     <script>
         // Auto-apply filters from URL on load (linked from index.html / categories.html)
         // Supported params: category, dist, min, max
@@ -422,8 +430,8 @@
         })();
     </script>
     <script>(function(){var l=document.getElementById('pageLoader');if(l){l.classList.add('active');window.addEventListener('load',function(){l.classList.remove('active');l.classList.add('done');setTimeout(function(){l.remove()},600)})}})()</script>
-<script src="sw-register.js?v=20260420_recovery"></script>
-    <script src="back-button.js?v=20260506_hideWorker"></script>
+<script defer src="sw-register.js?v=20260420_recovery"></script>
+    <script defer src="back-button.js?v=20260506_hideWorker"></script>
 
 <nav class="bottom-tab-bar" aria-label="Main navigation">
     <a href="index.html" aria-label="Home"><i class="fas fa-home"></i><span>Home</span></a>

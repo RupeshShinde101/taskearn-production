@@ -225,12 +225,12 @@
 
         async function loadInitialTracking() {
             if (!token) {
-                alert('Please login first.');
+                _pageAlert('Please login first.');
                 window.location.href = 'index.html';
                 return;
             }
             if (!taskId) {
-                alert('Missing task id for tracking.');
+                _pageAlert('Missing task id for tracking.');
                 window.location.href = 'index.html';
                 return;
             }
@@ -240,7 +240,7 @@
             });
             const data = await response.json();
             if (!data.success || !data.tracking) {
-                alert(data.message || 'Unable to load tracking data.');
+                _pageAlert(data.message || 'Unable to load tracking data.');
                 window.location.href = 'index.html';
                 return;
             }
@@ -319,7 +319,7 @@
                 await pollLiveLocation();
                 pollTimer = setInterval(pollLiveLocation, 4000);
             } catch (e) {
-                alert('Failed to initialize tracking page.');
+                _pageAlert('Failed to initialize tracking page.');
                 window.location.href = 'index.html';
             }
         }
@@ -331,5 +331,29 @@
     </script>
 <script src="sw-register.js?v=20260420_recovery"></script>
     <script src="back-button.js?v=20260506_hideWorker"></script>
+<script>
+/* ---- _pageAlert: non-blocking replacement for alert() (auto-injected) ---- */
+(function(){
+  if (typeof window._pageAlert === 'function') return;
+  window._pageAlert = function(msg, opts){
+    try {
+      if (typeof window.showToast === 'function') { window.showToast(msg, (opts && opts.kind) || 'info', (opts && opts.ms) || 3500); return; }
+    } catch(e) {}
+    try {
+      var t = document.createElement('div');
+      t.setAttribute('role', 'status');
+      t.style.cssText =
+        'position:fixed;top:18px;left:50%;transform:translateX(-50%);' +
+        'z-index:2147483647;background:rgba(15,23,42,.95);color:#fff;' +
+        'padding:14px 22px;border-radius:10px;font-size:14px;font-weight:600;' +
+        'line-height:1.45;max-width:90vw;white-space:pre-wrap;text-align:center;' +
+        'box-shadow:0 10px 30px rgba(0,0,0,.4);pointer-events:none;';
+      t.textContent = String(msg == null ? '' : msg);
+      document.body.appendChild(t);
+      setTimeout(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, (opts && opts.ms) || 3500);
+    } catch(e) { try { console.warn(msg); } catch(_) {} }
+  };
+})();
+</script>
 </body>
 </html>

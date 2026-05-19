@@ -477,7 +477,15 @@ function showNotification(message, type = 'info', duration = 5000) {
 // Initialize IndexedDB on load
 initIndexedDB().then(dbAvailable => {
     if (!STORAGE_AVAILABLE && !dbAvailable) {
-        alert('⚠️ Warning: Your browser cannot save data. Please:\n\n1. Use https://www.workmate4u.com (not file://)\n2. Disable private/incognito mode\n3. Allow cookies and site data\n\nYour account will NOT be saved!');
+        // Non-blocking warning — alert() here blocks the renderer thread on
+        // page load which can trigger Chrome's hung-tab watchdog.
+        try {
+            if (typeof showToast === 'function') {
+                showToast('⚠️ Browser cannot save data. Use https://www.workmate4u.com and disable private/incognito mode.', 'error', 8000);
+            } else {
+                console.warn('Browser storage unavailable — account data will not persist.');
+            }
+        } catch (e) { console.warn('Storage warning failed:', e); }
     }
 });
 
@@ -1233,14 +1241,14 @@ function confirmDeleteAccount() {
     .then(r => {
         const data = r.data || {};
         if (data.success) {
-            alert('Account deleted. We\'re sorry to see you go.');
+            try { showToast('Account deleted. We\'re sorry to see you go.', 'success', 3000); } catch(e) {}
             localStorage.clear();
-            window.location.reload();
+            setTimeout(() => window.location.reload(), 1500);
         } else {
-            alert(data.message || 'Failed to delete account');
+            try { showToast(data.message || 'Failed to delete account', 'error'); } catch(e) {}
         }
     })
-    .catch(() => alert('Could not reach the server. Please check your connection and try again.'));
+    .catch(() => { try { showToast('Could not reach the server. Please check your connection and try again.', 'error'); } catch(e) {} });
 }
 
 // ========================================
@@ -1284,8 +1292,8 @@ function openDisputeModal(taskId) {
 function submitDispute(taskId) {
     const reason = document.getElementById('disputeReason').value;
     const details = document.getElementById('disputeDetails').value;
-    if (!reason) { alert('Please select a reason'); return; }
-    
+    if (!reason) { try { showToast('Please select a reason', 'error'); } catch(e) {} return; }
+
     apiRequest('/tasks/' + taskId + '/dispute', {
         method: 'POST',
         body: JSON.stringify({ reason, details })
@@ -1293,9 +1301,9 @@ function submitDispute(taskId) {
     .then(r => {
         const data = r.data || {};
         closeModal('disputeModal');
-        alert(data.message || (data.success ? 'Dispute filed!' : 'Failed'));
+        try { showToast(data.message || (data.success ? 'Dispute filed!' : 'Failed'), data.success ? 'success' : 'error'); } catch(e) {}
     })
-    .catch(() => alert('Could not reach the server. Please check your connection and try again.'));
+    .catch(() => { try { showToast('Could not reach the server. Please check your connection and try again.', 'error'); } catch(e) {} });
 }
 
 // ========================================
@@ -1339,7 +1347,7 @@ function exportTransactionsCSV() {
         a.click();
         URL.revokeObjectURL(url);
     })
-    .catch(() => alert('Failed to export. Try again.'));
+    .catch(() => { try { showToast('Failed to export. Try again.', 'error'); } catch(e) {} });
 }
 
 function toggleNotifications() {
@@ -6770,7 +6778,7 @@ window.posterCancelTask = posterCancelTask;
 // ── Verify & Pay Task (Poster releases payment from task card) ─────────────
 // Shows the full payment invoice popup so the poster can review the breakdown.
 async function verifyAndPayTask(taskId) {
-    if (!currentUser) { alert('Please login first'); return; }
+    if (!currentUser) { try { showToast('Please login first', 'error'); } catch(e) {} return; }
     await showPaymentInvoice(taskId);
 }
 window.verifyAndPayTask = verifyAndPayTask;
@@ -6778,7 +6786,7 @@ window.verifyAndPayTask = verifyAndPayTask;
 // ── Mark Task Completed (Helper after payment released) ────────────────────
 async function markTaskCompleted(taskId) {
     const token = localStorage.getItem('taskearn_token');
-    if (!token) { alert('Please login first'); return; }
+    if (!token) { try { showToast('Please login first', 'error'); } catch(e) {} return; }
     const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
     const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
@@ -6802,11 +6810,11 @@ async function markTaskCompleted(taskId) {
             renderAcceptedTasks();
             openRatingPopup(taskId);
         } else {
-            alert(result.message || 'Could not mark as completed. Please try again.');
+            try { showToast(result.message || 'Could not mark as completed. Please try again.', 'error'); } catch(e) {}
         }
     } catch (e) {
         console.error('markTaskCompleted error:', e);
-        alert('Network error. Please check your connection and try again.');
+        try { showToast('Network error. Please check your connection and try again.', 'error'); } catch(_) {}
     }
 }
 window.markTaskCompleted = markTaskCompleted;
@@ -6814,7 +6822,7 @@ window.markTaskCompleted = markTaskCompleted;
 // ── Verify Task Done (Helper: accepted → verify_pending) ──────────────────
 async function verifyTaskDone(taskId, btnEl) {
     const token = localStorage.getItem('taskearn_token');
-    if (!token) { alert('Please login first'); return; }
+    if (!token) { try { showToast('Please login first', 'error'); } catch(e) {} return; }
     if (!confirm('Have you completed this task? The poster will be notified to verify and pay.')) return;
     if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Sending...'; }
     const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
@@ -6855,11 +6863,11 @@ async function verifyTaskDone(taskId, btnEl) {
                 setTimeout(() => { const e = document.getElementById('shareEarnPrompt'); if (e) e.remove(); }, 10000);
             }, 2000);
         } else {
-            alert(result.message || 'Could not send verification. Please try again.');
+            try { showToast(result.message || 'Could not send verification. Please try again.', 'error'); } catch(_) {}
             if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-double"></i> Verify Task Done'; }
         }
     } catch (e) {
-        alert('Network error. Please try again.');
+        try { showToast('Network error. Please try again.', 'error'); } catch(_) {}
         if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-double"></i> Verify Task Done'; }
     }
 }
@@ -8474,8 +8482,7 @@ async function submitKYC() {
                 msg = 'Upload failed — the images may be too large. Please try photos taken at lower resolution.';
             }
             console.error('[KYC] Rejected by server:', msg, result);
-            showToast('❌ ' + msg, 'error');
-            try { alert('KYC submission failed:\n\n' + msg); } catch(_) {}
+            showToast('❌ ' + msg, 'error', 6000);
         }
     } catch (err) {
         console.error('[KYC] Submit failed:', err);

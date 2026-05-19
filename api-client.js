@@ -48,28 +48,31 @@ console.log('☁️ On Netlify:', ON_NETLIFY);
 console.log('🔒 Force mobile proxy:', FORCE_MOBILE_PROXY);
 
 // If not pre-set by inline HTML script, determine it now
-if (!API_BASE_URL) {
-    var __host = (window.location.hostname || '').toLowerCase();
-    var IS_LOCAL = __host === 'localhost' || __host === '127.0.0.1' || __host === '0.0.0.0';
-    var IS_STAGING = __host.indexOf('staging') !== -1 || __host.indexOf('deploy-preview') !== -1;
+var __host = (window.location.hostname || '').toLowerCase();
+var IS_LOCAL = __host === 'localhost' || __host === '127.0.0.1' || __host === '0.0.0.0';
+var IS_STAGING = __host.indexOf('staging') !== -1 || __host.indexOf('deploy-preview') !== -1;
 
+if (!API_BASE_URL) {
     if (IS_LOCAL) {
         // Local development: hit local Flask
         API_BASE_URL = 'http://localhost:5000/api';
         console.log('💻 Local dev: using http://localhost:5000/api');
-    } else if (IS_STAGING) {
-        // Staging / PR previews: hit staging Railway service
-        // (override here once you create the staging Railway URL)
-        API_BASE_URL = window.STAGING_API_URL
-            || 'https://taskearn-production-staging.up.railway.app/api';
-        console.log('🧪 Staging: using', API_BASE_URL);
-    } else if (MOBILE && ON_NETLIFY) {
+    } else if (ON_NETLIFY) {
+        // All production/staging Netlify users go through proxy — avoids browser-side
+        // DNS failures when the Railway domain changes (only one place to update: netlify.toml)
         API_BASE_URL = '/.netlify/functions/api-proxy/api';
-        console.log('📱 Mobile on Netlify: Using proxy');
+        console.log('☁️ Netlify: Using proxy for all users');
     } else {
         API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        console.log('🌍 Using Railway production server');
+        console.log('🌍 Using Railway production server (non-Netlify)');
     }
+}
+
+// Override: if an inline HTML script pre-set the Railway URL but we are on Netlify,
+// redirect to proxy. This prevents ERR_NAME_NOT_RESOLVED when Railway domain changes.
+if (API_BASE_URL && API_BASE_URL.includes('railway.app') && ON_NETLIFY && !IS_LOCAL) {
+    API_BASE_URL = '/.netlify/functions/api-proxy/api';
+    console.log('☁️ Overriding inline Railway URL → proxy (on Netlify)');
 }
 
 console.log('=====================================');
@@ -83,11 +86,12 @@ async function checkRailwayHealth() {
         return; // Already checked or explicitly offline
     }
     
-    // Skip health check for mobile users using proxy (proxy handles it)
-    if (MOBILE && ON_NETLIFY && PROXY_AVAILABLE) {
-        console.log('⏭️ Skipping Railway health check for mobile users (using proxy)');
+    // Skip health check entirely when on Netlify — all requests go through the proxy,
+    // so a direct Railway check from the browser is unnecessary and would fail on DNS change.
+    if (ON_NETLIFY) {
+        console.log('⏭️ Skipping Railway health check (on Netlify, using proxy)');
         RAILWAY_CHECKED = true;
-        RAILWAY_AVAILABLE = true; // Assume available when using proxy
+        RAILWAY_AVAILABLE = true;
         return;
     }
     
@@ -121,9 +125,9 @@ async function checkRailwayHealth() {
     RAILWAY_CHECKED = true;
 }
 
-// Check if Netlify proxy is working (for mobile users)
+// Check if Netlify proxy is working (for all Netlify users)
 async function checkProxyHealth() {
-    if (PROXY_CHECKED || !MOBILE || !ON_NETLIFY) {
+    if (PROXY_CHECKED || !ON_NETLIFY) {
         return; // Already checked or not applicable
     }
     
@@ -155,28 +159,20 @@ async function checkProxyHealth() {
         } else {
             PROXY_AVAILABLE = false;
             console.warn('⚠️ Proxy returned unexpected status:', response.status);
-            // Fallback to Railway
-            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-            console.log('📱 Proxy unavailable, falling back to Railway for mobile');
+            // No Railway fallback — proxy is the only route on Netlify
         }
     } catch (error) {
         PROXY_AVAILABLE = false;
         console.warn('⚠️ Proxy health check failed:', error.message);
-        
-        // IMPORTANT: If proxy is blocked (CORB error), fall back to Railway immediately
-        if (error.message.includes('Failed to fetch') || error.name === 'AbortError') {
-            console.log('📱 Proxy blocked or timeout - using Railway backend directly');
-            // Try to use Railway directly (some carriers might not block it on this second attempt)
-            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        }
+        // No Railway fallback — proxy is the only route on Netlify
     }
     
     PROXY_CHECKED = true;
 }
 
 // Run health checks in the background (non-blocking)
-// SKIP for mobile on Netlify - they MUST use proxy, no fallback needed
-if (!MOBILE || !ON_NETLIFY) {
+// SKIP entirely on Netlify - all users use proxy, no direct Railway checks needed
+if (!ON_NETLIFY) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
@@ -217,13 +213,18 @@ window.apiFetch = async function apiFetchGlobal(path, options) {
     // Build direct + proxy URLs from the same path. Strip /api prefix if present
     // so we can prepend the proper base for each route.
     var apiPath = path.indexOf('/api/') === 0 ? path.substring(4) : path;
-    var directBase = 'https://taskearn-production-production.up.railway.app/api';
     var proxyBase = '/.netlify/functions/api-proxy/api';
+    var directBase = IS_LOCAL
+        ? 'http://localhost:5000/api'
+        : (ON_NETLIFY ? proxyBase : 'https://taskearn-production-production.up.railway.app/api');
     try {
         return await fetch(directBase + apiPath, options);
     } catch (e) {
-        console.warn('apiFetch: direct failed, falling back to proxy:', e && e.message);
-        return await fetch(proxyBase + apiPath, options);
+        if (!ON_NETLIFY && directBase !== proxyBase) {
+            console.warn('apiFetch: direct failed, falling back to proxy:', e && e.message);
+            return await fetch(proxyBase + apiPath, options);
+        }
+        throw e;
     }
 };
 
@@ -396,43 +397,7 @@ async function apiRequest(endpoint, options = {}) {
             }
         }
 
-        // For desktop or if proxy failed for other reasons, try fallback
-        if (isUsingProxy && isNetworkError && !MOBILE) {
-            console.warn('⚠️ Desktop proxy request failed. Falling back to Railway...');
-            
-            // Try Railway directly
-            const railwayUrl = `https://taskearn-production-production.up.railway.app/api${endpoint}`;
-            
-            try {
-                const railwayResponse = await fetch(railwayUrl, {
-                    ...options,
-                    headers,
-                    mode: 'cors'
-                });
-                
-                let railwayData;
-                try {
-                    railwayData = await railwayResponse.json();
-                } catch (parseError) {
-                    railwayData = { success: false, message: 'Invalid response' };
-                }
-                
-                console.log('✅ Railway fallback successful');
-                return { success: railwayResponse.ok, status: railwayResponse.status, data: railwayData };
-                
-            } catch (railwayError) {
-                console.error('❌ Railway fallback also failed:', railwayError.message);
-                return {
-                    success: false,
-                    status: 0,
-                    data: {
-                        success: false,
-                        message: 'Cannot connect to backend. Try VPN.',
-                        offline: true
-                    }
-                };
-            }
-        }
+        // On Netlify, proxy is the only route — no Railway fallback needed here
         
         // Handle other network errors
         let errorMessage = 'Network error: ' + error.message;

@@ -80,6 +80,13 @@
   for = "*.html"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+    # unsafe-none is the browser default, but Netlify's edge CDN can inject
+    # same-origin for security hardening. Explicitly setting it restores the
+    # permissive value that Google Sign-In popup mode requires: the GSI client
+    # library calls window.postMessage() from accounts.google.com back to the
+    # opener (workmate4u.com). With same-origin COOP that postMessage is blocked
+    # and login silently fails (Chrome logs "would block the window.postMessage").
+    Cross-Origin-Opener-Policy = "unsafe-none"
 
 [[headers]]
   for = "*.svg"

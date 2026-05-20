@@ -2340,7 +2340,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 e.stopPropagation();
                 e.preventDefault();
                 var card = btn.closest('.task-card');
+                console.log('Accept button clicked for task card:', card);
                 var taskId = card ? card.getAttribute('data-task-id') : null;
+                console.log('Task ID:', taskId);
                 if (taskId) {
                     acceptTask(parseInt(taskId, 10));
                 }

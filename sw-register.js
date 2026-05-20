@@ -16,48 +16,202 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   // Recovery: if SW is stuck in a failed state, unregister and re-register
-  navigator.serviceWorker.getRegistration().then(function(existing) {
-    // if (existing && existing.installing === null && existing.waiting === null && existing.active === null) {
-      // SW registration exists but no worker in any state — stuck
-      console.warn('SW stuck, unregistering...');
-      return existing.unregister().then(function() {
-        return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+
+(function () {
+  'use strict';
+
+  // Track whether the page was initially controlled by a Service Worker
+  const hadControllerOnLoad = !!navigator.serviceWorker.controller;
+
+  // Store waiting worker for update flow
+  let waitingWorker = null;
+
+  /**
+   * Show update banner / prompt
+   * Replace this with your actual UI implementation
+   */
+  function showUpdateBanner() {
+    console.log('New version available.');
+
+    // Example:
+    // const banner = document.getElementById('update-banner');
+    // banner.style.display = 'block';
+  }
+
+  /**
+   * Register Service Worker safely
+   */
+  async function registerServiceWorker() {
+    // Browser support check
+    if (!('serviceWorker' in navigator)) {
+      console.warn('Service Workers are not supported in this browser.');
+      return;
+    }
+
+    try {
+      let existingRegistration =
+        await navigator.serviceWorker.getRegistration();
+
+      /**
+       * Fix broken/stuck registration
+       * Registration exists but no worker in any state
+       */
+      if (
+        existingRegistration &&
+        !existingRegistration.installing &&
+        !existingRegistration.waiting &&
+        !existingRegistration.active
+      ) {
+        console.warn('Service Worker registration stuck. Re-registering...');
+
+        await existingRegistration.unregister();
+
+        existingRegistration = await navigator.serviceWorker.register(
+          '/sw.js',
+          {
+            updateViaCache: 'none'
+          }
+        );
+      }
+
+      /**
+       * If a waiting worker already exists on load,
+       * prompt the user to refresh/update.
+       */
+      if (existingRegistration?.waiting) {
+        waitingWorker = existingRegistration.waiting;
+        showUpdateBanner();
+      }
+
+      /**
+       * Register Service Worker
+       */
+      const registration =
+        existingRegistration ||
+        (await navigator.serviceWorker.register('/sw.js', {
+          updateViaCache: 'none'
+        }));
+
+      console.log('Service Worker registered:', registration);
+
+      /**
+       * Force update check immediately
+       */
+      await registration.update();
+
+      /**
+       * Periodically check for updates
+       */
+      setInterval(() => {
+        registration.update().catch((err) => {
+          console.warn('SW update failed:', err);
+        });
+      }, 60000);
+
+      /**
+       * Listen for new Service Worker installation
+       */
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+
+        if (!newWorker) return;
+
+        newWorker.addEventListener('statechange', () => {
+          /**
+           * Show update banner only when:
+           * - new worker installed
+           * - existing page already controlled
+           * - page had controller on load
+           */
+          if (
+            newWorker.state === 'installed' &&
+            navigator.serviceWorker.controller &&
+            hadControllerOnLoad
+          ) {
+            waitingWorker = newWorker;
+            showUpdateBanner();
+          }
+        });
       });
-    }
-    // If there's already a waiting worker on page load (e.g. user had tab open), show banner
-    if (existing && existing.waiting) {
-      _swWaitingWorker = existing.waiting;
-      showUpdateBanner();
-    }
-    return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
-  }).then(function(reg) {
-    if (!reg) return;
-    // Force immediate update check
-    reg.update();
-    // Check for updates every 60 seconds
-    setInterval(function() { reg.update(); }, 60000);
-    reg.addEventListener('updatefound', function() {
-      var newWorker = reg.installing;
-      newWorker.addEventListener('statechange', function() {
-        // Show banner when new SW is installed and waiting (ready to take over)
-        // Guard: navigator.serviceWorker.controller means old SW was serving this page
-        if (newWorker.state === 'installed' && navigator.serviceWorker.controller && _hadControllerOnLoad) {
-          _swWaitingWorker = newWorker;
-          showUpdateBanner();
+    } catch (err) {
+      console.warn('Service Worker registration failed:', err);
+
+      /**
+       * Nuclear recovery option:
+       * Clear caches and retry registration
+       */
+      const isSupportedProtocol =
+        location.protocol === 'https:' ||
+        location.hostname === 'localhost' ||
+        location.hostname === '127.0.0.1';
+
+      if ('caches' in window && isSupportedProtocol) {
+        try {
+          const cacheNames = await caches.keys();
+
+          await Promise.all(
+            cacheNames.map((name) => caches.delete(name))
+          );
+
+          console.log('Caches cleared. Retrying SW registration...');
+
+          await navigator.serviceWorker.register('/sw.js', {
+            updateViaCache: 'none'
+          });
+        } catch (cacheErr) {
+          console.warn('Cache cleanup failed:', cacheErr);
         }
-      });
-    });
-  }).catch(function(err) {
-    console.warn('SW registration failed:', err);
-    // Nuclear option: clear all caches and retry (only if protocol supports SW)
-    if ('caches' in window && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-      caches.keys().then(function(names) {
-        names.forEach(function(name) { caches.delete(name); });
-      }).then(function() {
-        navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
-      });
+      }
     }
-  });
+  }
+
+  // Start registration
+  registerServiceWorker();
+})();
+
+
+  // navigator.serviceWorker.getRegistration().then(function(existing) {
+  //   if (existing && existing.installing === null && existing.waiting === null && existing.active === null) {
+  //     // SW registration exists but no worker in any state — stuck
+  //     console.warn('SW stuck, unregistering...');
+  //     return existing.unregister().then(function() {
+  //       return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+  //     });
+  //   }
+  //   // If there's already a waiting worker on page load (e.g. user had tab open), show banner
+  //   if (existing && existing.waiting) {
+  //     _swWaitingWorker = existing.waiting;
+  //     showUpdateBanner();
+  //   }
+  //   return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+  // }).then(function(reg) {
+  //   if (!reg) return;
+  //   // Force immediate update check
+  //   reg.update();
+  //   // Check for updates every 60 seconds
+  //   setInterval(function() { reg.update(); }, 60000);
+  //   reg.addEventListener('updatefound', function() {
+  //     var newWorker = reg.installing;
+  //     newWorker.addEventListener('statechange', function() {
+  //       // Show banner when new SW is installed and waiting (ready to take over)
+  //       // Guard: navigator.serviceWorker.controller means old SW was serving this page
+  //       if (newWorker.state === 'installed' && navigator.serviceWorker.controller && _hadControllerOnLoad) {
+  //         _swWaitingWorker = newWorker;
+  //         showUpdateBanner();
+  //       }
+  //     });
+  //   });
+  // }).catch(function(err) {
+  //   console.warn('SW registration failed:', err);
+  //   // Nuclear option: clear all caches and retry (only if protocol supports SW)
+  //   if ('caches' in window && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  //     caches.keys().then(function(names) {
+  //       names.forEach(function(name) { caches.delete(name); });
+  //     }).then(function() {
+  //       navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+  //     });
+  //   }
+  // });
 }
 
 // Capture install prompt for custom "Add to Home Screen" button

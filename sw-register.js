@@ -17,7 +17,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
 
   // Recovery: if SW is stuck in a failed state, unregister and re-register
   navigator.serviceWorker.getRegistration().then(function(existing) {
-    if (existing && existing.installing === null && existing.waiting === null && existing.active === null) {
+    // if (existing && existing.installing === null && existing.waiting === null && existing.active === null) {
       // SW registration exists but no worker in any state — stuck
       console.warn('SW stuck, unregistering...');
       return existing.unregister().then(function() {

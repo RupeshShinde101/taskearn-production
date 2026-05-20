@@ -3566,6 +3566,43 @@ async function acceptTask(taskId) {
         }));
     } catch (e) {}
 
+    // AGGRESSIVE EARLY TEARDOWN — done BEFORE the network call.
+    //
+    // Symptom this addresses: Chrome "Aw Snap! Out of Memory" on browse.html
+    // immediately after tapping Accept. The renderer was running out of memory
+    // while waiting on the 20s API call because browse.html still held:
+    //   - the Leaflet map + up to 200 marker DivIcon DOM nodes
+    //   - 60s auto-refresh interval that could fire mid-wait and double the
+    //     marker/render allocation
+    //   - the route polyline + the task list innerHTML
+    //   - the full tasks[] array (can be megabytes of JSON)
+    //
+    // Since we are about to navigate away on success, none of this is needed.
+    // Tearing it down NOW (synchronously, before await) means the page is
+    // already lean while the network request is in flight, giving the browser
+    // plenty of headroom to allocate the response body + run the navigation.
+    try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (e) {}
+    try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (e) {}
+    try { if (typeof _notifIntervalId !== 'undefined' && _notifIntervalId) { clearInterval(_notifIntervalId); _notifIntervalId = null; } } catch (e) {}
+    try { if (typeof clearRoute === 'function') clearRoute(); } catch (e) {}
+    try {
+        if (typeof taskMarkers !== 'undefined' && taskMarkers && taskMarkers.length) {
+            taskMarkers.forEach(function(m) { try { if (map && map.hasLayer(m)) map.removeLayer(m); } catch(_){} });
+            taskMarkers = [];
+        }
+    } catch (e) {}
+    // Drop the task list DOM — accepts buttons are already disabled and the
+    // user is about to leave the page. Keeps a tiny placeholder so they see
+    // SOMETHING if the redirect is delayed.
+    try {
+        var _list = document.getElementById('tasksList');
+        if (_list) _list.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#64748b;font-size:14px;"><i class="fas fa-spinner fa-spin" style="font-size:24px;margin-bottom:12px;display:block;"></i>Accepting task...</div>';
+    } catch (e) {}
+    // Release the in-memory task arrays. We do NOT touch myAcceptedTasks — it
+    // gets updated below on success, and we need it for the optimistic redirect
+    // on failure.
+    try { tasks = []; _currentTaskList = []; } catch (e) {}
+
     try {
         // 20-second timeout via Promise.race — Netlify functions can take up to
         // ~10 s on cold start + Railway round-trip on flaky carrier networks.
@@ -3608,22 +3645,10 @@ async function acceptTask(taskId) {
             } catch (e) {}
 
             // Redirect to task-in-progress.html (the helper's working view).
-            // This is the long-standing UX — the user explicitly wants it back.
-            // Before navigating, tear down browse.html's background activity so
-            // it cannot leak memory or fire fetches into a frozen page:
-            //   - clear the 60 s auto-refresh interval
-            //   - clear the 60 s expiry/notifications timer
-            //   - remove all Leaflet markers + the route polyline
-            //   - abort any in-flight fetch via the global AbortController if present
-            try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (e) {}
-            try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (e) {}
-            try {
-                if (typeof taskMarkers !== 'undefined' && taskMarkers && taskMarkers.length) {
-                    taskMarkers.forEach(function(m) { try { if (map && map.hasLayer(m)) map.removeLayer(m); } catch(_){} });
-                    taskMarkers = [];
-                }
-            } catch (e) {}
-            try { if (typeof clearRoute === 'function') clearRoute(); } catch (e) {}
+            // Heavy teardown was already done synchronously above before the
+            // API call; here we just nuke the map itself (last big object)
+            // and navigate.
+            try { if (map) { map.remove(); map = null; } } catch (e) {}
 
             // currentTask is already pre-saved to localStorage above, so
             // task-in-progress.html can render instantly even on a flaky network.
@@ -3638,20 +3663,27 @@ async function acceptTask(taskId) {
 
         } else if (data && data.hasActiveTask) {
             userActiveTask = { id: data.activeTaskId, title: data.activeTaskTitle };
-            refreshActiveTaskBanner();
             try { closeModal('taskDetailModal'); } catch(e) {}
             showToast('⚠️ You already have an active task. Complete it before accepting another.');
-            renderTasks();
-            resetAcceptButtons();
+            // We tore down the task list/markers/intervals BEFORE the API call,
+            // so a normal renderTasks() would render against an empty array.
+            // Reload the page so the user sees a correct, fresh browse view
+            // (with the active-task banner restored).
+            try { setTimeout(function(){ window.location.reload(); }, 1200); } catch (e) { window.location.reload(); }
+            return;
 
         } else if (data && data.needsKyc) {
             try { closeModal('taskDetailModal'); } catch(e) {}
             showKYCRequiredPopup('accept tasks');
-            resetAcceptButtons();
+            // KYC flow is modal-based; reload so the user can re-browse after KYC.
+            try { setTimeout(function(){ window.location.reload(); }, 1200); } catch (e) {}
+            return;
 
         } else {
             showToast('❌ ' + ((data && data.message) || 'Failed to accept task. Please try again.'));
-            resetAcceptButtons();
+            // Tasks list was torn down; reload to restore a working browse view.
+            try { setTimeout(function(){ window.location.reload(); }, 1500); } catch (e) { window.location.reload(); }
+            return;
         }
 
     } catch (err) {

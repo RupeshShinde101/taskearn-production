@@ -6,7 +6,7 @@ var _hadControllerOnLoad = !!(navigator.serviceWorker && navigator.serviceWorker
 // Guard to show the banner at most once per page load (prevent double-trigger).
 var _bannerShownThisLoad = false;
 
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   // Listen for SW_UPDATED message sent by the new SW's activate event.
   // Only show banner if there was already a controller (= real update, not fresh install).
   navigator.serviceWorker.addEventListener('message', function(event) {
@@ -48,9 +48,9 @@ if ('serviceWorker' in navigator) {
       });
     });
   }).catch(function(err) {
-    console.error('SW registration failed:', err);
-    // Nuclear option: clear all caches and retry
-    if ('caches' in window) {
+    console.warn('SW registration failed:', err);
+    // Nuclear option: clear all caches and retry (only if protocol supports SW)
+    if ('caches' in window && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       caches.keys().then(function(names) {
         names.forEach(function(name) { caches.delete(name); });
       }).then(function() {

@@ -1641,15 +1641,6 @@ function notifyTaskPoster(task, acceptedBy) {
     }
 }
 
-// Close notification dropdown when clicking outside
-document.addEventListener('click', function(e) {
-    const wrapper = document.getElementById('notificationWrapper');
-    const dropdown = document.getElementById('notificationDropdown');
-    if (wrapper && dropdown && !wrapper.contains(e.target)) {
-        dropdown.classList.remove('active');
-    }
-});
-
 // ========================================
 // INITIALIZATION
 // ========================================
@@ -2361,6 +2352,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (_) {}
             try { stopSuspensionTimer(); } catch (_) {}
             try { if (window._notifAudioCtx) { window._notifAudioCtx.close(); window._notifAudioCtx = null; } } catch (_) {}
+            try { if (window._heroQuotesIntervalId) { clearInterval(window._heroQuotesIntervalId); window._heroQuotesIntervalId = null; } } catch (_) {}
+            try { if (window._urgencyPulseIntervalId) { clearInterval(window._urgencyPulseIntervalId); window._urgencyPulseIntervalId = null; } } catch (_) {}
             // Clear Leaflet map markers
             try {
                 taskMarkers.forEach(function(m) { try { if (map && map.hasLayer(m)) map.removeLayer(m); } catch (_) {} });
@@ -9475,7 +9468,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     // Use a single DOMContentLoaded-safe initialiser — never create two intervals.
     function start() {
-        if (document.querySelector('.hero-quote')) setInterval(rotate, 4000);
+        if (document.querySelector('.hero-quote')) window._heroQuotesIntervalId = setInterval(rotate, 4000);
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', start, { once: true });
@@ -9514,15 +9507,6 @@ function updateCalc() {
 window.updateCalc = updateCalc;
 document.addEventListener('DOMContentLoaded', updateCalc);
 
-// WhatsApp share for task cards
-function shareTask(taskId) {
-    const task = (typeof tasks !== 'undefined') && tasks.find(t => t.id == taskId);
-    const title = task ? task.title : 'a task';
-    const text = encodeURIComponent(`Check out this task on Workmate4u: "${title}" — earn money helping nearby! https://workmate4u.netlify.app/browse.html`);
-    window.open('https://wa.me/?text=' + text, '_blank', 'noopener,noreferrer');
-}
-window.shareTask = shareTask;
-
 // 3. Urgency indicator: pulse task cards expiring in < 2h
 (function addUrgencyPulse() {
     function check() {
@@ -9538,7 +9522,7 @@ window.shareTask = shareTask;
             }
         });
     }
-    setInterval(check, 60000);
+    window._urgencyPulseIntervalId = setInterval(check, 60000);
     document.addEventListener('DOMContentLoaded', () => setTimeout(check, 2000));
 })();
 

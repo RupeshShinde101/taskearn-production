@@ -2332,6 +2332,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         // they never reach this handler; this only fires for edge-case buttons.
         document.addEventListener('click', function(e) {
             var btn = e.target.closest('.task-card-accept-btn');
+            console.log('Click event:', e.target, 'Closest accept button:', btn);
             if (btn) {
                 // Skip locked buttons (Task In Progress / Accepted state)
                 if (btn.classList.contains('task-card-accept-locked')) return;
@@ -2358,6 +2359,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (_) {}
             try { if (_notifIntervalId) { clearInterval(_notifIntervalId); _notifIntervalId = null; } } catch (_) {}
             try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (_) {}
+            try { stopSuspensionTimer(); } catch (_) {}
+            try { if (window._notifAudioCtx) { window._notifAudioCtx.close(); window._notifAudioCtx = null; } } catch (_) {}
             // Clear Leaflet map markers
             try {
                 taskMarkers.forEach(function(m) { try { if (map && map.hasLayer(m)) map.removeLayer(m); } catch (_) {} });

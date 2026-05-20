@@ -64,7 +64,12 @@ exports.handler = async (event) => {
                 'Content-Type': headers['content-type'] || 'application/json',
                 'Authorization': headers.authorization || '',
                 'Accept': 'application/json'
-            }
+            },
+            // Hard 8-second timeout so the function always returns a clean response
+            // before Netlify's 10-second function limit kills it mid-transfer.
+            // Without this, slow Railway responses cause ERR_CONNECTION_RESET + "200 (OK)"
+            // in the browser — the function started sending 200 headers then got killed.
+            signal: AbortSignal.timeout(8000)
         };
 
         if (event.body && event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {
@@ -84,12 +89,15 @@ exports.handler = async (event) => {
         };
     } catch (error) {
         console.error('Proxy error:', error.message);
+        const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
         return {
-            statusCode: 502,
+            statusCode: isTimeout ? 504 : 502,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 success: false,
-                message: 'Backend server unreachable. Please try again.'
+                message: isTimeout
+                    ? 'Backend server timed out. Please try again.'
+                    : 'Backend server unreachable. Please try again.'
             })
         };
     }

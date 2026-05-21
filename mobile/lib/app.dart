@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/auth_provider.dart';
+import 'screens/splash/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/auth/otp_screen.dart';
@@ -34,20 +35,32 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
   void initState() {
     super.initState();
     _router = GoRouter(
-      initialLocation: '/home',
+      initialLocation: '/splash',
       redirect: (context, state) {
         final auth = context.read<AuthProvider>();
-        final isLoggedIn = auth.isLoggedIn;
+        final status = auth.status;
         final loc = state.matchedLocation;
+
+        // While checking auth, stay on splash screen
+        if (status == AuthStatus.unknown) {
+          return loc == '/splash' ? null : '/splash';
+        }
+
         final isAuthRoute = loc.startsWith('/login') ||
             loc.startsWith('/register') ||
             loc.startsWith('/otp');
 
-        if (!isLoggedIn && !isAuthRoute) return '/login';
-        if (isLoggedIn && isAuthRoute) return '/home';
+        if (status == AuthStatus.unauthenticated && !isAuthRoute) return '/login';
+        if (status == AuthStatus.authenticated && (isAuthRoute || loc == '/splash')) return '/home';
         return null;
       },
       routes: [
+        // Splash
+        GoRoute(
+          path: '/splash',
+          builder: (_, __) => const SplashScreen(),
+        ),
+
         // Auth routes (no shell)
         GoRoute(
           path: '/login',

@@ -221,7 +221,38 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // Category filter
+          // Suspension banner (shown when account is suspended)
+          if (auth.user?.isSuspended == true)
+            SliverToBoxAdapter(
+              child: Builder(builder: (context) {
+                final until = auth.user?.suspendedUntil;
+                final msg = (until != null && until.isAfter(DateTime.now()))
+                    ? 'Account suspended until ${until.day}/${until.month} ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')}. You cannot accept new tasks.'
+                    : 'Your account is suspended. Contact support.';
+                return Container(
+                  margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.block, color: AppColors.danger, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(msg,
+                          style: const TextStyle(
+                              color: AppColors.danger,
+                              fontSize: 12,
+                              height: 1.4)),
+                    ),
+                  ]),
+                );
+              }),
+            ),
+
+
           SliverToBoxAdapter(
             child: SizedBox(
               height: 52,

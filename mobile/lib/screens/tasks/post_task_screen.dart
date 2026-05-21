@@ -200,13 +200,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: _location != null
-                      ? AppColors.success.withOpacity(0.08)
-                      : AppColors.warning.withOpacity(0.08),
+                      ? AppColors.success.withValues(alpha: 0.08)
+                      : AppColors.warning.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: _location != null
-                        ? AppColors.success.withOpacity(0.3)
-                        : AppColors.warning.withOpacity(0.3),
+                        ? AppColors.success.withValues(alpha: 0.3)
+                        : AppColors.warning.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(

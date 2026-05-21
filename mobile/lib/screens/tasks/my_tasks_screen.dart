@@ -21,7 +21,10 @@ class _MyTasksScreenState extends State<MyTasksScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    context.read<TaskProvider>().fetchMyTasks();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<TaskProvider>().fetchMyTasks();
+    });
   }
 
   @override
@@ -61,6 +64,7 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                 emptyMsg: 'No posted tasks',
                 onTap: (t) => context.push('/task/${t.id}'),
                 onDelete: (t) => tasks.deleteTask(t.id),
+                highlightCompleted: true,
               ),
               _TaskList(
                 tasks: tasks.myAcceptedTasks,
@@ -85,12 +89,14 @@ class _TaskList extends StatelessWidget {
   final String emptyMsg;
   final void Function(Task) onTap;
   final Future<void> Function(Task)? onDelete;
+  final bool highlightCompleted;
 
   const _TaskList({
     required this.tasks,
     required this.emptyMsg,
     required this.onTap,
     this.onDelete,
+    this.highlightCompleted = false,
   });
 
   @override
@@ -113,36 +119,58 @@ class _TaskList extends StatelessWidget {
       onRefresh: () => context.read<TaskProvider>().fetchMyTasks(),
       child: ListView.builder(
         itemCount: tasks.length,
-        itemBuilder: (_, i) => TaskCard(
-          task: tasks[i],
-          onTap: () => onTap(tasks[i]),
-          trailing: onDelete != null && tasks[i].status == 'posted'
-              ? IconButton(
-                  icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                  onPressed: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (dialogContext) => AlertDialog(
-                        title: const Text('Delete Task'),
-                        content:
-                            const Text('Are you sure you want to delete this task?'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(false),
-                              child: const Text('Cancel')),
-                          TextButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(true),
-                              child: const Text('Delete',
-                                  style:
-                                      TextStyle(color: AppColors.danger))),
-                        ],
-                      ),
-                    );
-                    if (confirm == true) await onDelete!(tasks[i]);
-                  },
-                )
-              : null,
-        ),
+        itemBuilder: (_, i) {
+          final t = tasks[i];
+          final needsVerify = highlightCompleted && t.status == 'completed';
+          return Stack(
+            children: [
+              TaskCard(
+                task: t,
+                onTap: () => onTap(t),
+                trailing: onDelete != null && t.status == 'posted'
+                    ? IconButton(
+                        icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Text('Delete Task'),
+                              content: const Text('Are you sure you want to delete this task?'),
+                              actions: [
+                                TextButton(
+                                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                                    child: const Text('Cancel')),
+                                TextButton(
+                                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                                    child: const Text('Delete',
+                                        style: TextStyle(color: AppColors.danger))),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) await onDelete!(t);
+                        },
+                      )
+                    : null,
+              ),
+              if (needsVerify)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF6B35),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Action Required',
+                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

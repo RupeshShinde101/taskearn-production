@@ -134,6 +134,7 @@ class _WalletScreenState extends State<WalletScreen>
                   Navigator.pop(ctx);
 
                   final wallet = context.read<WalletProvider>();
+                  final auth = context.read<AuthProvider>();
                   final order = await wallet.createTopUpOrder(amt);
                   if (order == null) {
                     if (!mounted) return;
@@ -146,7 +147,7 @@ class _WalletScreenState extends State<WalletScreen>
                     return;
                   }
 
-                  final user = context.read<AuthProvider>().user;
+                  final user = auth.user;
                   final options = <String, dynamic>{
                     'key': order['key'] ?? order['razorpay_key'] ?? '',
                     'order_id': order['order_id'] ?? order['id'],
@@ -415,7 +416,7 @@ class _TransactionList extends StatelessWidget {
           leading: CircleAvatar(
             backgroundColor:
                 (t.isCredit ? AppColors.success : AppColors.danger)
-                    .withOpacity(0.1),
+                    .withValues(alpha: 0.1),
             child: Icon(
               t.isCredit ? Icons.arrow_downward : Icons.arrow_upward,
               color: t.isCredit ? AppColors.success : AppColors.danger,
@@ -466,7 +467,7 @@ class _WithdrawalList extends StatelessWidget {
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: (isPending ? AppColors.warning : AppColors.success)
-                .withOpacity(0.1),
+                .withValues(alpha: 0.1),
             child: Icon(
               isPending ? Icons.hourglass_empty : Icons.check_circle_outline,
               color: isPending ? AppColors.warning : AppColors.success,
@@ -482,7 +483,7 @@ class _WithdrawalList extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: (isPending ? AppColors.warning : AppColors.success)
-                  .withOpacity(0.1),
+                  .withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(

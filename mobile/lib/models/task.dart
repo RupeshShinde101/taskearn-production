@@ -22,6 +22,7 @@ class Task {
   final DateTime? completedAt;
   final double? helperRating;
   final String? completionProof;
+  final String? posterPhone;
   final bool isPaid;
   final bool isHidden;
 
@@ -39,6 +40,7 @@ class Task {
     this.posterRating = 0.0,
     this.helperId,
     this.helperName,
+    this.posterPhone,
     required this.latitude,
     required this.longitude,
     this.address,
@@ -53,46 +55,100 @@ class Task {
     this.isHidden = false,
   });
 
+  // Parse a date string that may be ISO-8601 or RFC-2822
+  static DateTime _parseDate(dynamic value) {
+    if (value == null) return DateTime.now();
+    final s = value.toString().trim();
+    // Try ISO-8601 first
+    final iso = DateTime.tryParse(s);
+    if (iso != null) return iso;
+    // Fallback: today (RFC-2822 format not natively supported)
+    return DateTime.now();
+  }
+
   factory Task.fromJson(Map<String, dynamic> json) {
+    // ── location ────────────────────────────────────────────────────────────
+    // API returns either a nested `location: {lat, lng, address}` object
+    // OR flat columns `location_lat`, `location_lng`, `location_address`.
+    final loc = json['location'];
+    final locLat = loc is Map ? loc['lat'] : null;
+    final locLng = loc is Map ? loc['lng'] : null;
+    final locAddr = loc is Map ? loc['address'] : null;
+
+    // ── poster ───────────────────────────────────────────────────────────────
+    // API returns `postedBy: {id, name, rating}` or flat `poster_id`, `posted_by`
+    final postedBy = json['postedBy'] ?? json['poster'];
+    final posterId = (postedBy is Map ? postedBy['id'] : null)?.toString()
+        ?? json['poster_id']?.toString()
+        ?? json['posted_by']?.toString()
+        ?? '';
+    final posterName = (postedBy is Map ? postedBy['name'] : null)?.toString()
+        ?? json['poster_name']?.toString()
+        ?? 'Anonymous';
+    final posterRating = double.tryParse(
+        ((postedBy is Map ? postedBy['rating'] : null) ?? json['poster_rating'] ?? 0).toString()
+    ) ?? 0.0;
+
+    // ── helper ───────────────────────────────────────────────────────────────
+    final helper = json['helper'];
+    final helperIdRaw = (json['helper_id']
+        ?? json['accepted_by']
+        ?? (helper is Map ? helper['id'] : null))?.toString();
+    final helperName = (helper is Map ? helper['name'] : null)?.toString()
+        ?? json['helper_name']?.toString();
+
+    // ── status ───────────────────────────────────────────────────────────────
+    // API uses 'active' for open/browse tasks; normalise to 'posted'
+    final rawStatus = (json['status'] ?? 'active').toString();
+    final status = rawStatus == 'active' ? 'posted' : rawStatus;
+
     return Task(
       id: json['id']?.toString() ?? json['_id']?.toString() ?? '',
-      title: json['title'] ?? '',
-      description: json['description'] ?? '',
-      category: json['category'] ?? '',
-      budget: double.tryParse((json['budget'] ?? json['price'] ?? 0).toString()) ?? 0.0,
+      title: (json['title'] ?? '').toString(),
+      description: (json['description'] ?? '').toString(),
+      category: (json['category'] ?? '').toString(),
+      budget: double.tryParse(
+          (json['budget'] ?? json['price'] ?? json['amount'] ?? 0).toString()
+      ) ?? 0.0,
       serviceCharge: json['service_charge'] != null
           ? double.tryParse(json['service_charge'].toString()) ?? 0.0
           : null,
-      status: json['status'] ?? 'posted',
-      posterId: json['poster_id']?.toString() ?? '',
-      posterName: json['poster_name'] ?? json['poster']?['name'] ?? '',
-      posterAvatar: json['poster_avatar'] ?? json['poster']?['avatar'],
-      posterRating:
-          double.tryParse((json['poster_rating'] ?? json['poster']?['rating'] ?? 0).toString()) ?? 0.0,
-      helperId: json['helper_id']?.toString(),
-      helperName: json['helper_name'] ?? json['helper']?['name'],
-      latitude: double.tryParse((json['latitude'] ?? json['lat'] ?? 0).toString()) ?? 0.0,
-      longitude: double.tryParse((json['longitude'] ?? json['lng'] ?? 0).toString()) ?? 0.0,
-      address: json['address'],
-      city: json['city'],
-      distanceKm: json['distance_km'] != null
-          ? double.tryParse(json['distance_km'].toString()) ?? 0.0
+      status: status,
+      posterId: posterId,
+      posterName: posterName,
+      posterAvatar: json['poster_avatar']?.toString()
+          ?? (postedBy is Map ? postedBy['avatar']?.toString() : null),
+      posterRating: posterRating,
+      helperId: (helperIdRaw?.isEmpty ?? true) ? null : helperIdRaw,
+      helperName: helperName,
+      latitude: double.tryParse(
+          (locLat ?? json['latitude'] ?? json['lat'] ?? json['location_lat'] ?? 0).toString()
+      ) ?? 0.0,
+      longitude: double.tryParse(
+          (locLng ?? json['longitude'] ?? json['lng'] ?? json['location_lng'] ?? 0).toString()
+      ) ?? 0.0,
+      address: locAddr?.toString()
+          ?? json['address']?.toString()
+          ?? json['location_address']?.toString(),
+      city: json['city']?.toString(),
+      distanceKm: (json['distance_km'] ?? json['distanceKm']) != null
+          ? double.tryParse(
+              (json['distance_km'] ?? json['distanceKm']).toString()
+            ) ?? 0.0
           : null,
-      createdAt: json['created_at'] != null
-          ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
-          : DateTime.now(),
-      acceptedAt: json['accepted_at'] != null
-          ? DateTime.tryParse(json['accepted_at'])
-          : null,
-      completedAt: json['completed_at'] != null
-          ? DateTime.tryParse(json['completed_at'])
-          : null,
+      createdAt: _parseDate(
+          json['created_at'] ?? json['postedAt'] ?? json['posted_at']
+      ),
+      acceptedAt: json['accepted_at'] != null ? _parseDate(json['accepted_at']) : null,
+      completedAt: json['completed_at'] != null ? _parseDate(json['completed_at']) : null,
       helperRating: json['helper_rating'] != null
           ? double.tryParse(json['helper_rating'].toString()) ?? 0.0
           : null,
-      completionProof: json['completion_proof'],
-      isPaid: json['is_paid'] ?? false,
-      isHidden: json['is_hidden'] ?? false,
+      completionProof: json['completion_proof']?.toString(),
+      posterPhone: (postedBy is Map ? postedBy['phone'] : null)?.toString()
+          ?? json['poster_phone']?.toString(),
+      isPaid: json['is_paid'] == true || json['status'] == 'paid',
+      isHidden: json['is_hidden'] == true,
     );
   }
 
@@ -101,15 +157,21 @@ class Task {
   String get statusLabel {
     switch (status) {
       case 'posted':
+      case 'open':
+      case 'active':
         return 'Open';
       case 'accepted':
         return 'Accepted';
       case 'in_progress':
+      case 'verify_pending':
         return 'In Progress';
+      case 'payment_released':
+        return 'Payment Released';
       case 'completed':
-        return 'Completed';
+        return 'Awaiting Verification';
       case 'verified':
-        return 'Verified';
+      case 'paid':
+        return 'Completed';
       case 'cancelled':
         return 'Cancelled';
       default:

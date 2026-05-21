@@ -18,12 +18,11 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   // Recovery: if SW is stuck in a failed state, unregister and re-register
 
 
-  navigator.serviceWorker.getRegistration().then(function(existing) {
-    if (existing && existing.installing === null && existing.waiting === null && existing.active === null) {
-      // SW registration exists but no worker in any state — stuck
+  navigator.serviceWorker.getRegistration().then(async function(existing) {
+    if (existing && existing.installing === null && existing.waiting === null && existing.active === null) {// SW registration exists but no worker in any state — stuck
       console.warn('SW stuck, unregistering...');
-      return existing.unregister().then(function() {
-        return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+      return await existing.unregister().then(async function() {
+        return await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
       });
     }
     // If there's already a waiting worker on page load (e.g. user had tab open), show banner

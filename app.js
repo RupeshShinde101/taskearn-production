@@ -497,7 +497,6 @@ async function getStoredUsersAsync() {
             const users = localStorage.getItem(STORAGE_KEYS.USERS);
             if (users) {
                 const parsed = JSON.parse(users);
-                console.log('📦 Loaded users from localStorage:', Object.keys(parsed).length, 'users');
                 return parsed;
             }
         } catch (e) {
@@ -508,7 +507,6 @@ async function getStoredUsersAsync() {
     // Fallback to IndexedDB
     const idbData = await loadFromIndexedDB(STORAGE_KEYS.USERS);
     if (idbData) {
-        console.log('📦 Loaded users from IndexedDB:', Object.keys(idbData).length, 'users');
         // Sync back to localStorage if available
         if (STORAGE_AVAILABLE) {
             try { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(idbData)); } catch(e) {}
@@ -545,7 +543,6 @@ async function saveUsersAsync(users) {
             localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
             const verify = localStorage.getItem(STORAGE_KEYS.USERS);
             if (verify) {
-                console.log('✅ Users saved to localStorage:', Object.keys(users).length, 'users');
                 saved = true;
             }
         } catch (e) {
@@ -556,7 +553,6 @@ async function saveUsersAsync(users) {
     // Also save to IndexedDB as backup
     const idbSaved = await saveToIndexedDB(STORAGE_KEYS.USERS, users);
     if (idbSaved) {
-        console.log('✅ Users backed up to IndexedDB');
         saved = true;
     }
     
@@ -577,7 +573,7 @@ function saveUsers(users) {
         saveToIndexedDB(STORAGE_KEYS.USERS, users);
         const verify = localStorage.getItem(STORAGE_KEYS.USERS);
         if (verify) {
-            console.log('✅ Users saved to storage:', Object.keys(users).length, 'users');
+            console.log('✅ Users saved to storage:', Object.keys(users).length);
             return true;
         }
         return false;
@@ -648,7 +644,6 @@ async function loadCurrentSessionAsync() {
             const apiUserStr = localStorage.getItem('taskearn_user');
             if (apiToken && apiUserStr) {
                 const apiUser = JSON.parse(apiUserStr);
-                console.log('✅ Found API session for:', apiUser.name || apiUser.email);
                 // Verify token is still valid with the backend
                 if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
                     try {
@@ -658,7 +653,6 @@ async function loadCurrentSessionAsync() {
                             clearCurrentSession();
                             return null;
                         }
-                        console.log('✅ API token verified with backend');
                         // Merge locally-cached task data into fresh server profile so tasks
                         // show immediately on the first render (before syncUserTasksFromServer).
                         return {
@@ -700,7 +694,6 @@ async function loadCurrentSessionAsync() {
     }
     
     if (!session) {
-        console.log('ℹ️ No saved session found');
         return null;
     }
     
@@ -708,10 +701,9 @@ async function loadCurrentSessionAsync() {
     users = await getStoredUsersAsync();
     
     if (users[session.id]) {
-        console.log('✅ Found saved session for:', users[session.id].name);
         return users[session.id];
     } else {
-        console.log('⚠️ Session user not found in storage, clearing session');
+        console.warn('⚠️ Session user not found in storage, clearing');
         clearCurrentSession();
         return null;
     }
@@ -726,26 +718,21 @@ function loadCurrentSession() {
         const apiUserStr = localStorage.getItem('taskearn_user');
         if (apiToken && apiUserStr) {
             const apiUser = JSON.parse(apiUserStr);
-            console.log('✅ Found API session for:', apiUser.name || apiUser.email);
             return apiUser;
         }
         
         // Check local session
         const session = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-        console.log('🔍 Checking for saved session...');
         if (session) {
             const user = JSON.parse(session);
             // Refresh user data from storage to get latest data
             const users = getStoredUsers();
             if (users[user.id]) {
-                console.log('✅ Found saved session for:', users[user.id].name);
                 return users[user.id];
             } else {
-                console.log('⚠️ Session user not found in storage, clearing session');
+                console.warn('⚠️ Session user not found in storage, clearing');
                 clearCurrentSession();
             }
-        } else {
-            console.log('ℹ️ No saved session found');
         }
         return null;
     } catch (e) {
@@ -2141,11 +2128,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         })();
 
         console.log('🚀 Workmate4u Starting...');
-        console.log('📦 localStorage available:', STORAGE_AVAILABLE);
-        console.log('🔑 API Token:', localStorage.getItem('taskearn_token') ? 'EXISTS (✅)' : 'MISSING (❌)');
-        console.log('🌐 Backend URL:', window.TASKEARN_API_URL);
-        console.log('🔌 TasksAPI available:', typeof TasksAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
-        console.log('🔌 AuthAPI available:', typeof AuthAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
         
         // Wait for IndexedDB to initialize
         try {
@@ -2160,19 +2142,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Check and clear expired suspension
         checkAndClearSuspension();
         
-        // Debug: Show all stored users (using async version for full support)
-        try {
-            const allUsers = await getStoredUsersAsync();
-            console.log('👥 Registered users:', Object.keys(allUsers).length);
-            
-            // List registered user emails for debugging
-            if (Object.keys(allUsers).length > 0) {
-                console.log('📧 Registered emails:', Object.values(allUsers).map(u => u.email));
-            }
-        } catch (e) {
-            console.warn('⚠️ Could not load users:', e.message);
-        }
-        
         // Check for existing session (using async version)
         try {
             const savedUser = await loadCurrentSessionAsync();
@@ -2181,16 +2150,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 myPostedTasks = deserializeTasks(savedUser.postedTasks);
                 myAcceptedTasks = deserializeTasks(savedUser.acceptedTasks);
                 myCompletedTasks = deserializeTasks(savedUser.completedTasks);
-                console.log('✅ Session restored for:', currentUser.name);
-                console.log('📋 Posted tasks:', myPostedTasks.length);
-                console.log('✔️ Accepted tasks:', myAcceptedTasks.length);
                 
                 // Check if user has API token (backend authentication)
                 const hasApiToken = !!localStorage.getItem('taskearn_token');
                 if (!hasApiToken) {
-                    console.warn('⚠️ Local-only user detected:', currentUser.email);
-                    console.warn('⚠️ This user needs to be migrated to backend on next login');
-                    // Show migration warning banner
+                    // Show migration warning banner for local-only users
                     setTimeout(() => {
                         try {
                             const banner = document.getElementById('migrationWarningBanner');
@@ -2200,7 +2164,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                         } catch (e) {
                             console.warn('⚠️ Could not show migration banner:', e.message);
                         }
-                        console.warn('📢 User needs to re-login to migrate to backend');
                     }, 2000);
                 }
                 
@@ -3121,8 +3084,6 @@ function openTaskDetail(taskId) {
     
     // Check if current user is the task owner
     const isOwner = currentUser && task.postedBy && task.postedBy.id === currentUser.id;
-    
-    console.log('📋 Task details - isOwner:', isOwner, 'User:', currentUser?.id, 'Poster:', task.postedBy?.id);
 
     const content = `
         <div class="task-detail-header">
@@ -4338,9 +4299,7 @@ async function deleteTask(taskId) {
     try {
         var result;
         if (typeof TasksAPI !== 'undefined' && TasksAPI.delete) {
-            console.log('📡 Calling TasksAPI.delete for task:', taskId);
             result = await TasksAPI.delete(taskId);
-            console.log('📥 Delete API response:', JSON.stringify(result));
         } else {
             // Fallback: direct fetch
             console.warn('⚠️ TasksAPI not available, using direct fetch');
@@ -4361,7 +4320,6 @@ async function deleteTask(taskId) {
                 mode: 'cors'
             });
             result = await resp.json();
-            console.log('📥 Direct fetch delete response:', JSON.stringify(result));
         }
 
         if (!result || !result.success) {
@@ -5444,20 +5402,13 @@ async function handleTaskSubmit(event) {
     let serverSaveError = null;
     
     // Task posting requires API authentication (already checked above)
-    console.log('📤 Attempting to post task to server...');
-    console.log('🔑 Has API token:', !!hasApiToken);
-    console.log('👤 Current user:', currentUser?.name, currentUser?.id);
-    console.log('📦 Task data:', JSON.stringify(taskData, null, 2));
     
     try {
         if (typeof TasksAPI !== 'undefined' && TasksAPI.create) {
-            console.log('🚀 Calling TasksAPI.create...');
             const result = await TasksAPI.create(taskData);
-            console.log('📥 Server response:', JSON.stringify(result, null, 2));
             
             if (result.success) {
                 serverTaskId = result.taskId;
-                console.log('✅ Task saved to server with ID:', serverTaskId);
                 showToast('✅ Task posted successfully!');
             } else {
                 serverSaveError = result.message;

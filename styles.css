@@ -537,7 +537,7 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
 
 .notification-dropdown {
     position: fixed;
-    top: 60px;
+    top: 72px;
     right: 16px;
     width: 350px;
     max-height: 450px;
@@ -873,6 +873,7 @@ h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
     display: none;
     position: fixed;
     top: 70px;
+    top: calc(70px + env(safe-area-inset-top, 0px));
     left: 0;
     right: 0;
     background: var(--white);

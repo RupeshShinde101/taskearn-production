@@ -310,14 +310,8 @@ async function apiRequest(endpoint, options = {}) {
         // Handle token expiration - only clear if we actually had an API token
         if (response.status === 401) {
             const token = localStorage.getItem('taskearn_token');
-            console.log('❌ 401 Unauthorized response received!');
-            console.log('   Error message:', data.message);
-            console.log('   Token exists:', !!token);
             if (token) {
-                console.log('   Token length:', token.length);
-                console.log('   Token preview:', token.substring(0, 30) + '...');
                 localStorage.removeItem('taskearn_token');
-                console.log('⚠️  Token cleared from localStorage');
                 // Show session expired overlay if not already shown
                 if (!document.getElementById('sessionExpiredOverlay')) {
                     const overlay = document.createElement('div');
@@ -450,7 +444,6 @@ async function apiRequest(endpoint, options = {}) {
 
 function setAuthToken(token) {
     localStorage.setItem('taskearn_token', token);
-    console.log('✅ Auth token saved to localStorage');
 }
 
 function clearAuthToken() {
@@ -480,22 +473,14 @@ function getUserFromStorage() {
 const AuthAPI = {
     // Register new user
     async register(userData) {
-        console.log('📝 Starting registration with data:', userData);
         const result = await apiRequest('/auth/register', {
             method: 'POST',
             body: JSON.stringify(userData)
         });
         
-        console.log('✅ Register API response:', result);
-        
         if (result.success && result.data && result.data.token) {
-            console.log('🎯 Setting auth token...');
             setAuthToken(result.data.token);
             saveUserToStorage(result.data.user);
-        } else if (result.success && result.data) {
-            console.log('⚠️ Success but no token in response:', result.data);
-        } else if (!result.success) {
-            console.log('❌ Registration failed:', result.data?.message || result.data);
         }
         
         // Return the actual response data from backend
@@ -504,22 +489,14 @@ const AuthAPI = {
     
     // Login user
     async login(email, password) {
-        console.log('🔑 Starting login for:', email);
         const result = await apiRequest('/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email, password })
         });
         
-        console.log('✅ Login API response:', result);
-        
         if (result.success && result.data && result.data.token) {
-            console.log('🎯 Setting auth token...');
             setAuthToken(result.data.token);
             saveUserToStorage(result.data.user);
-        } else if (result.success && result.data) {
-            console.log('⚠️ Success but no token:', result.data);
-        } else if (!result.success) {
-            console.log('❌ Login failed:', result.data?.message || result.data);
         }
         
         // Return the actual response data from backend

@@ -9526,36 +9526,8 @@ document.addEventListener('DOMContentLoaded', updateCalc);
     document.addEventListener('DOMContentLoaded', () => setTimeout(check, 2000));
 })();
 
-// 5. Hero stat counter animation (update floor values with real data if available)
-function animateCounter(el, target, prefix, suffix) {
-    if (!el) return;
-    const duration = 1200;
-    const start = Date.now();
-    const from = 0;
-    function step() {
-        const p = Math.min((Date.now() - start) / duration, 1);
-        const val = Math.round(from + (target - from) * (1 - Math.pow(1 - p, 3)));
-        el.textContent = prefix + val.toLocaleString('en-IN') + suffix;
-        if (p < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-}
-
-// Observe hero stat section and animate when in view
-(function observeHeroStats() {
-    const stats = document.getElementById('heroStatUsers');
-    if (!stats) return;
-    const obs = new IntersectionObserver((entries) => {
-        entries.forEach(e => {
-            if (e.isIntersecting) {
-                animateCounter(document.getElementById('heroStatUsers'), 500, '', '+');
-                animateCounter(document.getElementById('heroStatTasks'), 200, '', '+');
-                obs.disconnect();
-            }
-        });
-    }, { threshold: 0.5 });
-    obs.observe(stats);
-})();
+// 5. Hero stat counter animation handled by index.html inline script
+// which fetches real-time data from /api/platform-stats and caches it.
 
 
 

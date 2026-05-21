@@ -140,7 +140,8 @@ def init_postgres_db():
                 otp VARCHAR(10) NOT NULL,
                 created_at TIMESTAMP NOT NULL,
                 expires_at TIMESTAMP NOT NULL,
-                used BOOLEAN DEFAULT FALSE
+                used BOOLEAN DEFAULT FALSE,
+                otp_verified BOOLEAN DEFAULT FALSE
             )
         ''')
         
@@ -651,6 +652,15 @@ def init_postgres_db():
             print("[DB] ✅ push_subscriptions lat/lng columns added or already exist")
         except Exception as e:
             print(f"[DB] ⚠️  Could not add lat/lng to push_subscriptions: {e}")
+
+        # Ensure otp_verified column exists in password_resets (security migration)
+        try:
+            cursor.execute('''
+                ALTER TABLE password_resets ADD COLUMN IF NOT EXISTS otp_verified BOOLEAN DEFAULT FALSE
+            ''')
+            print("[DB] ✅ otp_verified column added or already exists in password_resets")
+        except Exception as e:
+            print(f"[DB] ⚠️  Could not add otp_verified to password_resets: {e}")
         
         # ========================================
         # CREATE SYSTEM/COMPANY USER
@@ -759,6 +769,7 @@ def init_sqlite_db():
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
                 used INTEGER DEFAULT 0,
+                otp_verified INTEGER DEFAULT 0,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         ''')
@@ -1063,8 +1074,19 @@ def init_sqlite_db():
                 print("[DB] ✅ paid_at column already exists")
         except Exception as e:
             print(f"[DB] ⚠️  SQLite migration error: {e}")
-        
-                # ========================================
+
+        # otp_verified column in password_resets
+        try:
+            cursor.execute('PRAGMA table_info(password_resets)')
+            pr_columns = [row[1] for row in cursor.fetchall()]
+            if 'otp_verified' not in pr_columns:
+                print("[DB] Adding otp_verified column to password_resets...")
+                cursor.execute('ALTER TABLE password_resets ADD COLUMN otp_verified INTEGER DEFAULT 0')
+                print("[DB] ✅ otp_verified column added")
+        except Exception as e:
+            print(f"[DB] ⚠️  SQLite password_resets migration error: {e}")
+
+        # ========================================
         # CREATE SYSTEM/COMPANY USER
         # ========================================
         # Ensure a company user with id '1' exists for the platform wallet

@@ -9187,7 +9187,7 @@ function startOTPTimer() {
         
         if (seconds <= 0) {
             clearInterval(forgotPasswordState.otpTimer);
-            if (timerEl) timerEl.innerHTML = '<span style="color: var(--danger);">OTP expired</span>';
+            if (timerEl) timerEl.innerHTML = '<span style="color: var(--gray);">You can request a new OTP</span>';
             if (resendBtn) resendBtn.disabled = false;
         } else {
             if (timerEl) timerEl.innerHTML = `Resend OTP in <strong>${seconds}s</strong>`;

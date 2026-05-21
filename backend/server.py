@@ -1750,9 +1750,12 @@ def verify_otp():
         ''', (reset_token, otp, False if config.USE_POSTGRES else 0, now))
         
         reset_record = cursor.fetchone()
-    
-    if not reset_record:
-        return jsonify({'success': False, 'message': 'Invalid or expired OTP'}), 400
+        if not reset_record:
+            return jsonify({'success': False, 'message': 'Invalid or expired OTP'}), 400
+        
+        # Mark OTP as verified so reset_password can confirm the step was completed
+        cursor.execute(f'UPDATE password_resets SET otp_verified = {PH} WHERE token = {PH}',
+                       (True if config.USE_POSTGRES else 1, reset_token))
     
     return jsonify({
         'success': True,
@@ -1780,15 +1783,15 @@ def reset_password():
     with get_db() as (cursor, conn):
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
-        # Get reset record
+        # Get reset record — also require that OTP was actually verified
         cursor.execute(f'''
             SELECT * FROM password_resets 
-            WHERE token = {PH} AND used = {PH} AND expires_at > {PH}
-        ''', (reset_token, False if config.USE_POSTGRES else 0, now))
+            WHERE token = {PH} AND used = {PH} AND otp_verified = {PH} AND expires_at > {PH}
+        ''', (reset_token, False if config.USE_POSTGRES else 0, True if config.USE_POSTGRES else 1, now))
         
         reset_record = cursor.fetchone()
         if not reset_record:
-            return jsonify({'success': False, 'message': 'Invalid or expired reset token'}), 400
+            return jsonify({'success': False, 'message': 'Invalid or expired reset token. Please verify your OTP first.'}), 400
         
         reset_record = dict_from_row(reset_record)
         

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -21,6 +22,8 @@ class _ChatScreenState extends State<ChatScreen> {
   List<ChatMessage> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  Timer? _pollTimer;
+  String? _lastMessageId;
 
   String get _otherName =>
       widget.extra?['poster_name'] ?? widget.extra?['helper_name'] ?? 'User';
@@ -29,10 +32,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _loadMessages();
+    // Poll for new messages every 5 seconds
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => _pollMessages());
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -40,8 +46,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadMessages() async {
     try {
-      final data =
-          await ApiService.get('/chat/${widget.taskId}/messages');
+      final data = await ApiService.get('/chat/${widget.taskId}/messages');
       final msgs = (data['messages'] as List? ?? [])
           .map((j) => ChatMessage.fromJson(j))
           .toList();
@@ -49,12 +54,40 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _messages = msgs;
           _loading = false;
+          _lastMessageId = msgs.isNotEmpty ? msgs.last.id : null;
         });
         _scrollToBottom();
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _pollMessages() async {
+    if (!mounted) return;
+    try {
+      final params = _lastMessageId != null
+          ? {'after': _lastMessageId!}
+          : <String, String>{};
+      final data = await ApiService.get(
+        '/chat/${widget.taskId}/messages',
+        queryParams: params.isNotEmpty ? params : null,
+      );
+      final msgs = (data['messages'] as List? ?? [])
+          .map((j) => ChatMessage.fromJson(j))
+          .toList();
+      if (!mounted) return;
+      // Only add truly new messages
+      final existingIds = _messages.map((m) => m.id).toSet();
+      final newMsgs = msgs.where((m) => !existingIds.contains(m.id)).toList();
+      if (newMsgs.isNotEmpty) {
+        setState(() {
+          _messages.addAll(newMsgs);
+          _lastMessageId = _messages.last.id;
+        });
+        _scrollToBottom();
+      }
+    } catch (_) {}
   }
 
   Future<void> _send() async {
@@ -248,7 +281,7 @@ class _MessageBubble extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10,
                 color: _isMe
-                    ? Colors.white.withOpacity(0.7)
+                    ? Colors.white.withValues(alpha: 0.7)
                     : AppColors.grayLight,
               ),
             ),

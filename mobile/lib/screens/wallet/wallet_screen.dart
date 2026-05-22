@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../providers/wallet_provider.dart';
@@ -22,10 +23,13 @@ class _WalletScreenState extends State<WalletScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
-    final w = context.read<WalletProvider>();
-    w.fetchWallet();
-    w.fetchTransactions();
-    w.fetchWithdrawals();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final w = context.read<WalletProvider>();
+      w.fetchWallet();
+      w.fetchTransactions();
+      w.fetchWithdrawals();
+    });
 
     _razorpay = Razorpay();
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess);
@@ -134,6 +138,7 @@ class _WalletScreenState extends State<WalletScreen>
                   Navigator.pop(ctx);
 
                   final wallet = context.read<WalletProvider>();
+                  final auth = context.read<AuthProvider>();
                   final order = await wallet.createTopUpOrder(amt);
                   if (order == null) {
                     if (!mounted) return;
@@ -146,7 +151,7 @@ class _WalletScreenState extends State<WalletScreen>
                     return;
                   }
 
-                  final user = context.read<AuthProvider>().user;
+                  final user = auth.user;
                   final options = <String, dynamic>{
                     'key': order['key'] ?? order['razorpay_key'] ?? '',
                     'order_id': order['order_id'] ?? order['id'],
@@ -184,6 +189,38 @@ class _WalletScreenState extends State<WalletScreen>
   }
 
   void _showWithdraw() {
+    // KYC must be verified to withdraw
+    final auth = context.read<AuthProvider>();
+    if (!(auth.user?.isKycVerified ?? false)) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('KYC Verification Required'),
+          content: const Text(
+            'Complete KYC verification before withdrawing money.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.push('/kyc');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Verify KYC'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final amtCtrl = TextEditingController();
     final bankCtrl = TextEditingController();
     final ifscCtrl = TextEditingController();
@@ -415,7 +452,7 @@ class _TransactionList extends StatelessWidget {
           leading: CircleAvatar(
             backgroundColor:
                 (t.isCredit ? AppColors.success : AppColors.danger)
-                    .withOpacity(0.1),
+                    .withValues(alpha: 0.1),
             child: Icon(
               t.isCredit ? Icons.arrow_downward : Icons.arrow_upward,
               color: t.isCredit ? AppColors.success : AppColors.danger,
@@ -466,7 +503,7 @@ class _WithdrawalList extends StatelessWidget {
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: (isPending ? AppColors.warning : AppColors.success)
-                .withOpacity(0.1),
+                .withValues(alpha: 0.1),
             child: Icon(
               isPending ? Icons.hourglass_empty : Icons.check_circle_outline,
               color: isPending ? AppColors.warning : AppColors.success,
@@ -482,7 +519,7 @@ class _WithdrawalList extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: (isPending ? AppColors.warning : AppColors.success)
-                  .withOpacity(0.1),
+                  .withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(

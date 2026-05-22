@@ -3,6 +3,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/notification_service.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
@@ -37,8 +38,15 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       final data = await ApiService.get('/auth/me');
-      _user = User.fromJson(data['user'] ?? data);
+      final userJson = Map<String, dynamic>.from((data['user'] ?? data) as Map);
+      debugPrint('[AUTH] _checkAuth KYC fields: '
+          'kyc_verified=${userJson["kyc_verified"]} '
+          'kyc_status=${userJson["kyc_status"]} '
+          'kycVerified=${userJson["kycVerified"]} '
+          'kycStatus=${userJson["kycStatus"]}');
+      _user = User.fromJson(userJson);
       _status = AuthStatus.authenticated;
+      _registerFcmToken();
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403) {
         await StorageService.clearToken();
@@ -73,6 +81,7 @@ class AuthProvider extends ChangeNotifier {
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();
+        _registerFcmToken();
         return true;
       }
 
@@ -144,25 +153,90 @@ class AuthProvider extends ChangeNotifier {
   Future<void> refreshUser() async {
     try {
       final data = await ApiService.get('/auth/me');
-      _user = User.fromJson(data['user'] ?? data);
+      final userJson = Map<String, dynamic>.from(
+          (data['user'] ?? data) as Map);
+      // DEBUG: log KYC-related fields from API response
+      debugPrint('[AUTH] /auth/me raw KYC fields: '
+          'kyc_verified=${userJson["kyc_verified"]} '
+          'kyc_status=${userJson["kyc_status"]} '
+          'kycVerified=${userJson["kycVerified"]} '
+          'kycStatus=${userJson["kycStatus"]} '
+          'is_kyc_verified=${userJson["is_kyc_verified"]}');
+      debugPrint('[AUTH] All keys: ${userJson.keys.toList()}');
+      _user = User.fromJson(userJson);
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[AUTH] refreshUser error: $e');
+    }
   }
 
   Future<bool> updateProfile({
     String? name,
     String? bio,
     String? avatarPath,
+    List<String>? skills,
   }) async {
     _loading = true;
     notifyListeners();
 
     try {
-      final data = await ApiService.put('/user/profile', body: {
-        if (name != null) 'name': name,
-        if (bio != null) 'bio': bio,
+      final body = <String, dynamic>{};
+      if (name != null && name.trim().isNotEmpty) body['name'] = name.trim();
+      if (bio != null) body['bio'] = bio.trim();
+      if (skills != null) body['skills'] = skills;
+
+      await ApiService.put('/user/profile', body: body);
+      // Always refresh from server so skills and all fields are up-to-date
+      await refreshUser();
+      _loading = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Register a device FCM token with the backend for push notifications.
+  Future<void> updateFcmToken(String token) async {
+    try {
+      await ApiService.post('/user/device-token', body: {
+        'token': token,
+        'platform': 'android',
       });
-      _user = User.fromJson(data['user'] ?? data);
+    } catch (_) {}
+  }
+
+  /// Submit a KYC document (aadhaar / pan / selfie path).
+  Future<bool> submitKyc({
+    required String docType,
+    required String docNumber,
+    String? frontImagePath,
+    String? selfieImagePath,
+  }) async {
+    _loading = true;
+    notifyListeners();
+    try {
+      final body = <String, dynamic>{
+        'doc_type': docType,
+        'doc_number': docNumber,
+      };
+      await ApiService.put('/user/kyc', body: body);
+      if (frontImagePath != null) {
+        try {
+          await ApiService.uploadFile(
+              '/user/kyc/upload', frontImagePath, 'kyc_doc');
+        } catch (_) {}
+      }
+      if (selfieImagePath != null) {
+        try {
+          await ApiService.uploadFile(
+              '/user/kyc/selfie', selfieImagePath, 'selfie');
+        } catch (_) {}
+      }
+      await refreshUser();
       _loading = false;
       notifyListeners();
       return true;
@@ -236,5 +310,120 @@ class AuthProvider extends ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
+  }
+
+  // ── Change Password ────────────────────────────────────────────────────────
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await ApiService.post('/auth/change-password', body: {
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      });
+      _loading = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ── Forgot Password — Step 1: send OTP to email ──────────────────────────
+  Future<bool> forgotPasswordSendOtp(String email) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await ApiService.post('/auth/forgot-password', body: {'email': email.trim()});
+      _loading = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ── Forgot Password — Step 2: verify OTP + set new password ──────────────
+  Future<bool> resetPasswordWithOtp({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await ApiService.post('/auth/reset-password', body: {
+        'email': email.trim(),
+        'otp': otp.trim(),
+        'new_password': newPassword,
+      });
+      _loading = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ── Email Verification — send OTP ─────────────────────────────────────────
+  Future<bool> sendEmailVerificationOtp() async {
+    _error = null;
+    try {
+      await ApiService.post('/auth/send-verification-otp',
+          body: {'email': _user?.email ?? ''});
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ── Email Verification — verify OTP ──────────────────────────────────────
+  Future<bool> verifyEmailOtp(String otp) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await ApiService.post('/auth/verify-email', body: {
+        'email': _user?.email ?? '',
+        'otp': otp.trim(),
+      });
+      await refreshUser();
+      _loading = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Registers the FCM device token with the backend after login.
+  Future<void> _registerFcmToken() async {
+    try {
+      final token = await NotificationService.getToken();
+      if (token != null) {
+        await updateFcmToken(token);
+        NotificationService.onTokenRefresh(updateFcmToken);
+      }
+    } catch (_) {}
   }
 }

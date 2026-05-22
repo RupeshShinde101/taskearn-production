@@ -1,4 +1,7 @@
+import 'dart:async' show TimeoutException;
 import 'dart:convert';
+import 'dart:io' show SocketException;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../services/storage_service.dart';
 
@@ -30,6 +33,20 @@ class ApiService {
     };
   }
 
+  // ─── NETWORK ERROR WRAPPER ────────────────────────────────────────────────
+  static Future<dynamic> _safeRequest(
+      Future<http.Response> Function() fn) async {
+    try {
+      return _handleResponse(await fn());
+    } on SocketException {
+      throw ApiException('No internet connection. Please check your network.');
+    } on http.ClientException {
+      throw ApiException('Network error. Please try again.');
+    } on TimeoutException {
+      throw ApiException('Request timed out. Please try again.');
+    }
+  }
+
   // ─── GET ────────────────────────────────────────────────────────────────────
   static Future<dynamic> get(String path,
       {Map<String, String>? queryParams}) async {
@@ -37,47 +54,44 @@ class ApiService {
     if (queryParams != null && queryParams.isNotEmpty) {
       uri = uri.replace(queryParameters: queryParams);
     }
-
-    final response = await http
-        .get(uri, headers: _headers)
-        .timeout(const Duration(seconds: 30));
-
-    return _handleResponse(response);
+    return _safeRequest(
+      () => http.get(uri, headers: _headers).timeout(const Duration(seconds: 30)),
+    );
   }
 
   // ─── POST ───────────────────────────────────────────────────────────────────
   static Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
-    final response = await http
-        .post(
-          Uri.parse('$baseUrl$path'),
-          headers: _headers,
-          body: body != null ? jsonEncode(body) : null,
-        )
-        .timeout(const Duration(seconds: 30));
-
-    return _handleResponse(response);
+    return _safeRequest(
+      () => http
+          .post(
+            Uri.parse('$baseUrl$path'),
+            headers: _headers,
+            body: body != null ? jsonEncode(body) : null,
+          )
+          .timeout(const Duration(seconds: 30)),
+    );
   }
 
   // ─── PUT ────────────────────────────────────────────────────────────────────
   static Future<dynamic> put(String path, {Map<String, dynamic>? body}) async {
-    final response = await http
-        .put(
-          Uri.parse('$baseUrl$path'),
-          headers: _headers,
-          body: body != null ? jsonEncode(body) : null,
-        )
-        .timeout(const Duration(seconds: 30));
-
-    return _handleResponse(response);
+    return _safeRequest(
+      () => http
+          .put(
+            Uri.parse('$baseUrl$path'),
+            headers: _headers,
+            body: body != null ? jsonEncode(body) : null,
+          )
+          .timeout(const Duration(seconds: 30)),
+    );
   }
 
   // ─── DELETE ─────────────────────────────────────────────────────────────────
   static Future<dynamic> delete(String path) async {
-    final response = await http
-        .delete(Uri.parse('$baseUrl$path'), headers: _headers)
-        .timeout(const Duration(seconds: 30));
-
-    return _handleResponse(response);
+    return _safeRequest(
+      () => http
+          .delete(Uri.parse('$baseUrl$path'), headers: _headers)
+          .timeout(const Duration(seconds: 30)),
+    );
   }
 
   // ─── MULTIPART (file upload) ─────────────────────────────────────────────────
@@ -97,9 +111,17 @@ class ApiService {
     request.files.add(await http.MultipartFile.fromPath(fieldName, filePath));
     if (fields != null) request.fields.addAll(fields);
 
-    final streamed = await request.send().timeout(const Duration(seconds: 60));
-    final response = await http.Response.fromStream(streamed);
-    return _handleResponse(response);
+    try {
+      final streamed = await request.send().timeout(const Duration(seconds: 60));
+      final response = await http.Response.fromStream(streamed);
+      return _handleResponse(response);
+    } on SocketException {
+      throw ApiException('No internet connection. Please check your network.');
+    } on http.ClientException {
+      throw ApiException('Network error. Please try again.');
+    } on TimeoutException {
+      throw ApiException('Request timed out. Please try again.');
+    }
   }
 
   // ─── RESPONSE HANDLER ───────────────────────────────────────────────────────
@@ -121,6 +143,7 @@ class ApiService {
         ? (data['error'] ?? data['message'] ?? 'Request failed')
         : 'Request failed';
 
+    debugPrint('[API] ERROR ${response.statusCode} ${response.request?.url}: $message');
     throw ApiException(message.toString(), statusCode: response.statusCode);
   }
 }

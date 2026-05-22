@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -18,21 +19,41 @@ class _BrowseScreenState extends State<BrowseScreen> {
   String _selectedCategory = 'all';
   double _maxBudget = 5000;
   double _radiusKm = 10;
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
-    context.read<TaskProvider>().fetchBrowseTasks(
-          category: _selectedCategory,
-          radiusKm: _radiusKm,
-          refresh: true,
-        );
+    _searchCtrl.addListener(_onSearchChanged);
+    // Defer until after first build to avoid setState-during-build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<TaskProvider>().fetchBrowseTasks(
+            category: _selectedCategory,
+            radiusKm: _radiusKm,
+            refresh: true,
+          );
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchCtrl.removeListener(_onSearchChanged);
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 500), _applyFilters);
   }
 
   void _applyFilters() {
     context.read<TaskProvider>().fetchBrowseTasks(
           category: _selectedCategory,
-          maxBudget: _maxBudget,
+          search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
+          maxBudget: _maxBudget < 5000 ? _maxBudget : null,
           radiusKm: _radiusKm,
           refresh: true,
         );

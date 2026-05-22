@@ -28,7 +28,7 @@ except Exception:
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 TEXT_EXT = {'.html', '.js', '.css', '.json', '.md', '.txt'}
-SKIP_DIRS = {'.git', '.venv', '.venv-1', 'node_modules', '__pycache__', 'backend'}
+SKIP_DIRS = {'.git', '.venv', '.venv-1', 'node_modules', '__pycache__', 'backend', 'netlify'}
 
 # Ordered: longer/more-specific patterns first.
 RUPEE_PATTERNS = [

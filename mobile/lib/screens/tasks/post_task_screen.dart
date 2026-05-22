@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
@@ -13,6 +15,27 @@ class PostTaskScreen extends StatefulWidget {
 
   @override
   State<PostTaskScreen> createState() => _PostTaskScreenState();
+}
+
+/// Returns the platform service charge in rupees for a given task category.
+/// Ranges are taken from the Workmate4u Terms of Service (Section 6.2).
+int _serviceChargeFor(String category) {
+  const charges = <String, int>{
+    // Quick errands
+    'delivery': 30, 'pickup': 30, 'errands': 30, 'queue_standing': 30,
+    // Standard
+    'groceries': 45, 'cleaning': 45, 'cooking': 45, 'laundry': 45,
+    'gardening': 45, 'transport': 45,
+    // Skilled
+    'repair': 60, 'tech_support': 60, 'pet_care': 60,
+    'child_care': 60, 'elder_care': 60, 'data_entry': 60,
+    // Time-intensive
+    'tutoring': 75, 'photography': 75, 'painting': 75,
+    'moving': 75, 'event_help': 75,
+    // Professional
+    'carpentry': 95, 'electrician': 95, 'plumbing': 95,
+  };
+  return charges[category] ?? 40;
 }
 
 class _PostTaskScreenState extends State<PostTaskScreen> {
@@ -61,6 +84,120 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       );
       return;
     }
+
+    // KYC must be verified to post a task
+    final auth = context.read<AuthProvider>();
+    if (!(auth.user?.isKycVerified ?? false)) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('KYC Verification Required'),
+          content: const Text(
+            'You need to complete KYC verification before posting a task.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.push('/kyc');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Verify KYC'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final budget = double.tryParse(_budgetCtrl.text) ?? 0;
+    final charge = _serviceChargeFor(_selectedCategory).toDouble();
+    final total  = budget + charge;
+
+    // Fetch current wallet balance and verify the poster has enough funds.
+    final wallet = context.read<WalletProvider>();
+    await wallet.fetchWallet();
+    if (!mounted) return;
+
+    if (wallet.balance.balance < total) {
+      final shortfall = total - wallet.balance.balance;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Insufficient Wallet Balance'),
+          content: Text(
+            'You need ₹${total.toStringAsFixed(0)} to post this task '
+            '(task ₹${budget.toStringAsFixed(0)} + service charge ₹${charge.toStringAsFixed(0)}).\n\n'
+            'Current balance: ₹${wallet.balance.balance.toStringAsFixed(0)}\n'
+            'Add at least ₹${shortfall.ceil()} to continue.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Add Money'),
+            ),
+          ],
+        ),
+      );
+      if (go == true && mounted) context.push('/wallet');
+      return;
+    }
+
+    // Confirm deduction before posting
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Task Posting'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('The following will be deducted from your wallet:'),
+            const SizedBox(height: 12),
+            _CostRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
+            _CostRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
+            const Divider(height: 20),
+            _CostRow('Total Deduction', '₹${total.toStringAsFixed(0)}',
+                bold: true),
+            const SizedBox(height: 8),
+            Text(
+              'Wallet balance after posting: ₹${(wallet.balance.balance - total).toStringAsFixed(0)}',
+              style: const TextStyle(color: AppColors.gray, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Post & Pay'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
 
     setState(() => _loading = true);
 
@@ -200,13 +337,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: _location != null
-                      ? AppColors.success.withOpacity(0.08)
-                      : AppColors.warning.withOpacity(0.08),
+                      ? AppColors.success.withValues(alpha: 0.08)
+                      : AppColors.warning.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: _location != null
-                        ? AppColors.success.withOpacity(0.3)
-                        : AppColors.warning.withOpacity(0.3),
+                        ? AppColors.success.withValues(alpha: 0.3)
+                        : AppColors.warning.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
@@ -246,7 +383,79 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 ),
               ),
 
-              const SizedBox(height: 28),
+
+              // ── Cost breakdown ─────────────────────────────────────
+              Builder(builder: (context) {
+                final budget  = double.tryParse(_budgetCtrl.text) ?? 0;
+                final charge  = _serviceChargeFor(_selectedCategory).toDouble();
+                final total   = budget + charge;
+                final walletBalance =
+                    context.watch<WalletProvider>().balance.balance;
+                final hasEnough = walletBalance >= total;
+                return Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: hasEnough
+                        ? AppColors.success.withValues(alpha: 0.06)
+                        : AppColors.danger.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: hasEnough
+                          ? AppColors.success.withValues(alpha: 0.3)
+                          : AppColors.danger.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.account_balance_wallet_outlined,
+                            size: 16,
+                            color: hasEnough ? AppColors.success : AppColors.danger,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Payment Summary',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: hasEnough ? AppColors.success : AppColors.danger,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _CostRow('Task Budget',
+                          '₹${budget.toStringAsFixed(0)}'),
+                      const SizedBox(height: 4),
+                      _CostRow('Service Charge',
+                          '₹${charge.toStringAsFixed(0)}'),
+                      const Divider(height: 14),
+                      _CostRow('Total Deducted from Wallet',
+                          '₹${total.toStringAsFixed(0)}',
+                          bold: true),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Wallet: ₹${walletBalance.toStringAsFixed(0)}'  +
+                        (hasEnough
+                            ? '  ✔ Sufficient'
+                            : '  ⚠ Add ₹${(total - walletBalance).ceil()} more'),
+                        style: TextStyle(
+                          color: hasEnough
+                              ? AppColors.success
+                              : AppColors.danger,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+              const SizedBox(height: 16),
 
               GradientButton(
                 label: 'Post Task',
@@ -258,6 +467,31 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Simple two-column label + value row used in cost breakdown dialogs.
+class _CostRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool bold;
+
+  const _CostRow(this.label, this.value, {this.bold = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+      color: bold ? AppColors.dark : AppColors.gray,
+      fontSize: bold ? 14 : 13,
+    );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: style),
+        Text(value, style: style),
+      ],
     );
   }
 }

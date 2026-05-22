@@ -66,6 +66,16 @@ class Task {
     return DateTime.now();
   }
 
+  /// Returns the first non-empty string value found in [map] for any of [keys].
+  static String _firstNonEmpty(Map<String, dynamic>? map, List<String> keys) {
+    if (map == null) return '';
+    for (final key in keys) {
+      final v = map[key];
+      if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
+    }
+    return '';
+  }
+
   factory Task.fromJson(Map<String, dynamic> json) {
     // ── location ────────────────────────────────────────────────────────────
     // API returns either a nested `location: {lat, lng, address}` object
@@ -76,18 +86,37 @@ class Task {
     final locAddr = loc is Map ? loc['address'] : null;
 
     // ── poster ───────────────────────────────────────────────────────────────
-    // API returns `postedBy: {id, name, rating}` or flat `poster_id`, `posted_by`
-    final postedBy = json['postedBy'] ?? json['poster'];
-    final posterId = (postedBy is Map ? postedBy['id'] : null)?.toString()
-        ?? json['poster_id']?.toString()
-        ?? json['posted_by']?.toString()
-        ?? '';
-    final posterName = (postedBy is Map ? postedBy['name'] : null)?.toString()
-        ?? json['poster_name']?.toString()
-        ?? 'Anonymous';
+    // The API may return the poster as any of: postedBy, poster, posted_by
+    // (populated nested object) OR as flat poster_id / poster_name fields.
+    // MongoDB uses _id; SQL APIs use id. Handle all variants.
+    final dynamic postedByRaw =
+        json['postedBy'] ?? json['poster'] ?? json['posted_by'];
+    final Map<String, dynamic>? postedBy =
+        postedByRaw is Map<String, dynamic> ? postedByRaw : null;
+
+    final posterId = _firstNonEmpty(postedBy, const ['_id', 'id'])
+        .isNotEmpty
+        ? _firstNonEmpty(postedBy, const ['_id', 'id'])
+        : (json['poster_id']?.toString() ??
+            (postedByRaw is String ? postedByRaw : null) ??
+            '');
+    final posterName = _firstNonEmpty(
+            postedBy,
+            const ['name', 'fullName', 'full_name', 'username', 'displayName'])
+        .isNotEmpty
+        ? _firstNonEmpty(
+            postedBy,
+            const ['name', 'fullName', 'full_name', 'username', 'displayName'])
+        : (json['poster_name']?.toString() ?? '');
     final posterRating = double.tryParse(
-        ((postedBy is Map ? postedBy['rating'] : null) ?? json['poster_rating'] ?? 0).toString()
-    ) ?? 0.0;
+            (_firstNonEmpty(postedBy,
+                        const ['rating', 'averageRating', 'average_rating'])
+                    .isNotEmpty
+                ? _firstNonEmpty(
+                    postedBy,
+                    const ['rating', 'averageRating', 'average_rating'])
+                : (json['poster_rating']?.toString() ?? '0'))) ??
+        0.0;
 
     // ── helper ───────────────────────────────────────────────────────────────
     final helper = json['helper'];
@@ -115,9 +144,13 @@ class Task {
           : null,
       status: status,
       posterId: posterId,
-      posterName: posterName,
-      posterAvatar: json['poster_avatar']?.toString()
-          ?? (postedBy is Map ? postedBy['avatar']?.toString() : null),
+      posterName: posterName.isNotEmpty ? posterName : 'Anonymous',
+      posterAvatar: json['poster_avatar']?.toString() ?? (() {
+            final a = _firstNonEmpty(postedBy, const [
+              'avatar', 'profilePicture', 'profile_picture', 'photo', 'image',
+            ]);
+            return a.isNotEmpty ? a : null;
+          })(),
       posterRating: posterRating,
       helperId: (helperIdRaw?.isEmpty ?? true) ? null : helperIdRaw,
       helperName: helperName,
@@ -145,14 +178,51 @@ class Task {
           ? double.tryParse(json['helper_rating'].toString()) ?? 0.0
           : null,
       completionProof: json['completion_proof']?.toString(),
-      posterPhone: (postedBy is Map ? postedBy['phone'] : null)?.toString()
-          ?? json['poster_phone']?.toString(),
+      posterPhone: (() {
+            final p = _firstNonEmpty(postedBy, const [
+              'phone', 'phoneNumber', 'phone_number', 'mobile',
+              'mobileNumber', 'mobile_number', 'contact', 'contactNumber',
+            ]);
+            return p.isNotEmpty
+                ? p
+                : (json['poster_phone']?.toString() ?? json['phone']?.toString());
+          })(),
       isPaid: json['is_paid'] == true || json['status'] == 'paid',
       isHidden: json['is_hidden'] == true,
     );
   }
 
   double get totalAmount => budget + (serviceCharge ?? 0);
+
+  /// Flat JSON map that can be fed back into [Task.fromJson].
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'description': description,
+    'category': category,
+    'budget': budget,
+    if (serviceCharge != null) 'service_charge': serviceCharge,
+    'status': status,
+    'poster_id': posterId,
+    'poster_name': posterName,
+    if (posterAvatar != null) 'poster_avatar': posterAvatar,
+    'poster_rating': posterRating,
+    if (posterPhone != null) 'poster_phone': posterPhone,
+    if (helperId != null) 'helper_id': helperId,
+    if (helperName != null) 'helper_name': helperName,
+    'latitude': latitude,
+    'longitude': longitude,
+    if (address != null) 'address': address,
+    if (city != null) 'city': city,
+    if (distanceKm != null) 'distance_km': distanceKm,
+    'created_at': createdAt.toIso8601String(),
+    if (acceptedAt != null) 'accepted_at': acceptedAt!.toIso8601String(),
+    if (completedAt != null) 'completed_at': completedAt!.toIso8601String(),
+    if (helperRating != null) 'helper_rating': helperRating,
+    if (completionProof != null) 'completion_proof': completionProof,
+    'is_paid': isPaid,
+    'is_hidden': isHidden,
+  };
 
   String get statusLabel {
     switch (status) {

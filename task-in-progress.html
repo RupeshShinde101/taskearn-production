@@ -678,7 +678,7 @@
     </div>
 
     <!-- Release Penalty Modal -->
-    <div id="releasePenaltyOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:none;align-items:center;justify-content:center;">
+    <div id="releasePenaltyOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;border-radius:16px;max-width:400px;width:90%;padding:24px;text-align:center;">
             <div style="width:56px;height:56px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
                 <i class="fas fa-exclamation-triangle" style="font-size:24px;color:#ef4444;"></i>
@@ -1302,17 +1302,13 @@
             window.location.href = 'index.html?tab=accepted-tasks';
         }
 
-        // Service charge lookup (mirrors SERVICE_CHARGES in app.js)
+        // Service charge fallback — only delivery/pickup/transport/moving carry a charge.
+        // Mirrors backend get_service_charge() and app.js getTaskServiceCharge().
         function getServiceChargeForCategory(category) {
-            const charges = {
-                'delivery': 30, 'pickup': 30, 'document': 30, 'errand': 35,
-                'groceries': 40, 'laundry': 40, 'shopping': 40, 'gardening': 50, 'cleaning': 50, 'cooking': 50,
-                'repair': 60, 'assembly': 60, 'tech-support': 60, 'event-help': 60, 'tailoring': 60, 'beauty': 60, 'petcare': 60,
-                'tutoring': 70, 'babysitting': 70, 'fitness': 70, 'photography': 70, 'painting': 70, 'moving': 80, 'eldercare': 80,
-                'carpentry': 90, 'electrician': 100, 'plumbing': 100,
-                'other': 50
-            };
-            return charges[category] || 50;
+            const DELIVERY_CATS = new Set(['delivery', 'pickup', 'transport', 'moving']);
+            if (!DELIVERY_CATS.has(category)) return 0;
+            const charges = { 'delivery': 15, 'pickup': 15, 'transport': 15, 'moving': 40 };
+            return charges[category] ?? 15;
         }
 
         // Helper: shared suspension utilities (reads localStorage cache synced from server)
@@ -1368,7 +1364,10 @@
             }
 
             // Calculate total value with service charge fallback
-            const serviceCharge = currentTask.service_charge || getServiceChargeForCategory(currentTask.category);
+            // Use ?? (nullish coalescing) so 0 (non-delivery tasks) is NOT treated as missing.
+            const serviceCharge = (currentTask.service_charge != null && currentTask.service_charge !== '')
+                ? parseFloat(currentTask.service_charge)
+                : getServiceChargeForCategory(currentTask.category);
             const taskValue = (currentTask.price || currentTask.amount || 0) + serviceCharge;
             const penalty = Math.round(taskValue * 0.10);
             const user = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
@@ -1399,7 +1398,10 @@
             const token = localStorage.getItem('taskearn_token') || '';
             // Calculate total value with service charge fallback (for UI only;
             // backend computes the authoritative penalty inside /abandon).
-            const serviceCharge = currentTask.service_charge || getServiceChargeForCategory(currentTask.category);
+            // Use explicit null check so 0 (non-delivery tasks) is NOT treated as missing.
+            const serviceCharge = (currentTask.service_charge != null && currentTask.service_charge !== '')
+                ? parseFloat(currentTask.service_charge)
+                : getServiceChargeForCategory(currentTask.category);
             const taskValue = (currentTask.price || currentTask.amount || 0) + serviceCharge;
             let penalty = Math.round(taskValue * 0.10);
 

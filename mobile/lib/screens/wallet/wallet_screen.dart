@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../providers/wallet_provider.dart';
@@ -22,10 +23,13 @@ class _WalletScreenState extends State<WalletScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
-    final w = context.read<WalletProvider>();
-    w.fetchWallet();
-    w.fetchTransactions();
-    w.fetchWithdrawals();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final w = context.read<WalletProvider>();
+      w.fetchWallet();
+      w.fetchTransactions();
+      w.fetchWithdrawals();
+    });
 
     _razorpay = Razorpay();
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess);
@@ -185,6 +189,38 @@ class _WalletScreenState extends State<WalletScreen>
   }
 
   void _showWithdraw() {
+    // KYC must be verified to withdraw
+    final auth = context.read<AuthProvider>();
+    if (!(auth.user?.isKycVerified ?? false)) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('KYC Verification Required'),
+          content: const Text(
+            'Complete KYC verification before withdrawing money.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.push('/kyc');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Verify KYC'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final amtCtrl = TextEditingController();
     final bankCtrl = TextEditingController();
     final ifscCtrl = TextEditingController();

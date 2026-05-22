@@ -3662,6 +3662,9 @@ async function acceptTask(taskId) {
         console.warn('acceptTask timed out / errored, optimistically redirecting:', err && err.message);
         try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (e) {}
         try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (e) {}
+        // Destroy the Leaflet map before navigating — same as the success path.
+        // Leaving it alive causes OOM when task-in-progress.html loads its own map.
+        try { if (map) { map.remove(); map = null; } } catch (e) {}
         try {
             window.location.replace('task-in-progress.html?taskId=' + encodeURIComponent(taskId));
         } catch (e) {

@@ -29,10 +29,11 @@
             {"@type": "Question", "name": "What is the minimum age requirement for Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "You must be at least 16 years old to use Workmate4u."}},
             {"@type": "Question", "name": "How do I post a task on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "After logging in, click Post a Task. Fill in the task title, description, category, budget, and location. Click submit to post your task."}},
             {"@type": "Question", "name": "How do I find tasks near me?", "acceptedAnswer": {"@type": "Answer", "text": "Go to Find Tasks section. Enable location access or enter your city/area to see nearby tasks. You can filter by category and budget."}},
-            {"@type": "Question", "name": "How do I get paid on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Once you complete a task and the Task Poster confirms, the payment is processed through Razorpay and transferred to your linked account."}},
-            {"@type": "Question", "name": "What payment methods are accepted?", "acceptedAnswer": {"@type": "Answer", "text": "Workmate4u accepts UPI, debit cards, credit cards, net banking, and popular wallets through Razorpay."}},
-            {"@type": "Question", "name": "Is my payment information secure on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, all payments are processed through Razorpay, a PCI-DSS compliant payment gateway. Workmate4u never stores your card details."}},
-            {"@type": "Question", "name": "How do refunds work?", "acceptedAnswer": {"@type": "Answer", "text": "If a task is cancelled before completion, refunds are processed within 5-7 business days to your original payment method."}},
+            {"@type": "Question", "name": "How do I get paid on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Once you complete a task and the Task Poster confirms payment, Workmate4u deducts a platform commission (15% for Delivery/Pickup/Transport/Moving tasks; 17% for all other categories) and credits the remaining amount to your wallet. You can then request a payout to your bank or UPI account."}},
+            {"@type": "Question", "name": "Is there a service charge on top of my task budget?", "acceptedAnswer": {"@type": "Answer", "text": "A service charge applies only to Delivery and Pick/Drop tasks (delivery, pickup, transport, moving), calculated by distance — typically ₹10 to ₹40. All other task categories carry no service charge on top of the budget."}},
+            {"@type": "Question", "name": "What payment methods are accepted on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Workmate4u accepts UPI, debit cards, credit cards, net banking, and popular wallets through Razorpay for wallet top-ups."}},
+            {"@type": "Question", "name": "Is my payment information secure on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, all payments are processed through Razorpay, a PCI-DSS compliant payment gateway. Workmate4u never stores your card or bank details."}},
+            {"@type": "Question", "name": "How do refunds work on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "If a task is cancelled before a Tasker accepts it, the full amount including any service charge is refunded instantly to the Poster's wallet. Post-acceptance cancellations are reviewed by the Workmate4u team."}},
             {"@type": "Question", "name": "How do I reset my password?", "acceptedAnswer": {"@type": "Answer", "text": "Click Forgot Password on the login screen. Enter your email to receive an OTP, then set a new password."}},
             {"@type": "Question", "name": "How do I delete my Workmate4u account?", "acceptedAnswer": {"@type": "Answer", "text": "Contact Workmate4u at info@workmate4u.com with your account email. Account deletion is processed within 30 days."}}
         ]
@@ -119,7 +120,7 @@
             
             <div class="faq-item">
                 <h4>How much should I pay for a task?</h4>
-                <p>Pricing depends on task complexity, time required, and your location. Browse similar tasks in your area to get an idea of fair pricing.</p>
+                <p>The minimum task budget is <strong>₹100</strong> and the maximum is ₹40,000. Browse similar tasks in your area to set a fair price. You can also use the optional "Nudge Budget" in the task wizard (+₹10/+₹20/+₹50) to attract Taskers faster.</p>
             </div>
             
             <div class="faq-item">
@@ -139,21 +140,46 @@
                 <p>Once you complete a task and the Task Poster confirms, the payment is processed through Razorpay and transferred to your linked account.</p>
             </div>
             
-            <h2>Payments</h2>
+            <h2>Payments & Service Charges</h2>
             
+            <div class="faq-item">
+                <h4>Is there a service charge on top of my task budget?</h4>
+                <p>A service charge applies <strong>only to Delivery &amp; Pick/Drop tasks</strong> (delivery, pickup, transport, moving). It is calculated by distance and typically ranges from <strong>₹10 to ₹40</strong>. The exact amount is shown clearly in the task wizard before you confirm posting. <strong>All other task categories</strong> (cleaning, repairs, groceries, tutoring, etc.) have <em>no service charge</em> on top of the budget.</p>
+            </div>
+
+            <div class="faq-item">
+                <h4>Does Workmate4u charge a posting fee?</h4>
+                <p>No. There is no platform posting fee for Task Posters. You pay only the task budget (plus the distance-based service charge for Delivery/Pick/Drop tasks).</p>
+            </div>
+
+            <div class="faq-item">
+                <h4>How much does a Tasker actually receive?</h4>
+                <p>When a task is marked complete and the Poster pays, Workmate4u deducts a platform commission before crediting the Tasker's wallet:</p>
+                <ul>
+                    <li><strong>Delivery, Pickup, Transport, Moving</strong> — 15% commission deducted</li>
+                    <li><strong>All other categories</strong> (cleaning, repairs, tutoring, groceries, etc.) — 17% commission deducted</li>
+                </ul>
+                <p>The commission is calculated on the total task value (budget + service charge). Taskers can see their estimated net earnings before accepting any task.</p>
+            </div>
+
+            <div class="faq-item">
+                <h4>What is the Workmate4u wallet?</h4>
+                <p>Every user has an internal wallet. <strong>Posters</strong> must add funds to their wallet via Razorpay (UPI, cards, net banking, wallets) before posting a task. The task budget (plus any service charge) is held from the wallet until the task is complete or cancelled. <strong>Taskers</strong> receive their net earnings in the wallet after commission deduction, and can request a payout to their bank/UPI account.</p>
+            </div>
+
             <div class="faq-item">
                 <h4>What payment methods are accepted?</h4>
-                <p>We accept UPI, debit cards, credit cards, net banking, and popular wallets through Razorpay.</p>
+                <p>We accept UPI, debit cards, credit cards, net banking, and popular wallets through Razorpay for wallet top-ups.</p>
             </div>
-            
+
             <div class="faq-item">
                 <h4>Is my payment information secure?</h4>
-                <p>Yes, all payments are processed through Razorpay, a PCI-DSS compliant payment gateway. We never store your card details.</p>
+                <p>Yes, all payments are processed through Razorpay, a PCI-DSS compliant payment gateway. Workmate4u never stores your card or bank details.</p>
             </div>
-            
+
             <div class="faq-item">
                 <h4>How do refunds work?</h4>
-                <p>If a task is cancelled before completion, refunds are processed within 5-7 business days to your original payment method.</p>
+                <p>If a task is cancelled before a Tasker accepts it, the full amount (task budget + any service charge) is refunded to the Poster's wallet instantly. If a task is cancelled after acceptance or fails to be completed, the amount is reviewed case-by-case — the task budget is refunded to the Poster's wallet; the service charge may be retained or refunded at Workmate4u's discretion based on platform usage at that point. Disputes are resolved by the Workmate4u team and our decision is final for the purpose of releasing the held funds.</p>
             </div>
             
             <h2>Account & Security</h2>
@@ -177,7 +203,7 @@
     </div>
     
     <div class="footer">
-        <p>&copy; 2026 Workmate4u India. All rights reserved.</p>
+        <p>&copy; 2026 Workmate4u India. All rights reserved. &bull; Last updated: May 22, 2026</p>
         <p><a href="index.html">Home</a> | <a href="about.html">About</a> | <a href="contact.html">Contact</a> | <a href="privacy.html">Privacy Policy</a> | <a href="terms.html">Terms of Service</a> | <a href="cookies.html">Cookie Policy</a> | <a href="safety.html">Safety</a></p>
     </div>
 <script src="sw-register.js?v=20260420_recovery"></script>

@@ -41,12 +41,33 @@ class NotificationProvider extends ChangeNotifier {
   }
 
   Future<void> clearAll() async {
-    try {
-      await ApiService.post('/notifications/clear-all');
-      _notifications = [];
-      _unreadCount = 0;
-      notifyListeners();
-    } catch (_) {}
+    // Optimistic clear — update UI immediately
+    _notifications = [];
+    _unreadCount = 0;
+    notifyListeners();
+
+    // Try DELETE first (405 on POST /clear-all means DELETE is likely correct)
+    for (final path in [
+      '/notifications/clear-all',
+      '/notifications',
+    ]) {
+      try {
+        await ApiService.delete(path);
+        return; // success
+      } catch (_) {}
+    }
+    // Fallback: try POST variants
+    for (final path in [
+      '/notifications/clear-all',
+      '/notifications/clear',
+    ]) {
+      try {
+        await ApiService.post(path);
+        return;
+      } catch (_) {
+        // UI already cleared; silently ignore if all endpoints fail
+      }
+    }
   }
 
   Map<String, dynamic> _toJson(AppNotification n) => {

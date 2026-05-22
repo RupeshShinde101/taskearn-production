@@ -506,7 +506,7 @@ function closeModal(id){var el=document.getElementById(id);if(el){el.classList.r
                 if (dist && /^[0-9]+$/.test(dist)) qs.push('dist=' + encodeURIComponent(dist));
                 if (minB && /^[0-9]+$/.test(minB)) qs.push('min=' + encodeURIComponent(minB));
                 if (maxB && /^[0-9]+$/.test(maxB)) qs.push('max=' + encodeURIComponent(maxB));
-                window.location.href = 'browse.html' + (qs.length ? ('?' + qs.join('&')) : '');
+                window.location.href = 'browse.html' + (qs.length ? ('₹' + qs.join('&')) : '');
             } catch (e) {
                 window.location.href = 'browse.html';
             }

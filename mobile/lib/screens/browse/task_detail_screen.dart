@@ -45,6 +45,38 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Future<void> _accept() async {
+    // KYC must be verified to accept a task
+    final auth = context.read<AuthProvider>();
+    if (!(auth.user?.isKycVerified ?? false)) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('KYC Verification Required'),
+          content: const Text(
+            'Complete KYC verification before accepting tasks.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.push('/kyc');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Verify KYC'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     setState(() => _accepting = true);
     final ok = await context.read<TaskProvider>().acceptTask(widget.taskId);
     if (!mounted) return;
@@ -246,7 +278,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.read<AuthProvider>();
+    final auth = context.watch<AuthProvider>();
 
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -279,6 +311,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final userId = auth.user?.id ?? '';
     final isPoster = task.posterId == userId;
     final isAssignedHelper = task.helperId == userId;
+    final taskProvider = context.watch<TaskProvider>();
+
+    // One-task-at-a-time: check if helper already has an active accepted task
+    final hasActiveTask = !isPoster && taskProvider.hasActiveAcceptedTask;
+    final activeTask = !isPoster ? taskProvider.activeAcceptedTask : null;
 
     // What action buttons to show
     final isSuspended = auth.user?.isSuspended ?? false;
@@ -286,15 +323,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         !isPoster &&
         !isAssignedHelper &&
         (task.status == 'posted' || task.status == 'open') &&
-        task.helperId == null;
+        task.helperId == null &&
+        !hasActiveTask;  // one task at a time
     final canCancel = isPoster && task.status == 'posted' && task.helperId == null;
-    final canVerify = isPoster && task.status == 'completed';
+    final canVerify = isPoster &&
+        (task.status == 'completed' || task.status == 'verify_pending');
     final canRateHelper = isPoster &&
-        task.status == 'verified' &&
+        (task.status == 'verified' || task.status == 'payment_released') &&
         task.helperRating == null &&
         task.helperId != null;
     final canRatePoster = isAssignedHelper &&
-        task.status == 'verified' &&
+        (task.status == 'verified' || task.status == 'payment_released') &&
         task.helperRating == null;
     Widget? bottomBar;
     if (canAccept) {
@@ -306,6 +345,40 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             loading: _accepting,
             onPressed: _accepting ? () {} : _accept,
             icon: Icons.check_circle_outline,
+          ),
+        ),
+      );
+    } else if (hasActiveTask &&
+        !isPoster &&
+        !isAssignedHelper &&
+        (task.status == 'posted' || task.status == 'open') &&
+        task.helperId == null &&
+        !isSuspended) {
+      // Helper already has an active accepted task — enforce one at a time
+      bottomBar = SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (activeTask != null)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                    label: const Text('Go to My Active Task'),
+                    onPressed: () =>
+                        context.push('/task-in-progress/${activeTask.id}'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       );
@@ -423,6 +496,63 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Active-task warning banner (helper only) ──────────────
+              if (hasActiveTask && !isPoster && !isAssignedHelper) ...[
+                GestureDetector(
+                  onTap: activeTask != null
+                      ? () => context
+                          .push('/task-in-progress/${activeTask.id}')
+                      : null,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.warning,
+                          const Color(0xFFD97706),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.assignment_late_outlined,
+                            color: Colors.white, size: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'You have an active task',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13),
+                              ),
+                              if (activeTask != null)
+                                Text(
+                                  activeTask.title,
+                                  style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right,
+                            color: Colors.white70, size: 22),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+
               // Status & distance row
               Row(
                 children: [

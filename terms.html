@@ -216,7 +216,7 @@
             <h3>5.1 Task Posting Rules</h3>
             <ul>
                 <li>Tasks must be lawful and clearly described.</li>
-                <li>Minimum task price is <strong>₹50</strong>; maximum is <strong>₹40,000</strong> (subject to change with notice).</li>
+                <li>Minimum task budget is <strong>₹100</strong>; maximum is <strong>₹40,000</strong> (subject to change with notice).</li>
                 <li>Posters must have sufficient wallet balance to cover the task price plus the applicable service charge before posting.</li>
                 <li>Posters must not request anything that discriminates on the basis of caste, religion, gender, sexual orientation, disability or any other protected characteristic.</li>
             </ul>
@@ -235,19 +235,29 @@
 
             <h2>6. Wallet, Service Charges & Payments</h2>
             <h3>6.1 Workmate4u Wallet</h3>
-            <p>Each user has an internal wallet ledger. Posters top up the wallet via Razorpay (UPI, cards, net-banking, wallets) before posting a task. The full task price plus service charge is debited from the Poster's wallet at the moment of task creation and held by Workmate4u until task completion or cancellation.</p>
-            <h3>6.2 Service Charge (Platform Fee)</h3>
-            <p>Workmate4u charges a per-task service charge calculated on the task category. Indicative ranges (subject to change):</p>
+            <p>Each user has an internal wallet ledger. Posters top up the wallet via Razorpay (UPI, cards, net-banking, wallets) before posting a task. The full task budget plus any applicable service charge is debited from the Poster's wallet at the moment of task creation and held by Workmate4u until task completion or cancellation.</p>
+            <h3>6.2 Service Charges & Platform Commission</h3>
+            <p>Workmate4u operates a two-part fee structure:</p>
+            <h4 style="margin-top:1rem;margin-bottom:0.5rem;color:#334155;">A. Service Charge (paid by Task Poster at the time of posting)</h4>
+            <p>A service charge is added on top of the task budget <strong>only for Delivery & Pick/Drop category tasks</strong> (delivery, pickup, transport, moving). The amount is calculated based on distance:</p>
             <ul>
-                <li>Quick errands (delivery, document, pickup) — <strong>₹30 – ₹35</strong></li>
-                <li>Standard tasks (groceries, cleaning, cooking, gardening) — <strong>₹40 – ₹50</strong></li>
-                <li>Skilled tasks (repair, tech support, beauty, tailoring, pet care) — <strong>₹60</strong></li>
-                <li>Time-intensive tasks (tutoring, photography, painting, moving) — <strong>₹70 – ₹80</strong></li>
-                <li>Professional tasks (carpentry, electrician, plumbing) — <strong>₹90 – ₹100</strong></li>
+                <li>Delivery / Pickup / Transport — <strong>₹10 – ₹35</strong> (by distance)</li>
+                <li>Moving / Large Items — <strong>up to ₹40</strong> (by distance)</li>
+                <li><strong>All other task categories</strong> (groceries, cleaning, repairs, tutoring, etc.) — <strong>₹0 service charge</strong> (no extra fee on top of budget)</li>
             </ul>
-            <p>The exact service charge is displayed clearly before you confirm posting. Taxes (where applicable) are included.</p>
+            <p>The exact service charge is calculated and displayed clearly in the task-posting wizard before you confirm. Taxes (where applicable) are included.</p>
+            <h4 style="margin-top:1rem;margin-bottom:0.5rem;color:#334155;">B. Platform Commission (deducted from Tasker's payout)</h4>
+            <p>When a task is completed and the Poster releases payment, Workmate4u deducts a platform commission from the total task value (task budget + any service charge) before crediting the Tasker's wallet:</p>
+            <ul>
+                <li>Delivery, Pickup, Transport, Moving — <strong>15%</strong> commission</li>
+                <li>All other categories (cleaning, repairs, tutoring, groceries, etc.) — <strong>17%</strong> commission</li>
+            </ul>
+            <p>The Tasker sees their net estimated earnings in the app before accepting any task. There is <strong>no posting fee</strong> charged to Task Posters on non-delivery tasks.</p>
+            <div class="highlight-box">
+                <strong>Example:</strong> A ₹500 cleaning task — Poster pays ₹500 (no service charge). Tasker receives ₹500 − 17% = <strong>₹415</strong>. A ₹300 delivery task with ₹15 service charge — Poster pays ₹315. Tasker receives ₹315 − 15% = <strong>₹267.75</strong>.
+            </div>
             <h3>6.3 Payouts to Taskers</h3>
-            <p>On task completion confirmed by the Poster (or auto-confirmed after the dispute window), the agreed task price is credited to the Tasker's wallet. Taskers may request a payout to their bank/UPI; Workmate4u processes payouts via Razorpay subject to KYC verification.</p>
+            <p>On task completion confirmed by the Poster (or after the dispute window), the task earnings net of commission are credited to the Tasker's wallet. Taskers may request a payout to their bank/UPI; Workmate4u processes payouts via Razorpay subject to KYC verification.</p>
             <h3>6.4 Cancellations & Refunds</h3>
             <ul>
                 <li>If a task is cancelled before acceptance, the full amount (price + service charge) is refunded to the Poster's wallet.</li>
@@ -334,8 +344,8 @@
             </ul>
 
             <div class="last-updated">
-                <p><strong>Last Updated:</strong> April 29, 2026</p>
-                <p>Effective Date: April 29, 2026</p>
+                <p><strong>Last Updated:</strong> May 22, 2026</p>
+                <p>Effective Date: May 22, 2026</p>
             </div>
         </div>
     </div>

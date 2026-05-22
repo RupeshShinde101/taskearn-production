@@ -7,6 +7,7 @@ import 'screens/splash/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/auth/otp_screen.dart';
+import 'screens/auth/forgot_password_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/browse/browse_screen.dart';
 import 'screens/browse/task_detail_screen.dart';
@@ -16,6 +17,7 @@ import 'screens/tasks/task_in_progress_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'screens/profile/profile_screen.dart';
+import 'screens/profile/kyc_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
 import 'screens/referral/referral_screen.dart';
 import 'screens/shell/main_shell.dart';
@@ -48,7 +50,8 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
 
         final isAuthRoute = loc.startsWith('/login') ||
             loc.startsWith('/register') ||
-            loc.startsWith('/otp');
+            loc.startsWith('/otp') ||
+            loc.startsWith('/forgot-password');
 
         if (status == AuthStatus.unauthenticated && !isAuthRoute) return '/login';
         if (status == AuthStatus.authenticated && (isAuthRoute || loc == '/splash')) return '/home';
@@ -74,6 +77,10 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
           path: '/otp',
           builder: (_, state) =>
               OtpScreen(extra: state.extra as Map<String, dynamic>?),
+        ),
+        GoRoute(
+          path: '/forgot-password',
+          builder: (_, __) => const ForgotPasswordScreen(),
         ),
 
         // Main shell with bottom nav
@@ -132,6 +139,10 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         GoRoute(
           path: '/referral',
           builder: (_, __) => const ReferralScreen(),
+        ),
+        GoRoute(
+          path: '/kyc',
+          builder: (_, __) => const KycScreen(),
         ),
       ],
     );

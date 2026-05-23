@@ -6,9 +6,10 @@ import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
 
-/// Two-step forgot-password flow:
-///   Step 1 — enter email, send OTP
-///   Step 2 — enter OTP + new password, reset
+/// Three-step forgot-password flow:
+///   Step 1 -- enter email -> send OTP
+///   Step 2 -- enter 6-digit OTP -> verify -> receive reset token
+///   Step 3 -- enter new password + confirm -> reset
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -17,20 +18,23 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  int _step = 1; // 1 = email entry, 2 = OTP + new password
+  int _step = 1;
   String _email = '';
+  String _resetToken = '';
 
-  // Step 1 controllers
+  // Step 1
   final _emailCtrl = TextEditingController();
   final _emailFormKey = GlobalKey<FormState>();
 
-  // Step 2 controllers
+  // Step 2
   String _otp = '';
+
+  // Step 3
   final _newPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
   bool _obscureNew = true;
   bool _obscureConfirm = true;
-  final _resetFormKey = GlobalKey<FormState>();
+  final _passFormKey = GlobalKey<FormState>();
 
   @override
   void dispose() {
@@ -43,87 +47,109 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Future<void> _sendOtp() async {
     if (!_emailFormKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
-    final ok = await auth.forgotPasswordSendOtp(_emailCtrl.text);
+    final token = await auth.forgotPasswordSendOtp(_emailCtrl.text.trim());
     if (!mounted) return;
-    if (ok) {
+    if (token != null || auth.error == null) {
+      // Some backends return a resetToken immediately; others just confirm OTP was sent.
       setState(() {
         _email = _emailCtrl.text.trim();
+        if (token != null) _resetToken = token;
+        _otp = '';
         _step = 2;
       });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.error ?? 'Failed to send OTP. Try again.'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(auth.error ?? 'Failed to send OTP. Try again.'),
+        backgroundColor: AppColors.danger,
+      ));
     }
   }
 
   Future<void> _resendOtp() async {
     final auth = context.read<AuthProvider>();
-    final ok = await auth.forgotPasswordSendOtp(_email);
+    final token = await auth.forgotPasswordSendOtp(_email);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ok ? 'OTP resent to $_email' : (auth.error ?? 'Failed to resend')),
-        backgroundColor: ok ? AppColors.success : AppColors.danger,
-      ),
-    );
+    final success = token != null || auth.error == null;
+    if (token != null) setState(() => _resetToken = token);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(success ? 'OTP resent to $_email' : (auth.error ?? 'Failed to resend')),
+      backgroundColor: success ? AppColors.success : AppColors.danger,
+    ));
   }
 
-  Future<void> _resetPassword() async {
-    if (!_resetFormKey.currentState!.validate()) return;
+  Future<void> _verifyOtp() async {
     if (_otp.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter the 6-digit OTP')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please enter the full 6-digit OTP'),
+      ));
       return;
     }
     final auth = context.read<AuthProvider>();
-    final ok = await auth.resetPasswordWithOtp(
-      email: _email,
-      otp: _otp,
+    final ok = await auth.verifyForgotPasswordOtp(
+        resetToken: _resetToken, otp: _otp);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _step = 3);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(auth.error ?? 'Invalid OTP. Please try again.'),
+        backgroundColor: AppColors.danger,
+      ));
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    if (!_passFormKey.currentState!.validate()) return;
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.resetPasswordWithToken(
+      resetToken: _resetToken,
       newPassword: _newPassCtrl.text,
     );
     if (!mounted) return;
     if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset successfully! Please log in.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Password reset successfully! Please log in.'),
+        backgroundColor: AppColors.success,
+      ));
       context.go('/login');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.error ?? 'Reset failed. Check OTP and try again.'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(auth.error ?? 'Reset failed. Please start over.'),
+        backgroundColor: AppColors.danger,
+      ));
+    }
+  }
+
+  void _handleBack() {
+    if (_step == 3) {
+      setState(() => _step = 2);
+    } else if (_step == 2) {
+      setState(() => _step = 1);
+    } else {
+      context.pop();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Forgot Password'),
-        leading: BackButton(onPressed: () {
-          if (_step == 2) {
-            setState(() => _step = 1);
-          } else {
-            context.pop();
-          }
-        }),
+        title: Text(_step == 1
+            ? 'Forgot Password'
+            : _step == 2
+                ? 'Verify OTP'
+                : 'Set New Password'),
+        leading: BackButton(onPressed: auth.isLoading ? null : _handleBack),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: _step == 1 ? _buildStep1(auth) : _buildStep2(auth),
+          child: _step == 1
+              ? _buildStep1(auth)
+              : _step == 2
+                  ? _buildStep2(auth)
+                  : _buildStep3(auth),
         ),
       ),
     );
@@ -195,58 +221,96 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       ),
     );
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        const Center(
+          child: Icon(Icons.mark_email_read_outlined, size: 64, color: AppColors.primary),
+        ),
+        const SizedBox(height: 16),
+        const Center(
+          child: Text(
+            'Enter OTP',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.dark),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            'A 6-digit code was sent to\n',
+            style: const TextStyle(color: AppColors.gray, height: 1.5),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 32),
+        const Text('6-Digit OTP',
+            style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.dark)),
+        const SizedBox(height: 12),
+        Center(
+          child: Pinput(
+            length: 6,
+            defaultPinTheme: pinTheme,
+            focusedPinTheme: pinTheme.copyWith(
+              decoration: pinTheme.decoration!.copyWith(
+                border: Border.all(color: AppColors.primary, width: 2),
+              ),
+            ),
+            onChanged: (v) => _otp = v,
+            onCompleted: (v) {
+              _otp = v;
+              _verifyOtp();
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: TextButton(
+            onPressed: auth.isLoading ? null : _resendOtp,
+            child: const Text('Resend OTP'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        GradientButton(
+          label: 'Verify OTP',
+          loading: auth.isLoading,
+          onPressed: _verifyOtp,
+          icon: Icons.verified_outlined,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep3(AuthProvider auth) {
     return Form(
-      key: _resetFormKey,
+      key: _passFormKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 24),
           const Center(
-            child: Icon(Icons.mark_email_read_outlined, size: 64, color: AppColors.primary),
+            child: Icon(Icons.lock_open_outlined, size: 64, color: AppColors.success),
           ),
           const SizedBox(height: 16),
           const Center(
             child: Text(
-              'Enter OTP & New Password',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.dark),
+              'Set New Password',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.dark),
             ),
           ),
           const SizedBox(height: 8),
-          Center(
+          const Center(
             child: Text(
-              'OTP sent to $_email',
-              style: const TextStyle(color: AppColors.gray),
+              'OTP verified! Enter your new password below.',
               textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.gray, height: 1.5),
             ),
           ),
-          const SizedBox(height: 28),
-          const Text('6-Digit OTP',
-              style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.dark)),
-          const SizedBox(height: 10),
-          Center(
-            child: Pinput(
-              length: 6,
-              defaultPinTheme: pinTheme,
-              focusedPinTheme: pinTheme.copyWith(
-                decoration: pinTheme.decoration!.copyWith(
-                  border: Border.all(color: AppColors.primary, width: 2),
-                ),
-              ),
-              onChanged: (v) => _otp = v,
-              onCompleted: (v) => _otp = v,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton(
-              onPressed: auth.isLoading ? null : _resendOtp,
-              child: const Text('Resend OTP'),
-            ),
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 32),
           TextFormField(
             controller: _newPassCtrl,
             obscureText: _obscureNew,
+            textInputAction: TextInputAction.next,
             decoration: InputDecoration(
               labelText: 'New Password',
               prefixIcon: const Icon(Icons.lock_outline),
@@ -264,10 +328,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               return null;
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           TextFormField(
             controller: _confirmPassCtrl,
             obscureText: _obscureConfirm,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _resetPassword(),
             decoration: InputDecoration(
               labelText: 'Confirm New Password',
               prefixIcon: const Icon(Icons.lock_outline),
@@ -275,8 +341,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 icon: Icon(_obscureConfirm
                     ? Icons.visibility_off_outlined
                     : Icons.visibility_outlined),
-                onPressed: () =>
-                    setState(() => _obscureConfirm = !_obscureConfirm),
+                onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
               ),
             ),
             validator: (v) {
@@ -286,7 +351,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
           const SizedBox(height: 28),
           GradientButton(
-            label: 'Reset Password',
+            label: 'Save New Password',
             loading: auth.isLoading,
             onPressed: _resetPassword,
             icon: Icons.check_circle_outline,

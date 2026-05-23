@@ -143,7 +143,9 @@ class ApiService {
         ? (data['error'] ?? data['message'] ?? 'Request failed')
         : 'Request failed';
 
-    debugPrint('[API] ERROR ${response.statusCode} ${response.request?.url}: $message');
+    if (response.statusCode != 404) {
+      debugPrint('[API] ERROR ${response.statusCode} ${response.request?.url}: $message');
+    }
     throw ApiException(message.toString(), statusCode: response.statusCode);
   }
 }

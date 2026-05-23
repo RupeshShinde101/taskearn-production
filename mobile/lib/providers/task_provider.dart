@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
@@ -10,11 +11,21 @@ class TaskProvider extends ChangeNotifier {
   List<Task> _myCompletedTasks = [];
   /// Stores fully-fetched task details (includes posterPhone etc.)
   final Map<String, Task> _detailCache = {};
+  /// Task IDs the helper has locally marked as complete but the backend may
+  /// still echo back in /user/tasks (due to propagation delay). We filter
+  /// these from _myAcceptedTasks inside fetchMyTasks() so that
+  /// hasActiveAcceptedTask never goes true again after the helper is done.
+  final Set<String> _locallyCompletedTaskIds = {};
   /// Poster phone numbers captured at accept time.
   /// Backed by StorageService so they survive app restarts.
   final Map<String, String> _savedPosterPhones = {};
   /// Poster names captured at accept time.
   final Map<String, String> _savedPosterNames = {};
+
+  /// Locally persisted completedAt timestamps — backed by SharedPreferences
+  /// so the 48-h expiry timer survives app restarts.
+  final Map<String, DateTime> _savedCompletedAt = {};
+  bool _completedAtLoaded = false;
 
   /// Persist a poster phone to both the in-memory map and SharedPreferences.
   void _savePhone(String taskId, String phone) {
@@ -37,6 +48,40 @@ class TaskProvider extends ChangeNotifier {
   /// Load any previously persisted poster name for [taskId].
   String? _loadName(String taskId) =>
       _savedPosterNames[taskId] ?? StorageService.getString('pn_$taskId');
+
+  /// Persist a completedAt timestamp so it survives app restarts.
+  void _saveCompletedAt(String taskId, DateTime completedAt) {
+    _savedCompletedAt[taskId] = completedAt;
+    _flushCompletedAtMap();
+  }
+
+  /// Write the full completedAt map to SharedPreferences as JSON.
+  void _flushCompletedAtMap() {
+    final encoded = jsonEncode({
+      for (final e in _savedCompletedAt.entries)
+        e.key: e.value.toIso8601String(),
+    });
+    StorageService.setString('_completedAtMap', encoded);
+  }
+
+  /// Load all persisted completedAt timestamps once from SharedPreferences.
+  void _loadSavedCompletedAt() {
+    if (_completedAtLoaded) return;
+    _completedAtLoaded = true;
+    final raw = StorageService.getString('_completedAtMap');
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      for (final e in map.entries) {
+        final dt = DateTime.tryParse(e.value.toString());
+        if (dt != null) _savedCompletedAt[e.key] = dt;
+      }
+    } catch (_) {}
+    // Drop entries older than 48 h (no longer relevant).
+    final cutoff = DateTime.now().subtract(const Duration(hours: 48));
+    _savedCompletedAt.removeWhere((_, dt) => dt.isBefore(cutoff));
+  }
+
   bool _loadingBrowse = false;
   bool _loadingMy = false;
   String? _error;
@@ -117,9 +162,14 @@ class TaskProvider extends ChangeNotifier {
 
       final data = await ApiService.get('/tasks', queryParams: params);
       final rawList = data['tasks'] as List? ?? [];
+      // Posted tasks expire after 24 h — filter client-side in case the backend
+      // doesn't clean them up immediately.
+      final expiryCutoff = DateTime.now().subtract(const Duration(hours: 24));
       final tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
         try { return Task.fromJson(j); } catch (_) { return null; }
-      }).whereType<Task>().toList();
+      }).whereType<Task>()
+          .where((t) => t.createdAt.isAfter(expiryCutoff))
+          .toList();
 
       _browseTasks.addAll(tasks);
       _hasMore = tasks.length == 20;
@@ -138,10 +188,86 @@ class TaskProvider extends ChangeNotifier {
 
     try {
       final data = await ApiService.get('/user/tasks');
-      // API returns 'postedTasks' and 'acceptedTasks' (not 'posted'/'accepted')
-      _myPostedTasks = _parseTaskList(data['postedTasks'] ?? data['posted']);
-      _myAcceptedTasks = _parseTaskList(data['acceptedTasks'] ?? data['accepted']);
-      _myCompletedTasks = _parseTaskList(data['completedTasks'] ?? data['completed']);
+
+      // Statuses that mean the task is "done" from the helper's perspective.
+      const completedStatuses = {
+        'completed', 'verify_pending', 'payment_released',
+        'verified', 'paid', 'done', 'finished',
+      };
+
+      // Statuses that mean a posted task is fully done — remove from Posted tab.
+      const postedDoneStatuses = {
+        'verified', 'paid', 'done', 'finished', 'payment_released',
+        'cancelled',
+      };
+      _myPostedTasks = _parseTaskList(data['postedTasks'] ?? data['posted'])
+          .where((t) => !postedDoneStatuses.contains(t.status))
+          .toList();
+      final rawAccepted = _parseTaskList(data['acceptedTasks'] ?? data['accepted']);
+
+      // Backend may return a dedicated completedTasks field OR may include
+      // completed-status tasks inside acceptedTasks.  Handle both.
+      final backendCompleted =
+          _parseTaskList(data['completedTasks'] ?? data['completed']);
+      // Extract any completed-status tasks that the backend put in acceptedTasks
+      final completedFromAccepted = rawAccepted
+          .where((t) => completedStatuses.contains(t.status))
+          .toList();
+      // Preserve locally-stamped completedAt values before overwriting the list.
+      // The backend often omits completed_at, so we keep timestamps from memory
+      // AND from SharedPreferences (survives app restarts).
+      _loadSavedCompletedAt();
+      final prevCompletedAt = Map<String, DateTime>.fromEntries(
+        _myCompletedTasks
+            .where((t) => t.completedAt != null)
+            .map((t) => MapEntry(t.id, t.completedAt!)),
+      );
+      // Merge persisted stamps for tasks not yet in in-memory list.
+      for (final e in _savedCompletedAt.entries) {
+        prevCompletedAt.putIfAbsent(e.key, () => e.value);
+      }
+
+      // Merge both sources (dedup by id)
+      _myCompletedTasks = List<Task>.from(backendCompleted);
+      for (final t in completedFromAccepted) {
+        if (!_myCompletedTasks.any((c) => c.id == t.id)) {
+          _myCompletedTasks.add(t);
+        }
+      }
+
+      // Restore locally-stamped completedAt where backend returned null.
+      for (int i = 0; i < _myCompletedTasks.length; i++) {
+        if (_myCompletedTasks[i].completedAt == null &&
+            prevCompletedAt.containsKey(_myCompletedTasks[i].id)) {
+          _myCompletedTasks[i] = _myCompletedTasks[i]
+              .copyWith(completedAt: prevCompletedAt[_myCompletedTasks[i].id]);
+        }
+      }
+
+      debugPrint('[TaskProvider] /user/tasks keys=${data.keys.toList()}');
+      debugPrint('[TaskProvider] completedTasks(backend)=${backendCompleted.length}  '
+          'completedFromAccepted=${completedFromAccepted.length}  '
+          'total=${_myCompletedTasks.length}');
+
+      // Filter locally-completed IDs from accepted (backend may lag behind).
+      // Evict an ID once the backend itself stops returning it in acceptedTasks,
+      // which confirms the backend has processed the completion. We check the
+      // RAW list (before filtering) so the eviction is based on what the backend
+      // actually returned, not our already-filtered view.
+      if (_locallyCompletedTaskIds.isNotEmpty) {
+        _locallyCompletedTaskIds.removeWhere(
+            (id) => !rawAccepted.any((t) => t.id == id));
+        _myAcceptedTasks = rawAccepted
+            .where((t) =>
+                !completedStatuses.contains(t.status) &&
+                !_locallyCompletedTaskIds.contains(t.id))
+            .toList();
+      } else {
+        // Always exclude completed-status tasks from the Accepted tab
+        _myAcceptedTasks = rawAccepted
+            .where((t) => !completedStatuses.contains(t.status))
+            .toList();
+      }
       // Auto-persist any phone numbers the backend included in list responses.
       for (final t in [..._myAcceptedTasks, ..._myPostedTasks]) {
         if (t.posterPhone != null && t.posterPhone!.trim().isNotEmpty) {
@@ -149,6 +275,22 @@ class TaskProvider extends ChangeNotifier {
         }
         if (t.posterName.isNotEmpty && t.posterName != 'Anonymous') {
           _saveName(t.id, t.posterName);
+        }
+      }
+      // Keep _detailCache in sync with the latest status/isPaid from the
+      // fresh list response. Without this, a cached entry from acceptTask()
+      // (status: 'accepted') shadows every subsequent fetchMyTasks() update,
+      // causing the in-progress screen to show stale data until app restart.
+      for (final fresh in [..._myAcceptedTasks, ..._myCompletedTasks]) {
+        final cached = _detailCache[fresh.id];
+        if (cached != null &&
+            (cached.status != fresh.status || cached.isPaid != fresh.isPaid)) {
+          final merged = Map<String, dynamic>.from(cached.toJson());
+          merged['status'] = fresh.status;
+          merged['is_paid'] = fresh.isPaid;
+          try {
+            _detailCache[fresh.id] = Task.fromJson(merged);
+          } catch (_) {}
         }
       }
     } catch (e) {
@@ -277,6 +419,26 @@ class TaskProvider extends ChangeNotifier {
             }
           }
 
+          // If the detail endpoint omitted drop_location, inject from the
+          // accepted task list (populated from /user/tasks with flat DB columns).
+          if (task.dropLatitude == null && task.dropAddress == null) {
+            Task? listTask;
+            for (final t in _myAcceptedTasks) {
+              if (t.id == id) { listTask = t; break; }
+            }
+            if (listTask != null) {
+              if (listTask.dropLatitude != null) {
+                enriched['drop_location_lat'] = listTask.dropLatitude;
+                enriched['drop_location_lng'] = listTask.dropLongitude;
+                needsReparse = true;
+              }
+              if (listTask.dropAddress != null) {
+                enriched['drop_location_address'] = listTask.dropAddress;
+                needsReparse = true;
+              }
+            }
+          }
+
           if (needsReparse) {
             task = Task.fromJson(enriched);
           }
@@ -289,8 +451,7 @@ class TaskProvider extends ChangeNotifier {
       }
     }
 
-    // ── Fallback: return cached entry with phone injection ───────────────────
-    // Helper: inject saved phone/name into a task object when the API omitted them.
+    // ── Fallback: inject saved phone/name into a task object ─────────────────
     Task _enrichWithSaved(Task t) {
       final phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
       final name  = _loadName(id)  ?? _findNameInAllLists(id);
@@ -308,27 +469,15 @@ class TaskProvider extends ChangeNotifier {
       return Task.fromJson(json);
     }
 
-    // If we have anything cached, inject saved phone and return immediately
-    // so the helper sees their contact buttons right away.
-    final cachedResult = _detailCache[id] ?? cachedForType;
-    if (cachedResult != null) {
-      return _enrichWithSaved(cachedResult);
-    }
-
-    // Last resort: refresh MY tasks list to get fresh status for
-    // in-progress / completed tasks — this hits /user/tasks which works.
+    // Both direct API endpoints failed (404/405). Refresh /user/tasks so we
+    // always get the latest status — the poster may have paid or verified
+    // since the last fetch. Never return a stale cache without refreshing first.
     try {
       await fetchMyTasks();
-      final myRefreshed = _findCached(id);
-      if (myRefreshed != null) return _enrichWithSaved(myRefreshed);
     } catch (_) {}
 
-    // Also try browse list for open tasks.
-    try {
-      await fetchBrowseTasks(refresh: true);
-      final refreshed = _findCached(id);
-      if (refreshed != null) return _enrichWithSaved(refreshed);
-    } catch (_) {}
+    final freshCached = _findCached(id);
+    if (freshCached != null) return _enrichWithSaved(freshCached);
 
     return null;
   }
@@ -337,6 +486,25 @@ class TaskProvider extends ChangeNotifier {
     try {
       await ApiService.post('/tasks', body: taskData);
       await fetchMyTasks();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Update an existing task (poster only, before a helper accepts).
+  Future<bool> updateTask(String taskId, Map<String, dynamic> data) async {
+    try {
+      _error = null;
+      final response = await ApiService.put('/tasks/$taskId', body: data);
+      // Refresh the detail cache with the updated task data.
+      _cacheDetailFromResponse(response, taskId);
+      // Invalidate cached detail so next load fetches fresh data.
+      _detailCache.remove(taskId);
+      await fetchMyTasks();
+      notifyListeners();
       return true;
     } on ApiException catch (e) {
       _error = e.message;
@@ -366,16 +534,39 @@ class TaskProvider extends ChangeNotifier {
       _cacheDetailFromResponse(response, taskId);
 
       // If the accept response didn't include a phone but we saved one above,
-      // inject it into the detail cache entry now.
-      if (browsePhone != null) {
+      // inject it directly into the cached task object so getTaskDetail()
+      // can return it immediately without another network round-trip.
+      final phoneToInject = browsePhone ?? _loadPhone(taskId);
+      if (phoneToInject != null) {
+        _savePhone(taskId, phoneToInject);
         final cached = _detailCache[taskId];
         if (cached != null &&
             (cached.posterPhone == null || cached.posterPhone!.trim().isEmpty)) {
-          _savePhone(taskId, browsePhone);
+          try {
+            final enriched = Map<String, dynamic>.from(cached.toJson());
+            enriched['poster_phone'] = phoneToInject;
+            _detailCache[taskId] = Task.fromJson(enriched);
+          } catch (_) {}
         }
       }
 
       await fetchMyTasks();
+
+      // After fetchMyTasks(), the accepted task may now have a posterPhone
+      // in _myAcceptedTasks. Inject it into the detail cache if still missing.
+      final cached2 = _detailCache[taskId];
+      if (cached2 != null &&
+          (cached2.posterPhone == null || cached2.posterPhone!.trim().isEmpty)) {
+        final phone2 = _loadPhone(taskId) ?? _findPhoneInAllLists(taskId);
+        if (phone2 != null) {
+          try {
+            final enriched = Map<String, dynamic>.from(cached2.toJson());
+            enriched['poster_phone'] = phone2;
+            _detailCache[taskId] = Task.fromJson(enriched);
+          } catch (_) {}
+        }
+      }
+
       return true;
     } on ApiException catch (e) {
       _error = e.message;
@@ -453,17 +644,43 @@ class TaskProvider extends ChangeNotifier {
 
   /// Helper confirms completion after payment is released (Step 3 of flow).
   Future<bool> finalMarkComplete(String taskId) async {
-    try {
-      await ApiService.post('/tasks/$taskId/mark-completed');
-      // Optimistically remove from accepted list so hasActiveAcceptedTask
-      // becomes false immediately — lets the helper accept a new task at once.
-      _myAcceptedTasks.removeWhere((t) => t.id == taskId);
+    void _clearTask() {
+      _locallyCompletedTaskIds.add(taskId);
+      // Move the task from accepted → completed list immediately so the UI
+      // reflects the change before the background fetchMyTasks() returns.
+      // Stamp completedAt = now so the 48 h expiry countdown starts correctly.
+      final now = DateTime.now();
+      _saveCompletedAt(taskId, now); // persist so it survives restarts
+      final idx = _myAcceptedTasks.indexWhere((t) => t.id == taskId);
+      if (idx >= 0) {
+        final task = _myAcceptedTasks.removeAt(idx);
+        if (!_myCompletedTasks.any((t) => t.id == taskId)) {
+          _myCompletedTasks.insert(0, task.copyWith(completedAt: now));
+        }
+      } else {
+        _myAcceptedTasks.removeWhere((t) => t.id == taskId);
+        // Fallback: if task was only in the detail cache, still add to completed
+        final cached = _detailCache[taskId];
+        if (cached != null && !_myCompletedTasks.any((t) => t.id == taskId)) {
+          _myCompletedTasks.insert(0, cached.copyWith(completedAt: now));
+        }
+      }
       _detailCache.remove(taskId);
       notifyListeners();
-      // Sync with backend in background (don't await — let UI navigate first).
-      fetchMyTasks();
+      fetchMyTasks(); // background sync — filter above keeps task excluded
+    }
+
+    try {
+      await ApiService.post('/tasks/$taskId/mark-completed');
+      _clearTask();
       return true;
     } on ApiException catch (e) {
+      // 404 means the task no longer exists on the backend OR the backend
+      // already advanced it to 'done'. Either way the helper is unblocked.
+      if (e.statusCode == 404) {
+        _clearTask();
+        return true;
+      }
       _error = e.message;
       notifyListeners();
       return false;

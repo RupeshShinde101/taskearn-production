@@ -5,6 +5,7 @@ import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
+import 'edit_task_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
   const MyTasksScreen({super.key});
@@ -115,6 +116,8 @@ class _PostedTaskList extends StatelessWidget {
           final hasHelper = t.helperId != null && t.helperId!.isNotEmpty;
           final canCancel = _cancellableStatuses.contains(t.status);
           final needsVerify = t.status == 'completed' || t.status == 'verify_pending';
+          final canEdit = !hasHelper &&
+              (t.status == 'posted' || t.status == 'open' || t.status == 'active');
 
           return Card(
             margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -225,23 +228,68 @@ class _PostedTaskList extends StatelessWidget {
                     ],
 
                     // ── Action buttons ──────────────────────────────────
-                    if (canCancel) ...[
+                    if (canEdit || canCancel) ...[
                       const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.cancel_outlined, size: 16),
-                          label: Text(hasHelper
-                              ? 'Cancel Task (notify helper)'
-                              : 'Cancel Task'),
-                          onPressed: () => _confirmCancel(context, t, hasHelper),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.danger,
-                            side: const BorderSide(color: AppColors.danger),
-                            minimumSize: const Size(double.infinity, 38),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                        ),
+                      Row(
+                        children: [
+                          // Edit button (only when no helper assigned)
+                          if (canEdit) ...[
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.edit_outlined, size: 16),
+                                label: const Text('Edit'),
+                                onPressed: () async {
+                                  final updated =
+                                      await Navigator.push<bool>(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          EditTaskScreen(task: t),
+                                    ),
+                                  );
+                                  if (updated == true &&
+                                      context.mounted) {
+                                    context
+                                        .read<TaskProvider>()
+                                        .fetchMyTasks();
+                                  }
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  side: const BorderSide(
+                                      color: AppColors.primary),
+                                  minimumSize:
+                                      const Size(double.infinity, 38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12),
+                                ),
+                              ),
+                            ),
+                            if (canCancel) const SizedBox(width: 8),
+                          ],
+                          // Cancel button
+                          if (canCancel)
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.cancel_outlined,
+                                    size: 16),
+                                label: Text(hasHelper
+                                    ? 'Cancel'
+                                    : 'Cancel Task'),
+                                onPressed: () =>
+                                    _confirmCancel(context, t, hasHelper),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.danger,
+                                  side: const BorderSide(
+                                      color: AppColors.danger),
+                                  minimumSize:
+                                      const Size(double.infinity, 38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ],
 
@@ -372,7 +420,16 @@ class _CompletedTaskList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (tasks.isEmpty) {
+    // Filter: only show tasks completed within the last 48 h.
+    // If completedAt is null (backend didn't return the field yet),
+    // fall back to createdAt so the task still expires rather than staying forever.
+    final now = DateTime.now();
+    final visible = tasks.where((t) {
+      final ref = t.completedAt ?? t.createdAt;
+      return ref.add(const Duration(hours: 48)).isAfter(now);
+    }).toList();
+
+    if (visible.isEmpty) {
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -381,6 +438,9 @@ class _CompletedTaskList extends StatelessWidget {
             SizedBox(height: 12),
             Text('No completed tasks',
                 style: TextStyle(color: AppColors.gray, fontSize: 15)),
+            SizedBox(height: 6),
+            Text('Completed tasks are kept for 48 hours',
+                style: TextStyle(color: AppColors.grayLight, fontSize: 12)),
           ],
         ),
       );
@@ -389,55 +449,216 @@ class _CompletedTaskList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchMyTasks(),
       child: ListView.builder(
-        itemCount: tasks.length,
+        padding: const EdgeInsets.only(bottom: 16),
+        itemCount: visible.length,
         itemBuilder: (_, i) {
-          final t = tasks[i];
+          final t = visible[i];
           final expiry = _expiryLabel(t.completedAt);
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TaskCard(task: t, onTap: () => onTap(t)),
-              if (expiry != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _expiryColor(t.completedAt)
-                          .withValues(alpha: 0.08),
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(12),
-                        bottomRight: Radius.circular(12),
+          final expiryClr = _expiryColor(t.completedAt);
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              child: InkWell(
+                onTap: () => onTap(t),
+                borderRadius: BorderRadius.circular(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Task info ──────────────────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              // Category icon
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary
+                                      .withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    _categoryEmoji(t.category),
+                                    style: const TextStyle(fontSize: 19),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      t.title,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: AppColors.dark,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Text(
+                                      t.category,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.gray),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Budget
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '₹${t.budget.toStringAsFixed(0)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                      color: AppColors.success,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.success
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Text(
+                                      'Completed',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          color: AppColors.success,
+                                          fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          if (t.description.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              t.description,
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.gray,
+                                  height: 1.4),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          const Divider(height: 1),
+                          const SizedBox(height: 10),
+
+                          // ── Poster info row ──────────────────────────────
+                          Row(
+                            children: [
+                              const Icon(Icons.person_outline,
+                                  size: 15, color: AppColors.gray),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      t.posterName.isNotEmpty
+                                          ? t.posterName
+                                          : 'Unknown Poster',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.dark,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (t.posterId.isNotEmpty)
+                                      Text(
+                                        'ID: ${t.posterId.length > 12 ? '${t.posterId.substring(0, 12)}…' : t.posterId}',
+                                        style: const TextStyle(
+                                            fontSize: 10,
+                                            color: AppColors.grayLight,
+                                            fontFamily: 'monospace'),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              if (t.completedAt != null)
+                                Text(
+                                  _formatDate(t.completedAt!),
+                                  style: const TextStyle(
+                                      fontSize: 11, color: AppColors.gray),
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
-                      border: Border.all(
-                          color: _expiryColor(t.completedAt)
-                              .withValues(alpha: 0.25)),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.access_time_rounded,
-                            size: 13,
-                            color: _expiryColor(t.completedAt)),
-                        const SizedBox(width: 5),
-                        Text(
-                          expiry,
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: _expiryColor(t.completedAt),
-                              fontWeight: FontWeight.w600),
+
+                    // ── Expiry bar ─────────────────────────────────────────
+                    if (expiry != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: expiryClr.withValues(alpha: 0.07),
+                          borderRadius: const BorderRadius.only(
+                            bottomLeft: Radius.circular(14),
+                            bottomRight: Radius.circular(14),
+                          ),
+                          border: Border(
+                            top: BorderSide(
+                                color: expiryClr.withValues(alpha: 0.2)),
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.access_time_rounded,
+                                size: 13, color: expiryClr),
+                            const SizedBox(width: 5),
+                            Text(
+                              expiry,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: expiryClr,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-            ],
+              ),
+            ),
           );
         },
       ),
     );
   }
+
+  String _categoryEmoji(String category) {
+    final cat = TaskCategory.all.firstWhere(
+      (c) => c.id == category,
+      orElse: () => const TaskCategory(id: '', label: '', icon: '📋'),
+    );
+    return cat.icon;
+  }
+
+  String _formatDate(DateTime dt) =>
+      '${dt.day}/${dt.month}/${dt.year % 100}';
 
   /// Returns a human-readable expiry string based on completedAt + 48 h.
   /// Returns null if no completedAt is available.
@@ -445,11 +666,11 @@ class _CompletedTaskList extends StatelessWidget {
     if (completedAt == null) return 'Visible for 48 h after completion';
     final expireAt = completedAt.add(const Duration(hours: 48));
     final remaining = expireAt.difference(DateTime.now());
-    if (remaining.isNegative) return 'Archived — no longer visible';
+    if (remaining.isNegative) return null; // filtered out above, shouldn't reach
     final h = remaining.inHours;
     final m = remaining.inMinutes % 60;
-    if (h >= 1) return 'Visible for ${h}h ${m}m more';
-    return 'Expires in ${remaining.inMinutes} min';
+    if (h >= 1) return 'Disappears in ${h}h ${m}m';
+    return 'Disappears in ${remaining.inMinutes} min';
   }
 
   Color _expiryColor(DateTime? completedAt) {

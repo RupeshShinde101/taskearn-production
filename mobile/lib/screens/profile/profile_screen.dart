@@ -333,7 +333,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('Change Password'),
-          content: Form(
+          content: SingleChildScrollView(
+            child: Form(
             key: formKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -397,6 +398,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ],
             ),
+          ),
           ),
           actions: [
             TextButton(

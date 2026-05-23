@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/auth_provider.dart';
+import 'services/notification_service.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
@@ -32,6 +34,8 @@ class Workmate4uApp extends StatefulWidget {
 class _Workmate4uAppState extends State<Workmate4uApp> {
   late final GoRouter _router;
   AuthProvider? _authProvider;
+  StreamSubscription<Map<String, dynamic>>? _notifSub;
+  StreamSubscription<Map<String, dynamic>>? _taskCompletedSub;
 
   @override
   void initState() {
@@ -157,6 +161,67 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       _authProvider = auth;
       _authProvider!.addListener(_onAuthChanged);
     }
+    // Listen to notification taps and route to the correct screen.
+    _notifSub ??= NotificationService.onNotificationTap.stream.listen((data) {
+      final taskId = data['task_id']?.toString() ??
+          data['taskId']?.toString() ??
+          data['payload']?.toString();
+      final type = data['type']?.toString() ?? '';
+      if (taskId != null && taskId.isNotEmpty) {
+        // Decide route: task-in-progress for active tasks, task detail for others
+        if (type == 'task_accepted' || type == 'task_started') {
+          _router.push('/task-in-progress/$taskId');
+        } else {
+          _router.push('/task/$taskId');
+        }
+      } else {
+        // Generic notification — go to notifications list
+        _router.push('/notifications');
+      }
+    });
+
+    // Show in-app popup when a task_completed event arrives while the poster
+    // is actively using the app.
+    _taskCompletedSub ??= NotificationService.onTaskCompleted.stream.listen((data) {
+      final taskId = data['task_id']?.toString() ?? '';
+      if (taskId.isEmpty) return;
+      final navKey = _router.routerDelegate.navigatorKey;
+      final ctx = navKey.currentContext;
+      if (ctx == null) return;
+      showDialog<void>(
+        context: ctx,
+        builder: (dialogCtx) => AlertDialog(
+          title: Row(
+            children: const [
+              Icon(Icons.check_circle_rounded, color: Color(0xFF4CAF50)),
+              SizedBox(width: 8),
+              Text('Task Completed!'),
+            ],
+          ),
+          content: const Text(
+            'Your task has been completed by the helper.\n'
+            'Please verify the work and complete payment.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Later'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(dialogCtx).pop();
+                _router.push('/task/$taskId');
+              },
+              child: const Text('Verify & Pay Now'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   void _onAuthChanged() {
@@ -166,6 +231,8 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
   @override
   void dispose() {
     _authProvider?.removeListener(_onAuthChanged);
+    _notifSub?.cancel();
+    _taskCompletedSub?.cancel();
     super.dispose();
   }
 

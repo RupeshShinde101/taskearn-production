@@ -3,9 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
+import '../tasks/edit_task_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
   final String taskId;
@@ -135,6 +137,94 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Future<void> _verify() async {
+    if (_task == null) return;
+    final task = _task!;
+    final budget = task.budget;
+    final charge = task.serviceCharge ?? 0;
+    final total  = budget + charge;
+
+    // Step 1: Check wallet balance and confirm payment
+    final wallet = context.read<WalletProvider>();
+    await wallet.fetchWallet();
+    if (!mounted) return;
+
+    if (wallet.balance.balance < total) {
+      final shortfall = total - wallet.balance.balance;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Insufficient Wallet Balance'),
+          content: Text(
+            'You need ₹${total.toStringAsFixed(0)} to pay for this task '
+            '(budget ₹${budget.toStringAsFixed(0)}'
+            '${charge > 0 ? ' + service charge ₹${charge.toStringAsFixed(0)}' : ''}).\n\n'
+            'Current balance: ₹${wallet.balance.balance.toStringAsFixed(0)}\n'
+            'Add at least ₹${shortfall.ceil()} to continue.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Add Money'),
+            ),
+          ],
+        ),
+      );
+      if (go == true && mounted) context.push('/wallet');
+      return;
+    }
+
+    // Step 2: Confirm payment amount
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Payment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'The following will be deducted from your wallet to pay the helper:',
+              style: TextStyle(color: AppColors.gray, fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            _DetailRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
+            if (charge > 0) _DetailRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
+            const Divider(height: 20),
+            _DetailRow('Total Payment', '₹${total.toStringAsFixed(0)}', bold: true),
+            const SizedBox(height: 6),
+            Text(
+              'Wallet after payment: ₹${(wallet.balance.balance - total).toStringAsFixed(0)}',
+              style: const TextStyle(color: AppColors.gray, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirm & Pay'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // Step 3: Enter OTP to verify completion
     final otpCtrl = TextEditingController();
     final otp = await showDialog<String>(
       context: context,
@@ -165,7 +255,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, otpCtrl.text.trim()),
-            child: const Text('Verify & Release Payment'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Verify & Pay'),
           ),
         ],
       ),
@@ -313,6 +407,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final isAssignedHelper = task.helperId == userId;
     final taskProvider = context.watch<TaskProvider>();
 
+    // Show edit button only for the poster's own unaccepted posted tasks
+    final canEdit = isPoster &&
+        (task.status == 'posted' || task.status == 'open') &&
+        task.helperId == null;
+
     // One-task-at-a-time: check if helper already has an active accepted task
     final hasActiveTask = !isPoster && taskProvider.hasActiveAcceptedTask;
     final activeTask = !isPoster ? taskProvider.activeAcceptedTask : null;
@@ -341,7 +440,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: GradientButton(
-            label: 'Accept Task – Earn ₹${task.budget.toStringAsFixed(0)}',
+            label: 'Accept Task \u2013 Earn \u20b9${task.netEarning.toStringAsFixed(0)}',
             loading: _accepting,
             onPressed: _accepting ? () {} : _accept,
             icon: Icons.check_circle_outline,
@@ -486,7 +585,22 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Task Details'),
-        actions: const [],
+        actions: [
+          if (canEdit)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit Task',
+              onPressed: () async {
+                final updated = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditTaskScreen(task: task),
+                  ),
+                );
+                if (updated == true && mounted) _loadTask();
+              },
+            ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _loadTask,
@@ -598,14 +712,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text('₹${task.budget.toStringAsFixed(0)}',
+                      const Text(
+                        'Net Earning',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.gray,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text('₹${task.netEarning.toStringAsFixed(0)}',
                           style: const TextStyle(
                               fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.success)),
-                      if (task.serviceCharge != null && task.serviceCharge! > 0)
-                        Text(
-                          '+ ₹${task.serviceCharge!.toStringAsFixed(0)} service fee',
-                          style: const TextStyle(color: AppColors.gray, fontSize: 11),
-                        ),
+                      Text(
+                        task.serviceCharge != null && task.serviceCharge! > 0
+                            ? 'Total ₹${task.totalAmount.toStringAsFixed(0)} − 15% fee'
+                            : '− 15% platform fee',
+                        style: const TextStyle(color: AppColors.gray, fontSize: 11),
+                      ),
                     ],
                   ),
                 ],
@@ -626,18 +749,70 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               const Text('Location',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.location_on_outlined, color: AppColors.primary, size: 18),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      task.address ?? '${task.latitude}, ${task.longitude}',
-                      style: const TextStyle(color: AppColors.gray),
-                    ),
+              // Delivery tasks: show pickup + drop separately
+              if (task.pickupAddress != null || task.dropAddress != null) ...[
+                if (task.pickupAddress != null) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.radio_button_checked,
+                          color: AppColors.primary, size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Pickup',
+                                style: TextStyle(
+                                    color: AppColors.gray,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600)),
+                            Text(task.pickupAddress!,
+                                style: const TextStyle(color: AppColors.gray)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (task.dropAddress != null) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.location_on, color: AppColors.danger, size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Drop / Destination',
+                                style: TextStyle(
+                                    color: AppColors.gray,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600)),
+                            Text(task.dropAddress!,
+                                style: const TextStyle(color: AppColors.gray)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              ),
+              ] else
+                Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined,
+                        color: AppColors.primary, size: 18),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        task.address ?? '${task.latitude}, ${task.longitude}',
+                        style: const TextStyle(color: AppColors.gray),
+                      ),
+                    ),
+                  ],
+                ),
 
               const Divider(height: 28),
 
@@ -646,7 +821,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 10),
               _UserRow(
-                name: task.posterName,
+                name: (task.posterName.isEmpty || task.posterName == 'Anonymous') && isPoster
+                    ? (auth.user?.name ?? task.posterName)
+                    : task.posterName,
                 avatar: task.posterAvatar,
                 rating: task.posterRating,
                 avatarColor: AppColors.primary,
@@ -840,6 +1017,30 @@ class _StatusBadge extends StatelessWidget {
       child: Text(
         _label,
         style: TextStyle(color: _color, fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+/// Simple two-column label + value row used in payment dialogs.
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool bold;
+  const _DetailRow(this.label, this.value, {this.bold = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+      color: bold ? AppColors.dark : AppColors.gray,
+      fontSize: bold ? 14 : 13,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [Text(label, style: style), Text(value, style: style)],
       ),
     );
   }

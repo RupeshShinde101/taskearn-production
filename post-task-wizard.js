@@ -82,6 +82,9 @@
                 : 'Choose a fair budget. Add a small nudge to attract taskers faster.';
         }
         updateBudgetMinLabel();
+        // Show/hide the drop location field for distance categories
+        const dropRow = $('wmDropLocationRow');
+        if (dropRow) dropRow.style.display = isDistance ? '' : 'none';
         // Update service charge display whenever category changes
         try { if (typeof window.updateTotalBudgetDisplay === 'function') window.updateTotalBudgetDisplay(); } catch (e) {}
     }
@@ -235,6 +238,10 @@
     function reset() {
         currentStep = 1;
         clearStepError();
+        // Clear drop location on wizard reset
+        const dropEl = $('modalTaskLocation_drop');
+        if (dropEl) dropEl.value = '';
+        if (typeof window !== 'undefined') window.modalDropCoords = null;
         applyCategoryLabels();
         goToStep(1, { skipValidate: true });
     }
@@ -384,7 +391,8 @@
                         <button type="button" class="wm-when-chip" data-when="today-evening">Today evening</button>
                         <button type="button" class="wm-when-chip" data-when="tomorrow-morning">Tomorrow 9am</button>
                     </div>
-                    <div class="form-group" style="margin-top:18px;"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
+                    <div class="form-group" style="margin-top:18px;"><label for="modalTaskLocation">Pickup Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
+                    <div class="form-group" id="wmDropLocationRow" style="display:none;margin-top:10px;"><label for="modalTaskLocation_drop">Drop-off Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation_drop" placeholder="Enter the drop-off / delivery address"><button type="button" class="location-btn" onclick="getModalDropLocation()"><i class="fas fa-flag-checkered"></i> Drop GPS</button></div></div>
                 </section>
                 <section class="wm-step" data-step="3" role="tabpanel" hidden>
                     <div class="wm-step-head"><h3 id="wmStep3Heading"><i class="fas fa-rupee-sign"></i> Fair price &amp; budget</h3><p class="wm-step-sub" id="wmStep3Sub">Choose a fair budget. Add a small nudge to attract taskers faster.</p></div>

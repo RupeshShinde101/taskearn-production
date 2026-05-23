@@ -68,6 +68,7 @@ let selectedTask = null;
 let gpsWatchId = null;
 let isGPSActive = false;
 let modalTaskCoords = null; // Stores picked location for task posting
+let modalDropCoords = null; // Stores picked drop location for delivery/transport task posting
 let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
 let _taskDetailMiniMap = null; // Leaflet mini-map inside task detail modal — kept global so it can be properly destroyed
 let _currentTaskList = []; // Tracks the currently displayed task list for sort without re-creating closures
@@ -1721,7 +1722,8 @@ async function syncUserTasksFromServer() {
                         helper_rating: dbTask.helper_rating,
                         helper_tasks_completed: dbTask.helper_tasks_completed,
                         postedBy: { id: user.id, name: user.name },
-                        location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address }
+                        location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address },
+                        drop_location: dbTask.drop_location_lat ? { lat: dbTask.drop_location_lat, lng: dbTask.drop_location_lng, address: dbTask.drop_location_address || '' } : null
                     });
                 }
             });
@@ -1777,7 +1779,8 @@ async function syncUserTasksFromServer() {
                     poster_phone: dbTask.poster_phone || '',
                     poster_email: dbTask.poster_email || '',
                     poster_user_id: dbTask.poster_user_id || dbTask.posted_by || '',
-                    location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address || '' }
+                    location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address || '' },
+                    drop_location: dbTask.drop_location_lat ? { lat: dbTask.drop_location_lat, lng: dbTask.drop_location_lng, address: dbTask.drop_location_address || '' } : null
                 };
                 if (dbTask.status === 'paid' || dbTask.status === 'completed') {
                     if (!myCompletedTasks.find(ct => ct.id == dbTask.id)) {
@@ -2724,6 +2727,7 @@ function getTaskIcon(category) {
 // ========================================
 
 function showRouteTo(task) {
+    if (!task.location || task.location.lat == null) return;
     clearRoute();
 
     // Draw a simple line from user to task
@@ -2857,8 +2861,8 @@ window._sortTasks = function(by) {
     else if (by === 'earn_asc') sorted.sort((a, b) => getHelperEarnings(a) - getHelperEarnings(b));
     else if (by === 'time') sorted.sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
     else sorted.sort((a, b) => {
-        const dA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
-        const dB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);
+        const dA = (a.location && a.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng) : Infinity;
+        const dB = (b.location && b.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng) : Infinity;
         return dA - dB;
     });
     renderTasks(sorted);
@@ -2892,10 +2896,10 @@ function renderTasks(filtered = null) {
         return true;
     });
 
-    // Sort by distance
+    // Sort by distance (tasks without coordinates go to the end)
     list.sort((a, b) => {
-        const dA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
-        const dB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);
+        const dA = (a.location && a.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng) : Infinity;
+        const dB = (b.location && b.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng) : Infinity;
         return dA - dB;
     });
 
@@ -2952,7 +2956,7 @@ function renderTasks(filtered = null) {
 
     const isHelper = currentUser && currentUser.id;
     container.innerHTML = displayList.map(task => {
-        const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
+        const dist = (task.location && task.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng) : null;
         const timeLeft = getTimeLeft(task.expiresAt);
         const rating = task.postedBy && task.postedBy.rating ? task.postedBy.rating : null;
         const isOwn = isHelper && task.postedBy && task.postedBy.id === currentUser.id;
@@ -2983,7 +2987,7 @@ function renderTasks(filtered = null) {
                     <h4 class="tc-title">${escapeHtml(task.title)}</h4>
                     <p class="tc-desc">${formatTaskDescription(task.description, { compact: true })}</p>
                     <div class="tc-stats">
-                        <span class="tc-stat tc-stat-location"><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
+                        <span class="tc-stat tc-stat-location"><i class="fas fa-map-marker-alt"></i> ${dist != null ? dist.toFixed(1) + ' km' : 'Location N/A'}</span>
                         ${rating ? `<span class="tc-stat tc-stat-rating"><i class="fas fa-star"></i> ${rating.toFixed(1)}</span>` : ''}
                         <span class="tc-stat ${timerClass}"><i class="fas fa-clock"></i> ${timeLeft}</span>
                     </div>
@@ -3040,7 +3044,7 @@ function onTaskCardClick(taskId) {
     highlightTaskCard(taskId);
     selectedTask = task;
 
-    if (map) {
+    if (map && task.location && task.location.lat != null) {
         map.setView([task.location.lat, task.location.lng], 15);
 
         // Open popup
@@ -3079,8 +3083,11 @@ function openTaskDetail(taskId) {
     window._lastTaskId = taskId;
     console.log('✅ Opening task detail for:', task.title);
 
-    const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
+    const dist = (task.location && task.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng) : null;
     const timeLeft = getTimeLeft(task.expiresAt);
+    const DISTANCE_CATS_DETAIL = new Set(['transport', 'pickup', 'delivery', 'moving']);
+    const hasDropLocation = task.drop_location && task.drop_location.lat != null;
+    const isDistanceCat = DISTANCE_CATS_DETAIL.has(task.category);
     
     // Check if current user is the task owner
     const isOwner = currentUser && task.postedBy && task.postedBy.id === currentUser.id;
@@ -3092,8 +3099,9 @@ function openTaskDetail(taskId) {
             ${isOwner ? '<span class="owner-badge"><i class="fas fa-user-check"></i> Your Task</span>' : ''}
             <h2>${escapeHtml(task.title)}</h2>
             <div class="task-detail-meta">
-                <span><i class="fas fa-map-marker-alt"></i> ${task.location.address}</span>
-                <span><i class="fas fa-ruler"></i> ${dist.toFixed(1)} km away</span>
+                <span><i class="fas fa-map-marker-alt"></i> ${(task.location && task.location.address) || 'Location not specified'}</span>
+                ${hasDropLocation ? `<span><i class="fas fa-flag-checkered"></i> Drop: ${escapeHtml(task.drop_location.address || '')}</span>` : ''}
+                ${dist != null ? `<span><i class="fas fa-ruler"></i> ${dist.toFixed(1)} km away</span>` : ''}
                 <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft} left</span>
             </div>
         </div>
@@ -3193,20 +3201,31 @@ function openTaskDetail(taskId) {
             }
         } catch (_) {}
         const el = document.getElementById('taskDetailMap');
-        if (el) {
+        if (el && typeof L !== 'undefined' && task.location && task.location.lat != null) {
             // Clear the leaflet_id flag so Leaflet allows re-initialisation on the same element
             delete el._leaflet_id;
+            const mapCenter = [task.location.lat, task.location.lng];
             _taskDetailMiniMap = L.map('taskDetailMap', {
-                center: [task.location.lat, task.location.lng],
+                center: mapCenter,
                 zoom: 15,
                 zoomControl: false,
                 dragging: false,
                 scrollWheelZoom: false
             });
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(_taskDetailMiniMap);
+            // Pickup marker
             L.marker([task.location.lat, task.location.lng], {
                 icon: getTaskIcon(task.category)
             }).addTo(_taskDetailMiniMap);
+            // Drop location marker and route line for delivery/transport categories
+            if (hasDropLocation) {
+                const dropIcon = L.divIcon({ className: 'task-marker', html: '<div style="background:#ef4444;color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);">🏁</div>', iconSize: [32,32], iconAnchor: [16,16] });
+                L.marker([task.drop_location.lat, task.drop_location.lng], { icon: dropIcon }).addTo(_taskDetailMiniMap);
+                L.polyline([[task.location.lat, task.location.lng], [task.drop_location.lat, task.drop_location.lng]], {
+                    color: '#6366f1', weight: 3, dashArray: '6,6'
+                }).addTo(_taskDetailMiniMap);
+                _taskDetailMiniMap.fitBounds([[task.location.lat, task.location.lng], [task.drop_location.lat, task.drop_location.lng]], { padding: [20, 20] });
+            }
             // Modal animates in — Leaflet caches initial 0px container; force redraw after layout settles
             setTimeout(() => { try { _taskDetailMiniMap && _taskDetailMiniMap.invalidateSize(); } catch(_){} }, 250);
             setTimeout(() => { try { _taskDetailMiniMap && _taskDetailMiniMap.invalidateSize(); } catch(_){} }, 600);
@@ -5383,6 +5402,27 @@ async function handleTaskSubmit(event) {
         return;
     }
 
+    // Resolve drop location for delivery/transport categories
+    const DISTANCE_CATS_SUBMIT = new Set(['transport', 'pickup', 'delivery', 'moving']);
+    let dropLat = null, dropLng = null, dropAddress = '';
+    if (DISTANCE_CATS_SUBMIT.has(category)) {
+        const dropAddrEl = document.getElementById('modalTaskLocation_drop');
+        const dropAddrText = dropAddrEl ? (dropAddrEl.value || '').trim() : '';
+        if (modalDropCoords) {
+            dropLat = modalDropCoords.lat;
+            dropLng = modalDropCoords.lng;
+            dropAddress = dropAddrText;
+        } else if (dropAddrText) {
+            showToast('📍 Looking up drop location...');
+            const dropGeo = await geocodeAddress(dropAddrText);
+            if (dropGeo) {
+                dropLat = dropGeo.lat;
+                dropLng = dropGeo.lng;
+                dropAddress = dropAddrText;
+            }
+        }
+    }
+
     const taskData = {
         title: document.getElementById('modalTaskTitle').value,
         category: category,
@@ -5392,6 +5432,8 @@ async function handleTaskSubmit(event) {
             lng: taskLng,
             address: addressText
         },
+        drop_location: (dropLat !== null) ? { lat: dropLat, lng: dropLng, address: dropAddress } : null,
+        dropLocation: (dropLat !== null) ? { lat: dropLat, lng: dropLng, address: dropAddress } : null,
         price: totalPrice,
         serviceCharge: serviceCharge,
         totalPaid: totalPayable
@@ -5399,6 +5441,7 @@ async function handleTaskSubmit(event) {
 
     // Reset for next post
     modalTaskCoords = null;
+    modalDropCoords = null;
 
     // Try to save to server first
     let serverTaskId = null;
@@ -7713,6 +7756,44 @@ async function getModalLocation() {
         console.warn('GPS error:', err.message);
         input.value = '';
         showToast('Could not get GPS. Please type an address.');
+    }
+}
+
+async function getModalDropLocation() {
+    const input = document.getElementById('modalTaskLocation_drop');
+    if (!input) return;
+
+    if (!navigator.geolocation) {
+        showToast('GPS not supported. Please type an address.');
+        return;
+    }
+
+    input.value = 'Locating...';
+    try {
+        const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true, timeout: 10000, maximumAge: 30000
+            });
+        });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        window.modalDropCoords = { lat, lng };
+
+        // Reverse-geocode to get address text
+        try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`, {
+                headers: { 'Accept-Language': 'en' }
+            });
+            const data = await resp.json();
+            input.value = data.display_name || 'Drop Location';
+        } catch {
+            input.value = 'Drop Location';
+        }
+        showToast('📍 Drop location set from GPS');
+    } catch (err) {
+        console.warn('GPS error (drop):', err.message);
+        input.value = '';
+        showToast('Could not get GPS. Please type a drop address.');
     }
 }
 

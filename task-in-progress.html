@@ -535,8 +535,9 @@
             <div id="map"></div>
             <!-- Location Info Overlay -->
             <div class="location-info">
-                <strong>📍 Task Location:</strong>
+                <strong>📍 Pickup Location:</strong>
                 <div id="taskLocation">Loading location...</div>
+                <div id="taskDropLocation" style="display:none;margin-top:4px;"><strong>🏁 Drop Location:</strong> <span id="taskDropLocationText"></span></div>
             </div>
             <!-- Center on location button -->
             <button class="map-btn map-btn-locate" onclick="centerMapOnTask()" title="Center on Task">
@@ -588,7 +589,11 @@
                 <div class="navigation-section">
                     <button class="btn-navigate" onclick="openNavigation()" title="Navigate to task location">
                         <i class="fas fa-map-marker-alt"></i>
-                        Navigate
+                        Navigate to Pickup
+                    </button>
+                    <button id="btnNavigateDrop" class="btn-navigate" onclick="openDropNavigation()" title="Navigate to drop location" style="display:none;background:linear-gradient(135deg,#8b5cf6 0%,#6d28d9 100%);">
+                        <i class="fas fa-flag-checkered"></i>
+                        Navigate to Drop
                     </button>
                     <a id="callPosterBtn" class="btn-call-poster" href="tel:" title="Call task poster" style="display:none;">
                         <i class="fas fa-phone"></i>
@@ -1567,7 +1572,26 @@
 
                     // Add popup to marker
                     const taskTitle = currentTask.title || 'Task Location';
-                    taskMarker.bindPopup(`<strong>${taskTitle}</strong><br/>Task location`);
+                    taskMarker.bindPopup(`<strong>${taskTitle}</strong><br/>Pickup location`);
+
+                    // Add drop location marker and polyline if present
+                    if (currentTask.drop_location && currentTask.drop_location.lat) {
+                        const dropLatLng = [currentTask.drop_location.lat, currentTask.drop_location.lng];
+                        const dropIcon = L.divIcon({
+                            html: '<div style="font-size:24px;line-height:1;">🏁</div>',
+                            className: '',
+                            iconSize: [24, 24],
+                            iconAnchor: [12, 12]
+                        });
+                        L.marker(dropLatLng, { icon: dropIcon })
+                            .addTo(map)
+                            .bindPopup(`<strong>Drop-off Location</strong><br/>${currentTask.drop_location.address || ''}`);
+                        L.polyline([[currentTask.location.lat, currentTask.location.lng], dropLatLng], {
+                            color: '#8b5cf6', weight: 3, dashArray: '6,6', opacity: 0.8
+                        }).addTo(map);
+                        // Fit map to show both markers
+                        map.fitBounds([[currentTask.location.lat, currentTask.location.lng], dropLatLng], { padding: [40, 40] });
+                    }
 
                     // Display location address
                     displayLocationInfo();
@@ -1599,6 +1623,18 @@
                 }
             } else {
                 locationDiv.textContent = 'Location available on map';
+            }
+            // Show drop location if present
+            if (currentTask.drop_location && (currentTask.drop_location.address || currentTask.drop_location.lat)) {
+                const dropDiv = document.getElementById('taskDropLocation');
+                const dropText = document.getElementById('taskDropLocationText');
+                if (dropDiv && dropText) {
+                    dropText.textContent = currentTask.drop_location.address ||
+                        `${currentTask.drop_location.lat.toFixed(4)}, ${currentTask.drop_location.lng.toFixed(4)}`;
+                    dropDiv.style.display = '';
+                }
+                const dropNavBtn = document.getElementById('btnNavigateDrop');
+                if (dropNavBtn) dropNavBtn.style.display = '';
             }
         }
 
@@ -1659,6 +1695,27 @@
                 // Desktop: Open Google Maps in new window
                 const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
                 window.open(mapsUrl, '_blank');
+            }
+        }
+
+        function openDropNavigation() {
+            if (!currentTask.drop_location || !currentTask.drop_location.lat) {
+                _pageToast('Drop location not available', true);
+                return;
+            }
+            const lat = currentTask.drop_location.lat;
+            const lng = currentTask.drop_location.lng;
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (isMobile) {
+                const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                if (isIOS) {
+                    window.location.href = `maps://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
+                    setTimeout(() => { window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`; }, 1000);
+                } else {
+                    window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+                }
+            } else {
+                window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank');
             }
         }
     </script>

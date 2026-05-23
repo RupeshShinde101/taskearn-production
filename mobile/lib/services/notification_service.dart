@@ -335,7 +335,8 @@ class NotificationService {
   static Future<String?> getToken() async {
     try {
       return await _fcm.getToken();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[FCM] getToken error: $e');
       return null;
     }
   }

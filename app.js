@@ -1000,11 +1000,20 @@ function _mapServerNotification(n) {
 }
 
 async function syncNotificationsFromServer() {
+    // In-flight guard: prevents concurrent stacked calls (e.g. from 3x
+    // renderDashboard() during init or from the 30 s interval overlapping
+    // with an auto-refresh-triggered renderDashboard).
+    if (window._syncNotifInFlight) return [];
+    // Rate-limit: skip if called within the last 20 seconds.
+    const _now = Date.now();
+    if (window._lastNotifSync && (_now - window._lastNotifSync) < 20000) return [];
+    window._syncNotifInFlight = true;
+    window._lastNotifSync = _now;
     // Capture user locally. The user may log out (currentUser -> null) while
     // the apiRequest below is in-flight; without this, currentUser.id throws
     // after the await resolves.
     const user = currentUser;
-    if (!user) return [];
+    if (!user) { window._syncNotifInFlight = false; return []; }
 
     try {
         const r = await apiRequest('/notifications', { method: 'GET' });
@@ -1027,6 +1036,8 @@ async function syncNotificationsFromServer() {
         }
     } catch (error) {
         console.warn('Could not sync notifications from server:', error.message);
+    } finally {
+        window._syncNotifInFlight = false;
     }
 
     // Fallback: always ensure in-memory array matches localStorage
@@ -1636,12 +1647,16 @@ function notifyTaskPoster(task, acceptedBy) {
 // Standalone sync of the current user's posted/accepted/completed tasks from the server.
 // Called independently of TasksAPI.getAll() so tasks always appear even if the
 // global task list endpoint fails.
-async function syncUserTasksFromServer() {
+async function syncUserTasksFromServer(silent = false) {
+    // In-flight guard: prevents concurrent stacked calls from the init
+    // parallel loads + the 20 s user-sync interval firing at the same time.
+    if (window._syncUserTasksInFlight) return;
+    window._syncUserTasksInFlight = true;
     // Capture user locally — same race as syncNotificationsFromServer: a
     // logout during the in-flight UserAPI.getTasks() call would set
     // currentUser to null and later currentUser.id accesses would throw.
     const user = currentUser;
-    if (!user) return;
+    if (!user) { window._syncUserTasksInFlight = false; return; }
     try {
         const userTasksResult = await UserAPI.getTasks();
         if (!currentUser) return; // logged out mid-flight
@@ -1832,9 +1847,13 @@ async function syncUserTasksFromServer() {
             totalEarnings: user.totalEarnings
         });
 
-        // Notify poster of tasks awaiting payment
+        // Notify poster of tasks awaiting payment — suppress in silent mode (fast-poll
+        // interval) and rate-limit to once every 5 minutes to avoid toast spam.
         const awaitingPayment = myPostedTasks.filter(t => t.status === 'completed');
-        if (awaitingPayment.length > 0) {
+        const _nowSync = Date.now();
+        if (!silent && awaitingPayment.length > 0 &&
+            (!window._lastAwaitingPaymentToast || (_nowSync - window._lastAwaitingPaymentToast) > 300000)) {
+            window._lastAwaitingPaymentToast = _nowSync;
             showToast(`💰 ${awaitingPayment.length} task(s) completed and awaiting your payment!`, 5000);
         }
 
@@ -1850,6 +1869,8 @@ async function syncUserTasksFromServer() {
 
     } catch (e) {
         console.warn('syncUserTasksFromServer failed:', e.message);
+    } finally {
+        window._syncUserTasksInFlight = false;
     }
 }
 
@@ -2243,18 +2264,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Category counts derived from now-loaded tasks array — no extra API call
         try { updateCategoryCardsFromTasks(); } catch (e) {}
         // userActiveTask already derived inside syncUserTasksFromServer
+        // Single renderDashboard here — replaces the duplicate call below.
         if (currentUser) { renderDashboard(); }
 
         // Load AI recommended tasks (after main tasks so userLocation is set)
         loadRecommendedTasks().catch(e => console.log('Recommendations unavailable:', e.message));
 
-        // Re-render all views with fresh server data
+        // Start timers (task expiry + user-sync interval + notification poll)
+        // renderTasks() is NOT called here — loadTasksFromServer() already rendered
+        // the task list above with fresh server data. A second call is redundant work.
         try {
-            renderTasks();
-            renderDashboard();
             startTaskTimers();
         } catch (e) {
-            console.warn('⚠️ Task rendering failed:', e.message);
+            console.warn('⚠️ Task timer start failed:', e.message);
         }
 
         // Auto-open payment invoice if ?pay=TASK_ID is in URL (from email Pay Now button)
@@ -7839,30 +7861,47 @@ function startTaskTimers() {
     if (_taskTimersStarted) return;
     _taskTimersStarted = true;
 
+    // Faster user-task status interval (20 s) — gives near-real-time badge
+    // updates for posted/accepted task status (accepted → verify_pending → paid)
+    // without the overhead of re-fetching all public tasks.
+    // renderTasks() is intentionally NOT called here — the 60 s auto-refresh
+    // re-fetches all public tasks from the server and re-renders with fresh data.
     _timerIntervalId = setInterval(() => {
         if (document.hidden) return; // Skip heavy work when tab is not visible
+        // Local expiry scan (no network — instant)
+        const now = new Date();
         tasks.forEach(t => {
-            if (t.status === 'active' && new Date(t.expiresAt) <= new Date()) {
+            if (t.status === 'active' && new Date(t.expiresAt) <= now) {
                 t.status = 'expired';
             }
         });
-        // Remove expired-active posted tasks and expired-accepted tasks
         myPostedTasks = myPostedTasks.filter(t => {
-            if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+            if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= now) return false;
             return true;
         });
         myAcceptedTasks = myAcceptedTasks.filter(t => {
-            if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+            if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= now) return false;
             return true;
         });
-        renderTasks();
-        renderPostedTasks();
-        renderAcceptedTasks();
-        // NOTE: addTaskMarkers() intentionally removed from this timer — re-creating
-        // all Leaflet marker objects every minute was the primary cause of
-        // "Out of Memory" crashes. Markers are updated only when fresh task data
-        // arrives from the server (loadTasksFromServer → addTaskMarkers).
-    }, 60000);
+        // Sync user task statuses from server (silent — no toast), then re-render
+        // posted/accepted sections with the freshly synced data.
+        if (currentUser) {
+            syncUserTasksFromServer(true).then(() => {
+                try { renderPostedTasks(); } catch (_) {}
+                try { renderAcceptedTasks(); } catch (_) {}
+            }).catch(() => {
+                // Network blip — still render with whatever local data we have
+                try { renderPostedTasks(); } catch (_) {}
+                try { renderAcceptedTasks(); } catch (_) {}
+            });
+        } else {
+            try { renderPostedTasks(); } catch (_) {}
+            try { renderAcceptedTasks(); } catch (_) {}
+        }
+        // NOTE: addTaskMarkers() intentionally not called here — re-creating
+        // all Leaflet marker objects was the primary cause of OOM crashes.
+        // Markers update only when fresh task data arrives from loadTasksFromServer.
+    }, 20000);
 
     // Sync notifications from server every 30 seconds
     _notifIntervalId = setInterval(() => {

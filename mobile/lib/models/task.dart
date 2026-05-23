@@ -25,6 +25,15 @@ class Task {
   final String? posterPhone;
   final bool isPaid;
   final bool isHidden;
+  // ── Delivery-specific fields ──────────────────────────────────────────────
+  /// For delivery/pickup tasks: the pickup / start-location address.
+  final String? pickupAddress;
+  /// For delivery/pickup tasks: the drop / destination address.
+  final String? dropAddress;
+  /// Drop location latitude (for navigation).
+  final double? dropLatitude;
+  /// Drop location longitude (for navigation).
+  final double? dropLongitude;
 
   Task({
     required this.id,
@@ -53,6 +62,10 @@ class Task {
     this.completionProof,
     this.isPaid = false,
     this.isHidden = false,
+    this.pickupAddress,
+    this.dropAddress,
+    this.dropLatitude,
+    this.dropLongitude,
   });
 
   // Parse a date string that may be ISO-8601 or RFC-2822
@@ -64,6 +77,16 @@ class Task {
     if (iso != null) return iso;
     // Fallback: today (RFC-2822 format not natively supported)
     return DateTime.now();
+  }
+
+  /// Like [_parseDate] but returns null for null/empty/unparseable values
+  /// instead of falling back to DateTime.now().  Used for optional timestamps
+  /// (completedAt, acceptedAt) so we never invent a fake timestamp.
+  static DateTime? _parseDateOrNull(dynamic value) {
+    if (value == null) return null;
+    final s = value.toString().trim();
+    if (s.isEmpty) return null;
+    return DateTime.tryParse(s); // null if unparseable — callers handle null
   }
 
   /// Returns the first non-empty string value found in [map] for any of [keys].
@@ -84,6 +107,16 @@ class Task {
     final locLat = loc is Map ? loc['lat'] : null;
     final locLng = loc is Map ? loc['lng'] : null;
     final locAddr = loc is Map ? loc['address'] : null;
+
+    // ── pickup / destination ─────────────────────────────────────────────
+    // Browse/user-task API returns:
+    //   location: {lat, lng, address}   ← pickup location
+    //   drop_location: {lat, lng, address} | null  ← drop location
+    // Some task-detail endpoints may return pickup/destination instead.
+    final pickup = json['pickup'];
+    final destination = json['destination'];
+    // The main public API uses drop_location (not destination)
+    final dropLoc = json['drop_location'];
 
     // ── poster ───────────────────────────────────────────────────────────────
     // The API may return the poster as any of: postedBy, poster, posted_by
@@ -155,12 +188,13 @@ class Task {
       helperId: (helperIdRaw?.isEmpty ?? true) ? null : helperIdRaw,
       helperName: helperName,
       latitude: double.tryParse(
-          (locLat ?? json['latitude'] ?? json['lat'] ?? json['location_lat'] ?? 0).toString()
+          (locLat ?? (pickup is Map ? pickup['lat'] : null) ?? json['latitude'] ?? json['lat'] ?? json['location_lat'] ?? 0).toString()
       ) ?? 0.0,
       longitude: double.tryParse(
-          (locLng ?? json['longitude'] ?? json['lng'] ?? json['location_lng'] ?? 0).toString()
+          (locLng ?? (pickup is Map ? pickup['lng'] : null) ?? json['longitude'] ?? json['lng'] ?? json['location_lng'] ?? 0).toString()
       ) ?? 0.0,
       address: locAddr?.toString()
+          ?? (pickup is Map ? pickup['address'] : null)?.toString()
           ?? json['address']?.toString()
           ?? json['location_address']?.toString(),
       city: json['city']?.toString(),
@@ -172,8 +206,8 @@ class Task {
       createdAt: _parseDate(
           json['created_at'] ?? json['postedAt'] ?? json['posted_at']
       ),
-      acceptedAt: json['accepted_at'] != null ? _parseDate(json['accepted_at']) : null,
-      completedAt: json['completed_at'] != null ? _parseDate(json['completed_at']) : null,
+      acceptedAt: _parseDateOrNull(json['accepted_at'] ?? json['acceptedAt']),
+      completedAt: _parseDateOrNull(json['completed_at'] ?? json['completedAt']),
       helperRating: json['helper_rating'] != null
           ? double.tryParse(json['helper_rating'].toString()) ?? 0.0
           : null,
@@ -189,10 +223,120 @@ class Task {
           })(),
       isPaid: json['is_paid'] == true || json['status'] == 'paid',
       isHidden: json['is_hidden'] == true,
+      pickupAddress: (pickup is Map ? pickup['address'] : null)?.toString()
+          ?? json['pickup_address']?.toString()
+          ?? json['pickupAddress']?.toString()
+          ?? json['pickup_addr']?.toString()
+          ?? json['from_address']?.toString()
+          ?? locAddr?.toString(),  // location.address IS the pickup for delivery tasks
+      dropAddress: (dropLoc is Map ? dropLoc['address'] : null)?.toString()
+          ?? (destination is Map ? destination['address'] : null)?.toString()
+          ?? json['drop_location_address']?.toString()
+          ?? json['delivery_address']?.toString()
+          ?? json['drop_address']?.toString()
+          ?? json['dropAddress']?.toString()
+          ?? json['deliveryAddress']?.toString()
+          ?? json['to_address']?.toString()
+          ?? json['destination_address']?.toString(),
+      dropLatitude: (() {
+        // Primary: drop_location nested object (browse/user-tasks API)
+        if (dropLoc is Map && dropLoc['lat'] != null)
+          return double.tryParse(dropLoc['lat'].toString());
+        // Fallback: destination nested object (task-detail API)
+        if (destination is Map && destination['lat'] != null)
+          return double.tryParse(destination['lat'].toString());
+        // Fallback: flat fields
+        final f = json['drop_location_lat'] ?? json['drop_lat'] ?? json['drop_latitude'] ?? json['dropLat'] ?? json['destination_lat'];
+        return f != null ? double.tryParse(f.toString()) : null;
+      })(),
+      dropLongitude: (() {
+        if (dropLoc is Map && dropLoc['lng'] != null)
+          return double.tryParse(dropLoc['lng'].toString());
+        if (destination is Map && destination['lng'] != null)
+          return double.tryParse(destination['lng'].toString());
+        final f = json['drop_location_lng'] ?? json['drop_lng'] ?? json['drop_longitude'] ?? json['dropLng'] ?? json['destination_lng'];
+        return f != null ? double.tryParse(f.toString()) : null;
+      })(),
     );
   }
 
   double get totalAmount => budget + (serviceCharge ?? 0);
+
+  /// Platform commission rate:
+  /// 15% for delivery/pickup/transport/moving; 17% for all other categories.
+  static const double platformCommission = 0.15;
+
+  /// Per-task commission rate based on category.
+  double get commissionRate {
+    const deliveryTypes = {'delivery', 'pickup', 'transport', 'moving'};
+    return deliveryTypes.contains(category) ? 0.15 : 0.17;
+  }
+
+  /// Returns the platform service charge estimate (in ₹) for a task category.
+  /// The actual charge is distance-based and finalised by the backend.
+  /// This is used as a front-end estimate in previews and confirmations.
+  static int serviceChargeForCategory(String category) {
+    switch (category) {
+      case 'delivery':
+      case 'pickup':
+      case 'transport':
+        return 25; // mid-range estimate (actual: ₹10–₹35 by distance)
+      case 'moving':
+        return 40; // estimate for large-item moves
+      default:
+        return 0;
+    }
+  }
+
+  /// Net amount the helper earns after [platformCommission] is deducted
+  /// from the total task value (budget + service charge).
+  double get netEarning => totalAmount * (1 - commissionRate);
+
+  /// True for task categories that involve a pickup-to-drop delivery route.
+  bool get isDeliveryType =>
+      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category);
+
+  /// Returns a copy of this task with the given fields replaced.
+  Task copyWith({
+    String? status,
+    DateTime? completedAt,
+    bool? isPaid,
+    String? helperName,
+    String? helperId,
+  }) {
+    return Task(
+      id: id,
+      title: title,
+      description: description,
+      category: category,
+      budget: budget,
+      serviceCharge: serviceCharge,
+      status: status ?? this.status,
+      posterId: posterId,
+      posterName: posterName,
+      posterAvatar: posterAvatar,
+      posterRating: posterRating,
+      helperId: helperId ?? this.helperId,
+      helperName: helperName ?? this.helperName,
+      posterPhone: posterPhone,
+      latitude: latitude,
+      longitude: longitude,
+      address: address,
+      city: city,
+      distanceKm: distanceKm,
+      createdAt: createdAt,
+      acceptedAt: acceptedAt,
+      completedAt: completedAt ?? this.completedAt,
+      helperRating: helperRating,
+      completionProof: completionProof,
+      isPaid: isPaid ?? this.isPaid,
+      isHidden: isHidden,
+      pickupAddress: pickupAddress,
+      dropAddress: dropAddress,
+      dropLatitude: dropLatitude,
+      dropLongitude: dropLongitude,
+    );
+  }
 
   /// Flat JSON map that can be fed back into [Task.fromJson].
   Map<String, dynamic> toJson() => {
@@ -222,6 +366,10 @@ class Task {
     if (completionProof != null) 'completion_proof': completionProof,
     'is_paid': isPaid,
     'is_hidden': isHidden,
+    if (pickupAddress != null) 'pickup_address': pickupAddress,
+    if (dropAddress != null) 'delivery_address': dropAddress,
+    if (dropLatitude != null) 'drop_lat': dropLatitude,
+    if (dropLongitude != null) 'drop_lng': dropLongitude,
   };
 
   String get statusLabel {

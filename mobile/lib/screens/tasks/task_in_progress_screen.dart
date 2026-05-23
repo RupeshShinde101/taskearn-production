@@ -31,6 +31,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Timer? _pollTimer;
   StreamSubscription<Position>? _locationSub;
   bool _paymentPopupShown = false; // ensure payment popup shown only once
+  bool _loaded = false;            // true after first data load; polls are silent
 
   // ── statuses treated as "cancelled" — helper should be redirected away
   static const _cancelledStatuses = {
@@ -41,12 +42,13 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     'completed', 'verify_pending',
   };
   // ── status after poster verified / payment released — helper must confirm
+  // 'paid' = poster has paid but helper has NOT yet clicked Mark as Completed
   static const _paymentReleasedStatuses = {
-    'payment_released', 'verified',
+    'payment_released', 'verified', 'paid',
   };
   // ── truly finished (helper already clicked Mark as Completed)
   static const _doneStatuses = {
-    'paid', 'done', 'finished',
+    'done', 'finished',
   };
 
   bool get _isDone =>
@@ -85,15 +87,34 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; });
+    // Only show full-screen spinner on the very first load. Subsequent polls
+    // update _task silently so the user never sees a spinner flash every 15 s.
+    if (!_loaded) setState(() { _loading = true; });
     final prevTask = _task;
     final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
     if (!mounted) return;
 
-    setState(() {
-      _task = task;
-      _loading = false;
-    });
+    // If posterPhone is missing on first load, refresh user tasks (which may
+    // include the phone in its list response) and try the detail again once.
+    // This handles the server propagation delay right after accepting a task.
+    if (!_loaded && task != null &&
+        (task.posterPhone == null || task.posterPhone!.trim().isEmpty)) {
+      await context.read<TaskProvider>().fetchMyTasks();
+      if (!mounted) return;
+      final retried = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
+      if (!mounted) return;
+      setState(() {
+        _task = retried ?? task;
+        _loading = false;
+        _loaded = true;
+      });
+    } else {
+      setState(() {
+        _task = task;
+        _loading = false;
+        _loaded = true;
+      });
+    }
 
     // If task data cannot be found at all (deleted/404), release and exit.
     final status = _task?.status ?? '';
@@ -125,9 +146,9 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Future<void> _showPaymentReceivedDialog() async {
     if (!mounted || _task == null) return;
     final task = _task!;
-    final taskTotal = task.budget + (task.serviceCharge ?? 0);
-    final platformFee = task.serviceCharge ?? 0.0;
-    final helperEarning = task.budget;
+    final commission = task.totalAmount * task.commissionRate;
+    final helperEarning = task.netEarning;
+    final commissionPct = (task.commissionRate * 100).toStringAsFixed(0);
 
     await showDialog<void>(
       context: context,
@@ -180,20 +201,16 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                 children: [
                   _BreakdownRow(
                     label: 'Task Total',
-                    value: '₹${taskTotal.toStringAsFixed(0)}',
+                    value: '₹${task.totalAmount.toStringAsFixed(0)}',
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: Divider(height: 1),
                   ),
                   _BreakdownRow(
-                    label: 'Platform Service Fee',
-                    value: platformFee > 0
-                        ? '− ₹${platformFee.toStringAsFixed(0)}'
-                        : '₹0',
-                    valueColor: platformFee > 0
-                        ? AppColors.danger
-                        : AppColors.gray,
+                    label: 'Platform Commission ($commissionPct%)',
+                    value: '− ₹${commission.toStringAsFixed(0)}',
+                    valueColor: AppColors.danger,
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
@@ -340,6 +357,43 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     }
   }
 
+  Future<void> _openDropNavigation() async {
+    if (_task == null) return;
+    final dropLat = _task!.dropLatitude;
+    final dropLng = _task!.dropLongitude;
+    final dropAddr = _task!.dropAddress;
+
+    Uri uri;
+    if (dropLat != null && dropLng != null) {
+      // Prefer precise coordinates
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1'
+          '&destination=$dropLat,$dropLng'
+          '&travelmode=driving');
+    } else if (dropAddr != null && dropAddr.trim().isNotEmpty) {
+      // Fall back to address text search
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1'
+          '&destination=${Uri.encodeComponent(dropAddr.trim())}'
+          '&travelmode=driving');
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Drop location not available')),
+        );
+      }
+      return;
+    }
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Google Maps')),
+      );
+    }
+  }
+
   Future<void> _callPoster() async {
     final phone = _task?.posterPhone;
     if (phone == null || phone.trim().isEmpty) {
@@ -471,6 +525,9 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     if (!mounted) return;
     setState(() => _completing = false);
     if (ok) {
+      // Show rating dialog so helper can rate the poster before leaving
+      await _showRatePosterDialog();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Task completed! You can now accept a new task.'),
@@ -481,6 +538,9 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       // Navigate to Browse so the helper can immediately find a new task.
       context.go('/browse');
     } else {
+      // Refresh — backend error likely means our cached status was stale
+      // (e.g. payment not yet released on server despite local flag showing paid).
+      _load();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -488,6 +548,92 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
           backgroundColor: AppColors.danger,
         ),
       );
+    }
+  }
+
+  /// Show a rating dialog so the helper can rate the task poster.
+  /// Called after successful mark-complete. Safe to skip (barrierDismissible=false
+  /// but has a Skip button).
+  Future<void> _showRatePosterDialog() async {
+    if (!mounted) return;
+    double selectedRating = 5.0;
+    final commentCtrl = TextEditingController();
+    bool submitted = false;
+    final posterName = _task?.posterName ?? 'the poster';
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Text('Rate the Task Poster',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'How was your experience with $posterName?',
+                style: const TextStyle(color: AppColors.gray, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  5,
+                  (i) => GestureDetector(
+                    onTap: () =>
+                        setDialog(() => selectedRating = (i + 1).toDouble()),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Icon(
+                        i < selectedRating ? Icons.star : Icons.star_border,
+                        color: AppColors.warning,
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: commentCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Comment (optional)',
+                  hintText: 'Leave a review...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Skip'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                submitted = true;
+                Navigator.pop(ctx);
+              },
+              child: const Text('Submit Rating'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    commentCtrl.dispose();
+    if (submitted && mounted) {
+      await context.read<TaskProvider>().rateTask(
+            widget.taskId,
+            selectedRating,
+            null,
+          );
     }
   }
 
@@ -566,6 +712,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final task = _task!;
     final hasPhone = task.posterPhone != null && task.posterPhone!.trim().isNotEmpty;
     final busy = _submitting || _completing || _abandoning;
+    final netEarning = task.netEarning;
 
     return Scaffold(
       appBar: AppBar(
@@ -599,31 +746,131 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (task.address != null && task.address!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Text(
-                            task.address!,
-                            style: const TextStyle(
-                                color: AppColors.gray,
-                                fontSize: 13,
-                                height: 1.4),
+                      // Delivery task (delivery / transport / pickup / moving):
+                      // show pickup and drop addresses with navigation buttons.
+                      if (task.isDeliveryType) ...[
+                        if (task.pickupAddress != null) ...[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.radio_button_checked,
+                                  color: AppColors.primary, size: 16),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Pickup',
+                                        style: TextStyle(
+                                            color: AppColors.gray,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600)),
+                                    Text(task.pickupAddress!,
+                                        style: const TextStyle(
+                                            color: AppColors.dark,
+                                            fontSize: 13,
+                                            height: 1.3)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        // Drop address row (always shown for delivery tasks;
+                        // shows placeholder when poster hasn't set drop yet)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.location_on,
+                                color: AppColors.danger, size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Drop',
+                                      style: TextStyle(
+                                          color: AppColors.gray,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600)),
+                                  Text(
+                                    task.dropAddress ?? 'Drop location not set by poster',
+                                    style: TextStyle(
+                                        color: task.dropAddress != null
+                                            ? AppColors.dark
+                                            : AppColors.grayLight,
+                                        fontSize: 13,
+                                        height: 1.3),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // Navigate to pickup location
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _openNavigation,
+                            icon: const Icon(Icons.navigation_rounded, size: 18),
+                            label: const Text('Navigate to Pickup'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
                           ),
                         ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _openNavigation,
-                          icon: const Icon(Icons.navigation_rounded, size: 18),
-                          label: const Text('Navigate to Task Location'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
+                        if (task.dropAddress != null || task.dropLatitude != null) ...[
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: task.dropAddress != null || task.dropLatitude != null
+                                  ? _openDropNavigation
+                                  : null,
+                              icon: const Icon(Icons.flag_outlined, size: 18),
+                              label: const Text('Navigate to Drop Location'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.danger,
+                                side: const BorderSide(color: AppColors.danger),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ] else ...[
+                        // Non-delivery task: single location
+                        if (task.address != null && task.address!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              task.address!,
+                              style: const TextStyle(
+                                  color: AppColors.gray,
+                                  fontSize: 13,
+                                  height: 1.4),
+                            ),
+                          ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _openNavigation,
+                            icon: const Icon(Icons.navigation_rounded, size: 18),
+                            label: const Text('Navigate to Task Location'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -791,7 +1038,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     _DetailRow('Category', task.category),
                     const Divider(height: 14),
                     _DetailRow(
-                        'Earning', '₹${task.budget.toStringAsFixed(0)}'),
+                        'Net Earning', '₹${netEarning.toStringAsFixed(0)}'),
                     const Divider(height: 14),
                     _DetailRow('Status', task.statusLabel),
                     const Divider(height: 14),
@@ -986,12 +1233,19 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               ],
             ),
           ),
-          Text(
-            '₹${task.budget.toStringAsFixed(0)}',
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w800),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const Text('Net Earning',
+                  style: TextStyle(color: Colors.white70, fontSize: 10)),
+              Text(
+                '₹${task.netEarning.toStringAsFixed(0)}',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800),
+              ),
+            ],
           ),
         ],
       ),

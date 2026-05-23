@@ -1,39 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/task_provider.dart';
+import 'package:provider/provider.dart';
 import '../../models/task.dart';
+import '../../providers/task_provider.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/map_location_picker.dart';
 
-class PostTaskScreen extends StatefulWidget {
-  const PostTaskScreen({super.key});
+class EditTaskScreen extends StatefulWidget {
+  final Task task;
+  const EditTaskScreen({super.key, required this.task});
 
   @override
-  State<PostTaskScreen> createState() => _PostTaskScreenState();
+  State<EditTaskScreen> createState() => _EditTaskScreenState();
 }
 
-class _PostTaskScreenState extends State<PostTaskScreen> {
+class _EditTaskScreenState extends State<EditTaskScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _titleCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _budgetCtrl = TextEditingController();
-  final _addressCtrl = TextEditingController();
-  // Delivery-specific: separate pickup & drop location fields
-  final _pickupAddrCtrl = TextEditingController();
-  final _dropAddrCtrl = TextEditingController();
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _descCtrl;
+  late final TextEditingController _budgetCtrl;
+  late final TextEditingController _addressCtrl;
+  late final TextEditingController _pickupAddrCtrl;
+  late final TextEditingController _dropAddrCtrl;
 
-  String _selectedCategory = 'delivery';
+  late String _selectedCategory;
   LatLng? _location;
-  String? _locationLabel; // reverse-geocoded address from map picker
+  String? _locationLabel;
   bool _loading = false;
-  bool _gettingLocation = false;
-  bool _showAllCategories = false;
   // Per-field lat/lng for delivery categories
   LatLng? _pickupLocation;
   LatLng? _dropLocation;
@@ -43,7 +40,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
 
-  /// Per-category description prompt chips shown below the description field.
   static const Map<String, List<String>> _prompts = {
     'delivery':    ['What to deliver?', 'Pickup point?', 'Drop point?', 'Item size/weight?', 'Urgent?'],
     'pickup':      ['What to pick up?', 'From where?', 'Fragile?', 'Time constraint?'],
@@ -71,18 +67,32 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'other':       ['Describe the task clearly?', 'Skills needed?', 'Expected duration?'],
   };
 
-  void _appendPrompt(String text) {
-    final current = _descCtrl.text.trimRight();
-    _descCtrl.text = current.isEmpty ? '$text: ' : '$current\n$text: ';
-    _descCtrl.selection =
-        TextSelection.fromPosition(TextPosition(offset: _descCtrl.text.length));
-    setState(() {});
-  }
-
   @override
   void initState() {
     super.initState();
-    _getLocation();
+    final t = widget.task;
+    _titleCtrl      = TextEditingController(text: t.title);
+    _descCtrl       = TextEditingController(text: t.description);
+    _budgetCtrl     = TextEditingController(text: t.budget.toStringAsFixed(0));
+    _selectedCategory = t.category;
+
+    // Pre-fill address fields
+    if (_isDelivery && t.address != null) {
+      final addr = t.address!;
+      // Try to split "Pickup: X\nDrop: Y" format
+      final pickupMatch = RegExp(r'Pickup:\s*(.+?)(?:\n|$)', dotAll: true).firstMatch(addr);
+      final dropMatch   = RegExp(r'Drop:\s*(.+?)(?:\n|$)', dotAll: true).firstMatch(addr);
+      _pickupAddrCtrl = TextEditingController(text: pickupMatch?.group(1)?.trim() ?? '');
+      _dropAddrCtrl   = TextEditingController(text: dropMatch?.group(1)?.trim() ?? '');
+      _addressCtrl    = TextEditingController();
+    } else {
+      _pickupAddrCtrl = TextEditingController();
+      _dropAddrCtrl   = TextEditingController();
+      _addressCtrl    = TextEditingController(text: t.address ?? '');
+    }
+
+    _location = LatLng(t.latitude, t.longitude);
+    _locationLabel = t.address;
   }
 
   @override
@@ -96,42 +106,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     super.dispose();
   }
 
-  Future<void> _getLocation() async {
-    setState(() => _gettingLocation = true);
-    final loc = await LocationService.getCurrentLocation();
-    if (!mounted) return;
-    if (loc == null) {
-      setState(() => _gettingLocation = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not get GPS. Enable location permission.'),
-        ),
-      );
-      return;
-    }
-    setState(() {
-      _location = loc;
-      _locationLabel = null;
-      _gettingLocation = false;
-    });
-    try {
-      final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
-          .timeout(const Duration(seconds: 6));
-      if (mounted && places.isNotEmpty) {
-        final p = places.first;
-        final parts = [p.name, p.subLocality, p.locality]
-            .where((s) => s != null && s!.isNotEmpty)
-            .map((s) => s!)
-            .toList();
-        final addr = parts.isEmpty ? null : parts.join(', ');
-        if (mounted) {
-          setState(() => _locationLabel = addr);
-          if (!_isDelivery && _addressCtrl.text.isEmpty && addr != null) {
-            _addressCtrl.text = addr;
-          }
-        }
-      }
-    } catch (_) {}
+  void _appendPrompt(String text) {
+    final current = _descCtrl.text.trimRight();
+    _descCtrl.text = current.isEmpty ? '$text: ' : '$current\n$text: ';
+    _descCtrl.selection =
+        TextSelection.fromPosition(TextPosition(offset: _descCtrl.text.length));
+    setState(() {});
   }
 
   Future<void> _pickLocationFromMap() async {
@@ -264,97 +244,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final LatLng? taskLocation =
-        _isDelivery ? (_pickupLocation ?? _location) : _location;
-    if (taskLocation == null) {
+    if (_location == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Please set a location — tap the map icon next to the address field'),
-        ),
-      );
-      return;
-    }
-
-    // KYC must be verified to post a task
-    final auth = context.read<AuthProvider>();
-    if (!(auth.user?.isKycVerified ?? false)) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('KYC Verification Required'),
-          content: const Text(
-            'You need to complete KYC verification before posting a task.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                context.push('/kyc');
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Verify KYC'),
-            ),
-          ],
-        ),
+        const SnackBar(content: Text('Please set a location on the map')),
       );
       return;
     }
 
     final budget = double.tryParse(_budgetCtrl.text) ?? 0;
     final charge = Task.serviceChargeForCategory(_selectedCategory).toDouble();
-    final total  = budget + charge;
 
-    // Confirm posting — payment is collected AFTER the helper completes the task
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Post Task'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Your task will be posted for helpers to accept.\n'
-              'You will only be charged when the helper completes the work and you verify it.',
-              style: TextStyle(color: AppColors.gray, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            _CostRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
-            if (charge > 0) _CostRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
-            const Divider(height: 20),
-            _CostRow('Total (due on verification)', '₹${total.toStringAsFixed(0)}',
-                bold: true),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Post Task'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
-
-    setState(() => _loading = true);
-
-    // Build the address field: for delivery categories combine pickup + drop.
     final String? combinedAddress;
     if (_isDelivery) {
       final pickup = _pickupAddrCtrl.text.trim();
@@ -363,47 +262,47 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           ? 'Pickup: $pickup\nDrop: $drop'
           : _locationLabel;
     } else {
-      final typed = _addressCtrl.text.trim();
-      combinedAddress = typed.isNotEmpty ? typed : _locationLabel;
+      combinedAddress = _addressCtrl.text.isNotEmpty
+          ? _addressCtrl.text.trim()
+          : _locationLabel;
     }
 
-    final taskData = {
+    final data = {
       'title': _titleCtrl.text.trim(),
       'description': _descCtrl.text.trim(),
       'category': _selectedCategory,
-      'price': double.tryParse(_budgetCtrl.text) ?? 0,
-      'budget': double.tryParse(_budgetCtrl.text) ?? 0,
+      'price': budget,
+      'budget': budget,
       if (charge > 0) 'service_charge': charge,
-      'latitude': taskLocation.latitude,
-      'longitude': taskLocation.longitude,
+      'latitude': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.latitude,
+      'longitude': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.longitude,
       'address': combinedAddress,
       if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
         'pickup_address': _pickupAddrCtrl.text.trim(),
-      if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty) ...{
+      if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty)
         'delivery_address': _dropAddrCtrl.text.trim(),
-        'drop_location_address': _dropAddrCtrl.text.trim(),
-      },
-      if (_isDelivery && _dropLocation != null) ...{
-        'drop_location_lat': _dropLocation!.latitude,
-        'drop_location_lng': _dropLocation!.longitude,
-      },
     };
 
-    final ok = await context.read<TaskProvider>().postTask(taskData);
-
+    setState(() => _loading = true);
+    final ok = await context.read<TaskProvider>().updateTask(widget.task.id, data);
     if (!mounted) return;
     setState(() => _loading = false);
 
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task posted successfully!')),
+        const SnackBar(
+          content: Text('Task updated successfully!'),
+          backgroundColor: AppColors.success,
+        ),
       );
-      context.go('/my-tasks');
+      context.pop(true); // signal caller to reload
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(
-                context.read<TaskProvider>().error ?? 'Failed to post task')),
+          content: Text(
+              context.read<TaskProvider>().error ?? 'Failed to update task'),
+          backgroundColor: AppColors.danger,
+        ),
       );
     }
   }
@@ -411,7 +310,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Post a Task')),
+      appBar: AppBar(title: const Text('Edit Task')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -424,7 +323,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 controller: _titleCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Task Title',
-                  hintText: 'e.g. Pick up parcel from Bandra',
                   prefixIcon: Icon(Icons.title),
                 ),
                 validator: (v) =>
@@ -432,140 +330,35 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ),
               const SizedBox(height: 14),
 
-              // ── Category grid ───────────────────────────────────────
+              // Category
               const Text('Category',
                   style: TextStyle(
                       fontWeight: FontWeight.w600, color: AppColors.dark)),
               const SizedBox(height: 8),
-              LayoutBuilder(builder: (ctx, constraints) {
-                final cats = _showAllCategories
-                    ? TaskCategory.all
-                    : TaskCategory.all.take(12).toList();
-                const crossCount = 4;
-                return Column(
-                  children: [
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: cats.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossCount,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 70 / 70,
-                      ),
-                      itemBuilder: (ctx, i) {
-                        final c = cats[i];
-                        final sel = _selectedCategory == c.id;
-                        return GestureDetector(
-                          onTap: () =>
-                              setState(() => _selectedCategory = c.id),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            decoration: BoxDecoration(
-                              color: sel
-                                  ? AppColors.primary
-                                  : AppColors.light,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: sel
-                                    ? AppColors.primary
-                                    : AppColors.border,
-                                width: sel ? 2 : 1,
-                              ),
-                              boxShadow: sel
-                                  ? [
-                                      BoxShadow(
-                                        color: AppColors.primary
-                                            .withValues(alpha: 0.25),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
-                                      )
-                                    ]
-                                  : null,
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(c.icon,
-                                    style: const TextStyle(fontSize: 22)),
-                                const SizedBox(height: 4),
-                                Text(
-                                  c.label,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: sel
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: sel
-                                        ? Colors.white
-                                        : AppColors.dark,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 6),
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _showAllCategories = !_showAllCategories),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _showAllCategories
-                                  ? 'Show fewer categories'
-                                  : 'Show all categories',
-                              style: const TextStyle(
-                                color: AppColors.primary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              _showAllCategories
-                                  ? Icons.keyboard_arrow_up
-                                  : Icons.keyboard_arrow_down,
-                              color: AppColors.primary,
-                              size: 16,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              }),
+              _CategoryGrid(
+                selected: _selectedCategory,
+                onChanged: (c) => setState(() => _selectedCategory = c),
+              ),
               const SizedBox(height: 14),
 
               // Description
               TextFormField(
                 controller: _descCtrl,
-                maxLines: 4,
+                maxLines: 5,
+                maxLength: 1000,
                 decoration: const InputDecoration(
                   labelText: 'Description',
                   hintText: 'Describe what needs to be done…',
                   prefixIcon: Icon(Icons.description_outlined),
                   alignLabelWithHint: true,
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().length < 10)
-                        ? 'Min 10 characters'
-                        : null,
+                validator: (v) => (v == null || v.trim().length < 10)
+                    ? 'Min 10 characters'
+                    : null,
               ),
-              // Per-category prompt chips
+              // Prompt chips
               if ((_prompts[_selectedCategory] ?? []).isNotEmpty) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 const Text('Add details:',
                     style: TextStyle(
                         fontSize: 11,
@@ -582,10 +375,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               fontSize: 11, color: AppColors.dark)),
                       onPressed: () => _appendPrompt(p),
                       backgroundColor: AppColors.light,
-                      side:
-                          const BorderSide(color: AppColors.border),
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 4),
+                      side: const BorderSide(color: AppColors.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
                       visualDensity: VisualDensity.compact,
                     );
                   }).toList(),
@@ -597,15 +388,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               TextFormField(
                 controller: _budgetCtrl,
                 keyboardType: TextInputType.number,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Budget (₹)',
-                  hintText: _isDelivery ? 'Auto-filled from distance' : 'Minimum ₹100',
-                  prefixIcon: const Icon(Icons.currency_rupee),
+                  hintText: 'Minimum ₹100',
+                  prefixIcon: Icon(Icons.currency_rupee),
                 ),
                 validator: (v) {
                   final n = double.tryParse(v ?? '');
-                  if (n == null || n <= 0) return 'Please enter a budget';
-                  if (!_isDelivery && n < 100) return 'Minimum budget is ₹100';
+                  if (n == null || n < 100) return 'Minimum budget is ₹100';
                   return null;
                 },
               ),
@@ -684,9 +474,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     labelText: 'Address / Landmark (optional)',
                     prefixIcon: const Icon(Icons.location_on_outlined),
                     suffixIcon: _AddressActionButtons(
-                      isLoading: _gettingLocation,
+                      isLoading: false,
                       accentColor: AppColors.primary,
-                      onGps: _getLocation,
+                      onGps: () async {
+                        final loc =
+                            await LocationService.getCurrentLocation();
+                        if (loc == null || !mounted) return;
+                        setState(() {
+                          _location = loc;
+                          _locationLabel = null;
+                        });
+                      },
                       onMap: _pickLocationFromMap,
                     ),
                     suffixIconConstraints:
@@ -706,15 +504,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                   ),
               ],
-
               const SizedBox(height: 14),
 
-              // ── Cost breakdown — real-time via ValueListenableBuilder ──
+              // Cost breakdown (real-time via ValueListenableBuilder)
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _budgetCtrl,
                 builder: (_, value, __) {
                   final budget = double.tryParse(value.text) ?? 0;
-                  final charge = Task.serviceChargeForCategory(_selectedCategory).toDouble();
+                  final charge =
+                      Task.serviceChargeForCategory(_selectedCategory).toDouble();
                   final total = budget + charge;
                   return Container(
                     padding: const EdgeInsets.all(14),
@@ -751,7 +549,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               '₹${charge.toStringAsFixed(0)}'),
                         ],
                         const Divider(height: 14),
-                        _CostRow('Total (pay after completion)',
+                        _CostRow(
+                            'Total (pay after completion)',
                             '₹${total.toStringAsFixed(0)}',
                             bold: true),
                         const SizedBox(height: 6),
@@ -767,11 +566,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   );
                 },
               ),
-
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
 
               GradientButton(
-                label: 'Post Task',
+                label: 'Update Task',
                 loading: _loading,
                 onPressed: _submit,
               ),
@@ -784,7 +582,97 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 }
 
-/// Suffix widget for address text fields: two icon buttons — GPS + Map picker.
+// ── Category grid ─────────────────────────────────────────────────────────────
+class _CategoryGrid extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onChanged;
+  const _CategoryGrid({required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final cats = TaskCategory.all;
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: cats.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemBuilder: (_, i) {
+        final c = cats[i];
+        final sel = selected == c.id;
+        return GestureDetector(
+          onTap: () => onChanged(c.id),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              color: sel ? AppColors.primary : AppColors.light,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: sel ? AppColors.primary : AppColors.border,
+                width: sel ? 2 : 1,
+              ),
+              boxShadow: sel
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.25),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      )
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(c.icon, style: const TextStyle(fontSize: 22)),
+                const SizedBox(height: 4),
+                Text(
+                  c.label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight:
+                        sel ? FontWeight.w700 : FontWeight.w500,
+                    color: sel ? Colors.white : AppColors.dark,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Cost row helper ───────────────────────────────────────────────────────────
+class _CostRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool bold;
+  const _CostRow(this.label, this.value, {this.bold = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+      color: bold ? AppColors.dark : AppColors.gray,
+      fontSize: bold ? 14 : 13,
+    );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [Text(label, style: style), Text(value, style: style)],
+    );
+  }
+}
+
+// ── Address action buttons (GPS + Map) ────────────────────────────────────────
 class _AddressActionButtons extends StatelessWidget {
   final bool isLoading;
   final Color accentColor;
@@ -826,31 +714,6 @@ class _AddressActionButtons extends StatelessWidget {
           padding: const EdgeInsets.all(10),
           constraints: const BoxConstraints(),
         ),
-      ],
-    );
-  }
-}
-
-/// Simple two-column label + value row used in cost breakdown dialogs.
-class _CostRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool bold;
-
-  const _CostRow(this.label, this.value, {this.bold = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-      color: bold ? AppColors.dark : AppColors.gray,
-      fontSize: bold ? 14 : 13,
-    );
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: style),
-        Text(value, style: style),
       ],
     );
   }

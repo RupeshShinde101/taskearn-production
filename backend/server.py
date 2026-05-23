@@ -265,6 +265,105 @@ def send_push_to_user(user_id, title, body, url='/notifications.html'):
 
 
 # ========================================
+# FCM (FIREBASE CLOUD MESSAGING) — Android/iOS push
+# ========================================
+
+_has_fcm = False
+try:
+    import firebase_admin
+    from firebase_admin import credentials as fb_credentials
+    from firebase_admin import messaging as fb_messaging
+
+    _firebase_sa_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '')
+    if _firebase_sa_json:
+        import json as _json_fcm
+        _cred = fb_credentials.Certificate(_json_fcm.loads(_firebase_sa_json))
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(_cred)
+        _has_fcm = True
+        print('[FCM] Firebase Admin SDK initialized ✅')
+    else:
+        print('[FCM] FIREBASE_SERVICE_ACCOUNT_JSON not set — FCM push disabled')
+except ImportError:
+    print('[FCM] firebase-admin not installed — FCM push disabled')
+except Exception as _fcm_init_err:
+    print(f'[FCM] Init error: {_fcm_init_err}')
+
+_fcm_columns_ensured = False
+
+def _ensure_fcm_token_column():
+    """Add fcm_token column to users table if it does not exist (one-time per process)."""
+    global _fcm_columns_ensured
+    if _fcm_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'fcm_token' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN fcm_token TEXT")
+            conn.commit()
+        _fcm_columns_ensured = True
+    except Exception as e:
+        print(f'⚠️ _ensure_fcm_token_column error: {e}')
+
+
+def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main'):
+    """Send an FCM push notification to the user's registered device.
+    Falls back silently if firebase-admin is not configured.
+
+    channel values:
+      workmate4u_main    — general task updates (high importance)
+      workmate4u_matched — nearby task matches  (max importance)
+      workmate4u_payment — payment events       (max importance)
+    """
+    if not _has_fcm:
+        return
+    _ensure_fcm_token_column()
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(f'SELECT fcm_token FROM users WHERE id = {PH}', (str(user_id),))
+            row = cursor.fetchone()
+        if not row:
+            return
+        token = dict_from_row(row).get('fcm_token') if hasattr(row, 'keys') else row[0]
+        if not token:
+            return
+
+        # All data values must be strings for FCM data messages
+        payload = {'type': data.get('type', 'general') if data else 'general',
+                   'title': title, 'body': body}
+        if data:
+            for k, v in data.items():
+                payload[str(k)] = str(v)
+
+        # Data-only message — no 'notification' key so the FCM SDK always
+        # routes it to the Flutter background handler (_bgMessageHandler) even
+        # when the app is killed.  The handler itself creates the local
+        # notification on the correct channel with the right importance.
+        message = fb_messaging.Message(
+            data=payload,
+            android=fb_messaging.AndroidConfig(
+                priority='high',   # FCM delivery priority — wakes up device
+            ),
+            apns=fb_messaging.APNSConfig(
+                headers={'apns-priority': '10'},
+                payload=fb_messaging.APNSPayload(
+                    aps=fb_messaging.Aps(content_available=True),
+                ),
+            ),
+            token=token,
+        )
+        fb_messaging.send(message)
+        print(f'[FCM] ✉ "{title}" → user {user_id}')
+    except Exception as e:
+        print(f'[FCM] Error sending to user {user_id}: {e}')
+
+
+# ========================================
 # HELPER FUNCTIONS
 # ========================================
 
@@ -1867,6 +1966,28 @@ def update_profile():
     })
 
 
+@app.route('/api/user/device-token', methods=['POST'])
+@require_auth
+def save_device_token():
+    """Save or refresh the user's FCM device token for push notifications."""
+    _ensure_fcm_token_column()
+    body = request.get_json() or {}
+    token = body.get('token', '').strip()
+    if not token:
+        return jsonify({'success': False, 'message': 'token required'}), 400
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'UPDATE users SET fcm_token = {PH} WHERE id = {PH}',
+                (token, request.user_id)
+            )
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[FCM] device-token save error: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/user/change-password', methods=['POST'])
 @require_auth
 def change_password():
@@ -2422,6 +2543,30 @@ def accept_task(task_id):
         except Exception:
             pass
 
+        # FCM push to poster (Android/iOS)
+        try:
+            send_fcm_to_user(
+                poster_id,
+                'Task Accepted! 🎉',
+                f'{helper_name} accepted your task "{task["title"]}". Budget: ₹{task["price"]}',
+                data={'type': 'task_accepted', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
+        # FCM push to helper confirming assignment
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                'Task Assigned! 📌',
+                f'You accepted "{task["title"]}". Complete it to earn ₹{task["price"]}.',
+                data={'type': 'task_assigned', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
         return jsonify({
             'success': True,
             'message': 'Task accepted successfully'
@@ -2667,6 +2812,23 @@ def poster_cancel_accepted_task(task_id):
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
         print(f"✅ Poster {request.user_id} cancelled & deleted task {task_id} (helper {helper_id})")
+
+        # FCM push — tell helper their task was cancelled
+        if helper_id:
+            try:
+                _cancel_msg = f'The poster cancelled task "{task_title}".'
+                if reason:
+                    _cancel_msg += f' Reason: {reason}'
+                send_fcm_to_user(
+                    helper_id,
+                    'Task Cancelled ⚠️',
+                    _cancel_msg,
+                    data={'type': 'task_cancelled_by_poster', 'task_id': str(task_id)},
+                    channel='workmate4u_main',
+                )
+            except Exception:
+                pass
+
         return jsonify({
             'success': True,
             'message': 'Task cancelled and removed.',
@@ -2947,6 +3109,30 @@ def complete_task(task_id):
                 notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, 0, total_poster_cost, task_id)
             except Exception:
                 pass
+
+            # FCM push — tell poster to pay
+            try:
+                send_fcm_to_user(
+                    poster_id,
+                    'Task Completed! 💰 Pay Now',
+                    f'{helper_name} completed "{task["title"]}". Please pay ₹{total_poster_cost:.2f}.',
+                    data={'type': 'task_completed', 'task_id': str(task_id), 'amount': str(round(total_poster_cost, 2))},
+                    channel='workmate4u_payment',
+                )
+            except Exception:
+                pass
+
+            # FCM push — tell helper to wait for payment
+            try:
+                send_fcm_to_user(
+                    helper_id,
+                    'Task Done! ✅ Awaiting Payment',
+                    f'You completed "{task["title"]}". Waiting for poster to pay ₹{helper_net_receives:.2f}.',
+                    data={'type': 'task_completed_helper', 'task_id': str(task_id)},
+                    channel='workmate4u_main',
+                )
+            except Exception:
+                pass
             
             return jsonify({
                 'success': True,
@@ -3041,6 +3227,31 @@ def verify_task(task_id):
                   'unread', helper_action, now))
 
         print(f"✅ Task {task_id} verified by helper {helper_id}. Status: accepted → verify_pending")
+
+        # FCM push — tell poster to verify and pay
+        try:
+            send_fcm_to_user(
+                poster_id,
+                'Verify & Pay Now ✅',
+                f'{helper_name} verified "{task["title"]}" is done. Pay ₹{total_poster_cost:.2f} to release payment.',
+                data={'type': 'verify_and_pay', 'task_id': str(task_id), 'amount': str(round(total_poster_cost, 2))},
+                channel='workmate4u_payment',
+            )
+        except Exception:
+            pass
+
+        # FCM push — tell helper verification is sent
+        try:
+            send_fcm_to_user(
+                helper_id,
+                'Verification Sent! ⏳',
+                f'You marked "{task["title"]}" as done. Waiting for poster to pay ₹{helper_net_receives:.2f}.',
+                data={'type': 'task_verify_sent', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
         return jsonify({
             'success': True,
             'message': 'Verification sent! Waiting for poster to pay.',
@@ -3579,6 +3790,39 @@ def pay_helper(task_id):
                 notify_payment_received_email(helper_id, task['title'], helper_earnings,
                     task_amount=task_amount, service_charge=service_charge,
                     commission=helper_total_deduction)
+            except Exception:
+                pass
+
+            # FCM push — tell helper payment released / received
+            try:
+                if is_new_flow:
+                    send_fcm_to_user(
+                        helper_id,
+                        'Payment Released! 🎉',
+                        f'₹{helper_earnings:.2f} released for "{task["title"]}". Tap to mark task as completed.',
+                        data={'type': 'payment_released', 'task_id': str(task_id), 'amount': str(round(helper_earnings, 2))},
+                        channel='workmate4u_payment',
+                    )
+                else:
+                    send_fcm_to_user(
+                        helper_id,
+                        'Payment Received! 💰',
+                        f'You received ₹{helper_earnings:.2f} for "{task["title"]}".',
+                        data={'type': 'payment_received', 'task_id': str(task_id), 'amount': str(round(helper_earnings, 2))},
+                        channel='workmate4u_payment',
+                    )
+            except Exception:
+                pass
+
+            # FCM push — confirm payment to poster
+            try:
+                send_fcm_to_user(
+                    request.user_id,
+                    'Payment Done! ✅',
+                    f'You paid ₹{total_poster_cost:.2f} for "{task["title"]}". Helper has been notified.',
+                    data={'type': 'payment_done', 'task_id': str(task_id), 'amount': str(round(total_poster_cost, 2))},
+                    channel='workmate4u_payment',
+                )
             except Exception:
                 pass
 
@@ -4614,6 +4858,16 @@ def request_withdrawal():
         )
     except Exception:
         pass
+    try:
+        send_fcm_to_user(
+            request.user_id,
+            'Withdrawal Requested 🏦',
+            f'₹{amount:.2f} withdrawal submitted. Transfer within 24 hours.',
+            data={'type': 'withdrawal_requested', 'amount': str(amount)},
+            channel='workmate4u_payment',
+        )
+    except Exception:
+        pass
 
     print(f"   New balance: ₹{new_balance:.2f}")
     print(f"   Withdrawal ID: {withdrawal_id}")
@@ -4844,6 +5098,16 @@ def admin_process_withdrawal():
         send_push_to_user(user_id, '💰 Withdrawal Update', push_msg, '/wallet.html')
     except Exception as e:
         print(f'[withdrawal] push error: {e}')
+    try:
+        _wdl_type = 'withdrawal_approved' if action == 'approve' else 'withdrawal_rejected'
+        _wdl_title = '💰 Withdrawal Processed' if action == 'approve' else 'Withdrawal Rejected'
+        send_fcm_to_user(
+            user_id, _wdl_title, push_msg,
+            data={'type': _wdl_type, 'amount': str(amount)},
+            channel='workmate4u_payment',
+        )
+    except Exception as e:
+        print(f'[FCM] withdrawal push error: {e}')
 
     return jsonify({'success': True, 'message': f'Withdrawal {action}d successfully', 'newStatus': new_status})
 

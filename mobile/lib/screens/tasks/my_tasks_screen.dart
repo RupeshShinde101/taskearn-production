@@ -346,35 +346,51 @@ class _PostedTaskList extends StatelessWidget {
                       ),
                     ],
 
-                    // ── Verify action banner ────────────────────────────
+                    // ── Verify / Pay Now action buttons ────────────────
                     if (needsVerify) ...[
                       const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: () => context.push('/task/${t.id}'),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF6B35).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color: const Color(0xFFFF6B35)
-                                    .withValues(alpha: 0.4)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.remove_red_eye_outlined,
+                                  size: 16),
+                              label: const Text('Verify'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFFF6B35),
+                                side: const BorderSide(
+                                    color: Color(0xFFFF6B35)),
+                                minimumSize:
+                                    const Size(double.infinity, 38),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8),
+                              ),
+                              onPressed: () =>
+                                  context.push('/task/${t.id}'),
+                            ),
                           ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.verified_outlined,
-                                  color: Color(0xFFFF6B35), size: 16),
-                              SizedBox(width: 6),
-                              Text('Tap to verify & release payment',
-                                  style: TextStyle(
-                                      color: Color(0xFFFF6B35),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12)),
-                            ],
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.payments_outlined,
+                                  size: 16),
+                              label: const Text('Pay Now'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFFF6B35),
+                                foregroundColor: Colors.white,
+                                minimumSize:
+                                    const Size(double.infinity, 38),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(8)),
+                              ),
+                              onPressed: () =>
+                                  context.push('/task/${t.id}'),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ],

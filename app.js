@@ -2883,7 +2883,7 @@ function renderTasks(filtered = null) {
             if (sel && sel.value && sel.value !== 'all'
                 && typeof window.applyFilters === 'function'
                 && Array.isArray(tasks) && tasks.length > 0) {
-                window.applyFilters();
+                window.applyFilters(true); // silent — no toast, no server search on auto-refresh
                 return;
             }
         } catch (e) { /* fall through to default render */ }
@@ -3523,6 +3523,7 @@ async function acceptTask(taskId) {
     try {
         var _td = task || {};
         var _tl = _td.location || {};
+        var _tDrop = _td.drop_location || null;
         localStorage.setItem('currentTask', JSON.stringify({
             id: taskId,
             title: _td.title || '',
@@ -3531,9 +3532,15 @@ async function acceptTask(taskId) {
             price: _td.price || 0,
             service_charge: _td.service_charge || 0,
             location: {
-                lat: parseFloat(_tl.lat) || 19.0760,
-                lng: parseFloat(_tl.lng) || 72.8777
+                lat: parseFloat(_tl.lat) || null,
+                lng: parseFloat(_tl.lng) || null,
+                address: _tl.address || ''
             },
+            drop_location: _tDrop ? {
+                lat: parseFloat(_tDrop.lat) || null,
+                lng: parseFloat(_tDrop.lng) || null,
+                address: _tDrop.address || ''
+            } : null,
             providerId: _td.postedBy ? _td.postedBy.id : null,
             providerName: _td.postedBy ? _td.postedBy.name : null,
             providerPhone: _td.postedBy ? _td.postedBy.phone : null,
@@ -4128,6 +4135,7 @@ function penaltyContinueTask() {
             providerName: task.postedBy?.name || 'Task Poster',
             providerPhone: task.postedBy?.phone || '',
             location: task.location || {},
+            drop_location: task.drop_location || null,
             startTime: task.acceptedAt ? new Date(task.acceptedAt).getTime() : Date.now()
         }));
         window.location.href = 'task-in-progress.html?taskId=' + task.id;
@@ -4151,6 +4159,7 @@ function goToTaskInProgress(taskId) {
         providerName: task.postedBy?.name || 'Task Poster',
         providerPhone: task.postedBy?.phone || '',
         location: task.location || {},
+        drop_location: task.drop_location || null,
         startTime: task.acceptedAt ? new Date(task.acceptedAt).getTime() : Date.now()
     }));
     window.location.href = 'task-in-progress.html?taskId=' + task.id;
@@ -7330,7 +7339,7 @@ function renderPaidPostedTasks() {
 
 let _searchDebounceTimer = null;
 
-function applyFilters() {
+function applyFilters(silent = false) {
     const cat = document.getElementById('filterCategory').value;
     const dist = parseInt(document.getElementById('filterDistance').value);
     const minB = parseInt(document.getElementById('minBudget').value) || 0;
@@ -7342,15 +7351,22 @@ function applyFilters() {
     const filtered = tasks.filter(t => {
         if (t.status !== 'active') return false;
         if (getTimeLeft(t.expiresAt) === 'Expired') return false;
-        const d = getDistance(userLocation.lat, userLocation.lng, t.location.lat, t.location.lng);
+        // Guard: skip distance filter for tasks without valid coordinates
+        if (t.location && t.location.lat != null && t.location.lng != null) {
+            const d = getDistance(userLocation.lat, userLocation.lng, t.location.lat, t.location.lng);
+            if (d > dist) return false;
+        }
         if (cat !== 'all' && t.category !== cat) return false;
-        if (d > dist) return false;
         if (t.price < minB || t.price > maxB) return false;
         if (searchTerm && !(t.title || '').toLowerCase().includes(searchTerm) && !(t.description || '').toLowerCase().includes(searchTerm)) return false;
         return true;
     });
 
     renderTasks(filtered);
+    // Silent mode: called from auto-refresh — skip toast + server search to
+    // prevent toast spam every 60 s and block the recursive server-search
+    // re-call chain that can cause OOM on low-RAM devices.
+    if (silent) return;
     showToast('Found ' + filtered.length + ' tasks');
 
     // Also do server-side search for broader results (debounced)

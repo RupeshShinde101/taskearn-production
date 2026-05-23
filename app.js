@@ -1694,8 +1694,10 @@ async function syncUserTasksFromServer(silent = false) {
 
             // Move any already-local tasks now marked paid/completed into history
             // (handles login case where postedTasks from API includes all statuses)
+            // NOTE: status='completed' means helper finished OLD flow — poster still needs
+            // to pay. Only 'paid' and 'payment_released' are truly done from poster's side.
             myPostedTasks.forEach(pt => {
-                if (pt.status === 'paid' || pt.status === 'payment_released' || pt.status === 'completed') {
+                if (pt.status === 'paid' || pt.status === 'payment_released') {
                     if (!myPaidPostedTasks.find(p => p.id === pt.id)) {
                         myPaidPostedTasks.push({
                             id: pt.id, title: pt.title, category: pt.category,
@@ -1710,8 +1712,10 @@ async function syncUserTasksFromServer(silent = false) {
             // Add DB tasks not yet in local list
             dbPosted.forEach(dbTask => {
                 if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
-                if (dbTask.status === 'paid' || dbTask.status === 'payment_released' || dbTask.status === 'completed') {
-                    // Add to paid/released/completed history (task done — move out of active section)
+                if (dbTask.status === 'paid' || dbTask.status === 'payment_released') {
+                    // Add to paid/released history (task done — move out of active section)
+                    // NOTE: status='completed' is NOT included here — it means helper finished
+                    // but poster hasn't paid yet. Keep it in myPostedTasks so poster can pay.
                     if (!myPaidPostedTasks.find(pt => pt.id === dbTask.id)) {
                         myPaidPostedTasks.push({
                             id: dbTask.id, title: dbTask.title, category: dbTask.category,
@@ -1743,9 +1747,11 @@ async function syncUserTasksFromServer(silent = false) {
                 }
             });
 
-            // Remove completed, paid, payment_released, and expired-active tasks
+            // Remove only truly-done tasks: 'paid' and 'payment_released' mean poster has paid.
+            // status='completed' means OLD flow — helper finished but poster hasn't paid yet;
+            // keep it visible in posted tasks so poster can verify and pay.
             myPostedTasks = myPostedTasks.filter(t => {
-                if (t.status === 'paid' || t.status === 'payment_released' || t.status === 'completed') return false;
+                if (t.status === 'paid' || t.status === 'payment_released') return false;
                 if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
                 return true;
             });
@@ -1849,7 +1855,8 @@ async function syncUserTasksFromServer(silent = false) {
 
         // Notify poster of tasks awaiting payment — suppress in silent mode (fast-poll
         // interval) and rate-limit to once every 5 minutes to avoid toast spam.
-        const awaitingPayment = myPostedTasks.filter(t => t.status === 'completed');
+        // Covers both old flow (completed) and new flow (verify_pending).
+        const awaitingPayment = myPostedTasks.filter(t => t.status === 'completed' || t.status === 'verify_pending');
         const _nowSync = Date.now();
         if (!silent && awaitingPayment.length > 0 &&
             (!window._lastAwaitingPaymentToast || (_nowSync - window._lastAwaitingPaymentToast) > 300000)) {
@@ -7035,9 +7042,11 @@ function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    // Show active (incl. expired) and accepted posted tasks (not completed/payment_released/paid — those go to history)
+    // Show active (incl. expired), accepted, and completed posted tasks.
+    // 'completed' = old flow where helper pressed Mark Done — poster still needs to pay;
+    // 'paid' and 'payment_released' are truly done and go to history instead.
     const visiblePostedTasks = myPostedTasks.filter(t => {
-        if (t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending') return true;
+        if (t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'completed') return true;
         if (t.status !== 'active') return false;
         return true; // include expired — rendered with Expired badge
     });
@@ -7049,7 +7058,7 @@ function renderPostedTasks() {
 
     el.innerHTML = visiblePostedTasks.map(t => {
         let helperHTML = '';
-        if ((t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending') && t.accepted_by) {
+        if ((t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'completed') && t.accepted_by) {
             const hName = t.helper_name || t.helperName || 'Helper';
             const hPhone = t.helper_phone || t.helperPhone || '';
             const hRating = t.helper_rating || t.helperRating || 0;
@@ -7078,8 +7087,8 @@ function renderPostedTasks() {
         let statusClass = t.status;
         if (isExpiredTask) { statusLabel = '⏰ Expired'; statusClass = 'expired'; }
         else if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
-        else if (t.status === 'completed' || t.status === 'pending_payment') { statusLabel = 'Awaiting Payment'; statusClass = 'warning'; }
-        else if (t.status === 'verify_pending') { statusLabel = '⏳ Verify & Pay'; statusClass = 'warning'; }
+        else if (t.status === 'pending_payment') { statusLabel = 'Awaiting Payment'; statusClass = 'warning'; }
+        else if (t.status === 'completed' || t.status === 'verify_pending') { statusLabel = '⏳ Verify & Pay'; statusClass = 'warning'; }
         else if (t.status === 'payment_released') { statusLabel = '✅ Payment Released'; statusClass = 'paid'; }
 
         let actionsHTML = '';
@@ -7104,7 +7113,9 @@ function renderPostedTasks() {
                         <i class="fas fa-times-circle"></i> Cancel & Delete Task
                     </button>
                 </div>`;
-        } else if (t.status === 'verify_pending') {
+        } else if (t.status === 'verify_pending' || t.status === 'completed') {
+            // Both statuses mean "helper finished, poster needs to verify and pay"
+            // verify_pending = new flow; completed = old/legacy flow
             const totalAmt = getTaskFinalValue(t);
             actionsHTML = `<div class="task-actions" style="margin-top:10px;">
                     <button class="btn" style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:700;padding:12px;border-radius:10px;border:none;font-size:15px;" onclick="verifyAndPayTask(${t.id})">

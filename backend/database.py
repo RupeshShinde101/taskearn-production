@@ -658,9 +658,18 @@ def init_postgres_db():
             cursor.execute('''
                 ALTER TABLE password_resets ADD COLUMN IF NOT EXISTS otp_verified BOOLEAN DEFAULT FALSE
             ''')
-            print("[DB] ✅ otp_verified column added or already exists in password_resets")
+            print("[DB] \u2705 otp_verified column added or already exists in password_resets")
         except Exception as e:
-            print(f"[DB] ⚠️  Could not add otp_verified to password_resets: {e}")
+            print(f"[DB] \u26a0\ufe0f  Could not add otp_verified to password_resets: {e}")
+
+        # Add drop location columns for delivery/transport tasks
+        try:
+            cursor.execute('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS drop_location_lat DECIMAL(10,8)')
+            cursor.execute('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS drop_location_lng DECIMAL(11,8)')
+            cursor.execute('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS drop_location_address TEXT')
+            print("[DB] \u2705 drop_location columns added or already exist")
+        except Exception as e:
+            print(f"[DB] \u26a0\ufe0f  Could not add drop_location columns: {e}")
         
         # ========================================
         # CREATE SYSTEM/COMPANY USER
@@ -1082,9 +1091,25 @@ def init_sqlite_db():
             if 'otp_verified' not in pr_columns:
                 print("[DB] Adding otp_verified column to password_resets...")
                 cursor.execute('ALTER TABLE password_resets ADD COLUMN otp_verified INTEGER DEFAULT 0')
-                print("[DB] ✅ otp_verified column added")
+                print("[DB] \u2705 otp_verified column added")
         except Exception as e:
-            print(f"[DB] ⚠️  SQLite password_resets migration error: {e}")
+            print(f"[DB] \u26a0\ufe0f  SQLite password_resets migration error: {e}")
+
+        # Drop location columns for delivery/transport tasks (SQLite migration)
+        try:
+            cursor.execute('PRAGMA table_info(tasks)')
+            task_cols = [row[1] for row in cursor.fetchall()]
+            if 'drop_location_lat' not in task_cols:
+                cursor.execute('ALTER TABLE tasks ADD COLUMN drop_location_lat REAL')
+                print("[DB] \u2705 drop_location_lat column added")
+            if 'drop_location_lng' not in task_cols:
+                cursor.execute('ALTER TABLE tasks ADD COLUMN drop_location_lng REAL')
+                print("[DB] \u2705 drop_location_lng column added")
+            if 'drop_location_address' not in task_cols:
+                cursor.execute('ALTER TABLE tasks ADD COLUMN drop_location_address TEXT')
+                print("[DB] \u2705 drop_location_address column added")
+        except Exception as e:
+            print(f"[DB] \u26a0\ufe0f  SQLite drop_location migration error: {e}")
 
         # ========================================
         # CREATE SYSTEM/COMPANY USER

@@ -1942,6 +1942,7 @@ def get_tasks():
                 cursor.execute(f'''
                     SELECT t.id, t.title, t.description, t.category,
                            t.location_lat, t.location_lng, t.location_address,
+                           t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
                            t.price, t.service_charge, t.posted_by, t.posted_at, t.expires_at, t.status,
                            COALESCE(u.name, 'Anonymous') AS poster_name,
                            COALESCE(u.rating, 5.0)       AS poster_rating,
@@ -1958,6 +1959,7 @@ def get_tasks():
                 cursor.execute(f'''
                     SELECT t.id, t.title, t.description, t.category,
                            t.location_lat, t.location_lng, t.location_address,
+                           t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
                            t.price, t.service_charge, t.posted_by, t.posted_at, t.expires_at, t.status,
                            COALESCE(u.name, 'Anonymous') AS poster_name,
                            COALESCE(u.rating, 5.0)       AS poster_rating,
@@ -1984,6 +1986,11 @@ def get_tasks():
                         'lng': task['location_lng'],
                         'address': task['location_address']
                     },
+                    'drop_location': {
+                        'lat': task['drop_location_lat'],
+                        'lng': task['drop_location_lng'],
+                        'address': task.get('drop_location_address') or ''
+                    } if task.get('drop_location_lat') else None,
                     'price': float(task['price']),
                     'service_charge': float(task.get('service_charge') or 0),
                     'postedBy': {
@@ -2158,6 +2165,7 @@ def create_task():
             expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)).isoformat()
             
             location = data.get('location', {})
+            drop_location = data.get('dropLocation') or data.get('drop_location') or {}
             
             print(f"   Posted at: {posted_at}")
             print(f"   Expires at: {expires_at}")
@@ -2173,9 +2181,10 @@ def create_task():
             # Insert task
             print('   Executing INSERT query...')
             cursor.execute(f'''
-                INSERT INTO tasks (title, description, category, location_lat, location_lng, 
-                                  location_address, price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
+                INSERT INTO tasks (title, description, category, location_lat, location_lng,
+                                  location_address, drop_location_lat, drop_location_lng, drop_location_address,
+                                  price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
             ''', (
                 html_escape(data['title']),
                 html_escape(data['description']),
@@ -2183,6 +2192,9 @@ def create_task():
                 location.get('lat'),
                 location.get('lng'),
                 html_escape(location.get('address', '') or ''),
+                drop_location.get('lat') if drop_location else None,
+                drop_location.get('lng') if drop_location else None,
+                html_escape(drop_location.get('address', '') or '') if drop_location else None,
                 data['price'],
                 service_charge,
                 request.user_id,
@@ -3912,9 +3924,9 @@ def get_tracking_info(task_id):
                 'lng': float(task['location_lng']) if task['location_lng'] else None
             },
             'destination': {
-                'address': task['location_address'] or 'Delivery Location',
-                'lat': float(task['location_lat']) if task['location_lat'] else None,
-                'lng': float(task['location_lng']) if task['location_lng'] else None
+                'address': task.get('drop_location_address') or task['location_address'] or 'Delivery Location',
+                'lat': float(task['drop_location_lat']) if task.get('drop_location_lat') else (float(task['location_lat']) if task['location_lat'] else None),
+                'lng': float(task['drop_location_lng']) if task.get('drop_location_lng') else (float(task['location_lng']) if task['location_lng'] else None)
             },
             'helper': {
                 'id': task['accepted_by'],

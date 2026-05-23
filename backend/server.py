@@ -340,21 +340,19 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
             for k, v in data.items():
                 payload[str(k)] = str(v)
 
-        importance = 'high' if channel == 'workmate4u_main' else 'max'
+        # Data-only message — no 'notification' key so the FCM SDK always
+        # routes it to the Flutter background handler (_bgMessageHandler) even
+        # when the app is killed.  The handler itself creates the local
+        # notification on the correct channel with the right importance.
         message = fb_messaging.Message(
-            notification=fb_messaging.Notification(title=title, body=body),
             data=payload,
             android=fb_messaging.AndroidConfig(
-                priority='high',
-                notification=fb_messaging.AndroidNotification(
-                    channel_id=channel,
-                    sound='default',
-                    priority='max' if importance == 'max' else 'high',
-                ),
+                priority='high',   # FCM delivery priority — wakes up device
             ),
             apns=fb_messaging.APNSConfig(
+                headers={'apns-priority': '10'},
                 payload=fb_messaging.APNSPayload(
-                    aps=fb_messaging.Aps(sound='default', badge=1),
+                    aps=fb_messaging.Aps(content_available=True),
                 ),
             ),
             token=token,

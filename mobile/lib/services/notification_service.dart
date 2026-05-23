@@ -6,28 +6,48 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Top-level handler for background/terminated messages (must be outside class).
 ///
-/// • FCM messages with a `notification` key → shown automatically by Android.
-/// • Data-only messages (no `notification` key) → we must show them here.
-///
-/// All backend-sent events are data-only so this handler covers every type.
+/// The backend sends DATA-ONLY FCM messages (no notification key) so that this
+/// handler is always called — Android routes data-only messages here regardless
+/// of whether the app is in the foreground, background, or terminated.
 @pragma('vm:entry-point')
 Future<void> _bgMessageHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 
-  // Messages that carry a FCM notification payload are shown by the OS without
-  // any code — only process data-only messages here.
+  // Skip if it somehow has a notification payload (OS would have shown it).
   if (message.notification != null) return;
 
   final data = message.data;
   final type = data['type']?.toString() ?? '';
   if (type.isEmpty) return;
 
-  // Re-initialise local notifications plugin inside this background isolate.
+  // Re-initialise local notifications plugin inside this background isolate
+  // and pre-create all three channels so notifications are never silently dropped.
   final local = FlutterLocalNotificationsPlugin();
   const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
   await local.initialize(
     settings: const InitializationSettings(android: androidInit),
   );
+
+  // Pre-create channels (idempotent — safe to call every time).
+  final androidPlugin = local
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+  if (androidPlugin != null) {
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_main', 'Task Updates',
+      description: 'Task updates and alerts',
+      importance: Importance.high,
+    ));
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_matched', 'Matched Tasks',
+      description: 'Tasks near you that match your skills profile',
+      importance: Importance.max,
+    ));
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_payment', 'Payments',
+      description: 'Payment alerts and confirmations',
+      importance: Importance.max,
+    ));
+  }
 
   // Choose channel, title, body and importance based on notification type.
   String title = data['title'] ?? 'Workmate4u';
@@ -213,6 +233,29 @@ class NotificationService {
         }
       },
     );
+
+    // ── Pre-create Android notification channels ───────────────────────────
+    // Must exist before FCM delivers any message; creating upfront prevents
+    // silent drops when the background isolate shows the first notification.
+    final androidPlugin = _local
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin != null) {
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_main', 'Task Updates',
+        description: 'Task updates and alerts',
+        importance: Importance.high,
+      ));
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_matched', 'Matched Tasks',
+        description: 'Tasks near you that match your skills profile',
+        importance: Importance.max,
+      ));
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_payment', 'Payments',
+        description: 'Payment alerts and confirmations',
+        importance: Importance.max,
+      ));
+    }
 
     // ── FCM permissions ────────────────────────────────────────────────────
     await _fcm.requestPermission(

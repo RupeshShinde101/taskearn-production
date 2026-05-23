@@ -952,8 +952,12 @@
 
             // If we have a taskId from URL but no proper data, fetch from API
             const taskId = taskIdFromUrl || currentTask.id;
+            // Track whether the primary tracking fetch already ran so the
+            // drop_location fallback below doesn't fire a duplicate request
+            // for the same endpoint when _hasLocal was false.
+            let _trackingFetched = false;
+            const token = localStorage.getItem('taskearn_token') || '';
             if (taskId) {
-                const token = localStorage.getItem('taskearn_token') || '';
                 // Skip the initial /tracking fetch entirely when we already have
                 // full task data in localStorage. The periodic watch still polls
                 // every 15s, so we don't miss state changes — but on page load
@@ -962,6 +966,7 @@
                 const _hasLocal = currentTask && currentTask.title && currentTask.providerName &&
                                   currentTask.providerPhone && currentTask.status;
                 if (token && !_hasLocal) {
+                    _trackingFetched = true;
                     try {
                         const res = await apiFetch('/tracking/' + taskId, {
                             headers: { 'Authorization': 'Bearer ' + token }
@@ -1026,7 +1031,8 @@
             // Fallback: even when we had full local data (_hasLocal=true), the old localStorage
             // save didn't include drop_location. Fetch tracking just for that field so the
             // Navigate to Drop button appears on delivery/transport tasks accepted before the fix.
-            if (token && !currentTask.drop_location && taskId) {
+            // Skip when _trackingFetched=true (the !_hasLocal path already ran the same endpoint).
+            if (token && !_trackingFetched && !currentTask.drop_location && taskId) {
                 try {
                     const _dRes = await apiFetch('/tracking/' + taskId, {
                         headers: { 'Authorization': 'Bearer ' + token }

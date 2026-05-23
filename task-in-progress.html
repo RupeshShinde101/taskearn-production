@@ -1000,6 +1000,8 @@
                             if (t.destination && t.destination.lat &&
                                 t.destination.lat !== (t.pickup && t.pickup.lat)) {
                                 currentTask.drop_location = { lat: t.destination.lat, lng: t.destination.lng, address: t.destination.address || '' };
+                                // Re-run location display in case map was already shown before API responded
+                                if (typeof displayLocationInfo === 'function') displayLocationInfo();
                             }
                             console.log('✅ Loaded task from API tracking:', currentTask);
                             // Update verify button based on current task status
@@ -1019,6 +1021,32 @@
                         console.warn('Tracking API fetch failed:', e.message);
                     }
                 }
+            }
+
+            // Fallback: even when we had full local data (_hasLocal=true), the old localStorage
+            // save didn't include drop_location. Fetch tracking just for that field so the
+            // Navigate to Drop button appears on delivery/transport tasks accepted before the fix.
+            if (token && !currentTask.drop_location && taskId) {
+                try {
+                    const _dRes = await apiFetch('/tracking/' + taskId, {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    if (_dRes.ok) {
+                        const _dResult = await _dRes.json();
+                        if (_dResult.success && _dResult.tracking) {
+                            const _dt = _dResult.tracking;
+                            if (_dt.destination && _dt.destination.lat &&
+                                _dt.destination.lat !== (_dt.pickup && _dt.pickup.lat)) {
+                                currentTask.drop_location = {
+                                    lat: _dt.destination.lat,
+                                    lng: _dt.destination.lng,
+                                    address: _dt.destination.address || ''
+                                };
+                                if (typeof displayLocationInfo === 'function') displayLocationInfo();
+                            }
+                        }
+                    }
+                } catch (_e) { /* network blip — ignore */ }
             }
 
             // Update UI with task details

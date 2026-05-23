@@ -1392,9 +1392,12 @@ def get_current_user():
 @app.route('/api/auth/logout', methods=['POST'])
 @require_auth
 def logout():
-    """Logout user (invalidate session)"""
+    """Logout user (invalidate session and clear FCM token)"""
     with get_db() as (cursor, conn):
-        cursor.execute(f'UPDATE users SET session_token = NULL WHERE id = {PH}', (request.user_id,))
+        cursor.execute(
+            f'UPDATE users SET session_token = NULL, fcm_token = NULL WHERE id = {PH}',
+            (request.user_id,)
+        )
     
     return jsonify({'success': True, 'message': 'Logged out successfully'})
 
@@ -1977,6 +1980,11 @@ def save_device_token():
         return jsonify({'success': False, 'message': 'token required'}), 400
     try:
         with get_db() as (cursor, conn):
+            # Remove this token from any other user first (prevents cross-account notifications)
+            cursor.execute(
+                f'UPDATE users SET fcm_token = NULL WHERE fcm_token = {PH} AND id != {PH}',
+                (token, request.user_id)
+            )
             cursor.execute(
                 f'UPDATE users SET fcm_token = {PH} WHERE id = {PH}',
                 (token, request.user_id)
@@ -2958,15 +2966,19 @@ def delete_task(task_id):
 @app.route('/api/tasks/<int:task_id>/details', methods=['GET'])
 @require_auth
 def get_task_details(task_id):
-    """Get task details with provider info for Task In Progress page"""
+    """Get task details with provider and helper info for Task In Progress page"""
     with get_db() as (cursor, conn):
-        # Get task with provider details
+        # Get task with poster and helper details
         cursor.execute(f'''
-            SELECT t.*, u.name as provider_name, u.phone as provider_phone, 
-                   u.rating as provider_rating, u.tasks_completed as provider_tasks
+            SELECT t.*, 
+                   poster.name as provider_name, poster.phone as provider_phone, 
+                   poster.rating as provider_rating, poster.tasks_completed as provider_tasks,
+                   helper.name as helper_name, helper.phone as helper_phone,
+                   helper.rating as helper_rating, helper.tasks_completed as helper_tasks_completed
             FROM tasks t
-            LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.id = {PH} AND t.status IN ('accepted', 'completed')
+            LEFT JOIN users poster ON t.posted_by = poster.id
+            LEFT JOIN users helper ON t.accepted_by = helper.id
+            WHERE t.id = {PH} AND t.status IN ('accepted', 'completed', 'verify_pending', 'payment_released', 'paid')
         ''', (task_id,))
         task = cursor.fetchone()
         
@@ -2992,6 +3004,14 @@ def get_task_details(task_id):
                 },
                 'status': task['status'],
                 'postedAt': task['posted_at'],
+                'accepted_at': task.get('accepted_at'),
+                'completed_at': task.get('completed_at'),
+                'accepted_by': task.get('accepted_by'),
+                'helper_id': task.get('accepted_by'),
+                'helper_name': task.get('helper_name'),
+                'helper_phone': task.get('helper_phone'),
+                'helper_rating': float(task['helper_rating']) if task.get('helper_rating') else None,
+                'helper_tasks_completed': task.get('helper_tasks_completed'),
                 'provider': {
                     'id': task['posted_by'],
                     'name': task['provider_name'],

@@ -258,17 +258,19 @@ class NotificationService {
     }
 
     // ── FCM permissions ────────────────────────────────────────────────────
-    await _fcm.requestPermission(
+    final settings = await _fcm.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
+    debugPrint('[FCM] Permission status: ${settings.authorizationStatus}');
 
     // ── Background handler ─────────────────────────────────────────────────
     FirebaseMessaging.onBackgroundMessage(_bgMessageHandler);
 
     // ── Foreground messages ────────────────────────────────────────────────
     FirebaseMessaging.onMessage.listen((message) {
+      debugPrint('[FCM] Foreground message: type=${message.data['type']} hasNotif=${message.notification != null}');
       final notification = message.notification;
       final type = message.data['type']?.toString() ?? '';
       final isMatch = type == 'task_matched' || type == 'matched_task';

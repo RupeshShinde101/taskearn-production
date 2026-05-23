@@ -202,11 +202,26 @@ class AuthProvider extends ChangeNotifier {
   /// Register a device FCM token with the backend for push notifications.
   Future<void> updateFcmToken(String token) async {
     try {
-      await ApiService.post('/user/device-token', body: {
+      final res = await ApiService.post('/user/device-token', body: {
         'token': token,
         'platform': 'android',
       });
-    } catch (_) {}
+      debugPrint('[FCM] device-token saved: $res');
+    } catch (e) {
+      debugPrint('[FCM] updateFcmToken error: $e');
+    }
+  }
+
+  /// Send current GPS coordinates to the backend.
+  /// The backend uses this to push matched-task notifications within 10 km.
+  Future<void> updateUserLocation(double lat, double lng) async {
+    try {
+      await ApiService.post('/user/location', body: {
+        'lat': lat,
+        'lng': lng,
+      });
+      debugPrint('[AUTH] Location sent to backend: $lat, $lng');
+    } catch (_) {} // non-critical, fail silently
   }
 
   /// Submit a KYC document (aadhaar / pan / selfie path).
@@ -337,12 +352,41 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ── Forgot Password — Step 1: send OTP to email ──────────────────────────
-  Future<bool> forgotPasswordSendOtp(String email) async {
+  /// Returns the resetToken on success (needed for steps 2 & 3), or null on failure.
+  Future<String?> forgotPasswordSendOtp(String email) async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      await ApiService.post('/auth/forgot-password', body: {'email': email.trim()});
+      final data = await ApiService.post('/auth/forgot-password', body: {'email': email.trim()});
+      _loading = false;
+      notifyListeners();
+      final token = data['resetToken']?.toString() ??
+          data['reset_token']?.toString() ??
+          data['token']?.toString();
+      return token; // may be null if backend omits it (some implementations)
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // ── Forgot Password — Step 2: verify OTP ────────────────────────────────
+  /// Verifies the OTP against the resetToken from step 1.
+  Future<bool> verifyForgotPasswordOtp({
+    required String resetToken,
+    required String otp,
+  }) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await ApiService.post('/auth/verify-otp', body: {
+        'resetToken': resetToken,
+        'otp': otp.trim(),
+      });
       _loading = false;
       notifyListeners();
       return true;
@@ -354,10 +398,9 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // ── Forgot Password — Step 2: verify OTP + set new password ──────────────
-  Future<bool> resetPasswordWithOtp({
-    required String email,
-    required String otp,
+  // ── Forgot Password — Step 3: reset password with token ──────────────────
+  Future<bool> resetPasswordWithToken({
+    required String resetToken,
     required String newPassword,
   }) async {
     _loading = true;
@@ -365,9 +408,8 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await ApiService.post('/auth/reset-password', body: {
-        'email': email.trim(),
-        'otp': otp.trim(),
-        'new_password': newPassword,
+        'resetToken': resetToken,
+        'newPassword': newPassword,
       });
       _loading = false;
       notifyListeners();
@@ -420,10 +462,15 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _registerFcmToken() async {
     try {
       final token = await NotificationService.getToken();
+      debugPrint('[FCM] Device token: ${token?.substring(0, 20)}...');
       if (token != null) {
         await updateFcmToken(token);
         NotificationService.onTokenRefresh(updateFcmToken);
+      } else {
+        debugPrint('[FCM] ⚠️ getToken() returned null');
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FCM] _registerFcmToken error: $e');
+    }
   }
 }

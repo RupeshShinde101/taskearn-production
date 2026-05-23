@@ -996,6 +996,11 @@
                                 const _phAddr = document.getElementById('mapPlaceholderAddr');
                                 if (_phAddr) _phAddr.textContent = t.pickup.address || (parseFloat(t.pickup.lat).toFixed(4) + ', ' + parseFloat(t.pickup.lng).toFixed(4));
                             }
+                            // Map destination → drop_location (for delivery/transport tasks)
+                            if (t.destination && t.destination.lat &&
+                                t.destination.lat !== (t.pickup && t.pickup.lat)) {
+                                currentTask.drop_location = { lat: t.destination.lat, lng: t.destination.lng, address: t.destination.address || '' };
+                            }
                             console.log('✅ Loaded task from API tracking:', currentTask);
                             // Update verify button based on current task status
                             updateVerifyButtonState(t.status);
@@ -1543,7 +1548,10 @@
             if (_ph) _ph.style.display = 'none';
             try {
                 // Create map centered on task location or default
-                const mapCenter = currentTask.location || { lat: 28.6139, lng: 77.2090 }; // Delhi default
+                // Guard against location object with null lat/lng
+                const mapCenter = (currentTask.location && currentTask.location.lat != null)
+                    ? currentTask.location
+                    : { lat: 28.6139, lng: 77.2090 }; // Delhi default
                 
                 map = L.map('map', {
                     center: [mapCenter.lat, mapCenter.lng],
@@ -1558,7 +1566,7 @@
                 }).addTo(map);
 
                 // Add task location marker
-                if (currentTask.location) {
+                if (currentTask.location && currentTask.location.lat != null) {
                     taskMarker = L.marker([currentTask.location.lat, currentTask.location.lng], {
                         icon: L.icon({
                             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',

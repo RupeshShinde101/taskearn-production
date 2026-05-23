@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/task_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
@@ -366,7 +367,7 @@ class _PostedTaskList extends StatelessWidget {
                                     horizontal: 8),
                               ),
                               onPressed: () =>
-                                  context.push('/task/${t.id}'),
+                                  _showProofDialog(context, t),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -387,7 +388,7 @@ class _PostedTaskList extends StatelessWidget {
                                         BorderRadius.circular(8)),
                               ),
                               onPressed: () =>
-                                  context.push('/task/${t.id}'),
+                                  _showPayNowDialog(context, t),
                             ),
                           ),
                         ],
@@ -447,6 +448,311 @@ class _PostedTaskList extends StatelessWidget {
       'tech_support': '💡',
     };
     return m[cat] ?? '📋';
+  }
+
+  // ── Shows completion proof photo + Pay Now entry point ──────────────────
+  void _showProofDialog(BuildContext context, Task t) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header
+            Container(
+              color: AppColors.primary.withValues(alpha: 0.07),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.task_alt,
+                      color: AppColors.primary, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('Completion Proof',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 15)),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: const Icon(Icons.close,
+                        size: 20, color: AppColors.gray),
+                  ),
+                ],
+              ),
+            ),
+            // Proof image
+            if (t.completionProof != null && t.completionProof!.isNotEmpty)
+              Image.network(
+                t.completionProof!,
+                height: 240,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                loadingBuilder: (_, child, progress) => progress == null
+                    ? child
+                    : const SizedBox(
+                        height: 240,
+                        child: Center(child: CircularProgressIndicator())),
+                errorBuilder: (_, __, ___) => Container(
+                  height: 100,
+                  color: AppColors.light,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.broken_image_outlined,
+                            color: AppColors.gray, size: 36),
+                        SizedBox(height: 4),
+                        Text('Could not load image',
+                            style: TextStyle(
+                                color: AppColors.gray, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              Container(
+                height: 100,
+                color: AppColors.light,
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.image_not_supported_outlined,
+                          color: AppColors.gray, size: 36),
+                      SizedBox(height: 4),
+                      Text('No proof photo submitted yet.',
+                          style: TextStyle(
+                              color: AppColors.gray, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ),
+            // Task + helper info
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (t.helperName != null)
+                    Text('Submitted by: ${t.helperName}',
+                        style: const TextStyle(
+                            color: AppColors.gray, fontSize: 12)),
+                  const SizedBox(height: 3),
+                  Text(t.title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 14),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            // Pay Now button
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.payments_outlined, size: 18),
+                label: const Text('Pay Now'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showPayNowDialog(context, t);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Wallet check + price breakdown + payment ─────────────────────────────
+  void _showPayNowDialog(BuildContext context, Task t) async {
+    final wallet = context.read<WalletProvider>();
+    await wallet.fetchWallet();
+    if (!context.mounted) return;
+
+    final budget = t.budget;
+    final charge = t.serviceCharge ?? 0;
+    final total = budget + charge;
+
+    // Insufficient balance check
+    if (wallet.balance.balance < total) {
+      final shortfall = total - wallet.balance.balance;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Insufficient Wallet Balance'),
+          content: Text(
+            'You need ₹${total.toStringAsFixed(0)} to pay for this task.\n\n'
+            'Current balance: ₹${wallet.balance.balance.toStringAsFixed(0)}\n'
+            'Add at least ₹${shortfall.ceil()} to continue.',
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white),
+              child: const Text('Add Money'),
+            ),
+          ],
+        ),
+      );
+      if (go == true && context.mounted) context.push('/wallet');
+      return;
+    }
+    if (!context.mounted) return;
+
+    // Commission calculation (same rates as backend)
+    const deliveryCategories = {'delivery', 'pickup', 'transport', 'moving'};
+    final commissionRate =
+        deliveryCategories.contains(t.category) ? 0.15 : 0.17;
+    final helperReceives = total * (1 - commissionRate);
+
+    bool paying = false;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateInner) => AlertDialog(
+          title: const Text('Confirm Payment'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This will be deducted from your wallet:',
+                style: TextStyle(
+                    color: AppColors.gray, fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              _AmountRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
+              if (charge > 0)
+                _AmountRow(
+                    'Service Charge', '₹${charge.toStringAsFixed(0)}'),
+              const Divider(height: 20),
+              _AmountRow('Total Payment', '₹${total.toStringAsFixed(0)}',
+                  bold: true),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Helper receives',
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.success)),
+                    Text('₹${helperReceives.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Wallet after: ₹${(wallet.balance.balance - total).toStringAsFixed(0)}',
+                style: const TextStyle(color: AppColors.gray, fontSize: 12),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: paying ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: paying
+                  ? null
+                  : () async {
+                      setStateInner(() => paying = true);
+                      final ok = await context
+                          .read<TaskProvider>()
+                          .payHelper(t.id);
+                      if (context.mounted) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(ok
+                                ? 'Payment released to helper!'
+                                : (context
+                                        .read<TaskProvider>()
+                                        .error ??
+                                    'Payment failed. Try again.')),
+                            backgroundColor:
+                                ok ? AppColors.success : AppColors.danger,
+                          ),
+                        );
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: paying
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Pay'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AmountRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool bold;
+  const _AmountRow(this.label, this.value, {this.bold = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(
+                  fontSize: 13,
+                  color: bold ? AppColors.dark : AppColors.gray,
+                  fontWeight:
+                      bold ? FontWeight.w700 : FontWeight.normal)),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+                  color: AppColors.dark)),
+        ],
+      ),
+    );
   }
 }
 

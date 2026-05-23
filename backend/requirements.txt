@@ -31,6 +31,9 @@ email-validator==2.1.0
 # Push Notifications
 pywebpush==2.0.0
 
+# FCM / Firebase Admin SDK — for Android push notifications
+firebase-admin==6.5.0
+
 # Email Service
 sendgrid==6.11.0
 

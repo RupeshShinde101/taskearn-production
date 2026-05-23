@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -840,6 +841,51 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   rating: task.helperRating,
                   avatarColor: AppColors.success,
                 ),
+                // Contact buttons — shown to poster only when helper phone is available
+                if (isPoster && task.helperPhone != null && task.helperPhone!.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.call, size: 18),
+                          label: const Text('Call'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.success,
+                            side: const BorderSide(color: AppColors.success),
+                          ),
+                          onPressed: () async {
+                            final uri = Uri(scheme: 'tel', path: task.helperPhone);
+                            try {
+                              await launchUrl(uri,
+                                  mode: LaunchMode.externalApplication);
+                            } catch (_) {}
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.chat, size: 18),
+                          label: const Text('WhatsApp'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF25D366),
+                            side: const BorderSide(color: Color(0xFF25D366)),
+                          ),
+                          onPressed: () async {
+                            final phone = task.helperPhone!.replaceAll(RegExp(r'[^\d]'), '');
+                            final number = phone.startsWith('91') ? phone : '91$phone';
+                            final uri = Uri.parse('https://wa.me/$number');
+                            try {
+                              await launchUrl(uri,
+                                  mode: LaunchMode.externalApplication);
+                            } catch (_) {}
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
 
               // Completion proof

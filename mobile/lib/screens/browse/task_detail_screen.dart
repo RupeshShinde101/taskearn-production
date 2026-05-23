@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -143,7 +144,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final charge = task.serviceCharge ?? 0;
     final total  = budget + charge;
 
-    // Step 1: Check wallet balance and confirm payment
+    // Step 1: Check wallet balance
     final wallet = context.read<WalletProvider>();
     await wallet.fetchWallet();
     if (!mounted) return;
@@ -217,64 +218,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Confirm & Pay'),
+            child: const Text('Pay Now'),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
 
-    // Step 3: Enter OTP to verify completion
-    final otpCtrl = TextEditingController();
-    final otp = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Verify Completion'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter the OTP sent to your registered email/phone to confirm task completion and release payment.',
-              style: TextStyle(color: AppColors.gray, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: otpCtrl,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              decoration: const InputDecoration(
-                labelText: 'Enter OTP',
-                prefixIcon: Icon(Icons.lock_outline),
-                counterText: '',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, otpCtrl.text.trim()),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Verify & Pay'),
-          ),
-        ],
-      ),
-    );
-    if (otp == null || otp.isEmpty || !mounted) return;
-
+    // Step 3: Call pay-helper (no OTP required)
     setState(() => _verifying = true);
-    final ok = await context.read<TaskProvider>().verifyTask(widget.taskId, otp);
+    final ok = await context.read<TaskProvider>().payHelper(widget.taskId);
     if (!mounted) return;
     setState(() => _verifying = false);
 
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Task verified! Payment released to helper.'),
+          content: Text('Payment released to helper successfully!'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -283,7 +243,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.read<TaskProvider>().error ?? 'Invalid OTP. Try again.'),
+          content: Text(context.read<TaskProvider>().error ?? 'Payment failed. Please try again.'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -529,7 +489,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Helper marked this task as complete. Verify to release payment.',
+                        'Helper marked this task as complete. Pay now to release payment.',
                         style: TextStyle(color: AppColors.warning, fontSize: 12, height: 1.4),
                       ),
                     ),
@@ -538,10 +498,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               ),
               const SizedBox(height: 12),
               GradientButton(
-                label: 'Verify & Release Payment',
+                label: 'Pay Now',
                 loading: _verifying,
                 onPressed: _verifying ? () {} : _verify,
-                icon: Icons.verified_outlined,
+                icon: Icons.payments_outlined,
               ),
             ],
           ),
@@ -840,6 +800,51 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   rating: task.helperRating,
                   avatarColor: AppColors.success,
                 ),
+                // Contact buttons — shown to poster only when helper phone is available
+                if (isPoster && task.helperPhone != null && task.helperPhone!.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.call, size: 18),
+                          label: const Text('Call'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.success,
+                            side: const BorderSide(color: AppColors.success),
+                          ),
+                          onPressed: () async {
+                            final uri = Uri(scheme: 'tel', path: task.helperPhone);
+                            try {
+                              await launchUrl(uri,
+                                  mode: LaunchMode.externalApplication);
+                            } catch (_) {}
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.chat, size: 18),
+                          label: const Text('WhatsApp'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF25D366),
+                            side: const BorderSide(color: Color(0xFF25D366)),
+                          ),
+                          onPressed: () async {
+                            final phone = task.helperPhone!.replaceAll(RegExp(r'[^\d]'), '');
+                            final number = phone.startsWith('91') ? phone : '91$phone';
+                            final uri = Uri.parse('https://wa.me/$number');
+                            try {
+                              await launchUrl(uri,
+                                  mode: LaunchMode.externalApplication);
+                            } catch (_) {}
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
 
               // Completion proof

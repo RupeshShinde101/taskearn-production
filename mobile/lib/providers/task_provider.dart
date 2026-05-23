@@ -699,6 +699,19 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
+  /// Poster pays the helper after task completion — calls /pay-helper (no OTP needed).
+  Future<bool> payHelper(String taskId) async {
+    try {
+      await ApiService.post('/tasks/$taskId/pay-helper');
+      await fetchMyTasks();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> rateTask(String taskId, double rating, String? comment) async {
     try {
       await ApiService.post('/tasks/$taskId/rate', body: {

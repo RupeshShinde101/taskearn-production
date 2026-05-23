@@ -12,6 +12,7 @@ class Task {
   final double posterRating;
   final String? helperId;
   final String? helperName;
+  final String? helperPhone;
   final double latitude;
   final double longitude;
   final String? address;
@@ -49,6 +50,7 @@ class Task {
     this.posterRating = 0.0,
     this.helperId,
     this.helperName,
+    this.helperPhone,
     this.posterPhone,
     required this.latitude,
     required this.longitude,
@@ -158,6 +160,8 @@ class Task {
         ?? (helper is Map ? helper['id'] : null))?.toString();
     final helperName = (helper is Map ? helper['name'] : null)?.toString()
         ?? json['helper_name']?.toString();
+    final helperPhone = (helper is Map ? helper['phone'] : null)?.toString()
+        ?? json['helper_phone']?.toString();
 
     // ── status ───────────────────────────────────────────────────────────────
     // API uses 'active' for open/browse tasks; normalise to 'posted'
@@ -187,6 +191,7 @@ class Task {
       posterRating: posterRating,
       helperId: (helperIdRaw?.isEmpty ?? true) ? null : helperIdRaw,
       helperName: helperName,
+      helperPhone: (helperPhone?.isEmpty ?? true) ? null : helperPhone,
       latitude: double.tryParse(
           (locLat ?? (pickup is Map ? pickup['lat'] : null) ?? json['latitude'] ?? json['lat'] ?? json['location_lat'] ?? 0).toString()
       ) ?? 0.0,
@@ -303,6 +308,7 @@ class Task {
     bool? isPaid,
     String? helperName,
     String? helperId,
+    String? helperPhone,
   }) {
     return Task(
       id: id,
@@ -318,6 +324,7 @@ class Task {
       posterRating: posterRating,
       helperId: helperId ?? this.helperId,
       helperName: helperName ?? this.helperName,
+      helperPhone: helperPhone ?? this.helperPhone,
       posterPhone: posterPhone,
       latitude: latitude,
       longitude: longitude,
@@ -354,6 +361,7 @@ class Task {
     if (posterPhone != null) 'poster_phone': posterPhone,
     if (helperId != null) 'helper_id': helperId,
     if (helperName != null) 'helper_name': helperName,
+    if (helperPhone != null) 'helper_phone': helperPhone,
     'latitude': latitude,
     'longitude': longitude,
     if (address != null) 'address': address,

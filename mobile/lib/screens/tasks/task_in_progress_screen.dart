@@ -405,12 +405,14 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       return;
     }
     final uri = Uri.parse('tel:${phone.trim()}');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open dialler.')),
-      );
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open dialler.')),
+        );
+      }
     }
   }
 
@@ -426,12 +428,14 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     }
     final full = raw.startsWith('91') ? raw : '91$raw';
     final uri = Uri.parse('https://wa.me/$full');
-    if (await canLaunchUrl(uri)) {
+    try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open WhatsApp.')),
-      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open WhatsApp.')),
+        );
+      }
     }
   }
 

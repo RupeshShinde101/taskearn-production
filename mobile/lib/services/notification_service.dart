@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -198,7 +199,7 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     title: title,
     body: body,
     notificationDetails: NotificationDetails(android: androidDetails),
-    payload: data['task_id'],
+    payload: jsonEncode({'task_id': data['task_id'] ?? '', 'type': type}),
   );
 }
 
@@ -229,7 +230,13 @@ class NotificationService {
       onDidReceiveNotificationResponse: (response) {
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) {
-          onNotificationTap.add({'payload': payload});
+          try {
+            final decoded = jsonDecode(payload) as Map<String, dynamic>;
+            onNotificationTap.add(decoded);
+          } catch (_) {
+            // Legacy plain task_id payload
+            onNotificationTap.add({'task_id': payload, 'type': ''});
+          }
         }
       },
     );
@@ -288,7 +295,8 @@ class NotificationService {
         _showLocalNotification(
           title: notification.title ?? 'Workmate4u',
           body: notification.body ?? '',
-          payload: message.data['task_id'],
+          taskId: message.data['task_id']?.toString(),
+          notificationType: type,
           isMatchedTask: isMatch,
           isPayment: isPayment,
         );
@@ -300,7 +308,8 @@ class NotificationService {
           _showLocalNotification(
             title: title,
             body: body,
-            payload: message.data['task_id'],
+            taskId: message.data['task_id']?.toString(),
+            notificationType: type,
             isMatchedTask: isMatch,
             isPayment: isPayment,
           );
@@ -348,7 +357,8 @@ class NotificationService {
   static Future<void> _showLocalNotification({
     required String title,
     required String body,
-    String? payload,
+    String? taskId,
+    String? notificationType,
     bool isMatchedTask = false,
     bool isPayment = false,
   }) async {
@@ -397,7 +407,9 @@ class NotificationService {
       title: title,
       body: body,
       notificationDetails: details,
-      payload: payload,
+      payload: taskId != null
+          ? jsonEncode({'task_id': taskId, 'type': notificationType ?? ''})
+          : null,
     );
   }
 }

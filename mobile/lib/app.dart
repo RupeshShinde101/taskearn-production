@@ -164,13 +164,25 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     // Listen to notification taps and route to the correct screen.
     _notifSub ??= NotificationService.onNotificationTap.stream.listen((data) {
       final taskId = data['task_id']?.toString() ??
-          data['taskId']?.toString() ??
-          data['payload']?.toString();
+          data['taskId']?.toString();
       final type = data['type']?.toString() ?? '';
       if (taskId != null && taskId.isNotEmpty) {
-        // Decide route: task-in-progress for active tasks, task detail for others
-        if (type == 'task_accepted' || type == 'task_started') {
-          _router.push('/task-in-progress/$taskId');
+        // Routes that should land on the task-in-progress screen:
+        // task_assigned  — helper just accepted
+        // task_accepted  — poster confirmation
+        // task_started   — task work started
+        // task_completed_helper / task_verify_sent — helper submitted completion
+        // payment_released — payment done, helper should see completion screen
+        const inProgressTypes = {
+          'task_assigned',
+          'task_accepted',
+          'task_started',
+          'task_completed_helper',
+          'task_verify_sent',
+          'payment_released',
+        };
+        if (inProgressTypes.contains(type)) {
+          _router.go('/task-in-progress/$taskId');
         } else {
           _router.push('/task/$taskId');
         }

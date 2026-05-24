@@ -3323,9 +3323,12 @@ def mark_task_completed(task_id):
             helper_id = request.user_id
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Set final completed status with 48h expiry anchor
+            # Set final completed status with 48h expiry anchor.
+            # Use 'done' (not 'completed') so /user/tasks can return this in
+            # a separate completedTasks field and the mobile moves the task to
+            # the Completed tab — even after an app restart.
             cursor.execute(f'''
-                UPDATE tasks SET status = 'completed', helper_final_completed_at = {PH}
+                UPDATE tasks SET status = 'done', helper_final_completed_at = {PH}
                 WHERE id = {PH}
             ''', (now, task_id))
 
@@ -3964,7 +3967,7 @@ def get_user_tasks():
                     cutoff_expr = "NOW() - INTERVAL '48 hours'"
                 else:
                     cutoff_expr = "datetime('now', '-48 hours')"
-                cursor.execute(f"SELECT id FROM tasks WHERE status = 'completed' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
+                cursor.execute(f"SELECT id FROM tasks WHERE status = 'done' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
                 completed_old_rows = cursor.fetchall()
                 completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
                 if completed_old_ids:
@@ -4009,6 +4012,20 @@ def get_user_tasks():
         ''', (request.user_id,))
         accepted = [dict_from_row(t) for t in cursor.fetchall()]
 
+        # Completed tasks — helper clicked final "Mark as Completed" (status='done').
+        # Returned in a separate field so the mobile can display them in the
+        # Completed tab without them appearing in the Accepted tab after restart.
+        cursor.execute(f'''
+            SELECT t.*, u.name as poster_name, u.phone as poster_phone,
+                   u.email as poster_email, u.id as poster_user_id,
+                   u.rating as poster_rating
+            FROM tasks t
+            LEFT JOIN users u ON t.posted_by = u.id
+            WHERE t.accepted_by = {PH} AND t.status = 'done'
+            ORDER BY t.helper_final_completed_at DESC NULLS LAST
+        ''', (request.user_id,))
+        completed = [dict_from_row(t) for t in cursor.fetchall()]
+
         # Task IDs the current user has already rated (to mark UI as "rated")
         cursor.execute(f'SELECT task_id FROM helper_ratings WHERE rater_id = {PH}', (request.user_id,))
         rated_task_ids = [str(row['task_id'] if isinstance(row, dict) else row[0])
@@ -4018,6 +4035,7 @@ def get_user_tasks():
         'success': True,
         'postedTasks': posted,
         'acceptedTasks': accepted,
+        'completedTasks': completed,
         'ratedTaskIds': rated_task_ids
     })
 

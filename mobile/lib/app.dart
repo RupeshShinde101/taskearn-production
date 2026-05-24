@@ -180,6 +180,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
           'task_completed_helper',
           'task_verify_sent',
           'payment_released',
+          'payment_received',
         };
         if (inProgressTypes.contains(type)) {
           _router.go('/task-in-progress/$taskId');

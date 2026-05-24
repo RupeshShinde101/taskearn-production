@@ -682,7 +682,7 @@ class TaskProvider extends ChangeNotifier {
           debugPrint('[TaskProvider] Proof upload failed: $e');
         }
       }
-      await ApiService.post('/tasks/$taskId/complete');
+      await ApiService.post('/tasks/$taskId/verify');
       // Invalidate detail cache so next load gets fresh status.
       _detailCache.remove(taskId);
       await fetchMyTasks();

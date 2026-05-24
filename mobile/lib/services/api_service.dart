@@ -60,7 +60,9 @@ class ApiService {
   }
 
   // ─── POST ───────────────────────────────────────────────────────────────────
-  static Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
+  static Future<dynamic> post(String path,
+      {Map<String, dynamic>? body,
+      Duration timeout = const Duration(seconds: 30)}) async {
     return _safeRequest(
       () => http
           .post(
@@ -68,7 +70,7 @@ class ApiService {
             headers: _headers,
             body: body != null ? jsonEncode(body) : null,
           )
-          .timeout(const Duration(seconds: 30)),
+          .timeout(timeout),
     );
   }
 

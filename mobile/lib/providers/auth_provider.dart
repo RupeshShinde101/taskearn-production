@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
@@ -13,6 +15,7 @@ class AuthProvider extends ChangeNotifier {
   AuthStatus _status = AuthStatus.unknown;
   bool _loading = false;
   String? _error;
+  String? _kycSubmitMessage;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: '874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com',
@@ -229,39 +232,61 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) {} // non-critical, fail silently
   }
 
-  /// Submit a KYC document (aadhaar / pan / selfie path).
+  /// Message returned by the backend after a KYC submit (e.g. "auto-verified" vs "pending").
+  String? get kycSubmitMessage => _kycSubmitMessage;
+
+  /// Submit KYC with Aadhaar (front + back) or PAN (front only).
+  /// Images are base64-encoded and sent as JSON to /user/kyc/submit.
   Future<bool> submitKyc({
     required String docType,
     required String docNumber,
-    String? frontImagePath,
-    String? selfieImagePath,
+    required String frontImagePath,
+    String? backImagePath, // required for aadhaar, null for pan
   }) async {
     _loading = true;
+    _error = null;
+    _kycSubmitMessage = null;
     notifyListeners();
     try {
+      // Convert images to base64
+      final frontBytes = await File(frontImagePath).readAsBytes();
+      final frontBase64 = base64Encode(frontBytes);
+
+      String? backBase64;
+      if (backImagePath != null) {
+        final backBytes = await File(backImagePath).readAsBytes();
+        backBase64 = base64Encode(backBytes);
+      }
+
+      // Normalise document number (uppercase, no spaces)
+      final normNumber = docNumber.trim().toUpperCase().replaceAll(' ', '');
+
       final body = <String, dynamic>{
-        'doc_type': docType,
-        'doc_number': docNumber,
+        'documentType': docType,
+        'documentNumber': normNumber,
+        'documentImageFront': frontBase64,
+        if (backBase64 != null) 'documentImageBack': backBase64,
+        'acknowledged': true,
       };
-      await ApiService.put('/user/kyc', body: body);
-      if (frontImagePath != null) {
-        try {
-          await ApiService.uploadFile(
-              '/user/kyc/upload', frontImagePath, 'kyc_doc');
-        } catch (_) {}
-      }
-      if (selfieImagePath != null) {
-        try {
-          await ApiService.uploadFile(
-              '/user/kyc/selfie', selfieImagePath, 'selfie');
-        } catch (_) {}
-      }
+
+      // Use a 120-second timeout: base64 images can be several MB
+      final response = await ApiService.post(
+        '/user/kyc/submit',
+        body: body,
+        timeout: const Duration(seconds: 120),
+      );
+      _kycSubmitMessage = response['message'] as String?;
       await refreshUser();
       _loading = false;
       notifyListeners();
       return true;
     } on ApiException catch (e) {
       _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Failed to submit KYC. Please try again.';
       _loading = false;
       notifyListeners();
       return false;
@@ -329,6 +354,7 @@ class AuthProvider extends ChangeNotifier {
 
   void clearError() {
     _error = null;
+    _kycSubmitMessage = null;
     notifyListeners();
   }
 

@@ -217,7 +217,10 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     title: title,
     body: body,
     notificationDetails: NotificationDetails(android: androidDetails),
-    payload: jsonEncode({'task_id': data['task_id'] ?? '', 'type': type}),
+    payload: jsonEncode({
+      'task_id': data['task_id'] ?? data['taskId'] ?? '',
+      'type': type,
+    }),
   );
 }
 
@@ -324,6 +327,9 @@ class NotificationService {
         // Data-only FCM message — show for all known types
         String? msgTitle = message.data['title'];
         String? msgBody = message.data['body'];
+        // Resolve taskId from either key name the backend may send
+        final String? msgTaskId = message.data['task_id']?.toString()
+            ?? message.data['taskId']?.toString();
 
         // Provide fallback title/body for critical notification types so they
         // are always displayed even if the data fields are unexpectedly absent.
@@ -378,7 +384,7 @@ class NotificationService {
           _showLocalNotification(
             title: msgTitle,
             body: msgBody,
-            taskId: message.data['task_id']?.toString(),
+            taskId: msgTaskId,
             notificationType: type,
             isMatchedTask: isMatch,
             isPayment: isPayment,

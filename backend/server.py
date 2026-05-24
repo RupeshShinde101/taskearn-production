@@ -3303,8 +3303,8 @@ def mark_task_completed(task_id):
         _ensure_verify_columns()
         with get_db() as (cursor, conn):
             cursor.execute(f'''
-                SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
-            ''', (task_id, request.user_id, 'payment_released'))
+                SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status IN ({PH}, {PH})
+            ''', (task_id, request.user_id, 'payment_released', 'paid'))
             task = cursor.fetchone()
             if not task:
                 return jsonify({'success': False, 'message': 'Task not found or payment not yet released'}), 404

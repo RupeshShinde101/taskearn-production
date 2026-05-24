@@ -172,6 +172,24 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       importance = Importance.high;
       break;
 
+    // ── Helper final mark-complete (helper gets this after /mark-completed) ─
+    case 'task_final_completed':
+      title = data['title'] ?? 'Task Complete! 🏆';
+      body = data['body'] ?? 'You\'ve fully completed the task. Great work!';
+      channelId = 'workmate4u_payment';
+      channelName = 'Payments';
+      channelDesc = 'Payment alerts and confirmations';
+      importance = Importance.max;
+      break;
+
+    // ── Poster notified after helper's final mark-complete ─────────────────
+    case 'task_final_completed_poster':
+      title = data['title'] ?? 'All Done! ✅';
+      body = data['body'] ?? 'Your task has been fully completed by the helper.';
+      channelId = 'workmate4u_main';
+      importance = Importance.high;
+      break;
+
     // ── Generic fallback ───────────────────────────────────────────────────
     default:
       if (title.isEmpty || body.isEmpty) return; // nothing to show
@@ -284,7 +302,8 @@ class NotificationService {
       final isPayment = type == 'task_completed' || type == 'verify_and_pay' ||
           type == 'payment_released' || type == 'payment_received' ||
           type == 'payment_done' || type == 'withdrawal_approved' ||
-          type == 'withdrawal_rejected' || type == 'withdrawal_requested';
+          type == 'withdrawal_rejected' || type == 'withdrawal_requested' ||
+          type == 'task_final_completed';
       final isTaskCompleted = type == 'task_completed' ||
           type == 'verify_pending' ||
           type == 'task_complete_verify' ||
@@ -328,6 +347,26 @@ class NotificationService {
             case 'task_completed':
               msgTitle ??= 'Task Completed! 💰 Pay Now';
               msgBody ??= 'Your helper has completed the task. Please pay now.';
+              break;
+            case 'task_completed_helper':
+              msgTitle ??= 'Task Done! ✅';
+              msgBody ??= 'Waiting for poster to release payment.';
+              break;
+            case 'verify_and_pay':
+              msgTitle ??= 'Verify & Pay Now ✅';
+              msgBody ??= 'Your helper verified the task is done. Please pay to release funds.';
+              break;
+            case 'task_verify_sent':
+              msgTitle ??= 'Verification Sent! ⏳';
+              msgBody ??= 'Waiting for the poster to confirm and pay.';
+              break;
+            case 'task_final_completed':
+              msgTitle ??= 'Task Complete! 🏆';
+              msgBody ??= 'You\'ve fully completed the task. Great work!';
+              break;
+            case 'task_final_completed_poster':
+              msgTitle ??= 'All Done! ✅';
+              msgBody ??= 'Your task has been fully completed by the helper.';
               break;
             default:
               break;

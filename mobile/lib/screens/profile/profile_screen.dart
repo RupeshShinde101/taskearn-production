@@ -265,10 +265,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
 
             // ── Skills section ────────────────────────────────────────────
-            const _SectionHeader('My Skills'),
+            Row(
+              children: [
+                const _SectionHeader('My Skills'),
+                const Spacer(),
+                if (user?.skills != null && user!.skills.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined,
+                        size: 18, color: AppColors.gray),
+                    onPressed: () => _showSkillsDialog(context, auth),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    splashRadius: 18,
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             if (user?.skills == null || user!.skills.isEmpty)
-              _EmptySkillsHint(onAdd: () => _showEditDialog(context, auth))
+              _EmptySkillsHint(onAdd: () => _showSkillsDialog(context, auth))
             else
               Wrap(
                 spacing: 8,
@@ -465,7 +479,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {}
   }
 
-  // ── Edit Profile bottom sheet ─────────────────────────────────────────────
+  // ── Edit personal details bottom sheet (pencil icon / avatar) ──────────────
   void _showEditDialog(BuildContext context, AuthProvider auth) {
     showModalBottomSheet(
       context: context,
@@ -474,6 +488,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetCtx) => _EditProfileSheet(auth: auth),
+    );
+  }
+
+  // ── Edit skills bottom sheet ──────────────────────────────────────────────
+  void _showSkillsDialog(BuildContext context, AuthProvider auth) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => _EditSkillsSheet(auth: auth),
     );
   }
 
@@ -606,8 +632,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _bioCtrl;
   late final TextEditingController _phoneCtrl;
-  late final TextEditingController _emailCtrl;
-  late List<String> _selectedSkills;
   bool _saving = false;
 
   @override
@@ -616,8 +640,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     _nameCtrl  = TextEditingController(text: widget.auth.user?.name);
     _bioCtrl   = TextEditingController(text: widget.auth.user?.bio);
     _phoneCtrl = TextEditingController(text: widget.auth.user?.phone ?? '');
-    _emailCtrl = TextEditingController(text: widget.auth.user?.email ?? '');
-    _selectedSkills = List.from(widget.auth.user?.skills ?? []);
   }
 
   @override
@@ -625,18 +647,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     _nameCtrl.dispose();
     _bioCtrl.dispose();
     _phoneCtrl.dispose();
-    _emailCtrl.dispose();
     super.dispose();
-  }
-
-  void _toggleSkill(String skill) {
-    setState(() {
-      if (_selectedSkills.contains(skill)) {
-        _selectedSkills.remove(skill);
-      } else {
-        _selectedSkills.add(skill);
-      }
-    });
   }
 
   Future<void> _save() async {
@@ -651,9 +662,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     final ok = await widget.auth.updateProfile(
       name: _nameCtrl.text,
       bio: _bioCtrl.text,
-      skills: _selectedSkills,
       phone: _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
-      email: _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
     );
 
     if (!mounted) return;
@@ -706,55 +715,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                  labelText: 'Email Address',
-                  prefixIcon: Icon(Icons.email_outlined)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
               controller: _bioCtrl,
               maxLines: 3,
               decoration: const InputDecoration(
                   labelText: 'Bio',
                   hintText: 'Tell task posters about yourself...',
                   prefixIcon: Icon(Icons.info_outline)),
-            ),
-
-            const SizedBox(height: 16),
-            const Text('My Skills',
-                style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.dark,
-                    fontSize: 14)),
-            const SizedBox(height: 6),
-            const Text(
-                'Select skills so the AI can match you with relevant tasks',
-                style: TextStyle(color: AppColors.gray, fontSize: 12)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _kAllSkills
-                  .map((skill) => FilterChip(
-                        label: Text(skill),
-                        selected: _selectedSkills.contains(skill),
-                        onSelected: (_) => _toggleSkill(skill),
-                        selectedColor: AppColors.primary.withValues(alpha: 0.15),
-                        checkmarkColor: AppColors.primary,
-                        labelStyle: TextStyle(
-                            color: _selectedSkills.contains(skill)
-                                ? AppColors.primary
-                                : AppColors.gray,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500),
-                        side: BorderSide(
-                            color: _selectedSkills.contains(skill)
-                                ? AppColors.primary
-                                : AppColors.border),
-                      ))
-                  .toList(),
             ),
 
             const SizedBox(height: 20),
@@ -769,6 +735,117 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : const Text('Save Changes'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Edit skills sheet ─────────────────────────────────────────────────────────
+class _EditSkillsSheet extends StatefulWidget {
+  final AuthProvider auth;
+  const _EditSkillsSheet({required this.auth});
+
+  @override
+  State<_EditSkillsSheet> createState() => _EditSkillsSheetState();
+}
+
+class _EditSkillsSheetState extends State<_EditSkillsSheet> {
+  late List<String> _selectedSkills;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedSkills = List.from(widget.auth.user?.skills ?? []);
+  }
+
+  void _toggleSkill(String skill) {
+    setState(() {
+      if (_selectedSkills.contains(skill)) {
+        _selectedSkills.remove(skill);
+      } else {
+        _selectedSkills.add(skill);
+      }
+    });
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    final ok = await widget.auth.updateProfile(skills: _selectedSkills);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Skills updated!'
+            : (widget.auth.error ?? 'Failed to save skills. Please try again.')),
+        backgroundColor: ok ? AppColors.success : AppColors.danger,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Center(
+              child: Text('My Skills',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(height: 4),
+            const Center(
+              child: Text('Select skills so AI can match you with relevant tasks',
+                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _kAllSkills
+                  .map((skill) => FilterChip(
+                        label: Text(skill),
+                        selected: _selectedSkills.contains(skill),
+                        onSelected: (_) => _toggleSkill(skill),
+                        selectedColor:
+                            AppColors.primary.withValues(alpha: 0.15),
+                        checkmarkColor: AppColors.primary,
+                        labelStyle: TextStyle(
+                            color: _selectedSkills.contains(skill)
+                                ? AppColors.primary
+                                : AppColors.gray,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500),
+                        side: BorderSide(
+                            color: _selectedSkills.contains(skill)
+                                ? AppColors.primary
+                                : AppColors.border),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Text('Save Skills'),
               ),
             ),
           ],

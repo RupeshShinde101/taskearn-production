@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
@@ -85,9 +86,30 @@ class TaskProvider extends ChangeNotifier {
 
   bool _loadingBrowse = false;
   bool _loadingMy = false;
+  bool _disposed = false;
   String? _error;
   int _currentPage = 1;
   bool _hasMore = true;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  void _notify() {
+    if (_disposed) return;
+    // If we're in a build/layout phase, defer to avoid the 'dependents.isEmpty' assertion.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed) notifyListeners();
+      });
+    } else {
+      _notify();
+    }
+  }
 
   List<Task> get browseTasks => _browseTasks;
   List<Task> get myPostedTasks => _myPostedTasks;
@@ -146,7 +168,7 @@ class TaskProvider extends ChangeNotifier {
     _loadingBrowse = true;
     _error = null;
     // Use microtask so notifyListeners doesn't fire synchronously during build
-    Future.microtask(notifyListeners);
+    Future.microtask(_notify);
 
     try {
       final params = <String, String>{
@@ -180,12 +202,12 @@ class TaskProvider extends ChangeNotifier {
     }
 
     _loadingBrowse = false;
-    notifyListeners();
+    _notify();
   }
 
   Future<void> fetchMyTasks() async {
     _loadingMy = true;
-    Future.microtask(notifyListeners);
+    Future.microtask(_notify);
 
     try {
       final data = await ApiService.get('/user/tasks');
@@ -323,7 +345,7 @@ class TaskProvider extends ChangeNotifier {
     }
 
     _loadingMy = false;
-    notifyListeners();
+    _notify();
   }
 
   List<Task> _parseTaskList(dynamic raw) {
@@ -529,7 +551,7 @@ class TaskProvider extends ChangeNotifier {
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -544,11 +566,11 @@ class TaskProvider extends ChangeNotifier {
       // Invalidate cached detail so next load fetches fresh data.
       _detailCache.remove(taskId);
       await fetchMyTasks();
-      notifyListeners();
+      _notify();
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -610,7 +632,7 @@ class TaskProvider extends ChangeNotifier {
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      notifyListeners();
+      _notify();
       // If the server says user already has an active task, refresh the list
       // so hasActiveAcceptedTask and activeAcceptedTask become correct and the
       // UI can show the active-task warning banner immediately.
@@ -633,11 +655,11 @@ class TaskProvider extends ChangeNotifier {
       }
       _myPostedTasks.removeWhere((t) => t.id == taskId);
       _browseTasks.removeWhere((t) => t.id == taskId);
-      notifyListeners();
+      _notify();
       return true;
     } catch (e) {
       _error = e.toString();
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -653,11 +675,11 @@ class TaskProvider extends ChangeNotifier {
       if (e.statusCode == 404 || e.statusCode == 405) {
         _myAcceptedTasks.removeWhere((t) => t.id == taskId);
         _detailCache.remove(taskId);
-        notifyListeners();
+        _notify();
         return true;
       }
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -689,11 +711,11 @@ class TaskProvider extends ChangeNotifier {
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     } catch (e) {
       _error = 'Network error. Please check your connection and try again.';
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -722,7 +744,7 @@ class TaskProvider extends ChangeNotifier {
         }
       }
       _detailCache.remove(taskId);
-      notifyListeners();
+      _notify();
       fetchMyTasks(); // background sync — filter above keeps task excluded
     }
 
@@ -738,7 +760,7 @@ class TaskProvider extends ChangeNotifier {
         return true;
       }
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -750,7 +772,7 @@ class TaskProvider extends ChangeNotifier {
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -781,11 +803,11 @@ class TaskProvider extends ChangeNotifier {
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     } catch (e) {
       _error = e.toString();
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -794,12 +816,12 @@ class TaskProvider extends ChangeNotifier {
     try {
       await ApiService.post('/tasks/$taskId/rate', body: {
         'rating': rating,
-        if (comment != null) 'comment': comment,
+        if (comment != null) 'review': comment,
       });
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     }
   }
@@ -808,17 +830,17 @@ class TaskProvider extends ChangeNotifier {
     try {
       await ApiService.delete('/tasks/$taskId');
       _myPostedTasks.removeWhere((t) => t.id == taskId);
-      notifyListeners();
+      _notify();
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      notifyListeners();
+      _notify();
       return false;
     }
   }
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    _notify();
   }
 }

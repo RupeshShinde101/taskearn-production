@@ -328,9 +328,11 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
             cursor.execute(f'SELECT fcm_token FROM users WHERE id = {PH}', (str(user_id),))
             row = cursor.fetchone()
         if not row:
+            print(f'[FCM] ⚠️ No user row for user_id={user_id} — skipping push')
             return
         token = dict_from_row(row).get('fcm_token') if hasattr(row, 'keys') else row[0]
         if not token:
+            print(f'[FCM] ⚠️ No FCM token registered for user_id={user_id} — skipping push')
             return
 
         # All data values must be strings for FCM data messages
@@ -3335,7 +3337,7 @@ def mark_task_completed(task_id):
                 WHERE id = {PH}
             ''', (helper_earnings, helper_id))
 
-            # Final completion notification for helper
+            # Final completion notification for helper (DB)
             import json
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
@@ -3345,7 +3347,46 @@ def mark_task_completed(task_id):
                   f'You\'ve successfully completed "{task["title"]}" and earned ₹{helper_earnings:.2f}. Great work!',
                   'unread', json.dumps({'type': 'task', 'taskId': task_id}), now))
 
+            # Final completion notification for poster (DB)
+            poster_id = task.get('posted_by')
+            if poster_id:
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (poster_id, task_id, 'task_final_completed_poster',
+                      'All Done! ✅',
+                      f'Your task "{task["title"]}" has been fully completed.',
+                      'unread', json.dumps({'type': 'task', 'taskId': task_id}), now))
+
         print(f"✅ Task {task_id} final-completed by helper {helper_id}. Earned ₹{helper_earnings:.2f}")
+
+        # FCM push — tell helper they finished and earned
+        try:
+            send_fcm_to_user(
+                helper_id,
+                'Task Complete! 🏆',
+                f'You\'ve fully completed "{task["title"]}" and earned ₹{helper_earnings:.2f}. Awesome work!',
+                data={'type': 'task_final_completed', 'task_id': str(task_id),
+                      'earnings': str(round(helper_earnings, 2))},
+                channel='workmate4u_payment',
+            )
+        except Exception:
+            pass
+
+        # FCM push — tell poster the task is fully done
+        poster_id = task.get('posted_by')
+        if poster_id:
+            try:
+                send_fcm_to_user(
+                    poster_id,
+                    'All Done! ✅',
+                    f'Your task "{task["title"]}" has been fully completed by the helper.',
+                    data={'type': 'task_final_completed_poster', 'task_id': str(task_id)},
+                    channel='workmate4u_main',
+                )
+            except Exception:
+                pass
+
         return jsonify({
             'success': True,
             'message': 'Task completed! Great work!',

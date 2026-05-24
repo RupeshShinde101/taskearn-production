@@ -307,7 +307,8 @@ class NotificationService {
       final isTaskCompleted = type == 'task_completed' ||
           type == 'verify_pending' ||
           type == 'task_complete_verify' ||
-          type == 'verify_and_pay';
+          type == 'verify_and_pay' ||
+          type == 'task_final_completed_poster';
 
       if (notification != null) {
         // FCM message carries a notification payload — show with appropriate channel

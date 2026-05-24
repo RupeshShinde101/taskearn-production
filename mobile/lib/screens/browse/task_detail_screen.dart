@@ -388,12 +388,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final canVerify = isPoster &&
         (task.status == 'completed' || task.status == 'verify_pending');
     final canRateHelper = isPoster &&
-        (task.status == 'verified' || task.status == 'payment_released') &&
-        task.helperRating == null &&
+        (task.status == 'verified' || task.status == 'payment_released' ||
+            task.status == 'done' || task.status == 'paid' ||
+            task.status == 'completed') &&
+        !task.posterHasRatedHelper &&
         task.helperId != null;
     final canRatePoster = isAssignedHelper &&
-        (task.status == 'verified' || task.status == 'payment_released') &&
-        task.helperRating == null;
+        (task.status == 'verified' || task.status == 'payment_released' ||
+            task.status == 'done' || task.status == 'paid' ||
+            task.status == 'completed') &&
+        !task.helperHasRatedPoster;
     Widget? bottomBar;
     if (canAccept) {
       bottomBar = SafeArea(

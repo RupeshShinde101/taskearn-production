@@ -631,12 +631,13 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       ),
     );
 
+    final comment = commentCtrl.text.trim();
     commentCtrl.dispose();
     if (submitted && mounted) {
       await context.read<TaskProvider>().rateTask(
             widget.taskId,
             selectedRating,
-            null,
+            comment.isNotEmpty ? comment : null,
           );
     }
   }

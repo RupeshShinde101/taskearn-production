@@ -2980,7 +2980,7 @@ def get_task_details(task_id):
             FROM tasks t
             LEFT JOIN users poster ON t.posted_by = poster.id
             LEFT JOIN users helper ON t.accepted_by = helper.id
-            WHERE t.id = {PH} AND t.status IN ('accepted', 'completed', 'verify_pending', 'payment_released', 'paid')
+            WHERE t.id = {PH} AND t.status IN ('accepted', 'completed', 'done', 'verify_pending', 'payment_released', 'paid')
         ''', (task_id,))
         task = cursor.fetchone()
         
@@ -2988,7 +2988,19 @@ def get_task_details(task_id):
             return jsonify({'success': False, 'message': 'Task not found'}), 404
         
         task = dict_from_row(task)
-        
+
+        # Check who has already rated for this task
+        poster_has_rated_helper = False
+        helper_has_rated_poster = False
+        if task.get('posted_by') and task.get('accepted_by'):
+            cursor.execute(f'''
+                SELECT rater_id FROM helper_ratings WHERE task_id = {PH} AND rater_id IN ({PH}, {PH})
+            ''', (task_id, task['posted_by'], task['accepted_by']))
+            raters = {row[0] if isinstance(row, (list, tuple)) else dict_from_row(row).get('rater_id')
+                      for row in cursor.fetchall()}
+            poster_has_rated_helper = task['posted_by'] in raters
+            helper_has_rated_poster = task['accepted_by'] in raters
+
         return jsonify({
             'success': True,
             'task': {
@@ -3014,6 +3026,8 @@ def get_task_details(task_id):
                 'helper_phone': task.get('helper_phone'),
                 'helper_rating': float(task['helper_rating']) if task.get('helper_rating') else None,
                 'helper_tasks_completed': task.get('helper_tasks_completed'),
+                'poster_has_rated_helper': poster_has_rated_helper,
+                'helper_has_rated_poster': helper_has_rated_poster,
                 'provider': {
                     'id': task['posted_by'],
                     'name': task['provider_name'],
@@ -3409,14 +3423,16 @@ def mark_task_completed(task_id):
 @require_auth
 def rate_task_poster(task_id):
     """
-    NEW FLOW — Optional step after mark-completed: Helper rates the poster.
-    Body: {rating: int(1-5), review: string (optional)}
+    Bidirectional rating after task completion.
+    Helper rates poster, OR poster rates helper — determined by who calls it.
+    Body: {rating: int(1-5), review/comment: string (optional)}
     """
     try:
         _ensure_helper_ratings_review()
         data = request.get_json() or {}
         rating = data.get('rating')
-        review = (data.get('review') or '').strip()[:500]
+        # Accept both 'review' and 'comment' field names
+        review = (data.get('review') or data.get('comment') or '').strip()[:500]
 
         try:
             rating = int(rating)
@@ -3426,22 +3442,38 @@ def rate_task_poster(task_id):
             return jsonify({'success': False, 'message': 'Rating must be 1–5'}), 400
 
         with get_db() as (cursor, conn):
-            # Verify helper completed this task
+            # Fetch the task — caller must be poster or helper, task must be in a terminal status
             cursor.execute(f'''
                 SELECT id, title, posted_by, accepted_by, status FROM tasks
-                WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
-            ''', (task_id, request.user_id, 'completed'))
+                WHERE id = {PH} AND status IN ({PH}, {PH}, {PH}, {PH}, {PH})
+                  AND (posted_by = {PH} OR accepted_by = {PH})
+            ''', (task_id, 'completed', 'done', 'payment_released', 'paid', 'verified',
+                  request.user_id, request.user_id))
             task = cursor.fetchone()
             if not task:
-                return jsonify({'success': False, 'message': 'Task not found or not yet completed by you'}), 404
+                return jsonify({'success': False, 'message': 'Task not found or not eligible for rating'}), 404
 
             task = dict_from_row(task)
-            rated_id = task['posted_by']
             rater_id = request.user_id
+            poster_id = task['posted_by']
+            helper_id = task['accepted_by']
+
+            # Determine who is rating whom
+            if rater_id == poster_id:
+                # Poster rates helper
+                rated_id = helper_id
+                if not rated_id:
+                    return jsonify({'success': False, 'message': 'No helper to rate'}), 400
+            elif rater_id == helper_id:
+                # Helper rates poster
+                rated_id = poster_id
+            else:
+                return jsonify({'success': False, 'message': 'You are not a participant of this task'}), 403
+
             task_title = task.get('title', '')
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Check if already rated
+            # Check if already rated (one rating per rater per task)
             cursor.execute(f'SELECT id FROM helper_ratings WHERE task_id = {PH} AND rater_id = {PH}', (task_id, rater_id))
             if cursor.fetchone():
                 return jsonify({'success': False, 'message': 'You already rated this task'}), 400

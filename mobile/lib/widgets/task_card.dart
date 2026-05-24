@@ -149,11 +149,28 @@ class TaskCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      task.posterName,
-                      style: const TextStyle(
-                          fontSize: 12, color: AppColors.gray),
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          task.posterName,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.gray),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (task.posterRating > 0)
+                          Row(
+                            children: [
+                              const Icon(Icons.star, size: 11, color: AppColors.warning),
+                              const SizedBox(width: 2),
+                              Text(
+                                task.posterRating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                    fontSize: 11, color: AppColors.gray),
+                              ),
+                            ],
+                          ),
+                      ],
                     ),
                   ),
 
@@ -187,9 +204,13 @@ class _StatusChip extends StatelessWidget {
         return AppColors.primary;
       case 'accepted':
       case 'in_progress':
+      case 'verify_pending':
         return AppColors.warning;
       case 'completed':
       case 'verified':
+      case 'payment_released':
+      case 'paid':
+      case 'done':
         return AppColors.success;
       case 'cancelled':
         return AppColors.danger;
@@ -206,10 +227,15 @@ class _StatusChip extends StatelessWidget {
         return 'Accepted';
       case 'in_progress':
         return 'In Progress';
+      case 'verify_pending':
+        return 'Verify Pending';
+      case 'payment_released':
+        return 'Payment Released';
       case 'completed':
-        return 'Completed';
       case 'verified':
-        return 'Verified';
+      case 'paid':
+      case 'done':
+        return 'Completed';
       case 'cancelled':
         return 'Cancelled';
       default:

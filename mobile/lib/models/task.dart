@@ -26,6 +26,10 @@ class Task {
   final String? posterPhone;
   final bool isPaid;
   final bool isHidden;
+  /// True when the poster has already submitted a rating for the helper on this task.
+  final bool posterHasRatedHelper;
+  /// True when the helper has already submitted a rating for the poster on this task.
+  final bool helperHasRatedPoster;
   // ── Delivery-specific fields ──────────────────────────────────────────────
   /// For delivery/pickup tasks: the pickup / start-location address.
   final String? pickupAddress;
@@ -64,6 +68,8 @@ class Task {
     this.completionProof,
     this.isPaid = false,
     this.isHidden = false,
+    this.posterHasRatedHelper = false,
+    this.helperHasRatedPoster = false,
     this.pickupAddress,
     this.dropAddress,
     this.dropLatitude,
@@ -228,6 +234,8 @@ class Task {
           })(),
       isPaid: json['is_paid'] == true || json['status'] == 'paid',
       isHidden: json['is_hidden'] == true,
+      posterHasRatedHelper: json['poster_has_rated_helper'] == true,
+      helperHasRatedPoster: json['helper_has_rated_poster'] == true,
       pickupAddress: (pickup is Map ? pickup['address'] : null)?.toString()
           ?? json['pickup_address']?.toString()
           ?? json['pickupAddress']?.toString()
@@ -338,6 +346,8 @@ class Task {
       completionProof: completionProof,
       isPaid: isPaid ?? this.isPaid,
       isHidden: isHidden,
+      posterHasRatedHelper: posterHasRatedHelper,
+      helperHasRatedPoster: helperHasRatedPoster,
       pickupAddress: pickupAddress,
       dropAddress: dropAddress,
       dropLatitude: dropLatitude,
@@ -374,6 +384,8 @@ class Task {
     if (completionProof != null) 'completion_proof': completionProof,
     'is_paid': isPaid,
     'is_hidden': isHidden,
+    'poster_has_rated_helper': posterHasRatedHelper,
+    'helper_has_rated_poster': helperHasRatedPoster,
     if (pickupAddress != null) 'pickup_address': pickupAddress,
     if (dropAddress != null) 'delivery_address': dropAddress,
     if (dropLatitude != null) 'drop_lat': dropLatitude,

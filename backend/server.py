@@ -2014,13 +2014,17 @@ def update_profile():
     if 'phone' in updates:
         new_phone = (updates['phone'] or '').strip()
         if new_phone:
-            with get_db() as (cursor, _ph_check):
-                cursor.execute(
-                    f'SELECT id FROM users WHERE phone = {PH} AND id != {PH}',
-                    (new_phone, request.user_id)
-                )
-                if cursor.fetchone():
-                    return jsonify({'success': False, 'message': 'Phone number already in use'}), 400
+            # Skip uniqueness check if the number belongs to this user already
+            current_user = get_user_by_id(request.user_id)
+            current_phone = (current_user.get('phone') or '').strip() if current_user else ''
+            if new_phone != current_phone:
+                with get_db() as (cursor, _ph_check):
+                    cursor.execute(
+                        f'SELECT id FROM users WHERE phone = {PH} AND id != {PH}',
+                        (new_phone, request.user_id)
+                    )
+                    if cursor.fetchone():
+                        return jsonify({'success': False, 'message': 'Phone number already in use'}), 400
         updates['phone'] = new_phone or None
 
     if 'profile_photo' in updates and updates.get('profile_photo'):

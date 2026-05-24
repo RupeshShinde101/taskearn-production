@@ -107,7 +107,7 @@ class TaskProvider extends ChangeNotifier {
         if (!_disposed) notifyListeners();
       });
     } else {
-      _notify();
+      notifyListeners();
     }
   }
 

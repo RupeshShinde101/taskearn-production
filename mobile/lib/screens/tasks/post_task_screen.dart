@@ -374,9 +374,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'price': double.tryParse(_budgetCtrl.text) ?? 0,
       'budget': double.tryParse(_budgetCtrl.text) ?? 0,
       if (charge > 0) 'service_charge': charge,
-      'latitude': taskLocation.latitude,
-      'longitude': taskLocation.longitude,
-      'address': combinedAddress,
+      // Nested location object expected by the backend
+      'location': {
+        'lat': taskLocation.latitude,
+        'lng': taskLocation.longitude,
+        'address': combinedAddress ?? '',
+      },
       if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
         'pickup_address': _pickupAddrCtrl.text.trim(),
       if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty) ...{
@@ -384,8 +387,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'drop_location_address': _dropAddrCtrl.text.trim(),
       },
       if (_isDelivery && _dropLocation != null) ...{
-        'drop_location_lat': _dropLocation!.latitude,
-        'drop_location_lng': _dropLocation!.longitude,
+        'dropLocation': {
+          'lat': _dropLocation!.latitude,
+          'lng': _dropLocation!.longitude,
+          'address': _dropAddrCtrl.text.trim(),
+        },
       },
     };
 

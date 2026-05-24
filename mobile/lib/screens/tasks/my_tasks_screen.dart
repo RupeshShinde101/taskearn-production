@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -451,7 +452,11 @@ class _PostedTaskList extends StatelessWidget {
   }
 
   // ── Shows completion proof photo + Pay Now entry point ──────────────────
-  void _showProofDialog(BuildContext context, Task t) {
+  void _showProofDialog(BuildContext context, Task t) async {
+    // Fetch proof images the helper uploaded for this task
+    final proofs = await context.read<TaskProvider>().fetchTaskProofs(t.id);
+    if (!context.mounted) return;
+    final proofUrl = proofs.isNotEmpty ? proofs.first : null;
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -485,36 +490,53 @@ class _PostedTaskList extends StatelessWidget {
                 ],
               ),
             ),
-            // Proof image
-            if (t.completionProof != null && t.completionProof!.isNotEmpty)
-              Image.network(
-                t.completionProof!,
-                height: 240,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                loadingBuilder: (_, child, progress) => progress == null
-                    ? child
-                    : const SizedBox(
-                        height: 240,
-                        child: Center(child: CircularProgressIndicator())),
-                errorBuilder: (_, __, ___) => Container(
-                  height: 100,
-                  color: AppColors.light,
-                  child: const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.broken_image_outlined,
-                            color: AppColors.gray, size: 36),
-                        SizedBox(height: 4),
-                        Text('Could not load image',
-                            style: TextStyle(
-                                color: AppColors.gray, fontSize: 12)),
-                      ],
+            // Proof image — supports both base64 data URIs and https URLs
+            if (proofUrl != null && proofUrl.isNotEmpty)
+              Builder(builder: (ctx) {
+                if (proofUrl.startsWith('data:image')) {
+                  // Strip the data:image/xxx;base64, prefix
+                  final commaIdx = proofUrl.indexOf(',');
+                  final b64 = commaIdx >= 0 ? proofUrl.substring(commaIdx + 1) : proofUrl;
+                  try {
+                    return Image.memory(
+                      base64Decode(b64),
+                      height: 240,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    );
+                  } catch (_) {
+                    return const SizedBox.shrink();
+                  }
+                }
+                return Image.network(
+                  proofUrl,
+                  height: 240,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (_, child, progress) => progress == null
+                      ? child
+                      : const SizedBox(
+                          height: 240,
+                          child: Center(child: CircularProgressIndicator())),
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 100,
+                    color: AppColors.light,
+                    child: const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.broken_image_outlined,
+                              color: AppColors.gray, size: 36),
+                          SizedBox(height: 4),
+                          Text('Could not load image',
+                              style: TextStyle(
+                                  color: AppColors.gray, fontSize: 12)),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              )
+                );
+              })
             else
               Container(
                 height: 100,
@@ -552,23 +574,20 @@ class _PostedTaskList extends StatelessWidget {
                 ],
               ),
             ),
-            // Pay Now button
+            // Verified button — confirms proof is accepted; pay separately via Pay Now card button
             Padding(
               padding: const EdgeInsets.all(16),
               child: ElevatedButton.icon(
-                icon: const Icon(Icons.payments_outlined, size: 18),
-                label: const Text('Pay Now'),
+                icon: const Icon(Icons.verified_outlined, size: 18),
+                label: const Text('Verified'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: AppColors.success,
                   foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 48),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                 ),
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _showPayNowDialog(context, t);
-                },
+                onPressed: () => Navigator.pop(ctx),
               ),
             ),
           ],
@@ -687,23 +706,29 @@ class _PostedTaskList extends StatelessWidget {
                   ? null
                   : () async {
                       setStateInner(() => paying = true);
-                      final ok = await context
-                          .read<TaskProvider>()
-                          .payHelper(t.id);
-                      if (context.mounted) {
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(ok
-                                ? 'Payment released to helper!'
-                                : (context
-                                        .read<TaskProvider>()
-                                        .error ??
-                                    'Payment failed. Try again.')),
-                            backgroundColor:
-                                ok ? AppColors.success : AppColors.danger,
-                          ),
-                        );
+                      try {
+                        final ok = await context
+                            .read<TaskProvider>()
+                            .payHelper(t.id);
+                        if (context.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(ok
+                                  ? 'Payment released to helper!'
+                                  : (context
+                                          .read<TaskProvider>()
+                                          .error ??
+                                      'Payment failed. Try again.')),
+                              backgroundColor:
+                                  ok ? AppColors.success : AppColors.danger,
+                            ),
+                          );
+                        }
+                      } catch (_) {
+                        // payHelper catches all exceptions internally; this
+                        // guard ensures the dialog always closes regardless.
+                        if (context.mounted) Navigator.pop(ctx);
                       }
                     },
               style: ElevatedButton.styleFrom(

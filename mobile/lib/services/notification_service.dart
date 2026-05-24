@@ -302,12 +302,42 @@ class NotificationService {
         );
       } else {
         // Data-only FCM message — show for all known types
-        final title = message.data['title'];
-        final body = message.data['body'];
-        if (title != null && body != null) {
+        String? msgTitle = message.data['title'];
+        String? msgBody = message.data['body'];
+
+        // Provide fallback title/body for critical notification types so they
+        // are always displayed even if the data fields are unexpectedly absent.
+        if (msgTitle == null || msgBody == null) {
+          switch (type) {
+            case 'task_assigned':
+              msgTitle ??= 'Task Assigned! 📌';
+              msgBody ??= 'You accepted a new task. Complete it to earn.';
+              break;
+            case 'task_accepted':
+              msgTitle ??= 'Task Accepted! 🎉';
+              msgBody ??= 'A helper accepted your task.';
+              break;
+            case 'payment_done':
+              msgTitle ??= 'Payment Done! ✅';
+              msgBody ??= 'Your payment was processed successfully.';
+              break;
+            case 'payment_released':
+              msgTitle ??= 'Payment Released! 🎉';
+              msgBody ??= 'Payment released. Mark the task as completed.';
+              break;
+            case 'task_completed':
+              msgTitle ??= 'Task Completed! 💰 Pay Now';
+              msgBody ??= 'Your helper has completed the task. Please pay now.';
+              break;
+            default:
+              break;
+          }
+        }
+
+        if (msgTitle != null && msgBody != null) {
           _showLocalNotification(
-            title: title,
-            body: body,
+            title: msgTitle,
+            body: msgBody,
             taskId: message.data['task_id']?.toString(),
             notificationType: type,
             isMatchedTask: isMatch,

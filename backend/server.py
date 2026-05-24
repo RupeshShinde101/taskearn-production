@@ -291,6 +291,29 @@ except Exception as _fcm_init_err:
 
 _fcm_columns_ensured = False
 _bio_skills_columns_ensured = False
+_user_location_columns_ensured = False
+
+def _ensure_user_location_columns():
+    """Add last_lat / last_lng columns to users table (one-time per process)."""
+    global _user_location_columns_ensured
+    if _user_location_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':  # PostgreSQL
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lat FLOAT')
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lng FLOAT')
+            else:           # SQLite
+                cursor.execute('PRAGMA table_info(users)')
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'last_lat' not in cols:
+                    cursor.execute('ALTER TABLE users ADD COLUMN last_lat FLOAT')
+                if 'last_lng' not in cols:
+                    cursor.execute('ALTER TABLE users ADD COLUMN last_lng FLOAT')
+            conn.commit()
+        _user_location_columns_ensured = True
+    except Exception as e:
+        print(f'\u26a0\ufe0f _ensure_user_location_columns error: {e}')
 
 def _ensure_bio_skills_columns():
     """Add bio and skills columns to users table if they do not exist (one-time per process)."""
@@ -2077,6 +2100,34 @@ def save_device_token():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/api/user/location', methods=['POST'])
+@require_auth
+def update_user_location():
+    """Save the user's last known GPS coordinates for proximity-based notifications."""
+    _ensure_user_location_columns()
+    body = request.get_json() or {}
+    lat = body.get('lat')
+    lng = body.get('lng')
+    if lat is None or lng is None:
+        return jsonify({'success': False, 'message': 'lat and lng required'}), 400
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'lat and lng must be numbers'}), 400
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'UPDATE users SET last_lat = {PH}, last_lng = {PH} WHERE id = {PH}',
+                (lat, lng, request.user_id)
+            )
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[Location] save error: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/user/change-password', methods=['POST'])
 @require_auth
 def change_password():
@@ -2464,7 +2515,7 @@ def create_task():
         
         # Push notification feature removed.
 
-        # ── Skill-match notifications ──────────────────────────────────────
+        # ── Skill-match notifications (10 km radius) ──────────────────────
         if task_id:
             try:
                 import json as _json_skill
@@ -2472,9 +2523,16 @@ def create_task():
                 _task_title = data.get('title', '').lower()
                 _task_desc = data.get('description', '').lower()
 
+                # Task location (may be None if poster didn't share location)
+                _ensure_user_location_columns()
+                _loc = data.get('location') or {}
+                _task_lat = _loc.get('lat') if isinstance(_loc, dict) else None
+                _task_lng = _loc.get('lng') if isinstance(_loc, dict) else None
+                _task_has_loc = _task_lat is not None and _task_lng is not None
+
                 with get_db() as (_sm_cursor, _sm_conn):
                     _sm_cursor.execute(f'''
-                        SELECT id, fcm_token, skills FROM users
+                        SELECT id, fcm_token, skills, last_lat, last_lng FROM users
                         WHERE fcm_token IS NOT NULL
                           AND id != {PH}
                           AND skills IS NOT NULL
@@ -2493,13 +2551,25 @@ def create_task():
                             _sk in _task_title or _sk in _task_desc
                             for _sk in _user_skills
                         )
-                        if _matched:
-                            send_fcm_to_user(
-                                _pu['id'],
-                                '🎯 Task matched your skills!',
-                                f'"{data["title"]}" — \u20b9{data["price"]} — {data.get("category", "General")}',
-                                data={'type': 'task_matched', 'taskId': str(task_id)}
-                            )
+                        if not _matched:
+                            continue
+                        # 10 km radius filter: only notify users within range.
+                        # If task has a location but user location is unknown, skip.
+                        # If task has no location, notify all skill-matched users.
+                        _u_lat = _pu.get('last_lat')
+                        _u_lng = _pu.get('last_lng')
+                        if _task_has_loc:
+                            if _u_lat is None or _u_lng is None:
+                                continue  # user location unknown — skip
+                            if _haversine_km(float(_task_lat), float(_task_lng),
+                                             float(_u_lat), float(_u_lng)) > 10.0:
+                                continue  # outside 10 km radius
+                        send_fcm_to_user(
+                            _pu['id'],
+                            '🎯 Task matched your skills!',
+                            f'"{data["title"]}" — \u20b9{data["price"]} — {data.get("category", "General")}',
+                            data={'type': 'task_matched', 'task_id': str(task_id)}
+                        )
                     except Exception:
                         pass
             except Exception as _match_e:

@@ -4,6 +4,7 @@ import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/notification_service.dart';
+import '../services/location_service.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
@@ -470,6 +471,11 @@ class AuthProvider extends ChangeNotifier {
       if (token != null) {
         await updateFcmToken(token);
         NotificationService.onTokenRefresh(updateFcmToken);
+        // Send current location so backend can apply 10km radius filter
+        try {
+          final loc = await LocationService.getCurrentLocation();
+          if (loc != null) await updateUserLocation(loc.latitude, loc.longitude);
+        } catch (_) {}
       } else {
         debugPrint('[FCM] ⚠️ getToken() returned null');
       }

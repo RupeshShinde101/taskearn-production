@@ -321,12 +321,25 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     // Dialog is now fully closed — safe to setState
     if (submitted && mounted) {
       setState(() => _rating = true);
-      await context.read<TaskProvider>().rateTask(
+      final comment = commentCtrl.text.trim();
+      final ok = await context.read<TaskProvider>().rateTask(
             widget.taskId,
             selectedRating,
-            commentCtrl.text.trim().isNotEmpty ? commentCtrl.text.trim() : null,
+            comment.isNotEmpty ? comment : null,
           );
-      if (mounted) setState(() => _rating = false);
+      if (mounted) {
+        setState(() => _rating = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(ok
+              ? 'Rated successfully!'
+              : (context.read<TaskProvider>().error ?? 'Failed to submit rating')),
+          backgroundColor: ok ? AppColors.success : AppColors.danger,
+        ));
+        if (ok) {
+          context.read<AuthProvider>().refreshUser();
+          await _loadTask();
+        }
+      }
     }
   }
 

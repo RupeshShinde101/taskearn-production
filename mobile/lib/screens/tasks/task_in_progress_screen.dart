@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../services/api_service.dart';
@@ -634,11 +635,20 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final comment = commentCtrl.text.trim();
     commentCtrl.dispose();
     if (submitted && mounted) {
-      await context.read<TaskProvider>().rateTask(
+      final ok = await context.read<TaskProvider>().rateTask(
             widget.taskId,
             selectedRating,
             comment.isNotEmpty ? comment : null,
           );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(ok
+              ? 'Rated successfully!'
+              : (context.read<TaskProvider>().error ?? 'Failed to submit rating')),
+          backgroundColor: ok ? AppColors.success : AppColors.danger,
+        ));
+        if (ok) context.read<AuthProvider>().refreshUser();
+      }
     }
   }
 

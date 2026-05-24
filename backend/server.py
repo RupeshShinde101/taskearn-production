@@ -3998,30 +3998,34 @@ def get_user_tasks():
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
 
-        # Accepted tasks — include all active statuses + new flow statuses + legacy paid
-        # New flow: verify_pending, payment_released, completed
-        # Legacy flow: completed, paid
+        # Accepted tasks — include all active statuses + new flow statuses + legacy paid.
+        # Exclude tasks where helper_final_completed_at is set (legacy status='completed'
+        # tasks already fully finished) — those go into completedTasks instead.
         cursor.execute(f'''
             SELECT t.*, u.name as poster_name, u.phone as poster_phone,
                    u.email as poster_email, u.id as poster_user_id,
                    u.rating as poster_rating
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.accepted_by = {PH} AND t.status IN ('accepted', 'completed', 'paid', 'verify_pending', 'payment_released')
+            WHERE t.accepted_by = {PH}
+              AND t.status IN ('accepted', 'completed', 'paid', 'verify_pending', 'payment_released')
+              AND (t.helper_final_completed_at IS NULL OR t.status != 'completed')
             ORDER BY t.accepted_at DESC
         ''', (request.user_id,))
         accepted = [dict_from_row(t) for t in cursor.fetchall()]
 
-        # Completed tasks — helper clicked final "Mark as Completed" (status='done').
-        # Returned in a separate field so the mobile can display them in the
-        # Completed tab without them appearing in the Accepted tab after restart.
+        # Completed tasks — helper clicked final "Mark as Completed".
+        # Includes new flow (status='done') AND legacy tasks that were already
+        # fully finished (status='completed' + helper_final_completed_at set).
         cursor.execute(f'''
             SELECT t.*, u.name as poster_name, u.phone as poster_phone,
                    u.email as poster_email, u.id as poster_user_id,
                    u.rating as poster_rating
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.accepted_by = {PH} AND t.status = 'done'
+            WHERE t.accepted_by = {PH}
+              AND (t.status = 'done'
+                   OR (t.status = 'completed' AND t.helper_final_completed_at IS NOT NULL))
             ORDER BY t.helper_final_completed_at DESC NULLS LAST
         ''', (request.user_id,))
         completed = [dict_from_row(t) for t in cursor.fetchall()]

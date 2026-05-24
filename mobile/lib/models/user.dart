@@ -44,7 +44,7 @@ class User {
       name: json['name'] ?? '',
       email: json['email'] ?? '',
       phone: json['phone'],
-      avatar: json['avatar'],
+      avatar: json['avatar'] ?? json['profilePhoto'],
       bio: json['bio'],
       skills: (json['skills'] as List? ?? []).map((s) => s.toString()).toList(),
       rating: double.tryParse((json['rating'] ?? 0).toString()) ?? 0.0,

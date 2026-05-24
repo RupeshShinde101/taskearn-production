@@ -175,6 +175,8 @@ class AuthProvider extends ChangeNotifier {
     String? bio,
     String? avatarPath,
     List<String>? skills,
+    String? phone,
+    String? email,
   }) async {
     _loading = true;
     notifyListeners();
@@ -184,6 +186,8 @@ class AuthProvider extends ChangeNotifier {
       if (name != null && name.trim().isNotEmpty) body['name'] = name.trim();
       if (bio != null) body['bio'] = bio.trim();
       if (skills != null) body['skills'] = skills;
+      if (phone != null && phone.trim().isNotEmpty) body['phone'] = phone.trim();
+      if (email != null && email.trim().isNotEmpty) body['email'] = email.trim();
 
       await ApiService.put('/user/profile', body: body);
       // Always refresh from server so skills and all fields are up-to-date

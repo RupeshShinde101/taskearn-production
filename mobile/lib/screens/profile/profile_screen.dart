@@ -109,13 +109,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               color: AppColors.grayLight, fontSize: 13)),
                     ),
                   if (user?.rating != null && user!.rating > 0) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.star, color: AppColors.warning, size: 18),
-                        Text(' ${user.rating.toStringAsFixed(1)} rating',
-                            style: const TextStyle(color: AppColors.gray)),
+                        ...List.generate(5, (i) {
+                          final filled = i < user.rating.floor();
+                          final half = !filled && i < user.rating;
+                          return Icon(
+                            filled
+                                ? Icons.star
+                                : (half ? Icons.star_half : Icons.star_border),
+                            color: AppColors.warning,
+                            size: 20,
+                          );
+                        }),
+                        const SizedBox(width: 6),
+                        Text(
+                          user.rating.toStringAsFixed(1),
+                          style: const TextStyle(
+                              color: AppColors.gray,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14),
+                        ),
                       ],
                     ),
                   ],

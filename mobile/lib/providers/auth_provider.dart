@@ -299,16 +299,33 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Always sign out first to clear any stale session from a previous
+      // logout — prevents null idToken / PlatformException on re-sign-in.
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+
       final account = await _googleSignIn.signIn();
       if (account == null) {
-        // User cancelled
+        // User cancelled the account picker
         _loading = false;
         notifyListeners();
         return false;
       }
 
-      final auth = await account.authentication;
-      final idToken = auth.idToken;
+      // Fetch authentication tokens — wrap separately because this can throw
+      // a PlatformException independent of signIn() on some Android versions.
+      String? idToken;
+      try {
+        final googleAuth = await account.authentication;
+        idToken = googleAuth.idToken;
+      } catch (e) {
+        debugPrint('[Google] account.authentication error: $e');
+        _error = 'Google authentication failed. Please try again.';
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
 
       if (idToken == null) {
         _error = 'Could not get ID token from Google. Please try again.';
@@ -332,6 +349,7 @@ class AuthProvider extends ChangeNotifier {
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();
+        _registerFcmToken(); // register FCM + sync location after Google login
         return true;
       }
 
@@ -345,7 +363,8 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     } catch (e) {
-      _error = 'Google sign-in error: $e';
+      debugPrint('[Google] loginWithGoogle error: $e');
+      _error = 'Google sign-in failed. Please try again.';
       _loading = false;
       notifyListeners();
       return false;

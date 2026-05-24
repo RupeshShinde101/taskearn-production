@@ -148,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen>
               backgroundColor: Colors.white,
               elevation: 0,
               title: Row(children: [
-                Image.asset('assets/images/logo.png', height: 36),
+                Image.asset('assets/images/logo.png', height: 42),
               ]),
               actions: [
                 GestureDetector(

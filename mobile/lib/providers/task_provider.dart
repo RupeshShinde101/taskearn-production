@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
@@ -189,10 +190,14 @@ class TaskProvider extends ChangeNotifier {
     try {
       final data = await ApiService.get('/user/tasks');
 
-      // Statuses that mean the task is "done" from the helper's perspective.
+      // Statuses that mean the task is truly done from the helper's perspective.
+      // NOTE: 'completed' and 'verify_pending' are NOT here — they mean the
+      // helper submitted proof but is still waiting for the poster to pay.
+      // 'payment_released' and 'paid' are excluded — helper still needs to
+      // click "Mark as Completed" before the task moves to the Completed tab.
+      // Only 'done'/'finished' mean the helper has truly confirmed completion.
       const completedStatuses = {
-        'completed', 'verify_pending', 'payment_released',
-        'verified', 'paid', 'done', 'finished',
+        'verified', 'done', 'finished',
       };
 
       // Statuses that mean a posted task is fully done — remove from Posted tab.
@@ -200,8 +205,14 @@ class TaskProvider extends ChangeNotifier {
         'verified', 'paid', 'done', 'finished', 'payment_released',
         'cancelled',
       };
+      final postedExpiryCutoff =
+          DateTime.now().subtract(const Duration(hours: 24));
       _myPostedTasks = _parseTaskList(data['postedTasks'] ?? data['posted'])
           .where((t) => !postedDoneStatuses.contains(t.status))
+          // Remove tasks still in 'posted' status that have passed the 24-h window
+          .where((t) =>
+              t.status != 'posted' ||
+              t.createdAt.isAfter(postedExpiryCutoff))
           .toList();
       final rawAccepted = _parseTaskList(data['acceptedTasks'] ?? data['accepted']);
 
@@ -232,6 +243,20 @@ class TaskProvider extends ChangeNotifier {
       for (final t in completedFromAccepted) {
         if (!_myCompletedTasks.any((c) => c.id == t.id)) {
           _myCompletedTasks.add(t);
+        }
+      }
+
+      // Re-add tasks that the helper confirmed locally (clicked "Mark as Completed")
+      // but whose status is still 'completed' / 'verify_pending' / 'payment_released'
+      // (not yet in completedStatuses). Without this they would vanish from the
+      // Completed tab after the next fetchMyTasks() rebuild.
+      for (final id in _locallyCompletedTaskIds) {
+        if (!_myCompletedTasks.any((t) => t.id == id)) {
+          final rawTask = rawAccepted.cast<Task?>().firstWhere((t) => t!.id == id, orElse: () => null);
+          if (rawTask != null) {
+            final stamp = prevCompletedAt[id] ?? _savedCompletedAt[id] ?? DateTime.now();
+            _myCompletedTasks.insert(0, rawTask.copyWith(completedAt: stamp));
+          }
         }
       }
 
@@ -395,12 +420,27 @@ class TaskProvider extends ChangeNotifier {
             ? (data['task'] ?? data['data'] ?? data)
             : null;
         if (taskJson is Map<String, dynamic>) {
-          var task = Task.fromJson(taskJson);
+          // Normalize the /tasks/$id/details response: that endpoint returns
+          // poster info under 'provider' but Task.fromJson expects 'posted_by'.
+          // Map it so posterPhone, posterName etc. are extracted correctly.
+          Map<String, dynamic> normalizedJson = taskJson;
+          final providerObj = taskJson['provider'];
+          if (providerObj is Map<String, dynamic> && !taskJson.containsKey('posted_by')) {
+            normalizedJson = Map<String, dynamic>.from(taskJson);
+            normalizedJson['posted_by'] = providerObj;
+            // Also flatten poster_phone at top level for extra safety
+            if (!normalizedJson.containsKey('poster_phone') &&
+                providerObj['phone'] != null) {
+              normalizedJson['poster_phone'] = providerObj['phone'];
+            }
+          }
+
+          var task = Task.fromJson(normalizedJson);
 
           // If the API response omitted posterPhone or posterName, inject
           // them from our persisted sources (browse list snapshot saved at
           // accept time, or any remaining list cache entry that has it).
-          final enriched = Map<String, dynamic>.from(taskJson);
+          final enriched = Map<String, dynamic>.from(normalizedJson);
           bool needsReparse = false;
 
           if (task.posterPhone == null || task.posterPhone!.trim().isEmpty) {
@@ -623,9 +663,25 @@ class TaskProvider extends ChangeNotifier {
   }
 
   /// Helper submits proof for verification (Step 1 of completion flow).
-  /// POSTs complete to notify poster; proof upload is handled server-side.
+  /// Uploads proof photo first (as base64 JSON), then marks task as completed.
   Future<bool> markCompleted(String taskId, {String? proofPath}) async {
     try {
+      // Upload proof image to task_proofs table if provided
+      if (proofPath != null && proofPath.isNotEmpty) {
+        try {
+          final bytes = await File(proofPath).readAsBytes();
+          final b64 = base64Encode(bytes);
+          final ext = proofPath.split('.').last.toLowerCase();
+          final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+          await ApiService.post(
+            '/task/$taskId/upload-proof',
+            body: {'imageUrl': 'data:$mime;base64,$b64', 'type': 'photo'},
+          );
+        } catch (e) {
+          // Non-fatal: log but continue with completion
+          debugPrint('[TaskProvider] Proof upload failed: $e');
+        }
+      }
       await ApiService.post('/tasks/$taskId/complete');
       // Invalidate detail cache so next load gets fresh status.
       _detailCache.remove(taskId);
@@ -699,14 +755,36 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
+  /// Fetch proof photos the helper uploaded for a task.
+  /// Returns a list of image_url strings, newest first.
+  Future<List<String>> fetchTaskProofs(String taskId) async {
+    try {
+      final data = await ApiService.get('/task/$taskId/proofs');
+      final proofs = data['proofs'] as List? ?? [];
+      return proofs
+          .map((p) => (p as Map)['image_url']?.toString() ?? '')
+          .where((url) => url.isNotEmpty)
+          .toList()
+          .reversed
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Poster pays the helper after task completion — calls /pay-helper (no OTP needed).
   Future<bool> payHelper(String taskId) async {
     try {
       await ApiService.post('/tasks/$taskId/pay-helper');
-      await fetchMyTasks();
+      // Refresh task list; ignore refresh errors — payment already succeeded.
+      try { await fetchMyTasks(); } catch (_) {}
       return true;
     } on ApiException catch (e) {
       _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = e.toString();
       notifyListeners();
       return false;
     }

@@ -894,7 +894,10 @@ def user_to_response(user):
         'phone': user.get('phone'),
         'dob': user.get('dob'),
         'profilePhoto': user.get('profile_photo'),
-        'rating': float(user.get('rating', 5.0)),
+        'avatar': user.get('profile_photo'),
+        'bio': user.get('bio'),
+        'rating': float(user.get('rating') or 0),
+        'ratingCount': 0,
         'tasksPosted': user.get('tasks_posted', 0),
         'tasksCompleted': user.get('tasks_completed', 0),
         'totalEarnings': float(user.get('total_earnings', 0)),
@@ -1369,9 +1372,10 @@ def get_current_user():
             
             real_earnings = credit_total - deduction_total
             
-            # Ratings count
+            # Compute live rating + count from helper_ratings
             cursor.execute(f'''
-                SELECT COUNT(*) as cnt FROM helper_ratings WHERE rated_id = {PH}
+                SELECT AVG(rating) as avg_r, COUNT(*) as cnt
+                FROM helper_ratings WHERE rated_id = {PH}
             ''', (request.user_id,))
             row = dict_from_row(cursor.fetchone())
             reviews_count = int(row['cnt'] or 0)
@@ -1382,6 +1386,9 @@ def get_current_user():
             if real_earnings > 0:
                 resp['totalEarnings'] = round(real_earnings, 2)
             resp['reviewsCount'] = reviews_count
+            resp['ratingCount'] = reviews_count
+            if reviews_count > 0:
+                resp['rating'] = round(float(row['avg_r']), 2)
     except Exception as e:
         print(f'⚠️ Stats computation error: {e}')
     

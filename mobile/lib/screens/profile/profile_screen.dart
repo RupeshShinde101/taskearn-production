@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 
 // ── All available skills the user can select ──────────────────────────────────
@@ -22,13 +23,41 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  List<Map<String, dynamic>> _reviews = [];
+  bool _reviewsLoading = false;
+
   @override
   void initState() {
     super.initState();
-    // Refresh user data on open so KYC/email status is always up-to-date
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
+      _loadReviews();
     });
+  }
+
+  Future<void> _refresh() async {
+    await Future.wait([
+      context.read<AuthProvider>().refreshUser(),
+      _loadReviews(),
+    ]);
+  }
+
+  Future<void> _loadReviews() async {
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.isEmpty) return;
+    if (!mounted) return;
+    setState(() => _reviewsLoading = true);
+    try {
+      final data = await ApiService.get('/user/$userId/reviews');
+      if (!mounted) return;
+      final list = (data['reviews'] as List? ?? []);
+      setState(() {
+        _reviews = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        _reviewsLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _reviewsLoading = false);
+    }
   }
 
   @override
@@ -46,9 +75,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Avatar, name, email, rating ──────────────────────────────
@@ -215,6 +247,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               color: AppColors.primary.withValues(alpha: 0.3)),
                         ))
                     .toList(),
+              ),
+
+            const SizedBox(height: 20),
+
+            // ── Reviews Received ──────────────────────────────────────────
+            const _SectionHeader('Reviews Received'),
+            const SizedBox(height: 8),
+            if (_reviewsLoading)
+              const Center(
+                  child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator()))
+            else if (_reviews.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.light,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: const Text('No reviews yet',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.gray)),
+              )
+            else
+              Column(
+                children: _reviews.map((r) => _ReviewCard(review: r)).toList(),
               ),
 
             const SizedBox(height: 20),
@@ -767,3 +827,101 @@ class _MenuItem extends StatelessWidget {
   }
 }
 
+// ── Individual review card ────────────────────────────────────────────────────
+class _ReviewCard extends StatelessWidget {
+  final Map<String, dynamic> review;
+  const _ReviewCard({required this.review});
+
+  @override
+  Widget build(BuildContext context) {
+    final rating = (review['rating'] as num?)?.toDouble() ?? 0;
+    final raterName = review['rater_name'] as String? ?? 'Anonymous';
+    final taskTitle = review['task_title'] as String? ?? 'Task';
+    final comment = (review['review'] as String? ?? '').trim();
+    final createdAt = review['created_at'] as String?;
+    String? dateStr;
+    if (createdAt != null) {
+      try {
+        final dt = DateTime.parse(createdAt).toLocal();
+        dateStr = '${dt.day}/${dt.month}/${dt.year}';
+      } catch (_) {}
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                child: Text(
+                  raterName.isNotEmpty ? raterName[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(raterName,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.dark,
+                            fontSize: 13)),
+                    Text(taskTitle,
+                        style: const TextStyle(
+                            color: AppColors.gray, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    children: List.generate(5, (i) => Icon(
+                      i < rating.round() ? Icons.star : Icons.star_border,
+                      color: AppColors.warning,
+                      size: 14,
+                    )),
+                  ),
+                  if (dateStr != null)
+                    Text(dateStr,
+                        style: const TextStyle(
+                            color: AppColors.grayLight, fontSize: 10)),
+                ],
+              ),
+            ],
+          ),
+          if (comment.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(comment,
+                style: const TextStyle(
+                    color: AppColors.dark, fontSize: 13, height: 1.4)),
+          ],
+        ],
+      ),
+    );
+  }
+}

@@ -262,8 +262,81 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
+  /// Returns a rejection reason string if content is flagged, or null if OK.
+  static String? _checkBannedContent(String title, String description) {
+    final text = '${title.toLowerCase()} ${description.toLowerCase()}';
+    if (text.trim().isEmpty) return null;
+
+    final patterns = <(RegExp, String)>[
+      (RegExp(r'\b(create|make|open|register|sign[- ]?up|generate|bulk)\b.{0,40}\b(email|emails|gmail|yahoo|outlook|hotmail|account|accounts|id|ids|profile|profiles)\b', caseSensitive: false), 'Bulk account or email creation tasks are not allowed (anti-spam policy).'),
+      (RegExp(r'\b(per|each|/)\s*(email|account|id|signup|sign[- ]?up|profile)\b', caseSensitive: false), 'Tasks paying per account/email creation are not allowed.'),
+      (RegExp(r'\b(sell|buy|rent|hire)\b.{0,30}\b(account|accounts|gmail|whatsapp|instagram|facebook|telegram|otp|sim|number)\b', caseSensitive: false), 'Buying or selling accounts/credentials is prohibited.'),
+      (RegExp(r'\b(receive|share|forward|read|provide|give|sell)\b.{0,30}\b(otp|otps|one[- ]time[- ]password|verification\s*code|sms\s*code)\b', caseSensitive: false), 'OTP/verification-code sharing tasks are prohibited.'),
+      (RegExp(r'\botp\s*(work|task|job|earn)\b', caseSensitive: false), 'OTP-based earning tasks are prohibited.'),
+      (RegExp(r'\b(use|share|rent|sell)\b.{0,30}\b(aadhaar|aadhar|pan\s*card|kyc|bank\s*account|upi\s*id)\b', caseSensitive: false), 'Sharing or renting personal KYC documents is prohibited.'),
+      (RegExp(r'\b(fake|paid|bulk)\b.{0,20}\b(reviews?|ratings?|likes?|followers?|subscribers?|comments?|votes?)\b', caseSensitive: false), 'Fake review/engagement/follower tasks are prohibited.'),
+      (RegExp(r'\b(click|watch)\s*(ads|advertisements|videos)\s*(bot|farm|loop)\b', caseSensitive: false), 'Click-fraud tasks are prohibited.'),
+      (RegExp(r'\b(usdt|btc|bitcoin|crypto|forex)\b.{0,30}\b(investment|trade|trading|deposit|recharge|profit|earn)\b', caseSensitive: false), 'Crypto/forex investment tasks are not permitted on Workmate4u.'),
+      (RegExp(r'\b(money\s*mule|transfer\s*money|launder|cash[- ]out)\b', caseSensitive: false), 'Money transfer/mule activity is strictly prohibited.'),
+      (RegExp(r'\b(hack|crack|bypass|unlock)\b.{0,30}\b(password|account|server|whatsapp|instagram|facebook|gmail|wifi|otp)\b', caseSensitive: false), 'Hacking or unauthorized access tasks are prohibited.'),
+      (RegExp(r'\b(escort|webcam\s*model|adult\s*content|nude|sex\s*chat|drugs?|weed|cocaine|heroin)\b', caseSensitive: false), 'Adult/illicit-content tasks are not allowed.'),
+      (RegExp(r'\b(captcha\s*solving|typing\s*captcha)\b', caseSensitive: false), 'Captcha-solving/spam tasks are not allowed.'),
+      (RegExp(r'\b(spam|spamming)\b.{0,20}\b(email|sms|whatsapp|message)\b', caseSensitive: false), 'Spam/bulk messaging tasks are not allowed.'),
+      (RegExp(r'\b(registration|joining|training|security|refundable)\s*(fee|deposit|amount|charge)\b', caseSensitive: false), 'Charging registration/security/joining fees from helpers is prohibited.'),
+      (RegExp(r'\b(pay|deposit|send|transfer)\b.{0,30}\b(first|upfront|in\s*advance|before\s*start)\b', caseSensitive: false), 'Tasks requiring upfront payment from the helper are not allowed.'),
+      (RegExp(r'\b(gift\s*card|itunes\s*card|amazon\s*voucher|paytm\s*voucher|google\s*play\s*card)\b', caseSensitive: false), 'Gift-card/voucher purchase tasks are not allowed (common scam vector).'),
+      (RegExp(r'\b(western\s*union|moneygram|wire\s*transfer)\b', caseSensitive: false), 'Wire-transfer/money-remittance tasks are not allowed.'),
+      (RegExp(r'\b(double|2x|triple)\s*your\s*(money|investment|amount)\b', caseSensitive: false), 'Investment doubling/get-rich-quick tasks are prohibited.'),
+      (RegExp(r'\b(guaranteed)\s*(returns?|profit|income|earning)\b', caseSensitive: false), 'Guaranteed-return investment tasks are prohibited.'),
+      (RegExp(r'\b(mlm|multi[- ]level|pyramid|ponzi|chain\s*scheme|matrix\s*scheme)\b', caseSensitive: false), 'MLM/pyramid/chain schemes are prohibited.'),
+      (RegExp(r'\b(recharge|deposit)\b.{0,20}\b(usdt|btc|trx|binance|crypto)\b', caseSensitive: false), 'Crypto recharge/deposit tasks are prohibited.'),
+      (RegExp(r'\bshare\s*(your\s*)?(otp|cvv|pin|password|net[- ]?banking|atm\s*pin)\b', caseSensitive: false), 'Sharing of OTP/PIN/CVV/banking credentials is strictly prohibited.'),
+      (RegExp(r'\b(give|tell|send)\s*(me\s*)?(your\s*)?(aadhaar|pan|bank|otp|cvv|pin)\b', caseSensitive: false), 'Asking helpers for Aadhaar/PAN/bank/OTP details is prohibited.'),
+      (RegExp(r'\b(fake|duplicate|forged?)\s*(aadhaar|pan|certificate|degree|marksheet|id|licence|license|passport)\b', caseSensitive: false), 'Fake/forged document tasks are illegal and prohibited.'),
+      (RegExp(r'\b(buy|sell)\s*(fake|stolen)\b', caseSensitive: false), 'Sale of fake/stolen goods is prohibited.'),
+      (RegExp(r'\b(get\s*rich\s*quick|easy\s*money|no\s*work\s*required)\b', caseSensitive: false), 'Misleading earnings claims are not allowed.'),
+      (RegExp(r'\b(pay|paid|payment)\b.{0,15}\b(outside|off)\b.{0,15}\b(app|platform|workmate)\b', caseSensitive: false), 'Tasks asking to pay outside the platform are not allowed.'),
+      (RegExp(r'\b(skip|bypass|avoid)\b.{0,15}\b(commission|platform|service\s*charge)\b', caseSensitive: false), 'Bypassing platform commission is not allowed.'),
+      (RegExp(r'\bcash\s*only\b.{0,30}\b(outside|hand|direct)\b', caseSensitive: false), 'Cash-only/off-platform payment tasks are not allowed.'),
+      (RegExp(r'\b(gun|pistol|firearm|ammunition|country\s*made)\b', caseSensitive: false), 'Weapons-related tasks are prohibited.'),
+      (RegExp(r'\b(mdma|lsd|ganja|hashish|opium|brown\s*sugar)\b', caseSensitive: false), 'Drug-related tasks are prohibited.'),
+    ];
+
+    for (final (rx, reason) in patterns) {
+      if (rx.hasMatch(text)) return reason;
+    }
+
+    // Phone number in task content
+    if (RegExp(r'(?:\+?91[\s\-]?)?[6-9]\d{9}').hasMatch(text)) {
+      return 'Sharing phone numbers in the task is not allowed. Helpers can contact you through in-app chat.';
+    }
+    // Email address in task content
+    if (RegExp(r'[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}', caseSensitive: false).hasMatch(text)) {
+      return 'Sharing email addresses in the task is not allowed. Helpers can contact you through in-app chat.';
+    }
+
+    return null;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // ── Client-side banned keyword check ────────────────────────────────────
+    final _bannedResult = _checkBannedContent(_titleCtrl.text, _descCtrl.text);
+    if (_bannedResult != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_bannedResult),
+            backgroundColor: AppColors.danger,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     final LatLng? taskLocation =
         _isDelivery ? (_pickupLocation ?? _location) : _location;
     if (taskLocation == null) {

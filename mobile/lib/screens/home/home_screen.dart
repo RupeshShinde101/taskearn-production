@@ -148,19 +148,7 @@ class _HomeScreenState extends State<HomeScreen>
               backgroundColor: Colors.white,
               elevation: 0,
               title: Row(children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: AppColors.gradient),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.handshake_rounded,
-                      color: Colors.white, size: 18),
-                ),
-                const SizedBox(width: 8),
-                const GradientText('Workmate4u',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                Image.asset('assets/images/logo.png', height: 36),
               ]),
               actions: [
                 GestureDetector(
@@ -435,21 +423,9 @@ class _HomeScreenState extends State<HomeScreen>
         child: Column(
           children: [
             Container(
-              width: 68,
+              width: 100,
               height: 68,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: AppColors.gradient),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.35),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.handshake_rounded,
-                  color: Colors.white, size: 32),
+              child: Image.asset('assets/images/logo.png', fit: BoxFit.contain),
             ),
             const SizedBox(height: 18),
             const Text(

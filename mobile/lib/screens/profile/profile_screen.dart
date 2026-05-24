@@ -6,6 +6,18 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 
+// ── Rank colour helper ──────────────────────────────────────────────────────
+Color _rankColor(String rank) {
+  switch (rank) {
+    case 'Elite':    return const Color(0xFF7C3AED);
+    case 'Platinum': return const Color(0xFF0EA5E9);
+    case 'Gold':     return const Color(0xFFF59E0B);
+    case 'Silver':   return const Color(0xFF6B7280);
+    case 'Bronze':   return const Color(0xFFB45309);
+    default:         return AppColors.gray;
+  }
+}
+
 // ── All available skills the user can select ──────────────────────────────────
 const _kAllSkills = [
   'Cleaning', 'Delivery', 'Driving', 'Cooking', 'Plumbing', 'Electrical',
@@ -25,6 +37,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   List<Map<String, dynamic>> _reviews = [];
   bool _reviewsLoading = false;
+  bool _showReviews = false;
 
   @override
   void initState() {
@@ -173,25 +186,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Stats row ─────────────────────────────────────────────────
+            // ── Stats grid (2×2: Completed | Posted / Rating | Rank) ─────────
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                child: Column(
                   children: [
-                    _StatCell(
-                        label: 'Tasks\nCompleted',
-                        value: '${user?.tasksCompleted ?? 0}'),
-                    const VerticalDivider(),
-                    _StatCell(
-                        label: 'Tasks\nPosted',
-                        value: '${user?.tasksPosted ?? 0}'),
-                    const VerticalDivider(),
-                    _StatCell(
-                        label: 'Rating',
-                        value: user?.rating != null && user!.rating > 0
-                            ? '${user.rating.toStringAsFixed(1)} ⭐'
-                            : 'New'),
+                    IntrinsicHeight(
+                      child: Row(
+                        children: [
+                          _StatCell(
+                            label: 'Tasks\nCompleted',
+                            value: '${user?.tasksCompleted ?? 0}',
+                          ),
+                          const VerticalDivider(width: 1),
+                          _StatCell(
+                            label: 'Tasks\nPosted',
+                            value: '${user?.tasksPosted ?? 0}',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 20),
+                    IntrinsicHeight(
+                      child: Row(
+                        children: [
+                          _StatCell(
+                            label: 'Rating',
+                            value: user != null && user.rating > 0
+                                ? '${user.rating.toStringAsFixed(1)} ★'
+                                : '— ★',
+                            valueColor: user != null && user.rating > 0
+                                ? AppColors.warning
+                                : AppColors.gray,
+                          ),
+                          const VerticalDivider(width: 1),
+                          _StatCell(
+                            label: 'Rank',
+                            value: user?.rank ?? 'New',
+                            valueColor: _rankColor(user?.rank ?? 'New'),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -252,30 +289,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 20),
 
             // ── Reviews Received ──────────────────────────────────────────
-            const _SectionHeader('Reviews Received'),
-            const SizedBox(height: 8),
-            if (_reviewsLoading)
-              const Center(
-                  child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: CircularProgressIndicator()))
-            else if (_reviews.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.light,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
+            InkWell(
+              onTap: () => setState(() => _showReviews = !_showReviews),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Text(
+                      'Reviews Received',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (_reviews.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${_reviews.length}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    Icon(
+                      _showReviews
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      color: AppColors.gray,
+                    ),
+                  ],
                 ),
-                child: const Text('No reviews yet',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.gray)),
-              )
-            else
-              Column(
-                children: _reviews.map((r) => _ReviewCard(review: r)).toList(),
               ),
+            ),
+            if (_showReviews) ...[
+              const SizedBox(height: 8),
+              if (_reviewsLoading)
+                const Center(
+                    child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: CircularProgressIndicator()))
+              else if (_reviews.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.light,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: const Text('No reviews yet',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.gray)),
+                )
+              else
+                Column(
+                  children: _reviews.map((r) => _ReviewCard(review: r)).toList(),
+                ),
+            ],
 
             const SizedBox(height: 20),
 
@@ -523,14 +605,18 @@ class _EditProfileSheet extends StatefulWidget {
 class _EditProfileSheetState extends State<_EditProfileSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _bioCtrl;
+  late final TextEditingController _phoneCtrl;
+  late final TextEditingController _emailCtrl;
   late List<String> _selectedSkills;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _nameCtrl = TextEditingController(text: widget.auth.user?.name);
-    _bioCtrl = TextEditingController(text: widget.auth.user?.bio);
+    _nameCtrl  = TextEditingController(text: widget.auth.user?.name);
+    _bioCtrl   = TextEditingController(text: widget.auth.user?.bio);
+    _phoneCtrl = TextEditingController(text: widget.auth.user?.phone ?? '');
+    _emailCtrl = TextEditingController(text: widget.auth.user?.email ?? '');
     _selectedSkills = List.from(widget.auth.user?.skills ?? []);
   }
 
@@ -538,6 +624,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   void dispose() {
     _nameCtrl.dispose();
     _bioCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
     super.dispose();
   }
 
@@ -564,6 +652,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       name: _nameCtrl.text,
       bio: _bioCtrl.text,
       skills: _selectedSkills,
+      phone: _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
+      email: _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
     );
 
     if (!mounted) return;
@@ -604,6 +694,23 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               decoration: const InputDecoration(
                   labelText: 'Full Name',
                   prefixIcon: Icon(Icons.person_outline)),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                  labelText: 'Mobile Number',
+                  prefixIcon: Icon(Icons.phone_outlined),
+                  hintText: '+91 XXXXXXXXXX'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                  labelText: 'Email Address',
+                  prefixIcon: Icon(Icons.email_outlined)),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -777,18 +884,20 @@ class _EmptySkillsHint extends StatelessWidget {
 class _StatCell extends StatelessWidget {
   final String label;
   final String value;
-  const _StatCell({required this.label, required this.value});
+  final Color? valueColor;
+  const _StatCell({required this.label, required this.value, this.valueColor});
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(value,
-              style: const TextStyle(
+              style: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 15,
-                  color: AppColors.dark)),
+                  color: valueColor ?? AppColors.dark)),
           const SizedBox(height: 4),
           Text(label,
               textAlign: TextAlign.center,

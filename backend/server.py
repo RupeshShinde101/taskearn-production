@@ -290,6 +290,29 @@ except Exception as _fcm_init_err:
     print(f'[FCM] Init error: {_fcm_init_err}')
 
 _fcm_columns_ensured = False
+_bio_skills_columns_ensured = False
+
+def _ensure_bio_skills_columns():
+    """Add bio and skills columns to users table if they do not exist (one-time per process)."""
+    global _bio_skills_columns_ensured
+    if _bio_skills_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS skills TEXT")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'bio' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT")
+                if 'skills' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN skills TEXT")
+            conn.commit()
+        _bio_skills_columns_ensured = True
+    except Exception as e:
+        print(f'⚠️ _ensure_bio_skills_columns error: {e}')
 
 def _ensure_fcm_token_column():
     """Add fcm_token column to users table if it does not exist (one-time per process)."""
@@ -836,6 +859,18 @@ def user_to_response(user):
     """Convert user dict to safe response (no password)"""
     if not user:
         return None
+    _ensure_bio_skills_columns()
+    import json as _json_u
+    _skills_raw = user.get('skills')
+    if isinstance(_skills_raw, list):
+        _skills = _skills_raw
+    elif isinstance(_skills_raw, str) and _skills_raw.strip():
+        try:
+            _skills = _json_u.loads(_skills_raw)
+        except Exception:
+            _skills = []
+    else:
+        _skills = []
     
     # Get wallet balance
     wallet = get_or_create_wallet(user['id'])
@@ -896,6 +931,7 @@ def user_to_response(user):
         'profilePhoto': user.get('profile_photo'),
         'avatar': user.get('profile_photo'),
         'bio': user.get('bio'),
+        'skills': _skills,
         'rating': float(user.get('rating') or 0),
         'ratingCount': 0,
         'tasksPosted': user.get('tasks_posted', 0),
@@ -1387,8 +1423,22 @@ def get_current_user():
                 resp['totalEarnings'] = round(real_earnings, 2)
             resp['reviewsCount'] = reviews_count
             resp['ratingCount'] = reviews_count
+            avg_r_val = float(row['avg_r'] or 0)
             if reviews_count > 0:
-                resp['rating'] = round(float(row['avg_r']), 2)
+                resp['rating'] = round(avg_r_val, 2)
+            # Compute rank from reviews + rating
+            if reviews_count == 0:
+                resp['rank'] = 'New'
+            elif reviews_count >= 50 and avg_r_val >= 4.8:
+                resp['rank'] = 'Elite'
+            elif reviews_count >= 25 and avg_r_val >= 4.5:
+                resp['rank'] = 'Platinum'
+            elif reviews_count >= 10 and avg_r_val >= 4.0:
+                resp['rank'] = 'Gold'
+            elif reviews_count >= 5 and avg_r_val >= 3.5:
+                resp['rank'] = 'Silver'
+            else:
+                resp['rank'] = 'Bronze'
     except Exception as e:
         print(f'⚠️ Stats computation error: {e}')
     
@@ -1930,10 +1980,16 @@ def reset_password():
 def update_profile():
     """Update user profile"""
     data = request.get_json()
-    
-    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob']
+    _ensure_bio_skills_columns()
+    import json as _json_profile
+
+    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio']
     updates = {k: v for k, v in data.items() if k in allowed_fields}
-    
+
+    # Skills: stored as JSON string in the DB
+    if 'skills' in data and isinstance(data['skills'], list):
+        updates['skills'] = _json_profile.dumps(data['skills'])
+
     # Validate DOB / age if provided
     if 'dob' in updates:
         try:
@@ -1943,7 +1999,7 @@ def update_profile():
                 return jsonify({'success': False, 'message': 'You must be 16 or older to use Workmate4u'}), 400
         except ValueError:
             return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
-    
+
     # Validate email uniqueness if changing email
     if 'email' in updates:
         new_email = updates['email'].strip().lower()
@@ -1953,12 +2009,24 @@ def update_profile():
         if existing and existing['id'] != request.user_id:
             return jsonify({'success': False, 'message': 'Email already in use'}), 400
         updates['email'] = new_email
-    
-    # Limit profile photo size (max ~2MB base64 after client compression)
-    if 'profile_photo' in updates and updates['profile_photo']:
+
+    # Validate phone uniqueness if changing phone
+    if 'phone' in updates:
+        new_phone = (updates['phone'] or '').strip()
+        if new_phone:
+            with get_db() as (cursor, _ph_check):
+                cursor.execute(
+                    f'SELECT id FROM users WHERE phone = {PH} AND id != {PH}',
+                    (new_phone, request.user_id)
+                )
+                if cursor.fetchone():
+                    return jsonify({'success': False, 'message': 'Phone number already in use'}), 400
+        updates['phone'] = new_phone or None
+
+    if 'profile_photo' in updates and updates.get('profile_photo'):
         if len(updates['profile_photo']) > 2800000:
             return jsonify({'success': False, 'message': 'Photo too large. Max 2MB.'}), 400
-    
+
     if not updates:
         return jsonify({'success': False, 'message': 'No valid fields to update'}), 400
     
@@ -2391,6 +2459,47 @@ def create_task():
             print(f"✅ Task created successfully with ID: {task_id}")
         
         # Push notification feature removed.
+
+        # ── Skill-match notifications ──────────────────────────────────────
+        if task_id:
+            try:
+                import json as _json_skill
+                _task_category = data.get('category', '').lower()
+                _task_title = data.get('title', '').lower()
+                _task_desc = data.get('description', '').lower()
+
+                with get_db() as (_sm_cursor, _sm_conn):
+                    _sm_cursor.execute(f'''
+                        SELECT id, fcm_token, skills FROM users
+                        WHERE fcm_token IS NOT NULL
+                          AND id != {PH}
+                          AND skills IS NOT NULL
+                          AND skills NOT IN ({PH}, {PH}, {PH})
+                    ''', (request.user_id, '[]', '', 'null'))
+                    _potential = [dict_from_row(r) for r in _sm_cursor.fetchall()]
+
+                for _pu in _potential:
+                    try:
+                        _sr = _pu.get('skills', '[]')
+                        _user_skills = [s.lower() for s in (
+                            _json_skill.loads(_sr) if isinstance(_sr, str) else (_sr or [])
+                        )]
+                        _matched = any(
+                            _sk in _task_category or _task_category in _sk or
+                            _sk in _task_title or _sk in _task_desc
+                            for _sk in _user_skills
+                        )
+                        if _matched:
+                            send_fcm_to_user(
+                                _pu['id'],
+                                '🎯 Task matched your skills!',
+                                f'"{data["title"]}" — \u20b9{data["price"]} — {data.get("category", "General")}',
+                                data={'type': 'task_matched', 'taskId': str(task_id)}
+                            )
+                    except Exception:
+                        pass
+            except Exception as _match_e:
+                print(f'⚠️ Skill-match notification error: {_match_e}')
 
         response = {
             'success': True,

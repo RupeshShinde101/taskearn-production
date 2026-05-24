@@ -9,6 +9,8 @@ class User {
   final double rating;
   final int tasksCompleted;
   final int tasksPosted;
+  final int reviewsCount;
+  final String rank;
   final bool isKycVerified;
   final String? kycStatus; // 'pending', 'approved', 'rejected', null
   final bool isEmailVerified;
@@ -28,6 +30,8 @@ class User {
     this.rating = 0.0,
     this.tasksCompleted = 0,
     this.tasksPosted = 0,
+    this.reviewsCount = 0,
+    this.rank = 'New',
     this.isKycVerified = false,
     this.kycStatus,
     this.isEmailVerified = false,
@@ -48,8 +52,10 @@ class User {
       bio: json['bio'],
       skills: (json['skills'] as List? ?? []).map((s) => s.toString()).toList(),
       rating: double.tryParse((json['rating'] ?? 0).toString()) ?? 0.0,
-      tasksCompleted: json['tasks_completed'] ?? 0,
-      tasksPosted: json['tasks_posted'] ?? 0,
+      tasksCompleted: json['tasksCompleted'] ?? json['tasks_completed'] ?? 0,
+      tasksPosted: json['tasksPosted'] ?? json['tasks_posted'] ?? 0,
+      reviewsCount: json['reviewsCount'] ?? json['reviews_count'] ?? 0,
+      rank: json['rank'] ?? 'New',
       // Treat as verified when ANY known KYC field indicates approval
       isKycVerified: (json['kyc_verified'] == true) ||
           (json['kycVerified'] == true) ||

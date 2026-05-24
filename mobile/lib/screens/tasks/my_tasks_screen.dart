@@ -706,29 +706,32 @@ class _PostedTaskList extends StatelessWidget {
                   ? null
                   : () async {
                       setStateInner(() => paying = true);
+                      bool ok = false;
                       try {
-                        final ok = await context
+                        ok = await context
                             .read<TaskProvider>()
                             .payHelper(t.id);
-                        if (context.mounted) {
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(ok
-                                  ? 'Payment released to helper!'
-                                  : (context
-                                          .read<TaskProvider>()
-                                          .error ??
-                                      'Payment failed. Try again.')),
-                              backgroundColor:
-                                  ok ? AppColors.success : AppColors.danger,
-                            ),
-                          );
-                        }
                       } catch (_) {
-                        // payHelper catches all exceptions internally; this
-                        // guard ensures the dialog always closes regardless.
-                        if (context.mounted) Navigator.pop(ctx);
+                        // payHelper catches all exceptions internally.
+                      } finally {
+                        // Always close using the dialog's own context (ctx)
+                        // — the outer `context` may become unmounted when
+                        // fetchMyTasks() triggers a rebuild of the screen.
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      }
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(ok
+                                ? 'Payment released to helper!'
+                                : (context
+                                        .read<TaskProvider>()
+                                        .error ??
+                                    'Payment failed. Try again.')),
+                            backgroundColor:
+                                ok ? AppColors.success : AppColors.danger,
+                          ),
+                        );
                       }
                     },
               style: ElevatedButton.styleFrom(

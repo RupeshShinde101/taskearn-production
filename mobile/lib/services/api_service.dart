@@ -1,9 +1,11 @@
 import 'dart:async' show TimeoutException;
 import 'dart:convert';
-import 'dart:io' show HttpException, SocketException, TlsException;
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import '../services/storage_service.dart';
+import 'doh_helper.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -17,11 +19,79 @@ class ApiException implements Exception {
 class ApiService {
   static const String _prodUrl =
       'https://taskearn-production-production.up.railway.app/api';
-  // static const String _devUrl = 'http://localhost:5000/api';
+  static const String _railwayHost =
+      'taskearn-production-production.up.railway.app';
 
-  static String get baseUrl {
-    // Switch to dev URL in debug mode if needed
-    return _prodUrl;
+  static String get baseUrl => _prodUrl;
+
+  // ─── Custom HTTP client with DoH fallback for Railway host ─────────────────
+  // Only this client has a connectionFactory — Firebase, Google Sign-In, and
+  // all other packages use the default system-DNS client unaffected.
+  static http.Client? _client;
+  static http.Client get _httpClient =>
+      _client ??= IOClient(_buildDartClient());
+
+  static HttpClient _buildDartClient() {
+    return HttpClient()..connectionFactory = _connectionFactory;
+  }
+
+  /// DNS-aware connection factory:
+  /// • Proxy connections go to the proxy host (not the target).
+  /// • Railway host: system DNS (4 s) → DoH fallback via [DohHelper].
+  /// • All other hosts: system DNS as normal.
+  /// For HTTPS, dart:io wraps the plain socket with TLS using the original
+  /// hostname for SNI + certificate verification — no security compromise.
+  static Future<ConnectionTask<Socket>> _connectionFactory(
+      Uri url, String? proxyHost, int? proxyPort) async {
+    // ── Proxy: connect to the proxy, dart:io handles the CONNECT tunnel ──────
+    if (proxyHost != null) {
+      final addrs = await InternetAddress.lookup(proxyHost);
+      if (addrs.isEmpty) throw SocketException('Failed host lookup: $proxyHost');
+      final addr = addrs.firstWhere(
+        (a) => a.type == InternetAddressType.IPv4,
+        orElse: () => addrs.first,
+      );
+      return Socket.startConnect(addr, proxyPort!);
+    }
+
+    final host = url.host;
+    final port =
+        url.hasPort ? url.port : (url.isScheme('https') ? 443 : 80);
+
+    // ── Railway backend: try system DNS → DoH fallback ───────────────────────
+    if (host == _railwayHost) {
+      InternetAddress? addr;
+
+      try {
+        final addrs = await InternetAddress.lookup(host)
+            .timeout(const Duration(seconds: 4));
+        if (addrs.isNotEmpty) {
+          addr = addrs.firstWhere(
+            (a) => a.type == InternetAddressType.IPv4,
+            orElse: () => addrs.first,
+          );
+        }
+      } on SocketException {
+        // System DNS returned an error — fall through to DoH
+      } on TimeoutException {
+        // System DNS timed out — fall through to DoH
+      } catch (_) {}
+
+      addr ??= await DohHelper.resolve(host);
+
+      if (addr == null) throw SocketException('Failed host lookup: $host');
+      debugPrint('[API] Connecting to $host via ${addr.address}:$port');
+      return Socket.startConnect(addr, port);
+    }
+
+    // ── All other hosts: normal system DNS ──────────────────────────────────
+    final addrs = await InternetAddress.lookup(host);
+    if (addrs.isEmpty) throw SocketException('Failed host lookup: $host');
+    final addr = addrs.firstWhere(
+      (a) => a.type == InternetAddressType.IPv4,
+      orElse: () => addrs.first,
+    );
+    return Socket.startConnect(addr, port);
   }
 
   static Map<String, String> get _headers {
@@ -70,7 +140,7 @@ class ApiService {
       uri = uri.replace(queryParameters: queryParams);
     }
     return _safeRequest(
-      () => http.get(uri, headers: _headers).timeout(const Duration(seconds: 30)),
+      () => _httpClient.get(uri, headers: _headers).timeout(const Duration(seconds: 30)),
     );
   }
 
@@ -79,7 +149,7 @@ class ApiService {
       {Map<String, dynamic>? body,
       Duration timeout = const Duration(seconds: 30)}) async {
     return _safeRequest(
-      () => http
+      () => _httpClient
           .post(
             Uri.parse('$baseUrl$path'),
             headers: _headers,
@@ -92,7 +162,7 @@ class ApiService {
   // ─── PUT ────────────────────────────────────────────────────────────────────
   static Future<dynamic> put(String path, {Map<String, dynamic>? body}) async {
     return _safeRequest(
-      () => http
+      () => _httpClient
           .put(
             Uri.parse('$baseUrl$path'),
             headers: _headers,
@@ -105,7 +175,7 @@ class ApiService {
   // ─── DELETE ─────────────────────────────────────────────────────────────────
   static Future<dynamic> delete(String path) async {
     return _safeRequest(
-      () => http
+      () => _httpClient
           .delete(Uri.parse('$baseUrl$path'), headers: _headers)
           .timeout(const Duration(seconds: 30)),
     );
@@ -129,7 +199,7 @@ class ApiService {
     if (fields != null) request.fields.addAll(fields);
 
     try {
-      final streamed = await request.send().timeout(const Duration(seconds: 60));
+      final streamed = await _httpClient.send(request).timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {

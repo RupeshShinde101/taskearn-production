@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/image_utils.dart';
 
 // ── Rank colour helper ──────────────────────────────────────────────────────
 Color _rankColor(String rank) {
@@ -106,9 +107,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         CircleAvatar(
                           radius: 48,
-                          backgroundImage: user?.avatar != null
-                              ? NetworkImage(user!.avatar!)
-                              : null,
+                          backgroundImage: avatarImage(user?.avatar),
                           backgroundColor: AppColors.light,
                           child: user?.avatar == null
                               ? Text(

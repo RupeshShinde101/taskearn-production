@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../theme/app_theme.dart';
+import '../utils/image_utils.dart';
 
 class TaskCard extends StatelessWidget {
   final Task task;
@@ -132,9 +133,7 @@ class TaskCard extends StatelessWidget {
                   CircleAvatar(
                     radius: 12,
                     backgroundColor: AppColors.light,
-                    backgroundImage: task.posterAvatar != null
-                        ? NetworkImage(task.posterAvatar!)
-                        : null,
+                    backgroundImage: avatarImage(task.posterAvatar),
                     child: task.posterAvatar == null
                         ? Text(
                             task.posterName.isNotEmpty

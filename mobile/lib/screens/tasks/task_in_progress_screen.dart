@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -12,6 +13,7 @@ import '../../models/task.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
 
 class TaskInProgressScreen extends StatefulWidget {
@@ -906,15 +908,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                           radius: 24,
                           backgroundColor:
                               AppColors.primary.withValues(alpha: 0.12),
-                          backgroundImage: (task.posterAvatar != null &&
-                                  task.posterAvatar!.isNotEmpty)
-                              ? NetworkImage(task.posterAvatar!)
-                              : null,
-                          onBackgroundImageError:
-                              (task.posterAvatar != null &&
-                                      task.posterAvatar!.isNotEmpty)
-                                  ? (_, __) {}
-                                  : null,
+                          backgroundImage: avatarImage(task.posterAvatar),
+                          onBackgroundImageError: (_, __) {},
                           child: (task.posterAvatar == null ||
                                   task.posterAvatar!.isEmpty)
                               ? Text(

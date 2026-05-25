@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
@@ -28,6 +29,9 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoading => _loading;
   String? get error => _error;
 
+  /// Client-side session duration: 30 days after last successful login.
+  static const Duration _kSessionDuration = Duration(days: 30);
+
   AuthProvider() {
     _checkAuth();
   }
@@ -40,6 +44,25 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
 
+    // ── Client-side session expiry ─────────────────────────────────────────
+    final expiry = StorageService.getSessionExpiry();
+    if (expiry != null && DateTime.now().isAfter(expiry)) {
+      debugPrint('[AUTH] Session expired at $expiry — clearing session.');
+      await StorageService.clearSession();
+      _status = AuthStatus.unauthenticated;
+      notifyListeners();
+      return;
+    }
+
+    // ── Restore user instantly from local cache (no network wait) ──────────
+    final cachedJson = StorageService.getUserJson();
+    if (cachedJson != null) {
+      _user = User.fromJson(cachedJson);
+      _status = AuthStatus.authenticated;
+      notifyListeners(); // show the app immediately
+    }
+
+    // ── Background server verification ─────────────────────────────────────
     try {
       final data = await ApiService.get('/auth/me');
       final userJson = Map<String, dynamic>.from((data['user'] ?? data) as Map);
@@ -49,19 +72,19 @@ class AuthProvider extends ChangeNotifier {
           'kycVerified=${userJson["kycVerified"]} '
           'kycStatus=${userJson["kycStatus"]}');
       _user = User.fromJson(userJson);
+      await StorageService.saveUserJson(userJson); // keep cache fresh
       _status = AuthStatus.authenticated;
       _registerFcmToken();
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403) {
-        await StorageService.clearToken();
+        // Token explicitly rejected by server — full logout
+        await StorageService.clearSession();
+        _user = null;
         _status = AuthStatus.unauthenticated;
-      } else {
-        // Network/server error — keep token, user stays logged in
-        _status = AuthStatus.authenticated;
       }
+      // Other API errors (5xx, timeout): keep the cached user logged in
     } catch (_) {
-      // Network unavailable on startup — keep token, stay logged in
-      _status = AuthStatus.authenticated;
+      // Network unavailable — keep cached user, stay logged in
     }
     notifyListeners();
   }
@@ -82,6 +105,9 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveToken(token);
         _user = User.fromJson(data['user'] ?? data);
         await StorageService.saveUserId(_user!.id);
+        await StorageService.saveUserJson(_user!.toJson());
+        await StorageService.saveSessionExpiry(
+            DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();
@@ -106,39 +132,83 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
     String? phone,
+    String? dob,
+    String? inviteCode,
     String? referralCode,
   }) async {
     _loading = true;
     _error = null;
     notifyListeners();
 
-    try {
-      final data = await ApiService.post('/auth/register', body: {
-        'name': name.trim(),
-        'email': email.trim(),
-        'password': password,
-        if (phone != null) 'phone': phone,
-        if (referralCode != null && referralCode.isNotEmpty)
-          'referral_code': referralCode,
-      });
-
-      final token = data['token'] ?? data['access_token'];
-      if (token != null) {
-        await StorageService.saveToken(token);
-        _user = User.fromJson(data['user'] ?? data);
-        await StorageService.saveUserId(_user!.id);
-        _status = AuthStatus.authenticated;
-      }
-
-      _loading = false;
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
+    // ── Pre-flight connectivity check ─────────────────────────────────────
+    final connectivityResults = await Connectivity().checkConnectivity();
+    final hasNetwork =
+        connectivityResults.any((r) => r != ConnectivityResult.none);
+    if (!hasNetwork) {
+      _error =
+          'No internet connection. Please enable mobile data or Wi-Fi and try again.';
       _loading = false;
       notifyListeners();
       return false;
     }
+
+    final body = {
+      'name': name.trim(),
+      'email': email.trim(),
+      'password': password,
+      if (phone != null) 'phone': phone,
+      if (dob != null && dob.isNotEmpty) 'date_of_birth': dob,
+      if (inviteCode != null && inviteCode.isNotEmpty)
+        'invite_code': inviteCode.trim().toUpperCase(),
+      if (referralCode != null && referralCode.isNotEmpty)
+        'referral_code': referralCode.trim(),
+    };
+
+    // ── Attempt registration (one auto-retry on transient network errors) ──
+    ApiException? lastNetworkError;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (attempt == 1) {
+        // Brief pause before retry — lets DNS/connection recover
+        await Future.delayed(const Duration(seconds: 3));
+        debugPrint('[AUTH] register: retrying after transient network error…');
+      }
+      try {
+        final data =
+            await ApiService.post('/auth/register', body: body);
+
+        final token = data['token'] ?? data['access_token'];
+        if (token != null) {
+          await StorageService.saveToken(token);
+          _user = User.fromJson(data['user'] ?? data);
+          await StorageService.saveUserId(_user!.id);
+          await StorageService.saveUserJson(_user!.toJson());
+          await StorageService.saveSessionExpiry(
+              DateTime.now().add(_kSessionDuration));
+          _status = AuthStatus.authenticated;
+        }
+
+        _loading = false;
+        notifyListeners();
+        return true;
+      } on ApiException catch (e) {
+        if (e.statusCode != null) {
+          // Server responded with an error — don't retry, surface immediately
+          _error = e.message;
+          _loading = false;
+          notifyListeners();
+          return false;
+        }
+        // statusCode == null → network/connection error — save and maybe retry
+        lastNetworkError = e;
+      }
+    }
+
+    // Both attempts failed with a network error
+    _error = lastNetworkError?.message ??
+        'Could not connect to the server. Please try again.';
+    _loading = false;
+    notifyListeners();
+    return false;
   }
 
   Future<void> logout() async {
@@ -148,7 +218,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
-    await StorageService.clearToken();
+    await StorageService.clearSession();
     _user = null;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
@@ -168,6 +238,7 @@ class AuthProvider extends ChangeNotifier {
           'is_kyc_verified=${userJson["is_kyc_verified"]}');
       debugPrint('[AUTH] All keys: ${userJson.keys.toList()}');
       _user = User.fromJson(userJson);
+      await StorageService.saveUserJson(userJson); // keep cache fresh
       notifyListeners();
     } catch (e) {
       debugPrint('[AUTH] refreshUser error: $e');
@@ -346,6 +417,9 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveToken(token);
         _user = User.fromJson(data['user'] ?? data);
         await StorageService.saveUserId(_user!.id);
+        await StorageService.saveUserJson(_user!.toJson());
+        await StorageService.saveSessionExpiry(
+            DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();

@@ -148,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen>
               backgroundColor: Colors.white,
               elevation: 0,
               title: Row(children: [
-                Image.asset('assets/images/logo.png', height: 42),
+                Image.asset('assets/images/logo.png', height: 56),
               ]),
               actions: [
                 GestureDetector(
@@ -422,11 +422,7 @@ class _HomeScreenState extends State<HomeScreen>
         padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
         child: Column(
           children: [
-            Container(
-              width: 100,
-              height: 68,
-              child: Image.asset('assets/images/logo.png', fit: BoxFit.contain),
-            ),
+            Image.asset('assets/images/logo.png', width: 200),
             const SizedBox(height: 18),
             const Text(
               'What is Workmate4u?',

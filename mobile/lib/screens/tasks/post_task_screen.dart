@@ -39,6 +39,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   LatLng? _dropLocation;
   bool _gettingPickupGps = false;
   bool _gettingDropGps = false;
+  double? _calculatedDistanceKm;
 
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
@@ -53,12 +54,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'cleaning':    ['How many rooms?', 'Type of cleaning?', 'Time slot?', 'Pets at home?'],
     'cooking':     ['How many people?', 'What cuisine/dishes?', 'Dietary restrictions?', 'Time needed?'],
     'laundry':     ['How many clothes?', 'Wash + fold or just fold?', 'Pick up from home?'],
+    'household':   ['What chores needed?', 'How many rooms?', 'Duration?', 'Supplies provided?'],
+    'shopping':    ['What items to buy?', 'Which store/area?', 'Item budget?', 'Urgent?'],
     'electrician': ['What electrical work?', 'Specific fault/issue?', 'Urgent?'],
     'plumbing':    ['What plumbing issue?', 'Room affected?', 'Urgent?'],
     'repair':      ['What to repair?', 'Brand/model?', 'How long broken?'],
+    'vehicle':     ['Vehicle type?', 'Service needed?', 'Make/model?', 'At-home or garage?'],
     'tutoring':    ['Which subject?', 'Grade/level?', 'Hours needed?', 'Online or in-person?'],
+    'freelancer':  ['What service do you need?', 'Skill level required?', 'Deadline?', 'Remote or in-person?', 'Tools/software needed?'],
     'carpentry':   ['What carpentry work?', 'Materials needed?', 'Approximate dimensions?'],
     'painting':    ['What to paint?', 'Colour preference?', 'Area size?'],
+    'beauty':      ['What treatment/service?', 'At-home or salon?', 'Duration?', 'Gender preference?'],
     'pet_care':    ['Type of pet?', 'Care needed?', 'Duration?', 'Vaccinated?'],
     'child_care':  ['Age of child?', 'Duration?', 'Special needs?'],
     'elder_care':  ['Type of care?', 'Duration?', 'Medical needs?'],
@@ -70,6 +76,26 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'tech_support':['Device type?', 'What issue?', 'OS/software?'],
     'other':       ['Describe the task clearly?', 'Skills needed?', 'Expected duration?'],
   };
+
+  /// Recalculates the straight-line distance (km) between pickup and drop,
+  /// then auto-fills the budget with the ₹10/km minimum if it is unset or lower.
+  void _recalcDistance() {
+    if (_pickupLocation != null && _dropLocation != null) {
+      final km = const Distance().as(
+        LengthUnit.Kilometer,
+        _pickupLocation!,
+        _dropLocation!,
+      );
+      final minPrice = (km * 10).ceil().toDouble();
+      final current = double.tryParse(_budgetCtrl.text) ?? 0;
+      if (current < minPrice) {
+        _budgetCtrl.text = minPrice.toStringAsFixed(0);
+      }
+      setState(() => _calculatedDistanceKm = km);
+    } else {
+      setState(() => _calculatedDistanceKm = null);
+    }
+  }
 
   void _appendPrompt(String text) {
     final current = _descCtrl.text.trimRight();
@@ -168,6 +194,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _location ??= _pickupLocation;
         if (addr != null && addr.isNotEmpty) _pickupAddrCtrl.text = addr;
       });
+      _recalcDistance();
     }
   }
 
@@ -186,6 +213,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _dropLocation = result['location'] as LatLng;
         if (addr != null && addr.isNotEmpty) _dropAddrCtrl.text = addr;
       });
+      _recalcDistance();
     }
   }
 
@@ -205,6 +233,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       _pickupLocation = loc;
       _location ??= loc;
     });
+    _recalcDistance();
     try {
       final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
           .timeout(const Duration(seconds: 6));
@@ -240,6 +269,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       return;
     }
     setState(() => _dropLocation = loc);
+    _recalcDistance();
     try {
       final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
           .timeout(const Duration(seconds: 6));
@@ -678,13 +708,26 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Budget (₹)',
-                  hintText: _isDelivery ? 'Auto-filled from distance' : 'Minimum ₹100',
+                  hintText: _isDelivery
+                      ? (_calculatedDistanceKm != null
+                          ? 'Min ₹${(_calculatedDistanceKm! * 10).ceil()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km × ₹10/km)'
+                          : 'Set locations to auto-calculate')
+                      : 'Minimum ₹100',
                   prefixIcon: const Icon(Icons.currency_rupee),
                 ),
                 validator: (v) {
                   final n = double.tryParse(v ?? '');
                   if (n == null || n <= 0) return 'Please enter a budget';
-                  if (!_isDelivery && n < 100) return 'Minimum budget is ₹100';
+                  if (_isDelivery) {
+                    if (_calculatedDistanceKm != null) {
+                      final minPrice = (_calculatedDistanceKm! * 10).ceil();
+                      if (n < minPrice) {
+                        return 'Minimum ₹$minPrice (₹10/km × ${_calculatedDistanceKm!.toStringAsFixed(1)} km)';
+                      }
+                    }
+                  } else {
+                    if (n < 100) return 'Minimum budget is ₹100';
+                  }
                   return null;
                 },
               ),
@@ -755,6 +798,49 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           color: AppColors.danger, fontSize: 11),
                     ),
                   ),
+
+                // ── Distance + minimum price card ────────────────────────
+                if (_calculatedDistanceKm != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.route,
+                            size: 18, color: AppColors.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Distance: ${_calculatedDistanceKm!.toStringAsFixed(1)} km',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Minimum price: ₹${(_calculatedDistanceKm! * 10).ceil()} (₹10 per km)',
+                                style: const TextStyle(
+                                    fontSize: 12, color: AppColors.gray),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ] else ...[
                 // Single address for non-delivery tasks
                 TextFormField(

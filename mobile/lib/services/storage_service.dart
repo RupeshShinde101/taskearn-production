@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageService {
@@ -16,6 +17,40 @@ class StorageService {
 
   static Future<void> clearToken() async {
     await _prefs.remove('auth_token');
+  }
+
+  // ─── Session expiry ──────────────────────────────────────────────────────────
+  /// Persists the absolute expiry time as epoch milliseconds.
+  static Future<void> saveSessionExpiry(DateTime expiry) async {
+    await _prefs.setInt('session_expiry_ms', expiry.millisecondsSinceEpoch);
+  }
+
+  /// Returns the stored expiry time, or null if never set.
+  static DateTime? getSessionExpiry() {
+    final ms = _prefs.getInt('session_expiry_ms');
+    return ms != null ? DateTime.fromMillisecondsSinceEpoch(ms) : null;
+  }
+
+  // ─── Cached user JSON (for instant offline restoration) ─────────────────────
+  static Future<void> saveUserJson(Map<String, dynamic> json) async {
+    await _prefs.setString('cached_user_json', jsonEncode(json));
+  }
+
+  static Map<String, dynamic>? getUserJson() {
+    final raw = _prefs.getString('cached_user_json');
+    if (raw == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ─── Full session clear (token + user cache + expiry) ───────────────────────
+  static Future<void> clearSession() async {
+    await _prefs.remove('auth_token');
+    await _prefs.remove('cached_user_json');
+    await _prefs.remove('session_expiry_ms');
   }
 
   // ─── User ───────────────────────────────────────────────────────────────────

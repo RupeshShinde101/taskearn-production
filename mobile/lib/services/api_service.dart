@@ -1,6 +1,6 @@
 import 'dart:async' show TimeoutException;
 import 'dart:convert';
-import 'dart:io' show SocketException;
+import 'dart:io' show HttpException, SocketException, TlsException;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../services/storage_service.dart';
@@ -38,12 +38,27 @@ class ApiService {
       Future<http.Response> Function() fn) async {
     try {
       return _handleResponse(await fn());
-    } on SocketException {
-      throw ApiException('No internet connection. Please check your network.');
-    } on http.ClientException {
-      throw ApiException('Network error. Please try again.');
+    } on SocketException catch (e) {
+      final msg = e.message.toLowerCase();
+      if (msg.contains('failed host lookup') || msg.contains('network is unreachable')) {
+        throw ApiException('Cannot reach the server. Check your internet connection and try again.', statusCode: null);
+      }
+      throw ApiException('No internet connection. Please check your network.', statusCode: null);
+    } on TlsException {
+      throw ApiException('Secure connection failed. Please try again.', statusCode: null);
+    } on HttpException {
+      throw ApiException('Network error. Please try again.', statusCode: null);
+    } on http.ClientException catch (e) {
+      final msg = e.message.toLowerCase();
+      if (msg.contains('handshake') || msg.contains('tls') || msg.contains('certificate')) {
+        throw ApiException('Secure connection failed. Please try again.', statusCode: null);
+      }
+      throw ApiException('Network error. Please try again.', statusCode: null);
     } on TimeoutException {
-      throw ApiException('Request timed out. Please try again.');
+      throw ApiException('Request timed out. Please try again.', statusCode: null);
+    } catch (e) {
+      // Catch-all safety net for unexpected platform errors
+      throw ApiException('Connection error. Please try again.', statusCode: null);
     }
   }
 
@@ -118,11 +133,15 @@ class ApiService {
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {
-      throw ApiException('No internet connection. Please check your network.');
+      throw ApiException('No internet connection. Please check your network.', statusCode: null);
+    } on TlsException {
+      throw ApiException('Secure connection failed. Please try again.', statusCode: null);
     } on http.ClientException {
-      throw ApiException('Network error. Please try again.');
+      throw ApiException('Network error. Please try again.', statusCode: null);
     } on TimeoutException {
-      throw ApiException('Request timed out. Please try again.');
+      throw ApiException('Request timed out. Please try again.', statusCode: null);
+    } catch (e) {
+      throw ApiException('Connection error. Please try again.', statusCode: null);
     }
   }
 

@@ -21,6 +21,9 @@ class ApiService {
       'https://taskearn-production-production.up.railway.app/api';
   static const String _railwayHost =
       'taskearn-production-production.up.railway.app';
+  // Last-resort IP confirmed working via direct TCP+TLS test.
+  // Update if Railway migrates the deployment to a new IP.
+  static const String _railwayFallbackIp = '66.33.22.54';
 
   static String get baseUrl => _prodUrl;
 
@@ -39,8 +42,9 @@ class ApiService {
   /// • Proxy connections go to the proxy host (not the target).
   /// • Railway host: system DNS (4 s) → DoH fallback via [DohHelper].
   /// • All other hosts: system DNS as normal.
-  /// For HTTPS, dart:io wraps the plain socket with TLS using the original
-  /// hostname for SNI + certificate verification — no security compromise.
+  /// IMPORTANT: When connectionFactory is set, dart:io does NOT auto-wrap in
+  /// TLS. We must return a SecureSocket for HTTPS so TLS is established with
+  /// the original hostname for SNI + cert verification — no security compromise.
   static Future<ConnectionTask<Socket>> _connectionFactory(
       Uri url, String? proxyHost, int? proxyPort) async {
     // ── Proxy: connect to the proxy, dart:io handles the CONNECT tunnel ──────
@@ -79,8 +83,25 @@ class ApiService {
 
       addr ??= await DohHelper.resolve(host);
 
-      if (addr == null) throw SocketException('Failed host lookup: $host');
+      // Absolute last resort: hardcoded known IP.
+      // TCP+TLS to this IP with SNI=hostname is confirmed working.
+      if (addr == null) {
+        debugPrint('[API] DNS+DoH both failed — using hardcoded IP $_railwayFallbackIp');
+        addr = InternetAddress(_railwayFallbackIp,
+            type: InternetAddressType.IPv4);
+      }
+
       debugPrint('[API] Connecting to $host via ${addr.address}:$port');
+      // connectionFactory bypasses dart:io's auto-TLS wrapping.
+      // For HTTPS: plain TCP to the resolved/hardcoded IP, then TLS with
+      // hostname as SNI via SecureSocket.secure, wrapped in ConnectionTask.
+      if (url.isScheme('https')) {
+        final sf = Socket.connect(addr, port)
+            .timeout(const Duration(seconds: 10))
+            .then((plain) => SecureSocket.secure(plain, host: host)
+                .timeout(const Duration(seconds: 10)));
+        return Future.value(ConnectionTask.fromSocket(sf, () {}));
+      }
       return Socket.startConnect(addr, port);
     }
 
@@ -91,6 +112,13 @@ class ApiService {
       (a) => a.type == InternetAddressType.IPv4,
       orElse: () => addrs.first,
     );
+    if (url.isScheme('https')) {
+      final sf = Socket.connect(addr, port)
+          .timeout(const Duration(seconds: 10))
+          .then((plain) => SecureSocket.secure(plain, host: host)
+              .timeout(const Duration(seconds: 10)));
+      return Future.value(ConnectionTask.fromSocket(sf, () {}));
+    }
     return Socket.startConnect(addr, port);
   }
 

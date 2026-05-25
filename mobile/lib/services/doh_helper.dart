@@ -5,12 +5,16 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
-/// Resolves hostnames via DNS-over-HTTPS (Google DoH) when the device's
-/// ISP DNS cannot resolve them (e.g. *.up.railway.app on some Indian ISPs).
+/// Resolves hostnames via DNS-over-HTTPS when ISP DNS is broken.
 ///
-/// Uses a dedicated HTTP client that connects directly to Google's well-known
-/// DNS IP addresses (8.8.8.8 / 8.8.4.4), eliminating any circular DNS
-/// dependency — DoH works even when system DNS is completely broken.
+/// Tries two providers in order:
+///   1. Google   (8.8.8.8 / 8.8.4.4)
+///   2. Cloudflare (1.1.1.1 / 1.0.0.1)
+///
+/// Both providers are reached via hardcoded IPs, so DoH works even when
+/// system DNS cannot resolve dns.google or cloudflare-dns.com.
+/// The dart:io HttpClient still performs TLS with the original hostname
+/// for SNI + certificate verification — fully secure.
 ///
 /// Results are cached per DNS TTL (clamped 60 s – 1 h).
 class DohHelper {
@@ -18,12 +22,12 @@ class DohHelper {
 
   static final Map<String, _CachedAddress> _cache = {};
 
-  // Google's stable anycast DNS IPs — used to reach dns.google without DNS.
-  static const List<String> _googleDnsIps = ['8.8.8.8', '8.8.4.4'];
+  // Known stable anycast IPs for each DoH provider.
+  static const List<String> _googleIps = ['8.8.8.8', '8.8.4.4'];
+  static const List<String> _cloudflareIps = ['1.1.1.1', '1.0.0.1'];
 
-  // Dedicated HTTP client whose connectionFactory bypasses DNS for dns.google
-  // by connecting directly to the known IPs.  The dart:io HttpClient still
-  // performs TLS with hostname 'dns.google' (SNI + cert verification) — secure.
+  // Dedicated HTTP client whose connectionFactory bypasses DNS entirely for
+  // both dns.google and cloudflare-dns.com by connecting to known IPs.
   static final http.Client _dohClient = IOClient(
     HttpClient()
       ..connectionFactory =
@@ -31,22 +35,26 @@ class DohHelper {
         final port =
             url.hasPort ? url.port : (url.isScheme('https') ? 443 : 80);
 
+        List<String>? ips;
         if (url.host == 'dns.google') {
-          Exception? lastErr;
-          for (final ip in _googleDnsIps) {
-            try {
-              return await Socket.startConnect(
-                InternetAddress(ip, type: InternetAddressType.IPv4),
-                port,
-              ).timeout(const Duration(seconds: 5));
-            } catch (e) {
-              lastErr = e is Exception ? e : Exception(e.toString());
-            }
-          }
-          throw lastErr ?? SocketException('Cannot reach dns.google');
+          ips = _googleIps;
+        } else if (url.host == 'cloudflare-dns.com') {
+          ips = _cloudflareIps;
         }
 
-        // Any other host: normal system DNS (shouldn't be needed in practice).
+        if (ips != null) {
+          // DoH is always HTTPS. connectionFactory bypasses dart:io's auto-TLS,
+          // so we must do TLS ourselves:
+          //   plain TCP to the hardcoded IP  →  SecureSocket.secure with the
+          //   real hostname for SNI →  wrap in ConnectionTask.fromSocket.
+          final hostname = url.host;
+          final secureSocketFuture =
+              _connectSecureToFirst(ips, port, hostname);
+          return Future.value(
+              ConnectionTask.fromSocket(secureSocketFuture, () {}));
+        }
+
+        // Any other host (not expected in practice): normal system DNS.
         final addrs = await InternetAddress.lookup(url.host);
         if (addrs.isEmpty) {
           throw SocketException('Failed host lookup: ${url.host}');
@@ -55,12 +63,18 @@ class DohHelper {
           (a) => a.type == InternetAddressType.IPv4,
           orElse: () => addrs.first,
         );
+        if (url.isScheme('https')) {
+          final sf = Socket.connect(addr, port).then(
+              (s) => SecureSocket.secure(s, host: url.host));
+          return Future.value(ConnectionTask.fromSocket(sf, () {}));
+        }
         return Socket.startConnect(addr, port);
       },
   );
 
-  /// Try to resolve [hostname] via Google DNS-over-HTTPS.
-  /// Returns a resolved [InternetAddress] (IPv4), or null on failure.
+  /// Try to resolve [hostname] via DoH.
+  /// Tries Google DoH first, then Cloudflare DoH as backup.
+  /// Returns a resolved [InternetAddress] (IPv4), or null if both fail.
   static Future<InternetAddress?> resolve(String hostname) async {
     final cached = _cache[hostname];
     if (cached != null && DateTime.now().isBefore(cached.expires)) {
@@ -68,14 +82,30 @@ class DohHelper {
       return cached.address;
     }
 
-    debugPrint('[DoH] Resolving $hostname via Google DoH…');
+    // 1. Google DoH
+    var addr = await _queryProvider(
+      hostname,
+      'https://dns.google/resolve'
+      '?name=${Uri.encodeComponent(hostname)}&type=A',
+    );
+
+    // 2. Cloudflare DoH
+    addr ??= await _queryProvider(
+      hostname,
+      'https://cloudflare-dns.com/dns-query'
+      '?name=${Uri.encodeComponent(hostname)}&type=A',
+    );
+
+    return addr;
+  }
+
+  static Future<InternetAddress?> _queryProvider(
+      String hostname, String doHUrl) async {
+    debugPrint('[DoH] Querying $doHUrl for $hostname…');
     try {
-      final url = Uri.parse(
-        'https://dns.google/resolve'
-        '?name=${Uri.encodeComponent(hostname)}&type=A',
-      );
       final resp = await _dohClient
-          .get(url, headers: {'Accept': 'application/dns-json'})
+          .get(Uri.parse(doHUrl),
+              headers: {'Accept': 'application/dns-json'})
           .timeout(const Duration(seconds: 10));
 
       if (resp.statusCode == 200) {
@@ -100,9 +130,29 @@ class DohHelper {
         }
       }
     } catch (e) {
-      debugPrint('[DoH] Resolution failed for $hostname: $e');
+      debugPrint('[DoH] $doHUrl failed for $hostname: $e');
     }
     return null;
+  }
+
+  /// Tries each IP in order via plain TCP, then upgrades to TLS with [hostname]
+  /// as the SNI name. Returns the first successful [SecureSocket].
+  static Future<SecureSocket> _connectSecureToFirst(
+      List<String> ips, int port, String hostname) async {
+    Object? lastErr;
+    for (final ip in ips) {
+      try {
+        final plain = await Socket.connect(
+          InternetAddress(ip, type: InternetAddressType.IPv4),
+          port,
+        ).timeout(const Duration(seconds: 5));
+        return await SecureSocket.secure(plain, host: hostname)
+            .timeout(const Duration(seconds: 10));
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr ?? SocketException('Cannot connect to $hostname');
   }
 }
 
@@ -112,3 +162,4 @@ class _CachedAddress {
 
   const _CachedAddress({required this.address, required this.expires});
 }
+

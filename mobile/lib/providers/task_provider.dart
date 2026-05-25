@@ -171,11 +171,10 @@ class TaskProvider extends ChangeNotifier {
     Future.microtask(_notify);
 
     try {
+      final String endpoint;
       final params = <String, String>{
         'page': '$_currentPage',
-        'per_page': '20',
         if (category != null && category != 'all') 'category': category,
-        if (search != null && search.isNotEmpty) 'search': search,
         if (lat != null) 'lat': '$lat',
         if (lng != null) 'lng': '$lng',
         if (radiusKm != null) 'radius': '$radiusKm',
@@ -183,7 +182,17 @@ class TaskProvider extends ChangeNotifier {
         if (maxBudget != null) 'max_budget': '$maxBudget',
       };
 
-      final data = await ApiService.get('/tasks', queryParams: params);
+      if (search != null && search.isNotEmpty) {
+        // Use the dedicated search endpoint which filters by title + description
+        endpoint = '/tasks/search';
+        params['q'] = search;
+        params['limit'] = '20';
+      } else {
+        endpoint = '/tasks';
+        params['per_page'] = '20';
+      }
+
+      final data = await ApiService.get(endpoint, queryParams: params);
       final rawList = data['tasks'] as List? ?? [];
       // Posted tasks expire after 24 h — filter client-side in case the backend
       // doesn't clean them up immediately.

@@ -39,6 +39,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   LatLng? _dropLocation;
   bool _gettingPickupGps = false;
   bool _gettingDropGps = false;
+  double? _calculatedDistanceKm;
 
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
@@ -53,12 +54,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'cleaning':    ['How many rooms?', 'Type of cleaning?', 'Time slot?', 'Pets at home?'],
     'cooking':     ['How many people?', 'What cuisine/dishes?', 'Dietary restrictions?', 'Time needed?'],
     'laundry':     ['How many clothes?', 'Wash + fold or just fold?', 'Pick up from home?'],
+    'household':   ['What chores needed?', 'How many rooms?', 'Duration?', 'Supplies provided?'],
+    'shopping':    ['What items to buy?', 'Which store/area?', 'Item budget?', 'Urgent?'],
     'electrician': ['What electrical work?', 'Specific fault/issue?', 'Urgent?'],
     'plumbing':    ['What plumbing issue?', 'Room affected?', 'Urgent?'],
     'repair':      ['What to repair?', 'Brand/model?', 'How long broken?'],
+    'vehicle':     ['Vehicle type?', 'Service needed?', 'Make/model?', 'At-home or garage?'],
     'tutoring':    ['Which subject?', 'Grade/level?', 'Hours needed?', 'Online or in-person?'],
+    'freelancer':  ['What service do you need?', 'Skill level required?', 'Deadline?', 'Remote or in-person?', 'Tools/software needed?'],
     'carpentry':   ['What carpentry work?', 'Materials needed?', 'Approximate dimensions?'],
     'painting':    ['What to paint?', 'Colour preference?', 'Area size?'],
+    'beauty':      ['What treatment/service?', 'At-home or salon?', 'Duration?', 'Gender preference?'],
     'pet_care':    ['Type of pet?', 'Care needed?', 'Duration?', 'Vaccinated?'],
     'child_care':  ['Age of child?', 'Duration?', 'Special needs?'],
     'elder_care':  ['Type of care?', 'Duration?', 'Medical needs?'],
@@ -70,6 +76,26 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'tech_support':['Device type?', 'What issue?', 'OS/software?'],
     'other':       ['Describe the task clearly?', 'Skills needed?', 'Expected duration?'],
   };
+
+  /// Recalculates the straight-line distance (km) between pickup and drop,
+  /// then auto-fills the budget with the ₹10/km minimum if it is unset or lower.
+  void _recalcDistance() {
+    if (_pickupLocation != null && _dropLocation != null) {
+      final km = const Distance().as(
+        LengthUnit.Kilometer,
+        _pickupLocation!,
+        _dropLocation!,
+      );
+      final minPrice = (km * 10).ceil().toDouble();
+      final current = double.tryParse(_budgetCtrl.text) ?? 0;
+      if (current < minPrice) {
+        _budgetCtrl.text = minPrice.toStringAsFixed(0);
+      }
+      setState(() => _calculatedDistanceKm = km);
+    } else {
+      setState(() => _calculatedDistanceKm = null);
+    }
+  }
 
   void _appendPrompt(String text) {
     final current = _descCtrl.text.trimRight();
@@ -168,6 +194,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _location ??= _pickupLocation;
         if (addr != null && addr.isNotEmpty) _pickupAddrCtrl.text = addr;
       });
+      _recalcDistance();
     }
   }
 
@@ -186,6 +213,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _dropLocation = result['location'] as LatLng;
         if (addr != null && addr.isNotEmpty) _dropAddrCtrl.text = addr;
       });
+      _recalcDistance();
     }
   }
 
@@ -205,6 +233,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       _pickupLocation = loc;
       _location ??= loc;
     });
+    _recalcDistance();
     try {
       final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
           .timeout(const Duration(seconds: 6));
@@ -240,6 +269,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       return;
     }
     setState(() => _dropLocation = loc);
+    _recalcDistance();
     try {
       final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
           .timeout(const Duration(seconds: 6));
@@ -262,8 +292,81 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
+  /// Returns a rejection reason string if content is flagged, or null if OK.
+  static String? _checkBannedContent(String title, String description) {
+    final text = '${title.toLowerCase()} ${description.toLowerCase()}';
+    if (text.trim().isEmpty) return null;
+
+    final patterns = <(RegExp, String)>[
+      (RegExp(r'\b(create|make|open|register|sign[- ]?up|generate|bulk)\b.{0,40}\b(email|emails|gmail|yahoo|outlook|hotmail|account|accounts|id|ids|profile|profiles)\b', caseSensitive: false), 'Bulk account or email creation tasks are not allowed (anti-spam policy).'),
+      (RegExp(r'\b(per|each|/)\s*(email|account|id|signup|sign[- ]?up|profile)\b', caseSensitive: false), 'Tasks paying per account/email creation are not allowed.'),
+      (RegExp(r'\b(sell|buy|rent|hire)\b.{0,30}\b(account|accounts|gmail|whatsapp|instagram|facebook|telegram|otp|sim|number)\b', caseSensitive: false), 'Buying or selling accounts/credentials is prohibited.'),
+      (RegExp(r'\b(receive|share|forward|read|provide|give|sell)\b.{0,30}\b(otp|otps|one[- ]time[- ]password|verification\s*code|sms\s*code)\b', caseSensitive: false), 'OTP/verification-code sharing tasks are prohibited.'),
+      (RegExp(r'\botp\s*(work|task|job|earn)\b', caseSensitive: false), 'OTP-based earning tasks are prohibited.'),
+      (RegExp(r'\b(use|share|rent|sell)\b.{0,30}\b(aadhaar|aadhar|pan\s*card|kyc|bank\s*account|upi\s*id)\b', caseSensitive: false), 'Sharing or renting personal KYC documents is prohibited.'),
+      (RegExp(r'\b(fake|paid|bulk)\b.{0,20}\b(reviews?|ratings?|likes?|followers?|subscribers?|comments?|votes?)\b', caseSensitive: false), 'Fake review/engagement/follower tasks are prohibited.'),
+      (RegExp(r'\b(click|watch)\s*(ads|advertisements|videos)\s*(bot|farm|loop)\b', caseSensitive: false), 'Click-fraud tasks are prohibited.'),
+      (RegExp(r'\b(usdt|btc|bitcoin|crypto|forex)\b.{0,30}\b(investment|trade|trading|deposit|recharge|profit|earn)\b', caseSensitive: false), 'Crypto/forex investment tasks are not permitted on Workmate4u.'),
+      (RegExp(r'\b(money\s*mule|transfer\s*money|launder|cash[- ]out)\b', caseSensitive: false), 'Money transfer/mule activity is strictly prohibited.'),
+      (RegExp(r'\b(hack|crack|bypass|unlock)\b.{0,30}\b(password|account|server|whatsapp|instagram|facebook|gmail|wifi|otp)\b', caseSensitive: false), 'Hacking or unauthorized access tasks are prohibited.'),
+      (RegExp(r'\b(escort|webcam\s*model|adult\s*content|nude|sex\s*chat|drugs?|weed|cocaine|heroin)\b', caseSensitive: false), 'Adult/illicit-content tasks are not allowed.'),
+      (RegExp(r'\b(captcha\s*solving|typing\s*captcha)\b', caseSensitive: false), 'Captcha-solving/spam tasks are not allowed.'),
+      (RegExp(r'\b(spam|spamming)\b.{0,20}\b(email|sms|whatsapp|message)\b', caseSensitive: false), 'Spam/bulk messaging tasks are not allowed.'),
+      (RegExp(r'\b(registration|joining|training|security|refundable)\s*(fee|deposit|amount|charge)\b', caseSensitive: false), 'Charging registration/security/joining fees from helpers is prohibited.'),
+      (RegExp(r'\b(pay|deposit|send|transfer)\b.{0,30}\b(first|upfront|in\s*advance|before\s*start)\b', caseSensitive: false), 'Tasks requiring upfront payment from the helper are not allowed.'),
+      (RegExp(r'\b(gift\s*card|itunes\s*card|amazon\s*voucher|paytm\s*voucher|google\s*play\s*card)\b', caseSensitive: false), 'Gift-card/voucher purchase tasks are not allowed (common scam vector).'),
+      (RegExp(r'\b(western\s*union|moneygram|wire\s*transfer)\b', caseSensitive: false), 'Wire-transfer/money-remittance tasks are not allowed.'),
+      (RegExp(r'\b(double|2x|triple)\s*your\s*(money|investment|amount)\b', caseSensitive: false), 'Investment doubling/get-rich-quick tasks are prohibited.'),
+      (RegExp(r'\b(guaranteed)\s*(returns?|profit|income|earning)\b', caseSensitive: false), 'Guaranteed-return investment tasks are prohibited.'),
+      (RegExp(r'\b(mlm|multi[- ]level|pyramid|ponzi|chain\s*scheme|matrix\s*scheme)\b', caseSensitive: false), 'MLM/pyramid/chain schemes are prohibited.'),
+      (RegExp(r'\b(recharge|deposit)\b.{0,20}\b(usdt|btc|trx|binance|crypto)\b', caseSensitive: false), 'Crypto recharge/deposit tasks are prohibited.'),
+      (RegExp(r'\bshare\s*(your\s*)?(otp|cvv|pin|password|net[- ]?banking|atm\s*pin)\b', caseSensitive: false), 'Sharing of OTP/PIN/CVV/banking credentials is strictly prohibited.'),
+      (RegExp(r'\b(give|tell|send)\s*(me\s*)?(your\s*)?(aadhaar|pan|bank|otp|cvv|pin)\b', caseSensitive: false), 'Asking helpers for Aadhaar/PAN/bank/OTP details is prohibited.'),
+      (RegExp(r'\b(fake|duplicate|forged?)\s*(aadhaar|pan|certificate|degree|marksheet|id|licence|license|passport)\b', caseSensitive: false), 'Fake/forged document tasks are illegal and prohibited.'),
+      (RegExp(r'\b(buy|sell)\s*(fake|stolen)\b', caseSensitive: false), 'Sale of fake/stolen goods is prohibited.'),
+      (RegExp(r'\b(get\s*rich\s*quick|easy\s*money|no\s*work\s*required)\b', caseSensitive: false), 'Misleading earnings claims are not allowed.'),
+      (RegExp(r'\b(pay|paid|payment)\b.{0,15}\b(outside|off)\b.{0,15}\b(app|platform|workmate)\b', caseSensitive: false), 'Tasks asking to pay outside the platform are not allowed.'),
+      (RegExp(r'\b(skip|bypass|avoid)\b.{0,15}\b(commission|platform|service\s*charge)\b', caseSensitive: false), 'Bypassing platform commission is not allowed.'),
+      (RegExp(r'\bcash\s*only\b.{0,30}\b(outside|hand|direct)\b', caseSensitive: false), 'Cash-only/off-platform payment tasks are not allowed.'),
+      (RegExp(r'\b(gun|pistol|firearm|ammunition|country\s*made)\b', caseSensitive: false), 'Weapons-related tasks are prohibited.'),
+      (RegExp(r'\b(mdma|lsd|ganja|hashish|opium|brown\s*sugar)\b', caseSensitive: false), 'Drug-related tasks are prohibited.'),
+    ];
+
+    for (final (rx, reason) in patterns) {
+      if (rx.hasMatch(text)) return reason;
+    }
+
+    // Phone number in task content
+    if (RegExp(r'(?:\+?91[\s\-]?)?[6-9]\d{9}').hasMatch(text)) {
+      return 'Sharing phone numbers in the task is not allowed. Helpers can contact you through in-app chat.';
+    }
+    // Email address in task content
+    if (RegExp(r'[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}', caseSensitive: false).hasMatch(text)) {
+      return 'Sharing email addresses in the task is not allowed. Helpers can contact you through in-app chat.';
+    }
+
+    return null;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // ── Client-side banned keyword check ────────────────────────────────────
+    final _bannedResult = _checkBannedContent(_titleCtrl.text, _descCtrl.text);
+    if (_bannedResult != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_bannedResult),
+            backgroundColor: AppColors.danger,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     final LatLng? taskLocation =
         _isDelivery ? (_pickupLocation ?? _location) : _location;
     if (taskLocation == null) {
@@ -605,13 +708,26 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Budget (₹)',
-                  hintText: _isDelivery ? 'Auto-filled from distance' : 'Minimum ₹100',
+                  hintText: _isDelivery
+                      ? (_calculatedDistanceKm != null
+                          ? 'Min ₹${(_calculatedDistanceKm! * 10).ceil()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km × ₹10/km)'
+                          : 'Set locations to auto-calculate')
+                      : 'Minimum ₹100',
                   prefixIcon: const Icon(Icons.currency_rupee),
                 ),
                 validator: (v) {
                   final n = double.tryParse(v ?? '');
                   if (n == null || n <= 0) return 'Please enter a budget';
-                  if (!_isDelivery && n < 100) return 'Minimum budget is ₹100';
+                  if (_isDelivery) {
+                    if (_calculatedDistanceKm != null) {
+                      final minPrice = (_calculatedDistanceKm! * 10).ceil();
+                      if (n < minPrice) {
+                        return 'Minimum ₹$minPrice (₹10/km × ${_calculatedDistanceKm!.toStringAsFixed(1)} km)';
+                      }
+                    }
+                  } else {
+                    if (n < 100) return 'Minimum budget is ₹100';
+                  }
                   return null;
                 },
               ),
@@ -682,6 +798,49 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           color: AppColors.danger, fontSize: 11),
                     ),
                   ),
+
+                // ── Distance + minimum price card ────────────────────────
+                if (_calculatedDistanceKm != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.route,
+                            size: 18, color: AppColors.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Distance: ${_calculatedDistanceKm!.toStringAsFixed(1)} km',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Minimum price: ₹${(_calculatedDistanceKm! * 10).ceil()} (₹10 per km)',
+                                style: const TextStyle(
+                                    fontSize: 12, color: AppColors.gray),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ] else ...[
                 // Single address for non-delivery tasks
                 TextFormField(

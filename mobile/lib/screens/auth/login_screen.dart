@@ -73,24 +73,9 @@ class _LoginScreenState extends State<LoginScreen> {
               Center(
                 child: Column(
                   children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: AppColors.gradient,
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Icon(Icons.handshake_rounded,
-                          color: Colors.white, size: 40),
-                    ),
-                    const SizedBox(height: 16),
-                    const GradientText(
-                      'Workmate4u',
-                      style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+                    Image.asset(
+                      'assets/images/logo.png',
+                      height: 130,
                     ),
                     const SizedBox(height: 6),
                     const Text(

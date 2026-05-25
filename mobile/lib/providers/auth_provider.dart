@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
@@ -13,6 +16,7 @@ class AuthProvider extends ChangeNotifier {
   AuthStatus _status = AuthStatus.unknown;
   bool _loading = false;
   String? _error;
+  String? _kycSubmitMessage;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: '874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com',
@@ -24,6 +28,9 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _status == AuthStatus.authenticated;
   bool get isLoading => _loading;
   String? get error => _error;
+
+  /// Client-side session duration: 30 days after last successful login.
+  static const Duration _kSessionDuration = Duration(days: 30);
 
   AuthProvider() {
     _checkAuth();
@@ -37,6 +44,25 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
 
+    // ── Client-side session expiry ─────────────────────────────────────────
+    final expiry = StorageService.getSessionExpiry();
+    if (expiry != null && DateTime.now().isAfter(expiry)) {
+      debugPrint('[AUTH] Session expired at $expiry — clearing session.');
+      await StorageService.clearSession();
+      _status = AuthStatus.unauthenticated;
+      notifyListeners();
+      return;
+    }
+
+    // ── Restore user instantly from local cache (no network wait) ──────────
+    final cachedJson = StorageService.getUserJson();
+    if (cachedJson != null) {
+      _user = User.fromJson(cachedJson);
+      _status = AuthStatus.authenticated;
+      notifyListeners(); // show the app immediately
+    }
+
+    // ── Background server verification ─────────────────────────────────────
     try {
       final data = await ApiService.get('/auth/me');
       final userJson = Map<String, dynamic>.from((data['user'] ?? data) as Map);
@@ -46,19 +72,19 @@ class AuthProvider extends ChangeNotifier {
           'kycVerified=${userJson["kycVerified"]} '
           'kycStatus=${userJson["kycStatus"]}');
       _user = User.fromJson(userJson);
+      await StorageService.saveUserJson(userJson); // keep cache fresh
       _status = AuthStatus.authenticated;
       _registerFcmToken();
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403) {
-        await StorageService.clearToken();
+        // Token explicitly rejected by server — full logout
+        await StorageService.clearSession();
+        _user = null;
         _status = AuthStatus.unauthenticated;
-      } else {
-        // Network/server error — keep token, user stays logged in
-        _status = AuthStatus.authenticated;
       }
+      // Other API errors (5xx, timeout): keep the cached user logged in
     } catch (_) {
-      // Network unavailable on startup — keep token, stay logged in
-      _status = AuthStatus.authenticated;
+      // Network unavailable — keep cached user, stay logged in
     }
     notifyListeners();
   }
@@ -79,6 +105,9 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveToken(token);
         _user = User.fromJson(data['user'] ?? data);
         await StorageService.saveUserId(_user!.id);
+        await StorageService.saveUserJson(_user!.toJson());
+        await StorageService.saveSessionExpiry(
+            DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();
@@ -103,39 +132,83 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
     String? phone,
+    String? dob,
+    String? inviteCode,
     String? referralCode,
   }) async {
     _loading = true;
     _error = null;
     notifyListeners();
 
-    try {
-      final data = await ApiService.post('/auth/register', body: {
-        'name': name.trim(),
-        'email': email.trim(),
-        'password': password,
-        if (phone != null) 'phone': phone,
-        if (referralCode != null && referralCode.isNotEmpty)
-          'referral_code': referralCode,
-      });
-
-      final token = data['token'] ?? data['access_token'];
-      if (token != null) {
-        await StorageService.saveToken(token);
-        _user = User.fromJson(data['user'] ?? data);
-        await StorageService.saveUserId(_user!.id);
-        _status = AuthStatus.authenticated;
-      }
-
-      _loading = false;
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
+    // ── Pre-flight connectivity check ─────────────────────────────────────
+    final connectivityResults = await Connectivity().checkConnectivity();
+    final hasNetwork =
+        connectivityResults.any((r) => r != ConnectivityResult.none);
+    if (!hasNetwork) {
+      _error =
+          'No internet connection. Please enable mobile data or Wi-Fi and try again.';
       _loading = false;
       notifyListeners();
       return false;
     }
+
+    final body = {
+      'name': name.trim(),
+      'email': email.trim(),
+      'password': password,
+      if (phone != null) 'phone': phone,
+      if (dob != null && dob.isNotEmpty) 'date_of_birth': dob,
+      if (inviteCode != null && inviteCode.isNotEmpty)
+        'invite_code': inviteCode.trim().toUpperCase(),
+      if (referralCode != null && referralCode.isNotEmpty)
+        'referral_code': referralCode.trim(),
+    };
+
+    // ── Attempt registration (one auto-retry on transient network errors) ──
+    ApiException? lastNetworkError;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (attempt == 1) {
+        // Brief pause before retry — lets DNS/connection recover
+        await Future.delayed(const Duration(seconds: 3));
+        debugPrint('[AUTH] register: retrying after transient network error…');
+      }
+      try {
+        final data =
+            await ApiService.post('/auth/register', body: body);
+
+        final token = data['token'] ?? data['access_token'];
+        if (token != null) {
+          await StorageService.saveToken(token);
+          _user = User.fromJson(data['user'] ?? data);
+          await StorageService.saveUserId(_user!.id);
+          await StorageService.saveUserJson(_user!.toJson());
+          await StorageService.saveSessionExpiry(
+              DateTime.now().add(_kSessionDuration));
+          _status = AuthStatus.authenticated;
+        }
+
+        _loading = false;
+        notifyListeners();
+        return true;
+      } on ApiException catch (e) {
+        if (e.statusCode != null) {
+          // Server responded with an error — don't retry, surface immediately
+          _error = e.message;
+          _loading = false;
+          notifyListeners();
+          return false;
+        }
+        // statusCode == null → network/connection error — save and maybe retry
+        lastNetworkError = e;
+      }
+    }
+
+    // Both attempts failed with a network error
+    _error = lastNetworkError?.message ??
+        'Could not connect to the server. Please try again.';
+    _loading = false;
+    notifyListeners();
+    return false;
   }
 
   Future<void> logout() async {
@@ -145,7 +218,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
-    await StorageService.clearToken();
+    await StorageService.clearSession();
     _user = null;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
@@ -165,6 +238,7 @@ class AuthProvider extends ChangeNotifier {
           'is_kyc_verified=${userJson["is_kyc_verified"]}');
       debugPrint('[AUTH] All keys: ${userJson.keys.toList()}');
       _user = User.fromJson(userJson);
+      await StorageService.saveUserJson(userJson); // keep cache fresh
       notifyListeners();
     } catch (e) {
       debugPrint('[AUTH] refreshUser error: $e');
@@ -229,39 +303,61 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) {} // non-critical, fail silently
   }
 
-  /// Submit a KYC document (aadhaar / pan / selfie path).
+  /// Message returned by the backend after a KYC submit (e.g. "auto-verified" vs "pending").
+  String? get kycSubmitMessage => _kycSubmitMessage;
+
+  /// Submit KYC with Aadhaar (front + back) or PAN (front only).
+  /// Images are base64-encoded and sent as JSON to /user/kyc/submit.
   Future<bool> submitKyc({
     required String docType,
     required String docNumber,
-    String? frontImagePath,
-    String? selfieImagePath,
+    required String frontImagePath,
+    String? backImagePath, // required for aadhaar, null for pan
   }) async {
     _loading = true;
+    _error = null;
+    _kycSubmitMessage = null;
     notifyListeners();
     try {
+      // Convert images to base64
+      final frontBytes = await File(frontImagePath).readAsBytes();
+      final frontBase64 = base64Encode(frontBytes);
+
+      String? backBase64;
+      if (backImagePath != null) {
+        final backBytes = await File(backImagePath).readAsBytes();
+        backBase64 = base64Encode(backBytes);
+      }
+
+      // Normalise document number (uppercase, no spaces)
+      final normNumber = docNumber.trim().toUpperCase().replaceAll(' ', '');
+
       final body = <String, dynamic>{
-        'doc_type': docType,
-        'doc_number': docNumber,
+        'documentType': docType,
+        'documentNumber': normNumber,
+        'documentImageFront': frontBase64,
+        if (backBase64 != null) 'documentImageBack': backBase64,
+        'acknowledged': true,
       };
-      await ApiService.put('/user/kyc', body: body);
-      if (frontImagePath != null) {
-        try {
-          await ApiService.uploadFile(
-              '/user/kyc/upload', frontImagePath, 'kyc_doc');
-        } catch (_) {}
-      }
-      if (selfieImagePath != null) {
-        try {
-          await ApiService.uploadFile(
-              '/user/kyc/selfie', selfieImagePath, 'selfie');
-        } catch (_) {}
-      }
+
+      // Use a 120-second timeout: base64 images can be several MB
+      final response = await ApiService.post(
+        '/user/kyc/submit',
+        body: body,
+        timeout: const Duration(seconds: 120),
+      );
+      _kycSubmitMessage = response['message'] as String?;
       await refreshUser();
       _loading = false;
       notifyListeners();
       return true;
     } on ApiException catch (e) {
       _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Failed to submit KYC. Please try again.';
       _loading = false;
       notifyListeners();
       return false;
@@ -274,16 +370,33 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Always sign out first to clear any stale session from a previous
+      // logout — prevents null idToken / PlatformException on re-sign-in.
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+
       final account = await _googleSignIn.signIn();
       if (account == null) {
-        // User cancelled
+        // User cancelled the account picker
         _loading = false;
         notifyListeners();
         return false;
       }
 
-      final auth = await account.authentication;
-      final idToken = auth.idToken;
+      // Fetch authentication tokens — wrap separately because this can throw
+      // a PlatformException independent of signIn() on some Android versions.
+      String? idToken;
+      try {
+        final googleAuth = await account.authentication;
+        idToken = googleAuth.idToken;
+      } catch (e) {
+        debugPrint('[Google] account.authentication error: $e');
+        _error = 'Google authentication failed. Please try again.';
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
 
       if (idToken == null) {
         _error = 'Could not get ID token from Google. Please try again.';
@@ -304,9 +417,13 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveToken(token);
         _user = User.fromJson(data['user'] ?? data);
         await StorageService.saveUserId(_user!.id);
+        await StorageService.saveUserJson(_user!.toJson());
+        await StorageService.saveSessionExpiry(
+            DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();
+        _registerFcmToken(); // register FCM + sync location after Google login
         return true;
       }
 
@@ -320,7 +437,8 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     } catch (e) {
-      _error = 'Google sign-in error: $e';
+      debugPrint('[Google] loginWithGoogle error: $e');
+      _error = 'Google sign-in failed. Please try again.';
       _loading = false;
       notifyListeners();
       return false;
@@ -329,6 +447,7 @@ class AuthProvider extends ChangeNotifier {
 
   void clearError() {
     _error = null;
+    _kycSubmitMessage = null;
     notifyListeners();
   }
 

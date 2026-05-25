@@ -51,9 +51,57 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  int _ageInYears(DateTime dob) {
+    final now = DateTime.now();
+    int age = now.year - dob.year;
+    if (now.month < dob.month ||
+        (now.month == dob.month && now.day < dob.day)) {
+      age--;
+    }
+    return age;
+  }
+
   Future<void> _signUpWithGoogle() async {
+    if (_inviteCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Please enter your invite code above before signing up with Google')),
+      );
+      return;
+    }
+    if (_dob == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Please select your date of birth above before signing up with Google')),
+      );
+      return;
+    }
+    if (_ageInYears(_dob!) < 16) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text('You must be at least 16 years old to join WorkMate4U')),
+      );
+      return;
+    }
+    if (!_agreeTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please accept the terms & conditions')),
+      );
+      return;
+    }
+
     final auth = context.read<AuthProvider>();
-    final ok = await auth.loginWithGoogle();
+    final ok = await auth.loginWithGoogle(
+      inviteCode: _inviteCtrl.text.trim(),
+      referralCode:
+          _referralCtrl.text.trim().isEmpty ? null : _referralCtrl.text.trim(),
+      dob: _dob,
+      phone:
+          _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+    );
     if (!mounted) return;
 
     if (ok) {

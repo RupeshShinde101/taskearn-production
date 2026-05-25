@@ -364,7 +364,12 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> loginWithGoogle() async {
+  Future<bool> loginWithGoogle({
+    String? inviteCode,
+    String? referralCode,
+    DateTime? dob,
+    String? phone,
+  }) async {
     _loading = true;
     _error = null;
     notifyListeners();
@@ -410,6 +415,14 @@ class AuthProvider extends ChangeNotifier {
         'email': account.email,
         'name': account.displayName,
         'avatar': account.photoUrl,
+        if (inviteCode != null && inviteCode.isNotEmpty)
+          'invite_code': inviteCode,
+        if (referralCode != null && referralCode.isNotEmpty)
+          'referral_code': referralCode,
+        if (dob != null)
+          'dob':
+              '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}',
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
       });
 
       final token = data['token'] ?? data['access_token'];

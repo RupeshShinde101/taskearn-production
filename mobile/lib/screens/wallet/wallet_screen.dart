@@ -45,19 +45,41 @@ class _WalletScreenState extends State<WalletScreen>
   }
 
   void _onPaymentSuccess(PaymentSuccessResponse response) async {
+    // Show a non-dismissible loading dialog while we verify with the backend.
+    // This prevents the user from navigating away and losing the context.
+    if (mounted) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Verifying payment…'),
+            ],
+          ),
+        ),
+      );
+    }
+
     final wallet = context.read<WalletProvider>();
-    final ok = await wallet.verifyTopUp({
-      'razorpay_order_id': response.orderId,
-      'razorpay_payment_id': response.paymentId,
-      'razorpay_signature': response.signature,
-    });
+    final ok = await wallet.verifyTopUp(
+      paymentId: response.paymentId ?? '',
+      orderId: response.orderId ?? '',
+      signature: response.signature ?? '',
+    );
+
     if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // dismiss loading dialog
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
             ? 'Payment successful! Wallet credited.'
             : (wallet.error ?? 'Payment verification failed.')),
         backgroundColor: ok ? AppColors.success : AppColors.danger,
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -152,10 +174,11 @@ class _WalletScreenState extends State<WalletScreen>
                   }
 
                   final user = auth.user;
+                  // Backend returns 'orderId' (camelCase) and 'amount' in paise.
                   final options = <String, dynamic>{
                     'key': order['key'] ?? order['razorpay_key'] ?? '',
-                    'order_id': order['order_id'] ?? order['id'],
-                    'amount': order['amount'], // paise from backend
+                    'order_id': order['orderId'] ?? order['order_id'] ?? order['id'],
+                    'amount': order['amount'], // already in paise from backend
                     'currency': order['currency'] ?? 'INR',
                     'name': 'WorkMate4U',
                     'description': 'Wallet Top-up',

@@ -159,8 +159,11 @@ class ApiService {
       throw ApiException('Network error. Please try again.', statusCode: null);
     } on TimeoutException {
       throw ApiException('Request timed out. Please try again.', statusCode: null);
+    } on ApiException {
+      // Never wrap our own exceptions — let the caller see the real message/statusCode.
+      rethrow;
     } catch (e) {
-      // Catch-all safety net for unexpected platform errors
+      // Catch-all safety net for unexpected platform errors (not ApiException).
       throw ApiException('Connection error. Please try again.', statusCode: null);
     }
   }

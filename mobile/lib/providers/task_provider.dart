@@ -501,11 +501,18 @@ class TaskProvider extends ChangeNotifier {
           // Map it so posterPhone, posterName etc. are extracted correctly.
           Map<String, dynamic> normalizedJson = taskJson;
           final providerObj = taskJson['provider'];
-          if (providerObj is Map<String, dynamic> && !taskJson.containsKey('posted_by')) {
+          if (providerObj is Map<String, dynamic>) {
             normalizedJson = Map<String, dynamic>.from(taskJson);
-            normalizedJson['posted_by'] = providerObj;
-            // Also flatten poster_phone at top level for extra safety
-            if (!normalizedJson.containsKey('poster_phone') &&
+            // Always map provider → posted_by (the /details endpoint uses 'provider')
+            if (!normalizedJson.containsKey('posted_by') ||
+                normalizedJson['posted_by'] is! Map) {
+              normalizedJson['posted_by'] = providerObj;
+            }
+            // Always flatten poster_phone from provider.phone — the /details
+            // endpoint returns phone only inside the nested 'provider' object.
+            // Without this, posterPhone stays null even though the data is present.
+            if ((normalizedJson['poster_phone'] == null ||
+                    normalizedJson['poster_phone'].toString().trim().isEmpty) &&
                 providerObj['phone'] != null) {
               normalizedJson['poster_phone'] = providerObj['phone'];
             }
@@ -727,11 +734,18 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> abandonTask(String taskId) async {
+  Future<Map<String, dynamic>> abandonTask(String taskId) async {
     try {
-      await ApiService.post('/tasks/$taskId/abandon');
+      final response = await ApiService.post('/tasks/$taskId/abandon');
       await fetchMyTasks();
-      return true;
+      final data = response is Map ? response : {};
+      return {
+        'success': true,
+        'releasePenalty': double.tryParse((data['releasePenalty'] ?? data['release_penalty'] ?? 0).toString()) ?? 0.0,
+        'dailyReleaseCount': int.tryParse((data['dailyReleaseCount'] ?? 0).toString()) ?? 0,
+        'suspended': data['suspended'] == true,
+        'message': data['message']?.toString() ?? '',
+      };
     } on ApiException catch (e) {
       // If the task no longer exists on the server, treat it as already released:
       // remove from local list so hasActiveAcceptedTask becomes correct.
@@ -739,11 +753,11 @@ class TaskProvider extends ChangeNotifier {
         _myAcceptedTasks.removeWhere((t) => t.id == taskId);
         _detailCache.remove(taskId);
         _notify();
-        return true;
+        return {'success': true, 'releasePenalty': 0.0, 'dailyReleaseCount': 0, 'suspended': false, 'message': ''};
       }
       _error = e.message;
       _notify();
-      return false;
+      return {'success': false, 'message': e.message};
     }
   }
 

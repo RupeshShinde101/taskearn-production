@@ -161,6 +161,16 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       break;
 
     // ── Wallet / withdrawal ────────────────────────────────────────────────
+    case 'wallet_topup':
+    case 'wallet_credited':
+      title = data['title'] ?? '💰 Wallet Topped Up!';
+      body = data['body'] ?? 'Your wallet has been credited.';
+      channelId = 'workmate4u_payment';
+      channelName = 'Payments';
+      channelDesc = 'Payment alerts and confirmations';
+      importance = Importance.max;
+      break;
+
     case 'withdrawal_requested':
     case 'withdrawal_approved':
     case 'withdrawal_rejected':

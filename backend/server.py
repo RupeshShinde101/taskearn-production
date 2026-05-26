@@ -6768,6 +6768,22 @@ def verify_wallet_topup():
         print(f"[WALLET] New balance: ₹{new_balance}")
         print(f"[WALLET] Transaction recorded with ID: {wallet_id}")
         
+        # FCM push — notify user their wallet has been topped up
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                '💰 Wallet Topped Up!',
+                f'₹{credit_amount:.2f} added to your wallet. Balance: ₹{new_balance:.2f}',
+                data={
+                    'type': 'wallet_topup',
+                    'amount': str(credit_amount),
+                    'new_balance': str(new_balance),
+                },
+                channel='workmate4u_payment',
+            )
+        except Exception:
+            pass
+
         return jsonify({
             'success': True,
             'message': f'Wallet credited with ₹{credit_amount}',

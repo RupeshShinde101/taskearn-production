@@ -245,6 +245,7 @@ class _WalletScreenState extends State<WalletScreen>
     }
 
     final amtCtrl = TextEditingController();
+    final bankNameCtrl = TextEditingController();
     final bankCtrl = TextEditingController();
     final ifscCtrl = TextEditingController();
     final holderCtrl = TextEditingController();
@@ -273,7 +274,13 @@ class _WalletScreenState extends State<WalletScreen>
             ),
             const SizedBox(height: 12),
             TextField(
+              controller: bankNameCtrl,
+              decoration: const InputDecoration(labelText: 'Bank Name (e.g. SBI, HDFC)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
               controller: bankCtrl,
+              keyboardType: TextInputType.number,
               decoration:
                   const InputDecoration(labelText: 'Bank Account Number'),
             ),
@@ -296,9 +303,10 @@ class _WalletScreenState extends State<WalletScreen>
                 Navigator.pop(ctx);
                 final ok = await context.read<WalletProvider>().requestWithdrawal(
                       amount: amt,
-                      bankAccount: bankCtrl.text,
-                      ifscCode: ifscCtrl.text,
-                      accountHolder: holderCtrl.text,
+                      bankName: bankNameCtrl.text.trim(),
+                      bankAccount: bankCtrl.text.trim(),
+                      ifscCode: ifscCtrl.text.trim(),
+                      accountHolder: holderCtrl.text.trim(),
                     );
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(

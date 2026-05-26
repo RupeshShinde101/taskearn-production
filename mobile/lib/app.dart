@@ -239,6 +239,11 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     };
     // Notification types that map to the browse / detail view.
     const matchedTypes = {'task_matched', 'matched_task'};
+    // Wallet-specific notification types that should open the wallet screen.
+    const walletTypes = {
+      'wallet_topup', 'wallet_credited',
+      'withdrawal_requested', 'withdrawal_approved', 'withdrawal_rejected',
+    };
 
     String destination;
     if (taskId != null && taskId.isNotEmpty) {
@@ -249,7 +254,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       // No task ID in the FCM payload — pick the most appropriate screen.
       if (matchedTypes.contains(type)) {
         destination = '/browse'; // Matched-task alerts → browse for the task
-      } else if (type.contains('payment')) {
+      } else if (walletTypes.contains(type) || type.contains('payment')) {
         destination = '/wallet';
       } else if (type.isNotEmpty) {
         destination = '/my-tasks';

@@ -121,6 +121,7 @@ class WalletProvider extends ChangeNotifier {
 
   Future<bool> requestWithdrawal({
     required double amount,
+    required String bankName,
     required String bankAccount,
     required String ifscCode,
     required String accountHolder,
@@ -128,9 +129,10 @@ class WalletProvider extends ChangeNotifier {
     try {
       await ApiService.post('/wallet/withdraw', body: {
         'amount': amount,
-        'bank_account': bankAccount,
-        'ifsc_code': ifscCode,
-        'account_holder': accountHolder,
+        'bankName': bankName,
+        'accountNumber': bankAccount,
+        'ifscCode': ifscCode,
+        'accountHolder': accountHolder,
       });
       await fetchWallet();
       await fetchWithdrawals();

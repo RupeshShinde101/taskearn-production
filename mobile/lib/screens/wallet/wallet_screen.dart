@@ -45,19 +45,41 @@ class _WalletScreenState extends State<WalletScreen>
   }
 
   void _onPaymentSuccess(PaymentSuccessResponse response) async {
+    // Show a non-dismissible loading dialog while we verify with the backend.
+    // This prevents the user from navigating away and losing the context.
+    if (mounted) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Verifying payment…'),
+            ],
+          ),
+        ),
+      );
+    }
+
     final wallet = context.read<WalletProvider>();
-    final ok = await wallet.verifyTopUp({
-      'razorpay_order_id': response.orderId,
-      'razorpay_payment_id': response.paymentId,
-      'razorpay_signature': response.signature,
-    });
+    final ok = await wallet.verifyTopUp(
+      paymentId: response.paymentId ?? '',
+      orderId: response.orderId ?? '',
+      signature: response.signature ?? '',
+    );
+
     if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // dismiss loading dialog
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
             ? 'Payment successful! Wallet credited.'
             : (wallet.error ?? 'Payment verification failed.')),
         backgroundColor: ok ? AppColors.success : AppColors.danger,
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -152,10 +174,11 @@ class _WalletScreenState extends State<WalletScreen>
                   }
 
                   final user = auth.user;
+                  // Backend returns 'orderId' (camelCase) and 'amount' in paise.
                   final options = <String, dynamic>{
                     'key': order['key'] ?? order['razorpay_key'] ?? '',
-                    'order_id': order['order_id'] ?? order['id'],
-                    'amount': order['amount'], // paise from backend
+                    'order_id': order['orderId'] ?? order['order_id'] ?? order['id'],
+                    'amount': order['amount'], // already in paise from backend
                     'currency': order['currency'] ?? 'INR',
                     'name': 'WorkMate4U',
                     'description': 'Wallet Top-up',
@@ -222,6 +245,7 @@ class _WalletScreenState extends State<WalletScreen>
     }
 
     final amtCtrl = TextEditingController();
+    final bankNameCtrl = TextEditingController();
     final bankCtrl = TextEditingController();
     final ifscCtrl = TextEditingController();
     final holderCtrl = TextEditingController();
@@ -250,7 +274,13 @@ class _WalletScreenState extends State<WalletScreen>
             ),
             const SizedBox(height: 12),
             TextField(
+              controller: bankNameCtrl,
+              decoration: const InputDecoration(labelText: 'Bank Name (e.g. SBI, HDFC)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
               controller: bankCtrl,
+              keyboardType: TextInputType.number,
               decoration:
                   const InputDecoration(labelText: 'Bank Account Number'),
             ),
@@ -273,9 +303,10 @@ class _WalletScreenState extends State<WalletScreen>
                 Navigator.pop(ctx);
                 final ok = await context.read<WalletProvider>().requestWithdrawal(
                       amount: amt,
-                      bankAccount: bankCtrl.text,
-                      ifscCode: ifscCtrl.text,
-                      accountHolder: holderCtrl.text,
+                      bankName: bankNameCtrl.text.trim(),
+                      bankAccount: bankCtrl.text.trim(),
+                      ifscCode: ifscCtrl.text.trim(),
+                      accountHolder: holderCtrl.text.trim(),
                     );
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(

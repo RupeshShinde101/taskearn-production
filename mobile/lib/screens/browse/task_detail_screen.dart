@@ -7,6 +7,7 @@ import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
 import '../tasks/edit_task_screen.dart';
 
@@ -926,7 +927,7 @@ class _UserRow extends StatelessWidget {
       children: [
         CircleAvatar(
           radius: 22,
-          backgroundImage: avatar != null ? NetworkImage(avatar!) : null,
+          backgroundImage: avatarImage(avatar),
           backgroundColor: AppColors.light,
           child: avatar == null
               ? Text(

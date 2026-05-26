@@ -1,9 +1,11 @@
 import 'dart:async' show TimeoutException;
 import 'dart:convert';
-import 'dart:io' show HttpException, SocketException, TlsException;
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import '../services/storage_service.dart';
+import 'doh_helper.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -17,11 +19,112 @@ class ApiException implements Exception {
 class ApiService {
   static const String _prodUrl =
       'https://taskearn-production-production.up.railway.app/api';
-  // static const String _devUrl = 'http://localhost:5000/api';
+  static const String _railwayHost =
+      'taskearn-production-production.up.railway.app';
+  // Last-resort IP confirmed working via direct TCP+TLS test.
+  // Update if Railway migrates the deployment to a new IP.
+  static const String _railwayFallbackIp = '66.33.22.54';
 
-  static String get baseUrl {
-    // Switch to dev URL in debug mode if needed
-    return _prodUrl;
+  static String get baseUrl => _prodUrl;
+
+  /// Invoked by [_handleResponse] whenever the server returns 401 while
+  /// a JWT token is stored in [StorageService].  Register this once in
+  /// [AuthProvider] to clear the session and redirect to login globally.
+  static void Function()? onUnauthorized;
+
+  // ─── Custom HTTP client with DoH fallback for Railway host ─────────────────
+  // Only this client has a connectionFactory — Firebase, Google Sign-In, and
+  // all other packages use the default system-DNS client unaffected.
+  static http.Client? _client;
+  static http.Client get _httpClient =>
+      _client ??= IOClient(_buildDartClient());
+
+  static HttpClient _buildDartClient() {
+    return HttpClient()..connectionFactory = _connectionFactory;
+  }
+
+  /// DNS-aware connection factory:
+  /// • Proxy connections go to the proxy host (not the target).
+  /// • Railway host: system DNS (4 s) → DoH fallback via [DohHelper].
+  /// • All other hosts: system DNS as normal.
+  /// IMPORTANT: When connectionFactory is set, dart:io does NOT auto-wrap in
+  /// TLS. We must return a SecureSocket for HTTPS so TLS is established with
+  /// the original hostname for SNI + cert verification — no security compromise.
+  static Future<ConnectionTask<Socket>> _connectionFactory(
+      Uri url, String? proxyHost, int? proxyPort) async {
+    // ── Proxy: connect to the proxy, dart:io handles the CONNECT tunnel ──────
+    if (proxyHost != null) {
+      final addrs = await InternetAddress.lookup(proxyHost);
+      if (addrs.isEmpty) throw SocketException('Failed host lookup: $proxyHost');
+      final addr = addrs.firstWhere(
+        (a) => a.type == InternetAddressType.IPv4,
+        orElse: () => addrs.first,
+      );
+      return Socket.startConnect(addr, proxyPort!);
+    }
+
+    final host = url.host;
+    final port =
+        url.hasPort ? url.port : (url.isScheme('https') ? 443 : 80);
+
+    // ── Railway backend: try system DNS → DoH fallback ───────────────────────
+    if (host == _railwayHost) {
+      InternetAddress? addr;
+
+      try {
+        final addrs = await InternetAddress.lookup(host)
+            .timeout(const Duration(seconds: 4));
+        if (addrs.isNotEmpty) {
+          addr = addrs.firstWhere(
+            (a) => a.type == InternetAddressType.IPv4,
+            orElse: () => addrs.first,
+          );
+        }
+      } on SocketException {
+        // System DNS returned an error — fall through to DoH
+      } on TimeoutException {
+        // System DNS timed out — fall through to DoH
+      } catch (_) {}
+
+      addr ??= await DohHelper.resolve(host);
+
+      // Absolute last resort: hardcoded known IP.
+      // TCP+TLS to this IP with SNI=hostname is confirmed working.
+      if (addr == null) {
+        debugPrint('[API] DNS+DoH both failed — using hardcoded IP $_railwayFallbackIp');
+        addr = InternetAddress(_railwayFallbackIp,
+            type: InternetAddressType.IPv4);
+      }
+
+      debugPrint('[API] Connecting to $host via ${addr.address}:$port');
+      // connectionFactory bypasses dart:io's auto-TLS wrapping.
+      // For HTTPS: plain TCP to the resolved/hardcoded IP, then TLS with
+      // hostname as SNI via SecureSocket.secure, wrapped in ConnectionTask.
+      if (url.isScheme('https')) {
+        final sf = Socket.connect(addr, port)
+            .timeout(const Duration(seconds: 10))
+            .then((plain) => SecureSocket.secure(plain, host: host)
+                .timeout(const Duration(seconds: 10)));
+        return Future.value(ConnectionTask.fromSocket(sf, () {}));
+      }
+      return Socket.startConnect(addr, port);
+    }
+
+    // ── All other hosts: normal system DNS ──────────────────────────────────
+    final addrs = await InternetAddress.lookup(host);
+    if (addrs.isEmpty) throw SocketException('Failed host lookup: $host');
+    final addr = addrs.firstWhere(
+      (a) => a.type == InternetAddressType.IPv4,
+      orElse: () => addrs.first,
+    );
+    if (url.isScheme('https')) {
+      final sf = Socket.connect(addr, port)
+          .timeout(const Duration(seconds: 10))
+          .then((plain) => SecureSocket.secure(plain, host: host)
+              .timeout(const Duration(seconds: 10)));
+      return Future.value(ConnectionTask.fromSocket(sf, () {}));
+    }
+    return Socket.startConnect(addr, port);
   }
 
   static Map<String, String> get _headers {
@@ -56,8 +159,11 @@ class ApiService {
       throw ApiException('Network error. Please try again.', statusCode: null);
     } on TimeoutException {
       throw ApiException('Request timed out. Please try again.', statusCode: null);
+    } on ApiException {
+      // Never wrap our own exceptions — let the caller see the real message/statusCode.
+      rethrow;
     } catch (e) {
-      // Catch-all safety net for unexpected platform errors
+      // Catch-all safety net for unexpected platform errors (not ApiException).
       throw ApiException('Connection error. Please try again.', statusCode: null);
     }
   }
@@ -70,7 +176,7 @@ class ApiService {
       uri = uri.replace(queryParameters: queryParams);
     }
     return _safeRequest(
-      () => http.get(uri, headers: _headers).timeout(const Duration(seconds: 30)),
+      () => _httpClient.get(uri, headers: _headers).timeout(const Duration(seconds: 30)),
     );
   }
 
@@ -79,7 +185,7 @@ class ApiService {
       {Map<String, dynamic>? body,
       Duration timeout = const Duration(seconds: 30)}) async {
     return _safeRequest(
-      () => http
+      () => _httpClient
           .post(
             Uri.parse('$baseUrl$path'),
             headers: _headers,
@@ -92,7 +198,7 @@ class ApiService {
   // ─── PUT ────────────────────────────────────────────────────────────────────
   static Future<dynamic> put(String path, {Map<String, dynamic>? body}) async {
     return _safeRequest(
-      () => http
+      () => _httpClient
           .put(
             Uri.parse('$baseUrl$path'),
             headers: _headers,
@@ -105,7 +211,7 @@ class ApiService {
   // ─── DELETE ─────────────────────────────────────────────────────────────────
   static Future<dynamic> delete(String path) async {
     return _safeRequest(
-      () => http
+      () => _httpClient
           .delete(Uri.parse('$baseUrl$path'), headers: _headers)
           .timeout(const Duration(seconds: 30)),
     );
@@ -129,7 +235,7 @@ class ApiService {
     if (fields != null) request.fields.addAll(fields);
 
     try {
-      final streamed = await request.send().timeout(const Duration(seconds: 60));
+      final streamed = await _httpClient.send(request).timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamed);
       return _handleResponse(response);
     } on SocketException {
@@ -167,6 +273,14 @@ class ApiService {
     if (response.statusCode != 404) {
       debugPrint('[API] ERROR ${response.statusCode} ${response.request?.url}: $message');
     }
+
+    // When the server rejects our token, clear the local session and signal
+    // the AuthProvider to redirect to login. Only fires when a token is
+    // present — wrong-password 401 on /auth/login has no token stored yet.
+    if (response.statusCode == 401 && StorageService.getToken() != null) {
+      onUnauthorized?.call();
+    }
+
     throw ApiException(message.toString(), statusCode: response.statusCode);
   }
 }

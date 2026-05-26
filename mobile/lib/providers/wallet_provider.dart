@@ -8,6 +8,9 @@ class WalletProvider extends ChangeNotifier {
   List<WithdrawalRequest> _withdrawals = [];
   bool _loading = false;
   String? _error;
+  /// Amount (in paise) from the most recently created top-up order.
+  /// Stored here so [verifyTopUp] can include it in the verify request.
+  int _pendingTopUpAmountPaise = 0;
 
   WalletBalance get balance => _balance;
   List<Transaction> get transactions => _transactions;
@@ -56,12 +59,25 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  // Returns Razorpay order data for wallet top-up
-  Future<Map<String, dynamic>?> createTopUpOrder(double amount) async {
+  // Returns Razorpay order data for wallet top-up.
+  // Amount must be in RUPEES (the backend auto-converts to paise and returns
+  // the order amount in paise in the 'amount' field of the response).
+  Future<Map<String, dynamic>?> createTopUpOrder(double amountRupees) async {
     try {
+      // Send amount as integer rupees. The backend converts to paise internally
+      // and returns the Razorpay order with 'amount' in paise.
       final data = await ApiService.post('/payments/wallet-topup-order',
-          body: {'amount': amount});
-      return data;
+          body: {'amount': amountRupees.toInt()});
+      if (data is Map && data['success'] == false) {
+        _error = data['message']?.toString() ?? 'Failed to create order';
+        notifyListeners();
+        return null;
+      }
+      // Store the paise amount from the Razorpay order for the verify step.
+      final rawAmount = data['amount'];
+      _pendingTopUpAmountPaise =
+          int.tryParse(rawAmount?.toString() ?? '0') ?? 0;
+      return Map<String, dynamic>.from(data as Map);
     } on ApiException catch (e) {
       _error = e.message;
       notifyListeners();
@@ -69,10 +85,32 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> verifyTopUp(Map<String, dynamic> paymentData) async {
+  /// Verify a completed Razorpay top-up payment.
+  /// [paymentId] = Razorpay payment ID (always present)
+  /// [orderId]   = Razorpay order ID (from the order we created)
+  /// [signature] = HMAC signature from Razorpay (present for order payments)
+  Future<bool> verifyTopUp({
+    required String paymentId,
+    required String orderId,
+    required String signature,
+  }) async {
     try {
-      await ApiService.post('/payments/wallet-topup-verify', body: paymentData);
+      final body = <String, dynamic>{
+        'paymentId': paymentId,
+        'orderId': orderId,
+        'signature': signature,
+        'amount': _pendingTopUpAmountPaise,
+      };
+      final result = await ApiService.post('/payments/wallet-topup-verify',
+          body: body);
+      if (result is Map && result['success'] == false) {
+        _error = result['message']?.toString() ?? 'Payment verification failed';
+        notifyListeners();
+        return false;
+      }
+      _pendingTopUpAmountPaise = 0;
       await fetchWallet();
+      await fetchTransactions();
       return true;
     } on ApiException catch (e) {
       _error = e.message;
@@ -83,6 +121,7 @@ class WalletProvider extends ChangeNotifier {
 
   Future<bool> requestWithdrawal({
     required double amount,
+    required String bankName,
     required String bankAccount,
     required String ifscCode,
     required String accountHolder,
@@ -90,9 +129,10 @@ class WalletProvider extends ChangeNotifier {
     try {
       await ApiService.post('/wallet/withdraw', body: {
         'amount': amount,
-        'bank_account': bankAccount,
-        'ifsc_code': ifscCode,
-        'account_holder': accountHolder,
+        'bankName': bankName,
+        'accountNumber': bankAccount,
+        'ifscCode': ifscCode,
+        'accountHolder': accountHolder,
       });
       await fetchWallet();
       await fetchWithdrawals();

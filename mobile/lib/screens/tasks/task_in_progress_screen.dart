@@ -12,6 +12,7 @@ import '../../models/task.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
 
 class TaskInProgressScreen extends StatefulWidget {
@@ -30,9 +31,13 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   bool _abandoning = false;
   String? _proofPath;
   Timer? _pollTimer;
+  Timer? _phoneRetryTimer; // short follow-up if poster phone is missing on first load
   StreamSubscription<Position>? _locationSub;
   bool _paymentPopupShown = false; // ensure payment popup shown only once
   bool _loaded = false;            // true after first data load; polls are silent
+  bool _refreshing = false;        // true while a manual refresh is in flight
+  int _phoneRetryCount = 0;        // automatic phone-fetch retry counter
+  static const _maxPhoneRetries = 5; // maximum automatic retries for poster phone
 
   // ── statuses treated as "cancelled" — helper should be redirected away
   static const _cancelledStatuses = {
@@ -71,6 +76,16 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   @override
   void initState() {
     super.initState();
+    // Pre-populate from provider cache immediately so the task info (title,
+    // poster name, etc.) is visible before the first async _load() completes.
+    // This avoids a blank spinner screen when navigating here right after accept.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final cached = context.read<TaskProvider>().getCachedTask(widget.taskId);
+      if (cached != null && _task == null) {
+        setState(() { _task = cached; });
+      }
+    });
     _load();
     _startLocationUpdates();
     // Poll for status changes every 30 s so the helper is redirected
@@ -92,55 +107,91 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     // update _task silently so the user never sees a spinner flash every 15 s.
     if (!_loaded) setState(() { _loading = true; });
     final prevTask = _task;
-    final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
-    if (!mounted) return;
-
-    // If posterPhone is missing on first load, refresh user tasks (which may
-    // include the phone in its list response) and try the detail again once.
-    // This handles the server propagation delay right after accepting a task.
-    if (!_loaded && task != null &&
-        (task.posterPhone == null || task.posterPhone!.trim().isEmpty)) {
-      await context.read<TaskProvider>().fetchMyTasks();
+    try {
+      final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
       if (!mounted) return;
-      final retried = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
-      if (!mounted) return;
-      setState(() {
-        _task = retried ?? task;
-        _loading = false;
-        _loaded = true;
-      });
-    } else {
-      setState(() {
-        _task = task;
-        _loading = false;
-        _loaded = true;
-      });
-    }
 
-    // If task data cannot be found at all (deleted/404), release and exit.
-    final status = _task?.status ?? '';
-    if (_task == null) {
-      _pollTimer?.cancel();
-      _showTaskGoneDialog();
-      return;
-    }
+      // If posterPhone is missing on first load, refresh user tasks (which may
+      // include the phone in its list response) and try the detail again once.
+      // This handles the server propagation delay right after accepting a task.
+      if (!_loaded && task != null &&
+          (task.posterPhone == null || task.posterPhone!.trim().isEmpty)) {
+        await context.read<TaskProvider>().fetchMyTasks();
+        if (!mounted) return;
+        final retried = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
+        if (!mounted) return;
+        setState(() {
+          _task = retried ?? task;
+          _loading = false;
+          _loaded = true;
+        });
+      } else {
+        setState(() {
+          _task = task;
+          _loading = false;
+          _loaded = true;
+        });
+      }
 
-    // If the poster cancelled, redirect.
-    if (_cancelledStatuses.contains(status)) {
-      _pollTimer?.cancel();
-      _showCancelledDialog();
-      return;
-    }
+      // If task data cannot be found at all (deleted/404), release and exit.
+      final status = _task?.status ?? '';
+      if (_task == null) {
+        _pollTimer?.cancel();
+        _showTaskGoneDialog();
+        return;
+      }
 
-    // Detect transition to payment-released state using both status AND isPaid.
-    final wasPaymentReleased = _taskIsPaymentReleased(prevTask);
-    final nowPaymentReleased = _taskIsPaymentReleased(_task);
-    if (nowPaymentReleased && !wasPaymentReleased && !_paymentPopupShown) {
-      _paymentPopupShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showPaymentReceivedDialog();
-      });
+      // If the poster cancelled, redirect.
+      if (_cancelledStatuses.contains(status)) {
+        _pollTimer?.cancel();
+        _showCancelledDialog();
+        return;
+      }
+
+      // Detect transition to payment-released state using both status AND isPaid.
+      final wasPaymentReleased = _taskIsPaymentReleased(prevTask);
+      final nowPaymentReleased = _taskIsPaymentReleased(_task);
+      if (nowPaymentReleased && !wasPaymentReleased && !_paymentPopupShown) {
+        _paymentPopupShown = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showPaymentReceivedDialog();
+        });
+      }
+
+      // Auto-retry fetching poster contact if still missing (server propagation
+      // delay after accept). Backoff: 4 s, 8 s, 12 s … up to _maxPhoneRetries.
+      // Never cancels an already-pending timer (so the 15-second poll does not
+      // push retries further out).
+      if (_task != null &&
+          (_task!.posterPhone == null || _task!.posterPhone!.trim().isEmpty) &&
+          _phoneRetryCount < _maxPhoneRetries &&
+          !(_phoneRetryTimer?.isActive ?? false)) {
+        _phoneRetryCount++;
+        _phoneRetryTimer = Timer(Duration(seconds: 4 * _phoneRetryCount), () {
+          if (mounted) _load();
+        });
+      }
+    } catch (e) {
+      debugPrint('[TaskInProgress] _load error: $e');
+      // Ensure the screen never stays stuck on the loading spinner.
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loaded = true;
+        });
+      }
     }
+  }
+
+  /// Manual refresh triggered by the AppBar button, pull-to-refresh, or the
+  /// inline contact-section Refresh button. Shows visual feedback and resets
+  /// the phone auto-retry counter so retries restart from the beginning.
+  Future<void> _manualRefresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    _phoneRetryCount = 0; // reset so auto-retries fire again
+    await _load();
+    if (mounted) setState(() => _refreshing = false);
   }
 
   // ── Payment received popup with earnings breakdown ────────────────────────
@@ -320,6 +371,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _phoneRetryTimer?.cancel();
     _locationSub?.cancel();
     super.dispose();
   }
@@ -396,16 +448,32 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   }
 
   Future<void> _callPoster() async {
-    final phone = _task?.posterPhone;
-    if (phone == null || phone.trim().isEmpty) {
+    var phone = _task?.posterPhone?.trim();
+    if (phone == null || phone.isEmpty) {
+      // Auto-refresh once then retry the call
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Phone number not available for this poster.')),
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            content: Text('Fetching contact info, please wait…'),
+            duration: Duration(seconds: 3),
+          ));
       }
-      return;
+      await _manualRefresh();
+      phone = _task?.posterPhone?.trim();
+      if (phone == null || phone.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(const SnackBar(
+              content: Text(
+                  'Contact number not available yet. Try again in a moment.'),
+            ));
+        }
+        return;
+      }
     }
-    final uri = Uri.parse('tel:${phone.trim()}');
+    final uri = Uri.parse('tel:$phone');
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
@@ -418,14 +486,30 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   }
 
   Future<void> _whatsappPoster() async {
-    final raw = _task?.posterPhone?.replaceAll(RegExp(r'[^0-9]'), '');
+    var raw = _task?.posterPhone?.replaceAll(RegExp(r'[^0-9]'), '');
     if (raw == null || raw.isEmpty) {
+      // Auto-refresh once then retry WhatsApp
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Phone number not available for this poster.')),
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            content: Text('Fetching contact info, please wait…'),
+            duration: Duration(seconds: 3),
+          ));
       }
-      return;
+      await _manualRefresh();
+      raw = _task?.posterPhone?.replaceAll(RegExp(r'[^0-9]'), '');
+      if (raw == null || raw.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(const SnackBar(
+              content: Text(
+                  'Contact number not available yet. Try again in a moment.'),
+            ));
+        }
+        return;
+      }
     }
     final full = raw.startsWith('91') ? raw : '91$raw';
     final uri = Uri.parse('https://wa.me/$full');
@@ -728,20 +812,36 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final hasPhone = task.posterPhone != null && task.posterPhone!.trim().isNotEmpty;
     final busy = _submitting || _completing || _abandoning;
     final netEarning = task.netEarning;
+    // Computed once to avoid calling avatarImage() twice — required because
+    // Flutter asserts backgroundImage != null when onBackgroundImageError is set.
+    final posterAvatarImg = avatarImage(task.posterAvatar);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Task In Progress'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _load,
-          ),
+          if (_refreshing)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.only(right: 16),
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+              onPressed: _manualRefresh,
+            ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: _manualRefresh,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
@@ -906,17 +1006,12 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                           radius: 24,
                           backgroundColor:
                               AppColors.primary.withValues(alpha: 0.12),
-                          backgroundImage: (task.posterAvatar != null &&
-                                  task.posterAvatar!.isNotEmpty)
-                              ? NetworkImage(task.posterAvatar!)
-                              : null,
+                          backgroundImage: posterAvatarImg,
+                          // onBackgroundImageError must be null when
+                          // backgroundImage is null (Flutter assertion).
                           onBackgroundImageError:
-                              (task.posterAvatar != null &&
-                                      task.posterAvatar!.isNotEmpty)
-                                  ? (_, __) {}
-                                  : null,
-                          child: (task.posterAvatar == null ||
-                                  task.posterAvatar!.isEmpty)
+                              posterAvatarImg != null ? (_, __) {} : null,
+                          child: posterAvatarImg == null
                               ? Text(
                                   (task.posterName.isNotEmpty &&
                                           task.posterName != 'Anonymous')
@@ -1029,12 +1124,38 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     ),
 
                     if (!hasPhone)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 6),
-                        child: Text(
-                          'Contact number was not provided by the poster.',
-                          style:
-                              TextStyle(color: AppColors.grayLight, fontSize: 11),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Contact info not yet available.',
+                                style: TextStyle(
+                                    color: AppColors.grayLight, fontSize: 11),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed:
+                                  _refreshing ? null : _manualRefresh,
+                              icon: _refreshing
+                                  ? const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 1.5),
+                                    )
+                                  : const Icon(Icons.refresh, size: 14),
+                              label: Text(
+                                  _refreshing ? 'Refreshing…' : 'Refresh'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                   ],

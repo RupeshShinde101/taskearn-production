@@ -27,6 +27,11 @@ class ApiService {
 
   static String get baseUrl => _prodUrl;
 
+  /// Invoked by [_handleResponse] whenever the server returns 401 while
+  /// a JWT token is stored in [StorageService].  Register this once in
+  /// [AuthProvider] to clear the session and redirect to login globally.
+  static void Function()? onUnauthorized;
+
   // ─── Custom HTTP client with DoH fallback for Railway host ─────────────────
   // Only this client has a connectionFactory — Firebase, Google Sign-In, and
   // all other packages use the default system-DNS client unaffected.
@@ -265,6 +270,14 @@ class ApiService {
     if (response.statusCode != 404) {
       debugPrint('[API] ERROR ${response.statusCode} ${response.request?.url}: $message');
     }
+
+    // When the server rejects our token, clear the local session and signal
+    // the AuthProvider to redirect to login. Only fires when a token is
+    // present — wrong-password 401 on /auth/login has no token stored yet.
+    if (response.statusCode == 401 && StorageService.getToken() != null) {
+      onUnauthorized?.call();
+    }
+
     throw ApiException(message.toString(), statusCode: response.statusCode);
   }
 }

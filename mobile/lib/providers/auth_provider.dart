@@ -33,7 +33,24 @@ class AuthProvider extends ChangeNotifier {
   static const Duration _kSessionDuration = Duration(days: 30);
 
   AuthProvider() {
+    // Register a global 401 handler so any API call that receives an
+    // "Invalid or expired token" response automatically clears the session
+    // and redirects the user to login — regardless of where in the app it fires.
+    ApiService.onUnauthorized = _handleUnauthorized;
     _checkAuth();
+  }
+
+  /// Called by [ApiService] whenever the backend returns 401 while a JWT is
+  /// stored.  Clears the session and marks the user as unauthenticated so the
+  /// go_router redirect guard navigates to /login automatically.
+  void _handleUnauthorized() async {
+    // No-op if already logged out (guard against multiple concurrent 401s).
+    if (_status == AuthStatus.unauthenticated) return;
+    debugPrint('[AUTH] Received 401 — token expired or invalid. Forcing logout.');
+    await StorageService.clearSession();
+    _user = null;
+    _status = AuthStatus.unauthenticated;
+    notifyListeners();
   }
 
   Future<void> _checkAuth() async {

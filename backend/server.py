@@ -2839,6 +2839,18 @@ def abandon_task(task_id):
                     f'release-penalty-{task_id}', task_id, penalty_now
                 ))
                 print(f"\u26a0\ufe0f Helper {request.user_id} released task {task_id}. Penalty \u20b9{release_penalty:.2f} -> new balance \u20b9{helper_new_balance:.2f}")
+                
+                # Send FCM notification to helper about penalty deduction
+                try:
+                    send_fcm_to_user(
+                        request.user_id,
+                        '⚠️ Release Penalty Deducted',
+                        f'₹{release_penalty:.2f} penalty deducted from your wallet for releasing the task.',
+                        data={'type': 'penalty_deducted', 'amount': str(release_penalty), 'taskId': str(task_id)},
+                        channel='workmate4u_payment',
+                    )
+                except Exception as fcm_err:
+                    print(f"⚠️ Failed to send penalty FCM notification: {fcm_err}")
 
         # Ensure suspension columns exist before using them
         _ensure_suspension_columns()
@@ -3039,6 +3051,66 @@ def poster_cancel_accepted_task(task_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error cancelling task: {str(e)}'}), 500
+
+
+@app.route('/api/tasks/<int:task_id>', methods=['GET'])
+@require_auth
+def get_task(task_id):
+    """Get a single task by ID — used when tapping a task_matched FCM notification."""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT t.id, t.title, t.description, t.category,
+                       t.location_lat, t.location_lng, t.location_address,
+                       t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
+                       t.price, t.service_charge, t.posted_by, t.posted_at, t.expires_at, t.status,
+                       COALESCE(u.name, 'Anonymous') AS poster_name,
+                       COALESCE(u.rating, 5.0)       AS poster_rating,
+                       COALESCE(u.tasks_posted, 0)   AS poster_tasks
+                FROM tasks t
+                LEFT JOIN users u ON u.id = t.posted_by
+                WHERE t.id = {PH}
+                  AND t.status NOT IN ('removed', 'flagged', 'suspicious')
+            ''', (task_id,))
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Task not found'}), 404
+        task = dict_from_row(row)
+        return jsonify({
+            'success': True,
+            'task': {
+                'id': task['id'],
+                'title': task['title'],
+                'description': task['description'],
+                'category': task['category'],
+                'location': {
+                    'lat': task['location_lat'],
+                    'lng': task['location_lng'],
+                    'address': task['location_address']
+                },
+                'drop_location': {
+                    'lat': task['drop_location_lat'],
+                    'lng': task['drop_location_lng'],
+                    'address': task.get('drop_location_address') or ''
+                } if task.get('drop_location_lat') else None,
+                'price': float(task['price']),
+                'service_charge': float(task.get('service_charge') or 0),
+                'postedBy': {
+                    'id': task.get('posted_by'),
+                    'name': task['poster_name'],
+                    'rating': float(task['poster_rating']),
+                    'tasksPosted': int(task['poster_tasks'])
+                },
+                'postedAt': task['posted_at'],
+                'expiresAt': task['expires_at'],
+                'status': task['status']
+            }
+        })
+    except Exception as e:
+        print(f"[GET /api/tasks/{task_id}] Error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to load task.'}), 500
 
 
 @app.route('/api/tasks/<int:task_id>', methods=['PUT'])

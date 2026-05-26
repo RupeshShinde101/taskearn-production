@@ -36,6 +36,9 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
   AuthProvider? _authProvider;
   StreamSubscription<Map<String, dynamic>>? _notifSub;
   StreamSubscription<Map<String, dynamic>>? _taskCompletedSub;
+  /// Navigation path deferred until the user is authenticated.
+  /// Set when a notification tap arrives before auth is established.
+  String? _pendingNavPath;
 
   @override
   void initState() {
@@ -162,36 +165,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       _authProvider!.addListener(_onAuthChanged);
     }
     // Listen to notification taps and route to the correct screen.
-    _notifSub ??= NotificationService.onNotificationTap.stream.listen((data) {
-      final taskId = data['task_id']?.toString() ??
-          data['taskId']?.toString();
-      final type = data['type']?.toString() ?? '';
-      if (taskId != null && taskId.isNotEmpty) {
-        // Routes that should land on the task-in-progress screen:
-        // task_assigned  — helper just accepted
-        // task_accepted  — poster confirmation
-        // task_started   — task work started
-        // task_completed_helper / task_verify_sent — helper submitted completion
-        // payment_released — payment done, helper should see completion screen
-        const inProgressTypes = {
-          'task_assigned',
-          'task_accepted',
-          'task_started',
-          'task_completed_helper',
-          'task_verify_sent',
-          'payment_released',
-          'payment_received',
-        };
-        if (inProgressTypes.contains(type)) {
-          _router.go('/task-in-progress/$taskId');
-        } else {
-          _router.push('/task/$taskId');
-        }
-      } else {
-        // Generic notification — go to notifications list
-        _router.push('/notifications');
-      }
-    });
+    _notifSub ??= NotificationService.onNotificationTap.stream
+        .listen(_handleNotifTap);
+
+    // Consume any notification that launched the app from a terminated state.
+    // Must be done AFTER subscribing so we can immediately process it.
+    final pendingTap = NotificationService.consumePendingInitialTap();
+    if (pendingTap != null) {
+      _handleNotifTap(pendingTap);
+    }
 
     // Show in-app popup when a task_completed event arrives while the poster
     // is actively using the app.
@@ -237,8 +219,65 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     });
   }
 
+  void _handleNotifTap(Map<String, dynamic> data) {
+    // Resolve task ID — check all common key names the backend may send.
+    final taskId = data['task_id']?.toString()
+        ?? data['taskId']?.toString()
+        ?? data['id']?.toString();
+    final type = data['type']?.toString() ?? '';
+
+    // Determine where to navigate.
+    // inProgressTypes — these screens should open the in-progress view.
+    const inProgressTypes = {
+      'task_assigned',       // helper just accepted
+      'task_accepted',       // poster confirmation
+      'task_started',
+      'task_completed_helper',
+      'task_verify_sent',
+      'payment_released',
+      'payment_received',
+    };
+    // Notification types that map to the browse / detail view.
+    const matchedTypes = {'task_matched', 'matched_task'};
+
+    String destination;
+    if (taskId != null && taskId.isNotEmpty) {
+      destination = inProgressTypes.contains(type)
+          ? '/task-in-progress/$taskId'
+          : '/task/$taskId';
+    } else {
+      // No task ID in the FCM payload — pick the most appropriate screen.
+      if (matchedTypes.contains(type)) {
+        destination = '/browse'; // Matched-task alerts → browse for the task
+      } else if (type.contains('payment')) {
+        destination = '/wallet';
+      } else if (type.isNotEmpty) {
+        destination = '/my-tasks';
+      } else {
+        destination = '/notifications';
+      }
+    }
+
+    // If the user is already authenticated, navigate immediately.
+    // Otherwise, store the path and navigate once auth resolves.
+    if (_authProvider?.status == AuthStatus.authenticated) {
+      _router.push(destination);
+    } else {
+      _pendingNavPath = destination;
+    }
+  }
+
   void _onAuthChanged() {
     _router.refresh();
+    // Navigate to a deferred notification destination now that auth is ready.
+    if (_authProvider?.status == AuthStatus.authenticated &&
+        _pendingNavPath != null) {
+      final path = _pendingNavPath!;
+      _pendingNavPath = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _router.push(path);
+      });
+    }
   }
 
   @override

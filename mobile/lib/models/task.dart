@@ -230,7 +230,9 @@ class Task {
             ]);
             return p.isNotEmpty
                 ? p
-                : (json['poster_phone']?.toString() ?? json['phone']?.toString());
+                : (json['poster_phone']?.toString()
+                    ?? json['posterPhone']?.toString()  // camelCase from some backends
+                    ?? json['phone']?.toString());
           })(),
       isPaid: json['is_paid'] == true || json['status'] == 'paid',
       isHidden: json['is_hidden'] == true,
@@ -458,4 +460,12 @@ class TaskCategory {
     TaskCategory(id: 'tech_support', label: 'Tech Support', icon: '💡'),
     TaskCategory(id: 'other', label: 'Other', icon: '📋'),
   ];
+
+  /// Returns the icon emoji for [category], falling back to '📋' if not found.
+  static String iconFor(String category) {
+    return all.firstWhere(
+      (c) => c.id == category,
+      orElse: () => const TaskCategory(id: '', label: '', icon: '📋'),
+    ).icon;
+  }
 }

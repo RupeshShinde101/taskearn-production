@@ -238,6 +238,12 @@ class NotificationService {
   static final StreamController<Map<String, dynamic>> onTaskCompleted =
       StreamController.broadcast();
 
+  /// Holds the data from getInitialMessage() / getNotificationAppLaunchDetails()
+  /// so it can be consumed AFTER the app widget has subscribed to [onNotificationTap].
+  /// Using a static store prevents the race-condition where the initial message is
+  /// broadcast before any listener exists (broadcast streams don't buffer).
+  static Map<String, dynamic>? _pendingInitialTap;
+
   static Future<void> init() async {
     // ── Local notifications setup ──────────────────────────────────────────
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -405,16 +411,42 @@ class NotificationService {
       }
     });
 
-    // ── App opened from notification ───────────────────────────────────────
+    // ── App opened from a background-state FCM notification ─────────────────
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
       onNotificationTap.add(message.data);
     });
 
-    // Check if app was launched by a notification
+    // ── Check for notification that LAUNCHED the app (terminated-state tap) ─
+    // We intentionally store it rather than broadcast immediately, because the
+    // broadcast stream has NO listeners yet at this point in main() — storing
+    // lets app.dart consume it after didChangeDependencies() sets up its sub.
     final initial = await _fcm.getInitialMessage();
     if (initial != null) {
-      onNotificationTap.add(initial.data);
+      _pendingInitialTap = initial.data;
     }
+
+    // Also check for a tap via a local notification that launched the app.
+    // flutter_local_notifications surfaces this through getNotificationAppLaunchDetails.
+    final launchDetails = await _local.getNotificationAppLaunchDetails();
+    if (launchDetails != null &&
+        launchDetails.didNotificationLaunchApp &&
+        launchDetails.notificationResponse?.payload != null) {
+      final payload = launchDetails.notificationResponse!.payload!;
+      try {
+        final decoded = jsonDecode(payload) as Map<String, dynamic>;
+        _pendingInitialTap ??= decoded; // FCM wins if both present
+      } catch (_) {
+        _pendingInitialTap ??= {'task_id': payload, 'type': ''};
+      }
+    }
+  }
+
+  /// Returns and clears any notification data that was stored during app launch
+  /// (terminated-state tap). Call this once after subscribing to [onNotificationTap].
+  static Map<String, dynamic>? consumePendingInitialTap() {
+    final tap = _pendingInitialTap;
+    _pendingInitialTap = null;
+    return tap;
   }
 
   static Future<String?> getToken() async {
@@ -428,6 +460,16 @@ class NotificationService {
 
   static void onTokenRefresh(void Function(String) callback) {
     _fcm.onTokenRefresh.listen(callback);
+  }
+
+  /// Shows a local notification when one of the user's posted tasks expires.
+  /// Called from TaskProvider when it detects a status transition to 'expired'.
+  static Future<void> showTaskExpiredNotification(String taskTitle) async {
+    await _showLocalNotification(
+      title: 'Task Expired ⏰',
+      body: '"$taskTitle" has expired and been removed from the board.',
+      notificationType: 'task_expired',
+    );
   }
 
   static Future<void> _showLocalNotification({
@@ -483,9 +525,13 @@ class NotificationService {
       title: title,
       body: body,
       notificationDetails: details,
-      payload: taskId != null
-          ? jsonEncode({'task_id': taskId, 'type': notificationType ?? ''})
-          : null,
+      // Always include a payload so tapping the notification always triggers
+      // onDidReceiveNotificationResponse and the app can route appropriately
+      // even when task_id is absent (e.g. server omits it for some events).
+      payload: jsonEncode({
+        if (taskId != null && taskId.isNotEmpty) 'task_id': taskId,
+        'type': notificationType ?? '',
+      }),
     );
   }
 }

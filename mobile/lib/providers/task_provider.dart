@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import '../services/storage_service.dart';
 
 class TaskProvider extends ChangeNotifier {
@@ -28,6 +29,10 @@ class TaskProvider extends ChangeNotifier {
   /// so the 48-h expiry timer survives app restarts.
   final Map<String, DateTime> _savedCompletedAt = {};
   bool _completedAtLoaded = false;
+
+  /// Tracks the last known status of each posted task so we can detect
+  /// when a task transitions to 'expired' and fire a local notification.
+  final Map<String, String> _lastPostedTaskStatuses = {};
 
   /// Persist a poster phone to both the in-memory map and SharedPreferences.
   void _savePhone(String taskId, String phone) {
@@ -234,11 +239,30 @@ class TaskProvider extends ChangeNotifier {
       // Statuses that mean a posted task is fully done — remove from Posted tab.
       const postedDoneStatuses = {
         'verified', 'paid', 'done', 'finished', 'payment_released',
-        'cancelled',
+        'cancelled', 'expired',
       };
       final postedExpiryCutoff =
           DateTime.now().subtract(const Duration(hours: 24));
-      _myPostedTasks = _parseTaskList(data['postedTasks'] ?? data['posted'])
+      final rawPosted = _parseTaskList(data['postedTasks'] ?? data['posted']);
+
+      // Detect tasks that just transitioned to 'expired' so we can fire a
+      // local notification. We compare against the statuses seen last fetch.
+      for (final t in rawPosted) {
+        if (t.status == 'expired') {
+          final prev = _lastPostedTaskStatuses[t.id];
+          if (prev != null && prev != 'expired') {
+            // This task just expired — notify the poster.
+            NotificationService.showTaskExpiredNotification(t.title);
+          }
+        }
+      }
+      // Persist current statuses for the next comparison.
+      _lastPostedTaskStatuses.clear();
+      for (final t in rawPosted) {
+        _lastPostedTaskStatuses[t.id] = t.status;
+      }
+
+      _myPostedTasks = rawPosted
           .where((t) => !postedDoneStatuses.contains(t.status))
           // Remove tasks still in 'posted' status that have passed the 24-h window
           .where((t) =>
@@ -379,8 +403,18 @@ class TaskProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Returns any locally-cached [Task] for [id] without hitting the network.
+  /// Used by TaskInProgressScreen to pre-populate the UI while [getTaskDetail]
+  /// is loading.
+  Task? getCachedTask(String id) => _findCached(id);
+
   /// Search every list cache for a non-empty posterPhone for [id].
+  /// Checks the detail cache first since it holds the full poster info from the network.
   String? _findPhoneInAllLists(String id) {
+    final cached = _detailCache[id];
+    if (cached != null && cached.posterPhone != null && cached.posterPhone!.trim().isNotEmpty) {
+      return cached.posterPhone!.trim();
+    }
     for (final list in [_browseTasks, _myAcceptedTasks, _myPostedTasks, _myCompletedTasks]) {
       for (final t in list) {
         if (t.id == id && t.posterPhone != null && t.posterPhone!.trim().isNotEmpty) {
@@ -392,7 +426,12 @@ class TaskProvider extends ChangeNotifier {
   }
 
   /// Search every list cache for a non-empty, non-Anonymous posterName for [id].
+  /// Checks the detail cache first since it holds the full poster info from the network.
   String? _findNameInAllLists(String id) {
+    final cached = _detailCache[id];
+    if (cached != null && cached.posterName.isNotEmpty && cached.posterName != 'Anonymous') {
+      return cached.posterName;
+    }
     for (final list in [_browseTasks, _myAcceptedTasks, _myPostedTasks, _myCompletedTasks]) {
       for (final t in list) {
         if (t.id == id && t.posterName.isNotEmpty && t.posterName != 'Anonymous') {
@@ -407,13 +446,19 @@ class TaskProvider extends ChangeNotifier {
   /// Only caches if the parsed task has real poster info (not Anonymous).
   void _cacheDetailFromResponse(dynamic response, String taskId) {
     try {
-      // Accept endpoint may wrap the task under various keys
-      final Map<String, dynamic>? json = response is Map<String, dynamic>
-          ? (response['task'] ?? response['data'] ?? response['acceptedTask'] ??
-              response['result'] ?? response)
-                  as Map<String, dynamic>?
-          : null;
-      if (json != null && json.isNotEmpty) {
+      if (response is! Map) return;
+      // Accept endpoint may wrap the task under various keys.
+      // Use Map.from() instead of a direct cast to avoid TypeError when the
+      // runtime type is Map<dynamic, dynamic> (e.g. from JSON decoded in an
+      // isolate).  The try-catch around us handles any remaining failures.
+      final raw = (response as Map)['task'] ??
+          response['data'] ??
+          response['acceptedTask'] ??
+          response['result'] ??
+          response;
+      if (raw is! Map) return;
+      final json = Map<String, dynamic>.from(raw);
+      if (json.isNotEmpty) {
         final task = Task.fromJson(json);
         // Only cache if we got real poster info
         if (task.posterName != 'Anonymous' || task.posterPhone != null) {
@@ -515,6 +560,15 @@ class TaskProvider extends ChangeNotifier {
           }
 
           _detailCache[id] = task;
+          // Persist phone & name whenever we retrieve them from the network so
+          // that subsequent calls (and the next app session) find them quickly
+          // via _loadPhone/_loadName instead of relying solely on the API.
+          if (task.posterPhone != null && task.posterPhone!.trim().isNotEmpty) {
+            _savePhone(id, task.posterPhone!);
+          }
+          if (task.posterName.isNotEmpty && task.posterName != 'Anonymous') {
+            _saveName(id, task.posterName);
+          }
           return task;
         }
       } catch (_) {

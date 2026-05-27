@@ -174,7 +174,7 @@ class AuthProvider extends ChangeNotifier {
       'email': email.trim(),
       'password': password,
       if (phone != null) 'phone': phone,
-      if (dob != null && dob.isNotEmpty) 'date_of_birth': dob,
+      if (dob != null && dob.isNotEmpty) 'dob': dob,
       if (inviteCode != null && inviteCode.isNotEmpty)
         'invite_code': inviteCode.trim().toUpperCase(),
       if (referralCode != null && referralCode.isNotEmpty)

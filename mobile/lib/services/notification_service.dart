@@ -48,6 +48,11 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       description: 'Payment alerts and confirmations',
       importance: Importance.max,
     ));
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_admin', 'Admin Alerts',
+      description: 'Account status and admin messages',
+      importance: Importance.max,
+    ));
   }
 
   // Choose channel, title, body and importance based on notification type.
@@ -182,6 +187,18 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       importance = Importance.high;
       break;
 
+    // ── Penalty deducted for task release ──────────────────────────────────
+    case 'penalty_deducted':
+    case 'release_penalty':
+    case 'task_abandoned_penalty':
+      title = data['title'] ?? '⚠️ Release Penalty';
+      body = data['body'] ?? 'A penalty has been deducted from your wallet for releasing the task.';
+      channelId = 'workmate4u_payment';
+      channelName = 'Payments';
+      channelDesc = 'Payment alerts and confirmations';
+      importance = Importance.max;
+      break;
+
     // ── Helper final mark-complete (helper gets this after /mark-completed) ─
     case 'task_final_completed':
       title = data['title'] ?? 'Task Complete! 🏆';
@@ -197,6 +214,63 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       title = data['title'] ?? 'All Done! ✅';
       body = data['body'] ?? 'Your task has been fully completed by the helper.';
       channelId = 'workmate4u_main';
+      importance = Importance.high;
+      break;
+
+    // ── Admin / account actions ────────────────────────────────────────────
+    case 'account_suspended':
+    case 'admin_suspended':
+      title = data['title'] ?? 'Account Suspended ⛔';
+      body = data['body'] ?? 'Your account has been suspended by admin.';
+      channelId = 'workmate4u_admin';
+      channelName = 'Admin Alerts';
+      channelDesc = 'Account status and admin messages';
+      importance = Importance.max;
+      break;
+
+    case 'account_banned':
+    case 'admin_banned':
+      title = data['title'] ?? 'Account Banned 🚫';
+      body = data['body'] ?? 'Your account has been permanently banned.';
+      channelId = 'workmate4u_admin';
+      channelName = 'Admin Alerts';
+      channelDesc = 'Account status and admin messages';
+      importance = Importance.max;
+      break;
+
+    case 'account_restored':
+      title = data['title'] ?? 'Account Restored ✅';
+      body = data['body'] ?? 'Your account restriction has been lifted.';
+      channelId = 'workmate4u_admin';
+      channelName = 'Admin Alerts';
+      channelDesc = 'Account status and admin messages';
+      importance = Importance.max;
+      break;
+
+    case 'admin_warning':
+      title = data['title'] ?? 'Warning from Workmate4u ⚠️';
+      body = data['body'] ?? 'Your account has received a warning from admin.';
+      channelId = 'workmate4u_admin';
+      channelName = 'Admin Alerts';
+      channelDesc = 'Account status and admin messages';
+      importance = Importance.max;
+      break;
+
+    case 'admin_message':
+      title = data['title'] ?? 'Message from Workmate4u 📢';
+      body = data['body'] ?? '';
+      channelId = 'workmate4u_admin';
+      channelName = 'Admin Alerts';
+      channelDesc = 'Account status and admin messages';
+      importance = Importance.high;
+      break;
+
+    case 'admin_balance_adjusted':
+      title = data['title'] ?? 'Wallet Balance Updated 💰';
+      body = data['body'] ?? 'Your wallet balance has been adjusted by admin.';
+      channelId = 'workmate4u_payment';
+      channelName = 'Payments';
+      channelDesc = 'Payment alerts and confirmations';
       importance = Importance.high;
       break;
 
@@ -217,7 +291,9 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
         ? const Color(0xFF10B981)  // green for money
         : channelId == 'workmate4u_matched'
             ? const Color(0xFF6366F1)  // indigo for matches
-            : const Color(0xFF0EA5E9), // sky-blue for tasks
+            : channelId == 'workmate4u_admin'
+                ? const Color(0xFFEF4444)  // red for admin alerts
+                : const Color(0xFF0EA5E9), // sky-blue for tasks
     enableVibration: true,
     playSound: true,
   );
@@ -299,6 +375,11 @@ class NotificationService {
         description: 'Payment alerts and confirmations',
         importance: Importance.max,
       ));
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_admin', 'Admin Alerts',
+        description: 'Account status and admin messages',
+        importance: Importance.max,
+      ));
     }
 
     // ── FCM permissions ────────────────────────────────────────────────────
@@ -323,6 +404,10 @@ class NotificationService {
           type == 'payment_done' || type == 'withdrawal_approved' ||
           type == 'withdrawal_rejected' || type == 'withdrawal_requested' ||
           type == 'task_final_completed';
+      final isAdmin = type == 'account_suspended' || type == 'admin_suspended' ||
+          type == 'account_banned' || type == 'admin_banned' ||
+          type == 'account_restored' || type == 'admin_warning' ||
+          type == 'admin_message' || type == 'admin_balance_adjusted';
       final isTaskCompleted = type == 'task_completed' ||
           type == 'verify_pending' ||
           type == 'task_complete_verify' ||
@@ -338,6 +423,7 @@ class NotificationService {
           notificationType: type,
           isMatchedTask: isMatch,
           isPayment: isPayment,
+          isAdmin: isAdmin,
         );
       } else {
         // Data-only FCM message — show for all known types
@@ -390,8 +476,33 @@ class NotificationService {
             case 'task_final_completed_poster':
               msgTitle ??= 'All Done! ✅';
               msgBody ??= 'Your task has been fully completed by the helper.';
+              break;            // ── Admin actions ───────────────────────────────────────────────
+            case 'account_suspended':
+            case 'admin_suspended':
+              msgTitle ??= 'Account Suspended \u26d4';
+              msgBody ??= 'Your account has been suspended by admin.';
               break;
-            default:
+            case 'account_banned':
+            case 'admin_banned':
+              msgTitle ??= 'Account Banned \U0001f6ab';
+              msgBody ??= 'Your account has been permanently banned.';
+              break;
+            case 'account_restored':
+              msgTitle ??= 'Account Restored \u2705';
+              msgBody ??= 'Your account restriction has been lifted.';
+              break;
+            case 'admin_warning':
+              msgTitle ??= 'Warning from Workmate4u \u26a0\ufe0f';
+              msgBody ??= 'Your account has received a warning from admin.';
+              break;
+            case 'admin_message':
+              msgTitle ??= 'Message from Workmate4u \U0001f4e2';
+              msgBody ??= '';
+              break;
+            case 'admin_balance_adjusted':
+              msgTitle ??= 'Wallet Balance Updated \U0001f4b0';
+              msgBody ??= 'Your wallet balance has been adjusted by admin.';
+              break;            default:
               break;
           }
         }
@@ -404,6 +515,7 @@ class NotificationService {
             notificationType: type,
             isMatchedTask: isMatch,
             isPayment: isPayment,
+            isAdmin: isAdmin,
           );
         }
       }
@@ -489,9 +601,22 @@ class NotificationService {
     String? notificationType,
     bool isMatchedTask = false,
     bool isPayment = false,
+    bool isAdmin = false,
   }) async {
     final AndroidNotificationDetails androidDetails;
-    if (isMatchedTask) {
+    if (isAdmin) {
+      androidDetails = const AndroidNotificationDetails(
+        'workmate4u_admin',
+        'Admin Alerts',
+        channelDescription: 'Account status and admin messages',
+        importance: Importance.max,
+        priority: Priority.max,
+        icon: '@mipmap/ic_launcher',
+        color: Color(0xFFEF4444),
+        enableVibration: true,
+        playSound: true,
+      );
+    } else if (isMatchedTask) {
       androidDetails = const AndroidNotificationDetails(
         'workmate4u_matched',
         'Matched Tasks',

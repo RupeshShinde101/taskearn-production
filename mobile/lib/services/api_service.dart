@@ -217,7 +217,7 @@ class ApiService {
     );
   }
 
-  // ─── MULTIPART (file upload) ─────────────────────────────────────────────────
+  // ─── MULTIPART (single file upload) ────────────────────────────────────────
   static Future<dynamic> uploadFile(
     String path,
     String filePath,
@@ -248,6 +248,56 @@ class ApiService {
       throw ApiException('Request timed out. Please try again.', statusCode: null);
     } catch (e) {
       throw ApiException('Connection error. Please try again.', statusCode: null);
+    }
+  }
+
+  // ─── MULTIPART (multiple files + text fields) ────────────────────────────────
+  /// Sends a multipart/form-data POST with any number of file attachments and
+  /// plain-text fields.  Use this instead of [post] when uploading files so
+  /// the server receives actual file bytes (not base64 strings in JSON) and
+  /// can forward them to cloud storage, returning a URL rather than raw data.
+  static Future<dynamic> postMultipart(
+    String path, {
+    Map<String, String>? fields,
+    Map<String, String>? filePaths, // fieldName -> absolute file path
+    Duration timeout = const Duration(seconds: 120),
+  }) async {
+    final token = StorageService.getToken();
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'));
+
+    if (token != null) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+    request.headers['Accept'] = 'application/json';
+
+    if (fields != null) request.fields.addAll(fields);
+
+    if (filePaths != null) {
+      for (final entry in filePaths.entries) {
+        request.files
+            .add(await http.MultipartFile.fromPath(entry.key, entry.value));
+      }
+    }
+
+    try {
+      final streamed = await _httpClient.send(request).timeout(timeout);
+      final response = await http.Response.fromStream(streamed);
+      return _handleResponse(response);
+    } on SocketException {
+      throw ApiException(
+          'No internet connection. Please check your network.',
+          statusCode: null);
+    } on TlsException {
+      throw ApiException('Secure connection failed. Please try again.',
+          statusCode: null);
+    } on http.ClientException {
+      throw ApiException('Network error. Please try again.', statusCode: null);
+    } on TimeoutException {
+      throw ApiException('Request timed out. Please try again.',
+          statusCode: null);
+    } catch (e) {
+      throw ApiException('Connection error. Please try again.',
+          statusCode: null);
     }
   }
 

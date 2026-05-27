@@ -737,13 +737,73 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   }
 
   Future<void> _releaseTask() async {
+    final task = _task;
+    if (task == null) return;
+
+    // Calculate penalty locally: 10% of total task value (matches backend logic)
+    final penalty = task.totalAmount * 0.10;
+    // Daily release count comes from the user profile (not the task object)
+    final releasesUsed = context.read<AuthProvider>().user?.dailyReleaseCount ?? 0;
+    final remaining = (Task.maxDailyReleases - releasesUsed).clamp(0, Task.maxDailyReleases);
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Release Task'),
-        content: const Text(
-            'Releasing a task without completing it may result in a penalty.\n\n'
-            'More than 3 releases may trigger a 48-hour account suspension.'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'Releasing a task without completing it will result in a penalty.'),
+              const SizedBox(height: 12),
+              if (penalty > 0)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded,
+                          color: AppColors.danger, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '₹${penalty.toStringAsFixed(0)} penalty will be deducted',
+                          style: const TextStyle(
+                            color: AppColors.danger,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Text(
+                'Releases today: $releasesUsed/${Task.maxDailyReleases}',
+                style: const TextStyle(fontSize: 12, color: AppColors.gray),
+              ),
+              if (remaining <= 1) ...[
+                const SizedBox(height: 4),
+                Text(
+                  remaining == 0
+                      ? '⚠️ No releases left today. Next release will trigger 48h suspension.'
+                      : '⚠️ $remaining release left. After that, 48h suspension activates.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.danger,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -760,11 +820,34 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     if (confirm != true || !mounted) return;
 
     setState(() => _abandoning = true);
-    final ok = await context.read<TaskProvider>().abandonTask(widget.taskId);
+    final result = await context.read<TaskProvider>().abandonTask(widget.taskId);
     if (!mounted) return;
     setState(() => _abandoning = false);
-    if (ok) {
-      context.go('/my-tasks');
+
+    if (result['success'] == true) {
+      // Refresh user profile so dailyReleaseCount is up to date
+      context.read<AuthProvider>().refreshUser();
+
+      final releasePenalty = result['releasePenalty'] as double? ?? 0.0;
+      final dailyCount = result['dailyReleaseCount'] as int? ?? 0;
+      final isSuspended = result['suspended'] == true;
+
+      // Show penalty/release summary before navigating away
+      if (mounted) {
+        final msg = releasePenalty > 0
+            ? '₹${releasePenalty.toStringAsFixed(0)} penalty deducted. Releases today: $dailyCount/${Task.maxDailyReleases}'
+                '${isSuspended ? ' — Account suspended 48h' : ''}'
+            : 'Task released. Releases today: $dailyCount/${Task.maxDailyReleases}';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: releasePenalty > 0 || isSuspended ? AppColors.danger : AppColors.gray,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        await Future.delayed(const Duration(milliseconds: 600));
+      }
+      if (mounted) context.go('/my-tasks');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

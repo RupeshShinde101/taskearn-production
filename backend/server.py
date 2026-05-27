@@ -9947,18 +9947,54 @@ def notify_account_suspended_email(user_id, reason):
 @app.route('/api/user/kyc/submit', methods=['POST'])
 @require_auth
 def submit_kyc():
-    """Submit KYC document for verification (with anti-fraud checks)."""
-    data = request.get_json() or {}
-    doc_type = (data.get('documentType') or '').strip()
-    doc_number = (data.get('documentNumber') or '').strip()
-    # Accept new front/back fields; fall back to legacy documentImage field
-    doc_image_front = data.get('documentImageFront') or data.get('documentImage', '')
-    doc_image_back = data.get('documentImageBack') or ''
-    if doc_image_front:
-        doc_image_front = doc_image_front.strip()
-    if doc_image_back:
-        doc_image_back = doc_image_back.strip()
-    acknowledged = bool(data.get('acknowledged'))
+    """Submit KYC document for verification (with anti-fraud checks).
+    Accepts two request formats:
+      - multipart/form-data (mobile app): files in 'documentImageFront' / 'documentImageBack'
+      - application/json     (website):   base64 data URIs in JSON body
+    Images are always stored as 'data:<mime>;base64,<b64>' so the admin panel
+    can render them directly with <img src="..."> without triggering 414 errors.
+    """
+    import base64 as _b64
+
+    def _file_to_data_uri(field_name):
+        """Convert a multipart file field to a base64 data URI string."""
+        f = request.files.get(field_name)
+        if not f:
+            return ''
+        raw = f.read()
+        if not raw:
+            return ''
+        mime = (f.content_type or 'image/jpeg').split(';')[0].strip() or 'image/jpeg'
+        return f'data:{mime};base64,{_b64.b64encode(raw).decode()}'
+
+    content_type = request.content_type or ''
+    if 'multipart/form-data' in content_type:
+        # Mobile app sends binary files via multipart — convert to data URIs for DB storage
+        doc_type = (request.form.get('documentType') or '').strip()
+        doc_number = (request.form.get('documentNumber') or '').strip()
+        acknowledged = request.form.get('acknowledged', 'false').lower() in ('true', '1', 'yes')
+        doc_image_front = _file_to_data_uri('documentImageFront')
+        doc_image_back = _file_to_data_uri('documentImageBack')
+    else:
+        # Website sends JSON with base64 data URI strings
+        data = request.get_json() or {}
+        doc_type = (data.get('documentType') or '').strip()
+        doc_number = (data.get('documentNumber') or '').strip()
+        # Accept new front/back fields; fall back to legacy documentImage field
+        doc_image_front = data.get('documentImageFront') or data.get('documentImage', '')
+        doc_image_back = data.get('documentImageBack') or ''
+        if doc_image_front:
+            doc_image_front = doc_image_front.strip()
+        if doc_image_back:
+            doc_image_back = doc_image_back.strip()
+        # Ensure stored value always has the data URI prefix so <img src> renders inline
+        def _ensure_data_uri(s):
+            if s and not s.startswith('data:'):
+                return f'data:image/jpeg;base64,{s}'
+            return s
+        doc_image_front = _ensure_data_uri(doc_image_front)
+        doc_image_back = _ensure_data_uri(doc_image_back)
+        acknowledged = bool(data.get('acknowledged'))
 
     # Mandatory legal declaration (acts as legal evidence in case of fraud)
     if not acknowledged:

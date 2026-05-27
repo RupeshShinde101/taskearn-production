@@ -74,9 +74,9 @@ class _KycScreenState extends State<KycScreen> {
     final picker = ImagePicker();
     final file = await picker.pickImage(
       source: source,
-      imageQuality: 85,
-      maxWidth: 1800,
-      maxHeight: 1800,
+      imageQuality: 60,   // keep document text legible but under 300 KB per image
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
     if (file != null && mounted) {
       setState(() {

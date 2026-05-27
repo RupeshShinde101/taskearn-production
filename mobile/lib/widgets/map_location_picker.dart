@@ -74,7 +74,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       if (places.isNotEmpty) {
         final p = places.first;
         final parts = [p.name, p.subLocality, p.locality, p.administrativeArea]
-            .where((s) => s != null && s!.isNotEmpty)
+            .where((s) => s != null && s.isNotEmpty)
             .map((s) => s!)
             .toList();
         setState(() {

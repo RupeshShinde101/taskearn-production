@@ -105,10 +105,26 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     setState(() {});
   }
 
+  /// Auto-fill description with category-specific prompts/questions.
+  /// Called when a category is selected to guide the user on what to describe.
+  void _autoFillDescription() {
+    final prompts = _prompts[_selectedCategory];
+    if (prompts == null || prompts.isEmpty) return;
+    
+    // Only auto-fill if the description is currently empty
+    if (_descCtrl.text.trim().isEmpty) {
+      _descCtrl.text = prompts.join('\n');
+      _descCtrl.selection =
+          TextSelection.fromPosition(TextPosition(offset: 0));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _getLocation();
+    // Auto-fill description with prompts for the default category on first open
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillDescription());
   }
 
   @override
@@ -146,7 +162,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (mounted && places.isNotEmpty) {
         final p = places.first;
         final parts = [p.name, p.subLocality, p.locality]
-            .where((s) => s != null && s!.isNotEmpty)
+            .where((s) => s != null && s.isNotEmpty)
             .map((s) => s!)
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');
@@ -240,7 +256,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (mounted && places.isNotEmpty) {
         final p = places.first;
         final parts = [p.name, p.subLocality, p.locality]
-            .where((s) => s != null && s!.isNotEmpty)
+            .where((s) => s != null && s.isNotEmpty)
             .map((s) => s!)
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');
@@ -276,7 +292,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (mounted && places.isNotEmpty) {
         final p = places.first;
         final parts = [p.name, p.subLocality, p.locality]
-            .where((s) => s != null && s!.isNotEmpty)
+            .where((s) => s != null && s.isNotEmpty)
             .map((s) => s!)
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');
@@ -568,8 +584,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         final c = cats[i];
                         final sel = _selectedCategory == c.id;
                         return GestureDetector(
-                          onTap: () =>
-                              setState(() => _selectedCategory = c.id),
+                          onTap: () => setState(() {
+                            _selectedCategory = c.id;
+                            _autoFillDescription();
+                          }),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             decoration: BoxDecoration(

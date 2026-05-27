@@ -243,6 +243,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     const walletTypes = {
       'wallet_topup', 'wallet_credited',
       'withdrawal_requested', 'withdrawal_approved', 'withdrawal_rejected',
+      'penalty_deducted', 'release_penalty', 'task_abandoned_penalty',
+    };
+    // Admin notification types — navigate to the notifications screen.
+    const adminTypes = {
+      'account_suspended', 'admin_suspended',
+      'account_banned', 'admin_banned',
+      'account_restored',
+      'admin_warning', 'admin_message',
+      'admin_balance_adjusted',
     };
 
     String destination;
@@ -252,7 +261,9 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
           : '/task/$taskId';
     } else {
       // No task ID in the FCM payload — pick the most appropriate screen.
-      if (matchedTypes.contains(type)) {
+      if (adminTypes.contains(type)) {
+        destination = '/notifications';
+      } else if (matchedTypes.contains(type)) {
         destination = '/browse'; // Matched-task alerts → browse for the task
       } else if (walletTypes.contains(type) || type.contains('payment')) {
         destination = '/wallet';

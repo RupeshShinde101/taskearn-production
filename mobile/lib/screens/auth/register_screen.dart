@@ -115,6 +115,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_dob == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Please select your date of birth')),
+      );
+      return;
+    }
+    if (_ageInYears(_dob!) < 16) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text('You must be at least 16 years old to join WorkMate4U')),
+      );
+      return;
+    }
     if (!_agreeTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please accept the terms & conditions')),
@@ -197,8 +212,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       v == null ? 'Date of birth is required' : null,
                   builder: (state) => GestureDetector(
                     onTap: () async {
-                      await _pickDob();
-                      state.didChange(_dob);
+                      final now = DateTime.now();
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate:
+                            _dob ?? DateTime(now.year - 20, now.month, now.day),
+                        firstDate: DateTime(1920),
+                        lastDate:
+                            DateTime(now.year - 13, now.month, now.day),
+                        helpText: 'Select Date of Birth',
+                        fieldLabelText: 'Date of Birth',
+                      );
+                      if (picked != null) {
+                        setState(() => _dob = picked);
+                        state.didChange(picked); // pass value directly, not via _dob
+                      }
                     },
                     child: InputDecorator(
                       decoration: InputDecoration(

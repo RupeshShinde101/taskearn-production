@@ -324,7 +324,10 @@ class AuthProvider extends ChangeNotifier {
   String? get kycSubmitMessage => _kycSubmitMessage;
 
   /// Submit KYC with Aadhaar (front + back) or PAN (front only).
-  /// Images are base64-encoded and sent as JSON to /user/kyc/submit.
+  /// Images are sent as multipart/form-data (binary bytes, ~25% smaller than
+  /// base64 JSON) so the request stays well under proxy size limits.
+  /// The backend converts the files to base64 data URIs before storing in the
+  /// DB, ensuring the admin panel can render them inline without 414 errors.
   Future<bool> submitKyc({
     required String docType,
     required String docNumber,
@@ -336,31 +339,26 @@ class AuthProvider extends ChangeNotifier {
     _kycSubmitMessage = null;
     notifyListeners();
     try {
-      // Convert images to base64
-      final frontBytes = await File(frontImagePath).readAsBytes();
-      final frontBase64 = base64Encode(frontBytes);
-
-      String? backBase64;
-      if (backImagePath != null) {
-        final backBytes = await File(backImagePath).readAsBytes();
-        backBase64 = base64Encode(backBytes);
-      }
-
       // Normalise document number (uppercase, no spaces)
       final normNumber = docNumber.trim().toUpperCase().replaceAll(' ', '');
 
-      final body = <String, dynamic>{
+      final fields = <String, String>{
         'documentType': docType,
         'documentNumber': normNumber,
-        'documentImageFront': frontBase64,
-        if (backBase64 != null) 'documentImageBack': backBase64,
-        'acknowledged': true,
+        'acknowledged': 'true',
       };
 
-      // Use a 120-second timeout: base64 images can be several MB
-      final response = await ApiService.post(
+      final filePaths = <String, String>{
+        'documentImageFront': frontImagePath,
+        if (backImagePath != null) 'documentImageBack': backImagePath,
+      };
+
+      // Send binary files via multipart — backend converts to base64 data URI
+      // and stores in DB so the admin panel can display images as inline <img>.
+      final response = await ApiService.postMultipart(
         '/user/kyc/submit',
-        body: body,
+        fields: fields,
+        filePaths: filePaths,
         timeout: const Duration(seconds: 120),
       );
       _kycSubmitMessage = response['message'] as String?;

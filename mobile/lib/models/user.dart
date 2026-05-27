@@ -18,6 +18,8 @@ class User {
   final DateTime? suspendedUntil;
   final String? referralCode;
   final DateTime createdAt;
+  /// Number of task releases made today (resets daily). Max 3 before suspension.
+  final int dailyReleaseCount;
 
   User({
     required this.id,
@@ -39,6 +41,7 @@ class User {
     this.suspendedUntil,
     this.referralCode,
     required this.createdAt,
+    this.dailyReleaseCount = 0,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -78,6 +81,8 @@ class User {
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
           : DateTime.now(),
+      dailyReleaseCount: int.tryParse(
+              (json['dailyReleaseCount'] ?? json['daily_release_count'] ?? 0).toString()) ?? 0,
     );
   }
 
@@ -98,5 +103,6 @@ class User {
         'is_suspended': isSuspended,
         'referral_code': referralCode,
         'created_at': createdAt.toIso8601String(),
+        'dailyReleaseCount': dailyReleaseCount,
       };
 }

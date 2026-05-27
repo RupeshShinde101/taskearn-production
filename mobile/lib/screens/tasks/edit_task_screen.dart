@@ -191,7 +191,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       if (mounted && places.isNotEmpty) {
         final p = places.first;
         final parts = [p.name, p.subLocality, p.locality]
-            .where((s) => s != null && s!.isNotEmpty)
+            .where((s) => s != null && s.isNotEmpty)
             .map((s) => s!)
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');
@@ -226,7 +226,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       if (mounted && places.isNotEmpty) {
         final p = places.first;
         final parts = [p.name, p.subLocality, p.locality]
-            .where((s) => s != null && s!.isNotEmpty)
+            .where((s) => s != null && s.isNotEmpty)
             .map((s) => s!)
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');

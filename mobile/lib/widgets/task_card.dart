@@ -38,7 +38,7 @@ class TaskCard extends StatelessWidget {
                     ),
                     child: Center(
                       child: Text(
-                        _categoryEmoji(task.category),
+                        TaskCategory.iconFor(task.category),
                         style: const TextStyle(fontSize: 20),
                       ),
                     ),
@@ -182,14 +182,6 @@ class TaskCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _categoryEmoji(String category) {
-    final cat = TaskCategory.all.firstWhere(
-      (c) => c.id == category,
-      orElse: () => const TaskCategory(id: '', label: '', icon: '📋'),
-    );
-    return cat.icon;
   }
 }
 

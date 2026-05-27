@@ -87,11 +87,6 @@ class _PostedTaskList extends StatelessWidget {
   const _PostedTaskList({required this.tasks});
 
   static const _cancellableStatuses = {'posted', 'accepted', 'in_progress'};
-  // After helper submits for verification, cancel is no longer allowed
-  static const _nonCancellableStatuses = {
-    'completed', 'verify_pending', 'payment_released',
-    'verified', 'paid', 'done', 'finished', 'cancelled',
-  };
 
   @override
   Widget build(BuildContext context) {
@@ -141,7 +136,7 @@ class _PostedTaskList extends StatelessWidget {
                             color: AppColors.primary.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Center(child: Text(_emoji(t.category),
+                          child: Center(child: Text(TaskCategory.iconFor(t.category),
                               style: const TextStyle(fontSize: 20))),
                         ),
                         const SizedBox(width: 10),
@@ -435,20 +430,6 @@ class _PostedTaskList extends StatelessWidget {
         backgroundColor: ok ? AppColors.success : AppColors.danger,
       ));
     }
-  }
-
-  String _emoji(String cat) {
-    const m = {
-      'delivery': '🚚', 'pickup': '📦', 'transport': '🚗', 'moving': '🏠',
-      'groceries': '🛒', 'cooking': '🍳', 'cleaning': '🧹', 'laundry': '👕',
-      'electrician': '⚡', 'plumbing': '🔧', 'carpentry': '🪚',
-      'painting': '🎨', 'repair': '🔨', 'tutoring': '📚',
-      'data_entry': '💻', 'photography': '📷', 'gardening': '🌱',
-      'pet_care': '🐾', 'child_care': '👶', 'elder_care': '👴',
-      'errands': '🏃', 'queue_standing': '🕐', 'event_help': '🎉',
-      'tech_support': '💡',
-    };
-    return m[cat] ?? '📋';
   }
 
   // ── Shows completion proof photo + Pay Now entry point ──────────────────
@@ -889,7 +870,7 @@ class _CompletedTaskList extends StatelessWidget {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    _categoryEmoji(t.category),
+                                    TaskCategory.iconFor(t.category),
                                     style: const TextStyle(fontSize: 19),
                                   ),
                                 ),
@@ -1050,14 +1031,6 @@ class _CompletedTaskList extends StatelessWidget {
         },
       ),
     );
-  }
-
-  String _categoryEmoji(String category) {
-    final cat = TaskCategory.all.firstWhere(
-      (c) => c.id == category,
-      orElse: () => const TaskCategory(id: '', label: '', icon: '📋'),
-    );
-    return cat.icon;
   }
 
   String _formatDate(DateTime dt) =>

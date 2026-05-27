@@ -70,6 +70,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
+    final phoneDigits = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
+    if (phoneDigits.isEmpty || phoneDigits.length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Please enter a valid phone number before signing up with Google')),
+      );
+      return;
+    }
     if (_dob == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -99,8 +108,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       referralCode:
           _referralCtrl.text.trim().isEmpty ? null : _referralCtrl.text.trim(),
       dob: _dob,
-      phone:
-          _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+      phone: _phoneCtrl.text.trim(),
     );
     if (!mounted) return;
 
@@ -115,6 +123,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_dob == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Please select your date of birth')),
+      );
+      return;
+    }
+    if (_ageInYears(_dob!) < 16) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text('You must be at least 16 years old to join WorkMate4U')),
+      );
+      return;
+    }
     if (!_agreeTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please accept the terms & conditions')),
@@ -127,7 +150,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       name: _nameCtrl.text,
       email: _emailCtrl.text,
       password: _passwordCtrl.text,
-      phone: _phoneCtrl.text.isNotEmpty ? _phoneCtrl.text : null,
+      phone: _phoneCtrl.text.trim(),
       dob: _dob != null ? DateFormat('yyyy-MM-dd').format(_dob!) : null,
       inviteCode: _inviteCtrl.text.isNotEmpty ? _inviteCtrl.text : null,
       referralCode: _referralCtrl.text.isNotEmpty ? _referralCtrl.text : null,
@@ -184,11 +207,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _phoneCtrl,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(
-                    labelText: 'Phone (optional)',
+                    labelText: 'Phone Number',
                     prefixIcon: Icon(Icons.phone_outlined),
                   ),
+                  validator: (v) {
+                    final digits = v?.replaceAll(RegExp(r'\D'), '') ?? '';
+                    if (digits.isEmpty) return 'Phone number is required';
+                    if (digits.length < 10) return 'Enter a valid phone number';
+                    return null;
+                  },
                 ),
-                const SizedBox(height: 14),
 
                 // ── Date of Birth ──────────────────────────────────────────
                 FormField<DateTime>(
@@ -197,8 +225,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       v == null ? 'Date of birth is required' : null,
                   builder: (state) => GestureDetector(
                     onTap: () async {
-                      await _pickDob();
-                      state.didChange(_dob);
+                      final now = DateTime.now();
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate:
+                            _dob ?? DateTime(now.year - 20, now.month, now.day),
+                        firstDate: DateTime(1920),
+                        lastDate:
+                            DateTime(now.year - 13, now.month, now.day),
+                        helpText: 'Select Date of Birth',
+                        fieldLabelText: 'Date of Birth',
+                      );
+                      if (picked != null) {
+                        setState(() => _dob = picked);
+                        state.didChange(picked); // pass value directly, not via _dob
+                      }
                     },
                     child: InputDecorator(
                       decoration: InputDecoration(

@@ -39,6 +39,10 @@ class Task {
   final double? dropLatitude;
   /// Drop location longitude (for navigation).
   final double? dropLongitude;
+  /// Release penalty amount (10% of total task value) — shown if helper abandons
+  final double releasePenalty;
+  /// Daily releases used (0-3) — max 3 releases per 24h before 48h suspension
+  final int dailyReleasesUsed;
 
   Task({
     required this.id,
@@ -74,16 +78,26 @@ class Task {
     this.dropAddress,
     this.dropLatitude,
     this.dropLongitude,
+    this.releasePenalty = 0.0,
+    this.dailyReleasesUsed = 0,
   });
 
-  // Parse a date string that may be ISO-8601 or RFC-2822
+  // Parse a date string that may be ISO-8601 or RFC-2822.
+  // PostgreSQL returns UTC timestamps without 'Z' suffix; we treat naive
+  // timestamps (no timezone info) as UTC so the 48-h expiry filter is accurate.
   static DateTime _parseDate(dynamic value) {
     if (value == null) return DateTime.now();
     final s = value.toString().trim();
-    // Try ISO-8601 first
-    final iso = DateTime.tryParse(s);
-    if (iso != null) return iso;
-    // Fallback: today (RFC-2822 format not natively supported)
+    var iso = DateTime.tryParse(s);
+    if (iso == null) {
+      // Try appending 'Z' to treat as UTC (PostgreSQL naive timestamp format)
+      iso = DateTime.tryParse('${s}Z');
+    }
+    if (iso != null) {
+      // If string had no timezone marker, the parsed value is already UTC
+      // (we appended Z above). Convert to local for consistent UI display.
+      return iso.isUtc ? iso.toLocal() : iso;
+    }
     return DateTime.now();
   }
 
@@ -94,7 +108,12 @@ class Task {
     if (value == null) return null;
     final s = value.toString().trim();
     if (s.isEmpty) return null;
-    return DateTime.tryParse(s); // null if unparseable — callers handle null
+    var iso = DateTime.tryParse(s);
+    if (iso == null) {
+      iso = DateTime.tryParse('${s}Z');
+    }
+    if (iso == null) return null;
+    return iso.isUtc ? iso.toLocal() : iso;
   }
 
   /// Returns the first non-empty string value found in [map] for any of [keys].
@@ -218,7 +237,9 @@ class Task {
           json['created_at'] ?? json['postedAt'] ?? json['posted_at']
       ),
       acceptedAt: _parseDateOrNull(json['accepted_at'] ?? json['acceptedAt']),
-      completedAt: _parseDateOrNull(json['completed_at'] ?? json['completedAt']),
+      completedAt: _parseDateOrNull(
+          json['completed_at'] ?? json['completedAt'] ??
+          json['helper_final_completed_at']),  // 'done' tasks use this column
       helperRating: json['helper_rating'] != null
           ? double.tryParse(json['helper_rating'].toString()) ?? 0.0
           : null,
@@ -272,6 +293,12 @@ class Task {
         final f = json['drop_location_lng'] ?? json['drop_lng'] ?? json['drop_longitude'] ?? json['dropLng'] ?? json['destination_lng'];
         return f != null ? double.tryParse(f.toString()) : null;
       })(),
+      releasePenalty: double.tryParse(
+          (json['release_penalty'] ?? json['releasePenalty'] ?? json['penalty'] ?? 0).toString()
+      ) ?? 0.0,
+      dailyReleasesUsed: int.tryParse(
+          (json['daily_releases_used'] ?? json['dailyReleasesUsed'] ?? json['dailyReleaseCount'] ?? 0).toString()
+      ) ?? 0,
     );
   }
 
@@ -306,6 +333,12 @@ class Task {
   /// Net amount the helper earns after [platformCommission] is deducted
   /// from the total task value (budget + service charge).
   double get netEarning => totalAmount * (1 - commissionRate);
+
+  /// Max daily releases allowed before 48h suspension.
+  static const int maxDailyReleases = 3;
+
+  /// Remaining releases allowed today (0 to maxDailyReleases).
+  int get remainingReleases => (maxDailyReleases - dailyReleasesUsed).clamp(0, maxDailyReleases);
 
   /// True for task categories that involve a pickup-to-drop delivery route.
   bool get isDeliveryType =>
@@ -354,6 +387,8 @@ class Task {
       dropAddress: dropAddress,
       dropLatitude: dropLatitude,
       dropLongitude: dropLongitude,
+      releasePenalty: releasePenalty,
+      dailyReleasesUsed: dailyReleasesUsed,
     );
   }
 
@@ -392,6 +427,8 @@ class Task {
     if (dropAddress != null) 'delivery_address': dropAddress,
     if (dropLatitude != null) 'drop_lat': dropLatitude,
     if (dropLongitude != null) 'drop_lng': dropLongitude,
+    'release_penalty': releasePenalty,
+    'daily_releases_used': dailyReleasesUsed,
   };
 
   String get statusLabel {

@@ -1165,7 +1165,7 @@
             </button>
             <div class="modal-title">Add Money</div>
             <div class="amount-input-container">
-                <input type="number" class="amount-input" id="addAmount" placeholder="₹0" min="10">
+                <input type="text" inputmode="numeric" pattern="[0-9]*" class="amount-input" id="addAmount" placeholder="₹0">
             </div>
             <div class="quick-amounts">
                 <button class="quick-amount-btn" onclick="setAmount(100)">₹100</button>
@@ -1618,11 +1618,15 @@
         }
         
         document.getElementById('addAmount').addEventListener('input', (e) => {
-            updateCashbackNote(parseInt(e.target.value) || 0);
+            // Strip any non-digit chars (e.g. commas added by mobile browsers)
+            const cleaned = e.target.value.replace(/[^0-9]/g, '');
+            if (e.target.value !== cleaned) e.target.value = cleaned;
+            updateCashbackNote(parseInt(cleaned) || 0);
         });
         
         async function processAddMoney() {
-            const amount = parseInt(document.getElementById('addAmount').value);
+            const rawVal = document.getElementById('addAmount').value.replace(/[^0-9]/g, '');
+            const amount = parseInt(rawVal);
             
             if (!amount || amount < 10) {
                 showToast('Minimum amount is ₹10');
@@ -1673,10 +1677,12 @@
             }
         }
         
-        function openWalletRazorpayCheckout(orderId, amount, razorpayKey) {
+        async function openWalletRazorpayCheckout(orderId, amount, razorpayKey) {
             try {
+                // Lazily load the Razorpay checkout SDK (never loaded at page start)
+                await loadRazorpaySDK();
                 if (typeof Razorpay === 'undefined') {
-                    showToast('Payment gateway not available. Please refresh page.');
+                    showToast('Payment gateway failed to load. Please check your connection and try again.');
                     return;
                 }
                 

@@ -14,12 +14,27 @@ class Config:
     
     # Secret key for JWT and sessions - MUST be set via environment variable in production
     SECRET_KEY = os.environ.get('SECRET_KEY', '')
-    if not SECRET_KEY:
+
+    # Known-weak / placeholder values that must never be used in production
+    _WEAK_KEYS = {
+        '', 'change_me', 'changeme', 'secret', 'password',
+        'REPLACE_WITH_RANDOM_SECRET_KEY_DO_NOT_COMMIT',
+        'TaskEarn-Fixed-Secret-Key-2026-Do-Not-Change',
+    }
+
+    if not SECRET_KEY or SECRET_KEY in _WEAK_KEYS:
         if os.environ.get('DATABASE_URL'):
-            raise RuntimeError("SECRET_KEY must be set in production (DATABASE_URL is configured)")
+            raise RuntimeError(
+                "SECRET_KEY must be set to a strong random value in production. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
         import secrets as _secrets
         SECRET_KEY = _secrets.token_hex(32)
         print("⚠️  SECRET_KEY not set in environment — using random key (sessions won't survive restarts)")
+    elif len(SECRET_KEY) < 32:
+        if os.environ.get('DATABASE_URL'):
+            raise RuntimeError("SECRET_KEY is too short — must be at least 32 characters in production.")
+        print("⚠️  SECRET_KEY is short — consider using a longer random value.")
     else:
         print("🔐 SECRET_KEY loaded from environment")
     

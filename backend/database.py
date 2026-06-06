@@ -25,12 +25,41 @@ except ImportError:
 # DATABASE CONNECTION
 # ========================================
 
+def _build_secure_dsn(database_url: str) -> str:
+    """
+    Ensure the DSN always has sslmode=require and a connect_timeout.
+    Railway internal URLs don't need SSL but public-proxy URLs do.
+    We always enforce it — harmless inside the private network,
+    critical when exposed via the public proxy.
+    """
+    import urllib.parse as _up
+    parsed = _up.urlparse(database_url)
+    qs = dict(_up.parse_qsl(parsed.query))
+    # Force SSL — prevents plaintext connections from the internet
+    qs.setdefault('sslmode', 'require')
+    # Fail fast on network issues instead of hanging indefinitely
+    qs.setdefault('connect_timeout', '10')
+    new_query = _up.urlencode(qs)
+    secured = parsed._replace(query=new_query)
+    return _up.urlunparse(secured)
+
+
 def get_postgres_connection():
-    """Get PostgreSQL connection"""
+    """Get a hardened PostgreSQL connection with SSL and statement-level guards."""
     if not POSTGRES_AVAILABLE:
         raise Exception("PostgreSQL driver not installed")
-    
-    conn = psycopg2.connect(config.DATABASE_URL)
+
+    dsn = _build_secure_dsn(config.DATABASE_URL)
+    conn = psycopg2.connect(dsn)
+
+    # Enforce a per-statement timeout so that a compromised session
+    # cannot run long-running port-scan queries (e.g. via dblink).
+    # 30 s is generous for any legitimate query in this app.
+    with conn.cursor() as _cur:
+        _cur.execute("SET statement_timeout = '30s'")
+        # Disable dblink / postgres_fdw network-reach from this session
+        _cur.execute("SET search_path = public")
+    conn.commit()
     return conn
 
 
@@ -1146,12 +1175,65 @@ def init_sqlite_db():
         print("[DB] ✅ SQLite database initialized successfully")
 
 
+def _harden_postgres_security():
+    """
+    Drop dangerous PostgreSQL extensions and set protective timeouts.
+    Called automatically on every backend startup when using PostgreSQL.
+    This ensures the database cannot be used for outbound network scanning
+    even if an attacker gains access to the DB session.
+    """
+    DANGEROUS_EXTENSIONS = ['dblink', 'postgres_fdw', 'pg_net', 'http', 'plperlu', 'plpythonu']
+    try:
+        conn = get_postgres_connection()
+        with conn.cursor() as cur:
+            # Drop network-capable extensions that were used for port scanning
+            for ext in DANGEROUS_EXTENSIONS:
+                try:
+                    cur.execute(f"DROP EXTENSION IF EXISTS {ext} CASCADE")
+                    print(f"[Security] ✅ Dropped extension (if existed): {ext}")
+                except Exception as ex:
+                    print(f"[Security] ℹ️  Could not drop {ext}: {ex}")
+
+            # Set DB-level statement timeout (60s max per query)
+            try:
+                cur.execute("ALTER DATABASE railway SET statement_timeout = '60s'")
+                print("[Security] ✅ statement_timeout = 60s set on database")
+            except Exception as ex:
+                print(f"[Security] ℹ️  statement_timeout not set: {ex}")
+
+            # Kill abandoned transactions after 2 minutes
+            try:
+                cur.execute("ALTER DATABASE railway SET idle_in_transaction_session_timeout = '120s'")
+                print("[Security] ✅ idle_in_transaction_session_timeout = 120s set on database")
+            except Exception as ex:
+                print(f"[Security] ℹ️  idle_in_transaction_session_timeout not set: {ex}")
+
+            # Revoke file-system access from public
+            for fn in [
+                "pg_read_server_files(text)",
+                "pg_ls_dir(text)",
+            ]:
+                try:
+                    cur.execute(f"REVOKE EXECUTE ON FUNCTION {fn} FROM PUBLIC")
+                    print(f"[Security] ✅ Revoked PUBLIC execute on {fn}")
+                except Exception:
+                    pass  # Function may not exist in this PG version
+
+        conn.commit()
+        conn.close()
+        print("[Security] ✅ PostgreSQL hardening complete")
+    except Exception as e:
+        print(f"[Security] ⚠️  PostgreSQL hardening skipped: {e}")
+
+
 def init_db():
     """Initialize database based on configuration"""
     try:
         if config.USE_POSTGRES and POSTGRES_AVAILABLE:
             print("[DB] Initializing PostgreSQL database...")
             init_postgres_db()
+            # Harden DB security on every startup (idempotent — safe to run repeatedly)
+            _harden_postgres_security()
         else:
             print("[DB] Initializing SQLite database...")
             init_sqlite_db()

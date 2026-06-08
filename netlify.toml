@@ -103,6 +103,13 @@
     Cross-Origin-Opener-Policy = "unsafe-none"
 
 [[headers]]
+  for = "/*"
+  [headers.values]
+    # Also apply on extension-less routes (/, /browse, /profile, etc.) so
+    # Google popup postMessage is not blocked by stricter default COOP.
+    Cross-Origin-Opener-Policy = "unsafe-none"
+
+[[headers]]
   for = "*.svg"
   [headers.values]
     Cache-Control = "public, max-age=31536000"

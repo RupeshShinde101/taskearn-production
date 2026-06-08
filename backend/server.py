@@ -2286,6 +2286,14 @@ def get_tasks():
         print(f"[GET /api/tasks] Error: {e}")
         import traceback
         traceback.print_exc()
+        err = str(e).lower()
+        if any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database']):
+            return jsonify({
+                'success': True,
+                'tasks': [],
+                'stale': True,
+                'message': 'Server is warming up. Showing empty task list temporarily.'
+            }), 200
         return jsonify({
             'success': False,
             'message': 'Failed to load tasks. Please try again.'
@@ -10556,7 +10564,7 @@ def get_google_client_id():
 @rate_limit('10 per minute')
 def google_login():
     """Login or register via Google ID token"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     id_token = data.get('credential', '')
     invite_code = (data.get('invite_code') or '').strip().upper()
 
@@ -10566,6 +10574,7 @@ def google_login():
     try:
         # Verify Google ID token
         import urllib.request
+        import urllib.error
         import json as json_mod
         # Use Google's tokeninfo endpoint to verify
         token_url = f'https://oauth2.googleapis.com/tokeninfo?id_token={id_token}'
@@ -10671,6 +10680,9 @@ def google_login():
         print(f"[GOOGLE LOGIN] Error: {e}")
         import traceback
         traceback.print_exc()
+        err = str(e).lower()
+        if any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database']):
+            return jsonify({'success': False, 'message': 'Login service is warming up. Please try again in a few seconds.'}), 503
         return jsonify({'success': False, 'message': 'Google login failed'}), 500
 
 

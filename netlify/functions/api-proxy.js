@@ -58,6 +58,9 @@ exports.handler = async (event) => {
         delete headers['x-nf-client-connection-ip'];
         delete headers.connection;
 
+        const isGet = event.httpMethod === 'GET';
+        const timeoutMs = isGet ? 15000 : 8000;
+
         const fetchOptions = {
             method: event.httpMethod,
             headers: {
@@ -65,11 +68,11 @@ exports.handler = async (event) => {
                 'Authorization': headers.authorization || '',
                 'Accept': 'application/json'
             },
-            // Hard 8-second timeout so the function always returns a clean response
-            // before Netlify's 10-second function limit kills it mid-transfer.
-            // Without this, slow Railway responses cause ERR_CONNECTION_RESET + "200 (OK)"
-            // in the browser — the function started sending 200 headers then got killed.
-            signal: AbortSignal.timeout(8000)
+            // GETs are public and safe to wait a little longer for during a cold
+            // start. Writes stay shorter so we don't risk hanging Netlify on posts.
+            // If the backend is still cold after this window, the client retry
+            // path will handle a second attempt.
+            signal: AbortSignal.timeout(timeoutMs)
         };
 
         if (event.body && event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {

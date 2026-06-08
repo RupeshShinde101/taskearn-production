@@ -8277,20 +8277,35 @@ async function initGoogleSignIn(forceRender) {
         try {
             // Use apiRequest so the Netlify proxy fallback kicks in if the
             // direct Railway URL fails to resolve (Indian ISP blocks etc).
+            // If the backend is still cold, retry a few times before giving up.
             let configResp = null;
-            if (typeof apiRequest === 'function') {
-                const r = await apiRequest('/config/google-client-id');
-                configResp = r && r.data ? r.data : null;
-            } else {
-                const API_BASE = window.API_BASE_URL || '/.netlify/functions/api-proxy/api';
-                const resp = await fetch(API_BASE + '/config/google-client-id');
-                configResp = await resp.json();
+            let lastError = null;
+            for (let attempt = 1; attempt <= 4; attempt += 1) {
+                try {
+                    if (typeof apiRequest === 'function') {
+                        const r = await apiRequest('/config/google-client-id');
+                        configResp = r && r.data ? r.data : null;
+                    } else {
+                        const API_BASE = window.API_BASE_URL || '/.netlify/functions/api-proxy/api';
+                        const resp = await fetch(API_BASE + '/config/google-client-id');
+                        configResp = await resp.json();
+                    }
+                    console.log('📦 Google client ID response:', configResp);
+                    if (configResp && configResp.success && configResp.clientId) {
+                        window.GOOGLE_CLIENT_ID = configResp.clientId;
+                        break;
+                    }
+                } catch (e) {
+                    lastError = e;
+                    console.warn(`⚠️ Google client ID fetch attempt ${attempt} failed:`, e && e.message);
+                }
+                if (!window.GOOGLE_CLIENT_ID && attempt < 4) {
+                    await new Promise(resolve => setTimeout(resolve, attempt * 3000));
+                }
             }
-            console.log('📦 Google client ID response:', configResp);
-            if (configResp && configResp.success && configResp.clientId) {
-                window.GOOGLE_CLIENT_ID = configResp.clientId;
-            } else {
+            if (!window.GOOGLE_CLIENT_ID) {
                 console.warn('❌ Google client ID not available');
+                if (lastError) console.warn('   Last error:', lastError.message || lastError);
                 return;
             }
         } catch (e) {

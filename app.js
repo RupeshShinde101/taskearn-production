@@ -8387,17 +8387,41 @@ async function initGoogleSignIn(forceRender) {
             });
         } catch (e) {
             console.warn('Google renderButton failed:', e);
-            // Last-resort fallback: tell the user. Do NOT call prompt() here —
-            // under mandatory FedCM, prompt() from a click handler often
-            // rejects with AbortError without showing any UI, leaving the
-            // user with a button that does nothing visible.
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.textContent = labelText + ' (unavailable)';
-            btn.disabled = true;
-            btn.style.cssText = 'width:300px;max-width:100%;height:44px;border:1px solid #dadce0;border-radius:4px;background:#f1f3f4;color:#80868b;font:500 14px "Google Sans",Roboto,sans-serif;cursor:not-allowed;';
-            container.appendChild(btn);
+            renderGooglePlaceholder(container, labelText + '');
         }
+    }
+
+    function renderGooglePlaceholder(container, labelText) {
+        if (!container) return;
+        container.innerHTML = '';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = labelText;
+        btn.setAttribute('aria-label', labelText);
+        btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;gap:10px;width:300px;max-width:100%;height:44px;padding:0 16px;border:1px solid #dadce0;border-radius:4px;background:#fff;color:#3c4043;font:500 14px Arial, sans-serif;box-shadow:0 1px 2px rgba(60,64,67,.08);cursor:pointer;';
+        const logo = document.createElement('span');
+        logo.style.cssText = 'width:18px;height:18px;border-radius:50%;background:conic-gradient(#ea4335 0 25%, #fbbc05 25% 50%, #34a853 50% 75%, #4285f4 75% 100%);display:inline-block;flex:0 0 18px;';
+        const text = document.createElement('span');
+        text.textContent = labelText;
+        btn.appendChild(logo);
+        btn.appendChild(text);
+        btn.addEventListener('click', function() {
+            if (typeof initGoogleSignIn === 'function') {
+                initGoogleSignIn(true);
+            }
+        });
+        container.appendChild(btn);
+    }
+
+    // Show a visible fallback immediately so the user never sees an empty
+    // hole while the backend/client ID is still loading.
+    const loginFallback = document.getElementById('googleSignInBtn_login');
+    if (loginFallback && !loginFallback.querySelector('button')) {
+        renderGooglePlaceholder(loginFallback, 'Continue with Google');
+    }
+    const signupFallback = document.getElementById('googleSignInBtn_signup');
+    if (signupFallback && !signupFallback.querySelector('button')) {
+        renderGooglePlaceholder(signupFallback, 'Continue with Google');
     }
 
     const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');

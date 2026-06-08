@@ -27,40 +27,59 @@ except ImportError:
 
 def _build_secure_dsn(database_url: str) -> str:
     """
-    Ensure the DSN always has sslmode=require and a connect_timeout.
-    Railway internal URLs don't need SSL but public-proxy URLs do.
-    We always enforce it — harmless inside the private network,
-    critical when exposed via the public proxy.
+    Build a DSN suitable for Railway's PostgreSQL proxy.
+
+    Railway terminates TLS at the proxy layer — the backend Postgres process
+    itself does not speak TLS.  Using sslmode=require causes the server to
+    drop the connection immediately ("Connection terminated unexpectedly")
+    because the SSL handshake never completes.
+
+    sslmode=prefer: tries SSL first; if the server declines it falls back to
+    a plain connection automatically.  This is safe on Railway's private
+    network and also works via the public proxy.
     """
     import urllib.parse as _up
     parsed = _up.urlparse(database_url)
     qs = dict(_up.parse_qsl(parsed.query))
-    # Force SSL — prevents plaintext connections from the internet
-    qs.setdefault('sslmode', 'require')
+    # prefer = try SSL, fall back gracefully if the proxy declines it
+    qs.setdefault('sslmode', 'prefer')
     # Fail fast on network issues instead of hanging indefinitely
-    qs.setdefault('connect_timeout', '10')
+    qs.setdefault('connect_timeout', '15')
     new_query = _up.urlencode(qs)
     secured = parsed._replace(query=new_query)
     return _up.urlunparse(secured)
 
 
-def get_postgres_connection():
-    """Get a hardened PostgreSQL connection with SSL and statement-level guards."""
+def get_postgres_connection(retries: int = 3, delay: float = 2.0):
+    """
+    Get a PostgreSQL connection with retry logic for transient Railway
+    proxy drops (e.g. during deploys or idle-connection recycling).
+    """
     if not POSTGRES_AVAILABLE:
         raise Exception("PostgreSQL driver not installed")
 
-    dsn = _build_secure_dsn(config.DATABASE_URL)
-    conn = psycopg2.connect(dsn)
+    import time as _time
 
-    # Enforce a per-statement timeout so that a compromised session
-    # cannot run long-running port-scan queries (e.g. via dblink).
-    # 30 s is generous for any legitimate query in this app.
-    with conn.cursor() as _cur:
-        _cur.execute("SET statement_timeout = '30s'")
-        # Disable dblink / postgres_fdw network-reach from this session
-        _cur.execute("SET search_path = public")
-    conn.commit()
-    return conn
+    dsn = _build_secure_dsn(config.DATABASE_URL)
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            conn = psycopg2.connect(dsn)
+            with conn.cursor() as _cur:
+                # Enforce a per-statement timeout (30 s is generous for this app)
+                _cur.execute("SET statement_timeout = '30s'")
+                _cur.execute("SET search_path = public")
+            conn.commit()
+            return conn
+        except psycopg2.OperationalError as exc:
+            last_exc = exc
+            if attempt < retries:
+                print(f"⚠️  DB connection attempt {attempt} failed: {exc} — retrying in {delay}s")
+                _time.sleep(delay)
+                delay *= 2  # exponential back-off
+            else:
+                print(f"❌  DB connection failed after {retries} attempts: {exc}")
+    raise last_exc
 
 
 def get_sqlite_connection():

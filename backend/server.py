@@ -2321,6 +2321,9 @@ def get_category_counts():
         return jsonify({'success': True, 'counts': counts})
     except Exception as e:
         print(f"[GET /api/tasks/category-counts] Error: {e}")
+        err = str(e).lower()
+        if any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database']):
+            return jsonify({'success': True, 'counts': {}, 'stale': True}), 200
         return jsonify({'success': False, 'message': 'Failed to load category counts.'}), 500
 
 
@@ -10596,76 +10599,89 @@ def google_login():
         if not google_id or not email:
             return jsonify({'success': False, 'message': 'Invalid Google token'}), 401
 
-        with get_db() as (cursor, conn):
-            # Check if user exists by google_id
-            cursor.execute(f'SELECT id FROM users WHERE google_id = {PH}', (google_id,))
-            existing = cursor.fetchone()
+        # Retry DB block for transient startup/connectivity failures.
+        user = None
+        for db_attempt in range(2):
+            try:
+                with get_db() as (cursor, conn):
+                    # Check if user exists by google_id
+                    cursor.execute(f'SELECT id FROM users WHERE google_id = {PH}', (google_id,))
+                    existing = cursor.fetchone()
 
-            if existing:
-                # Existing Google user — login (no invite code needed)
-                user_id = dict_from_row(existing)['id']
-                last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
-            else:
-                # Check if this email/google_id was previously deleted by admin
-                cursor.execute(f'SELECT email FROM deleted_accounts WHERE email = {PH} OR google_id = {PH}', (email, google_id))
-                if cursor.fetchone():
-                    return jsonify({'success': False, 'message': 'This account has been removed. Contact support if you believe this is a mistake.'}), 403
+                    if existing:
+                        # Existing Google user — login (no invite code needed)
+                        user_id = dict_from_row(existing)['id']
+                        last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                        cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
+                    else:
+                        # Check if this email/google_id was previously deleted by admin
+                        cursor.execute(f'SELECT email FROM deleted_accounts WHERE email = {PH} OR google_id = {PH}', (email, google_id))
+                        if cursor.fetchone():
+                            return jsonify({'success': False, 'message': 'This account has been removed. Contact support if you believe this is a mistake.'}), 403
 
-                # Check if email already registered (link accounts — also no invite needed)
-                cursor.execute(f'SELECT id FROM users WHERE email = {PH}', (email,))
-                email_user = cursor.fetchone()
+                        # Check if email already registered (link accounts — also no invite needed)
+                        cursor.execute(f'SELECT id FROM users WHERE email = {PH}', (email,))
+                        email_user = cursor.fetchone()
 
-                if email_user:
-                    user_id = dict_from_row(email_user)['id']
-                    cursor.execute(f'''
-                        UPDATE users SET google_id = {PH}, auth_provider = 'google'
-                        WHERE id = {PH}
-                    ''', (google_id, user_id))
-                else:
-                    # Brand-new user — apply trial checks before creating account
-                    if config.TRIAL_ACTIVE:
-                        import datetime as _dt
-                        # Validate invite code
-                        if invite_code != config.TRIAL_INVITE_CODE.upper():
-                            return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.', 'needsInviteCode': True}), 403
-                        # Check trial end date
-                        try:
-                            end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
-                        except ValueError:
-                            end_date = _dt.date.today() + _dt.timedelta(days=30)
-                        if _dt.date.today() > end_date:
-                            return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
-                        # Check user cap
-                        cursor.execute('SELECT COUNT(*) as cnt FROM users')
-                        row = dict_from_row(cursor.fetchone())
-                        if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
-                            return jsonify({'success': False, 'message': "All trial spots are taken. We'll notify you when we launch publicly!"}), 403
+                        if email_user:
+                            user_id = dict_from_row(email_user)['id']
+                            cursor.execute(f'''
+                                UPDATE users SET google_id = {PH}, auth_provider = 'google'
+                                WHERE id = {PH}
+                            ''', (google_id, user_id))
+                        else:
+                            # Brand-new user — apply trial checks before creating account
+                            if config.TRIAL_ACTIVE:
+                                import datetime as _dt
+                                # Validate invite code
+                                if invite_code != config.TRIAL_INVITE_CODE.upper():
+                                    return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.', 'needsInviteCode': True}), 403
+                                # Check trial end date
+                                try:
+                                    end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
+                                except ValueError:
+                                    end_date = _dt.date.today() + _dt.timedelta(days=30)
+                                if _dt.date.today() > end_date:
+                                    return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
+                                # Check user cap
+                                cursor.execute('SELECT COUNT(*) as cnt FROM users')
+                                row = dict_from_row(cursor.fetchone())
+                                if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
+                                    return jsonify({'success': False, 'message': "All trial spots are taken. We'll notify you when we launch publicly!"}), 403
 
-                    # Register new Google user
-                    user_id = generate_user_id()
-                    joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    # Google users get a random password (they never use it)
-                    random_pw = generate_password_hash(secrets.token_hex(32), method='pbkdf2:sha256')
-                    cursor.execute(f'''
-                        INSERT INTO users (id, name, email, password_hash, google_id, auth_provider,
-                                          email_verified, profile_photo, joined_at)
-                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (user_id, name, email, random_pw, google_id, 'google',
-                          True, picture, joined_at))
+                            # Register new Google user
+                            user_id = generate_user_id()
+                            joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            # Google users get a random password (they never use it)
+                            random_pw = generate_password_hash(secrets.token_hex(32), method='pbkdf2:sha256')
+                            cursor.execute(f'''
+                                INSERT INTO users (id, name, email, password_hash, google_id, auth_provider,
+                                                  email_verified, profile_photo, joined_at)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                            ''', (user_id, name, email, random_pw, google_id, 'google',
+                                  True, picture, joined_at))
 
-                    # Create wallet
-                    cursor.execute(f'''
-                        INSERT INTO wallets (user_id, balance, created_at)
-                        VALUES ({PH}, 0, {PH})
-                    ''', (user_id, joined_at))
+                            # Create wallet
+                            cursor.execute(f'''
+                                INSERT INTO wallets (user_id, balance, created_at)
+                                VALUES ({PH}, 0, {PH})
+                            ''', (user_id, joined_at))
 
-            user = get_user_by_id(user_id)
-            if user and user.get('is_banned'):
-                return jsonify({'success': False, 'message': 'Account is banned'}), 403
+                    user = get_user_by_id(user_id)
+                    if user and user.get('is_banned'):
+                        return jsonify({'success': False, 'message': 'Account is banned'}), 403
+                break
+            except Exception as db_exc:
+                err = str(db_exc).lower()
+                transient = any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database'])
+                if transient and db_attempt == 0:
+                    import time as _time
+                    _time.sleep(0.8)
+                    continue
+                raise
 
         token = generate_jwt_token(user_id, email)
-        user = get_user_by_id(user_id)
+        user = user or get_user_by_id(user_id)
 
         return jsonify({
             'success': True,

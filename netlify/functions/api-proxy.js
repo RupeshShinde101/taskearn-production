@@ -126,6 +126,13 @@ exports.handler = async (event) => {
                     body: JSON.stringify({ trial: false, stale: true })
                 };
             }
+            if (path === '/api/tasks/category-counts') {
+                return {
+                    statusCode: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ success: true, counts: {}, stale: true })
+                };
+            }
             if (path === '/api/config/google-client-id') {
                 const fallbackClientId = process.env.GOOGLE_CLIENT_ID || '';
                 if (fallbackClientId) {
@@ -202,6 +209,13 @@ exports.handler = async (event) => {
                     statusCode: 200,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ trial: false, stale: true })
+                };
+            }
+            if (path === '/api/tasks/category-counts') {
+                return {
+                    statusCode: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ success: true, counts: {}, stale: true })
                 };
             }
             if (path === '/api/config/google-client-id' && process.env.GOOGLE_CLIENT_ID) {

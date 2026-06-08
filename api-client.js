@@ -331,7 +331,18 @@ async function apiRequest(endpoint, options = {}) {
                 }
             }
         }
-        
+
+        // 504 = Railway backend is cold-starting or temporarily overloaded.
+        // Retry up to 2 times with a 4-second gap so that a Railway dyno
+        // warming up (usually 10-30 s) is given a chance to respond.
+        // Only retry idempotent reads to avoid duplicate writes.
+        const method = (options.method || 'GET').toUpperCase();
+        if (response.status === 504 && (method === 'GET') && !(options._retry504)) {
+            console.warn(`⚠️ 504 on ${endpoint} — server may be cold-starting, retrying in 4s...`);
+            await new Promise(r => setTimeout(r, 4000));
+            return apiRequest(endpoint, { ...options, _retry504: true });
+        }
+
         return { success: response.ok, status: response.status, data };
         
     } catch (error) {

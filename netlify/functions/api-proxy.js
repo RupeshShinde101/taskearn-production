@@ -79,6 +79,13 @@ exports.handler = async (event) => {
         const response = await fetch(targetUrl, fetchOptions);
         const body = await response.text();
 
+        // If Railway returned 504, fire a background wake-up ping so the
+        // dyno starts warming for the user's next retry.
+        if (response.status === 504) {
+            fetch(BACKEND_URL + '/api/health', { method: 'GET', signal: AbortSignal.timeout(25000) })
+                .catch(() => {}); // intentionally background, ignore result
+        }
+
         return {
             statusCode: response.status,
             headers: {
@@ -90,13 +97,18 @@ exports.handler = async (event) => {
     } catch (error) {
         console.error('Proxy error:', error.message);
         const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
+        // Fire a background wake-up ping so Railway starts warming up
+        if (isTimeout) {
+            fetch(BACKEND_URL + '/api/health', { method: 'GET', signal: AbortSignal.timeout(25000) })
+                .catch(() => {});
+        }
         return {
             statusCode: isTimeout ? 504 : 502,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 success: false,
                 message: isTimeout
-                    ? 'Backend server timed out. Please try again.'
+                    ? 'Server is starting up — please wait a moment and try again.'
                     : 'Backend server unreachable. Please try again.'
             })
         };

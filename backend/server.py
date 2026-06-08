@@ -174,14 +174,21 @@ def handle_preflight_and_csrf():
 # ========================================
 # DATABASE INITIALIZATION
 # ========================================
-# Initialize database on app startup (works with gunicorn)
-try:
-    print("🔄 Initializing database...")
-    init_db()
-    print("✅ Database initialized successfully")
-except Exception as e:
-    print(f"⚠️  Error initializing database: {e}")
-    print("   Database may already be initialized or connection issue")
+# Run init_db() in a background thread so the server starts accepting
+# requests (and passes Railway's health checks) immediately, even if the
+# database is slow to accept connections on cold start.
+import threading as _threading
+
+def _bg_init_db():
+    try:
+        print("🔄 Initializing database (background)...")
+        init_db()
+        print("✅ Database initialized successfully")
+    except Exception as e:
+        print(f"⚠️  Error initializing database: {e}")
+        print("   Database may already be initialized or connection issue")
+
+_threading.Thread(target=_bg_init_db, daemon=True, name="db-init").start()
 
 def ensure_platform_account():
     """Create the platform system account (user_id='1') if it doesn't exist.

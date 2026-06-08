@@ -25,7 +25,7 @@ except ImportError:
 # DATABASE CONNECTION
 # ========================================
 
-def _build_secure_dsn(database_url: str) -> str:
+def _build_secure_dsn(database_url: str, connect_timeout: int = 5) -> str:
     """
     Build a DSN suitable for Railway's PostgreSQL proxy.
 
@@ -44,13 +44,13 @@ def _build_secure_dsn(database_url: str) -> str:
     # prefer = try SSL, fall back gracefully if the proxy declines it
     qs.setdefault('sslmode', 'prefer')
     # Fail fast on network issues instead of hanging indefinitely
-    qs.setdefault('connect_timeout', '15')
+    qs.setdefault('connect_timeout', str(connect_timeout))
     new_query = _up.urlencode(qs)
     secured = parsed._replace(query=new_query)
     return _up.urlunparse(secured)
 
 
-def get_postgres_connection(retries: int = 3, delay: float = 2.0):
+def get_postgres_connection(retries: int = 1, delay: float = 0.6, connect_timeout: int = 5):
     """
     Get a PostgreSQL connection with retry logic for transient Railway
     proxy drops (e.g. during deploys or idle-connection recycling).
@@ -60,7 +60,7 @@ def get_postgres_connection(retries: int = 3, delay: float = 2.0):
 
     import time as _time
 
-    dsn = _build_secure_dsn(config.DATABASE_URL)
+    dsn = _build_secure_dsn(config.DATABASE_URL, connect_timeout=connect_timeout)
     last_exc = None
     for attempt in range(1, retries + 1):
         try:

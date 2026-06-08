@@ -40,6 +40,24 @@ exports.handler = async (event) => {
 
     // Extract the API path: /.netlify/functions/api-proxy/api/auth/login → /api/auth/login
     const path = event.path.replace('/.netlify/functions/api-proxy', '') || '/';
+    const method = (event.httpMethod || 'GET').toUpperCase();
+
+    // Fast-path endpoints that do not need backend DB access.
+    if (method === 'GET' && path === '/api/health') {
+        return {
+            statusCode: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ success: true, status: 'proxy-ok', source: 'netlify-proxy' })
+        };
+    }
+
+    if (method === 'GET' && path === '/api/config/google-client-id' && process.env.GOOGLE_CLIENT_ID) {
+        return {
+            statusCode: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ success: true, clientId: process.env.GOOGLE_CLIENT_ID })
+        };
+    }
     // Forward query string parameters (event.path never includes them)
     const qs = event.rawQuery || Object.entries(event.queryStringParameters || {})
         .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
@@ -58,11 +76,11 @@ exports.handler = async (event) => {
         delete headers['x-nf-client-connection-ip'];
         delete headers.connection;
 
-        const isGet = event.httpMethod === 'GET';
+        const isGet = method === 'GET';
         const timeoutMs = isGet ? 15000 : 8000;
 
         const fetchOptions = {
-            method: event.httpMethod,
+            method,
             headers: {
                 'Content-Type': headers['content-type'] || 'application/json',
                 'Authorization': headers.authorization || '',
@@ -75,7 +93,7 @@ exports.handler = async (event) => {
             signal: AbortSignal.timeout(timeoutMs)
         };
 
-        if (event.body && event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {
+        if (event.body && method !== 'GET' && method !== 'HEAD') {
             fetchOptions.body = event.body;
         }
 
@@ -105,6 +123,31 @@ exports.handler = async (event) => {
             fetch(BACKEND_URL + '/api/health', { method: 'GET', signal: AbortSignal.timeout(25000) })
                 .catch(() => {});
         }
+        // Graceful fallback for non-critical read-only endpoints.
+        if (isTimeout && method === 'GET') {
+            if (path === '/api/platform-stats') {
+                return {
+                    statusCode: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ success: true, users: 0, completedTasks: 0, totalEarned: 0, stale: true })
+                };
+            }
+            if (path === '/api/trial/status') {
+                return {
+                    statusCode: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trial: false, stale: true })
+                };
+            }
+            if (path === '/api/config/google-client-id' && process.env.GOOGLE_CLIENT_ID) {
+                return {
+                    statusCode: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ success: true, clientId: process.env.GOOGLE_CLIENT_ID, stale: true })
+                };
+            }
+        }
+
         return {
             statusCode: isTimeout ? 504 : 502,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },

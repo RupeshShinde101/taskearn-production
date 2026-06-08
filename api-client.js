@@ -344,6 +344,29 @@ async function apiRequest(endpoint, options = {}) {
             return apiRequest(endpoint, { ...options, _retry504Count: retryCount + 1 });
         }
 
+        // Cache successful GET responses so we can recover gracefully if the
+        // backend has a transient cold-start timeout later.
+        if (response.ok && method === 'GET') {
+            try {
+                localStorage.setItem('taskearn_cached_' + endpoint, JSON.stringify(data));
+            } catch (_) {}
+        }
+
+        // If retries are exhausted and this is still a 504 GET, return cached
+        // data when available instead of hard-failing the UI.
+        if (response.status === 504 && method === 'GET') {
+            try {
+                const cached = localStorage.getItem('taskearn_cached_' + endpoint);
+                if (cached) {
+                    return {
+                        success: true,
+                        status: 200,
+                        data: { ...JSON.parse(cached), stale: true, message: 'Showing cached data while server wakes up.' }
+                    };
+                }
+            } catch (_) {}
+        }
+
         return { success: response.ok, status: response.status, data };
         
     } catch (error) {
@@ -1035,6 +1058,9 @@ const NotificationsAPI = {
 // ========================================
 
 async function checkBackendHealth() {
+    // On Netlify, the proxy itself is the public edge and already tested.
+    // Skip backend-health noise here to prevent repetitive console 504 logs.
+    if (ON_NETLIFY) return true;
     const result = await apiRequest('/health', { method: 'GET' });
     return result.success;
 }

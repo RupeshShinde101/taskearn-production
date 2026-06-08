@@ -7573,14 +7573,18 @@ function openModal(id) {
     // GIS library hasn't finished loading yet, poll briefly until it does.
     if (id === 'loginModal' || id === 'signupModal') {
         if (typeof initGoogleSignIn === 'function') {
+            // Delay slightly so the modal is painted and the container has a
+            // real width before Google's renderButton measures it. Without this
+            // delay, renderButton runs while the container is still 0-wide and
+            // produces an invisible / zero-width button.
             const tryInit = (attempts) => {
                 if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-                    try { initGoogleSignIn(); } catch (e) { console.warn('Google init retry failed', e); }
+                    try { initGoogleSignIn(true); } catch (e) { console.warn('Google init retry failed', e); }
                 } else if (attempts < 30) {
                     setTimeout(() => tryInit(attempts + 1), 200);
                 }
             };
-            tryInit(0);
+            setTimeout(() => tryInit(0), 80);
         }
     }
 }
@@ -8261,8 +8265,8 @@ window.nudgeBudget = nudgeBudget;
 // ========================================
 
 // Initialize Google Sign-In buttons when GIS library loads
-async function initGoogleSignIn() {
-    console.log('🔄 initGoogleSignIn called');
+async function initGoogleSignIn(forceRender) {
+    console.log('🔄 initGoogleSignIn called, forceRender=', !!forceRender);
     
     if (typeof google === 'undefined' || !google.accounts) {
         console.log('⏳ Google GIS library not loaded yet');
@@ -8348,7 +8352,14 @@ async function initGoogleSignIn() {
     // GIS owns the click and routes it through FedCM correctly.
     function renderOfficialGoogleBtn(container, labelText) {
         if (!container) return;
-        container.innerHTML = '';
+        // Replace the node entirely — calling renderButton() on a container
+        // that already holds a Google button silently fails after the first
+        // render (GIS detects its own DOM and skips re-render).
+        const fresh = document.createElement('div');
+        fresh.id = container.id;
+        fresh.style.cssText = container.style.cssText;
+        container.parentNode.replaceChild(fresh, container);
+        container = fresh;
         try {
             google.accounts.id.renderButton(container, {
                 type: 'standard',

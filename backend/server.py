@@ -10589,46 +10589,51 @@ def get_google_client_id():
 
 
 def _ensure_google_auth_schema():
-    """Ensure Google auth columns/tables exist before running login queries."""
+    """Ensure Google auth columns/tables exist before running login queries.
+
+    Retries once after calling init_db() if the users table does not exist yet
+    (race condition during cold start while background init_db thread is still
+    running).  Errors are re-raised so the caller can surface an HTTP 503.
+    """
     global _google_auth_schema_ensured
     if _google_auth_schema_ensured:
         return
 
-    with get_db() as (cursor, conn):
-        if PH == '%s':
-            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE')
-            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'email'")
-            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE')
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS deleted_accounts (
-                    email VARCHAR(255) PRIMARY KEY,
-                    google_id VARCHAR(255),
-                    deleted_at TIMESTAMP DEFAULT NOW()
-                )
-            ''')
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id
-                ON deleted_accounts (google_id) WHERE google_id IS NOT NULL
-            ''')
-        else:
-            cursor.execute('PRAGMA table_info(users)')
-            cols = [row[1] for row in cursor.fetchall()]
-            if 'google_id' not in cols:
-                cursor.execute('ALTER TABLE users ADD COLUMN google_id TEXT')
-            if 'auth_provider' not in cols:
-                cursor.execute("ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'email'")
-            if 'email_verified' not in cols:
-                cursor.execute('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0')
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS deleted_accounts (
-                    email TEXT PRIMARY KEY,
-                    google_id TEXT,
-                    deleted_at TEXT
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id ON deleted_accounts(google_id)')
-
-    _google_auth_schema_ensured = True
+    import time as _time_sch
+    for _attempt in range(2):
+        try:
+            with get_db() as (cursor, conn):
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE')
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'email'")
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS deleted_accounts (
+                        email VARCHAR(255) PRIMARY KEY,
+                        google_id VARCHAR(255),
+                        deleted_at TIMESTAMP DEFAULT NOW()
+                    )
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id
+                    ON deleted_accounts (google_id) WHERE google_id IS NOT NULL
+                ''')
+            _google_auth_schema_ensured = True
+            return
+        except Exception as _sch_exc:
+            if _attempt == 0:
+                _sch_err = str(_sch_exc).lower()
+                if any(k in _sch_err for k in ['relation', 'does not exist', 'no such table', 'undefined table']):
+                    # Tables not created yet — background init_db may still be
+                    # running on cold start. Trigger a synchronous init and retry.
+                    print(f'[GOOGLE AUTH SCHEMA] users table missing, running init_db: {_sch_exc}')
+                    try:
+                        init_db()
+                    except Exception as _init_e:
+                        print(f'[GOOGLE AUTH SCHEMA] init_db failed: {_init_e}')
+                    _time_sch.sleep(0.5)
+                    continue
+            # Second attempt or unexpected error — propagate to caller
+            raise
 
 @app.route('/api/auth/google', methods=['POST'])
 @rate_limit('10 per minute')
@@ -10642,7 +10647,14 @@ def google_login():
         return jsonify({'success': False, 'message': 'Google credential is required'}), 400
 
     try:
-        _ensure_google_auth_schema()
+        # Ensure Google auth schema is ready. Return 503 if the DB isn't up
+        # yet (background init_db may still be running on cold start); the
+        # Netlify proxy retries automatically on 5xx.
+        try:
+            _ensure_google_auth_schema()
+        except Exception as _sch_e:
+            print(f'[GOOGLE LOGIN] Schema ensure failed: {_sch_e}')
+            return jsonify({'success': False, 'message': 'Login service is starting up. Please try again in a few seconds.'}), 503
 
         # Verify Google ID token
         import urllib.request
@@ -10793,7 +10805,11 @@ def google_login():
         import traceback
         traceback.print_exc()
         err = str(e).lower()
-        if any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database']):
+        if any(k in err for k in [
+            'could not connect', 'connection', 'timeout', 'server closed',
+            'operationalerror', 'database', 'relation', 'does not exist',
+            'no such table', 'undefined table',
+        ]):
             return jsonify({'success': False, 'message': 'Login service is warming up. Please try again in a few seconds.'}), 503
         return jsonify({'success': False, 'message': 'Google login failed'}), 500
 

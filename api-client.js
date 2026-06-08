@@ -332,14 +332,13 @@ async function apiRequest(endpoint, options = {}) {
             }
         }
 
-        // 504 = Railway backend is cold-starting or temporarily overloaded.
-        // Retry GETs a few times with back-off so a warming dyno has a chance
-        // to become available before the UI gives up.
+        // 5xx = backend is cold-starting, overloaded, or temporarily failing.
+        // Retry GETs with back-off so the UI can recover automatically.
         const method = (options.method || 'GET').toUpperCase();
         const retryCount = options._retry504Count || 0;
-        if (response.status === 504 && method === 'GET' && retryCount < 2) {
+        if (response.status >= 500 && method === 'GET' && retryCount < 2) {
             const waitMs = 4000 * (retryCount + 1);
-            console.warn(`⚠️ 504 on ${endpoint} — server may be cold-starting, retrying in ${waitMs / 1000}s...`);
+            console.warn(`⚠️ ${response.status} on ${endpoint} — backend may be warming or unstable, retrying in ${waitMs / 1000}s...`);
             await new Promise(r => setTimeout(r, waitMs));
             return apiRequest(endpoint, { ...options, _retry504Count: retryCount + 1 });
         }
@@ -352,9 +351,9 @@ async function apiRequest(endpoint, options = {}) {
             } catch (_) {}
         }
 
-        // If retries are exhausted and this is still a 504 GET, return cached
+        // If retries are exhausted and this is still a 5xx GET, return cached
         // data when available instead of hard-failing the UI.
-        if (response.status === 504 && method === 'GET') {
+        if (response.status >= 500 && method === 'GET') {
             try {
                 const cached = localStorage.getItem('taskearn_cached_' + endpoint);
                 if (cached) {

@@ -63,9 +63,10 @@ exports.handler = async (event) => {
         .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
     const targetUrl = `${BACKEND_URL}${path}${qs ? '?' + qs : ''}`;
 
+    // Dynamic import for node-fetch (Netlify functions use Node 18+)
+    const fetchImpl = globalThis.fetch || (await import('node-fetch')).default;
+
     try {
-        // Dynamic import for node-fetch (Netlify functions use Node 18+)
-        const fetch = globalThis.fetch || (await import('node-fetch')).default;
 
         const headers = { ...event.headers };
         // Remove Netlify-specific headers
@@ -97,13 +98,42 @@ exports.handler = async (event) => {
             fetchOptions.body = event.body;
         }
 
-        const response = await fetch(targetUrl, fetchOptions);
+        const response = await fetchImpl(targetUrl, fetchOptions);
         const body = await response.text();
+
+        // Graceful fallback for non-critical read-only endpoints when backend
+        // returns 5xx. These should not block page rendering.
+        if (isGet && response.status >= 500) {
+            if (path === '/api/platform-stats') {
+                return {
+                    statusCode: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ success: true, users: 0, completedTasks: 0, totalEarned: 0, stale: true })
+                };
+            }
+            if (path === '/api/trial/status') {
+                return {
+                    statusCode: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trial: false, stale: true })
+                };
+            }
+            if (path === '/api/config/google-client-id') {
+                const fallbackClientId = process.env.GOOGLE_CLIENT_ID || '';
+                if (fallbackClientId) {
+                    return {
+                        statusCode: 200,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ success: true, clientId: fallbackClientId, stale: true })
+                    };
+                }
+            }
+        }
 
         // If Railway returned 504, fire a background wake-up ping so the
         // dyno starts warming for the user's next retry.
         if (response.status === 504) {
-            fetch(BACKEND_URL + '/api/health', { method: 'GET', signal: AbortSignal.timeout(25000) })
+            fetchImpl(BACKEND_URL + '/api/health', { method: 'GET', signal: AbortSignal.timeout(25000) })
                 .catch(() => {}); // intentionally background, ignore result
         }
 
@@ -120,7 +150,7 @@ exports.handler = async (event) => {
         const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
         // Fire a background wake-up ping so Railway starts warming up
         if (isTimeout) {
-            fetch(BACKEND_URL + '/api/health', { method: 'GET', signal: AbortSignal.timeout(25000) })
+            fetchImpl(BACKEND_URL + '/api/health', { method: 'GET', signal: AbortSignal.timeout(25000) })
                 .catch(() => {});
         }
         // Graceful fallback for non-critical read-only endpoints.

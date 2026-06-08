@@ -1112,6 +1112,55 @@ def init_sqlite_db():
         except Exception as e:
             print(f"[DB] \u26a0\ufe0f  is_admin migration error: {e}")
 
+        # Google OAuth, email verification, referral, KYC, and other auth columns
+        try:
+            cursor.execute('PRAGMA table_info(users)')
+            user_columns = [row[1] for row in cursor.fetchall()]
+            if 'google_id' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN google_id TEXT UNIQUE')
+                print("[DB] ✅ google_id column added")
+            if 'auth_provider' not in user_columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'email'")
+                print("[DB] ✅ auth_provider column added")
+            if 'email_verified' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0')
+                print("[DB] ✅ email_verified column added")
+            if 'referral_code' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN referral_code TEXT UNIQUE')
+                print("[DB] ✅ referral_code column added")
+            if 'referred_by' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN referred_by TEXT')
+                print("[DB] ✅ referred_by column added")
+            if 'helper_level' not in user_columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN helper_level TEXT DEFAULT 'bronze'")
+                print("[DB] ✅ helper_level column added")
+            if 'phone_verified' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN phone_verified INTEGER DEFAULT 0')
+                print("[DB] ✅ phone_verified column added")
+            if 'kyc_status' not in user_columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN kyc_status TEXT DEFAULT 'none'")
+                print("[DB] ✅ kyc_status column added")
+            if 'kyc_document_type' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN kyc_document_type TEXT')
+                print("[DB] ✅ kyc_document_type column added")
+            if 'kyc_document_number' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN kyc_document_number TEXT')
+                print("[DB] ✅ kyc_document_number column added")
+            if 'kyc_verified_at' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN kyc_verified_at TEXT')
+                print("[DB] ✅ kyc_verified_at column added")
+            if 'kyc_document_image' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN kyc_document_image TEXT')
+                print("[DB] ✅ kyc_document_image column added")
+            if 'preferred_language' not in user_columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN preferred_language TEXT DEFAULT 'en'")
+                print("[DB] ✅ preferred_language column added")
+            if 'is_banned' not in user_columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0')
+                print("[DB] ✅ is_banned column added")
+        except Exception as e:
+            print(f"[DB] ⚠️  OAuth/auth column migration error: {e}")
+
         try:
             cursor.execute('PRAGMA table_info(tasks)')
             columns = [row[1] for row in cursor.fetchall()]

@@ -25,7 +25,7 @@ except ImportError:
 # DATABASE CONNECTION
 # ========================================
 
-def _build_secure_dsn(database_url: str, connect_timeout: int = 5) -> str:
+def _build_secure_dsn(database_url: str, connect_timeout: int = 3) -> str:
     """
     Build a DSN suitable for Railway's PostgreSQL proxy.
 
@@ -50,7 +50,7 @@ def _build_secure_dsn(database_url: str, connect_timeout: int = 5) -> str:
     return _up.urlunparse(secured)
 
 
-def get_postgres_connection(retries: int = 1, delay: float = 0.6, connect_timeout: int = 5):
+def get_postgres_connection(retries: int = 2, delay: float = 0.3, connect_timeout: int = 3):
     """
     Get a PostgreSQL connection with retry logic for transient Railway
     proxy drops (e.g. during deploys or idle-connection recycling).

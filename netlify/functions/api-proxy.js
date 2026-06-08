@@ -98,7 +98,15 @@ exports.handler = async (event) => {
             fetchOptions.body = event.body;
         }
 
-        const response = await fetchImpl(targetUrl, fetchOptions);
+        let response = await fetchImpl(targetUrl, fetchOptions);
+
+        // Google login is user-facing and should tolerate a short backend blip.
+        // Retry once on transient 5xx before returning failure.
+        if (method === 'POST' && path === '/api/auth/google' && response.status >= 500) {
+            await new Promise(r => setTimeout(r, 1200));
+            response = await fetchImpl(targetUrl, fetchOptions);
+        }
+
         const body = await response.text();
 
         // Graceful fallback for non-critical read-only endpoints when backend
@@ -148,6 +156,33 @@ exports.handler = async (event) => {
     } catch (error) {
         console.error('Proxy error:', error.message);
         const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
+
+        // One retry for Google auth on transient network/timeout.
+        if (method === 'POST' && path === '/api/auth/google') {
+            try {
+                const retryResp = await fetchImpl(targetUrl, {
+                    method,
+                    headers: {
+                        'Content-Type': event.headers['content-type'] || event.headers['Content-Type'] || 'application/json',
+                        'Authorization': event.headers.authorization || event.headers.Authorization || '',
+                        'Accept': 'application/json'
+                    },
+                    body: event.body,
+                    signal: AbortSignal.timeout(8000)
+                });
+                const retryBody = await retryResp.text();
+                return {
+                    statusCode: retryResp.status,
+                    headers: {
+                        ...corsHeaders,
+                        'Content-Type': retryResp.headers.get('content-type') || 'application/json'
+                    },
+                    body: retryBody
+                };
+            } catch (_) {
+                // fall through to normal error handling
+            }
+        }
         // Fire a background wake-up ping so Railway starts warming up
         if (isTimeout) {
             fetchImpl(BACKEND_URL + '/api/health', { method: 'GET', signal: AbortSignal.timeout(25000) })

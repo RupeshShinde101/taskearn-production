@@ -41,15 +41,17 @@ class Config:
     # JWT Settings — default 4h; set JWT_EXPIRATION_HOURS env var to override
     JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 4))
     
-    # Database URL
+    # Database URL (required)
     # Format: postgresql://user:password@host:port/database
-    DATABASE_URL = os.environ.get('DATABASE_URL')
-    
-    # For SQLite fallback (local development)
-    SQLITE_DATABASE = os.environ.get('SQLITE_DATABASE', 'taskearn.db')
-    
-    # Use PostgreSQL if DATABASE_URL is set, otherwise SQLite
-    USE_POSTGRES = DATABASE_URL is not None
+    DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL is required. SQLite fallback has been removed. "
+            "Configure a PostgreSQL connection string in environment variables."
+        )
+
+    # PostgreSQL is the only supported production database for this backend.
+    USE_POSTGRES = True
     
     # CORS Settings - set CORS_ORIGINS env var to comma-separated allowed origins
     # Default allows your known domains; set to '*' only for local dev
@@ -98,16 +100,17 @@ class Config:
     TRIAL_END_DATE = os.environ.get('TRIAL_END_DATE', '2026-06-08')  # 30 days from launch
     TRIAL_MAX_USERS = int(os.environ.get('TRIAL_MAX_USERS', 100))
     
-    # Production database
-    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+    # Validate PostgreSQL URL scheme
+    if DATABASE_URL.startswith('postgres://'):
         # Railway uses postgres:// which psycopg2 recognizes
         pass
-    elif DATABASE_URL and DATABASE_URL.startswith('postgresql://'):
+    elif DATABASE_URL.startswith('postgresql://'):
         # Standard PostgreSQL format
         pass
     else:
-        # Fallback to SQLite if no DATABASE_URL
-        USE_POSTGRES = False
+        raise RuntimeError(
+            "DATABASE_URL must start with postgres:// or postgresql://"
+        )
 
 
 class DevelopmentConfig(Config):

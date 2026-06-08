@@ -1,6 +1,6 @@
 """
 TaskEarn Backend Server - Production Ready
-Flask + PostgreSQL/SQLite + bcrypt + JWT + Razorpay
+Flask + PostgreSQL + bcrypt + JWT + Razorpay
 """
 
 import sys
@@ -220,7 +220,7 @@ try:
 except Exception as e:
     print(f"⚠️  Platform account setup failed: {e}")
 
-# Placeholder for SQL queries (? for SQLite, %s for PostgreSQL)
+# Placeholder for SQL queries (%s for PostgreSQL)
 PH = get_placeholder()
 
 # ========================================
@@ -299,6 +299,7 @@ except Exception as _fcm_init_err:
 _fcm_columns_ensured = False
 _bio_skills_columns_ensured = False
 _user_location_columns_ensured = False
+_google_auth_schema_ensured = False
 
 def _ensure_user_location_columns():
     """Add last_lat / last_lng columns to users table (one-time per process)."""
@@ -1362,6 +1363,14 @@ def login():
     user = get_user_by_email(email)
     if not user:
         return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+
+    # If this account is linked to Google sign-in, guide the user clearly.
+    if user.get('auth_provider') == 'google':
+        return jsonify({
+            'success': False,
+            'message': 'This account uses Google Sign-In. Please continue with Google.',
+            'needsGoogleSignIn': True
+        }), 400
     
     # Verify password
     if not check_password_hash(user['password_hash'], password):
@@ -7129,9 +7138,24 @@ def payment_webhook():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
+    db_connected = False
+    db_error = None
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+            db_connected = True
+    except Exception as e:
+        db_error = str(e)
+
     return jsonify({
         'success': True,
-        'status': 'healthy',
+        'status': 'healthy' if db_connected else 'degraded',
+        'database': {
+            'connected': db_connected,
+            'engine': 'postgresql',
+            'error': db_error
+        },
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
     })
 
@@ -10563,6 +10587,49 @@ def get_google_client_id():
         return jsonify({'success': False, 'message': 'Google Sign-In not configured'}), 404
     return jsonify({'success': True, 'clientId': client_id})
 
+
+def _ensure_google_auth_schema():
+    """Ensure Google auth columns/tables exist before running login queries."""
+    global _google_auth_schema_ensured
+    if _google_auth_schema_ensured:
+        return
+
+    with get_db() as (cursor, conn):
+        if PH == '%s':
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE')
+            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'email'")
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS deleted_accounts (
+                    email VARCHAR(255) PRIMARY KEY,
+                    google_id VARCHAR(255),
+                    deleted_at TIMESTAMP DEFAULT NOW()
+                )
+            ''')
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id
+                ON deleted_accounts (google_id) WHERE google_id IS NOT NULL
+            ''')
+        else:
+            cursor.execute('PRAGMA table_info(users)')
+            cols = [row[1] for row in cursor.fetchall()]
+            if 'google_id' not in cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN google_id TEXT')
+            if 'auth_provider' not in cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'email'")
+            if 'email_verified' not in cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS deleted_accounts (
+                    email TEXT PRIMARY KEY,
+                    google_id TEXT,
+                    deleted_at TEXT
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id ON deleted_accounts(google_id)')
+
+    _google_auth_schema_ensured = True
+
 @app.route('/api/auth/google', methods=['POST'])
 @rate_limit('10 per minute')
 def google_login():
@@ -10575,6 +10642,8 @@ def google_login():
         return jsonify({'success': False, 'message': 'Google credential is required'}), 400
 
     try:
+        _ensure_google_auth_schema()
+
         # Verify Google ID token
         import urllib.request
         import urllib.error
@@ -10625,6 +10694,14 @@ def google_login():
 
                         if email_user:
                             user_id = dict_from_row(email_user)['id']
+                            # Guard against linking a Google ID already attached to a different account.
+                            cursor.execute(f'SELECT id FROM users WHERE google_id = {PH}', (google_id,))
+                            existing_google_owner = cursor.fetchone()
+                            if existing_google_owner and dict_from_row(existing_google_owner)['id'] != user_id:
+                                return jsonify({
+                                    'success': False,
+                                    'message': 'This Google account is already linked to another user.'
+                                }), 409
                             cursor.execute(f'''
                                 UPDATE users SET google_id = {PH}, auth_provider = 'google'
                                 WHERE id = {PH}
@@ -10673,6 +10750,25 @@ def google_login():
                 break
             except Exception as db_exc:
                 err = str(db_exc).lower()
+                if any(k in err for k in ['unique constraint', 'duplicate key value', 'already exists']):
+                    return jsonify({
+                        'success': False,
+                        'message': 'This Google account is already linked. Please sign in with the linked account.'
+                    }), 409
+                # If schema is not ready yet (cold deploy / partial migration),
+                # run init and retry once before failing the request.
+                schema_missing = any(k in err for k in [
+                    'relation', 'does not exist', 'undefined table', 'undefined column',
+                    'no such table', 'no such column'
+                ])
+                if schema_missing and db_attempt == 0:
+                    try:
+                        init_db()
+                    except Exception:
+                        pass
+                    import time as _time
+                    _time.sleep(0.6)
+                    continue
                 transient = any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database'])
                 if transient and db_attempt == 0:
                     import time as _time
@@ -10792,7 +10888,7 @@ if __name__ == '__main__':
     print("=" * 50)
     print(f"📍 Running on: http://0.0.0.0:{port}")
     print(f"📚 API Docs: /api/health")
-    print(f"💾 Database: {'PostgreSQL' if config.USE_POSTGRES else 'SQLite'}")
+    print("💾 Database: PostgreSQL")
     print("=" * 50)
     
     # Run Flask server

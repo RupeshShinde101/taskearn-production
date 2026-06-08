@@ -1183,129 +1183,149 @@ def disconnect():
 def register():
     """Register a new user"""
     data = request.get_json()
-    
-    # ---- TRIAL MODE CHECKS ----
-    if config.TRIAL_ACTIVE:
-        import datetime as _dt
-        # Check invite code
-        invite_code = (data.get('invite_code') or '').strip().upper()
-        if invite_code != config.TRIAL_INVITE_CODE.upper():
-            return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.'}), 403
-        # Check trial end date
-        try:
-            end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
-        except ValueError:
-            end_date = _dt.date.today() + _dt.timedelta(days=30)
-        if _dt.date.today() > end_date:
-            return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
-        # Check user cap
-        with get_db() as (cursor, conn):
-            cursor.execute('SELECT COUNT(*) as cnt FROM users')
-            row = dict_from_row(cursor.fetchone())
-            if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
-                return jsonify({'success': False, 'message': 'All 100 trial spots are taken. We\'ll notify you when we launch publicly!'}), 403
+    if not data:
+        return jsonify({'success': False, 'message': 'Request body required'}), 400
 
-    # Validate required fields
-    required = ['name', 'email', 'password', 'dob']
-    for field in required:
-        if not data.get(field):
-            return jsonify({'success': False, 'message': f'{field} is required'}), 400
-    
-    name = html_escape(data['name'].strip())
-    email = data['email'].strip().lower()
-    password = data['password']
-    phone = data.get('phone', '').strip()
-    dob = data['dob']
-    
-    # Validate email
-    if not validate_email(email):
-        return jsonify({'success': False, 'message': 'Invalid email format'}), 400
-    
-    # Validate password
-    is_valid, message = validate_password(password)
-    if not is_valid:
-        return jsonify({'success': False, 'message': message}), 400
-    
-    # Check if email already exists
-    if get_user_by_email(email):
-        return jsonify({'success': False, 'message': 'Email already registered'}), 400
-    
-    # Validate age (must be 16+)
     try:
-        dob_date = datetime.datetime.strptime(dob, '%Y-%m-%d')
-        age = (datetime.datetime.now() - dob_date).days // 365
-        if age < 16:
-            return jsonify({'success': False, 'message': 'You must be 16 or older'}), 400
-    except ValueError:
-        return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
-    
-    # Create user
-    user_id = generate_user_id()
-    password_hash = generate_password_hash(password, method='pbkdf2:sha256')
-    joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    
-    with get_db() as (cursor, conn):
-        try:
-            cursor.execute(f'''
-                INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (user_id, name, email, password_hash, phone, dob, joined_at))
-            conn.commit()  # Explicitly commit the transaction
-        except Exception as e:
-            conn.rollback()  # Rollback on error
-            print(f"[ERROR] Registration failed: {str(e)}")
+        # ---- TRIAL MODE CHECKS ----
+        if config.TRIAL_ACTIVE:
+            import datetime as _dt
+            # Check invite code
+            invite_code = (data.get('invite_code') or '').strip().upper()
+            if invite_code != config.TRIAL_INVITE_CODE.upper():
+                return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.'}), 403
+            # Check trial end date
+            try:
+                end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
+            except ValueError:
+                end_date = _dt.date.today() + _dt.timedelta(days=30)
+            if _dt.date.today() > end_date:
+                return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
+            # Check user cap
+            try:
+                with get_db() as (cursor, conn):
+                    cursor.execute('SELECT COUNT(*) as cnt FROM users')
+                    row = dict_from_row(cursor.fetchone())
+                    if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
+                        return jsonify({'success': False, 'message': 'All 100 trial spots are taken. We\'ll notify you when we launch publicly!'}), 403
+            except Exception as _cnt_e:
+                _cnt_err = str(_cnt_e).lower()
+                if any(k in _cnt_err for k in ['connect', 'relation', 'does not exist']):
+                    return jsonify({'success': False, 'message': 'Service is starting up. Please try again in a few seconds.'}), 503
+                raise
+
+        # Validate required fields
+        required = ['name', 'email', 'password', 'dob']
+        for field in required:
+            if not data.get(field):
+                return jsonify({'success': False, 'message': f'{field} is required'}), 400
+
+        name = html_escape(data['name'].strip())
+        email = data['email'].strip().lower()
+        password = data['password']
+        phone = data.get('phone', '').strip()
+        dob = data['dob']
+
+        # Validate email
+        if not validate_email(email):
+            return jsonify({'success': False, 'message': 'Invalid email format'}), 400
+
+        # Validate password
+        is_valid, message = validate_password(password)
+        if not is_valid:
+            return jsonify({'success': False, 'message': message}), 400
+
+        # Check if email already exists
+        if get_user_by_email(email):
             return jsonify({'success': False, 'message': 'Email already registered'}), 400
-    
-    # Generate token
-    token = generate_jwt_token(user_id, email)
-    user = get_user_by_id(user_id)
-    
-    # Auto-send email verification OTP
-    otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
-    otp_expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)).isoformat()
-    
-    with get_db() as (cursor, conn):
-        cursor.execute(f'''
-            INSERT INTO password_resets (user_id, token, otp, created_at, expires_at)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (user_id, 'email_verify_' + secrets.token_hex(16), otp,
-              datetime.datetime.now(datetime.timezone.utc).isoformat(), otp_expires))
-    
-    if config.SENDGRID_API_KEY:
+
+        # Validate age (must be 16+)
         try:
-            from sendgrid import SendGridAPIClient
-            from sendgrid.helpers.mail import Mail
-            message = Mail(
-                from_email=config.FROM_EMAIL,
-                to_emails=email,
-                subject=f'{config.APP_NAME} - Verify Your Email',
-                html_content=f'''
-                    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;">
-                        <h2 style="color:#6366f1;">Welcome to Workmate4u!</h2>
-                        <p>Hi {name},</p>
-                        <p>Your email verification code is:</p>
-                        <h1 style="color:#6366f1;font-size:36px;letter-spacing:6px;text-align:center;
-                            background:#f0f0ff;padding:16px;border-radius:10px;">{otp}</h1>
-                        <p>This code expires in <strong>10 minutes</strong>.</p>
-                        <p style="color:#888;font-size:13px;">If you didn't create this account, please ignore this email.</p>
-                    </div>
-                '''
-            )
-            sg = SendGridAPIClient(config.SENDGRID_API_KEY)
-            sg.send(message)
-        except Exception as e:
-            print(f"⚠️ SendGrid email error: {e}")
-    else:
-        print(f"⚠️ SendGrid not configured — OTP email not sent for {email}")
+            dob_date = datetime.datetime.strptime(dob, '%Y-%m-%d')
+            age = (datetime.datetime.now() - dob_date).days // 365
+            if age < 16:
+                return jsonify({'success': False, 'message': 'You must be 16 or older'}), 400
+        except ValueError:
+            return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
+
+        # Create user
+        user_id = generate_user_id()
+        password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+        joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        with get_db() as (cursor, conn):
+            try:
+                cursor.execute(f'''
+                    INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (user_id, name, email, password_hash, phone, dob, joined_at))
+                conn.commit()  # Explicitly commit the transaction
+            except Exception as e:
+                conn.rollback()  # Rollback on error
+                print(f"[ERROR] Registration failed: {str(e)}")
+                return jsonify({'success': False, 'message': 'Email already registered'}), 400
+
+        # Generate token
+        token = generate_jwt_token(user_id, email)
+        user = get_user_by_id(user_id)
+
+        # Auto-send email verification OTP
+        otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        otp_expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)).isoformat()
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                INSERT INTO password_resets (user_id, token, otp, created_at, expires_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'email_verify_' + secrets.token_hex(16), otp,
+                  datetime.datetime.now(datetime.timezone.utc).isoformat(), otp_expires))
     
-    response = {
-        'success': True,
-        'message': 'Registration successful. Please verify your email.',
-        'token': token,
-        'user': user_to_response(user),
-        'requiresVerification': True
-    }
-    return jsonify(response), 201
+        if config.SENDGRID_API_KEY:
+            try:
+                from sendgrid import SendGridAPIClient
+                from sendgrid.helpers.mail import Mail
+                message = Mail(
+                    from_email=config.FROM_EMAIL,
+                    to_emails=email,
+                    subject=f'{config.APP_NAME} - Verify Your Email',
+                    html_content=f'''
+                        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;">
+                            <h2 style="color:#6366f1;">Welcome to Workmate4u!</h2>
+                            <p>Hi {name},</p>
+                            <p>Your email verification code is:</p>
+                            <h1 style="color:#6366f1;font-size:36px;letter-spacing:6px;text-align:center;
+                                background:#f0f0ff;padding:16px;border-radius:10px;">{otp}</h1>
+                            <p>This code expires in <strong>10 minutes</strong>.</p>
+                            <p style="color:#888;font-size:13px;">If you didn't create this account, please ignore this email.</p>
+                        </div>
+                    '''
+                )
+                sg = SendGridAPIClient(config.SENDGRID_API_KEY)
+                sg.send(message)
+            except Exception as e:
+                print(f"⚠️ SendGrid email error: {e}")
+        else:
+            print(f"⚠️ SendGrid not configured — OTP email not sent for {email}")
+
+        response = {
+            'success': True,
+            'message': 'Registration successful. Please verify your email.',
+            'token': token,
+            'user': user_to_response(user),
+            'requiresVerification': True
+        }
+        return jsonify(response), 201
+
+    except Exception as e:
+        print(f'[REGISTER] Error: {e}')
+        import traceback; traceback.print_exc()
+        err = str(e).lower()
+        if any(k in err for k in [
+            'could not connect', 'connection', 'timeout', 'server closed',
+            'operationalerror', 'database', 'relation', 'does not exist',
+        ]):
+            return jsonify({'success': False, 'message': 'Service is starting up. Please try again in a few seconds.'}), 503
+        return jsonify({'success': False, 'message': 'Registration failed. Please try again.'}), 500
 
 
 # -----------------------------------------------------------------------
@@ -1327,10 +1347,13 @@ def trial_status():
 
     expired = now_date > end_date
 
-    with get_db() as (cursor, conn):
-        cursor.execute('SELECT COUNT(*) as cnt FROM users')
-        row = dict_from_row(cursor.fetchone())
-        total_users = row['cnt'] or 0
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('SELECT COUNT(*) as cnt FROM users')
+            row = dict_from_row(cursor.fetchone())
+            total_users = row['cnt'] or 0
+    except Exception:
+        total_users = 0
 
     slots_remaining = max(0, config.TRIAL_MAX_USERS - total_users)
     full = total_users >= config.TRIAL_MAX_USERS
@@ -1352,52 +1375,66 @@ def trial_status():
 def login():
     """Login user"""
     data = request.get_json()
-    
+    if not data:
+        return jsonify({'success': False, 'message': 'Request body required'}), 400
+
     email = data.get('email', '').strip().lower()
     password = data.get('password', '')
-    
+
     if not email or not password:
         return jsonify({'success': False, 'message': 'Email and password required'}), 400
-    
-    # Get user
-    user = get_user_by_email(email)
-    if not user:
-        return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
 
-    # If this account is linked to Google sign-in, guide the user clearly.
-    if user.get('auth_provider') == 'google':
+    try:
+        # Get user
+        user = get_user_by_email(email)
+        if not user:
+            return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+
+        # If this account is linked to Google sign-in, guide the user clearly.
+        if user.get('auth_provider') == 'google':
+            return jsonify({
+                'success': False,
+                'message': 'This account uses Google Sign-In. Please continue with Google.',
+                'needsGoogleSignIn': True
+            }), 400
+
+        # Verify password
+        if not check_password_hash(user['password_hash'], password):
+            return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+
+        # Check if user is banned
+        if user.get('is_banned'):
+            return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
+
+        # Update last login
+        with get_db() as (cursor, conn):
+            last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            session_token = secrets.token_hex(32)
+            cursor.execute(f'''
+                UPDATE users SET last_login = {PH}, session_token = {PH} WHERE id = {PH}
+            ''', (last_login, session_token, user['id']))
+
+        # Generate token
+        token = generate_jwt_token(user['id'], email)
+        user = get_user_by_id(user['id'])
+
         return jsonify({
-            'success': False,
-            'message': 'This account uses Google Sign-In. Please continue with Google.',
-            'needsGoogleSignIn': True
-        }), 400
-    
-    # Verify password
-    if not check_password_hash(user['password_hash'], password):
-        return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
-    
-    # Check if user is banned
-    if user.get('is_banned'):
-        return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
-    
-    # Update last login
-    with get_db() as (cursor, conn):
-        last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        session_token = secrets.token_hex(32)
-        cursor.execute(f'''
-            UPDATE users SET last_login = {PH}, session_token = {PH} WHERE id = {PH}
-        ''', (last_login, session_token, user['id']))
-    
-    # Generate token
-    token = generate_jwt_token(user['id'], email)
-    user = get_user_by_id(user['id'])
-    
-    return jsonify({
-        'success': True,
-        'message': 'Login successful',
-        'token': token,
-        'user': user_to_response(user)
-    })
+            'success': True,
+            'message': 'Login successful',
+            'token': token,
+            'user': user_to_response(user)
+        })
+
+    except Exception as e:
+        print(f'[LOGIN] Error: {e}')
+        import traceback; traceback.print_exc()
+        err = str(e).lower()
+        if any(k in err for k in [
+            'could not connect', 'connection', 'timeout', 'server closed',
+            'operationalerror', 'database', 'relation', 'does not exist',
+        ]):
+            return jsonify({'success': False, 'message': 'Login service is starting up. Please try again in a few seconds.'}), 503
+        return jsonify({'success': False, 'message': 'Login failed. Please try again.'}), 500
 
 
 @app.route('/api/auth/me', methods=['GET'])

@@ -1,0 +1,58 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Workmate4u (Release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "release"
+    },
+    {
+      "name": "Workmate4u (Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Workmate4u (Windows)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "windows",
+      "program": "lib/main.dart",
+      "flutterMode": "release"
+    },
+    {
+      "name": "Workmate4u (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "program": "lib/main.dart"
+    },
+    {
+      "name": "Workmate4u (Android - USB)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "android",
+      "program": "lib/main.dart",
+      "flutterMode": "release"
+    },
+    {
+      "name": "mobile (Flutter SM S921B) — Release",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "RZCX91VLBTP",
+      "program": "lib/main.dart",
+      "flutterMode": "release"
+    },
+    {
+      "name": "mobile (Flutter SM S921B) — Debug",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "RZCX91VLBTP",
+      "program": "lib/main.dart",
+      "flutterMode": "debug"
+    }
+  ]
+}

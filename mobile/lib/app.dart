@@ -238,7 +238,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'payment_received',
     };
     // Notification types that map to the browse / detail view.
-    const matchedTypes = {'task_matched', 'matched_task', 'skill_matched', 'nearby_task'};
+    const matchedTypes = {'task_matched', 'matched_task'};
     // Wallet-specific notification types that should open the wallet screen.
     const walletTypes = {
       'wallet_topup', 'wallet_credited',

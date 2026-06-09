@@ -616,14 +616,51 @@ class TaskProvider extends ChangeNotifier {
 
   Future<bool> postTask(Map<String, dynamic> taskData) async {
     try {
-      await ApiService.post('/tasks', body: taskData);
+      final response = await ApiService.post('/tasks', body: taskData);
+      // Extract the newly-created task's ID to trigger notification broadcasts.
+      final newTaskId = _extractNewTaskId(response);
       await fetchMyTasks();
+      // Fire-and-forget: trigger both notification types on the backend.
+      // Failures are silently swallowed so they never block task posting.
+      if (newTaskId != null && newTaskId.isNotEmpty) {
+        _triggerNewTaskNotifications(newTaskId);
+      }
       return true;
     } on ApiException catch (e) {
       _error = e.message;
       _notify();
       return false;
     }
+  }
+
+  /// Extract the task ID from a backend create-task response.
+  /// The backend may wrap the task under 'task', 'data', or return it directly.
+  String? _extractNewTaskId(dynamic response) {
+    try {
+      if (response is! Map) return null;
+      final raw = response['task'] ?? response['data'] ?? response['result'] ?? response;
+      if (raw is Map) {
+        return (raw['id'] ?? raw['_id'])?.toString();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// After posting a task, notify the backend to push FCM messages to:
+  ///   1. All users whose profile skills match the task (any radius).
+  ///   2. All users within 10 km of the task location (any task category).
+  /// Both calls are fire-and-forget — failure never blocks the task post.
+  void _triggerNewTaskNotifications(String taskId) {
+    Future.microtask(() async {
+      try {
+        await ApiService.post('/tasks/$taskId/notify-skills');
+      } catch (_) {}
+      try {
+        await ApiService.post('/tasks/$taskId/notify-nearby');
+      } catch (_) {}
+    });
   }
 
   /// Update an existing task (poster only, before a helper accepts).

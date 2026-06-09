@@ -64,11 +64,31 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
   Importance importance = Importance.high;
 
   switch (type) {
-    // ── Nearby task match ──────────────────────────────────────────────────
+    // ── Nearby task match (combined — legacy) ─────────────────────────────
     case 'task_matched':
     case 'matched_task':
       title = data['title'] ?? '🎯 New task near you!';
       body = data['body'] ?? 'A task within 10 km matches your profile. Tap to view.';
+      channelId = 'workmate4u_matched';
+      channelName = 'Matched Tasks';
+      channelDesc = 'Tasks near you that match your skills profile';
+      importance = Importance.max;
+      break;
+
+    // ── Skill-matched notification (all users with matching skills, no radius) ──
+    case 'skill_matched':
+      title = data['title'] ?? '💼 Task Matching Your Skills!';
+      body = data['body'] ?? 'A new task matches your skills. Tap to view.';
+      channelId = 'workmate4u_matched';
+      channelName = 'Matched Tasks';
+      channelDesc = 'Tasks that match your skills profile';
+      importance = Importance.max;
+      break;
+
+    // ── Nearby task (all users within 10 km, any task category) ────────────
+    case 'nearby_task':
+      title = data['title'] ?? '📍 New Task Near You!';
+      body = data['body'] ?? 'A new task is available near you. Tap to view.';
       channelId = 'workmate4u_matched';
       channelName = 'Matched Tasks';
       channelDesc = 'Tasks near you that match your skills profile';
@@ -398,7 +418,8 @@ class NotificationService {
       debugPrint('[FCM] Foreground message: type=${message.data['type']} hasNotif=${message.notification != null}');
       final notification = message.notification;
       final type = message.data['type']?.toString() ?? '';
-      final isMatch = type == 'task_matched' || type == 'matched_task';
+      final isMatch = type == 'task_matched' || type == 'matched_task' ||
+          type == 'skill_matched' || type == 'nearby_task';
       final isPayment = type == 'task_completed' || type == 'verify_and_pay' ||
           type == 'payment_released' || type == 'payment_received' ||
           type == 'payment_done' || type == 'withdrawal_approved' ||
@@ -437,6 +458,19 @@ class NotificationService {
         // are always displayed even if the data fields are unexpectedly absent.
         if (msgTitle == null || msgBody == null) {
           switch (type) {
+            case 'skill_matched':
+              msgTitle ??= '💼 Task Matching Your Skills!';
+              msgBody ??= 'A new task matches your skills. Tap to view.';
+              break;
+            case 'nearby_task':
+              msgTitle ??= '📍 New Task Near You!';
+              msgBody ??= 'A new task is available near you. Tap to view.';
+              break;
+            case 'task_matched':
+            case 'matched_task':
+              msgTitle ??= '🎯 New task near you!';
+              msgBody ??= 'A task within 10 km matches your profile. Tap to view.';
+              break;
             case 'task_assigned':
               msgTitle ??= 'Task Assigned! 📌';
               msgBody ??= 'You accepted a new task. Complete it to earn.';

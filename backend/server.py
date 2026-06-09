@@ -2577,67 +2577,10 @@ def create_task():
             
             print(f"✅ Task created successfully with ID: {task_id}")
         
-        # Push notification feature removed.
-
-        # ── Skill-match notifications (10 km radius) ──────────────────────
-        if task_id:
-            try:
-                import json as _json_skill
-                _task_category = data.get('category', '').lower()
-                _task_title = data.get('title', '').lower()
-                _task_desc = data.get('description', '').lower()
-
-                # Task location (may be None if poster didn't share location)
-                _ensure_user_location_columns()
-                _loc = data.get('location') or {}
-                _task_lat = _loc.get('lat') if isinstance(_loc, dict) else None
-                _task_lng = _loc.get('lng') if isinstance(_loc, dict) else None
-                _task_has_loc = _task_lat is not None and _task_lng is not None
-
-                with get_db() as (_sm_cursor, _sm_conn):
-                    _sm_cursor.execute(f'''
-                        SELECT id, fcm_token, skills, last_lat, last_lng FROM users
-                        WHERE fcm_token IS NOT NULL
-                          AND id != {PH}
-                          AND skills IS NOT NULL
-                          AND skills NOT IN ({PH}, {PH}, {PH})
-                    ''', (request.user_id, '[]', '', 'null'))
-                    _potential = [dict_from_row(r) for r in _sm_cursor.fetchall()]
-
-                for _pu in _potential:
-                    try:
-                        _sr = _pu.get('skills', '[]')
-                        _user_skills = [s.lower() for s in (
-                            _json_skill.loads(_sr) if isinstance(_sr, str) else (_sr or [])
-                        )]
-                        _matched = any(
-                            _sk in _task_category or _task_category in _sk or
-                            _sk in _task_title or _sk in _task_desc
-                            for _sk in _user_skills
-                        )
-                        if not _matched:
-                            continue
-                        # 10 km radius filter: only notify users within range.
-                        # If task has a location but user location is unknown, skip.
-                        # If task has no location, notify all skill-matched users.
-                        _u_lat = _pu.get('last_lat')
-                        _u_lng = _pu.get('last_lng')
-                        if _task_has_loc:
-                            if _u_lat is None or _u_lng is None:
-                                continue  # user location unknown — skip
-                            if _haversine_km(float(_task_lat), float(_task_lng),
-                                             float(_u_lat), float(_u_lng)) > 10.0:
-                                continue  # outside 10 km radius
-                        send_fcm_to_user(
-                            _pu['id'],
-                            '🎯 Task matched your skills!',
-                            f'"{data["title"]}" — \u20b9{data["price"]} — {data.get("category", "General")}',
-                            data={'type': 'task_matched', 'task_id': str(task_id)}
-                        )
-                    except Exception:
-                        pass
-            except Exception as _match_e:
-                print(f'⚠️ Skill-match notification error: {_match_e}')
+        # Skill-match and nearby notifications are triggered by the Flutter app
+        # via dedicated endpoints (POST /tasks/<id>/notify-skills and
+        # POST /tasks/<id>/notify-nearby) after receiving the task ID here.
+        # This avoids blocking the response and keeps each concern separate.
 
         response = {
             'success': True,
@@ -9038,6 +8981,165 @@ def delete_account():
     except Exception as e:
         print(f"❌ Error deleting account: {e}")
         return jsonify({'success': False, 'message': 'Failed to delete account'}), 500
+
+
+# ========================================
+# TASK NOTIFICATION BROADCAST ENDPOINTS
+# ========================================
+
+@app.route('/api/tasks/<int:task_id>/notify-skills', methods=['POST'])
+@require_auth
+def notify_task_skills(task_id):
+    """Push FCM notification (type: skill_matched) to every user whose profile
+    skills overlap with this task's category/title/description.
+    No location radius — purely skill-based matching.
+    Only the task poster may call this endpoint."""
+    import json as _nsj
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(
+                f'SELECT id, posted_by, title, category, description, price FROM tasks WHERE id = {PH}',
+                (task_id,)
+            )
+            task = dict_from_row(cursor.fetchone()) if cursor.rowcount != 0 else None
+            if task is None:
+                cursor.execute(
+                    f'SELECT id, posted_by, title, category, description, price FROM tasks WHERE id = {PH}',
+                    (task_id,)
+                )
+                row = cursor.fetchone()
+                task = dict_from_row(row) if row else None
+        if not task:
+            return jsonify({'success': False, 'message': 'Task not found'}), 404
+
+        poster_id = str(task.get('posted_by', ''))
+        if str(request.user_id) != poster_id:
+            return jsonify({'success': False, 'message': 'Not authorised'}), 403
+
+        _task_category = (task.get('category') or '').lower()
+        _task_title    = (task.get('title')    or '').lower()
+        _task_desc     = (task.get('description') or '').lower()
+        _task_price    = task.get('price', 0)
+        _task_title_display = task.get('title', '')
+        _task_cat_display   = task.get('category', 'General')
+
+        _ensure_bio_skills_columns()
+        _ensure_fcm_token_column()
+
+        with get_db() as (cursor, _):
+            cursor.execute(f'''
+                SELECT id, fcm_token, skills FROM users
+                WHERE fcm_token IS NOT NULL
+                  AND id != {PH}
+                  AND skills IS NOT NULL
+                  AND skills NOT IN ({PH}, {PH}, {PH})
+            ''', (request.user_id, '[]', '', 'null'))
+            candidates = [dict_from_row(r) for r in cursor.fetchall()]
+
+        notified = 0
+        for user in candidates:
+            try:
+                raw_skills = user.get('skills', '[]')
+                user_skills = [s.lower() for s in (
+                    _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])
+                )]
+                matched = any(
+                    sk in _task_category or _task_category in sk or
+                    sk in _task_title    or sk in _task_desc
+                    for sk in user_skills
+                )
+                if not matched:
+                    continue
+                send_fcm_to_user(
+                    user['id'],
+                    '\U0001f4bc Task Matching Your Skills!',
+                    f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
+                    data={'type': 'skill_matched', 'task_id': str(task_id)},
+                    channel='workmate4u_matched',
+                )
+                notified += 1
+            except Exception:
+                pass
+
+        print(f'[FCM] notify-skills task={task_id}: notified {notified} user(s)')
+        return jsonify({'success': True, 'notified': notified})
+    except Exception as e:
+        print(f'[FCM] notify-skills error: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/tasks/<int:task_id>/notify-nearby', methods=['POST'])
+@require_auth
+def notify_task_nearby(task_id):
+    """Push FCM notification (type: nearby_task) to every user within 10 km of
+    the task's location, regardless of their skills or the task's category.
+    Only the task poster may call this endpoint."""
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(
+                f'SELECT id, posted_by, title, category, description, price, '
+                f'location_lat, location_lng FROM tasks WHERE id = {PH}',
+                (task_id,)
+            )
+            row = cursor.fetchone()
+            task = dict_from_row(row) if row else None
+        if not task:
+            return jsonify({'success': False, 'message': 'Task not found'}), 404
+
+        poster_id = str(task.get('posted_by', ''))
+        if str(request.user_id) != poster_id:
+            return jsonify({'success': False, 'message': 'Not authorised'}), 403
+
+        task_lat = task.get('location_lat')
+        task_lng = task.get('location_lng')
+        if task_lat is None or task_lng is None:
+            # No location — cannot do proximity filtering; skip silently
+            return jsonify({'success': True, 'notified': 0, 'reason': 'task has no location'})
+
+        task_lat = float(task_lat)
+        task_lng = float(task_lng)
+        _task_title_display = task.get('title', '')
+        _task_cat_display   = task.get('category', 'General')
+        _task_price         = task.get('price', 0)
+
+        _ensure_user_location_columns()
+        _ensure_fcm_token_column()
+
+        with get_db() as (cursor, _):
+            cursor.execute(f'''
+                SELECT id, fcm_token, last_lat, last_lng FROM users
+                WHERE fcm_token IS NOT NULL
+                  AND id != {PH}
+                  AND last_lat IS NOT NULL
+                  AND last_lng IS NOT NULL
+            ''', (request.user_id,))
+            candidates = [dict_from_row(r) for r in cursor.fetchall()]
+
+        notified = 0
+        for user in candidates:
+            try:
+                u_lat = user.get('last_lat')
+                u_lng = user.get('last_lng')
+                if u_lat is None or u_lng is None:
+                    continue
+                if _haversine_km(task_lat, task_lng, float(u_lat), float(u_lng)) > 10.0:
+                    continue
+                send_fcm_to_user(
+                    user['id'],
+                    '\U0001f4cd New Task Near You!',
+                    f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
+                    data={'type': 'nearby_task', 'task_id': str(task_id)},
+                    channel='workmate4u_matched',
+                )
+                notified += 1
+            except Exception:
+                pass
+
+        print(f'[FCM] notify-nearby task={task_id}: notified {notified} user(s)')
+        return jsonify({'success': True, 'notified': notified})
+    except Exception as e:
+        print(f'[FCM] notify-nearby error: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ========================================

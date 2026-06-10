@@ -1,5 +1,6 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
@@ -481,6 +482,18 @@ class AuthProvider extends ChangeNotifier {
       return false;
     } on ApiException catch (e) {
       _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    } on PlatformException catch (e) {
+      debugPrint('[Google] PlatformException: code=${e.code} message=${e.message}');
+      if (e.message != null && (e.message!.contains(': 10') || e.message!.contains('DEVELOPER_ERROR'))) {
+        _error = 'Google sign-in is not configured for this app build. Please contact support.';
+      } else if (e.code == 'network_error') {
+        _error = 'Network error. Please check your connection and try again.';
+      } else {
+        _error = 'Google sign-in failed. Please try again.';
+      }
       _loading = false;
       notifyListeners();
       return false;

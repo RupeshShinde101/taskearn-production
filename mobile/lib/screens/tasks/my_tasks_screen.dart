@@ -434,9 +434,32 @@ class _PostedTaskList extends StatelessWidget {
 
   // ── Shows completion proof photo + Pay Now entry point ──────────────────
   void _showProofDialog(BuildContext context, Task t) async {
+    // Show a non-dismissible loading dialog while fetching the proof image URL
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: SizedBox(
+          height: 80,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 14),
+                Text('Loading proof image…',
+                    style: TextStyle(fontSize: 13)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
     // Fetch proof images the helper uploaded for this task
     final proofs = await context.read<TaskProvider>().fetchTaskProofs(t.id);
     if (!context.mounted) return;
+    // Dismiss the loading dialog before showing the proof dialog
+    Navigator.of(context, rootNavigator: true).pop();
     final proofUrl = proofs.isNotEmpty ? proofs.first : null;
     showDialog(
       context: context,

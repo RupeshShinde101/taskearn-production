@@ -84,4 +84,15 @@ class StorageService {
   }
 
   static String? getString(String key) => _prefs.getString(key);
+
+  // ─── Gender (persisted locally so emoji works even before server returns it) ─
+  static Future<void> saveGender(String gender) async {
+    await _prefs.setString('user_gender', gender);
+  }
+
+  static String? getGender() => _prefs.getString('user_gender');
+
+  static Future<void> clearGender() async {
+    await _prefs.remove('user_gender');
+  }
 }

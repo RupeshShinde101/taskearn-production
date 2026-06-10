@@ -395,7 +395,11 @@ class TaskProvider extends ChangeNotifier {
   /// Find a task by ID in all local caches (detail cache has highest priority)
   Task? _findCached(String id) {
     if (_detailCache.containsKey(id)) return _detailCache[id];
-    for (final list in [_browseTasks, _myPostedTasks, _myAcceptedTasks, _myCompletedTasks]) {
+    // Check accepted/completed lists before browse so an accepted task is
+    // found with its updated status ('accepted') rather than the stale browse
+    // entry ('active'). This prevents getTaskDetail() from short-circuiting
+    // the network fetch via the isActivePoster guard on first load.
+    for (final list in [_myAcceptedTasks, _myCompletedTasks, _myPostedTasks, _browseTasks]) {
       for (final t in list) {
         if (t.id == id) return t;
       }
@@ -696,6 +700,12 @@ class TaskProvider extends ChangeNotifier {
       if (browseName != null) {
         _saveName(taskId, browseName);
       }
+
+      // Remove the task from the browse list immediately so _findCached()
+      // doesn't return the stale 'active' browse entry after accept, which
+      // would cause getTaskDetail() to skip the network call (isActivePoster
+      // guard) and return a phone-less task on the in-progress screen.
+      _browseTasks.removeWhere((t) => t.id == taskId);
 
       final response = await ApiService.post('/tasks/$taskId/accept');
       // Cache the full task returned by the accept endpoint – it may include

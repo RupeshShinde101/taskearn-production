@@ -8,13 +8,6 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-// Load signing properties from key.properties
-val keystorePropertiesFile = rootProject.file("key.properties")
-val keystoreProperties = Properties()
-if (keystorePropertiesFile.exists()) {
-    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
-}
-
 android {
     namespace = "com.workmate4u.workmate4u"
     compileSdk = flutter.compileSdkVersion
@@ -22,10 +15,10 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties["keyAlias"].toString()
-            keyPassword = keystoreProperties["keyPassword"].toString()
-            storeFile = file(keystoreProperties["storeFile"].toString())
-            storePassword = keystoreProperties["storePassword"].toString()
+            keyAlias = "upload"
+            keyPassword = "Cbzxp#3422@"
+            storeFile = file("keystore/release-keystore.jks")
+            storePassword = "Cbzxp#3422@"
         }
     }
 

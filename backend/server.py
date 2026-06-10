@@ -3072,12 +3072,20 @@ def get_task(task_id):
                 SELECT t.id, t.title, t.description, t.category,
                        t.location_lat, t.location_lng, t.location_address,
                        t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
-                       t.price, t.service_charge, t.posted_by, t.posted_at, t.expires_at, t.status,
+                       t.price, t.service_charge, t.posted_by, t.accepted_by,
+                       t.posted_at, t.expires_at, t.status,
+                       t.is_paid, t.completion_proof, t.accepted_at, t.completed_at,
+                       t.helper_final_completed_at, t.is_hidden,
                        COALESCE(u.name, 'Anonymous') AS poster_name,
                        COALESCE(u.rating, 5.0)       AS poster_rating,
-                       COALESCE(u.tasks_posted, 0)   AS poster_tasks
+                       COALESCE(u.tasks_posted, 0)   AS poster_tasks,
+                       u.phone                        AS poster_phone,
+                       h.name                         AS helper_name,
+                       h.phone                        AS helper_phone,
+                       COALESCE(h.rating, 5.0)        AS helper_rating
                 FROM tasks t
                 LEFT JOIN users u ON u.id = t.posted_by
+                LEFT JOIN users h ON h.id = t.accepted_by
                 WHERE t.id = {PH}
                   AND t.status NOT IN ('removed', 'flagged', 'suspicious')
             ''', (task_id,))
@@ -3085,6 +3093,10 @@ def get_task(task_id):
         if not row:
             return jsonify({'success': False, 'message': 'Task not found'}), 404
         task = dict_from_row(row)
+        # Only expose poster_phone to the accepted helper (privacy)
+        show_poster_phone = (task.get('accepted_by') == request.user_id)
+        # Only expose helper_phone to the task poster
+        show_helper_phone = (task.get('posted_by') == request.user_id)
         return jsonify({
             'success': True,
             'task': {
@@ -3108,11 +3120,18 @@ def get_task(task_id):
                     'id': task.get('posted_by'),
                     'name': task['poster_name'],
                     'rating': float(task['poster_rating']),
-                    'tasksPosted': int(task['poster_tasks'])
+                    'tasksPosted': int(task['poster_tasks']),
+                    'phone': task.get('poster_phone') or '' if show_poster_phone else ''
                 },
+                'poster_phone': task.get('poster_phone') or '' if show_poster_phone else '',
+                'helper_phone': task.get('helper_phone') or '' if show_helper_phone else '',
+                'accepted_by': task.get('accepted_by'),
+                'is_paid': task.get('is_paid', False),
+                'status': task['status'],
                 'postedAt': task['posted_at'],
                 'expiresAt': task['expires_at'],
-                'status': task['status']
+                'accepted_at': task.get('accepted_at'),
+                'completed_at': task.get('completed_at') or task.get('helper_final_completed_at'),
             }
         })
     except Exception as e:
@@ -6599,21 +6618,20 @@ def create_wallet_topup_order():
             return jsonify({'success': False, 'message': 'Payment gateway not configured'}), 503
         
         data = request.get_json()
-        amount = int(data.get('amount', 0))  # Should be in paise
+        # Frontend sends amount in RUPEES. Convert to paise for Razorpay.
+        amount_rupees = int(data.get('amount', 0))
         
-        print(f"  Amount (raw): {amount}")
+        print(f'  Amount (raw rupees from frontend): {amount_rupees}')
         
-        # DEFENSIVE: Auto-detect if amount is in rupees vs paise
-        # Minimum is ₹10 = 1000 paise
-        # If amount < 1000 and >= 10, it's likely in rupees (from frontend not multiplying)
-        if amount < 1000 and amount >= 10:
-            print(f"⚠️  [WALLET] Amount appears to be in rupees, converting: {amount}₹ → {amount * 100} paise")
-            amount = amount * 100
+        if amount_rupees < 10:  # Minimum Rs.10
+            return jsonify({'success': False, 'message': 'Minimum top-up is Rs.10'}), 400
+        if amount_rupees > 100000:  # Maximum Rs.1,00,000 per transaction
+            return jsonify({'success': False, 'message': 'Maximum top-up is Rs.1,00,000'}), 400
         
-        print(f"  Amount (after conversion): {amount} paise (₹{amount/100})")
+        amount = amount_rupees * 100  # Convert to paise for Razorpay
         
-        if amount < 1000:  # Minimum ₹10
-            return jsonify({'success': False, 'message': 'Minimum top-up is ₹10'}), 400
+        print(f'  Amount (converted): {amount} paise (Rs.{amount_rupees})')
+        
         
         print(f"[WALLET] Creating Razorpay order for wallet top-up: {amount} paise (₹{amount/100})")
         
@@ -6675,22 +6693,14 @@ def verify_wallet_topup():
         payment_id = data.get('paymentId')
         order_id = data.get('orderId')
         signature = data.get('signature')
+        # Amount is in PAISE (sent from Flutter's _pendingTopUpAmountPaise)
         amount = float(data.get('amount', 0))
         
-        print(f"\n[WALLET] ===== WALLET TOP-UP VERIFICATION =====")
-        print(f"[WALLET] Order ID: {order_id}")
-        print(f"[WALLET] Payment ID: {payment_id}")
-        print(f"[WALLET] Amount (raw): {amount}")
-        
-        # DEFENSIVE: Auto-detect if amount is in rupees vs paise
-        # Minimum is ₹10 = 1000 paise
-        # If amount < 1000, it's likely in rupees (from old buggy code)
-        if amount < 1000 and amount >= 10:
-            print(f"⚠️  [WALLET] Amount appears to be in rupees, converting: {amount}₹ → {amount * 100} paise")
-            amount = amount * 100
-        
-        print(f"[WALLET] Amount (after conversion): {amount} paise = ₹{amount/100}")
-        print(f"[WALLET] User: {request.user_id}")
+        print('[WALLET] ===== WALLET TOP-UP VERIFICATION =====')
+        print(f'[WALLET] Order ID: {order_id}')
+        print(f'[WALLET] Payment ID: {payment_id}')
+        print(f'[WALLET] Amount: {amount} paise = Rs.{amount/100}')
+        print(f'[WALLET] User: {request.user_id}')
         
         if not all([payment_id, order_id, amount]) or amount <= 0:
             print(f"❌ [WALLET] Missing required fields")

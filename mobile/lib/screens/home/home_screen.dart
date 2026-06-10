@@ -9,6 +9,7 @@ import '../../providers/wallet_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/image_utils.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,9 +19,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _usersCount  = 36;
-  int _tasksCount  = 22;
-  int _earnedTotal = 4000;
   String _cityName = 'Your City';
   List<Task> _suggestedTasks = [];
 
@@ -45,7 +43,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     context.read<NotificationProvider>().fetchNotifications();
     context.read<WalletProvider>().fetchWallet();
-    _fetchStats();
     _fetchSuggestedTasks();
   }
 
@@ -79,25 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _fetchStats() async {
-    try {
-      final data = await ApiService.get('/platform-stats');
-      if (!mounted || data == null) return;
-      setState(() {
-        _usersCount  = (data['users']          as num?)?.toInt() ?? _usersCount;
-        _tasksCount  = (data['completedTasks'] as num?)?.toInt() ?? _tasksCount;
-        _earnedTotal = (data['totalEarned']    as num?)?.toInt() ?? _earnedTotal;
-      });
-    } catch (_) {}
-  }
-
-  String _fmtEarned(int v) {
-    if (v >= 10000000) return '₹${(v / 10000000).toStringAsFixed(0)}Cr+';
-    if (v >= 100000)   return '₹${(v / 100000).toStringAsFixed(0)}L+';
-    if (v >= 1000)     return '₹${v ~/ 1000}K+';
-    return '₹$v+';
-  }
-
   @override
   Widget build(BuildContext context) {
     final auth          = context.watch<AuthProvider>();
@@ -105,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final wallet        = context.watch<WalletProvider>();
     final firstName     = auth.user?.name.split(' ').first ?? 'there';
     final isSuspended   = auth.user?.isSuspended == true;
-    final avatarUrl     = auth.user?.avatar;
+    final avatarProvider = avatarImage(auth.user?.avatar);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF1F2F8),
@@ -124,11 +102,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => context.go('/profile'),
                 child: CircleAvatar(
                   radius: 18,
-                  backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
-                      ? NetworkImage(avatarUrl)
-                      : null,
+                  backgroundImage: avatarProvider,
                   backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-                  child: (avatarUrl == null || avatarUrl.isEmpty)
+                  child: avatarProvider == null
                       ? Text(
                           firstName.isNotEmpty
                               ? firstName[0].toUpperCase()
@@ -260,8 +236,7 @@ class _HomeScreenState extends State<HomeScreen> {
               }),
             ),
 
-          SliverToBoxAdapter(child: _buildHero(firstName)),
-          SliverToBoxAdapter(child: _buildStats()),
+          SliverToBoxAdapter(child: _buildHero(firstName, auth.user?.gender)),
           SliverToBoxAdapter(child: _buildSearch()),
           SliverToBoxAdapter(child: _buildCategories()),
           if (_suggestedTasks.isNotEmpty)
@@ -275,7 +250,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ── HERO ─────────────────────────────────────────────────────────────────
-  Widget _buildHero(String firstName) {
+  Widget _buildHero(String firstName, String? gender) {
+    final heroEmoji = gender == 'male' ? '👦' : gender == 'female' ? '👧' : '🧑';
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       decoration: BoxDecoration(
@@ -429,9 +405,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           border:
                               Border.all(color: AppColors.border, width: 2),
                         ),
-                        child: const Center(
-                          child: Text('🧑',
-                              style: TextStyle(fontSize: 40)),
+                        child: Center(
+                          child: Text(heroEmoji,
+                              style: const TextStyle(fontSize: 40)),
                         ),
                       ),
                     ),
@@ -495,65 +471,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
-  }
-
-  // ── STATS ─────────────────────────────────────────────────────────────────
-  Widget _buildStats() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)
-        ],
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            _statItem(Icons.people_alt_rounded, AppColors.primary,
-                '$_usersCount+', 'Active Users'),
-            _vDivider(),
-            _statItem(Icons.check_circle_rounded, AppColors.success,
-                '$_tasksCount+', 'Tasks Done'),
-            _vDivider(),
-            _statItem(Icons.currency_rupee_rounded,
-                const Color(0xFFF59E0B),
-                _fmtEarned(_earnedTotal), 'Paid Out'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _statItem(
-      IconData icon, Color color, String value, String label) {
-    return Expanded(
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 4),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: color)),
-          const SizedBox(height: 2),
-          Text(label,
-              style:
-                  const TextStyle(fontSize: 11, color: AppColors.gray)),
-        ],
-      ),
-    );
-  }
-
-  Widget _vDivider() {
-    return Container(
-        width: 1,
-        color: AppColors.border,
-        margin: const EdgeInsets.symmetric(vertical: 4));
   }
 
   // ── SEARCH ────────────────────────────────────────────────────────────────

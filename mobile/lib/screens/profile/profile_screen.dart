@@ -415,6 +415,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const Divider(height: 1),
                   _MenuItem(
+                    icon: Icons.play_circle_outline,
+                    title: 'How to Use (Tutorial)',
+                    onTap: () => context.push('/tutorial'),
+                  ),
+                  const Divider(height: 1),
+                  _MenuItem(
                     icon: Icons.privacy_tip_outlined,
                     title: 'Privacy Policy',
                     onTap: () => _launch('https://workmate4u.com/privacy'),
@@ -431,7 +437,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── Sign out ──────────────────────────────────────────────────
+            // ── Sign out ──────────────────────────────────────────────────────
             Card(
               child: _MenuItem(
                 icon: Icons.logout,
@@ -459,6 +465,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     await auth.logout();
                   }
                 },
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ── Delete account ────────────────────────────────────────────────
+            Card(
+              child: _MenuItem(
+                icon: Icons.delete_forever_outlined,
+                title: 'Delete My Account',
+                textColor: AppColors.danger,
+                iconColor: AppColors.danger,
+                onTap: () => _showDeleteAccountDialog(context, auth),
               ),
             ),
 
@@ -502,9 +521,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ── Delete Account dialog ─────────────────────────────────────────────────
+  void _showDeleteAccountDialog(BuildContext context, AuthProvider auth) {
+    final isGoogleUser = auth.user?.authProvider == 'google';
+    final passwordCtrl = TextEditingController();
+    bool obscure = true;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Delete Account'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This will permanently delete your account and all your data. '
+                  'This action cannot be undone.',
+                ),
+                if (!isGoogleUser) ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: passwordCtrl,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      labelText: 'Confirm Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscure
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined),
+                        onPressed: () =>
+                            setDialogState(() => obscure = !obscure),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: () async {
+                  Navigator.of(dialogCtx).pop();
+                  if (!context.mounted) return;
+                  final result = await auth.deleteAccount(
+                      password:
+                          isGoogleUser ? null : passwordCtrl.text);
+                  if (!context.mounted) return;
+                  if (result['success'] != true) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['message'] ??
+                            'Failed to delete account. Please contact support.'),
+                        backgroundColor: AppColors.danger,
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Delete',
+                    style: TextStyle(color: AppColors.danger))),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Change Password dialog ────────────────────────────────────────────────
-  void _showChangePasswordDialog(BuildContext context, AuthProvider auth) {
-    final currentCtrl = TextEditingController();
+  void _showChangePasswordDialog(BuildContext context, AuthProvider auth) {    final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -629,22 +718,21 @@ class _EditProfileSheet extends StatefulWidget {
 
 class _EditProfileSheetState extends State<_EditProfileSheet> {
   late final TextEditingController _nameCtrl;
-  late final TextEditingController _bioCtrl;
   late final TextEditingController _phoneCtrl;
+  String? _gender;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _nameCtrl  = TextEditingController(text: widget.auth.user?.name);
-    _bioCtrl   = TextEditingController(text: widget.auth.user?.bio);
     _phoneCtrl = TextEditingController(text: widget.auth.user?.phone ?? '');
+    _gender    = widget.auth.user?.gender;
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _bioCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();
   }
@@ -660,7 +748,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     setState(() => _saving = true);
     final ok = await widget.auth.updateProfile(
       name: _nameCtrl.text,
-      bio: _bioCtrl.text,
+      gender: _gender,
       phone: _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
     );
 
@@ -712,14 +800,35 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   prefixIcon: Icon(Icons.phone_outlined),
                   hintText: '+91 XXXXXXXXXX'),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _bioCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                  labelText: 'Bio',
-                  hintText: 'Tell task posters about yourself...',
-                  prefixIcon: Icon(Icons.info_outline)),
+            const SizedBox(height: 16),
+
+            // ── Gender selection ─────────────────────────────────────
+            const Text('Gender',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.dark)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _GenderOption(
+                    label: 'Male',
+                    emoji: '👦',
+                    selected: _gender == 'male',
+                    onTap: () => setState(() => _gender = 'male'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _GenderOption(
+                    label: 'Female',
+                    emoji: '👧',
+                    selected: _gender == 'female',
+                    onTap: () => setState(() => _gender = 'female'),
+                  ),
+                ),
+              ],
             ),
 
             const SizedBox(height: 20),
@@ -734,6 +843,56 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : const Text('Save Changes'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Gender option tile ────────────────────────────────────────────────────────
+class _GenderOption extends StatelessWidget {
+  final String label;
+  final String emoji;
+  final bool selected;
+  final VoidCallback onTap;
+  const _GenderOption({
+    required this.label,
+    required this.emoji,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.1)
+              : AppColors.light,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 28)),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: selected ? AppColors.primary : AppColors.dark,
               ),
             ),
           ],

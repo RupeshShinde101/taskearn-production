@@ -5,6 +5,7 @@ class User {
   final String? phone;
   final String? avatar;
   final String? bio;
+  final String? gender; // 'male' | 'female' | null
   final List<String> skills;
   final double rating;
   final int tasksCompleted;
@@ -20,6 +21,7 @@ class User {
   final DateTime createdAt;
   /// Number of task releases made today (resets daily). Max 3 before suspension.
   final int dailyReleaseCount;
+  final String? authProvider; // 'email' | 'google' | null
 
   User({
     required this.id,
@@ -28,6 +30,7 @@ class User {
     this.phone,
     this.avatar,
     this.bio,
+    this.gender,
     this.skills = const [],
     this.rating = 0.0,
     this.tasksCompleted = 0,
@@ -42,6 +45,7 @@ class User {
     this.referralCode,
     required this.createdAt,
     this.dailyReleaseCount = 0,
+    this.authProvider,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -53,6 +57,7 @@ class User {
       phone: json['phone'],
       avatar: json['avatar'] ?? json['profilePhoto'],
       bio: json['bio'],
+      gender: json['gender']?.toString(),
       skills: (json['skills'] as List? ?? []).map((s) => s.toString()).toList(),
       rating: double.tryParse((json['rating'] ?? 0).toString()) ?? 0.0,
       tasksCompleted: json['tasksCompleted'] ?? json['tasks_completed'] ?? 0,
@@ -83,6 +88,7 @@ class User {
           : DateTime.now(),
       dailyReleaseCount: int.tryParse(
               (json['dailyReleaseCount'] ?? json['daily_release_count'] ?? 0).toString()) ?? 0,
+      authProvider: json['auth_provider']?.toString(),
     );
   }
 
@@ -93,6 +99,7 @@ class User {
         'phone': phone,
         'avatar': avatar,
         'bio': bio,
+        'gender': gender,
         'skills': skills,
         'rating': rating,
         'tasks_completed': tasksCompleted,

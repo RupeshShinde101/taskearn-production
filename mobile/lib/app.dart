@@ -23,6 +23,7 @@ import 'screens/profile/kyc_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
 import 'screens/referral/referral_screen.dart';
 import 'screens/shell/main_shell.dart';
+import 'screens/tutorial/tutorial_screen.dart';
 
 class Workmate4uApp extends StatefulWidget {
   const Workmate4uApp({super.key});
@@ -150,6 +151,10 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         GoRoute(
           path: '/kyc',
           builder: (_, __) => const KycScreen(),
+        ),
+        GoRoute(
+          path: '/tutorial',
+          builder: (_, __) => const TutorialScreen(),
         ),
       ],
     );

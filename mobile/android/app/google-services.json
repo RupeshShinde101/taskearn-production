@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "874101147109-0hkvqqd5bgquvhq7nmqepp8m30u9gptd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.workmate4u.workmate4u",
+            "certificate_hash": "ec9c69508a081953f6d6af38c87190e7c5fba809"
+          }
+        },
+        {
           "client_id": "874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com",
           "client_type": 3
         }

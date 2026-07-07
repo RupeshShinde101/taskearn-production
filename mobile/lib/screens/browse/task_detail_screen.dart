@@ -600,10 +600,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 14),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
+                      gradient: const LinearGradient(
                         colors: [
                           AppColors.warning,
-                          const Color(0xFFD97706),
+                          Color(0xFFD97706),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(14),
@@ -878,6 +878,31 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     height: 200,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      final total = loadingProgress.expectedTotalBytes;
+                      final received = loadingProgress.cumulativeBytesLoaded;
+                      return Container(
+                        height: 200,
+                        width: double.infinity,
+                        color: AppColors.light,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(
+                                value: total != null ? received / total : null,
+                                color: AppColors.primary,
+                                strokeWidth: 3,
+                              ),
+                              const SizedBox(height: 10),
+                              const Text('Loading proof image…',
+                                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                     errorBuilder: (_, __, ___) => Container(
                       height: 80,
                       color: AppColors.light,

@@ -1,7 +1,6 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
@@ -74,6 +73,12 @@ class AuthProvider extends ChangeNotifier {
     // ── Restore user instantly from local cache (no network wait) ──────────
     final cachedJson = StorageService.getUserJson();
     if (cachedJson != null) {
+      // Inject locally-saved gender into the cached JSON so the emoji shows
+      // immediately on startup without waiting for the network /auth/me call.
+      if (cachedJson['gender'] == null || cachedJson['gender'].toString().isEmpty) {
+        final localGender = StorageService.getGender();
+        if (localGender != null) cachedJson['gender'] = localGender;
+      }
       _user = User.fromJson(cachedJson);
       _status = AuthStatus.authenticated;
       notifyListeners(); // show the app immediately
@@ -88,6 +93,15 @@ class AuthProvider extends ChangeNotifier {
           'kyc_status=${userJson["kyc_status"]} '
           'kycVerified=${userJson["kycVerified"]} '
           'kycStatus=${userJson["kycStatus"]}');
+      // Inject locally-saved gender if server didn't return it (e.g. backend
+      // not yet deployed with the gender column).
+      if (userJson['gender'] == null || userJson['gender'].toString().isEmpty) {
+        final localGender = StorageService.getGender();
+        if (localGender != null) userJson['gender'] = localGender;
+      } else {
+        // Backend returned gender — keep local copy in sync.
+        await StorageService.saveGender(userJson['gender'].toString());
+      }
       _user = User.fromJson(userJson);
       await StorageService.saveUserJson(userJson); // keep cache fresh
       _status = AuthStatus.authenticated;
@@ -241,6 +255,26 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Permanently delete the user's account and all data.
+  Future<Map<String, dynamic>> deleteAccount({String? password}) async {
+    try {
+      final body = <String, dynamic>{};
+      if (password != null && password.isNotEmpty) body['password'] = password;
+      final res = await ApiService.post('/user/delete-account', body: body);
+      if (res['success'] == true) {
+        try { await _googleSignIn.signOut(); } catch (_) {}
+        await StorageService.clearSession();
+        _user = null;
+        _status = AuthStatus.unauthenticated;
+        notifyListeners();
+        return {'success': true};
+      }
+      return {'success': false, 'message': res['message'] ?? 'Failed to delete account'};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   Future<void> refreshUser() async {
     try {
       final data = await ApiService.get('/auth/me');
@@ -254,6 +288,13 @@ class AuthProvider extends ChangeNotifier {
           'kycStatus=${userJson["kycStatus"]} '
           'is_kyc_verified=${userJson["is_kyc_verified"]}');
       debugPrint('[AUTH] All keys: ${userJson.keys.toList()}');
+      // Inject locally-saved gender if backend didn't return it.
+      if (userJson['gender'] == null || userJson['gender'].toString().isEmpty) {
+        final localGender = StorageService.getGender();
+        if (localGender != null) userJson['gender'] = localGender;
+      } else {
+        await StorageService.saveGender(userJson['gender'].toString());
+      }
       _user = User.fromJson(userJson);
       await StorageService.saveUserJson(userJson); // keep cache fresh
       notifyListeners();
@@ -265,6 +306,7 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> updateProfile({
     String? name,
     String? bio,
+    String? gender,
     String? avatarPath,
     List<String>? skills,
     String? phone,
@@ -277,11 +319,15 @@ class AuthProvider extends ChangeNotifier {
       final body = <String, dynamic>{};
       if (name != null && name.trim().isNotEmpty) body['name'] = name.trim();
       if (bio != null) body['bio'] = bio.trim();
+      if (gender != null) body['gender'] = gender;
       if (skills != null) body['skills'] = skills;
       if (phone != null && phone.trim().isNotEmpty) body['phone'] = phone.trim();
       if (email != null && email.trim().isNotEmpty) body['email'] = email.trim();
 
       await ApiService.put('/user/profile', body: body);
+      // Persist gender locally immediately so the home emoji updates even
+      // before the backend returns the field in /auth/me response.
+      if (gender != null) await StorageService.saveGender(gender);
       // Always refresh from server so skills and all fields are up-to-date
       await refreshUser();
       _loading = false;
@@ -461,6 +507,18 @@ class AuthProvider extends ChangeNotifier {
       return false;
     } on ApiException catch (e) {
       _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    } on PlatformException catch (e) {
+      debugPrint('[Google] PlatformException: code=${e.code} message=${e.message}');
+      if (e.message != null && (e.message!.contains(': 10') || e.message!.contains('DEVELOPER_ERROR'))) {
+        _error = 'Google sign-in is not configured for this app build. Please contact support.';
+      } else if (e.code == 'network_error') {
+        _error = 'Network error. Please check your connection and try again.';
+      } else {
+        _error = 'Google sign-in failed. Please try again.';
+      }
       _loading = false;
       notifyListeners();
       return false;

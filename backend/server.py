@@ -300,6 +300,7 @@ _fcm_columns_ensured = False
 _bio_skills_columns_ensured = False
 _user_location_columns_ensured = False
 _google_auth_schema_ensured = False
+_gender_column_ensured = False
 
 def _ensure_user_location_columns():
     """Add last_lat / last_lng columns to users table (one-time per process)."""
@@ -322,6 +323,25 @@ def _ensure_user_location_columns():
         _user_location_columns_ensured = True
     except Exception as e:
         print(f'\u26a0\ufe0f _ensure_user_location_columns error: {e}')
+
+def _ensure_gender_column():
+    """Add gender column to users table if it does not exist (one-time per process)."""
+    global _gender_column_ensured
+    if _gender_column_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(10)")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'gender' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN gender VARCHAR(10)")
+            conn.commit()
+        _gender_column_ensured = True
+    except Exception as e:
+        print(f'⚠️ _ensure_gender_column error: {e}')
 
 def _ensure_bio_skills_columns():
     """Add bio and skills columns to users table if they do not exist (one-time per process)."""
@@ -891,6 +911,7 @@ def user_to_response(user):
     if not user:
         return None
     _ensure_bio_skills_columns()
+    _ensure_gender_column()
     import json as _json_u
     _skills_raw = user.get('skills')
     if isinstance(_skills_raw, list):
@@ -985,7 +1006,8 @@ def user_to_response(user):
         'authProvider': user.get('auth_provider', 'email'),
         'kycStatus': user.get('kyc_status', 'none'),
         'kycDocumentType': user.get('kyc_document_type'),
-        'phoneVerified': bool(user.get('phone_verified', False))
+        'phoneVerified': bool(user.get('phone_verified', False)),
+        'gender': user.get('gender')
     }
 
 
@@ -2059,7 +2081,8 @@ def update_profile():
     _ensure_bio_skills_columns()
     import json as _json_profile
 
-    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio']
+    _ensure_gender_column()
+    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio', 'gender']
     updates = {k: v for k, v in data.items() if k in allowed_fields}
 
     # Skills: stored as JSON string in the DB

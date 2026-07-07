@@ -89,10 +89,7 @@ class Task {
     if (value == null) return DateTime.now();
     final s = value.toString().trim();
     var iso = DateTime.tryParse(s);
-    if (iso == null) {
-      // Try appending 'Z' to treat as UTC (PostgreSQL naive timestamp format)
-      iso = DateTime.tryParse('${s}Z');
-    }
+    iso ??= DateTime.tryParse('${s}Z');
     if (iso != null) {
       // If string had no timezone marker, the parsed value is already UTC
       // (we appended Z above). Convert to local for consistent UI display.
@@ -109,9 +106,7 @@ class Task {
     final s = value.toString().trim();
     if (s.isEmpty) return null;
     var iso = DateTime.tryParse(s);
-    if (iso == null) {
-      iso = DateTime.tryParse('${s}Z');
-    }
+    iso ??= DateTime.tryParse('${s}Z');
     if (iso == null) return null;
     return iso.isUtc ? iso.toLocal() : iso;
   }
@@ -276,20 +271,24 @@ class Task {
           ?? json['destination_address']?.toString(),
       dropLatitude: (() {
         // Primary: drop_location nested object (browse/user-tasks API)
-        if (dropLoc is Map && dropLoc['lat'] != null)
+        if (dropLoc is Map && dropLoc['lat'] != null) {
           return double.tryParse(dropLoc['lat'].toString());
+        }
         // Fallback: destination nested object (task-detail API)
-        if (destination is Map && destination['lat'] != null)
+        if (destination is Map && destination['lat'] != null) {
           return double.tryParse(destination['lat'].toString());
+        }
         // Fallback: flat fields
         final f = json['drop_location_lat'] ?? json['drop_lat'] ?? json['drop_latitude'] ?? json['dropLat'] ?? json['destination_lat'];
         return f != null ? double.tryParse(f.toString()) : null;
       })(),
       dropLongitude: (() {
-        if (dropLoc is Map && dropLoc['lng'] != null)
+        if (dropLoc is Map && dropLoc['lng'] != null) {
           return double.tryParse(dropLoc['lng'].toString());
-        if (destination is Map && destination['lng'] != null)
+        }
+        if (destination is Map && destination['lng'] != null) {
           return double.tryParse(destination['lng'].toString());
+        }
         final f = json['drop_location_lng'] ?? json['drop_lng'] ?? json['drop_longitude'] ?? json['dropLng'] ?? json['destination_lng'];
         return f != null ? double.tryParse(f.toString()) : null;
       })(),

@@ -1063,6 +1063,9 @@ def require_admin(f):
         user_id = payload['user_id']
         request.user_id = user_id
         request.user_email = payload['email']
+        # Mark this request as admin context so get_db() uses ADMIN_DATABASE_URL
+        from flask import g
+        g.use_admin_db = True
         # Check is_admin flag
         try:
             with get_db() as (cursor, conn):
@@ -5404,8 +5407,7 @@ def admin_list_withdrawals():
     status_filter = request.args.get('status', '').strip().lower()
     PH = get_placeholder()
     try:
-        with get_db() as conn:
-            cursor = conn.cursor()
+        with get_db() as (cursor, conn):
             if status_filter:
                 cursor.execute(
                     f"""SELECT wr.id, wr.user_id, wr.amount, wr.account_number, wr.ifsc_code,

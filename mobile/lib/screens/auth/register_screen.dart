@@ -250,11 +250,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             size: 18),
                         errorText: state.errorText,
                         border: const OutlineInputBorder(),
-                        enabledBorder: OutlineInputBorder(
+                        enabledBorder: const OutlineInputBorder(
                           borderSide:
                               BorderSide(color: AppColors.border),
                         ),
-                        focusedBorder: OutlineInputBorder(
+                        focusedBorder: const OutlineInputBorder(
                           borderSide: BorderSide(
                               color: AppColors.primary, width: 1.5),
                         ),
@@ -314,16 +314,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   child: TextFormField(
                     controller: _inviteCtrl,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'Invite Code',
                       hintText: 'e.g. WORKMATE2026',
-                      prefixIcon: const Icon(Icons.vpn_key_outlined,
+                      prefixIcon: Icon(Icons.vpn_key_outlined,
                           color: AppColors.primary),
                       helperText:
                           'Required during closed beta — get your code from the team or a referral link.',
                       helperMaxLines: 2,
                       helperStyle:
-                          const TextStyle(color: AppColors.gray, fontSize: 11),
+                          TextStyle(color: AppColors.gray, fontSize: 11),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,

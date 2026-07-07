@@ -102,7 +102,7 @@ class _KycScreenState extends State<KycScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_frontImagePath == null) {
-      _showSnack('Please upload the front side of your ' + _docLabel + '.', isError: true);
+      _showSnack('Please upload the front side of your $_docLabel.', isError: true);
       return;
     }
     if (_isAadhaar && _backImagePath == null) {
@@ -424,7 +424,7 @@ class _KycScreenState extends State<KycScreen> {
 
   Widget _buildStatusBanner(String? kycStatus, bool isVerified) {
     if (isVerified) {
-      return _StatusBanner(
+      return const _StatusBanner(
         icon: Icons.verified_rounded,
         label: 'KYC Verified',
         subtitle: 'Your identity has been successfully verified.',
@@ -433,14 +433,14 @@ class _KycScreenState extends State<KycScreen> {
     }
     switch (kycStatus) {
       case 'pending':
-        return _StatusBanner(
+        return const _StatusBanner(
           icon: Icons.hourglass_top_rounded,
           label: 'Verification Pending',
           subtitle: 'Your documents are under review (24-48 hours).',
           color: AppColors.warning,
         );
       case 'rejected':
-        return _StatusBanner(
+        return const _StatusBanner(
           icon: Icons.cancel_outlined,
           label: 'Verification Rejected',
           subtitle:
@@ -448,7 +448,7 @@ class _KycScreenState extends State<KycScreen> {
           color: AppColors.danger,
         );
       default:
-        return _StatusBanner(
+        return const _StatusBanner(
           icon: Icons.badge_outlined,
           label: 'KYC Not Verified',
           subtitle:

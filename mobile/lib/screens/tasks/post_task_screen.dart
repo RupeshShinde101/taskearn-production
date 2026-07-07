@@ -115,7 +115,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (_descCtrl.text.trim().isEmpty) {
       _descCtrl.text = prompts.join('\n');
       _descCtrl.selection =
-          TextSelection.fromPosition(TextPosition(offset: 0));
+          TextSelection.fromPosition(const TextPosition(offset: 0));
     }
   }
 
@@ -368,12 +368,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     // ── Client-side banned keyword check ────────────────────────────────────
-    final _bannedResult = _checkBannedContent(_titleCtrl.text, _descCtrl.text);
-    if (_bannedResult != null) {
+    final bannedResult = _checkBannedContent(_titleCtrl.text, _descCtrl.text);
+    if (bannedResult != null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_bannedResult),
+            content: Text(bannedResult),
             backgroundColor: AppColors.danger,
             duration: const Duration(seconds: 4),
           ),

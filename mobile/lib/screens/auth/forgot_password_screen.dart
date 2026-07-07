@@ -236,10 +236,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Center(
+        const Center(
           child: Text(
             'A 6-digit code was sent to\n',
-            style: const TextStyle(color: AppColors.gray, height: 1.5),
+            style: TextStyle(color: AppColors.gray, height: 1.5),
             textAlign: TextAlign.center,
           ),
         ),

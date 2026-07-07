@@ -235,9 +235,9 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'The task poster verified your work and released your payment. Here\'s the breakdown:',
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.gray, fontSize: 13, height: 1.5),
             ),
             const SizedBox(height: 16),

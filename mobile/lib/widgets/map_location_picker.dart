@@ -426,16 +426,16 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                   if (_showResults &&
                       !_searching &&
                       _searchResults.isEmpty)
-                    Material(
+                    const Material(
                       elevation: 4,
-                      borderRadius: const BorderRadius.only(
+                      borderRadius: BorderRadius.only(
                         bottomLeft: Radius.circular(12),
                         bottomRight: Radius.circular(12),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(14),
+                        padding: EdgeInsets.all(14),
                         child: Row(
-                          children: const [
+                          children: [
                             Icon(Icons.search_off,
                                 color: AppColors.gray, size: 18),
                             SizedBox(width: 8),

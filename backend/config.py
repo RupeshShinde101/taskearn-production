@@ -4,10 +4,12 @@ Loads from environment variables for production
 """
 
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# Load .env file if exists (for local development)
-load_dotenv()
+# Load .env file if exists (for local development).
+# find_dotenv() searches the current directory AND all parent directories,
+# so running from backend/ still picks up the root-level .env.
+load_dotenv(find_dotenv(usecwd=True), override=False)
 
 class Config:
     """Base configuration"""
@@ -49,6 +51,12 @@ class Config:
             "DATABASE_URL is required. SQLite fallback has been removed. "
             "Configure a PostgreSQL connection string in environment variables."
         )
+
+    # Admin Database URL (optional) — set ADMIN_DATABASE_URL to the Railway public
+    # proxy URL (e.g. postgresql://postgres:pass@crossover.proxy.rlwy.net:17104/railway)
+    # so that admin-panel routes always use the public URL while the rest of the app
+    # uses the internal DATABASE_URL.  Falls back to DATABASE_URL if not set.
+    ADMIN_DATABASE_URL = os.environ.get('ADMIN_DATABASE_URL', DATABASE_URL).strip() or DATABASE_URL
 
     # PostgreSQL is the only supported production database for this backend.
     USE_POSTGRES = True

@@ -63,17 +63,22 @@ def _build_secure_dsn(database_url: str, connect_timeout: int = 3) -> str:
     return _up.urlunparse(secured)
 
 
-def get_postgres_connection(retries: int = 2, delay: float = 0.3, connect_timeout: int = 3):
+def get_postgres_connection(retries: int = 2, delay: float = 0.3, connect_timeout: int = 3,
+                            database_url: str = None):
     """
     Get a PostgreSQL connection with retry logic for transient Railway
     proxy drops (e.g. during deploys or idle-connection recycling).
+
+    Pass database_url to override the default DATABASE_URL (used by admin routes
+    to connect via the public proxy URL instead of the internal hostname).
     """
     if not POSTGRES_AVAILABLE:
         raise Exception("PostgreSQL driver not installed")
 
     import time as _time
 
-    dsn = _build_secure_dsn(config.DATABASE_URL, connect_timeout=connect_timeout)
+    url = database_url or config.DATABASE_URL
+    dsn = _build_secure_dsn(url, connect_timeout=connect_timeout)
     last_exc = None
     for attempt in range(1, retries + 1):
         try:
@@ -97,15 +102,31 @@ def get_postgres_connection(retries: int = 2, delay: float = 0.3, connect_timeou
 
 @contextmanager
 def get_db():
-    """Get PostgreSQL database connection"""
+    """
+    Get PostgreSQL database connection.
+
+    When called from an admin route (require_admin sets flask.g.use_admin_db = True),
+    automatically uses ADMIN_DATABASE_URL (public proxy) instead of DATABASE_URL
+    (internal hostname) so admin-panel requests work even when private networking
+    DNS is unavailable.
+    """
     conn = None
     try:
         if not POSTGRES_AVAILABLE:
             raise RuntimeError("PostgreSQL driver not installed")
 
-        conn = get_postgres_connection()
+        # Check if this is an admin-context request (set by require_admin decorator)
+        db_url = None
+        try:
+            from flask import g as _g
+            if getattr(_g, 'use_admin_db', False):
+                db_url = config.ADMIN_DATABASE_URL
+        except RuntimeError:
+            pass  # Outside request context — use default URL
+
+        conn = get_postgres_connection(database_url=db_url)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
+
         yield cursor, conn
     except Exception as e:
         if conn:

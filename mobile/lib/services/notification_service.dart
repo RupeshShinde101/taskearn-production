@@ -518,7 +518,7 @@ class NotificationService {
               break;
             case 'account_banned':
             case 'admin_banned':
-              msgTitle ??= 'Account Banned \U0001f6ab';
+              msgTitle ??= 'Account Banned U0001f6ab';
               msgBody ??= 'Your account has been permanently banned.';
               break;
             case 'account_restored':
@@ -530,11 +530,11 @@ class NotificationService {
               msgBody ??= 'Your account has received a warning from admin.';
               break;
             case 'admin_message':
-              msgTitle ??= 'Message from Workmate4u \U0001f4e2';
+              msgTitle ??= 'Message from Workmate4u U0001f4e2';
               msgBody ??= '';
               break;
             case 'admin_balance_adjusted':
-              msgTitle ??= 'Wallet Balance Updated \U0001f4b0';
+              msgTitle ??= 'Wallet Balance Updated U0001f4b0';
               msgBody ??= 'Your wallet balance has been adjusted by admin.';
               break;            default:
               break;

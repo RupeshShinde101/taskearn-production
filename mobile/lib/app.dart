@@ -191,8 +191,8 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       showDialog<void>(
         context: ctx,
         builder: (dialogCtx) => AlertDialog(
-          title: Row(
-            children: const [
+          title: const Row(
+            children: [
               Icon(Icons.check_circle_rounded, color: Color(0xFF4CAF50)),
               SizedBox(width: 8),
               Text('Task Completed!'),

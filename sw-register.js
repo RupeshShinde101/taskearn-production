@@ -49,15 +49,15 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
         }
       });
     });
-  }).catch(function(err) {
+  }).catch( function(err) {
     console.warn('SW registration failed:', err);
     // Nuclear option: clear all caches and retry (only if protocol supports SW)
     if ('caches' in window && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       caches.keys().then(function(names) {
         names.forEach(function(name) { caches.delete(name); });
-      }).then(function() {
+      }).catch(function() {}).then(function() {
         navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
-      });
+      }).catch(function() {});
     }
   });
 }

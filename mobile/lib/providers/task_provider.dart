@@ -455,7 +455,7 @@ class TaskProvider extends ChangeNotifier {
       // Use Map.from() instead of a direct cast to avoid TypeError when the
       // runtime type is Map<dynamic, dynamic> (e.g. from JSON decoded in an
       // isolate).  The try-catch around us handles any remaining failures.
-      final raw = (response as Map)['task'] ??
+      final raw = (response)['task'] ??
           response['data'] ??
           response['acceptedTask'] ??
           response['result'] ??
@@ -588,7 +588,7 @@ class TaskProvider extends ChangeNotifier {
     }
 
     // ── Fallback: inject saved phone/name into a task object ─────────────────
-    Task _enrichWithSaved(Task t) {
+    Task enrichWithSaved(Task t) {
       final phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
       final name  = _loadName(id)  ?? _findNameInAllLists(id);
       if ((phone == null || (t.posterPhone?.trim().isNotEmpty ?? false)) &&
@@ -613,7 +613,7 @@ class TaskProvider extends ChangeNotifier {
     } catch (_) {}
 
     final freshCached = _findCached(id);
-    if (freshCached != null) return _enrichWithSaved(freshCached);
+    if (freshCached != null) return enrichWithSaved(freshCached);
 
     return null;
   }
@@ -846,7 +846,7 @@ class TaskProvider extends ChangeNotifier {
 
   /// Helper confirms completion after payment is released (Step 3 of flow).
   Future<bool> finalMarkComplete(String taskId) async {
-    void _clearTask() {
+    void clearTask() {
       _locallyCompletedTaskIds.add(taskId);
       // Move the task from accepted → completed list immediately so the UI
       // reflects the change before the background fetchMyTasks() returns.
@@ -874,13 +874,13 @@ class TaskProvider extends ChangeNotifier {
 
     try {
       await ApiService.post('/tasks/$taskId/mark-completed');
-      _clearTask();
+      clearTask();
       return true;
     } on ApiException catch (e) {
       // 404 means the task no longer exists on the backend OR the backend
       // already advanced it to 'done'. Either way the helper is unblocked.
       if (e.statusCode == 404) {
-        _clearTask();
+        clearTask();
         return true;
       }
       _error = e.message;

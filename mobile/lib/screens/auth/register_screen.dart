@@ -36,21 +36,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  Future<void> _pickDob() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dob ?? DateTime(now.year - 20, now.month, now.day),
-      firstDate: DateTime(1920),
-      lastDate: DateTime(now.year - 13, now.month, now.day),
-      helpText: 'Select Date of Birth',
-      fieldLabelText: 'Date of Birth',
-    );
-    if (picked != null) {
-      setState(() => _dob = picked);
-    }
-  }
-
   int _ageInYears(DateTime dob) {
     final now = DateTime.now();
     int age = now.year - dob.year;

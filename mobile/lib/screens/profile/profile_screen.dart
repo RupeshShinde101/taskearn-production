@@ -749,8 +749,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         if (!mounted) return;
         if (status.isPermanentlyDenied) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
+            const SnackBar(
+              content: Text(
                   'Camera permission denied. Enable it in app settings.'),
               action: SnackBarAction(
                 label: 'Settings',

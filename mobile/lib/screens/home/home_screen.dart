@@ -695,10 +695,10 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Container(
               height: 64,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: AppColors.success,
                 borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
+                    BorderRadius.vertical(top: Radius.circular(16)),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(children: [
@@ -739,7 +739,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text('85%\nmatch',
+                  child: const Text('85%\nmatch',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontSize: 9,

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/widgets.dart';
 
 /// Returns the appropriate [ImageProvider] for an avatar/photo URL.
@@ -6,7 +7,8 @@ import 'package:flutter/widgets.dart';
 /// Handles three cases:
 ///   1. `data:image/...;base64,...`  — Google Sign-In sometimes returns these;
 ///      decoded with [base64Decode] and served as [MemoryImage].
-///   2. `https://` / `http://`       — regular remote URL → [NetworkImage].
+///   2. `https://` / `http://`       — regular remote URL → [CachedNetworkImageProvider]
+///      which keeps the image in memory/disk so widget rebuilds never cause flicker.
 ///   3. null / empty / other          — returns null (caller shows placeholder).
 ImageProvider? avatarImage(String? url) {
   if (url == null || url.isEmpty) return null;
@@ -22,7 +24,7 @@ ImageProvider? avatarImage(String? url) {
   }
 
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return NetworkImage(url);
+    return CachedNetworkImageProvider(url);
   }
 
   return null;

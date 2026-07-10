@@ -341,6 +341,31 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Upload a new profile photo.  Sends the image as multipart/form-data so
+  /// the server receives actual bytes (field name: `avatar`).
+  Future<bool> updateAvatar(String filePath) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await ApiService.uploadFile('/user/avatar', filePath, 'avatar');
+      await refreshUser();
+      _loading = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Failed to update photo. Please try again.';
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Register a device FCM token with the backend for push notifications.
   Future<void> updateFcmToken(String token) async {
     try {

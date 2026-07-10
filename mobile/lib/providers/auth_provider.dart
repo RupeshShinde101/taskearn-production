@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -341,14 +343,21 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Upload a new profile photo.  Sends the image as multipart/form-data so
-  /// the server receives actual bytes (field name: `avatar`).
+  /// Upload a new profile photo.
+  /// Reads the picked image file, encodes it as a base64 data URI, and sends
+  /// it via the existing PUT /user/profile endpoint — no separate backend
+  /// endpoint required, and the app's avatarImage() already handles data: URIs.
   Future<bool> updateAvatar(String filePath) async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      await ApiService.uploadFile('/user/avatar', filePath, 'avatar');
+      final bytes = await File(filePath).readAsBytes();
+      final ext = filePath.split('.').last.toLowerCase();
+      final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+      final dataUri = 'data:$mime;base64,${base64Encode(bytes)}';
+
+      await ApiService.put('/user/profile', body: {'avatar': dataUri});
       await refreshUser();
       _loading = false;
       notifyListeners();
@@ -359,6 +368,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     } catch (e) {
+      debugPrint('[AUTH] updateAvatar error: $e');
       _error = 'Failed to update photo. Please try again.';
       _loading = false;
       notifyListeners();

@@ -309,7 +309,7 @@ class AuthProvider extends ChangeNotifier {
     String? name,
     String? bio,
     String? gender,
-    String? avatarPath,
+    String? avatarDataUri,
     List<String>? skills,
     String? phone,
     String? email,
@@ -325,6 +325,7 @@ class AuthProvider extends ChangeNotifier {
       if (skills != null) body['skills'] = skills;
       if (phone != null && phone.trim().isNotEmpty) body['phone'] = phone.trim();
       if (email != null && email.trim().isNotEmpty) body['email'] = email.trim();
+      if (avatarDataUri != null && avatarDataUri.isNotEmpty) body['avatar'] = avatarDataUri;
 
       await ApiService.put('/user/profile', body: body);
       // Persist gender locally immediately so the home emoji updates even

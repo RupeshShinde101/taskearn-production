@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -108,20 +109,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () => _showEditDialog(context, auth),
                     child: Stack(
                       children: [
-                        CircleAvatar(
-                          radius: 48,
-                          backgroundImage: avatarImage(user?.avatar),
-                          backgroundColor: AppColors.light,
-                          child: user?.avatar == null
-                              ? Text(
-                                  user?.name.isNotEmpty == true
-                                      ? user!.name[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                      fontSize: 36,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.primary))
-                              : null,
+                        Selector<AuthProvider, String?>(
+                          selector: (_, a) => a.user?.avatar,
+                          builder: (_, avatar, __) => CircleAvatar(
+                            radius: 48,
+                            backgroundImage: avatarImage(avatar),
+                            backgroundColor: AppColors.light,
+                            child: avatar == null
+                                ? Text(
+                                    user?.name.isNotEmpty == true
+                                        ? user!.name[0].toUpperCase()
+                                        : '?',
+                                    style: const TextStyle(
+                                        fontSize: 36,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary))
+                                : null,
+                          ),
                         ),
                         Positioned(
                           bottom: 0,
@@ -835,19 +839,25 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     setState(() => _saving = true);
 
-    // Upload avatar first if the user picked a new one.
+    // Encode picked image as base64 data URI and include in the same
+    // profile-update request so name/gender are always valid fields.
+    String? avatarDataUri;
     if (_pickedImage != null) {
-      final avatarOk = await widget.auth.updateAvatar(_pickedImage!.path);
-      if (!mounted) return;
-      if (!avatarOk) {
+      try {
+        final bytes = await _pickedImage!.readAsBytes();
+        final ext = _pickedImage!.path.split('.').last.toLowerCase();
+        final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+        avatarDataUri = 'data:$mime;base64,${base64Encode(bytes)}';
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not read the selected photo. Please try again.'),
+              backgroundColor: AppColors.danger,
+            ),
+          );
+        }
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.auth.error ??
-                'Failed to update photo. Please try again.'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
         return;
       }
     }
@@ -856,6 +866,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       name: _nameCtrl.text,
       gender: _gender,
       phone: _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
+      avatarDataUri: avatarDataUri,
     );
 
     if (!mounted) return;

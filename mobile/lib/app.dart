@@ -187,7 +187,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       if (taskId.isEmpty) return;
       final navKey = _router.routerDelegate.navigatorKey;
       final ctx = navKey.currentContext;
-      if (ctx == null) return;
+      if (ctx == null || !ctx.mounted) return;
       showDialog<void>(
         context: ctx,
         builder: (dialogCtx) => AlertDialog(

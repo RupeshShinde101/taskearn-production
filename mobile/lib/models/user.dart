@@ -112,4 +112,31 @@ class User {
         'created_at': createdAt.toIso8601String(),
         'dailyReleaseCount': dailyReleaseCount,
       };
+
+  /// Returns a copy of this User with only the avatar replaced.
+  /// Preserves ALL fields (unlike toJson→fromJson which loses rank etc.).
+  User copyWithAvatar(String? newAvatar) => User(
+        id: id,
+        name: name,
+        email: email,
+        phone: phone,
+        avatar: newAvatar,
+        bio: bio,
+        gender: gender,
+        skills: skills,
+        rating: rating,
+        tasksCompleted: tasksCompleted,
+        tasksPosted: tasksPosted,
+        reviewsCount: reviewsCount,
+        rank: rank,
+        isKycVerified: isKycVerified,
+        kycStatus: kycStatus,
+        isEmailVerified: isEmailVerified,
+        isSuspended: isSuspended,
+        suspendedUntil: suspendedUntil,
+        referralCode: referralCode,
+        createdAt: createdAt,
+        dailyReleaseCount: dailyReleaseCount,
+        authProvider: authProvider,
+      );
 }

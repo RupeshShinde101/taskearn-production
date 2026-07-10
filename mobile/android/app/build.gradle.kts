@@ -14,12 +14,6 @@ android {
     ndkVersion = flutter.ndkVersion
 
     signingConfigs {
-        getByName("debug") {
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-            storeFile = file("keystore/debug-keystore.jks")
-            storePassword = "android"
-        }
         create("release") {
             keyAlias = "upload"
             keyPassword = "Cbzxp#3422@"
@@ -52,7 +46,8 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("debug")
+            // Uses the default Android debug keystore (~/.android/debug.keystore)
+            // whose SHA-1 is registered in Firebase Console.
         }
         release {
             signingConfig = signingConfigs.getByName("release")

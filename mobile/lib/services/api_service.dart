@@ -242,11 +242,15 @@ class ApiService {
       throw ApiException('No internet connection. Please check your network.', statusCode: null);
     } on TlsException {
       throw ApiException('Secure connection failed. Please try again.', statusCode: null);
+    } on HttpException catch (e) {
+      debugPrint('[API] uploadFile HttpException: $e');
+      throw ApiException('Network error. Please try again.', statusCode: null);
     } on http.ClientException {
       throw ApiException('Network error. Please try again.', statusCode: null);
     } on TimeoutException {
       throw ApiException('Request timed out. Please try again.', statusCode: null);
     } catch (e) {
+      debugPrint('[API] uploadFile unexpected error: ${e.runtimeType}: $e');
       throw ApiException('Connection error. Please try again.', statusCode: null);
     }
   }

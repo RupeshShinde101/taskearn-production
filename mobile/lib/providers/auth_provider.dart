@@ -297,6 +297,17 @@ class AuthProvider extends ChangeNotifier {
       } else {
         await StorageService.saveGender(userJson['gender'].toString());
       }
+      // Preserve a manually-uploaded avatar (data: URI) if the backend's
+      // /auth/me doesn't echo it back (some endpoints ignore large fields).
+      final serverAvatar = userJson['avatar']?.toString() ?? '';
+      final serverProfilePhoto = userJson['profilePhoto']?.toString() ?? '';
+      if (!serverAvatar.startsWith('data:') && !serverProfilePhoto.startsWith('data:')) {
+        final cachedJson = StorageService.getUserJson();
+        final cachedAvatar = cachedJson?['avatar']?.toString() ?? '';
+        if (cachedAvatar.startsWith('data:')) {
+          userJson['avatar'] = cachedAvatar;
+        }
+      }
       _user = User.fromJson(userJson);
       await StorageService.saveUserJson(userJson); // keep cache fresh
       notifyListeners();
@@ -331,7 +342,20 @@ class AuthProvider extends ChangeNotifier {
       // Persist gender locally immediately so the home emoji updates even
       // before the backend returns the field in /auth/me response.
       if (gender != null) await StorageService.saveGender(gender);
-      // Always refresh from server so skills and all fields are up-to-date
+
+      // Optimistically apply the new avatar BEFORE calling refreshUser().
+      // The backend's PUT /user/profile may not persist the avatar field,
+      // so we cache it locally first so refreshUser() can preserve it.
+      if (avatarDataUri != null && avatarDataUri.isNotEmpty && _user != null) {
+        final mergedJson = _user!.toJson();
+        mergedJson['avatar'] = avatarDataUri;
+        _user = User.fromJson(mergedJson);
+        await StorageService.saveUserJson(mergedJson);
+        notifyListeners(); // Show new avatar immediately
+      }
+
+      // Refresh remaining fields from server (avatar will be preserved
+      // by refreshUser's local-cache fallback if backend ignores it).
       await refreshUser();
       _loading = false;
       notifyListeners();

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Universal Links (https://workmate4u.com) -->
+	<!-- Requires apple-app-site-association file at https://workmate4u.com/.well-known/apple-app-site-association -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:workmate4u.com</string>
+	</array>
+	<!-- Push notifications entitlement (required for FCM on iOS) -->
+	<key>aps-environment</key>
+	<string>production</string>
+</dict>
+</plist>

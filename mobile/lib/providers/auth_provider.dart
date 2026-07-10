@@ -18,6 +18,9 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   String? _kycSubmitMessage;
+  /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
+  /// so it survives refreshUser() calls where the backend ignores the field.
+  String? _localAvatarUri;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: '874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com',
@@ -82,6 +85,11 @@ class AuthProvider extends ChangeNotifier {
         if (localGender != null) cachedJson['gender'] = localGender;
       }
       _user = User.fromJson(cachedJson);
+      // Load and apply locally-uploaded avatar override
+      _localAvatarUri = StorageService.getString('user_avatar_local');
+      if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
+        _user = _user!.copyWithAvatar(_localAvatarUri);
+      }
       _status = AuthStatus.authenticated;
       notifyListeners(); // show the app immediately
     }
@@ -105,6 +113,10 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      // Re-apply locally-uploaded avatar if server doesn't return one
+      if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
+        _user = _user!.copyWithAvatar(_localAvatarUri);
+      }
       await StorageService.saveUserJson(userJson); // keep cache fresh
       _status = AuthStatus.authenticated;
       _registerFcmToken();
@@ -252,7 +264,9 @@ class AuthProvider extends ChangeNotifier {
       await _googleSignIn.signOut();
     } catch (_) {}
     await StorageService.clearSession();
+    await StorageService.setString('user_avatar_local', '');
     _user = null;
+    _localAvatarUri = null;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
   }
@@ -297,18 +311,12 @@ class AuthProvider extends ChangeNotifier {
       } else {
         await StorageService.saveGender(userJson['gender'].toString());
       }
-      // Preserve a manually-uploaded avatar (data: URI) if the backend's
-      // /auth/me doesn't echo it back (some endpoints ignore large fields).
-      final serverAvatar = userJson['avatar']?.toString() ?? '';
-      final serverProfilePhoto = userJson['profilePhoto']?.toString() ?? '';
-      if (!serverAvatar.startsWith('data:') && !serverProfilePhoto.startsWith('data:')) {
-        final cachedJson = StorageService.getUserJson();
-        final cachedAvatar = cachedJson?['avatar']?.toString() ?? '';
-        if (cachedAvatar.startsWith('data:')) {
-          userJson['avatar'] = cachedAvatar;
-        }
-      }
       _user = User.fromJson(userJson);
+      // Always re-apply locally-uploaded avatar — backend ignores the avatar
+      // field on PUT /user/profile so /auth/me won't return our new photo.
+      if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
+        _user = _user!.copyWithAvatar(_localAvatarUri);
+      }
       await StorageService.saveUserJson(userJson); // keep cache fresh
       notifyListeners();
     } catch (e) {
@@ -343,19 +351,18 @@ class AuthProvider extends ChangeNotifier {
       // before the backend returns the field in /auth/me response.
       if (gender != null) await StorageService.saveGender(gender);
 
-      // Optimistically apply the new avatar BEFORE calling refreshUser().
-      // The backend's PUT /user/profile may not persist the avatar field,
-      // so we cache it locally first so refreshUser() can preserve it.
-      if (avatarDataUri != null && avatarDataUri.isNotEmpty && _user != null) {
-        final mergedJson = _user!.toJson();
-        mergedJson['avatar'] = avatarDataUri;
-        _user = User.fromJson(mergedJson);
-        await StorageService.saveUserJson(mergedJson);
-        notifyListeners(); // Show new avatar immediately
+      // Store avatar locally and apply immediately.
+      // Backend ignores the avatar field on PUT /user/profile, so we keep
+      // it in-memory (_localAvatarUri) and re-apply after every server fetch.
+      if (avatarDataUri != null && avatarDataUri.isNotEmpty) {
+        _localAvatarUri = avatarDataUri;
+        await StorageService.setString('user_avatar_local', avatarDataUri);
+        if (_user != null) {
+          _user = _user!.copyWithAvatar(avatarDataUri);
+          notifyListeners(); // Immediate visual feedback — no waiting for server
+        }
       }
 
-      // Refresh remaining fields from server (avatar will be preserved
-      // by refreshUser's local-cache fallback if backend ignores it).
       await refreshUser();
       _loading = false;
       notifyListeners();

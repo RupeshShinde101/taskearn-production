@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "874101147109",
+    "project_id": "workmate4u-d2197",
+    "storage_bucket": "workmate4u-d2197.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:874101147109:android:19fac22968d9c14df75b0c",
+        "android_client_info": {
+          "package_name": "com.workmate4u.workmate4u"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "874101147109-0hkvqqd5bgquvhq7nmqepp8m30u9gptd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.workmate4u.workmate4u",
+            "certificate_hash": "1efcb1e4e4e75767ba2e4c5027862b48506a9d68"
+          }
+        },
+        {
+          "client_id": "874101147109-6ej4nfaqg8jog8in1fjbgqvbk041hce1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.workmate4u.workmate4u",
+            "certificate_hash": "ec9c69508a081953f6d6af38c87190e7c5fba809"
+          }
+        },
+        {
+          "client_id": "874101147109-ee2n3lr6kplbarf8d1ev7o0v7h4r8r9r.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.workmate4u.workmate4u",
+            "certificate_hash": "5d7d0606db53a0632e6266c101ccb6d41e6dc9b8"
+          }
+        },
+        {
+          "client_id": "874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBJlMHoCe9jqz_QYg8q9pz0rYOz-TODJXE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

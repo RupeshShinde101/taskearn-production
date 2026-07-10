@@ -47,3 +47,5 @@ app.*.map.json
 # Release signing - never commit these
 android/key.properties
 android/app/keystore/
+# Allow shared debug keystore so all team members use the same SHA-1 for Google Sign-In
+!android/app/keystore/debug-keystore.jks

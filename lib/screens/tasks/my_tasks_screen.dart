@@ -425,10 +425,10 @@ class _PostedTaskList extends StatelessWidget {
     final ok = await context
         .read<TaskProvider>()
         .cancelTask(t.id, hasHelper: hasHelper);
-    // Show immediate local notification for accepted-task cancellations.
+    // Show immediate local notification for ALL task cancellations.
     // Uses workmate4u_payment (Importance.max) to guarantee heads-up popup
     // independently of FCM delivery and channel settings.
-    if (ok && hasHelper) {
+    if (ok) {
       NotificationService.showCancellationNotification(t.title)
           .catchError((_) {});
     }

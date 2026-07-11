@@ -3345,12 +3345,43 @@ def delete_task(task_id):
             if task['status'] in ('completed', 'paid'):
                 return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
 
+            task_title = task.get('title', '')
+
             # Clean up all FK references then delete the task
             _safe_delete_tasks(cursor, task_id)
-
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
+            # Store cancellation confirmation in DB for the poster
+            try:
+                cursor.execute('SAVEPOINT sp_del_notif')
+                import json as _json_del
+                _now_del = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'task_cancelled_confirmation',
+                      'Task Cancelled \u2705',
+                      f'Your task "{task_title}" has been cancelled and removed.',
+                      'unread', _json_del.dumps({'type': 'task_cancelled_confirmation'}), _now_del))
+                cursor.execute('RELEASE SAVEPOINT sp_del_notif')
+            except Exception:
+                try: cursor.execute('ROLLBACK TO SAVEPOINT sp_del_notif')
+                except Exception: pass
+
         print(f"✅ Task {task_id} deleted by user {request.user_id}")
+
+        # FCM push — confirm to poster (same pattern as task_posted)
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                'Task Cancelled \u2705',
+                f'Your task "{task_title}" has been cancelled and removed.',
+                data={'type': 'task_cancelled_confirmation', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception as _fcm_del_err:
+            print(f'[FCM] \u274c delete_task cancel notify failed: {_fcm_del_err}')
+
         return jsonify({'success': True, 'message': 'Task deleted successfully'})
     except Exception as e:
         print(f"❌ Error in delete_task: {e}")

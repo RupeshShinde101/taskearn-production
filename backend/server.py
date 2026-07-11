@@ -2300,14 +2300,19 @@ def change_password():
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
-    """Get all active tasks (non-expired) with optional pagination"""
+    """Get all active tasks (non-expired) with optional pagination and filtering"""
     import datetime
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     # Pagination params
     page = request.args.get('page', type=int)
-    limit = request.args.get('limit', 20, type=int)
+    limit = request.args.get('limit', request.args.get('per_page', 20, type=int), type=int)
     limit = min(max(limit, 1), 100)  # clamp 1-100
+
+    # Filter params
+    category_filter = request.args.get('category', '').strip()
+    max_budget = request.args.get('max_budget', type=float)
+    min_budget = request.args.get('min_budget', type=float)
     
     # Throttle cleanup: run at most once every 5 minutes per process
     global _last_cleanup_time
@@ -2324,12 +2329,23 @@ def get_tasks():
     
     try:
         with get_db() as (cursor, conn):
-            # Build query — JOIN users to avoid N+1 queries per task
+            # Build WHERE clause with optional filters
             base_where = f"WHERE t.status = 'active' AND t.expires_at > {PH}"
+            base_params = [now]
+
+            if category_filter and category_filter != 'all':
+                base_where += f" AND t.category = {PH}"
+                base_params.append(category_filter)
+            if max_budget is not None:
+                base_where += f" AND t.price <= {PH}"
+                base_params.append(max_budget)
+            if min_budget is not None:
+                base_where += f" AND t.price >= {PH}"
+                base_params.append(min_budget)
             
             if page is not None:
                 # Paginated mode
-                cursor.execute(f'SELECT COUNT(*) as total FROM tasks t {base_where}', (now,))
+                cursor.execute(f'SELECT COUNT(*) as total FROM tasks t {base_where}', tuple(base_params))
                 total = dict_from_row(cursor.fetchone())['total']
                 
                 offset = (page - 1) * limit
@@ -2346,7 +2362,7 @@ def get_tasks():
                     {base_where}
                     ORDER BY t.posted_at DESC
                     LIMIT {PH} OFFSET {PH}
-                ''', (now, limit, offset))
+                ''', tuple(base_params) + (limit, offset))
             else:
                 # Legacy: return all active (with safety limit), single JOIN
                 total = None
@@ -2363,7 +2379,7 @@ def get_tasks():
                     {base_where}
                     ORDER BY t.posted_at DESC
                     LIMIT 200
-                ''', (now,))
+                ''', tuple(base_params))
             
             rows = cursor.fetchall()
             
@@ -9745,8 +9761,8 @@ def search_tasks():
     """Search tasks by keyword with server-side filtering"""
     keyword = request.args.get('q', '').strip()
     category = request.args.get('category', '').strip()
-    min_price = request.args.get('min_price', type=float)
-    max_price = request.args.get('max_price', type=float)
+    min_price = request.args.get('min_price', type=float) or request.args.get('min_budget', type=float)
+    max_price = request.args.get('max_price', type=float) or request.args.get('max_budget', type=float)
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 20, type=int)
     limit = min(max(limit, 1), 100)

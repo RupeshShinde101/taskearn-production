@@ -152,6 +152,20 @@ class _BrowseScreenState extends State<BrowseScreen> {
     );
   }
 
+  void _clearFilters() {
+    setState(() {
+      _selectedCategory = 'all';
+      _maxBudget = 5000;
+      _searchCtrl.clear();
+    });
+    _applyFilters();
+  }
+
+  bool get _hasActiveFilters =>
+      _selectedCategory != 'all' ||
+      _maxBudget < 5000 ||
+      _searchCtrl.text.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -197,19 +211,35 @@ class _BrowseScreenState extends State<BrowseScreen> {
                 }
 
                 if (tasks.browseTasks.isEmpty) {
+                  final filtersActive = _hasActiveFilters;
                   return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.inbox_outlined,
-                            size: 64, color: AppColors.grayLight),
+                        Icon(
+                          filtersActive ? Icons.filter_list_off : Icons.inbox_outlined,
+                          size: 64, color: AppColors.grayLight),
                         const SizedBox(height: 12),
-                        const Text('No tasks available'),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: _applyFilters,
-                          child: const Text('Refresh'),
+                        Text(
+                          filtersActive
+                              ? 'No tasks match your filters'
+                              : 'No tasks available',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600,
+                              color: AppColors.gray),
                         ),
+                        const SizedBox(height: 8),
+                        if (filtersActive)
+                          ElevatedButton.icon(
+                            onPressed: _clearFilters,
+                            icon: const Icon(Icons.close, size: 16),
+                            label: const Text('Clear Filters'),
+                          )
+                        else
+                          TextButton(
+                            onPressed: _applyFilters,
+                            child: const Text('Refresh'),
+                          ),
                       ],
                     ),
                   );

@@ -192,9 +192,12 @@ class TaskProvider extends ChangeNotifier {
         endpoint = '/tasks/search';
         params['q'] = search;
         params['limit'] = '20';
+        if (category != null && category != 'all') params['category'] = category;
+        if (maxBudget != null) params['max_budget'] = '$maxBudget';
+        if (minBudget != null) params['min_budget'] = '$minBudget';
       } else {
         endpoint = '/tasks';
-        params['per_page'] = '20';
+        params['limit'] = '20';
       }
 
       final data = await ApiService.get(endpoint, queryParams: params);

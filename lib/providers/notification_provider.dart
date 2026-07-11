@@ -6,12 +6,18 @@ import '../services/storage_service.dart';
 /// Key for storing the UTC timestamp of the last "clear all" action.
 const _kClearedAtKey = 'notif_cleared_at';
 
+/// Key for persisting the set of notification IDs the user has read locally.
+/// Comma-separated string of IDs (e.g. "12,45,78").
+const _kReadIdsKey = 'notif_read_ids';
+
 class NotificationProvider extends ChangeNotifier {
   List<AppNotification> _notifications = [];
   int _unreadCount = 0;
   bool _loading = false;
   // Tracks IDs marked read locally so re-fetches don't revert the read state.
+  // This set is also persisted to storage so it survives app restarts.
   final Set<String> _locallyReadIds = {};
+  bool _readIdsLoaded = false;
 
   List<AppNotification> get notifications => _notifications;
   int get unreadCount => _unreadCount;
@@ -20,6 +26,15 @@ class NotificationProvider extends ChangeNotifier {
   Future<void> fetchNotifications() async {
     _loading = true;
     notifyListeners();
+
+    // Load persisted read IDs on the first fetch so the overlay survives restarts.
+    if (!_readIdsLoaded) {
+      _readIdsLoaded = true;
+      final stored = StorageService.getString(_kReadIdsKey) ?? '';
+      if (stored.isNotEmpty) {
+        _locallyReadIds.addAll(stored.split(',').where((s) => s.isNotEmpty));
+      }
+    }
 
     try {
       final data = await ApiService.get('/notifications');
@@ -58,6 +73,8 @@ class NotificationProvider extends ChangeNotifier {
   Future<void> markRead(String id) async {
     // Optimistic update first — persists even if the API call fails.
     _locallyReadIds.add(id);
+    // Persist to storage so the read state survives app restarts.
+    await StorageService.setString(_kReadIdsKey, _locallyReadIds.join(','));
     final idx = _notifications.indexWhere((n) => n.id == id);
     if (idx >= 0 && !_notifications[idx].isRead) {
       _notifications[idx] = AppNotification.fromJson(
@@ -79,6 +96,7 @@ class NotificationProvider extends ChangeNotifier {
 
     // Optimistic clear — update UI immediately
     _locallyReadIds.clear();
+    await StorageService.setString(_kReadIdsKey, '');
     _notifications = [];
     _unreadCount = 0;
     notifyListeners();

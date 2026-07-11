@@ -37,7 +37,16 @@ class AppNotification {
       return DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
     }
     if (value is String) {
-      final parsed = DateTime.tryParse(value);
+      // Normalize PostgreSQL "YYYY-MM-DD HH:MM:SS.ffffff" (space separator, no TZ)
+      // to ISO 8601 so Dart can parse it.
+      String s = value;
+      if (s.contains(' ') && !s.contains('T')) {
+        s = s.replaceFirst(' ', 'T');
+      }
+      // If there is no timezone info at all, the backend stored UTC — append Z.
+      final hasZone = s.contains('+') || s.toUpperCase().contains('Z');
+      if (!hasZone) s += 'Z';
+      final parsed = DateTime.tryParse(s);
       if (parsed != null) return parsed.toLocal();
     }
     return DateTime.now();

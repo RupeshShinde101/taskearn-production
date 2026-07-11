@@ -3027,31 +3027,9 @@ def poster_cancel_accepted_task(task_id):
             helper_id = task['accepted_by']
             task_title = task['title']
 
-            # Notify helper BEFORE deletion (notification keeps task_id for reference,
-            # but task row itself will be removed). Use SAVEPOINT so a notif failure
-            # does not block the deletion.
-            if helper_id:
-                try:
-                    cursor.execute('SAVEPOINT sp_notify')
-                    import json as _json
-                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    msg = f'The poster has cancelled "{task_title}". The task has been removed.'
-                    if reason:
-                        msg += f' Reason: {reason}'
-                    notif_data = _json.dumps({'type': 'system'})
-                    cursor.execute(f'''
-                        INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
-                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (helper_id, 'task_cancelled_by_poster',
-                          'Task Cancelled by Poster ⚠️', msg,
-                          'unread', notif_data, now))
-                    cursor.execute('RELEASE SAVEPOINT sp_notify')
-                except Exception as notif_err:
-                    print(f"⚠️ Failed to create poster-cancel notification: {notif_err}")
-                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_notify')
-                    except Exception: pass
-
             # Permanently delete task and clean up FK references
+            # NOTE: helper + poster DB notifications are inserted AFTER this cleanup
+            # so they are never caught by the "DELETE FROM notifications WHERE task_id=X".
             for cleanup_sql in [
                 f'DELETE FROM notifications WHERE task_id = {PH}',
                 f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
@@ -3089,6 +3067,29 @@ def poster_cancel_accepted_task(task_id):
                 print(f"⚠️ Failed to create poster cancel DB notification: {_pn_err}")
                 try: cursor.execute('ROLLBACK TO SAVEPOINT sp_poster_notif')
                 except Exception: pass
+
+            # Store cancellation notification for the helper too.
+            # Done AFTER task deletion + cleanup, WITHOUT task_id, so it is never
+            # deleted by the "DELETE FROM notifications WHERE task_id=X" cleanup.
+            if helper_id:
+                try:
+                    cursor.execute('SAVEPOINT sp_helper_notif')
+                    import json as _json_helper
+                    _now_helper = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    _helper_msg = f'The poster has cancelled task "{task_title}" and removed it.'
+                    if reason:
+                        _helper_msg += f' Reason: {reason}'
+                    cursor.execute(f'''
+                        INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (helper_id, 'task_cancelled_by_poster',
+                          'Task Cancelled by Poster ⚠️', _helper_msg,
+                          'unread', _json_helper.dumps({'type': 'task_cancelled_by_poster'}), _now_helper))
+                    cursor.execute('RELEASE SAVEPOINT sp_helper_notif')
+                except Exception as _hn_err:
+                    print(f"⚠️ Failed to create helper cancel DB notification: {_hn_err}")
+                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_helper_notif')
+                    except Exception: pass
 
         print(f"✅ Poster {request.user_id} cancelled & deleted task {task_id} (helper {helper_id})")
 

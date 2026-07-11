@@ -5112,6 +5112,7 @@ def add_money_to_wallet():
     # FCM push — notify user their wallet has been topped up
     try:
         cashback_msg_fcm = f' (includes ₹{cashback:.2f} cashback!)' if cashback > 0 else ''
+        print(f'[FCM] Sending wallet_topup to user {request.user_id}')
         send_fcm_to_user(
             request.user_id,
             'Wallet Topped Up! 💰',
@@ -5119,8 +5120,8 @@ def add_money_to_wallet():
             data={'type': 'wallet_topup', 'amount': str(amount), 'new_balance': str(new_balance)},
             channel='workmate4u_payment',
         )
-    except Exception:
-        pass
+    except Exception as _fcm_wallet_err:
+        print(f'[FCM] ❌ wallet_topup FCM failed: {_fcm_wallet_err}')
 
     debt_cleared = new_balance >= 0
     return jsonify({

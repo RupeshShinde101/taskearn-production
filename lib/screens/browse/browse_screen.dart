@@ -241,34 +241,71 @@ class _BrowseScreenState extends State<BrowseScreen> {
                 if (tasks.browseTasks.isEmpty) {
                   final filtersActive = _hasActiveFilters;
                   return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          filtersActive ? Icons.filter_list_off : Icons.inbox_outlined,
-                          size: 64, color: AppColors.grayLight),
-                        const SizedBox(height: 12),
-                        Text(
-                          filtersActive
-                              ? 'No tasks match your filters'
-                              : 'No tasks available',
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600,
-                              color: AppColors.gray),
-                        ),
-                        const SizedBox(height: 8),
-                        if (filtersActive)
-                          ElevatedButton.icon(
-                            onPressed: _clearFilters,
-                            icon: const Icon(Icons.close, size: 16),
-                            label: const Text('Clear Filters'),
-                          )
-                        else
-                          TextButton(
-                            onPressed: _applyFilters,
-                            child: const Text('Refresh'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: AppColors.grayLight.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              filtersActive
+                                  ? Icons.search_off_rounded
+                                  : Icons.inbox_outlined,
+                              size: 32,
+                              color: AppColors.gray,
+                            ),
                           ),
-                      ],
+                          const SizedBox(height: 16),
+                          Text(
+                            filtersActive
+                                ? 'No tasks match your filters'
+                                : 'No tasks available',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.dark,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            filtersActive
+                                ? 'Try adjusting or clearing your filters'
+                                : 'Check back later for new tasks',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.gray,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          if (filtersActive)
+                            OutlinedButton.icon(
+                              onPressed: _clearFilters,
+                              icon: const Icon(Icons.close_rounded, size: 16),
+                              label: const Text('Clear Filters'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(color: AppColors.primary),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24)),
+                              ),
+                            )
+                          else
+                            TextButton(
+                              onPressed: _applyFilters,
+                              child: const Text('Refresh'),
+                            ),
+                        ],
+                      ),
                     ),
                   );
                 }

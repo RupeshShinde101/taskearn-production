@@ -14,6 +14,16 @@ android {
     ndkVersion = flutter.ndkVersion
 
     signingConfigs {
+        // Shared debug keystore committed to the repo so ALL developers use the
+        // same SHA-1 fingerprint (C3:AB:41:A8:...) for debug builds.
+        // IMPORTANT: register this SHA-1 in Firebase Console before teammates
+        // can use Google Sign-In in debug builds (see SHA-1 registration guide).
+        getByName("debug") {
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            storeFile = file("keystore/debug-keystore.jks")
+            storePassword = "android"
+        }
         create("release") {
             keyAlias = "upload"
             keyPassword = "Cbzxp#3422@"
@@ -46,8 +56,7 @@ android {
 
     buildTypes {
         debug {
-            // Uses the default Android debug keystore (~/.android/debug.keystore)
-            // whose SHA-1 is registered in Firebase Console.
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             signingConfig = signingConfigs.getByName("release")

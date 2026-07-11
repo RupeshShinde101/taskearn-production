@@ -6,6 +6,7 @@ import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
+import '../../services/location_service.dart';
 
 class BrowseScreen extends StatefulWidget {
   const BrowseScreen({super.key});
@@ -21,19 +22,36 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _radiusKm = 10;
   Timer? _searchDebounce;
 
+  // User's current GPS location for radius filtering
+  double? _userLat;
+  double? _userLng;
+  bool _locationDenied = false;
+
   @override
   void initState() {
     super.initState();
     _searchCtrl.addListener(_onSearchChanged);
-    // Defer until after first build to avoid setState-during-build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      context.read<TaskProvider>().fetchBrowseTasks(
-            category: _selectedCategory,
-            radiusKm: _radiusKm,
-            refresh: true,
-          );
+      // Fetch location first, then load tasks so radius filter applies immediately
+      await _fetchLocation();
+      if (!mounted) return;
+      _applyFilters();
     });
+  }
+
+  Future<void> _fetchLocation() async {
+    final pos = await LocationService.getCurrentLocation();
+    if (!mounted) return;
+    if (pos != null) {
+      setState(() {
+        _userLat = pos.latitude;
+        _userLng = pos.longitude;
+        _locationDenied = false;
+      });
+    } else {
+      setState(() => _locationDenied = true);
+    }
   }
 
   @override
@@ -54,7 +72,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
           maxBudget: _maxBudget < 5000 ? _maxBudget : null,
-          radiusKm: _radiusKm,
+          radiusKm: _userLat != null ? _radiusKm : null,
+          lat: _userLat,
+          lng: _userLng,
           refresh: true,
         );
   }
@@ -128,13 +148,21 @@ class _BrowseScreenState extends State<BrowseScreen> {
                       style: const TextStyle(color: AppColors.primary)),
                 ],
               ),
+              if (_locationDenied)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '\u26a0\ufe0f Location permission denied — radius filter disabled',
+                    style: TextStyle(color: AppColors.danger, fontSize: 12),
+                  ),
+                ),
               Slider(
                 value: _radiusKm,
                 min: 1,
                 max: 50,
                 divisions: 49,
-                activeColor: AppColors.primary,
-                onChanged: (v) => setModal(() => _radiusKm = v),
+                activeColor: _locationDenied ? AppColors.grayLight : AppColors.primary,
+                onChanged: _locationDenied ? null : (v) => setModal(() => _radiusKm = v),
               ),
               const SizedBox(height: 12),
               ElevatedButton(

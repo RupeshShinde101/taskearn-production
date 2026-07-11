@@ -2313,6 +2313,9 @@ def get_tasks():
     category_filter = request.args.get('category', '').strip()
     max_budget = request.args.get('max_budget', type=float)
     min_budget = request.args.get('min_budget', type=float)
+    lat = request.args.get('lat', type=float)
+    lng = request.args.get('lng', type=float)
+    radius_km = request.args.get('radius', type=float)
     
     # Throttle cleanup: run at most once every 5 minutes per process
     global _last_cleanup_time
@@ -2342,6 +2345,16 @@ def get_tasks():
             if min_budget is not None:
                 base_where += f" AND t.price >= {PH}"
                 base_params.append(min_budget)
+            if lat is not None and lng is not None and radius_km is not None:
+                # Haversine formula — filter tasks within radius_km of user's location
+                base_where += f"""
+                    AND t.location_lat IS NOT NULL AND t.location_lng IS NOT NULL
+                    AND (6371 * acos(LEAST(1.0,
+                        cos(radians({PH})) * cos(radians(t.location_lat)) *
+                        cos(radians(t.location_lng) - radians({PH})) +
+                        sin(radians({PH})) * sin(radians(t.location_lat))
+                    ))) <= {PH}"""
+                base_params.extend([lat, lng, lat, radius_km])
             
             if page is not None:
                 # Paginated mode

@@ -457,9 +457,6 @@ class NotificationService {
       final notification = message.notification;
       final type = message.data['type']?.toString() ?? '';
 
-      // task_cancelled_confirmation is shown directly from Flutter (my_tasks_screen)
-      // immediately after the cancel API returns success.  Skip here to avoid duplicate.
-      if (type == 'task_cancelled_confirmation') return;
 
       final isMatch = type == 'task_matched' || type == 'matched_task' ||
           type == 'skill_matched' || type == 'nearby_task';

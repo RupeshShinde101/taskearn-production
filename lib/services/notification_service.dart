@@ -363,6 +363,10 @@ class NotificationService {
 
   static FirebaseMessaging get _fcm => FirebaseMessaging.instance;
 
+  // Called after every foreground FCM message so the notification section
+  // can refresh its list without requiring a manual pull-to-refresh.
+  static VoidCallback? onNewNotification;
+
   // Broadcast stream so any widget can listen for tapped notifications.
   static final StreamController<Map<String, dynamic>> onNotificationTap =
       StreamController.broadcast();
@@ -620,6 +624,8 @@ class NotificationService {
           });
         }
       }
+      // Notify providers so the notification section auto-refreshes.
+      onNewNotification?.call();
     });
 
     // ── App opened from a background-state FCM notification ─────────────────

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/notification_model.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/notification_service.dart';
 
 /// Key for storing the UTC timestamp of the last "clear all" action.
 const _kClearedAtKey = 'notif_cleared_at';
@@ -18,6 +19,12 @@ class NotificationProvider extends ChangeNotifier {
   // This set is also persisted to storage so it survives app restarts.
   final Set<String> _locallyReadIds = {};
   bool _readIdsLoaded = false;
+
+  NotificationProvider() {
+    // Auto-refresh the notification list whenever a foreground FCM arrives
+    // so the user doesn't have to manually pull-to-refresh to see new items.
+    NotificationService.onNewNotification = () => fetchNotifications();
+  }
 
   List<AppNotification> get notifications => _notifications;
   int get unreadCount => _unreadCount;

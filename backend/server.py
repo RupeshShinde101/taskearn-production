@@ -439,6 +439,60 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
         print(f'[FCM] Error sending to user {user_id}: {e}')
 
 
+def _safe_delete_tasks(cursor, task_ids):
+    """Remove all FK-referenced rows for the given task ID(s) so the caller can
+    then safely DELETE FROM tasks.
+
+    Preserves history notifications (task_posted, task_expired,
+    task_cancelled_confirmation) by NULLing their task_id rather than
+    deleting them — the poster keeps a record even after the task is gone.
+    wallet_transactions are also NULLed (audit trail).
+
+    Every statement runs inside its own SAVEPOINT so a single table being
+    absent (e.g. in a dev environment) never aborts the whole transaction.
+    """
+    if not task_ids:
+        return
+    if isinstance(task_ids, (int, str)):
+        task_ids = [task_ids]
+    ids = [str(t) for t in task_ids if t is not None]
+    if not ids:
+        return
+
+    # IDs come from DB queries (not user input) — safe to interpolate.
+    in_clause = f"({','.join(ids)})"
+    history_types = "('task_posted','task_expired','task_cancelled_confirmation')"
+
+    steps = [
+        # Preserve history notifications — NULL the FK ref instead of deleting
+        f'UPDATE notifications SET task_id = NULL WHERE task_id IN {in_clause} AND notification_type IN {history_types}',
+        # Delete all remaining task-linked notifications (no FK refs left)
+        f'DELETE FROM notifications WHERE task_id IN {in_clause}',
+        # Preserve wallet transaction audit trail — NULL the FK ref
+        f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id IN {in_clause}',
+        # Delete all other FK-referencing rows
+        f'DELETE FROM task_releases WHERE task_id IN {in_clause}',
+        f'DELETE FROM reviews WHERE task_id IN {in_clause}',
+        f'DELETE FROM helper_ratings WHERE task_id IN {in_clause}',
+        f'DELETE FROM task_proofs WHERE task_id IN {in_clause}',
+        f'DELETE FROM chat_messages WHERE task_id IN {in_clause}',
+        f'DELETE FROM location_tracking WHERE task_id IN {in_clause}',
+        f'DELETE FROM sos_alerts WHERE task_id IN {in_clause}',
+        f'DELETE FROM payments WHERE task_id IN {in_clause}',
+    ]
+    for i, sql in enumerate(steps):
+        sp = f'sp_del_{i}'
+        try:
+            cursor.execute(f'SAVEPOINT {sp}')
+            cursor.execute(sql)
+            cursor.execute(f'RELEASE SAVEPOINT {sp}')
+        except Exception:
+            try:
+                cursor.execute(f'ROLLBACK TO SAVEPOINT {sp}')
+            except Exception:
+                pass
+
+
 # ========================================
 # HELPER FUNCTIONS
 # ========================================
@@ -3028,24 +3082,8 @@ def poster_cancel_accepted_task(task_id):
             task_title = task['title']
 
             # Permanently delete task and clean up FK references
-            # NOTE: helper + poster DB notifications are inserted AFTER this cleanup
-            # so they are never caught by the "DELETE FROM notifications WHERE task_id=X".
-            # task_posted notifications are preserved by nulling their task_id first,
-            # so the FK constraint is satisfied before the task row is deleted.
-            for cleanup_sql in [
-                f"UPDATE notifications SET task_id = NULL WHERE task_id = {PH} AND notification_type = 'task_posted'",
-                f'DELETE FROM notifications WHERE task_id = {PH}',
-                f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
-                f'DELETE FROM task_releases WHERE task_id = {PH}',
-                f'DELETE FROM reviews WHERE task_id = {PH}',
-            ]:
-                try:
-                    cursor.execute('SAVEPOINT sp_cleanup')
-                    cursor.execute(cleanup_sql, (task_id,))
-                    cursor.execute('RELEASE SAVEPOINT sp_cleanup')
-                except Exception:
-                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_cleanup')
-                    except Exception: pass
+            # NOTE: helper + poster DB notifications are inserted AFTER this cleanup.
+            _safe_delete_tasks(cursor, task_id)
 
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
@@ -3306,23 +3344,8 @@ def delete_task(task_id):
             if task['status'] in ('completed', 'paid'):
                 return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
 
-            # Clean up foreign key references using SAVEPOINTs
-            # (PostgreSQL aborts entire transaction if a statement fails without savepoint)
-            # Preserve task_posted notifications by nulling their task_id (history),
-            # then delete all remaining task-linked notifications before removing the task.
-            for cleanup_sql in [
-                f"UPDATE notifications SET task_id = NULL WHERE task_id = {PH} AND notification_type = 'task_posted'",
-                f'DELETE FROM notifications WHERE task_id = {PH}',
-                f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
-                f'DELETE FROM task_releases WHERE task_id = {PH}',
-                f'DELETE FROM reviews WHERE task_id = {PH}',
-            ]:
-                try:
-                    cursor.execute('SAVEPOINT sp_cleanup')
-                    cursor.execute(cleanup_sql, (task_id,))
-                    cursor.execute('RELEASE SAVEPOINT sp_cleanup')
-                except Exception:
-                    cursor.execute('ROLLBACK TO SAVEPOINT sp_cleanup')
+            # Clean up all FK references then delete the task
+            _safe_delete_tasks(cursor, task_id)
 
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
@@ -4347,14 +4370,8 @@ def get_user_tasks():
                 old_task_rows = cursor.fetchall()
                 old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_task_rows]
                 if old_ids:
-                    ids_str = ','.join(old_ids)
-                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                       'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
-                        try:
-                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
-                        except Exception:
-                            pass
-                    cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
+                    _safe_delete_tasks(cursor, old_ids)
+                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_ids)})")
                     conn.commit()
             except Exception as cleanup_err:
                 print(f'[/api/user/tasks] 48h cleanup skipped: {cleanup_err}')
@@ -4373,14 +4390,8 @@ def get_user_tasks():
                 completed_old_rows = cursor.fetchall()
                 completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
                 if completed_old_ids:
-                    ids_str = ','.join(completed_old_ids)
-                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                       'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
-                        try:
-                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
-                        except Exception:
-                            pass
-                    cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
+                    _safe_delete_tasks(cursor, completed_old_ids)
+                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(completed_old_ids)})")
                     conn.commit()
             except Exception as cleanup_err2:
                 print(f'[/api/user/tasks] completed 48h cleanup skipped: {cleanup_err2}')
@@ -7296,39 +7307,41 @@ def cleanup_old_tasks():
                 expired_tasks = [dict_from_row(r) for r in cursor.fetchall()]
                 
                 for t in expired_tasks:
-                    # Notify poster before deleting
+                    # Notify poster — insert WITHOUT task_id so there is no FK
+                    # reference on a row that is about to be deleted.
                     notif_data = json.dumps({'type': 'task', 'taskId': t['id']})
                     try:
                         cursor.execute(f'''
-                            INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
-                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                        ''', (t['posted_by'], t['id'], 'task_expired',
+                            INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (t['posted_by'], 'task_expired',
                               'Task Expired ⏰',
                               f'Your task "{t["title"]}" has expired without being accepted. You can post it again.',
                               'unread', notif_data, now))
                     except Exception:
                         pass
-                    # Cascade delete related records then the task itself
-                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                       'location_tracking', 'sos_alerts']:
-                        try:
-                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id = {PH}', (t['id'],))
-                        except Exception:
-                            pass
+                    # Clean up all FK references then delete the task
+                    _safe_delete_tasks(cursor, t['id'])
                     cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (t['id'],))
                 
                 if expired_tasks:
                     print(f"✅ Deleted {len(expired_tasks)} expired tasks and notified posters")
                 
-                # Delete completed/paid tasks older than 30 days
+                # Delete completed/paid tasks older than 30 days.
+                # Must fetch IDs first and use _safe_delete_tasks to avoid FK violations.
                 cursor.execute(f'''
-                    DELETE FROM tasks 
+                    SELECT id FROM tasks
                     WHERE (status = 'completed' OR status = 'paid')
                     AND completed_at IS NOT NULL
                     AND completed_at < {PH}
                 ''', (thirty_days_ago,))
-                
-                deleted_count = cursor.rowcount
+                old_rows = cursor.fetchall()
+                old_task_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_rows]
+                deleted_count = 0
+                if old_task_ids:
+                    _safe_delete_tasks(cursor, old_task_ids)
+                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_task_ids)})")
+                    deleted_count = cursor.rowcount
                 
                 if deleted_count > 0:
                     print(f"✅ Cleaned up {deleted_count} old completed/paid tasks")

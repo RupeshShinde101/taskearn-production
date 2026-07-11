@@ -201,7 +201,7 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       title = data['title'] ?? 'Task Cancelled ✅';
       body = data['body'] ?? 'Your task has been cancelled and removed.';
       channelId = 'workmate4u_main';
-      importance = Importance.high;
+      importance = Importance.max;
       break;
 
     // ── Poster receives confirmation when their task was posted ──────────────
@@ -209,7 +209,7 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       title = data['title'] ?? 'Task Posted! 📋';
       body = data['body'] ?? 'Your task has been posted successfully.';
       channelId = 'workmate4u_main';
-      importance = Importance.high;
+      importance = Importance.max;
       break;
 
     // ── Wallet / withdrawal ────────────────────────────────────────────────
@@ -462,7 +462,8 @@ class NotificationService {
           type == 'payment_released' || type == 'payment_received' ||
           type == 'payment_done' || type == 'withdrawal_approved' ||
           type == 'withdrawal_rejected' || type == 'withdrawal_requested' ||
-          type == 'task_final_completed';
+          type == 'task_final_completed' || type == 'wallet_topup' ||
+          type == 'wallet_credited';
       final isAdmin = type == 'account_suspended' || type == 'admin_suspended' ||
           type == 'account_banned' || type == 'admin_banned' ||
           type == 'account_restored' || type == 'admin_warning' ||
@@ -582,6 +583,11 @@ class NotificationService {
             case 'task_cancelled_confirmation':
               msgTitle ??= 'Task Cancelled ✅';
               msgBody ??= 'Your task has been cancelled and removed.';
+              break;
+            case 'wallet_topup':
+            case 'wallet_credited':
+              msgTitle ??= 'Wallet Topped Up! 💰';
+              msgBody ??= 'Your wallet has been credited.';
               break;
             default:
               break;
@@ -730,6 +736,8 @@ class NotificationService {
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
         color: Color(0xFF0EA5E9),
+        enableVibration: true,
+        playSound: true,
       );
     }
     const iosDetails = DarwinNotificationDetails();

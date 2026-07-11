@@ -5036,7 +5036,20 @@ def add_money_to_wallet():
                   'unread', json.dumps({'type': 'success', 'amount': amount, 'cashback': cashback}), now))
     except Exception as notif_err:
         print(f"⚠️ Failed to create topup notification: {notif_err}")
-    
+
+    # FCM push — notify user their wallet has been topped up
+    try:
+        cashback_msg_fcm = f' (includes ₹{cashback:.2f} cashback!)' if cashback > 0 else ''
+        send_fcm_to_user(
+            request.user_id,
+            'Wallet Topped Up! 💰',
+            f'₹{amount:.2f} added to your wallet{cashback_msg_fcm}. New balance: ₹{new_balance:.2f}',
+            data={'type': 'wallet_topup', 'amount': str(amount), 'new_balance': str(new_balance)},
+            channel='workmate4u_payment',
+        )
+    except Exception:
+        pass
+
     debt_cleared = new_balance >= 0
     return jsonify({
         'success': True,

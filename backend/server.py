@@ -3331,7 +3331,7 @@ def delete_task(task_id):
     """Delete a task (only poster can delete)"""
     try:
         with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT posted_by, status FROM tasks WHERE id = {PH}', (task_id,))
+            cursor.execute(f'SELECT posted_by, status, title FROM tasks WHERE id = {PH}', (task_id,))
             task = cursor.fetchone()
 
             if not task:

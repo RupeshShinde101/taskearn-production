@@ -5408,8 +5408,8 @@ def request_withdrawal():
             data={'type': 'withdrawal_requested', 'amount': str(amount)},
             channel='workmate4u_payment',
         )
-    except Exception:
-        pass
+    except Exception as _fcm_wdl_req_err:
+        print(f'[FCM] ❌ withdrawal_requested FCM failed: {_fcm_wdl_req_err}')
 
     print(f"   New balance: ₹{new_balance:.2f}")
     print(f"   Withdrawal ID: {withdrawal_id}")
@@ -6994,9 +6994,25 @@ def verify_wallet_topup():
         print(f"✅ [WALLET] Wallet credited successfully: ₹{credit_amount}")
         print(f"[WALLET] New balance: ₹{new_balance}")
         print(f"[WALLET] Transaction recorded with ID: {wallet_id}")
-        
+
+        # DB notification for the user
+        try:
+            import json as _vwt_json
+            _vwt_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            with get_db() as (_vwt_cur, _vwt_conn):
+                _vwt_cur.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'wallet_topup',
+                      'Wallet Topped Up! 💰',
+                      f'₹{credit_amount:.2f} added to your wallet via Razorpay. New balance: ₹{new_balance:.2f}',
+                      'unread', _vwt_json.dumps({'type': 'wallet_topup', 'amount': credit_amount}), _vwt_now))
+        except Exception as _vwt_notif_err:
+            print(f'⚠️ [WALLET] verify DB notification failed: {_vwt_notif_err}')
+
         # FCM push — notify user their wallet has been topped up
         try:
+            print(f'[FCM] Sending wallet_topup (verify) to user {request.user_id}')
             send_fcm_to_user(
                 request.user_id,
                 '💰 Wallet Topped Up!',
@@ -7008,8 +7024,8 @@ def verify_wallet_topup():
                 },
                 channel='workmate4u_payment',
             )
-        except Exception:
-            pass
+        except Exception as _fcm_verify_err:
+            print(f'[FCM] ❌ verify_wallet_topup FCM failed: {_fcm_verify_err}')
 
         return jsonify({
             'success': True,
@@ -7228,6 +7244,32 @@ def payment_webhook():
                         ))
                         
                         print(f"✅ [WEBHOOK] Wallet credited: ₹{amount} → new balance ₹{new_balance}")
+
+                        # DB notification for the user
+                        import json as _wh_json
+                        try:
+                            cursor.execute(f'''
+                                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                            ''', (topup_user_id, 'wallet_topup',
+                                  'Wallet Topped Up! 💰',
+                                  f'₹{amount:.2f} added to your wallet via Razorpay. New balance: ₹{new_balance:.2f}',
+                                  'unread', _wh_json.dumps({'type': 'wallet_topup', 'amount': amount}), now))
+                        except Exception as _wh_notif_err:
+                            print(f'⚠️ [WEBHOOK] DB notification failed: {_wh_notif_err}')
+
+                        # FCM push
+                        try:
+                            print(f'[FCM] Sending wallet_topup (webhook) to user {topup_user_id}')
+                            send_fcm_to_user(
+                                topup_user_id,
+                                'Wallet Topped Up! 💰',
+                                f'₹{amount:.2f} added to your wallet. New balance: ₹{new_balance:.2f}',
+                                data={'type': 'wallet_topup', 'amount': str(amount), 'new_balance': str(new_balance)},
+                                channel='workmate4u_payment',
+                            )
+                        except Exception as _wh_fcm_err:
+                            print(f'[FCM] ❌ webhook wallet_topup FCM failed: {_wh_fcm_err}')
                 
                 conn.commit()
         

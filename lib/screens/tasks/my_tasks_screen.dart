@@ -8,6 +8,7 @@ import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
+import '../../services/notification_service.dart';
 import 'edit_task_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
@@ -424,6 +425,10 @@ class _PostedTaskList extends StatelessWidget {
     final ok = await context
         .read<TaskProvider>()
         .cancelTask(t.id, hasHelper: hasHelper);
+    if (ok && hasHelper) {
+      // Show a local notification immediately — doesn't depend on FCM round-trip
+      await NotificationService.showCancellationNotification(t.title);
+    }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(ok ? 'Task cancelled.' : 'Failed to cancel task.'),

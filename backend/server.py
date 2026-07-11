@@ -7573,7 +7573,6 @@ def get_notifications():
     """Get notifications for current user"""
     try:
         with get_db() as (cursor, conn):
-            # Get unread notifications
             cursor.execute(f'''
                 SELECT n.*, t.title as task_title
                 FROM notifications n
@@ -7584,7 +7583,21 @@ def get_notifications():
             ''', (request.user_id,))
             
             rows = cursor.fetchall()
-            notifications = [dict_from_row(row) for row in rows]
+            notifications = []
+            for row in rows:
+                n = dict_from_row(row)
+                # Flask 3.0 serialises datetime as RFC 7231 ("Thu, 11 Jul 2024 10:35:42 GMT")
+                # which Dart's DateTime.tryParse cannot handle.  Convert to ISO 8601 explicitly.
+                for field in ('created_at', 'read_at'):
+                    val = n.get(field)
+                    if hasattr(val, 'isoformat'):
+                        # psycopg2 returns naive datetimes for TIMESTAMP columns;
+                        # the column stores UTC values, so attach the UTC marker.
+                        if getattr(val, 'tzinfo', None) is None:
+                            import datetime as _dt
+                            val = val.replace(tzinfo=_dt.timezone.utc)
+                        n[field] = val.isoformat()
+                notifications.append(n)
             
             return jsonify({
                 'success': True,

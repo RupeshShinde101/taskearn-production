@@ -188,12 +188,28 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       importance = Importance.high;
       break;
 
-    // ── Poster cancelled the accepted task ─────────────────────────────────
+    // ── Poster cancelled the accepted task (helper receives this) ───────────
     case 'task_cancelled_by_poster':
       title = data['title'] ?? 'Task Cancelled ⚠️';
       body = data['body'] ?? 'The poster has cancelled the task.';
       channelId = 'workmate4u_main';
       importance = Importance.max;
+      break;
+
+    // ── Poster receives confirmation after they cancel their own task ────────
+    case 'task_cancelled_confirmation':
+      title = data['title'] ?? 'Task Cancelled ✅';
+      body = data['body'] ?? 'Your task has been cancelled and removed.';
+      channelId = 'workmate4u_main';
+      importance = Importance.high;
+      break;
+
+    // ── Poster receives confirmation when their task was posted ──────────────
+    case 'task_posted':
+      title = data['title'] ?? 'Task Posted! 📋';
+      body = data['body'] ?? 'Your task has been posted successfully.';
+      channelId = 'workmate4u_main';
+      importance = Importance.high;
       break;
 
     // ── Wallet / withdrawal ────────────────────────────────────────────────
@@ -558,7 +574,16 @@ class NotificationService {
             case 'admin_balance_adjusted':
               msgTitle ??= 'Wallet Balance Updated U0001f4b0';
               msgBody ??= 'Your wallet balance has been adjusted by admin.';
-              break;            default:
+              break;
+            case 'task_posted':
+              msgTitle ??= 'Task Posted! 📋';
+              msgBody ??= 'Your task has been posted successfully.';
+              break;
+            case 'task_cancelled_confirmation':
+              msgTitle ??= 'Task Cancelled ✅';
+              msgBody ??= 'Your task has been cancelled and removed.';
+              break;
+            default:
               break;
           }
         }

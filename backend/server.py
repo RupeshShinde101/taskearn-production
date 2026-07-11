@@ -2603,6 +2603,18 @@ def create_task():
             
             print(f"✅ Task created successfully with ID: {task_id}")
         
+        # FCM push — confirm to poster that their task was posted
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                'Task Posted! 📋',
+                f'Your task "{data["title"]}" has been posted. Budget: ₹{data["price"]}. It will expire in 24 hours.',
+                data={'type': 'task_posted', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
         # Skill-match and nearby notifications are triggered by the Flutter app
         # via dedicated endpoints (POST /tasks/<id>/notify-skills and
         # POST /tasks/<id>/notify-nearby) after receiving the task ID here.
@@ -3073,6 +3085,21 @@ def poster_cancel_accepted_task(task_id):
                 )
             except Exception:
                 pass
+
+        # FCM push — confirm to poster that the cancellation was processed
+        try:
+            _poster_cancel_msg = f'Your task "{task_title}" has been cancelled and removed.'
+            if reason:
+                _poster_cancel_msg += f' Reason: {reason}'
+            send_fcm_to_user(
+                request.user_id,
+                'Task Cancelled ✅',
+                _poster_cancel_msg,
+                data={'type': 'task_cancelled_confirmation', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
 
         return jsonify({
             'success': True,

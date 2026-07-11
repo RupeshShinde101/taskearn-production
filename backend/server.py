@@ -3147,14 +3147,15 @@ def poster_cancel_accepted_task(task_id):
                     data={'type': 'task_cancelled_by_poster', 'task_id': str(task_id)},
                     channel='workmate4u_main',
                 )
-            except Exception:
-                pass
+            except Exception as _fcm_h_err:
+                print(f'[FCM] ❌ Helper cancel notify failed: {_fcm_h_err}')
 
         # FCM push — confirm to poster that the cancellation was processed
         try:
             _poster_cancel_msg = f'Your task "{task_title}" has been cancelled and removed.'
             if reason:
                 _poster_cancel_msg += f' Reason: {reason}'
+            print(f'[FCM] Sending task_cancelled_confirmation to poster {request.user_id}')
             send_fcm_to_user(
                 request.user_id,
                 'Task Cancelled ✅',
@@ -3162,8 +3163,8 @@ def poster_cancel_accepted_task(task_id):
                 data={'type': 'task_cancelled_confirmation', 'task_id': str(task_id)},
                 channel='workmate4u_main',
             )
-        except Exception:
-            pass
+        except Exception as _fcm_p_err:
+            print(f'[FCM] ❌ Poster cancel notify failed: {_fcm_p_err}')
 
         return jsonify({
             'success': True,

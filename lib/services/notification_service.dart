@@ -683,13 +683,27 @@ class NotificationService {
     );
   }
 
-  /// Shows a local notification when the user's task has been cancelled.
-  /// Called directly from Flutter (no FCM round-trip) so it appears immediately.
+  /// Shows an immediate local notification when the poster cancels an accepted task.
+  /// Uses workmate4u_payment (Importance.max) so it always shows as a heads-up popup
+  /// regardless of the workmate4u_main channel's importance level on the device.
   static Future<void> showCancellationNotification(String taskTitle) async {
-    await _showLocalNotification(
-      title: 'Task Cancelled ✅',
+    const androidDetails = AndroidNotificationDetails(
+      'workmate4u_payment',
+      'Payments',
+      channelDescription: 'Payment alerts and confirmations',
+      importance: Importance.max,
+      priority: Priority.max,
+      icon: '@mipmap/ic_launcher',
+      color: Color(0xFF10B981),
+      enableVibration: true,
+      playSound: true,
+    );
+    await _local.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: 'Task Cancelled \u2705',
       body: 'Your task "$taskTitle" has been cancelled and removed.',
-      notificationType: 'task_cancelled_confirmation',
+      notificationDetails: const NotificationDetails(android: androidDetails),
+      payload: '{"type":"task_cancelled_confirmation"}',
     );
   }
 

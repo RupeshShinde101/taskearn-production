@@ -38,6 +38,14 @@
           }
         },
         {
+          "client_id": "874101147109-hvk32mheka5lob7qvjooerperremlnpg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.workmate4u.workmate4u",
+            "certificate_hash": "c3ab41a86b24507b192520e3175b138816588945"
+          }
+        },
+        {
           "client_id": "874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com",
           "client_type": 3
         }

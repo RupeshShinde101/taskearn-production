@@ -3030,9 +3030,11 @@ def poster_cancel_accepted_task(task_id):
             # Permanently delete task and clean up FK references
             # NOTE: helper + poster DB notifications are inserted AFTER this cleanup
             # so they are never caught by the "DELETE FROM notifications WHERE task_id=X".
-            # task_posted notifications are preserved so poster keeps their history.
+            # task_posted notifications are preserved by nulling their task_id first,
+            # so the FK constraint is satisfied before the task row is deleted.
             for cleanup_sql in [
-                f"DELETE FROM notifications WHERE task_id = {PH} AND notification_type != 'task_posted'",
+                f"UPDATE notifications SET task_id = NULL WHERE task_id = {PH} AND notification_type = 'task_posted'",
+                f'DELETE FROM notifications WHERE task_id = {PH}',
                 f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
                 f'DELETE FROM task_releases WHERE task_id = {PH}',
                 f'DELETE FROM reviews WHERE task_id = {PH}',
@@ -3306,10 +3308,11 @@ def delete_task(task_id):
 
             # Clean up foreign key references using SAVEPOINTs
             # (PostgreSQL aborts entire transaction if a statement fails without savepoint)
-            # NOTE: task_posted notifications are preserved (notification_type != 'task_posted')
-            # so the poster retains a history of tasks they created even after deletion.
+            # Preserve task_posted notifications by nulling their task_id (history),
+            # then delete all remaining task-linked notifications before removing the task.
             for cleanup_sql in [
-                f"DELETE FROM notifications WHERE task_id = {PH} AND notification_type != 'task_posted'",
+                f"UPDATE notifications SET task_id = NULL WHERE task_id = {PH} AND notification_type = 'task_posted'",
+                f'DELETE FROM notifications WHERE task_id = {PH}',
                 f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
                 f'DELETE FROM task_releases WHERE task_id = {PH}',
                 f'DELETE FROM reviews WHERE task_id = {PH}',

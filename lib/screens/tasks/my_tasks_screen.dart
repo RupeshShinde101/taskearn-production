@@ -425,9 +425,12 @@ class _PostedTaskList extends StatelessWidget {
     final ok = await context
         .read<TaskProvider>()
         .cancelTask(t.id, hasHelper: hasHelper);
-    if (ok && hasHelper) {
-      // Show a local notification immediately — doesn't depend on FCM round-trip
-      await NotificationService.showCancellationNotification(t.title);
+    if (ok) {
+      // Show a local notification immediately — doesn't depend on FCM round-trip.
+      // Only show for accepted tasks (hasHelper); plain posted tasks are silently removed.
+      if (hasHelper) {
+        await NotificationService.showCancellationNotification(t.title);
+      }
     }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

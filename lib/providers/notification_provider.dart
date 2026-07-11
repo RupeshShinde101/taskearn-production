@@ -120,6 +120,7 @@ class NotificationProvider extends ChangeNotifier {
         'type': n.type,
         'task_id': n.taskId,
         'is_read': n.isRead,
-        'created_at': n.createdAt.toIso8601String(),
+        // Always emit UTC so _parseDateTime doesn't re-apply the timezone offset
+        'created_at': n.createdAt.toUtc().toIso8601String(),
       };
 }

@@ -3030,8 +3030,9 @@ def poster_cancel_accepted_task(task_id):
             # Permanently delete task and clean up FK references
             # NOTE: helper + poster DB notifications are inserted AFTER this cleanup
             # so they are never caught by the "DELETE FROM notifications WHERE task_id=X".
+            # task_posted notifications are preserved so poster keeps their history.
             for cleanup_sql in [
-                f'DELETE FROM notifications WHERE task_id = {PH}',
+                f"DELETE FROM notifications WHERE task_id = {PH} AND notification_type != 'task_posted'",
                 f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
                 f'DELETE FROM task_releases WHERE task_id = {PH}',
                 f'DELETE FROM reviews WHERE task_id = {PH}',
@@ -3305,8 +3306,10 @@ def delete_task(task_id):
 
             # Clean up foreign key references using SAVEPOINTs
             # (PostgreSQL aborts entire transaction if a statement fails without savepoint)
+            # NOTE: task_posted notifications are preserved (notification_type != 'task_posted')
+            # so the poster retains a history of tasks they created even after deletion.
             for cleanup_sql in [
-                f'DELETE FROM notifications WHERE task_id = {PH}',
+                f"DELETE FROM notifications WHERE task_id = {PH} AND notification_type != 'task_posted'",
                 f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
                 f'DELETE FROM task_releases WHERE task_id = {PH}',
                 f'DELETE FROM reviews WHERE task_id = {PH}',

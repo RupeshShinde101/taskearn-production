@@ -3068,6 +3068,28 @@ def poster_cancel_accepted_task(task_id):
 
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
+            # Store cancellation confirmation in DB for the poster
+            # Must be done AFTER the task_id cleanup so it isn't deleted.
+            # No task_id on this record so it persists permanently.
+            try:
+                cursor.execute('SAVEPOINT sp_poster_notif')
+                import json as _json_cancel
+                _now_cancel = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                _poster_db_msg = f'Your task "{task_title}" has been cancelled and removed.'
+                if reason:
+                    _poster_db_msg += f' Reason: {reason}'
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'task_cancelled_confirmation',
+                      'Task Cancelled ✅', _poster_db_msg,
+                      'unread', _json_cancel.dumps({'type': 'task_cancelled_confirmation'}), _now_cancel))
+                cursor.execute('RELEASE SAVEPOINT sp_poster_notif')
+            except Exception as _pn_err:
+                print(f"⚠️ Failed to create poster cancel DB notification: {_pn_err}")
+                try: cursor.execute('ROLLBACK TO SAVEPOINT sp_poster_notif')
+                except Exception: pass
+
         print(f"✅ Poster {request.user_id} cancelled & deleted task {task_id} (helper {helper_id})")
 
         # FCM push — tell helper their task was cancelled

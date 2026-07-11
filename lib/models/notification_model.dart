@@ -22,9 +22,9 @@ class AppNotification {
       id: json['id']?.toString() ?? '',
       title: json['title'] ?? '',
       body: json['body'] ?? json['message'] ?? '',
-      type: json['type'],
+      type: json['notification_type'] ?? json['type'],
       taskId: json['task_id']?.toString(),
-      isRead: json['is_read'] ?? false,
+      isRead: json['status'] == 'read' || (json['is_read'] == true),
       createdAt: _parseDateTime(json['created_at']),
     );
   }

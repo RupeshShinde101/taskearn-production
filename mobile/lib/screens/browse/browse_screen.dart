@@ -20,6 +20,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _maxBudget = 5000;
   double _radiusKm = 10;
   Timer? _searchDebounce;
+  /// Ticks every minute so tasks that cross the 24-h expiry boundary are
+  /// removed from the visible list without needing a manual refresh.
+  Timer? _expiryTicker;
 
   @override
   void initState() {
@@ -34,10 +37,16 @@ class _BrowseScreenState extends State<BrowseScreen> {
             refresh: true,
           );
     });
+    // Trigger a rebuild every minute so expired tasks are wiped from the list
+    // even if the user hasn't refreshed.
+    _expiryTicker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _expiryTicker?.cancel();
     _searchDebounce?.cancel();
     _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();

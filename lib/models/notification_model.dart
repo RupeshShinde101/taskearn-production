@@ -22,9 +22,9 @@ class AppNotification {
       id: json['id']?.toString() ?? '',
       title: json['title'] ?? '',
       body: json['body'] ?? json['message'] ?? '',
-      type: json['type'],
+      type: json['notification_type'] ?? json['type'],
       taskId: json['task_id']?.toString(),
-      isRead: json['is_read'] ?? false,
+      isRead: json['status'] == 'read' || (json['is_read'] == true),
       createdAt: _parseDateTime(json['created_at']),
     );
   }
@@ -37,9 +37,48 @@ class AppNotification {
       return DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
     }
     if (value is String) {
-      final parsed = DateTime.tryParse(value);
+      // 1. Try RFC 7231 HTTP-date: "Thu, 11 Jul 2024 10:35:42 GMT"
+      //    Flask 3.0 DefaultJSONProvider emits this for datetime objects.
+      final httpParsed = _tryParseHttpDate(value);
+      if (httpParsed != null) return httpParsed;
+
+      // 2. Normalize PostgreSQL "YYYY-MM-DD HH:MM:SS" (space, no timezone).
+      String s = value;
+      if (s.contains(' ') && !s.contains('T')) {
+        s = s.replaceFirst(' ', 'T');
+      }
+      // No timezone info → backend stores UTC, append Z.
+      final hasZone = s.contains('+') || s.toUpperCase().contains('Z');
+      if (!hasZone) s += 'Z';
+      final parsed = DateTime.tryParse(s);
       if (parsed != null) return parsed.toLocal();
     }
     return DateTime.now();
+  }
+
+  // Parses RFC 7231 / RFC 2616 HTTP-date: "Thu, 11 Jul 2024 10:35:42 GMT"
+  static const _monthMap = {
+    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4,  'may': 5,  'jun': 6,
+    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+  };
+  static DateTime? _tryParseHttpDate(String s) {
+    try {
+      final clean = s.replaceAll(',', '').trim();
+      final parts = clean.split(RegExp(r'\s+'));
+      // ["Thu", "11", "Jul", "2024", "10:35:42", "GMT"]
+      if (parts.length < 5) return null;
+      final day   = int.tryParse(parts[1]);
+      final month = _monthMap[parts[2].toLowerCase()];
+      final year  = int.tryParse(parts[3]);
+      final time  = parts[4].split(':');
+      if (day == null || month == null || year == null || time.length != 3) return null;
+      final hour = int.tryParse(time[0]);
+      final min  = int.tryParse(time[1]);
+      final sec  = int.tryParse(time[2]);
+      if (hour == null || min == null || sec == null) return null;
+      return DateTime.utc(year, month, day, hour, min, sec).toLocal();
+    } catch (_) {
+      return null;
+    }
   }
 }

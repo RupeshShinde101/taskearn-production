@@ -45,6 +45,23 @@ except ImportError:
 config = get_config()
 app = Flask(__name__)
 
+# ── JSON provider: emit ISO-8601 for datetime objects ────────────────────────
+# Flask 3.0's default provider serialises datetime as RFC-1123 HTTP-date
+# (e.g. "Thu, 12 Jul 2026 10:30:00 GMT") which Dart's DateTime.tryParse
+# cannot read, causing every task timestamp to fall back to DateTime.now().
+# Overriding here ensures every jsonify() call returns proper ISO strings.
+from flask.json.provider import DefaultJSONProvider as _DefaultJSONProvider
+
+class _IsoDateJSONProvider(_DefaultJSONProvider):
+    def default(self, o):
+        if isinstance(o, (datetime.datetime, datetime.date)):
+            return o.isoformat()
+        return super().default(o)
+
+app.json_provider_class = _IsoDateJSONProvider
+app.json = _IsoDateJSONProvider(app)
+# ────────────────────────────────────────────────────────────────────────────
+
 # Rate limiter — protects auth endpoints from brute force
 if _has_limiter:
     limiter = Limiter(

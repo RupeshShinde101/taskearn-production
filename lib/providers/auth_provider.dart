@@ -16,6 +16,9 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   String? _kycSubmitMessage;
+  /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
+  /// so it survives refreshUser() calls where the backend ignores the field.
+  String? _localAvatarUri;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: '874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com',
@@ -80,6 +83,11 @@ class AuthProvider extends ChangeNotifier {
         if (localGender != null) cachedJson['gender'] = localGender;
       }
       _user = User.fromJson(cachedJson);
+      // Load and apply locally-uploaded avatar override
+      _localAvatarUri = StorageService.getString('user_avatar_local');
+      if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
+        _user = _user!.copyWithAvatar(_localAvatarUri);
+      }
       _status = AuthStatus.authenticated;
       notifyListeners(); // show the app immediately
     }
@@ -103,6 +111,10 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      // Re-apply locally-uploaded avatar if server doesn't return one
+      if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
+        _user = _user!.copyWithAvatar(_localAvatarUri);
+      }
       await StorageService.saveUserJson(userJson); // keep cache fresh
       _status = AuthStatus.authenticated;
       _registerFcmToken();
@@ -250,7 +262,9 @@ class AuthProvider extends ChangeNotifier {
       await _googleSignIn.signOut();
     } catch (_) {}
     await StorageService.clearSession();
+    await StorageService.setString('user_avatar_local', '');
     _user = null;
+    _localAvatarUri = null;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
   }
@@ -296,6 +310,11 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      // Always re-apply locally-uploaded avatar — backend ignores the avatar
+      // field on PUT /user/profile so /auth/me won't return our new photo.
+      if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
+        _user = _user!.copyWithAvatar(_localAvatarUri);
+      }
       await StorageService.saveUserJson(userJson); // keep cache fresh
       notifyListeners();
     } catch (e) {
@@ -307,7 +326,7 @@ class AuthProvider extends ChangeNotifier {
     String? name,
     String? bio,
     String? gender,
-    String? avatarPath,
+    String? avatarDataUri,
     List<String>? skills,
     String? phone,
     String? email,
@@ -323,12 +342,27 @@ class AuthProvider extends ChangeNotifier {
       if (skills != null) body['skills'] = skills;
       if (phone != null && phone.trim().isNotEmpty) body['phone'] = phone.trim();
       if (email != null && email.trim().isNotEmpty) body['email'] = email.trim();
+      if (avatarDataUri != null && avatarDataUri.isNotEmpty) {
+        body['profile_photo'] = avatarDataUri;
+      }
 
       await ApiService.put('/user/profile', body: body);
       // Persist gender locally immediately so the home emoji updates even
       // before the backend returns the field in /auth/me response.
       if (gender != null) await StorageService.saveGender(gender);
-      // Always refresh from server so skills and all fields are up-to-date
+
+      // Store avatar locally and apply immediately.
+      // Backend ignores the avatar field on PUT /user/profile, so we keep
+      // it in-memory (_localAvatarUri) and re-apply after every server fetch.
+      if (avatarDataUri != null && avatarDataUri.isNotEmpty) {
+        _localAvatarUri = avatarDataUri;
+        await StorageService.setString('user_avatar_local', avatarDataUri);
+        if (_user != null) {
+          _user = _user!.copyWithAvatar(avatarDataUri);
+          notifyListeners(); // Immediate visual feedback — no waiting for server
+        }
+      }
+
       await refreshUser();
       _loading = false;
       notifyListeners();

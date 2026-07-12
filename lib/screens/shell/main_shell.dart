@@ -11,13 +11,62 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   static const _tabs = [
     '/home',
     '/browse',
     '/my-tasks',
     '/profile',
   ];
+
+  // Tracks the active tab index so didPopRoute can read it without context.
+  int _currentIdx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Called by the OS when the Android back button / gesture is pressed.
+  /// Returning true marks the event as handled (suppresses default app-close).
+  @override
+  Future<bool> didPopRoute() async {
+    if (!mounted) return false;
+    if (_currentIdx != 0) {
+      // Non-home tab → go to Home
+      context.go('/home');
+      return true;
+    }
+    // Home tab → ask before exiting
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Exit App'),
+        content: const Text('Do you want to close the application?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+    if (shouldExit == true && mounted) {
+      SystemNavigator.pop();
+    }
+    return true; // always consumed — never let the OS close the app directly
+  }
 
   void _onTap(int index) {
     context.go(_tabs[index]);
@@ -34,38 +83,9 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final idx = _indexForPath(location);
-    final isHome = idx == 0;
+    _currentIdx = idx; // keep in sync for didPopRoute
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        if (!isHome) {
-          context.go('/home');
-          return;
-        }
-        final shouldExit = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Exit App'),
-            content: const Text('Do you want to close the application?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('No'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('Yes'),
-              ),
-            ],
-          ),
-        );
-        if (shouldExit == true && context.mounted) {
-          SystemNavigator.pop();
-        }
-      },
-      child: Scaffold(
+    return Scaffold(
         body: widget.child,
         bottomNavigationBar: Container(
           decoration: const BoxDecoration(

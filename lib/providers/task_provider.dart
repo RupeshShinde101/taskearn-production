@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
+import 'package:latlong2/latlong.dart';
 
 class TaskProvider extends ChangeNotifier {
   List<Task> _browseTasks = [];
@@ -192,9 +194,12 @@ class TaskProvider extends ChangeNotifier {
         endpoint = '/tasks/search';
         params['q'] = search;
         params['limit'] = '20';
+        if (category != null && category != 'all') params['category'] = category;
+        if (maxBudget != null) params['max_budget'] = '$maxBudget';
+        if (minBudget != null) params['min_budget'] = '$minBudget';
       } else {
         endpoint = '/tasks';
-        params['per_page'] = '20';
+        params['limit'] = '20';
       }
 
       final data = await ApiService.get(endpoint, queryParams: params);
@@ -202,11 +207,21 @@ class TaskProvider extends ChangeNotifier {
       // Posted tasks expire after 24 h — filter client-side in case the backend
       // doesn't clean them up immediately.
       final expiryCutoff = DateTime.now().subtract(const Duration(hours: 24));
-      final tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
+      var tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
         try { return Task.fromJson(j); } catch (_) { return null; }
       }).whereType<Task>()
           .where((t) => t.createdAt.isAfter(expiryCutoff))
           .toList();
+
+      // Client-side radius filter as fallback (backend may not have location index)
+      if (lat != null && lng != null && radiusKm != null) {
+        final userPos = LatLng(lat, lng);
+        tasks = tasks.where((t) {
+          final dist = LocationService.distanceBetween(
+              userPos, LatLng(t.latitude, t.longitude));
+          return dist <= radiusKm;
+        }).toList();
+      }
 
       _browseTasks.addAll(tasks);
       _hasMore = tasks.length == 20;

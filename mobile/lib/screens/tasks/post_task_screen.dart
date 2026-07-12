@@ -29,6 +29,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _dropAddrCtrl = TextEditingController();
 
   String _selectedCategory = 'delivery';
+  /// Stores the last template auto-filled into the description field so we can
+  /// detect whether the user has modified it before replacing on category change.
+  String _lastAutoFilledDesc = '';
   LatLng? _location;
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
@@ -107,13 +110,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Auto-fill description with category-specific prompts/questions.
   /// Called when a category is selected to guide the user on what to describe.
+  /// Replaces the description if it is still the previously auto-filled template
+  /// (i.e. the user hasn't typed any custom content), otherwise leaves it alone.
   void _autoFillDescription() {
     final prompts = _prompts[_selectedCategory];
     if (prompts == null || prompts.isEmpty) return;
-    
-    // Only auto-fill if the description is currently empty
-    if (_descCtrl.text.trim().isEmpty) {
-      _descCtrl.text = prompts.join('\n');
+    final newTemplate = prompts.join('\n');
+    final current = _descCtrl.text;
+    // Replace when: field is empty OR it still contains the last auto-filled template
+    if (current.trim().isEmpty || current == _lastAutoFilledDesc) {
+      _descCtrl.text = newTemplate;
+      _lastAutoFilledDesc = newTemplate;
       _descCtrl.selection =
           TextSelection.fromPosition(const TextPosition(offset: 0));
     }

@@ -45,6 +45,23 @@ except ImportError:
 config = get_config()
 app = Flask(__name__)
 
+# ── JSON provider: emit ISO-8601 for datetime objects ────────────────────────
+# Flask 3.0's default provider serialises datetime as RFC-1123 HTTP-date
+# (e.g. "Thu, 12 Jul 2026 10:30:00 GMT") which Dart's DateTime.tryParse
+# cannot read, causing every task timestamp to fall back to DateTime.now().
+# Overriding here ensures every jsonify() call returns proper ISO strings.
+from flask.json.provider import DefaultJSONProvider as _DefaultJSONProvider
+
+class _IsoDateJSONProvider(_DefaultJSONProvider):
+    def default(self, o):
+        if isinstance(o, (datetime.datetime, datetime.date)):
+            return o.isoformat()
+        return super().default(o)
+
+app.json_provider_class = _IsoDateJSONProvider
+app.json = _IsoDateJSONProvider(app)
+# ────────────────────────────────────────────────────────────────────────────
+
 # Rate limiter — protects auth endpoints from brute force
 if _has_limiter:
     limiter = Limiter(
@@ -437,6 +454,60 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
         print(f'[FCM] ✉ "{title}" → user {user_id}')
     except Exception as e:
         print(f'[FCM] Error sending to user {user_id}: {e}')
+
+
+def _safe_delete_tasks(cursor, task_ids):
+    """Remove all FK-referenced rows for the given task ID(s) so the caller can
+    then safely DELETE FROM tasks.
+
+    Preserves history notifications (task_posted, task_expired,
+    task_cancelled_confirmation) by NULLing their task_id rather than
+    deleting them — the poster keeps a record even after the task is gone.
+    wallet_transactions are also NULLed (audit trail).
+
+    Every statement runs inside its own SAVEPOINT so a single table being
+    absent (e.g. in a dev environment) never aborts the whole transaction.
+    """
+    if not task_ids:
+        return
+    if isinstance(task_ids, (int, str)):
+        task_ids = [task_ids]
+    ids = [str(t) for t in task_ids if t is not None]
+    if not ids:
+        return
+
+    # IDs come from DB queries (not user input) — safe to interpolate.
+    in_clause = f"({','.join(ids)})"
+    history_types = "('task_posted','task_expired','task_cancelled_confirmation')"
+
+    steps = [
+        # Preserve history notifications — NULL the FK ref instead of deleting
+        f'UPDATE notifications SET task_id = NULL WHERE task_id IN {in_clause} AND notification_type IN {history_types}',
+        # Delete all remaining task-linked notifications (no FK refs left)
+        f'DELETE FROM notifications WHERE task_id IN {in_clause}',
+        # Preserve wallet transaction audit trail — NULL the FK ref
+        f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id IN {in_clause}',
+        # Delete all other FK-referencing rows
+        f'DELETE FROM task_releases WHERE task_id IN {in_clause}',
+        f'DELETE FROM reviews WHERE task_id IN {in_clause}',
+        f'DELETE FROM helper_ratings WHERE task_id IN {in_clause}',
+        f'DELETE FROM task_proofs WHERE task_id IN {in_clause}',
+        f'DELETE FROM chat_messages WHERE task_id IN {in_clause}',
+        f'DELETE FROM location_tracking WHERE task_id IN {in_clause}',
+        f'DELETE FROM sos_alerts WHERE task_id IN {in_clause}',
+        f'DELETE FROM payments WHERE task_id IN {in_clause}',
+    ]
+    for i, sql in enumerate(steps):
+        sp = f'sp_del_{i}'
+        try:
+            cursor.execute(f'SAVEPOINT {sp}')
+            cursor.execute(sql)
+            cursor.execute(f'RELEASE SAVEPOINT {sp}')
+        except Exception:
+            try:
+                cursor.execute(f'ROLLBACK TO SAVEPOINT {sp}')
+            except Exception:
+                pass
 
 
 # ========================================
@@ -2246,14 +2317,22 @@ def change_password():
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
-    """Get all active tasks (non-expired) with optional pagination"""
+    """Get all active tasks (non-expired) with optional pagination and filtering"""
     import datetime
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     # Pagination params
     page = request.args.get('page', type=int)
-    limit = request.args.get('limit', 20, type=int)
+    limit = request.args.get('limit', request.args.get('per_page', 20, type=int), type=int)
     limit = min(max(limit, 1), 100)  # clamp 1-100
+
+    # Filter params
+    category_filter = request.args.get('category', '').strip()
+    max_budget = request.args.get('max_budget', type=float)
+    min_budget = request.args.get('min_budget', type=float)
+    lat = request.args.get('lat', type=float)
+    lng = request.args.get('lng', type=float)
+    radius_km = request.args.get('radius', type=float)
     
     # Throttle cleanup: run at most once every 5 minutes per process
     global _last_cleanup_time
@@ -2270,12 +2349,33 @@ def get_tasks():
     
     try:
         with get_db() as (cursor, conn):
-            # Build query — JOIN users to avoid N+1 queries per task
+            # Build WHERE clause with optional filters
             base_where = f"WHERE t.status = 'active' AND t.expires_at > {PH}"
+            base_params = [now]
+
+            if category_filter and category_filter != 'all':
+                base_where += f" AND t.category = {PH}"
+                base_params.append(category_filter)
+            if max_budget is not None:
+                base_where += f" AND t.price <= {PH}"
+                base_params.append(max_budget)
+            if min_budget is not None:
+                base_where += f" AND t.price >= {PH}"
+                base_params.append(min_budget)
+            if lat is not None and lng is not None and radius_km is not None:
+                # Haversine formula — filter tasks within radius_km of user's location
+                base_where += f"""
+                    AND t.location_lat IS NOT NULL AND t.location_lng IS NOT NULL
+                    AND (6371 * acos(LEAST(1.0,
+                        cos(radians({PH})) * cos(radians(t.location_lat)) *
+                        cos(radians(t.location_lng) - radians({PH})) +
+                        sin(radians({PH})) * sin(radians(t.location_lat))
+                    ))) <= {PH}"""
+                base_params.extend([lat, lng, lat, radius_km])
             
             if page is not None:
                 # Paginated mode
-                cursor.execute(f'SELECT COUNT(*) as total FROM tasks t {base_where}', (now,))
+                cursor.execute(f'SELECT COUNT(*) as total FROM tasks t {base_where}', tuple(base_params))
                 total = dict_from_row(cursor.fetchone())['total']
                 
                 offset = (page - 1) * limit
@@ -2292,7 +2392,7 @@ def get_tasks():
                     {base_where}
                     ORDER BY t.posted_at DESC
                     LIMIT {PH} OFFSET {PH}
-                ''', (now, limit, offset))
+                ''', tuple(base_params) + (limit, offset))
             else:
                 # Legacy: return all active (with safety limit), single JOIN
                 total = None
@@ -2309,7 +2409,7 @@ def get_tasks():
                     {base_where}
                     ORDER BY t.posted_at DESC
                     LIMIT 200
-                ''', (now,))
+                ''', tuple(base_params))
             
             rows = cursor.fetchall()
             
@@ -2603,10 +2703,89 @@ def create_task():
             
             print(f"✅ Task created successfully with ID: {task_id}")
         
-        # Skill-match and nearby notifications are triggered by the Flutter app
-        # via dedicated endpoints (POST /tasks/<id>/notify-skills and
-        # POST /tasks/<id>/notify-nearby) after receiving the task ID here.
-        # This avoids blocking the response and keeps each concern separate.
+        # FCM push — confirm to poster that their task was posted
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                'Task Posted! 📋',
+                f'Your task "{data["title"]}" has been posted. Budget: ₹{data["price"]}. It will expire in 24 hours.',
+                data={'type': 'task_posted', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
+        # Skill-match notifications are triggered in a background thread so
+        # the response is returned immediately without waiting for FCM calls.
+        def _skill_notify_bg(tid, poster_id, cat, title, desc, price):
+            try:
+                import json as _snj
+                import datetime as _dt
+                _ensure_bio_skills_columns()
+                _ensure_fcm_token_column()
+                _cat   = (cat   or '').lower()
+                _title = (title or '').lower()
+                _desc  = (desc  or '').lower()
+                with get_db() as (_cur, _):
+                    _cur.execute(f'''
+                        SELECT id, fcm_token, skills FROM users
+                        WHERE id != {PH}
+                          AND skills IS NOT NULL
+                          AND skills NOT IN ({PH}, {PH}, {PH})
+                    ''', (poster_id, '[]', '', 'null'))
+                    _candidates = [dict_from_row(r) for r in _cur.fetchall()]
+                _notified = 0
+                _n_title = '\U0001f4bc Task Matching Your Skills!'
+                _n_body  = f'"{title}" \u2014 \u20b9{price} \u2014 {cat}'
+                _n_data  = _snj.dumps({'type': 'skill_matched', 'taskId': tid,
+                                       'label': '\U0001f441\ufe0f View Task'})
+                _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                for _u in _candidates:
+                    try:
+                        _raw = _u.get('skills', '[]')
+                        _skills = [s.lower() for s in (
+                            _snj.loads(_raw) if isinstance(_raw, str) else (_raw or [])
+                        )]
+                        if not any(
+                            sk in _cat or _cat in sk or sk in _title or sk in _desc
+                            for sk in _skills
+                        ):
+                            continue
+                        # Insert in-app notification so it shows in the bell icon
+                        try:
+                            with get_db() as (_nc, _nconn):
+                                _nc.execute(f'''
+                                    INSERT INTO notifications
+                                        (user_id, task_id, notification_type, title, message, status, data, created_at)
+                                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                                ''', (_u['id'], tid, 'skill_matched',
+                                      _n_title, _n_body, 'unread', _n_data, _now))
+                                _nconn.commit()
+                        except Exception:
+                            pass
+                        # FCM push (only when the user has registered a device token)
+                        if _u.get('fcm_token'):
+                            send_fcm_to_user(
+                                _u['id'],
+                                _n_title,
+                                _n_body,
+                                data={'type': 'skill_matched', 'task_id': str(tid)},
+                                channel='workmate4u_matched',
+                            )
+                        _notified += 1
+                    except Exception:
+                        pass
+                print(f'[FCM] skill-match bg task={tid}: notified {_notified} user(s)')
+            except Exception as _e:
+                print(f'[FCM] skill-match bg error: {_e}')
+
+        _threading.Thread(
+            target=_skill_notify_bg,
+            args=(task_id, request.user_id,
+                  data.get('category', ''), data.get('title', ''),
+                  data.get('description', ''), data.get('price', 0)),
+            daemon=True,
+        ).start()
 
         response = {
             'success': True,
@@ -3015,46 +3194,56 @@ def poster_cancel_accepted_task(task_id):
             helper_id = task['accepted_by']
             task_title = task['title']
 
-            # Notify helper BEFORE deletion (notification keeps task_id for reference,
-            # but task row itself will be removed). Use SAVEPOINT so a notif failure
-            # does not block the deletion.
+            # Permanently delete task and clean up FK references
+            # NOTE: helper + poster DB notifications are inserted AFTER this cleanup.
+            _safe_delete_tasks(cursor, task_id)
+
+            cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
+
+            # Store cancellation confirmation in DB for the poster
+            # Must be done AFTER the task_id cleanup so it isn't deleted.
+            # No task_id on this record so it persists permanently.
+            try:
+                cursor.execute('SAVEPOINT sp_poster_notif')
+                import json as _json_cancel
+                _now_cancel = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                _poster_db_msg = f'Your task "{task_title}" has been cancelled and removed.'
+                if reason:
+                    _poster_db_msg += f' Reason: {reason}'
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'task_cancelled_confirmation',
+                      'Task Cancelled ✅', _poster_db_msg,
+                      'unread', _json_cancel.dumps({'type': 'task_cancelled_confirmation'}), _now_cancel))
+                cursor.execute('RELEASE SAVEPOINT sp_poster_notif')
+            except Exception as _pn_err:
+                print(f"⚠️ Failed to create poster cancel DB notification: {_pn_err}")
+                try: cursor.execute('ROLLBACK TO SAVEPOINT sp_poster_notif')
+                except Exception: pass
+
+            # Store cancellation notification for the helper too.
+            # Done AFTER task deletion + cleanup, WITHOUT task_id, so it is never
+            # deleted by the "DELETE FROM notifications WHERE task_id=X" cleanup.
             if helper_id:
                 try:
-                    cursor.execute('SAVEPOINT sp_notify')
-                    import json as _json
-                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    msg = f'The poster has cancelled "{task_title}". The task has been removed.'
+                    cursor.execute('SAVEPOINT sp_helper_notif')
+                    import json as _json_helper
+                    _now_helper = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    _helper_msg = f'The poster has cancelled task "{task_title}" and removed it.'
                     if reason:
-                        msg += f' Reason: {reason}'
-                    notif_data = _json.dumps({'type': 'system'})
+                        _helper_msg += f' Reason: {reason}'
                     cursor.execute(f'''
                         INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
                         VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                     ''', (helper_id, 'task_cancelled_by_poster',
-                          'Task Cancelled by Poster ⚠️', msg,
-                          'unread', notif_data, now))
-                    cursor.execute('RELEASE SAVEPOINT sp_notify')
-                except Exception as notif_err:
-                    print(f"⚠️ Failed to create poster-cancel notification: {notif_err}")
-                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_notify')
+                          'Task Cancelled by Poster ⚠️', _helper_msg,
+                          'unread', _json_helper.dumps({'type': 'task_cancelled_by_poster'}), _now_helper))
+                    cursor.execute('RELEASE SAVEPOINT sp_helper_notif')
+                except Exception as _hn_err:
+                    print(f"⚠️ Failed to create helper cancel DB notification: {_hn_err}")
+                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_helper_notif')
                     except Exception: pass
-
-            # Permanently delete task and clean up FK references
-            for cleanup_sql in [
-                f'DELETE FROM notifications WHERE task_id = {PH}',
-                f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
-                f'DELETE FROM task_releases WHERE task_id = {PH}',
-                f'DELETE FROM reviews WHERE task_id = {PH}',
-            ]:
-                try:
-                    cursor.execute('SAVEPOINT sp_cleanup')
-                    cursor.execute(cleanup_sql, (task_id,))
-                    cursor.execute('RELEASE SAVEPOINT sp_cleanup')
-                except Exception:
-                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_cleanup')
-                    except Exception: pass
-
-            cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
         print(f"✅ Poster {request.user_id} cancelled & deleted task {task_id} (helper {helper_id})")
 
@@ -3071,8 +3260,24 @@ def poster_cancel_accepted_task(task_id):
                     data={'type': 'task_cancelled_by_poster', 'task_id': str(task_id)},
                     channel='workmate4u_main',
                 )
-            except Exception:
-                pass
+            except Exception as _fcm_h_err:
+                print(f'[FCM] ❌ Helper cancel notify failed: {_fcm_h_err}')
+
+        # FCM push — confirm to poster that the cancellation was processed
+        try:
+            _poster_cancel_msg = f'Your task "{task_title}" has been cancelled and removed.'
+            if reason:
+                _poster_cancel_msg += f' Reason: {reason}'
+            print(f'[FCM] Sending task_cancelled_confirmation to poster {request.user_id}')
+            send_fcm_to_user(
+                request.user_id,
+                'Task Cancelled ✅',
+                _poster_cancel_msg,
+                data={'type': 'task_cancelled_confirmation', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception as _fcm_p_err:
+            print(f'[FCM] ❌ Poster cancel notify failed: {_fcm_p_err}')
 
         return jsonify({
             'success': True,
@@ -3239,7 +3444,7 @@ def delete_task(task_id):
     """Delete a task (only poster can delete)"""
     try:
         with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT posted_by, status FROM tasks WHERE id = {PH}', (task_id,))
+            cursor.execute(f'SELECT posted_by, status, title FROM tasks WHERE id = {PH}', (task_id,))
             task = cursor.fetchone()
 
             if not task:
@@ -3253,24 +3458,43 @@ def delete_task(task_id):
             if task['status'] in ('completed', 'paid'):
                 return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
 
-            # Clean up foreign key references using SAVEPOINTs
-            # (PostgreSQL aborts entire transaction if a statement fails without savepoint)
-            for cleanup_sql in [
-                f'DELETE FROM notifications WHERE task_id = {PH}',
-                f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
-                f'DELETE FROM task_releases WHERE task_id = {PH}',
-                f'DELETE FROM reviews WHERE task_id = {PH}',
-            ]:
-                try:
-                    cursor.execute('SAVEPOINT sp_cleanup')
-                    cursor.execute(cleanup_sql, (task_id,))
-                    cursor.execute('RELEASE SAVEPOINT sp_cleanup')
-                except Exception:
-                    cursor.execute('ROLLBACK TO SAVEPOINT sp_cleanup')
+            task_title = task.get('title', '')
 
+            # Clean up all FK references then delete the task
+            _safe_delete_tasks(cursor, task_id)
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
+            # Store cancellation confirmation in DB for the poster
+            try:
+                cursor.execute('SAVEPOINT sp_del_notif')
+                import json as _json_del
+                _now_del = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'task_cancelled_confirmation',
+                      'Task Cancelled \u2705',
+                      f'Your task "{task_title}" has been cancelled and removed.',
+                      'unread', _json_del.dumps({'type': 'task_cancelled_confirmation'}), _now_del))
+                cursor.execute('RELEASE SAVEPOINT sp_del_notif')
+            except Exception:
+                try: cursor.execute('ROLLBACK TO SAVEPOINT sp_del_notif')
+                except Exception: pass
+
         print(f"✅ Task {task_id} deleted by user {request.user_id}")
+
+        # FCM push — confirm to poster (same pattern as task_posted)
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                'Task Cancelled \u2705',
+                f'Your task "{task_title}" has been cancelled and removed.',
+                data={'type': 'task_cancelled_confirmation', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception as _fcm_del_err:
+            print(f'[FCM] \u274c delete_task cancel notify failed: {_fcm_del_err}')
+
         return jsonify({'success': True, 'message': 'Task deleted successfully'})
     except Exception as e:
         print(f"❌ Error in delete_task: {e}")
@@ -4291,14 +4515,8 @@ def get_user_tasks():
                 old_task_rows = cursor.fetchall()
                 old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_task_rows]
                 if old_ids:
-                    ids_str = ','.join(old_ids)
-                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                       'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
-                        try:
-                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
-                        except Exception:
-                            pass
-                    cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
+                    _safe_delete_tasks(cursor, old_ids)
+                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_ids)})")
                     conn.commit()
             except Exception as cleanup_err:
                 print(f'[/api/user/tasks] 48h cleanup skipped: {cleanup_err}')
@@ -4317,14 +4535,8 @@ def get_user_tasks():
                 completed_old_rows = cursor.fetchall()
                 completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
                 if completed_old_ids:
-                    ids_str = ','.join(completed_old_ids)
-                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                       'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
-                        try:
-                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
-                        except Exception:
-                            pass
-                    cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
+                    _safe_delete_tasks(cursor, completed_old_ids)
+                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(completed_old_ids)})")
                     conn.commit()
             except Exception as cleanup_err2:
                 print(f'[/api/user/tasks] completed 48h cleanup skipped: {cleanup_err2}')
@@ -5009,7 +5221,21 @@ def add_money_to_wallet():
                   'unread', json.dumps({'type': 'success', 'amount': amount, 'cashback': cashback}), now))
     except Exception as notif_err:
         print(f"⚠️ Failed to create topup notification: {notif_err}")
-    
+
+    # FCM push — notify user their wallet has been topped up
+    try:
+        cashback_msg_fcm = f' (includes ₹{cashback:.2f} cashback!)' if cashback > 0 else ''
+        print(f'[FCM] Sending wallet_topup to user {request.user_id}')
+        send_fcm_to_user(
+            request.user_id,
+            'Wallet Topped Up! 💰',
+            f'₹{amount:.2f} added to your wallet{cashback_msg_fcm}. New balance: ₹{new_balance:.2f}',
+            data={'type': 'wallet_topup', 'amount': str(amount), 'new_balance': str(new_balance)},
+            channel='workmate4u_payment',
+        )
+    except Exception as _fcm_wallet_err:
+        print(f'[FCM] ❌ wallet_topup FCM failed: {_fcm_wallet_err}')
+
     debt_cleared = new_balance >= 0
     return jsonify({
         'success': True,
@@ -5295,8 +5521,8 @@ def request_withdrawal():
             data={'type': 'withdrawal_requested', 'amount': str(amount)},
             channel='workmate4u_payment',
         )
-    except Exception:
-        pass
+    except Exception as _fcm_wdl_req_err:
+        print(f'[FCM] ❌ withdrawal_requested FCM failed: {_fcm_wdl_req_err}')
 
     print(f"   New balance: ₹{new_balance:.2f}")
     print(f"   Withdrawal ID: {withdrawal_id}")
@@ -6881,9 +7107,25 @@ def verify_wallet_topup():
         print(f"✅ [WALLET] Wallet credited successfully: ₹{credit_amount}")
         print(f"[WALLET] New balance: ₹{new_balance}")
         print(f"[WALLET] Transaction recorded with ID: {wallet_id}")
-        
+
+        # DB notification for the user
+        try:
+            import json as _vwt_json
+            _vwt_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            with get_db() as (_vwt_cur, _vwt_conn):
+                _vwt_cur.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'wallet_topup',
+                      'Wallet Topped Up! 💰',
+                      f'₹{credit_amount:.2f} added to your wallet via Razorpay. New balance: ₹{new_balance:.2f}',
+                      'unread', _vwt_json.dumps({'type': 'wallet_topup', 'amount': credit_amount}), _vwt_now))
+        except Exception as _vwt_notif_err:
+            print(f'⚠️ [WALLET] verify DB notification failed: {_vwt_notif_err}')
+
         # FCM push — notify user their wallet has been topped up
         try:
+            print(f'[FCM] Sending wallet_topup (verify) to user {request.user_id}')
             send_fcm_to_user(
                 request.user_id,
                 '💰 Wallet Topped Up!',
@@ -6895,8 +7137,8 @@ def verify_wallet_topup():
                 },
                 channel='workmate4u_payment',
             )
-        except Exception:
-            pass
+        except Exception as _fcm_verify_err:
+            print(f'[FCM] ❌ verify_wallet_topup FCM failed: {_fcm_verify_err}')
 
         return jsonify({
             'success': True,
@@ -7115,6 +7357,32 @@ def payment_webhook():
                         ))
                         
                         print(f"✅ [WEBHOOK] Wallet credited: ₹{amount} → new balance ₹{new_balance}")
+
+                        # DB notification for the user
+                        import json as _wh_json
+                        try:
+                            cursor.execute(f'''
+                                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                            ''', (topup_user_id, 'wallet_topup',
+                                  'Wallet Topped Up! 💰',
+                                  f'₹{amount:.2f} added to your wallet via Razorpay. New balance: ₹{new_balance:.2f}',
+                                  'unread', _wh_json.dumps({'type': 'wallet_topup', 'amount': amount}), now))
+                        except Exception as _wh_notif_err:
+                            print(f'⚠️ [WEBHOOK] DB notification failed: {_wh_notif_err}')
+
+                        # FCM push
+                        try:
+                            print(f'[FCM] Sending wallet_topup (webhook) to user {topup_user_id}')
+                            send_fcm_to_user(
+                                topup_user_id,
+                                'Wallet Topped Up! 💰',
+                                f'₹{amount:.2f} added to your wallet. New balance: ₹{new_balance:.2f}',
+                                data={'type': 'wallet_topup', 'amount': str(amount), 'new_balance': str(new_balance)},
+                                channel='workmate4u_payment',
+                            )
+                        except Exception as _wh_fcm_err:
+                            print(f'[FCM] ❌ webhook wallet_topup FCM failed: {_wh_fcm_err}')
                 
                 conn.commit()
         
@@ -7227,39 +7495,41 @@ def cleanup_old_tasks():
                 expired_tasks = [dict_from_row(r) for r in cursor.fetchall()]
                 
                 for t in expired_tasks:
-                    # Notify poster before deleting
+                    # Notify poster — insert WITHOUT task_id so there is no FK
+                    # reference on a row that is about to be deleted.
                     notif_data = json.dumps({'type': 'task', 'taskId': t['id']})
                     try:
                         cursor.execute(f'''
-                            INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
-                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                        ''', (t['posted_by'], t['id'], 'task_expired',
+                            INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (t['posted_by'], 'task_expired',
                               'Task Expired ⏰',
                               f'Your task "{t["title"]}" has expired without being accepted. You can post it again.',
                               'unread', notif_data, now))
                     except Exception:
                         pass
-                    # Cascade delete related records then the task itself
-                    for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                       'location_tracking', 'sos_alerts']:
-                        try:
-                            cursor.execute(f'DELETE FROM {ref_table} WHERE task_id = {PH}', (t['id'],))
-                        except Exception:
-                            pass
+                    # Clean up all FK references then delete the task
+                    _safe_delete_tasks(cursor, t['id'])
                     cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (t['id'],))
                 
                 if expired_tasks:
                     print(f"✅ Deleted {len(expired_tasks)} expired tasks and notified posters")
                 
-                # Delete completed/paid tasks older than 30 days
+                # Delete completed/paid tasks older than 30 days.
+                # Must fetch IDs first and use _safe_delete_tasks to avoid FK violations.
                 cursor.execute(f'''
-                    DELETE FROM tasks 
+                    SELECT id FROM tasks
                     WHERE (status = 'completed' OR status = 'paid')
                     AND completed_at IS NOT NULL
                     AND completed_at < {PH}
                 ''', (thirty_days_ago,))
-                
-                deleted_count = cursor.rowcount
+                old_rows = cursor.fetchall()
+                old_task_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_rows]
+                deleted_count = 0
+                if old_task_ids:
+                    _safe_delete_tasks(cursor, old_task_ids)
+                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_task_ids)})")
+                    deleted_count = cursor.rowcount
                 
                 if deleted_count > 0:
                     print(f"✅ Cleaned up {deleted_count} old completed/paid tasks")
@@ -7510,7 +7780,6 @@ def get_notifications():
     """Get notifications for current user"""
     try:
         with get_db() as (cursor, conn):
-            # Get unread notifications
             cursor.execute(f'''
                 SELECT n.*, t.title as task_title
                 FROM notifications n
@@ -7521,7 +7790,21 @@ def get_notifications():
             ''', (request.user_id,))
             
             rows = cursor.fetchall()
-            notifications = [dict_from_row(row) for row in rows]
+            notifications = []
+            for row in rows:
+                n = dict_from_row(row)
+                # Flask 3.0 serialises datetime as RFC 7231 ("Thu, 11 Jul 2024 10:35:42 GMT")
+                # which Dart's DateTime.tryParse cannot handle.  Convert to ISO 8601 explicitly.
+                for field in ('created_at', 'read_at'):
+                    val = n.get(field)
+                    if hasattr(val, 'isoformat'):
+                        # psycopg2 returns naive datetimes for TIMESTAMP columns;
+                        # the column stores UTC values, so attach the UTC marker.
+                        if getattr(val, 'tzinfo', None) is None:
+                            import datetime as _dt
+                            val = val.replace(tzinfo=_dt.timezone.utc)
+                        n[field] = val.isoformat()
+                notifications.append(n)
             
             return jsonify({
                 'success': True,
@@ -9575,8 +9858,8 @@ def search_tasks():
     """Search tasks by keyword with server-side filtering"""
     keyword = request.args.get('q', '').strip()
     category = request.args.get('category', '').strip()
-    min_price = request.args.get('min_price', type=float)
-    max_price = request.args.get('max_price', type=float)
+    min_price = request.args.get('min_price', type=float) or request.args.get('min_budget', type=float)
+    max_price = request.args.get('max_price', type=float) or request.args.get('max_budget', type=float)
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 20, type=int)
     limit = min(max(limit, 1), 100)

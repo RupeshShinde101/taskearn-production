@@ -116,7 +116,12 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  List<Task> get browseTasks => _browseTasks;
+  List<Task> get browseTasks {
+    // Filter dynamically so tasks that expire while the screen is open
+    // disappear without requiring a full refresh.
+    final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+    return _browseTasks.where((t) => t.createdAt.isAfter(cutoff)).toList();
+  }
   List<Task> get myPostedTasks => _myPostedTasks;
   List<Task> get myAcceptedTasks => _myAcceptedTasks;
   List<Task> get myCompletedTasks => _myCompletedTasks;

@@ -116,7 +116,12 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  List<Task> get browseTasks => _browseTasks;
+  List<Task> get browseTasks {
+    // Filter dynamically so tasks that expire while the screen is open
+    // disappear without requiring a full refresh.
+    final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+    return _browseTasks.where((t) => t.createdAt.isAfter(cutoff)).toList();
+  }
   List<Task> get myPostedTasks => _myPostedTasks;
   List<Task> get myAcceptedTasks => _myAcceptedTasks;
   List<Task> get myCompletedTasks => _myCompletedTasks;
@@ -638,13 +643,16 @@ class TaskProvider extends ChangeNotifier {
   }
 
   /// Extract the task ID from a backend create-task response.
-  /// The backend may wrap the task under 'task', 'data', or return it directly.
+  /// The backend returns {'taskId': ..., 'success': true, ...}.
+  /// Also handles wrapped responses under 'task', 'data', or 'result' keys.
   String? _extractNewTaskId(dynamic response) {
     try {
       if (response is! Map) return null;
+      // Direct key the backend uses
+      if (response['taskId'] != null) return response['taskId'].toString();
       final raw = response['task'] ?? response['data'] ?? response['result'] ?? response;
       if (raw is Map) {
-        return (raw['id'] ?? raw['_id'])?.toString();
+        return (raw['id'] ?? raw['_id'] ?? raw['taskId'])?.toString();
       }
       return null;
     } catch (_) {

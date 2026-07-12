@@ -30,19 +30,19 @@
           }
         },
         {
-          "client_id": "874101147109-0hkvqqd5bgquvhq7nmqepp8m30u9gptd.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.workmate4u.workmate4u",
-            "certificate_hash": "c3ab41a86b24507b192520e3175b138816588945"
-          }
-        },
-        {
           "client_id": "874101147109-ee2n3lr6kplbarf8d1ev7o0v7h4r8r9r.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.workmate4u.workmate4u",
             "certificate_hash": "5d7d0606db53a0632e6266c101ccb6d41e6dc9b8"
+          }
+        },
+        {
+          "client_id": "874101147109-hvk32mheka5lob7qvjooerperremlnpg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.workmate4u.workmate4u",
+            "certificate_hash": "c3ab41a86b24507b192520e3175b138816588945"
           }
         },
         {

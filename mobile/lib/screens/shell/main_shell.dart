@@ -41,11 +41,9 @@ class _MainShellState extends State<MainShell> {
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         if (!isHome) {
-          // Non-home tab → navigate to home instead of closing
           context.go('/home');
           return;
         }
-        // Home tab → ask the user before exiting
         final shouldExit = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -69,68 +67,67 @@ class _MainShellState extends State<MainShell> {
       },
       child: Scaffold(
         body: widget.child,
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _NavItem(
-                  icon: Icons.home_outlined,
-                  activeIcon: Icons.home,
-                  label: 'Home',
-                  selected: idx == 0,
-                  onTap: () => _onTap(0),
-                ),
-                _NavItem(
-                  icon: Icons.search_outlined,
-                  activeIcon: Icons.search,
-                  label: 'Browse',
-                  selected: idx == 1,
-                  onTap: () => _onTap(1),
-                ),
-                // Center "Post" button
-                GestureDetector(
-                  onTap: () => context.push('/post-task'),
-                  child: Container(
-                    width: 52,
-                    height: 52,
-                    decoration: const BoxDecoration(
-                      gradient:
-                          LinearGradient(colors: AppColors.gradient),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(0x446366F1),
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.add,
-                        color: Colors.white, size: 28),
+        bottomNavigationBar: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: AppColors.border)),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _NavItem(
+                    icon: Icons.home_outlined,
+                    activeIcon: Icons.home,
+                    label: 'Home',
+                    selected: idx == 0,
+                    onTap: () => _onTap(0),
                   ),
-                ),
-                _NavItem(
-                  icon: Icons.assignment_outlined,
-                  activeIcon: Icons.assignment,
-                  label: 'My Tasks',
-                  selected: idx == 2,
-                  onTap: () => _onTap(2),
-                ),
-                _NavItem(
-                  icon: Icons.person_outline,
-                  activeIcon: Icons.person,
-                  label: 'Profile',
-                  selected: idx == 3,
-                  onTap: () => _onTap(3),
-                ),
-              ],
+                  _NavItem(
+                    icon: Icons.search_outlined,
+                    activeIcon: Icons.search,
+                    label: 'Browse',
+                    selected: idx == 1,
+                    onTap: () => _onTap(1),
+                  ),
+                  // Center "Post" button
+                  GestureDetector(
+                    onTap: () => context.push('/post-task'),
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(colors: AppColors.gradient),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x446366F1),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.add, color: Colors.white, size: 28),
+                    ),
+                  ),
+                  _NavItem(
+                    icon: Icons.assignment_outlined,
+                    activeIcon: Icons.assignment,
+                    label: 'My Tasks',
+                    selected: idx == 2,
+                    onTap: () => _onTap(2),
+                  ),
+                  _NavItem(
+                    icon: Icons.person_outline,
+                    activeIcon: Icons.person,
+                    label: 'Profile',
+                    selected: idx == 3,
+                    onTap: () => _onTap(3),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

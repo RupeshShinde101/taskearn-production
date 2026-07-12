@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -105,20 +109,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () => _showEditDialog(context, auth),
                     child: Stack(
                       children: [
-                        CircleAvatar(
-                          radius: 48,
-                          backgroundImage: avatarImage(user?.avatar),
-                          backgroundColor: AppColors.light,
-                          child: user?.avatar == null
-                              ? Text(
-                                  user?.name.isNotEmpty == true
-                                      ? user!.name[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                      fontSize: 36,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.primary))
-                              : null,
+                        Selector<AuthProvider, String?>(
+                          selector: (_, a) => a.user?.avatar,
+                          builder: (_, avatar, __) => CircleAvatar(
+                            radius: 48,
+                            backgroundImage: avatarImage(avatar),
+                            backgroundColor: AppColors.light,
+                            child: avatar == null
+                                ? Text(
+                                    user?.name.isNotEmpty == true
+                                        ? user!.name[0].toUpperCase()
+                                        : '?',
+                                    style: const TextStyle(
+                                        fontSize: 36,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary))
+                                : null,
+                          ),
                         ),
                         Positioned(
                           bottom: 0,
@@ -721,6 +728,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   late final TextEditingController _phoneCtrl;
   String? _gender;
   bool _saving = false;
+  File? _pickedImage;
 
   @override
   void initState() {
@@ -737,6 +745,78 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     super.dispose();
   }
 
+  // ── Image picking ────────────────────────────────────────────────────────
+  Future<void> _pickImage(ImageSource source) async {
+    if (source == ImageSource.camera) {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        if (!mounted) return;
+        if (status.isPermanentlyDenied) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Camera permission denied. Enable it in app settings.'),
+              action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Camera permission denied')),
+          );
+        }
+        return;
+      }
+    }
+
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: source,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 80,
+    );
+
+    if (picked != null && mounted) {
+      setState(() => _pickedImage = File(picked.path));
+    }
+  }
+
+  void _showImageSourceSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined, color: AppColors.primary),
+              title: const Text('Take a Photo'),
+              onTap: () { Navigator.pop(ctx); _pickImage(ImageSource.camera); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: AppColors.primary),
+              title: const Text('Choose from Gallery'),
+              onTap: () { Navigator.pop(ctx); _pickImage(ImageSource.gallery); },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Save ─────────────────────────────────────────────────────────────────
   Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -746,10 +826,35 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     }
 
     setState(() => _saving = true);
+
+    // Encode picked image as base64 data URI and include in the same
+    // profile-update request so name/gender are always valid fields.
+    String? avatarDataUri;
+    if (_pickedImage != null) {
+      try {
+        final bytes = await _pickedImage!.readAsBytes();
+        final ext = _pickedImage!.path.split('.').last.toLowerCase();
+        final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+        avatarDataUri = 'data:$mime;base64,${base64Encode(bytes)}';
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not read the selected photo. Please try again.'),
+              backgroundColor: AppColors.danger,
+            ),
+          );
+        }
+        setState(() => _saving = false);
+        return;
+      }
+    }
+
     final ok = await widget.auth.updateProfile(
       name: _nameCtrl.text,
       gender: _gender,
       phone: _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
+      avatarDataUri: avatarDataUri,
     );
 
     if (!mounted) return;
@@ -770,6 +875,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final currentAvatarUrl = widget.auth.user?.avatar;
     return Padding(
       padding: EdgeInsets.fromLTRB(
           20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
@@ -780,8 +886,53 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           children: [
             const Center(
               child: Text('Edit Profile',
-                  style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Avatar picker ────────────────────────────────────────────
+            Center(
+              child: GestureDetector(
+                onTap: _saving ? null : _showImageSourceSheet,
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 44,
+                      backgroundColor: AppColors.light,
+                      backgroundImage: _pickedImage != null
+                          ? FileImage(_pickedImage!) as ImageProvider
+                          : avatarImage(currentAvatarUrl),
+                      child: (_pickedImage == null &&
+                              (currentAvatarUrl == null || currentAvatarUrl.isEmpty))
+                          ? Text(
+                              widget.auth.user?.name.isNotEmpty == true
+                                  ? widget.auth.user!.name[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary))
+                          : null,
+                    ),
+                    Positioned(
+                      bottom: 0, right: 0,
+                      child: Container(
+                        width: 28, height: 28,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(colors: AppColors.gradient),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 15),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Center(
+              child: Text('Tap to change photo',
+                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
             ),
             const SizedBox(height: 16),
 
@@ -813,8 +964,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               children: [
                 Expanded(
                   child: _GenderOption(
-                    label: 'Male',
-                    emoji: '👦',
+                    label: 'Male', emoji: '👦',
                     selected: _gender == 'male',
                     onTap: () => setState(() => _gender = 'male'),
                   ),
@@ -822,8 +972,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _GenderOption(
-                    label: 'Female',
-                    emoji: '👧',
+                    label: 'Female', emoji: '👧',
                     selected: _gender == 'female',
                     onTap: () => setState(() => _gender = 'female'),
                   ),
@@ -838,8 +987,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 onPressed: _saving ? null : _save,
                 child: _saving
                     ? const SizedBox(
-                        height: 20,
-                        width: 20,
+                        height: 20, width: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : const Text('Save Changes'),

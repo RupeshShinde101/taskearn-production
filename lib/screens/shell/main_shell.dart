@@ -19,6 +19,53 @@ class _MainShellState extends State<MainShell> {
     '/profile',
   ];
 
+  static const _channel = MethodChannel('com.workmate4u/navigation');
+  int _currentIdx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _channel.setMethodCallHandler(_onNativeBack);
+  }
+
+  @override
+  void dispose() {
+    _channel.setMethodCallHandler(null);
+    super.dispose();
+  }
+
+  /// Called from native Android when the back button / gesture is triggered.
+  /// Returns true  → Flutter handled it (Android does nothing).
+  /// Returns false → Android falls back to its default behaviour.
+  Future<dynamic> _onNativeBack(MethodCall call) async {
+    if (call.method != 'back_pressed' || !mounted) return false;
+    if (_currentIdx != 0) {
+      // Non-home tab → go to Home
+      context.go('/home');
+      return true;
+    }
+    // Home tab → ask before exiting
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Exit App'),
+        content: const Text('Do you want to close the application?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+    if (shouldExit == true && mounted) SystemNavigator.pop();
+    return true;
+  }
+
   void _onTap(int index) {
     context.go(_tabs[index]);
   }
@@ -34,39 +81,9 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final idx = _indexForPath(location);
-    final isHome = idx == 0;
+    _currentIdx = idx;
 
-    return BackButtonListener(
-      onBackButtonPressed: () async {
-        if (!isHome) {
-          // Non-home tab → go to Home without closing the app
-          context.go('/home');
-          return true; // consumed
-        }
-        // Home tab → ask before exiting
-        final shouldExit = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Exit App'),
-            content: const Text('Do you want to close the application?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('No'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('Yes'),
-              ),
-            ],
-          ),
-        );
-        if (shouldExit == true && context.mounted) {
-          SystemNavigator.pop();
-        }
-        return true; // always consumed
-      },
-      child: Scaffold(
+    return Scaffold(
         body: widget.child,
         bottomNavigationBar: Container(
           decoration: const BoxDecoration(

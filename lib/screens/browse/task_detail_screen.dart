@@ -46,6 +46,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       _loading = false;
       _error = task == null ? 'Task not found' : null;
     });
+    // Refresh user’s task list in the background so hasActiveAcceptedTask is
+    // accurate (needed when arriving from a notification without prior browse).
+    if (task != null && mounted) {
+      context.read<TaskProvider>().fetchMyTasks().catchError((_) {});
+    }
   }
 
   Future<void> _accept() async {

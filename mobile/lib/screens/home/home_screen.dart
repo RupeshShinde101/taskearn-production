@@ -76,6 +76,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if (mounted) {
         setState(() => _suggestedTasks = tasks);
+        // Cache into TaskProvider so getTaskDetail can find them when
+        // the user taps Apply, avoiding a 'Task not found' error.
         context.read<TaskProvider>().cacheTasksForBrowse(tasks);
       }
     } catch (_) {}
@@ -922,63 +924,139 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── CTA ───────────────────────────────────────────────────────────────────
   Widget _buildCTA() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.primary, Color(0xFF7C3AED)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(children: [
-        const Text('Ready to get started?',
-            textAlign: TextAlign.center,
-            style: TextStyle(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        children: [
+          // ── Top card: Post a Task ───────────────────────────────────
+          GestureDetector(
+            onTap: () => context.push('/post-task'),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF6366F1), Color(0xFF4F46E5)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.add_task_rounded,
+                        color: Colors.white, size: 28),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Post a Task',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3)),
+                        SizedBox(height: 3),
+                        Text('Get help from skilled helpers nearby',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 12, height: 1.3)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.arrow_forward_rounded,
+                        color: Colors.white, size: 18),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // ── Bottom card: Browse Tasks ────────────────────────────────
+          GestureDetector(
+            onTap: () => context.go('/browse'),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
                 color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
-        const Text('Post a task or start earning as a helper today.',
-            textAlign: TextAlign.center,
-            style:
-                TextStyle(color: Colors.white70, fontSize: 13, height: 1.4)),
-        const SizedBox(height: 20),
-        Row(children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => context.push('/post-task'),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.white, width: 1.5),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(0, 44),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22)),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.2)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: const Text('Post a Task',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.search_rounded,
+                        color: Color(0xFF6366F1), size: 26),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Browse Tasks',
+                            style: TextStyle(
+                                color: Color(0xFF1E293B),
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3)),
+                        SizedBox(height: 3),
+                        Text('Find tasks matching your skills & earn',
+                            style: TextStyle(
+                                color: Color(0xFF64748B), fontSize: 12, height: 1.3)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.arrow_forward_rounded,
+                        color: Color(0xFF6366F1), size: 18),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () => context.go('/browse'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: AppColors.primary,
-                minimumSize: const Size(0, 44),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22)),
-              ),
-              child: const Text('Browse Tasks',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ]),
-      ]),
+        ],
+      ),
     );
   }
 }

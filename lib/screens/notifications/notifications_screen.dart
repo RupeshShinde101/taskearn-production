@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../models/notification_model.dart';
@@ -63,7 +64,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 final n = notif.notifications[i];
                 return _NotificationTile(
                   notification: n,
-                  onTap: () => notif.markRead(n.id),
+                  onTap: () {
+                    notif.markRead(n.id);
+                    _navigateForNotification(context, n);
+                  },
                 );
               },
             ),
@@ -86,9 +90,8 @@ class _NotificationTile extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       leading: CircleAvatar(
-        backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-        child: const Icon(Icons.notifications,
-            color: AppColors.primary, size: 20),
+        backgroundColor: _iconBg,
+        child: Icon(_icon, color: _iconColor, size: 20),
       ),
       title: Text(
         notification.title,
@@ -125,6 +128,40 @@ class _NotificationTile extends StatelessWidget {
             ),
     );
   }
+
+  IconData get _icon {
+    switch (notification.type) {
+      case 'skill_matched':
+      case 'task_matched':
+      case 'matched_task':
+      case 'nearby_task':    return Icons.work_outline_rounded;
+      case 'task_accepted':  return Icons.check_circle_outline_rounded;
+      case 'task_assigned':  return Icons.assignment_ind_outlined;
+      case 'payment_released':
+      case 'payment_received':
+      case 'payment_done':   return Icons.payments_outlined;
+      case 'task_completed':
+      case 'verify_and_pay': return Icons.verified_outlined;
+      default:               return Icons.notifications_outlined;
+    }
+  }
+
+  Color get _iconColor {
+    switch (notification.type) {
+      case 'skill_matched':
+      case 'task_matched':
+      case 'matched_task':
+      case 'nearby_task':    return AppColors.primary;
+      case 'payment_released':
+      case 'payment_received':
+      case 'payment_done':   return AppColors.success;
+      case 'task_completed':
+      case 'verify_and_pay': return AppColors.warning;
+      default:               return AppColors.primary;
+    }
+  }
+
+  Color get _iconBg => _iconColor.withValues(alpha: 0.1);
 
   String _formatDate(DateTime dt) {
     final now = DateTime.now();

@@ -127,6 +127,16 @@ class TaskProvider extends ChangeNotifier {
   String? get error => _error;
   bool get hasMore => _hasMore;
 
+  /// Cache a list of tasks (e.g. from the home screen) into [_browseTasks]
+  /// so that [getTaskDetail] can find them without an extra network call.
+  void cacheTasksForBrowse(List<Task> tasks) {
+    for (final t in tasks) {
+      if (!_browseTasks.any((b) => b.id == t.id)) {
+        _browseTasks.add(t);
+      }
+    }
+  }
+
   /// Returns true if the user currently has an accepted task that is not
   /// yet fully completed. Used to enforce one-task-at-a-time rule.
   bool get hasActiveAcceptedTask {
@@ -493,11 +503,19 @@ class TaskProvider extends ChangeNotifier {
     // For accepted/in-progress tasks, always fetch fresh from the API so we
     // get the full poster info (phone, avatar) that list endpoints omit.
     final cachedForType = _findCached(id);
-    final isActivePoster =
-        cachedForType != null && (cachedForType.status == 'posted' || cachedForType.status == 'active');
+    // 'posted' == converted from 'active'; only skip the network for poster's
+    // own posted tasks or already-accepted tasks — NOT for plain browse tasks
+    // that another user wants to apply to (they need full poster info).
+    final isOwnPostedOrAccepted =
+        cachedForType != null &&
+        (cachedForType.status == 'accepted' ||
+         cachedForType.status == 'in_progress' ||
+         cachedForType.status == 'verify_pending' ||
+         cachedForType.status == 'payment_released' ||
+         cachedForType.status == 'completed' ||
+         cachedForType.status == 'paid');
 
-    // For open/browse tasks, use the detail cache or list cache.
-    if (isActivePoster) {
+    if (isOwnPostedOrAccepted) {
       final cachedDetail = _detailCache[id];
       if (cachedDetail != null &&
           (cachedDetail.posterName != 'Anonymous' ||
@@ -507,8 +525,9 @@ class TaskProvider extends ChangeNotifier {
       return cachedForType;
     }
 
-    // For accepted/in-progress tasks always hit the network to get full poster info.
-    for (final path in ['/tasks/$id/details', '/tasks/$id']) {
+    // Always try the API first for browse/open tasks so helpers get fresh data.
+    // Fall back to cache only if both network calls fail.
+    for (final path in ['/tasks/$id', '/tasks/$id/details']) {
       try {
         final data = await ApiService.get(path);
         final taskJson = data is Map<String, dynamic>

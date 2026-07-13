@@ -535,7 +535,6 @@ class TaskProvider extends ChangeNotifier {
             : null;
         if (taskJson is Map<String, dynamic>) {
           // Normalize the /tasks/$id/details response: that endpoint returns
-          // poster info under 'provider' but Task.fromJson expects 'posted_by'.
           // Map it so posterPhone, posterName etc. are extracted correctly.
           Map<String, dynamic> normalizedJson = taskJson;
           final providerObj = taskJson['provider'];

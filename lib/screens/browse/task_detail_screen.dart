@@ -993,24 +993,36 @@ class _TimelineRow extends StatelessWidget {
 
   String _format(DateTime d) {
     // Always display in IST (UTC+05:30) regardless of device timezone.
-    // Convert to UTC first, then add the fixed IST offset.
     final ist = d.toUtc().add(const Duration(hours: 5, minutes: 30));
     final nowIst = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
-    final diff = nowIst.difference(ist);
 
-    // Relative for very recent events
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24 && ist.day == nowIst.day) {
-      return 'Today, ${ist.hour.toString().padLeft(2, '0')}:${ist.minute.toString().padLeft(2, '0')} IST';
+    // 12-hour AM/PM time
+    final hour12 = ist.hour == 0 ? 12 : (ist.hour > 12 ? ist.hour - 12 : ist.hour);
+    final amPm = ist.hour < 12 ? 'AM' : 'PM';
+    final timeStr = '${hour12.toString()}:${ist.minute.toString().padLeft(2, '0')} $amPm';
+
+    final sameYear = ist.year == nowIst.year;
+    final sameDay = ist.year == nowIst.year && ist.month == nowIst.month && ist.day == nowIst.day;
+    final yesterday = ist.year == nowIst.year &&
+        ist.month == nowIst.subtract(const Duration(days: 1)).month &&
+        ist.day == nowIst.subtract(const Duration(days: 1)).day;
+
+    if (sameDay) return 'Today, $timeStr';
+    if (yesterday) return 'Yesterday, $timeStr';
+
+    // Within last 6 days → show weekday name
+    final diff = nowIst.difference(ist);
+    if (diff.inDays < 7) {
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return '${days[ist.weekday - 1]}, $timeStr';
     }
-    if (diff.inHours < 48 && ist.day == nowIst.subtract(const Duration(days: 1)).day) {
-      return 'Yesterday, ${ist.hour.toString().padLeft(2, '0')}:${ist.minute.toString().padLeft(2, '0')} IST';
-    }
-    // Full date for older
+
+    // Older → date + time
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return '${ist.day} ${months[ist.month - 1]} ${ist.year}, '
-        '${ist.hour.toString().padLeft(2, '0')}:${ist.minute.toString().padLeft(2, '0')} IST';
+    final dateStr = sameYear
+        ? '${ist.day} ${months[ist.month - 1]}'
+        : '${ist.day} ${months[ist.month - 1]} ${ist.year}';
+    return '$dateStr, $timeStr';
   }
 
   @override

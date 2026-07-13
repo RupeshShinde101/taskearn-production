@@ -557,25 +557,28 @@ _kyc_columns_ensured = False
 _verify_columns_ensured = False
 
 def _ensure_verify_columns():
-    """Ensure verified_at, payment_released_at, helper_final_completed_at columns exist in tasks table"""
+    """Ensure verified_at, payment_released_at, helper_final_completed_at, is_hidden columns exist in tasks table"""
     global _verify_columns_ensured
     if _verify_columns_ensured:
         return
     try:
         with get_db() as (cursor, conn):
             if PH == '%s':
-                # PostgreSQL
+                # PostgreSQL — DDL needs explicit commit
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP")
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS payment_released_at TIMESTAMP")
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS helper_final_completed_at TIMESTAMP")
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE")
+                conn.commit()
             else:
                 # SQLite
                 cursor.execute("PRAGMA table_info(tasks)")
                 cols = [row[1] for row in cursor.fetchall()]
                 for col, typ in [('verified_at', 'TEXT'), ('payment_released_at', 'TEXT'),
-                                  ('helper_final_completed_at', 'TEXT')]:
+                                  ('helper_final_completed_at', 'TEXT'), ('is_hidden', 'INTEGER')]:
                     if col not in cols:
                         cursor.execute(f'ALTER TABLE tasks ADD COLUMN {col} {typ}')
+                conn.commit()
         _verify_columns_ensured = True
         print("✅ Verify flow columns verified")
     except Exception as e:

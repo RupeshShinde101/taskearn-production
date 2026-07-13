@@ -696,14 +696,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       const Text(
-                        'Total Value',
+                        'Task Budget',
                         style: TextStyle(
                           fontSize: 11,
                           color: AppColors.gray,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      Text('₹${task.totalAmount.toStringAsFixed(0)}',
+                      Text('₹${task.budget.toStringAsFixed(0)}',
                           style: const TextStyle(
                               fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.dark)),
                       const SizedBox(height: 4),

@@ -76,7 +76,7 @@ class TaskCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       const Text(
-                        'Total Value',
+                        'Task Budget',
                         style: TextStyle(fontSize: 9, color: AppColors.gray, fontWeight: FontWeight.w500),
                       ),
                       Text(

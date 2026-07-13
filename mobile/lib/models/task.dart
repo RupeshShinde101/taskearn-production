@@ -553,3 +553,61 @@ class TaskCategory {
     ).icon;
   }
 }
+
+/// A parent/group category for the hierarchical category picker in post task.
+class TaskCategoryGroup {
+  final String label;
+  final String icon;
+  final List<String> categoryIds;
+
+  const TaskCategoryGroup({
+    required this.label,
+    required this.icon,
+    required this.categoryIds,
+  });
+
+  List<TaskCategory> get subCategories => categoryIds
+      .map((id) => TaskCategory.all.firstWhere(
+            (c) => c.id == id,
+            orElse: () => TaskCategory(id: id, label: id, icon: '📋'),
+          ))
+      .toList();
+
+  static const List<TaskCategoryGroup> all = [
+    TaskCategoryGroup(
+      label: 'Engineering & Repair',
+      icon: '🔧',
+      categoryIds: ['electrician', 'plumbing', 'repair', 'carpentry', 'painting', 'vehicle', 'tech_support'],
+    ),
+    TaskCategoryGroup(
+      label: 'Home & Lifestyle',
+      icon: '🏠',
+      categoryIds: ['cleaning', 'laundry', 'cooking', 'household', 'gardening', 'beauty'],
+    ),
+    TaskCategoryGroup(
+      label: 'Delivery & Moving',
+      icon: '🚚',
+      categoryIds: ['delivery', 'moving'],
+    ),
+    TaskCategoryGroup(
+      label: 'Shopping & Errands',
+      icon: '🛒',
+      categoryIds: ['groceries', 'shopping', 'errands', 'event_help', 'queue_standing'],
+    ),
+    TaskCategoryGroup(
+      label: 'Professional',
+      icon: '💼',
+      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring'],
+    ),
+    TaskCategoryGroup(
+      label: 'Care Services',
+      icon: '❤️',
+      categoryIds: ['child_care', 'elder_care', 'pet_care'],
+    ),
+    TaskCategoryGroup(
+      label: 'Other',
+      icon: '📋',
+      categoryIds: ['other'],
+    ),
+  ];
+}

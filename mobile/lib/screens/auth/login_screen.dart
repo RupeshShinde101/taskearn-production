@@ -242,25 +242,21 @@ class _FeatureCard extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: const [
-              _AvatarPerson(
-                emoji: '\u{1F477}\u200D\u2642\uFE0F',
-                label: 'Find Work',
-                borderColor: Color(0xFF6366F1),
-              ),
-              _AvatarPerson(
-                emoji: '\u{1F469}\u200D\u{1F4BC}',
-                label: 'Post Tasks',
-                borderColor: Color(0xFF0EA5E9),
-              ),
-            ],
-          ),
-        ],
-      ),
+      child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: const [
+            _AvatarPerson(
+              emoji: '👷',
+              label: 'Find Work',
+              borderColor: Color(0xFF6366F1),
+            ),
+            _AvatarPerson(
+              emoji: '💼',
+              label: 'Post Tasks',
+              borderColor: Color(0xFF0EA5E9),
+            ),
+          ],
+        ),
     );
   }
 }

@@ -566,7 +566,7 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (ctx, i) {
           final cat = cats[i];
           return GestureDetector(
-            onTap: () => context.go('/browse'),
+            onTap: () => context.go('/browse?category=${cat.$2.toLowerCase()}'),
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,

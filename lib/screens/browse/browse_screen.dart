@@ -22,10 +22,30 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _radiusKm = 10;
   Timer? _searchDebounce;
 
+  // Tracks the last category applied from the URL query param
+  // to avoid re-triggering on every didChangeDependencies call.
+  String? _lastRouteCategory;
+
   // User's current GPS location for radius filtering
   double? _userLat;
   double? _userLng;
   bool _locationDenied = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // When the user taps a category on the home screen, the route becomes
+    // /browse?category=delivery (etc.). Detect the change here and apply
+    // the filter so only matching tasks are shown.
+    final routeCat = GoRouterState.of(context).uri.queryParameters['category'];
+    if (routeCat != null && routeCat != _lastRouteCategory) {
+      _lastRouteCategory = routeCat;
+      setState(() => _selectedCategory = routeCat);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    }
+  }
 
   @override
   void initState() {

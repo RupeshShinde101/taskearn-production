@@ -20,9 +20,24 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _maxBudget = 5000;
   double _radiusKm = 10;
   Timer? _searchDebounce;
+  // Tracks the last category applied from the URL query param
+  String? _lastRouteCategory;
   /// Ticks every minute so tasks that cross the 24-h expiry boundary are
   /// removed from the visible list without needing a manual refresh.
   Timer? _expiryTicker;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final routeCat = GoRouterState.of(context).uri.queryParameters['category'];
+    if (routeCat != null && routeCat != _lastRouteCategory) {
+      _lastRouteCategory = routeCat;
+      setState(() => _selectedCategory = routeCat);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    }
+  }
 
   @override
   void initState() {

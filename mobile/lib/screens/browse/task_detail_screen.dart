@@ -696,6 +696,18 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       const Text(
+                        'Total Value',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.gray,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text('₹${task.totalAmount.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.dark)),
+                      const SizedBox(height: 4),
+                      const Text(
                         'Net Earning',
                         style: TextStyle(
                           fontSize: 11,
@@ -706,11 +718,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       Text('₹${task.netEarning.toStringAsFixed(0)}',
                           style: const TextStyle(
                               fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.success)),
-                      Text(
-                        task.serviceCharge != null && task.serviceCharge! > 0
-                            ? 'Total ₹${task.totalAmount.toStringAsFixed(0)} − 15% fee'
-                            : '− 15% platform fee',
-                        style: const TextStyle(color: AppColors.gray, fontSize: 11),
+                      const Text(
+                        '− 15% platform fee',
+                        style: TextStyle(color: AppColors.gray, fontSize: 11),
                       ),
                     ],
                   ),

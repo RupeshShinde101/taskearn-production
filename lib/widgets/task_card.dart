@@ -71,10 +71,19 @@ class TaskCard extends StatelessWidget {
                     ),
                   ),
 
-                  // Net Earning
+                  // Total & Net Earning
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      const Text(
+                        'Total Value',
+                        style: TextStyle(fontSize: 9, color: AppColors.gray, fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        '₹',
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.dark),
+                      ),
+                      const SizedBox(height: 2),
                       const Text(
                         'Net Earning',
                         style: TextStyle(

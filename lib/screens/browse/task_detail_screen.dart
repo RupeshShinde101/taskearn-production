@@ -992,9 +992,17 @@ class _TimelineRow extends StatelessWidget {
   const _TimelineRow(this.label, this.time);
 
   String _format(DateTime d) {
-    // Always display in IST (UTC+05:30) regardless of device timezone.
-    final ist = d.toUtc().add(const Duration(hours: 5, minutes: 30));
-    final nowIst = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+    // Convert to IST using the absolute epoch value.
+    // microsecondsSinceEpoch is always UTC-based regardless of isUtc flag
+    // or device timezone — this prevents any double-conversion on MIUI devices.
+    final ist = DateTime.fromMicrosecondsSinceEpoch(
+      d.microsecondsSinceEpoch,
+      isUtc: true,
+    ).add(const Duration(hours: 5, minutes: 30));
+    final nowIst = DateTime.fromMicrosecondsSinceEpoch(
+      DateTime.now().microsecondsSinceEpoch,
+      isUtc: true,
+    ).add(const Duration(hours: 5, minutes: 30));
 
     // 12-hour AM/PM time
     final hour12 = ist.hour == 0 ? 12 : (ist.hour > 12 ? ist.hour - 12 : ist.hour);

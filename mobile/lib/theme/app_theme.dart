@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
   // Brand
@@ -152,7 +151,7 @@ class AppTheme {
           thickness: 1,
           space: 0,
         ),
-        textTheme: GoogleFonts.poppinsTextTheme(),
+        fontFamily: 'Inter',
       );
 
   static ThemeData get darkTheme => ThemeData(
@@ -206,8 +205,7 @@ class AppTheme {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           hintStyle: const TextStyle(color: AppColors.gray, fontSize: 14),
         ),
-        textTheme: GoogleFonts.poppinsTextTheme(
-            ThemeData(brightness: Brightness.dark).textTheme),
+        fontFamily: 'Inter',
       );
 }
 

@@ -125,22 +125,20 @@ class Task {
 
   /// Parse any date/time value the server may send and return a local DateTime.
   static DateTime _parseDate(dynamic value) {
-    if (value == null) return DateTime.now();
+    if (value == null) return DateTime.now().toUtc();
     final s = value.toString().trim();
-    if (s.isEmpty) return DateTime.now();
+    if (s.isEmpty) return DateTime.now().toUtc();
     // Detect an explicit timezone marker: trailing 'Z' or an offset like +05:30
     final hasZone =
         s.endsWith('Z') || RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
     if (!hasZone) {
-      // No timezone marker → server sends UTC without 'Z'. Append Z before
-      // parsing so Dart treats it as UTC and then converts to local correctly.
       final utc = DateTime.tryParse('${s}Z');
-      if (utc != null) return utc.toLocal();
+      if (utc != null) return utc; // already UTC (isUtc=true)
     }
     final dt = DateTime.tryParse(s);
-    if (dt != null) return dt.isUtc ? dt.toLocal() : dt;
+    if (dt != null) return dt.isUtc ? dt : dt.toUtc();
     // Last resort: RFC-1123 / HTTP-date from Flask's default JSON encoder.
-    return _parseRfc1123(s) ?? DateTime.now();
+    return _parseRfc1123(s)?.toUtc() ?? DateTime.now().toUtc();
   }
 
   /// Like [_parseDate] but returns null for null/empty/unparseable values
@@ -154,11 +152,11 @@ class Task {
         s.endsWith('Z') || RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
     if (!hasZone) {
       final utc = DateTime.tryParse('${s}Z');
-      if (utc != null) return utc.toLocal();
+      if (utc != null) return utc;
     }
     final dt = DateTime.tryParse(s);
-    if (dt != null) return dt.isUtc ? dt.toLocal() : dt;
-    return _parseRfc1123(s);
+    if (dt != null) return dt.isUtc ? dt : dt.toUtc();
+    return _parseRfc1123(s)?.toUtc();
   }
 
   /// Returns the first non-empty string value found in [map] for any of [keys].

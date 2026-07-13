@@ -21,6 +21,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
+  void _navigateForNotification(BuildContext context, AppNotification n) {
+    final taskId = n.taskId;
+    if (taskId == null || taskId.isEmpty) return;
+    const inProgressTypes = {
+      'task_assigned', 'task_accepted', 'task_completed_helper',
+      'task_verify_sent', 'payment_released', 'payment_received',
+      'payment_done', 'verify_and_pay', 'task_completed',
+      'task_final_completed', 'task_cancelled_by_poster',
+    };
+    if (inProgressTypes.contains(n.type ?? '')) {
+      context.push('/task-in-progress/$taskId');
+    } else {
+      // skill_matched, nearby_task, task_posted → task detail with Apply button
+      context.push('/task/$taskId');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

@@ -39,6 +39,14 @@ class _MainShellState extends State<MainShell> {
   /// Returns false → Android falls back to its default behaviour.
   Future<dynamic> _onNativeBack(MethodCall call) async {
     if (call.method != 'back_pressed' || !mounted) return false;
+
+    // If there is a pushed route on the stack (e.g. task detail, notifications,
+    // post-task, chat) — pop it normally and do NOT apply tab-level logic.
+    if (GoRouter.of(context).canPop()) {
+      GoRouter.of(context).pop();
+      return true;
+    }
+
     if (_currentIdx != 0) {
       // Non-home tab → go to Home
       context.go('/home');

@@ -3297,6 +3297,7 @@ def get_task(task_id):
     """Get a single task by ID — used when tapping a task_matched FCM notification."""
     import datetime
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    _ensure_verify_columns()  # guarantees helper_final_completed_at + is_hidden exist
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''
@@ -3306,7 +3307,7 @@ def get_task(task_id):
                        t.price, t.service_charge, t.posted_by, t.accepted_by,
                        t.posted_at, t.expires_at, t.status,
                        t.is_paid, t.completion_proof, t.accepted_at, t.completed_at,
-                       t.helper_final_completed_at, t.is_hidden,
+                       t.helper_final_completed_at,
                        COALESCE(u.name, 'Anonymous') AS poster_name,
                        COALESCE(u.rating, 5.0)       AS poster_rating,
                        COALESCE(u.tasks_posted, 0)   AS poster_tasks,

@@ -110,6 +110,106 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     setState(() {});
   }
 
+  /// Show a bottom sheet with the sub-categories of [group].
+  void _showSubCategorySheet(TaskCategoryGroup group) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Title row
+            Row(
+              children: [
+                Text(group.icon, style: const TextStyle(fontSize: 24)),
+                const SizedBox(width: 10),
+                Text(
+                  group.label,
+                  style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Select a specific category:',
+              style: const TextStyle(fontSize: 13, color: AppColors.gray),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: group.subCategories.map((c) {
+                final sel = _selectedCategory == c.id;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedCategory = c.id;
+                      _autoFillDescription();
+                    });
+                    Navigator.pop(context);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: sel ? AppColors.primary : AppColors.light,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: sel ? AppColors.primary : AppColors.border,
+                        width: sel ? 2 : 1,
+                      ),
+                      boxShadow: sel
+                          ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.25), blurRadius: 8)]
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(c.icon, style: const TextStyle(fontSize: 20)),
+                        const SizedBox(width: 8),
+                        Text(
+                          c.label,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: sel ? Colors.white : AppColors.dark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Auto-fill description with category-specific prompts/questions.
   /// Called when a category is selected to guide the user on what to describe.
   /// Replaces the description if it is still the previously auto-filled template
@@ -566,16 +666,34 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ),
               const SizedBox(height: 14),
 
-              // ── Category grid ───────────────────────────────────────
+  // ── Category picker (hierarchical) ──────────────────────
               const Text('Category',
                   style: TextStyle(
                       fontWeight: FontWeight.w600, color: AppColors.dark)),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
+              // Selected category pill
+              if (_selectedCategory.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: AppColors.primary, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Selected: ${TaskCategory.all.firstWhere((c) => c.id == _selectedCategory, orElse: () => TaskCategory(id: '', label: _selectedCategory, icon: '')).label}',
+                        style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
               // Category search bar
               TextField(
                 controller: _categorySearchCtrl,
                 decoration: InputDecoration(
-                  hintText: 'Search category…',
+                  hintText: 'Search category\u2026',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: _categorySearch.isNotEmpty
                       ? IconButton(
@@ -617,124 +735,127 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 }),
               ),
               const SizedBox(height: 10),
-              LayoutBuilder(builder: (ctx, constraints) {
-                List<TaskCategory> allCats = _categorySearch.isEmpty
-                    ? (_showAllCategories ? TaskCategory.all : TaskCategory.all.take(12).toList())
-                    : TaskCategory.all.where(
-                        (c) => c.label.toLowerCase().contains(_categorySearch) ||
-                               c.id.contains(_categorySearch)).toList();
-                final bool isFiltered = _categorySearch.isNotEmpty;
-                const crossCount = 4;
-                return Column(
-                  children: [
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: allCats.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossCount,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 70 / 70,
-                      ),
-                      itemBuilder: (ctx, i) {
-                        final c = allCats[i];
-                        final sel = _selectedCategory == c.id;
-                        final highlighted = isFiltered && i == 0;
-                        return GestureDetector(
-                          onTap: () => setState(() {
-                            _selectedCategory = c.id;
-                            _autoFillDescription();
-                          }),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            decoration: BoxDecoration(
-                              color: sel
-                                  ? AppColors.primary
-                                  : highlighted
-                                      ? AppColors.primary.withValues(alpha: 0.12)
-                                      : AppColors.light,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: sel || highlighted
-                                    ? AppColors.primary
-                                    : AppColors.border,
-                                width: sel || highlighted ? 2 : 1,
-                              ),
-                              boxShadow: sel
-                                  ? [
-                                      BoxShadow(
-                                        color: AppColors.primary
-                                            .withValues(alpha: 0.25),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
-                                      )
-                                    ]
-                                  : null,
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(c.icon,
-                                    style: const TextStyle(fontSize: 22)),
-                                const SizedBox(height: 4),
-                                Text(
-                                  c.label,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: sel
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: sel
-                                        ? Colors.white
-                                        : AppColors.dark,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
+              // Show search results OR parent category groups
+              if (_categorySearch.isNotEmpty) ...[
+                // ── Flat search results ───────────────────────────────
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: TaskCategory.all
+                      .where((c) => c.label.toLowerCase().contains(_categorySearch) ||
+                                    c.id.contains(_categorySearch))
+                      .map((c) {
+                    final sel = _selectedCategory == c.id;
+                    return GestureDetector(
+                      onTap: () => setState(() {
+                        _selectedCategory = c.id;
+                        _categorySearchCtrl.clear();
+                        _categorySearch = '';
+                        _autoFillDescription();
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.primary,
+                            width: sel ? 2 : 1.5,
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 6),
-                    if (!isFiltered)
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _showAllCategories = !_showAllCategories),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              _showAllCategories
-                                  ? 'Show fewer categories'
-                                  : 'Show all categories',
-                              style: const TextStyle(
-                                color: AppColors.primary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              _showAllCategories
-                                  ? Icons.keyboard_arrow_up
-                                  : Icons.keyboard_arrow_down,
-                              color: AppColors.primary,
-                              size: 16,
-                            ),
+                            Text(c.icon, style: const TextStyle(fontSize: 16)),
+                            const SizedBox(width: 6),
+                            Text(c.label,
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: sel ? Colors.white : AppColors.dark)),
                           ],
                         ),
                       ),
-                    ),
-                  ],
-                );
-              }),
+                    );
+                  }).toList(),
+                ),
+              ] else ...[
+                // ── Parent category grid ──────────────────────────────
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: TaskCategoryGroup.all.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.0,
+                  ),
+                  itemBuilder: (ctx, i) {
+                    final group = TaskCategoryGroup.all[i];
+                    // Check if current selection belongs to this group
+                    final groupActive = group.categoryIds.contains(_selectedCategory);
+                    return GestureDetector(
+                      onTap: () => _showSubCategorySheet(group),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        decoration: BoxDecoration(
+                          color: groupActive ? AppColors.primary : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: groupActive ? AppColors.primary : AppColors.border,
+                            width: groupActive ? 2 : 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: groupActive
+                                  ? AppColors.primary.withValues(alpha: 0.2)
+                                  : Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(group.icon, style: const TextStyle(fontSize: 26)),
+                            const SizedBox(height: 6),
+                            Text(
+                              group.label,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: groupActive ? Colors.white : AppColors.dark,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (groupActive) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                TaskCategory.all.firstWhere(
+                                  (c) => c.id == _selectedCategory,
+                                  orElse: () => const TaskCategory(id: '', label: '', icon: ''),
+                                ).label,
+                                style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w500),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 14),
 
               // Description
@@ -743,7 +864,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 maxLines: 4,
                 decoration: const InputDecoration(
                   labelText: 'Description',
-                  hintText: 'Describe what needs to be done…',
+                  hintText: 'Describe what needs to be done\u2026',
                   prefixIcon: Icon(Icons.description_outlined),
                   alignLabelWithHint: true,
                 ),

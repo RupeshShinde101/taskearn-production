@@ -110,7 +110,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     setState(() {});
   }
 
-  /// Show a bottom sheet with the sub-categories of [group].
+  /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
   void _showSubCategorySheet(TaskCategoryGroup group) {
     showModalBottomSheet(
       context: context,
@@ -153,15 +153,24 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ],
             ),
             const SizedBox(height: 6),
-            Text(
+            const Text(
               'Select a specific category:',
-              style: const TextStyle(fontSize: 13, color: AppColors.gray),
+              style: TextStyle(fontSize: 13, color: AppColors.gray),
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: group.subCategories.map((c) {
+            // Square grid — same style as the old flat picker
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: group.subCategories.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.0,
+              ),
+              itemBuilder: (_, i) {
+                final c = group.subCategories[i];
                 final sel = _selectedCategory == c.id;
                 return GestureDetector(
                   onTap: () {
@@ -173,36 +182,42 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: sel ? AppColors.primary : AppColors.light,
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: sel ? AppColors.primary : AppColors.border,
                         width: sel ? 2 : 1,
                       ),
                       boxShadow: sel
-                          ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.25), blurRadius: 8)]
+                          ? [BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.25),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            )]
                           : null,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(c.icon, style: const TextStyle(fontSize: 20)),
-                        const SizedBox(width: 8),
+                        Text(c.icon, style: const TextStyle(fontSize: 22)),
+                        const SizedBox(height: 4),
                         Text(
                           c.label,
                           style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 10,
+                            fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
                             color: sel ? Colors.white : AppColors.dark,
                           ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
                 );
-              }).toList(),
+              },
             ),
           ],
         ),

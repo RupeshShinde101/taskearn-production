@@ -9443,6 +9443,24 @@ def notify_task_nearby(task_id):
                     continue
                 if _haversine_km(task_lat, task_lng, float(u_lat), float(u_lng)) > 10.0:
                     continue
+                # Store in-app notification so it shows in the bell icon
+                try:
+                    import json as _nj, datetime as _dt
+                    _ndata = _nj.dumps({'type': 'nearby_task', 'taskId': task_id,
+                                        'label': '\U0001f441\ufe0f View Task'})
+                    _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (user['id'], task_id, 'nearby_task',
+                              '\U0001f4cd New Task Near You!',
+                              f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
+                              'unread', _ndata, _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
                 send_fcm_to_user(
                     user['id'],
                     '\U0001f4cd New Task Near You!',

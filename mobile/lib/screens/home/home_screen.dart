@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
@@ -63,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchSuggestedTasks() async {
     try {
       final data = await ApiService.get('/tasks',
-          queryParams: {'limit': '8', 'status': 'open'});
+          queryParams: {'limit': '8'});
       if (!mounted || data == null) return;
       final list = data is List ? data : (data['tasks'] as List? ?? []);
       final tasks = <Task>[];
@@ -72,7 +73,10 @@ class _HomeScreenState extends State<HomeScreen> {
           tasks.add(Task.fromJson(item as Map<String, dynamic>));
         } catch (_) {}
       }
-      if (mounted) setState(() => _suggestedTasks = tasks);
+      if (mounted) {
+        setState(() => _suggestedTasks = tasks);
+        context.read<TaskProvider>().cacheTasksForBrowse(tasks);
+      }
     } catch (_) {}
   }
 

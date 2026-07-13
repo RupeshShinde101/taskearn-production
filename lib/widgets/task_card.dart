@@ -80,7 +80,7 @@ class TaskCard extends StatelessWidget {
                         style: TextStyle(fontSize: 9, color: AppColors.gray, fontWeight: FontWeight.w500),
                       ),
                       Text(
-                        '₹',
+                        '\u20b9${task.budget.toStringAsFixed(0)}',
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.dark),
                       ),
                       const SizedBox(height: 2),

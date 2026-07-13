@@ -112,6 +112,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
   void _showSubCategorySheet(TaskCategoryGroup group) {
+    // Dismiss keyboard so it doesn’t fight with the bottom sheet
+    FocusScope.of(context).unfocus();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -812,7 +814,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     // Check if current selection belongs to this group
                     final groupActive = group.categoryIds.contains(_selectedCategory);
                     return GestureDetector(
-                      onTap: () => _showSubCategorySheet(group),
+                      onTap: () {
+                        FocusScope.of(context).unfocus();
+                        _showSubCategorySheet(group);
+                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         decoration: BoxDecoration(

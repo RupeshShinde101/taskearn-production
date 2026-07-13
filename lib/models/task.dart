@@ -93,9 +93,9 @@ class Task {
       RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
 
   static DateTime _parseDate(dynamic value) {
-    if (value == null) return DateTime.now();
+    if (value == null) return DateTime.now().toUtc();
     final s = value.toString().trim();
-    if (s.isEmpty) return DateTime.now();
+    if (s.isEmpty) return DateTime.now().toUtc();
     final DateTime? iso;
     if (_hasTimezone(s)) {
       iso = DateTime.tryParse(s);
@@ -103,8 +103,9 @@ class Task {
       // No timezone marker — server sends UTC; append 'Z' to parse correctly.
       iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
     }
-    if (iso != null) return iso.isUtc ? iso.toLocal() : iso;
-    return DateTime.now();
+    // Always return UTC so microsecondsSinceEpoch gives the true epoch.
+    if (iso != null) return iso.isUtc ? iso : iso.toUtc();
+    return DateTime.now().toUtc();
   }
 
   /// Like [_parseDate] but returns null for null/empty/unparseable values.
@@ -119,7 +120,7 @@ class Task {
       iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
     }
     if (iso == null) return null;
-    return iso.isUtc ? iso.toLocal() : iso;
+    return iso.isUtc ? iso : iso.toUtc();
   }
 
   /// Returns the first non-empty string value found in [map] for any of [keys].

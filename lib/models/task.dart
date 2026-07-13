@@ -83,30 +83,41 @@ class Task {
   });
 
   // Parse a date string that may be ISO-8601 or RFC-2822.
-  // PostgreSQL returns UTC timestamps without 'Z' suffix; we treat naive
-  // timestamps (no timezone info) as UTC so the 48-h expiry filter is accurate.
+  // PostgreSQL returns UTC timestamps WITHOUT a 'Z' suffix (e.g. "2026-07-13 10:30:00").
+  // DateTime.tryParse() without a timezone treats the string as LOCAL time.
+  // Fix: if no timezone marker is present, append 'Z' so Dart treats it as UTC
+  // and converts to local for display.
+  static bool _hasTimezone(String s) =>
+      s.endsWith('Z') ||
+      s.endsWith('z') ||
+      RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
+
   static DateTime _parseDate(dynamic value) {
     if (value == null) return DateTime.now();
     final s = value.toString().trim();
-    var iso = DateTime.tryParse(s);
-    iso ??= DateTime.tryParse('${s}Z');
-    if (iso != null) {
-      // If string had no timezone marker, the parsed value is already UTC
-      // (we appended Z above). Convert to local for consistent UI display.
-      return iso.isUtc ? iso.toLocal() : iso;
+    if (s.isEmpty) return DateTime.now();
+    final DateTime? iso;
+    if (_hasTimezone(s)) {
+      iso = DateTime.tryParse(s);
+    } else {
+      // No timezone marker — server sends UTC; append 'Z' to parse correctly.
+      iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
     }
+    if (iso != null) return iso.isUtc ? iso.toLocal() : iso;
     return DateTime.now();
   }
 
-  /// Like [_parseDate] but returns null for null/empty/unparseable values
-  /// instead of falling back to DateTime.now().  Used for optional timestamps
-  /// (completedAt, acceptedAt) so we never invent a fake timestamp.
+  /// Like [_parseDate] but returns null for null/empty/unparseable values.
   static DateTime? _parseDateOrNull(dynamic value) {
     if (value == null) return null;
     final s = value.toString().trim();
     if (s.isEmpty) return null;
-    var iso = DateTime.tryParse(s);
-    iso ??= DateTime.tryParse('${s}Z');
+    final DateTime? iso;
+    if (_hasTimezone(s)) {
+      iso = DateTime.tryParse(s);
+    } else {
+      iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
+    }
     if (iso == null) return null;
     return iso.isUtc ? iso.toLocal() : iso;
   }

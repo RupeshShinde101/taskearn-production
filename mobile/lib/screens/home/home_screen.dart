@@ -11,6 +11,7 @@ import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
+import '../browse/browse_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -564,7 +565,10 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (ctx, i) {
           final cat = cats[i];
           return GestureDetector(
-            onTap: () => context.go('/browse?category=${cat.$2.toLowerCase()}'),
+            onTap: () {
+              BrowseScreen.jumpToCategory = cat.$2.toLowerCase();
+              context.go('/browse');
+            },
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,

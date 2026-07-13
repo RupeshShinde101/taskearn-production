@@ -8,6 +8,10 @@ import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
 
 class BrowseScreen extends StatefulWidget {
+  /// Set by the home screen before calling context.go('/browse') so that the
+  /// browse screen can pre-select and filter by that category on arrival.
+  static String? jumpToCategory;
+
   const BrowseScreen({super.key});
 
   @override
@@ -29,10 +33,10 @@ class _BrowseScreenState extends State<BrowseScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final routeCat = GoRouterState.of(context).uri.queryParameters['category'];
-    if (routeCat != null && routeCat != _lastRouteCategory) {
-      _lastRouteCategory = routeCat;
-      setState(() => _selectedCategory = routeCat);
+    final cat = BrowseScreen.jumpToCategory;
+    if (cat != null) {
+      BrowseScreen.jumpToCategory = null;
+      setState(() => _selectedCategory = cat);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _applyFilters();
       });

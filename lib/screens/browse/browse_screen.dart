@@ -9,6 +9,10 @@ import '../../widgets/task_card.dart';
 import '../../services/location_service.dart';
 
 class BrowseScreen extends StatefulWidget {
+  /// Set by the home screen before calling context.go('/browse') so that the
+  /// browse screen can pre-select and filter by that category on arrival.
+  static String? jumpToCategory;
+
   const BrowseScreen({super.key});
 
   @override
@@ -22,10 +26,6 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _radiusKm = 10;
   Timer? _searchDebounce;
 
-  // Tracks the last category applied from the URL query param
-  // to avoid re-triggering on every didChangeDependencies call.
-  String? _lastRouteCategory;
-
   // User's current GPS location for radius filtering
   double? _userLat;
   double? _userLng;
@@ -34,13 +34,11 @@ class _BrowseScreenState extends State<BrowseScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // When the user taps a category on the home screen, the route becomes
-    // /browse?category=delivery (etc.). Detect the change here and apply
-    // the filter so only matching tasks are shown.
-    final routeCat = GoRouterState.of(context).uri.queryParameters['category'];
-    if (routeCat != null && routeCat != _lastRouteCategory) {
-      _lastRouteCategory = routeCat;
-      setState(() => _selectedCategory = routeCat);
+    // Consume the category signal set by the home screen before navigating.
+    final cat = BrowseScreen.jumpToCategory;
+    if (cat != null) {
+      BrowseScreen.jumpToCategory = null; // consume once
+      setState(() => _selectedCategory = cat);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _applyFilters();
       });

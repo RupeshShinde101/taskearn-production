@@ -32,6 +32,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   /// Stores the last template auto-filled into the description field so we can
   /// detect whether the user has modified it before replacing on category change.
   String _lastAutoFilledDesc = '';
+  final _categorySearchCtrl = TextEditingController();
+  String _categorySearch = '';
   LatLng? _location;
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
@@ -569,17 +571,66 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   style: TextStyle(
                       fontWeight: FontWeight.w600, color: AppColors.dark)),
               const SizedBox(height: 8),
+              // Category search bar
+              TextField(
+                controller: _categorySearchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search category…',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _categorySearch.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => setState(() {
+                            _categorySearchCtrl.clear();
+                            _categorySearch = '';
+                          }),
+                        )
+                      : null,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                onChanged: (v) => setState(() {
+                  _categorySearch = v.trim().toLowerCase();
+                  if (_categorySearch.isNotEmpty) {
+                    final match = TaskCategory.all.firstWhere(
+                      (c) => c.label.toLowerCase().contains(_categorySearch) ||
+                             c.id.contains(_categorySearch),
+                      orElse: () => TaskCategory.all.first,
+                    );
+                    _selectedCategory = match.id;
+                    _autoFillDescription();
+                  }
+                }),
+              ),
+              const SizedBox(height: 10),
               LayoutBuilder(builder: (ctx, constraints) {
-                final cats = _showAllCategories
-                    ? TaskCategory.all
-                    : TaskCategory.all.take(12).toList();
+                List<TaskCategory> allCats = _categorySearch.isEmpty
+                    ? (_showAllCategories ? TaskCategory.all : TaskCategory.all.take(12).toList())
+                    : TaskCategory.all.where(
+                        (c) => c.label.toLowerCase().contains(_categorySearch) ||
+                               c.id.contains(_categorySearch)).toList();
+                final bool isFiltered = _categorySearch.isNotEmpty;
                 const crossCount = 4;
                 return Column(
                   children: [
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: cats.length,
+                      itemCount: allCats.length,
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: crossCount,
@@ -588,8 +639,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         childAspectRatio: 70 / 70,
                       ),
                       itemBuilder: (ctx, i) {
-                        final c = cats[i];
+                        final c = allCats[i];
                         final sel = _selectedCategory == c.id;
+                        final highlighted = isFiltered && i == 0;
                         return GestureDetector(
                           onTap: () => setState(() {
                             _selectedCategory = c.id;
@@ -600,13 +652,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             decoration: BoxDecoration(
                               color: sel
                                   ? AppColors.primary
-                                  : AppColors.light,
+                                  : highlighted
+                                      ? AppColors.primary.withValues(alpha: 0.12)
+                                      : AppColors.light,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: sel
+                                color: sel || highlighted
                                     ? AppColors.primary
                                     : AppColors.border,
-                                width: sel ? 2 : 1,
+                                width: sel || highlighted ? 2 : 1,
                               ),
                               boxShadow: sel
                                   ? [
@@ -647,6 +701,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       },
                     ),
                     const SizedBox(height: 6),
+                    if (!isFiltered)
                     GestureDetector(
                       onTap: () =>
                           setState(() => _showAllCategories = !_showAllCategories),

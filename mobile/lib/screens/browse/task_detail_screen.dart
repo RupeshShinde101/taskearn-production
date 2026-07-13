@@ -1001,6 +1001,12 @@ class _TimelineRow extends StatelessWidget {
     final amPm = ist.hour < 12 ? 'AM' : 'PM';
     final timeStr = '${hour12.toString()}:${ist.minute.toString().padLeft(2, '0')} $amPm';
 
+    final diff = nowIst.difference(ist);
+
+    // Very recent → relative label
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+
     final sameYear = ist.year == nowIst.year;
     final sameDay = ist.year == nowIst.year && ist.month == nowIst.month && ist.day == nowIst.day;
     final yesterday = ist.year == nowIst.year &&
@@ -1011,7 +1017,6 @@ class _TimelineRow extends StatelessWidget {
     if (yesterday) return 'Yesterday, $timeStr';
 
     // Within last 6 days → show weekday name
-    final diff = nowIst.difference(ist);
     if (diff.inDays < 7) {
       const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       return '${days[ist.weekday - 1]}, $timeStr';

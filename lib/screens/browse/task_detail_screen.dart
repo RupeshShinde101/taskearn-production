@@ -991,11 +991,30 @@ class _TimelineRow extends StatelessWidget {
   final DateTime time;
   const _TimelineRow(this.label, this.time);
 
+  String _format(DateTime d) {
+    // Always display in IST (UTC+05:30) regardless of device timezone.
+    // Convert to UTC first, then add the fixed IST offset.
+    final ist = d.toUtc().add(const Duration(hours: 5, minutes: 30));
+    final nowIst = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+    final diff = nowIst.difference(ist);
+
+    // Relative for very recent events
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24 && ist.day == nowIst.day) {
+      return 'Today, ${ist.hour.toString().padLeft(2, '0')}:${ist.minute.toString().padLeft(2, '0')} IST';
+    }
+    if (diff.inHours < 48 && ist.day == nowIst.subtract(const Duration(days: 1)).day) {
+      return 'Yesterday, ${ist.hour.toString().padLeft(2, '0')}:${ist.minute.toString().padLeft(2, '0')} IST';
+    }
+    // Full date for older
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${ist.day} ${months[ist.month - 1]} ${ist.year}, '
+        '${ist.hour.toString().padLeft(2, '0')}:${ist.minute.toString().padLeft(2, '0')} IST';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final d = time.toLocal();
-    final formatted =
-        '${d.day}/${d.month}/${d.year}  ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
@@ -1003,7 +1022,7 @@ class _TimelineRow extends StatelessWidget {
           const Icon(Icons.circle, size: 8, color: AppColors.primary),
           const SizedBox(width: 10),
           Text('$label: ', style: const TextStyle(color: AppColors.gray, fontSize: 13)),
-          Text(formatted, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          Text(_format(time), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
         ],
       ),
     );

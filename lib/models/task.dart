@@ -478,8 +478,8 @@ class TaskCategory {
 
   static const List<TaskCategory> all = [
     TaskCategory(id: 'delivery', label: 'Delivery', icon: '🚚'),
-    TaskCategory(id: 'pickup', label: 'Pickup', icon: '📦'),
-    TaskCategory(id: 'transport', label: 'Transport', icon: '🚗'),
+    // TaskCategory(id: 'pickup', label: 'Pickup', icon: '📦'),   // disabled
+    // TaskCategory(id: 'transport', label: 'Transport', icon: '🚗'), // disabled
     TaskCategory(id: 'moving', label: 'Moving', icon: '🏠'),
     TaskCategory(id: 'groceries', label: 'Groceries', icon: '🛒'),
     TaskCategory(id: 'cooking', label: 'Cooking', icon: '🍳'),

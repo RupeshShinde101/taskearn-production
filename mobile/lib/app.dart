@@ -25,6 +25,8 @@ import 'screens/notifications/notifications_screen.dart';
 import 'screens/referral/referral_screen.dart';
 import 'screens/shell/main_shell.dart';
 import 'screens/tutorial/tutorial_screen.dart';
+import 'screens/legal/terms_screen.dart';
+import 'screens/legal/privacy_screen.dart';
 
 class Workmate4uApp extends StatefulWidget {
   const Workmate4uApp({super.key});
@@ -60,7 +62,9 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         final isAuthRoute = loc.startsWith('/login') ||
             loc.startsWith('/register') ||
             loc.startsWith('/otp') ||
-            loc.startsWith('/forgot-password');
+            loc.startsWith('/forgot-password') ||
+            loc.startsWith('/terms') ||
+            loc.startsWith('/privacy');
 
         if (status == AuthStatus.unauthenticated && !isAuthRoute) return '/login';
         if (status == AuthStatus.authenticated && (isAuthRoute || loc == '/splash')) return '/home';
@@ -156,6 +160,14 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         GoRoute(
           path: '/tutorial',
           builder: (_, __) => const TutorialScreen(),
+        ),
+        GoRoute(
+          path: '/terms',
+          builder: (_, __) => const TermsScreen(),
+        ),
+        GoRoute(
+          path: '/privacy',
+          builder: (_, __) => const PrivacyScreen(),
         ),
       ],
     );

@@ -68,7 +68,50 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               // ── Logo ─────────────────────────────────────────────────
               Center(
-                child: Image.asset('assets/images/logo.png', height: 110),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset('assets/images/logo.png', height: 110),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 5),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF6366F1), Color(0xFF0EA5E9)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                const Color(0xFF6366F1).withValues(alpha: 0.25),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified_rounded,
+                              color: Colors.white, size: 12),
+                          SizedBox(width: 5),
+                          Text(
+                            "India's #1 Task Marketplace",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 18),
 
@@ -232,82 +275,13 @@ class _LoginScreenState extends State<LoginScreen> {
 class _FeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE0E7FF), Color(0xFFDBEAFE)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Image.asset(
+        'assets/images/illustration.png',
+        width: double.infinity,
+        fit: BoxFit.fitWidth,
       ),
-      child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: const [
-            _AvatarPerson(
-              emoji: '👷',
-              label: 'Find Work',
-              borderColor: Color(0xFF6366F1),
-            ),
-            _AvatarPerson(
-              emoji: '💼',
-              label: 'Post Tasks',
-              borderColor: Color(0xFF0EA5E9),
-            ),
-          ],
-        ),
-    );
-  }
-}
-
-class _AvatarPerson extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final Color borderColor;
-
-  const _AvatarPerson({
-    required this.emoji,
-    required this.label,
-    required this.borderColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border:
-                Border.all(color: borderColor.withValues(alpha: 0.35), width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(emoji,
-                style: const TextStyle(fontSize: 26),
-                textAlign: TextAlign.center),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
-          ),
-        ),
-      ],
     );
   }
 }

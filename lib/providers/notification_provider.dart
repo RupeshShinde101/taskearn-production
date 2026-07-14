@@ -95,6 +95,17 @@ class NotificationProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Mark all unread in-app notifications whose taskId matches [taskId] as read.
+  /// Called when the user opens a task via a floating FCM notification so the
+  /// bell icon badge and notification list stay in sync.
+  void markReadByTaskId(String taskId) {
+    for (final n in _notifications) {
+      if ((n.taskId == taskId) && !n.isRead) {
+        markRead(n.id);
+      }
+    }
+  }
+
   Future<void> clearAll() async {
     // Persist cleared timestamp BEFORE optimistic clear so that even if the
     // app restarts mid-operation, the filter is already in place.

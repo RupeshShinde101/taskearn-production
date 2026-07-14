@@ -245,6 +245,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
     _currentIdx = idx;
 
     return Scaffold(
+      extendBody: true,
       body: widget.child,
       bottomNavigationBar: _FloatingNavBar(
         selectedIndex: idx,
@@ -450,6 +451,7 @@ class _PillNavItemState extends State<_PillNavItem>
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
                     widget.icon,

@@ -10,7 +10,7 @@ class SplashScreen extends StatelessWidget {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFF5F6FF), Color(0xFFEEF0FF)],
+            colors: [Colors.white, Color(0xFFF5F6FF)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -27,15 +27,6 @@ class SplashScreen extends StatelessWidget {
               const Text(
                 'Find • Work • Earn',
                 style: TextStyle(color: AppColors.gray, fontSize: 14),
-              ),
-              const SizedBox(height: 52),
-              const SizedBox(
-                width: 32,
-                height: 32,
-                child: CircularProgressIndicator(
-                  color: AppColors.primary,
-                  strokeWidth: 3,
-                ),
               ),
             ],
           ),

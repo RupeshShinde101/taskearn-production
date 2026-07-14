@@ -11,6 +11,7 @@ import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
+import '../browse/browse_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -566,7 +567,10 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (ctx, i) {
           final cat = cats[i];
           return GestureDetector(
-            onTap: () => context.go('/browse'),
+            onTap: () {
+              BrowseScreen.jumpToCategory = cat.$2.toLowerCase();
+              context.go('/browse');
+            },
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -920,63 +924,132 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── CTA ───────────────────────────────────────────────────────────────────
   Widget _buildCTA() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.primary, Color(0xFF7C3AED)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF5B5BD6), Color(0xFF4338CA)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF5B5BD6).withValues(alpha: 0.30),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(children: [
-        const Text('Ready to get started?',
-            textAlign: TextAlign.center,
-            style: TextStyle(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Heading
+            const Text(
+              'Ready to get started?',
+              style: TextStyle(
                 color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
-        const Text('Post a task or start earning as a helper today.',
-            textAlign: TextAlign.center,
-            style:
-                TextStyle(color: Colors.white70, fontSize: 13, height: 1.4)),
-        const SizedBox(height: 20),
-        Row(children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => context.push('/post-task'),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.white, width: 1.5),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(0, 44),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22)),
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+                height: 1.2,
               ),
-              child: const Text('Post a Task',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () => context.go('/browse'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: AppColors.primary,
-                minimumSize: const Size(0, 44),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22)),
+            const SizedBox(height: 8),
+            // Subtitle
+            Text(
+              'Post a task and get help, or browse\nopportunities and start earning.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.78),
+                fontSize: 13.5,
+                height: 1.45,
               ),
-              child: const Text('Browse Tasks',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
             ),
-          ),
-        ]),
-      ]),
+            const SizedBox(height: 24),
+            // Buttons row
+            Row(
+              children: [
+                // Post a Task — solid white button
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => context.push('/post-task'),
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_task_rounded,
+                              color: Color(0xFF4338CA), size: 18),
+                          SizedBox(width: 7),
+                          Text(
+                            'Post a Task',
+                            style: TextStyle(
+                              color: Color(0xFF4338CA),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Browse Tasks — outline/ghost button
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => context.go('/browse'),
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_rounded,
+                              color: Colors.white.withValues(alpha: 0.92),
+                              size: 18),
+                          const SizedBox(width: 7),
+                          Text(
+                            'Browse Tasks',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

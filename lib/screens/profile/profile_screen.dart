@@ -454,18 +454,132 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () async {
                   final confirm = await showDialog<bool>(
                     context: context,
-                    builder: (dialogContext) => AlertDialog(
-                      title: const Text('Sign Out'),
-                      content: const Text('Are you sure you want to sign out?'),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.of(dialogContext).pop(false),
-                            child: const Text('Cancel')),
-                        TextButton(
-                            onPressed: () => Navigator.of(dialogContext).pop(true),
-                            child: const Text('Sign Out',
-                                style: TextStyle(color: AppColors.danger))),
-                      ],
+                    barrierColor: Colors.black.withValues(alpha: 0.55),
+                    builder: (dialogContext) => Dialog(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24)),
+                      insetPadding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 40),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Icon + title
+                            Row(
+                              children: [
+                                Container(
+                                  width: 44, height: 44,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.danger.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(Icons.logout_rounded,
+                                      color: AppColors.danger, size: 22),
+                                ),
+                                const SizedBox(width: 14),
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Sign Out',
+                                        style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w800,
+                                            color: Color(0xFF1E293B),
+                                            letterSpacing: -0.4)),
+                                    Text('You can sign back in anytime',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF94A3B8))),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            // Info banner
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.info_outline_rounded,
+                                      size: 16, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Your data and tasks will remain safe. Notifications will be disabled until you sign back in.',
+                                      style: TextStyle(
+                                          fontSize: 12.5,
+                                          color: const Color(0xFF64748B)
+                                              .withValues(alpha: 0.9),
+                                          height: 1.45),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            // Buttons
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(false),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor:
+                                          const Color(0xFF64748B),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14),
+                                        side: const BorderSide(
+                                            color: Color(0xFFE2E8F0)),
+                                      ),
+                                    ),
+                                    child: const Text('Stay',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14)),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(true),
+                                    icon: const Icon(Icons.logout_rounded,
+                                        size: 16),
+                                    label: const Text('Sign Out',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.danger,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   );
                   if (confirm == true && context.mounted) {

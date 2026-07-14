@@ -331,6 +331,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
                 return RefreshIndicator(
                   onRefresh: () async => _applyFilters(),
                   child: ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 96),
                     itemCount: tasks.browseTasks.length,
                     itemBuilder: (_, i) => TaskCard(
                       task: tasks.browseTasks[i],

@@ -232,82 +232,13 @@ class _LoginScreenState extends State<LoginScreen> {
 class _FeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE0E7FF), Color(0xFFDBEAFE)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Image.asset(
+        'assets/images/illustration.png',
+        width: double.infinity,
+        fit: BoxFit.fitWidth,
       ),
-      child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: const [
-            _AvatarPerson(
-              emoji: '👷',
-              label: 'Find Work',
-              borderColor: Color(0xFF6366F1),
-            ),
-            _AvatarPerson(
-              emoji: '💼',
-              label: 'Post Tasks',
-              borderColor: Color(0xFF0EA5E9),
-            ),
-          ],
-        ),
-    );
-  }
-}
-
-class _AvatarPerson extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final Color borderColor;
-
-  const _AvatarPerson({
-    required this.emoji,
-    required this.label,
-    required this.borderColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border:
-                Border.all(color: borderColor.withValues(alpha: 0.35), width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(emoji,
-                style: const TextStyle(fontSize: 26),
-                textAlign: TextAlign.center),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
-          ),
-        ),
-      ],
     );
   }
 }

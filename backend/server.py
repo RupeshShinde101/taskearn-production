@@ -3238,10 +3238,9 @@ def poster_cancel_accepted_task(task_id):
 @require_auth
 def get_task(task_id):
     """Get a single task by ID — used when tapping a task_matched FCM notification."""
-    import datetime
-    # _ensure_verify_columns() is called lazily at startup; skip it on every
-    # request to avoid DDL latency on the hot path.  The columns are guaranteed
-    # to exist after the first successful call during app warm-up.
+    # Ensure optional columns exist (no-op after the first call thanks to the
+    # _verify_columns_ensured flag, so there is no per-request DDL overhead).
+    _ensure_verify_columns()
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''
@@ -3250,8 +3249,8 @@ def get_task(task_id):
                        t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
                        t.price, t.service_charge, t.posted_by, t.accepted_by,
                        t.posted_at, t.expires_at, t.status,
-                       t.is_paid, t.completion_proof, t.accepted_at, t.completed_at,
-                       t.helper_final_completed_at,
+                       t.is_paid, t.completion_proof, t.accepted_at,
+                       COALESCE(t.completed_at, t.helper_final_completed_at) AS completed_at,
                        COALESCE(u.name, 'Anonymous') AS poster_name,
                        COALESCE(u.rating, 5.0)       AS poster_rating,
                        COALESCE(u.tasks_posted, 0)   AS poster_tasks,
@@ -3319,7 +3318,7 @@ def get_task(task_id):
                 'postedAt': _iso(task['posted_at']),
                 'expiresAt': _iso(task['expires_at']),
                 'accepted_at': _iso(task.get('accepted_at')),
-                'completed_at': _iso(task.get('completed_at') or task.get('helper_final_completed_at')),
+                'completed_at': _iso(task.get('completed_at')),
             }
         })
     except Exception as e:

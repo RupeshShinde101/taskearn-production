@@ -138,6 +138,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       dob: _dob != null ? DateFormat('yyyy-MM-dd').format(_dob!) : null,
       inviteCode: _inviteCtrl.text.isNotEmpty ? _inviteCtrl.text : null,
       referralCode: _referralCtrl.text.isNotEmpty ? _referralCtrl.text : null,
+      // Record the exact UTC timestamp when the user ticked the checkbox
+      termsAcceptedAt: DateTime.now().toUtc().toIso8601String(),
     );
 
     if (!mounted) return;

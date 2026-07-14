@@ -341,6 +341,29 @@ def _ensure_user_location_columns():
     except Exception as e:
         print(f'\u26a0\ufe0f _ensure_user_location_columns error: {e}')
 
+
+def _ensure_terms_columns():
+    """Add terms_accepted_at / terms_version to users (lazy migration)."""
+    global _terms_columns_ensured
+    if _terms_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':   # PostgreSQL
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ')
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version TEXT')
+            else:             # SQLite
+                cursor.execute('PRAGMA table_info(users)')
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'terms_accepted_at' not in cols:
+                    cursor.execute('ALTER TABLE users ADD COLUMN terms_accepted_at TEXT')
+                if 'terms_version' not in cols:
+                    cursor.execute('ALTER TABLE users ADD COLUMN terms_version TEXT')
+            conn.commit()
+        _terms_columns_ensured = True
+    except Exception as e:
+        print(f'Warning: _ensure_terms_columns error: {e}')
+
 def _ensure_gender_column():
     """Add gender column to users table if it does not exist (one-time per process)."""
     global _gender_column_ensured
@@ -555,6 +578,7 @@ def _ensure_suspension_columns():
 _kyc_columns_ensured = False
 
 _verify_columns_ensured = False
+_terms_columns_ensured = False
 
 def _ensure_verify_columns():
     """Ensure verified_at, payment_released_at, helper_final_completed_at, is_hidden columns exist in tasks table"""
@@ -1354,10 +1378,13 @@ def register():
 
         with get_db() as (cursor, conn):
             try:
+                _ensure_terms_columns()
+                terms_at = data.get('terms_accepted_at') or joined_at
+                terms_ver = data.get('terms_version', '2026-05-22')
                 cursor.execute(f'''
-                    INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at)
-                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                ''', (user_id, name, email, password_hash, phone, dob, joined_at))
+                    INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at, terms_accepted_at, terms_version)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (user_id, name, email, password_hash, phone, dob, joined_at, terms_at, terms_ver))
                 conn.commit()  # Explicitly commit the transaction
             except Exception as e:
                 conn.rollback()  # Rollback on error

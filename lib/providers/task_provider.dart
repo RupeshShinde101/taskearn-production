@@ -527,9 +527,18 @@ class TaskProvider extends ChangeNotifier {
 
     // Always try the API first for browse/open tasks so helpers get fresh data.
     // Fall back to cache only if both network calls fail.
-    for (final path in ['/tasks/$id', '/tasks/$id/details']) {
-      try {
-        final data = await ApiService.get(path);
+    // For brand-new tasks arriving via FCM notification, the first attempt can
+    // occasionally fail with a transient error. We retry once after 1 s before
+    // giving up so fresh notifications always open correctly.
+    String? lastApiError;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (attempt == 1) {
+        // Brief pause before the retry so transient Railway/DNS issues clear.
+        await Future.delayed(const Duration(seconds: 1));
+      }
+      for (final path in ['/tasks/$id', '/tasks/$id/details']) {
+        try {
+          final data = await ApiService.get(path);
         final taskJson = data is Map<String, dynamic>
             ? (data['task'] ?? data['data'] ?? data)
             : null;
@@ -615,10 +624,12 @@ class TaskProvider extends ChangeNotifier {
           }
           return task;
         }
-      } catch (_) {
-        // try next endpoint
+      } catch (e) {
+        // Record the error; try next endpoint or next attempt.
+        if (e is ApiException) lastApiError = e.message;
       }
-    }
+      } // end inner for-loop (paths)
+    } // end retry loop
 
     // ── Fallback: inject saved phone/name into a task object ─────────────────
     Task enrichWithSaved(Task t) {
@@ -638,7 +649,7 @@ class TaskProvider extends ChangeNotifier {
       return Task.fromJson(json);
     }
 
-    // Both direct API endpoints failed (404/405). Refresh /user/tasks so we
+    // Both direct API endpoints failed. Refresh /user/tasks so we
     // always get the latest status — the poster may have paid or verified
     // since the last fetch. Never return a stale cache without refreshing first.
     try {
@@ -648,6 +659,8 @@ class TaskProvider extends ChangeNotifier {
     final freshCached = _findCached(id);
     if (freshCached != null) return enrichWithSaved(freshCached);
 
+    // Surface the last API error so TaskDetailScreen can show a meaningful message.
+    if (lastApiError != null) _error = lastApiError;
     return null;
   }
 

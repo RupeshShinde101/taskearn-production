@@ -282,28 +282,29 @@ class _FloatingNavBar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
         child: Container(
-          height: 64,
+          height: 66,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFF0EEFF), Color(0xFFE8E4FF)],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(36),
+            border: Border.all(
+              color: const Color(0xFFEEEEF5),
+              width: 1,
+            ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.18),
-                blurRadius: 24,
+                color: const Color(0xFF6366F1).withValues(alpha: 0.14),
+                blurRadius: 28,
+                spreadRadius: -2,
                 offset: const Offset(0, 8),
               ),
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
-          padding: const EdgeInsets.all(5),
+          padding: const EdgeInsets.all(6),
           child: Row(
             children: [
               // Tab 0 & 1
@@ -322,8 +323,8 @@ class _FloatingNavBar extends StatelessWidget {
                 child: GestureDetector(
                   onTap: onPostTap,
                   child: Container(
-                    width: 48,
-                    height: 48,
+                    width: 50,
+                    height: 50,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
@@ -334,14 +335,14 @@ class _FloatingNavBar extends StatelessWidget {
                       boxShadow: [
                         BoxShadow(
                           color: const Color(0xFF6366F1)
-                              .withValues(alpha: 0.45),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+                              .withValues(alpha: 0.50),
+                          blurRadius: 14,
+                          offset: const Offset(0, 5),
                         ),
                       ],
                     ),
                     child: const Icon(Icons.add_rounded,
-                        color: Colors.white, size: 24),
+                        color: Colors.white, size: 26),
                   ),
                 ),
               ),
@@ -457,7 +458,7 @@ class _PillNavItemState extends State<_PillNavItem>
                     widget.icon,
                     size: 22,
                     color: Color.lerp(
-                      const Color(0xFF8E8EA0),
+                      const Color(0xFF94A3B8),
                       Colors.white,
                       t,
                     ),

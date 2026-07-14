@@ -3238,22 +3238,27 @@ def poster_cancel_accepted_task(task_id):
 @require_auth
 def get_task(task_id):
     """Get a single task by ID — used when tapping a task_matched FCM notification."""
-    # Ensure optional columns exist (no-op after the first call thanks to the
-    # _verify_columns_ensured flag, so there is no per-request DDL overhead).
+    import datetime as _dt
     _ensure_verify_columns()
+
+    def _iso(v):
+        if v is None:
+            return None
+        if hasattr(v, 'isoformat'):
+            if getattr(v, 'tzinfo', None) is None:
+                v = v.replace(tzinfo=_dt.timezone.utc)
+            return v.isoformat()
+        return str(v)
+
     try:
         with get_db() as (cursor, conn):
+            # Use t.* so we never fail on optional columns that may not exist
+            # yet (e.g. helper_final_completed_at, drop_location_*). We then
+            # access them via .get() which returns None for absent keys.
             cursor.execute(f'''
-                SELECT t.id, t.title, t.description, t.category,
-                       t.location_lat, t.location_lng, t.location_address,
-                       t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
-                       t.price, t.service_charge, t.posted_by, t.accepted_by,
-                       t.posted_at, t.expires_at, t.status,
-                       t.is_paid, t.completion_proof, t.accepted_at,
-                       COALESCE(t.completed_at, t.helper_final_completed_at) AS completed_at,
+                SELECT t.*,
                        COALESCE(u.name, 'Anonymous') AS poster_name,
                        COALESCE(u.rating, 5.0)       AS poster_rating,
-                       COALESCE(u.tasks_posted, 0)   AS poster_tasks,
                        u.phone                        AS poster_phone,
                        h.name                         AS helper_name,
                        h.phone                        AS helper_phone,
@@ -3268,61 +3273,49 @@ def get_task(task_id):
         if not row:
             return jsonify({'success': False, 'message': 'Task not found'}), 404
         task = dict_from_row(row)
-        # Only expose poster_phone to the accepted helper (privacy)
-        show_poster_phone = (task.get('accepted_by') == request.user_id)
-        # Only expose helper_phone to the task poster
-        show_helper_phone = (task.get('posted_by') == request.user_id)
-        # Normalise datetime fields to ISO 8601 strings so Flutter can always
-        # parse them reliably (Flask 3.x serialises datetime objects as RFC 7231
-        # which Dart's DateTime.tryParse cannot handle).
-        import datetime as _dt
-        def _iso(v):
-            if v is None:
-                return None
-            if hasattr(v, 'isoformat'):
-                if getattr(v, 'tzinfo', None) is None:
-                    v = v.replace(tzinfo=_dt.timezone.utc)
-                return v.isoformat()
-            return str(v)
+        show_poster_phone = (str(task.get('accepted_by') or '') == str(request.user_id))
+        show_helper_phone = (str(task.get('posted_by') or '') == str(request.user_id))
+        completed_at = task.get('completed_at') or task.get('helper_final_completed_at')
         return jsonify({
             'success': True,
             'task': {
                 'id': task['id'],
-                'title': task['title'],
-                'description': task['description'],
-                'category': task['category'],
+                'title': task.get('title', ''),
+                'description': task.get('description', ''),
+                'category': task.get('category', ''),
                 'location': {
-                    'lat': task['location_lat'],
-                    'lng': task['location_lng'],
-                    'address': task['location_address']
+                    'lat': task.get('location_lat'),
+                    'lng': task.get('location_lng'),
+                    'address': task.get('location_address', '')
                 },
                 'drop_location': {
-                    'lat': task['drop_location_lat'],
-                    'lng': task['drop_location_lng'],
+                    'lat': task.get('drop_location_lat'),
+                    'lng': task.get('drop_location_lng'),
                     'address': task.get('drop_location_address') or ''
                 } if task.get('drop_location_lat') else None,
-                'price': float(task['price']),
+                'price': float(task.get('price') or 0),
                 'service_charge': float(task.get('service_charge') or 0),
                 'postedBy': {
                     'id': task.get('posted_by'),
-                    'name': task['poster_name'],
-                    'rating': float(task['poster_rating']),
-                    'tasksPosted': int(task['poster_tasks']),
+                    'name': task.get('poster_name', 'Anonymous'),
+                    'rating': float(task.get('poster_rating') or 5.0),
+                    'tasksPosted': int(task.get('tasks_posted') or 0),
                     'phone': task.get('poster_phone') or '' if show_poster_phone else ''
                 },
                 'poster_phone': task.get('poster_phone') or '' if show_poster_phone else '',
                 'helper_phone': task.get('helper_phone') or '' if show_helper_phone else '',
                 'accepted_by': task.get('accepted_by'),
                 'is_paid': task.get('is_paid', False),
-                'status': task['status'],
-                'postedAt': _iso(task['posted_at']),
-                'expiresAt': _iso(task['expires_at']),
+                'status': task.get('status', 'active'),
+                'postedAt': _iso(task.get('posted_at')),
+                'expiresAt': _iso(task.get('expires_at')),
                 'accepted_at': _iso(task.get('accepted_at')),
-                'completed_at': _iso(task.get('completed_at')),
+                'completed_at': _iso(completed_at),
             }
         })
     except Exception as e:
         print(f"[GET /api/tasks/{task_id}] Error: {e}")
+        import traceback; traceback.print_exc()
         return jsonify({'success': False, 'message': 'Failed to load task.'}), 500
 
 

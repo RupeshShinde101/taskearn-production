@@ -2718,73 +2718,9 @@ def create_task():
         except Exception:
             pass
 
-        # Skill-match notifications are triggered in a background thread so
-        # the response is returned immediately without waiting for FCM calls.
-        def _skill_notify_bg(tid, poster_id, cat, title, desc, price):
-            try:
-                import json as _snj
-                import datetime as _dt
-                _ensure_bio_skills_columns()
-                _ensure_fcm_token_column()
-                _cat   = (cat   or '').lower()
-                _title = (title or '').lower()
-                _desc  = (desc  or '').lower()
-                with get_db() as (_cur, _):
-                    _cur.execute(f'''
-                        SELECT id, fcm_token, skills FROM users
-                        WHERE id != {PH}
-                          AND skills IS NOT NULL
-                          AND skills NOT IN ({PH}, {PH}, {PH})
-                    ''', (poster_id, '[]', '', 'null'))
-                    _candidates = [dict_from_row(r) for r in _cur.fetchall()]
-                _notified = 0
-                _n_title = '\U0001f4bc Task Matching Your Skills!'
-                _n_body  = f'"{title}" \u2014 \u20b9{price} \u2014 {cat}'
-                _n_data  = _snj.dumps({'type': 'skill_matched', 'taskId': tid,
-                                       'label': '\U0001f441\ufe0f View Task'})
-                _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
-                for _u in _candidates:
-                    try:
-                        _raw = _u.get('skills', '[]')
-                        _skills = [s.lower() for s in (
-                            _snj.loads(_raw) if isinstance(_raw, str) else (_raw or [])
-                        )]
-                        if not any(
-                            sk in _cat or _cat in sk or sk in _title or sk in _desc
-                            for sk in _skills
-                        ):
-                            continue
-                        # Insert in-app notification so it shows in the bell icon
-                        try:
-                            with get_db() as (_nc, _nconn):
-                                _nc.execute(f'''
-                                    INSERT INTO notifications
-                                        (user_id, task_id, notification_type, title, message, status, data, created_at)
-                                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                                ''', (_u['id'], tid, 'skill_matched',
-                                      _n_title, _n_body, 'unread', _n_data, _now))
-                                _nconn.commit()
-                        except Exception:
-                            pass
-                        # FCM push (only when the user has registered a device token)
-                        if _u.get('fcm_token'):
-                            send_fcm_to_user(
-                                _u['id'],
-                                _n_title,
-                                _n_body,
-                                data={'type': 'skill_matched', 'task_id': str(tid)},
-                                channel='workmate4u_matched',
-                            )
-                        _notified += 1
-                    except Exception:
-                        pass
-                print(f'[FCM] skill-match bg task={tid}: notified {_notified} user(s)')
-            except Exception as _e:
-                print(f'[FCM] skill-match bg error: {_e}')
-
-        # NOTE: skill-match and nearby notifications are triggered by the Flutter
-        # client via /api/tasks/<id>/notify-skills and /api/tasks/<id>/notify-nearby
-        # after task creation. Do NOT fire _skill_notify_bg here to avoid duplicates.
+        # Skill-match and nearby notifications are triggered by the Flutter client
+        # via /api/tasks/<id>/notify-skills and /api/tasks/<id>/notify-nearby after
+        # task creation. Do NOT send them inline here to avoid duplicates.
 
         response = {
             'success': True,

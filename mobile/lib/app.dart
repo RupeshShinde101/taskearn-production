@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/auth_provider.dart';
+import 'providers/notification_provider.dart';
 import 'services/notification_service.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -180,6 +181,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       _handleNotifTap(pendingTap);
     }
 
+    // Consume any notification tap that arrived during a background→foreground
+    // transition before the stream listener above was registered.
+    final pendingBgTap = NotificationService.consumePendingBackgroundTap();
+    if (pendingBgTap != null && pendingTap == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _handleNotifTap(pendingBgTap);
+      });
+    }
+
     // Show in-app popup when a task_completed event arrives while the poster
     // is actively using the app.
     _taskCompletedSub ??= NotificationService.onTaskCompleted.stream.listen((data) {
@@ -187,7 +197,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       if (taskId.isEmpty) return;
       final navKey = _router.routerDelegate.navigatorKey;
       final ctx = navKey.currentContext;
-      if (ctx == null || !ctx.mounted) return;
+      if (ctx == null) return;
       showDialog<void>(
         context: ctx,
         builder: (dialogCtx) => AlertDialog(
@@ -259,8 +269,18 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'admin_balance_adjusted',
     };
 
+    // Notification types whose task has been deleted — navigate to My Tasks
+    // instead of trying to open a non-existent task detail.
+    // Use go() for shell tab routes to avoid the navigator key assertion.
+    const deletedTaskTypes = {'task_expired', 'task_cancelled_confirmation'};
+    // Shell tab routes must use go() not push() — push() on an already-mounted
+    // ShellRoute child throws '!keyReservation.contains(key)'.
+    const shellTabRoutes = {'/my-tasks', '/home', '/browse', '/profile'};
+
     String destination;
-    if (taskId != null && taskId.isNotEmpty) {
+    if (deletedTaskTypes.contains(type)) {
+      destination = '/my-tasks';
+    } else if (taskId != null && taskId.isNotEmpty) {
       destination = inProgressTypes.contains(type)
           ? '/task-in-progress/$taskId'
           : '/task/$taskId';
@@ -282,7 +302,22 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     // If the user is already authenticated, navigate immediately.
     // Otherwise, store the path and navigate once auth resolves.
     if (_authProvider?.status == AuthStatus.authenticated) {
-      _router.push(destination);
+      // Shell tab routes must use go() to avoid the navigator key assertion.
+      if (shellTabRoutes.contains(destination)) {
+        _router.go(destination);
+      } else {
+        _router.push(destination);
+      }
+      // Mark the corresponding in-app notification as read so the bell badge
+      // and notification list stay in sync when the user opened via FCM tap.
+      if (taskId != null && taskId.isNotEmpty) {
+        try {
+          final ctx = _router.routerDelegate.navigatorKey.currentContext;
+          if (ctx != null) {
+            ctx.read<NotificationProvider>().markReadByTaskId(taskId);
+          }
+        } catch (_) {}
+      }
     } else {
       _pendingNavPath = destination;
     }

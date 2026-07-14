@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class AppNotification {
   final String id;
   final String title;
@@ -18,12 +20,26 @@ class AppNotification {
   });
 
   factory AppNotification.fromJson(Map<String, dynamic> json) {
+    // Primary: task_id DB column. Fallback: parse from the 'data' JSON field
+    // (which stores {"type":"skill_matched","taskId":"5",...}) so navigation
+    // still works even if the DB column is unexpectedly null.
+    String? taskId = json['task_id']?.toString();
+    if (taskId == null || taskId.isEmpty) {
+      try {
+        final raw = json['data'];
+        if (raw != null) {
+          final Map<String, dynamic> dataMap =
+              raw is String ? (jsonDecode(raw) as Map<String, dynamic>) : Map<String, dynamic>.from(raw as Map);
+          taskId = dataMap['task_id']?.toString() ?? dataMap['taskId']?.toString();
+        }
+      } catch (_) {}
+    }
     return AppNotification(
       id: json['id']?.toString() ?? '',
       title: json['title'] ?? '',
       body: json['body'] ?? json['message'] ?? '',
       type: json['notification_type'] ?? json['type'],
-      taskId: json['task_id']?.toString(),
+      taskId: taskId,
       isRead: json['status'] == 'read' || (json['is_read'] == true),
       createdAt: _parseDateTime(json['created_at']),
     );

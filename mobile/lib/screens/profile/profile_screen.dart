@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
@@ -454,18 +454,132 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () async {
                   final confirm = await showDialog<bool>(
                     context: context,
-                    builder: (dialogContext) => AlertDialog(
-                      title: const Text('Sign Out'),
-                      content: const Text('Are you sure you want to sign out?'),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.of(dialogContext).pop(false),
-                            child: const Text('Cancel')),
-                        TextButton(
-                            onPressed: () => Navigator.of(dialogContext).pop(true),
-                            child: const Text('Sign Out',
-                                style: TextStyle(color: AppColors.danger))),
-                      ],
+                    barrierColor: Colors.black.withValues(alpha: 0.55),
+                    builder: (dialogContext) => Dialog(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24)),
+                      insetPadding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 40),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Icon + title
+                            Row(
+                              children: [
+                                Container(
+                                  width: 44, height: 44,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.danger.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(Icons.logout_rounded,
+                                      color: AppColors.danger, size: 22),
+                                ),
+                                const SizedBox(width: 14),
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Sign Out',
+                                        style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w800,
+                                            color: Color(0xFF1E293B),
+                                            letterSpacing: -0.4)),
+                                    Text('You can sign back in anytime',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF94A3B8))),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            // Info banner
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.info_outline_rounded,
+                                      size: 16, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Your data and tasks will remain safe. Notifications will be disabled until you sign back in.',
+                                      style: TextStyle(
+                                          fontSize: 12.5,
+                                          color: const Color(0xFF64748B)
+                                              .withValues(alpha: 0.9),
+                                          height: 1.45),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            // Buttons
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(false),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor:
+                                          const Color(0xFF64748B),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14),
+                                        side: const BorderSide(
+                                            color: Color(0xFFE2E8F0)),
+                                      ),
+                                    ),
+                                    child: const Text('Stay',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14)),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(true),
+                                    icon: const Icon(Icons.logout_rounded,
+                                        size: 16),
+                                    label: const Text('Sign Out',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.danger,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   );
                   if (confirm == true && context.mounted) {
@@ -754,12 +868,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         if (status.isPermanentlyDenied) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(
-                  'Camera permission denied. Enable it in app settings.'),
-              action: SnackBarAction(
-                label: 'Settings',
-                onPressed: openAppSettings,
-              ),
+              content: Text('Camera permission denied. Enable it in app settings.'),
+              action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
             ),
           );
         } else {
@@ -804,22 +914,14 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 12),
             ListTile(
-              leading: const Icon(Icons.camera_alt_outlined,
-                  color: AppColors.primary),
+              leading: const Icon(Icons.camera_alt_outlined, color: AppColors.primary),
               title: const Text('Take a Photo'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickImage(ImageSource.camera);
-              },
+              onTap: () { Navigator.pop(ctx); _pickImage(ImageSource.camera); },
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined,
-                  color: AppColors.primary),
+              leading: const Icon(Icons.photo_library_outlined, color: AppColors.primary),
               title: const Text('Choose from Gallery'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickImage(ImageSource.gallery);
-              },
+              onTap: () { Navigator.pop(ctx); _pickImage(ImageSource.gallery); },
             ),
             const SizedBox(height: 8),
           ],
@@ -898,8 +1000,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           children: [
             const Center(
               child: Text('Edit Profile',
-                  style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             ),
             const SizedBox(height: 16),
 
@@ -916,8 +1017,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                           ? FileImage(_pickedImage!) as ImageProvider
                           : avatarImage(currentAvatarUrl),
                       child: (_pickedImage == null &&
-                              (currentAvatarUrl == null ||
-                                  currentAvatarUrl.isEmpty))
+                              (currentAvatarUrl == null || currentAvatarUrl.isEmpty))
                           ? Text(
                               widget.auth.user?.name.isNotEmpty == true
                                   ? widget.auth.user!.name[0].toUpperCase()
@@ -929,18 +1029,14 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                           : null,
                     ),
                     Positioned(
-                      bottom: 0,
-                      right: 0,
+                      bottom: 0, right: 0,
                       child: Container(
-                        width: 28,
-                        height: 28,
+                        width: 28, height: 28,
                         decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                              colors: AppColors.gradient),
+                          gradient: LinearGradient(colors: AppColors.gradient),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.camera_alt,
-                            color: Colors.white, size: 15),
+                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 15),
                       ),
                     ),
                   ],
@@ -950,8 +1046,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             const SizedBox(height: 6),
             const Center(
               child: Text('Tap to change photo',
-                  style: TextStyle(
-                      color: AppColors.gray, fontSize: 12)),
+                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
             ),
             const SizedBox(height: 16),
 
@@ -983,8 +1078,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               children: [
                 Expanded(
                   child: _GenderOption(
-                    label: 'Male',
-                    emoji: '👦',
+                    label: 'Male', emoji: '👦',
                     selected: _gender == 'male',
                     onTap: () => setState(() => _gender = 'male'),
                   ),
@@ -992,8 +1086,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _GenderOption(
-                    label: 'Female',
-                    emoji: '👧',
+                    label: 'Female', emoji: '👧',
                     selected: _gender == 'female',
                     onTap: () => setState(() => _gender = 'female'),
                   ),
@@ -1008,8 +1101,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 onPressed: _saving ? null : _save,
                 child: _saving
                     ? const SizedBox(
-                        height: 20,
-                        width: 20,
+                        height: 20, width: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : const Text('Save Changes'),

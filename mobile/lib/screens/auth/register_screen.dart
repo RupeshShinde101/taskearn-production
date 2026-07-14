@@ -435,36 +435,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             color: Color(0xFF64748B)),
                                       ),
                                       GestureDetector(
-                                        onTap: () =>
-                                            context.push('/terms'),
+                                        onTap: () {},
                                         child: const Text(
                                           'Terms & Conditions',
                                           style: TextStyle(
                                             color: Color(0xFF6366F1),
                                             fontWeight: FontWeight.w700,
                                             fontSize: 13,
-                                            decoration:
-                                                TextDecoration.underline,
-                                          ),
-                                        ),
-                                      ),
-                                      const Text(
-                                        ' and ',
-                                        style: TextStyle(
-                                            fontSize: 13,
-                                            color: Color(0xFF64748B)),
-                                      ),
-                                      GestureDetector(
-                                        onTap: () =>
-                                            context.push('/privacy'),
-                                        child: const Text(
-                                          'Privacy Policy',
-                                          style: TextStyle(
-                                            color: Color(0xFF10B981),
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 13,
-                                            decoration:
-                                                TextDecoration.underline,
                                           ),
                                         ),
                                       ),

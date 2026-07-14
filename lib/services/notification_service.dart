@@ -381,7 +381,19 @@ class NotificationService {
   /// broadcast before any listener exists (broadcast streams don't buffer).
   static Map<String, dynamic>? _pendingInitialTap;
 
+  // Stores a notification tap that arrived while the onNotificationTap stream
+  // had no listeners (e.g. background→foreground timing race). Consumed by
+  // didChangeDependencies() in app.dart alongside _pendingInitialTap.
+  static Map<String, dynamic>? _pendingBackgroundTap;
+
+  // Guard against init() being called more than once (e.g. during hot-restart
+  // or if app.dart inadvertently calls it again), which would register duplicate
+  // onMessage listeners and cause every FCM push to show twice.
+  static bool _initialized = false;
+
   static Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
     // ── Local notifications setup ──────────────────────────────────────────
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
@@ -394,13 +406,18 @@ class NotificationService {
       onDidReceiveNotificationResponse: (response) {
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) {
+          Map<String, dynamic> decoded;
           try {
-            final decoded = jsonDecode(payload) as Map<String, dynamic>;
-            onNotificationTap.add(decoded);
+            decoded = jsonDecode(payload) as Map<String, dynamic>;
           } catch (_) {
-            // Legacy plain task_id payload
-            onNotificationTap.add({'task_id': payload, 'type': ''});
+            decoded = {'task_id': payload, 'type': ''};
           }
+          // Broadcast to any active listener. Also store as _pendingBackgroundTap
+          // so app.dart's didChangeDependencies() can consume it if the event
+          // fired before the stream listener was registered (background→foreground
+          // timing race).
+          _pendingBackgroundTap = decoded;
+          onNotificationTap.add(decoded);
         }
       },
       onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
@@ -666,12 +683,31 @@ class NotificationService {
     return tap;
   }
 
+  /// Returns and clears any notification tap that arrived during a
+  /// background→foreground transition before the stream listener was ready.
+  static Map<String, dynamic>? consumePendingBackgroundTap() {
+    final tap = _pendingBackgroundTap;
+    _pendingBackgroundTap = null;
+    return tap;
+  }
+
   static Future<String?> getToken() async {
     try {
       return await _fcm.getToken();
     } catch (e) {
       debugPrint('[FCM] getToken error: $e');
       return null;
+    }
+  }
+
+  /// Delete the FCM token from Firebase so this device stops receiving push
+  /// notifications immediately. Call this on logout and on force-logout (401).
+  static Future<void> clearFcmToken() async {
+    try {
+      await _fcm.deleteToken();
+      debugPrint('[FCM] Token deleted — device will no longer receive notifications');
+    } catch (e) {
+      debugPrint('[FCM] clearFcmToken error: $e');
     }
   }
 

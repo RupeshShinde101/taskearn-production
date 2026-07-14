@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
+import 'package:latlong2/latlong.dart';
 
 class TaskProvider extends ChangeNotifier {
   List<Task> _browseTasks = [];
@@ -116,12 +118,7 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  List<Task> get browseTasks {
-    // Filter dynamically so tasks that expire while the screen is open
-    // disappear without requiring a full refresh.
-    final cutoff = DateTime.now().subtract(const Duration(hours: 24));
-    return _browseTasks.where((t) => t.createdAt.isAfter(cutoff)).toList();
-  }
+  List<Task> get browseTasks => _browseTasks;
   List<Task> get myPostedTasks => _myPostedTasks;
   List<Task> get myAcceptedTasks => _myAcceptedTasks;
   List<Task> get myCompletedTasks => _myCompletedTasks;
@@ -129,6 +126,12 @@ class TaskProvider extends ChangeNotifier {
   bool get isLoadingMy => _loadingMy;
   String? get error => _error;
   bool get hasMore => _hasMore;
+  /// True once tasks have been fetched at least once — used to decide whether
+  /// to show a full-screen spinner or just a subtle refresh indicator.
+  bool get hasMyTasksData =>
+      _myPostedTasks.isNotEmpty ||
+      _myAcceptedTasks.isNotEmpty ||
+      _myCompletedTasks.isNotEmpty;
 
   /// Cache a list of tasks (e.g. from the home screen) into [_browseTasks]
   /// so that [getTaskDetail] can find them without an extra network call.
@@ -207,9 +210,12 @@ class TaskProvider extends ChangeNotifier {
         endpoint = '/tasks/search';
         params['q'] = search;
         params['limit'] = '20';
+        if (category != null && category != 'all') params['category'] = category;
+        if (maxBudget != null) params['max_budget'] = '$maxBudget';
+        if (minBudget != null) params['min_budget'] = '$minBudget';
       } else {
         endpoint = '/tasks';
-        params['per_page'] = '20';
+        params['limit'] = '20';
       }
 
       final data = await ApiService.get(endpoint, queryParams: params);
@@ -217,11 +223,21 @@ class TaskProvider extends ChangeNotifier {
       // Posted tasks expire after 24 h — filter client-side in case the backend
       // doesn't clean them up immediately.
       final expiryCutoff = DateTime.now().subtract(const Duration(hours: 24));
-      final tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
+      var tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
         try { return Task.fromJson(j); } catch (_) { return null; }
       }).whereType<Task>()
           .where((t) => t.createdAt.isAfter(expiryCutoff))
           .toList();
+
+      // Client-side radius filter as fallback (backend may not have location index)
+      if (lat != null && lng != null && radiusKm != null) {
+        final userPos = LatLng(lat, lng);
+        tasks = tasks.where((t) {
+          final dist = LocationService.distanceBetween(
+              userPos, LatLng(t.latitude, t.longitude));
+          return dist <= radiusKm;
+        }).toList();
+      }
 
       _browseTasks.addAll(tasks);
       _hasMore = tasks.length == 20;
@@ -493,6 +509,9 @@ class TaskProvider extends ChangeNotifier {
     // For accepted/in-progress tasks, always fetch fresh from the API so we
     // get the full poster info (phone, avatar) that list endpoints omit.
     final cachedForType = _findCached(id);
+    // 'posted' == converted from 'active'; only skip the network for poster's
+    // own posted tasks or already-accepted tasks — NOT for plain browse tasks
+    // that another user wants to apply to (they need full poster info).
     final isOwnPostedOrAccepted =
         cachedForType != null &&
         (cachedForType.status == 'accepted' ||
@@ -512,99 +531,89 @@ class TaskProvider extends ChangeNotifier {
       return cachedForType;
     }
 
-    // Always try /tasks/$id first (works for active/browse tasks), then
-    // /tasks/$id/details as fallback (accepted/completed tasks only).
-    for (final path in ['/tasks/$id', '/tasks/$id/details']) {
-      try {
-        final data = await ApiService.get(path);
-        final taskJson = data is Map<String, dynamic>
-            ? (data['task'] ?? data['data'] ?? data)
-            : null;
-        if (taskJson is Map<String, dynamic>) {
-          // Normalize the /tasks/$id/details response: that endpoint returns
-          // poster info under 'provider' but Task.fromJson expects 'posted_by'.
-          // Map it so posterPhone, posterName etc. are extracted correctly.
-          Map<String, dynamic> normalizedJson = taskJson;
-          final providerObj = taskJson['provider'];
-          if (providerObj is Map<String, dynamic>) {
-            normalizedJson = Map<String, dynamic>.from(taskJson);
-            // Always map provider → posted_by (the /details endpoint uses 'provider')
-            if (!normalizedJson.containsKey('posted_by') ||
-                normalizedJson['posted_by'] is! Map) {
-              normalizedJson['posted_by'] = providerObj;
-            }
-            // Always flatten poster_phone from provider.phone — the /details
-            // endpoint returns phone only inside the nested 'provider' object.
-            // Without this, posterPhone stays null even though the data is present.
-            if ((normalizedJson['poster_phone'] == null ||
-                    normalizedJson['poster_phone'].toString().trim().isEmpty) &&
-                providerObj['phone'] != null) {
-              normalizedJson['poster_phone'] = providerObj['phone'];
-            }
-          }
-
-          var task = Task.fromJson(normalizedJson);
-
-          // If the API response omitted posterPhone or posterName, inject
-          // them from our persisted sources (browse list snapshot saved at
-          // accept time, or any remaining list cache entry that has it).
-          final enriched = Map<String, dynamic>.from(normalizedJson);
-          bool needsReparse = false;
-
-          if (task.posterPhone == null || task.posterPhone!.trim().isEmpty) {
-            final phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
-            if (phone != null) {
-              enriched['poster_phone'] = phone;
-              needsReparse = true;
-            }
-          }
-
-          if (task.posterName.isEmpty || task.posterName == 'Anonymous') {
-            final name = _loadName(id) ?? _findNameInAllLists(id);
-            if (name != null) {
-              enriched['poster_name'] = name;
-              needsReparse = true;
-            }
-          }
-
-          // If the detail endpoint omitted drop_location, inject from the
-          // accepted task list (populated from /user/tasks with flat DB columns).
-          if (task.dropLatitude == null && task.dropAddress == null) {
-            Task? listTask;
-            for (final t in _myAcceptedTasks) {
-              if (t.id == id) { listTask = t; break; }
-            }
-            if (listTask != null) {
-              if (listTask.dropLatitude != null) {
-                enriched['drop_location_lat'] = listTask.dropLatitude;
-                enriched['drop_location_lng'] = listTask.dropLongitude;
-                needsReparse = true;
+    // Always try the API first for browse/open tasks so helpers get fresh data.
+    // Retry once after 1 s — brand-new tasks arriving via FCM sometimes hit a
+    // transient connection error because the notification fires immediately
+    // after the task is committed to the DB.
+    String? lastApiError;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (attempt == 1) {
+        await Future.delayed(const Duration(seconds: 1));
+      }
+      for (final path in ['/tasks/$id', '/tasks/$id/details']) {
+        try {
+          final data = await ApiService.get(path);
+          final taskJson = data is Map<String, dynamic>
+              ? (data['task'] ?? data['data'] ?? data)
+              : null;
+          if (taskJson is Map<String, dynamic>) {
+            Map<String, dynamic> normalizedJson = taskJson;
+            final providerObj = taskJson['provider'];
+            if (providerObj is Map<String, dynamic>) {
+              normalizedJson = Map<String, dynamic>.from(taskJson);
+              if (!normalizedJson.containsKey('posted_by') ||
+                  normalizedJson['posted_by'] is! Map) {
+                normalizedJson['posted_by'] = providerObj;
               }
-              if (listTask.dropAddress != null) {
-                enriched['drop_location_address'] = listTask.dropAddress;
+              if ((normalizedJson['poster_phone'] == null ||
+                      normalizedJson['poster_phone'].toString().trim().isEmpty) &&
+                  providerObj['phone'] != null) {
+                normalizedJson['poster_phone'] = providerObj['phone'];
+              }
+            }
+
+            var task = Task.fromJson(normalizedJson);
+            final enriched = Map<String, dynamic>.from(normalizedJson);
+            bool needsReparse = false;
+
+            if (task.posterPhone == null || task.posterPhone!.trim().isEmpty) {
+              final phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
+              if (phone != null) {
+                enriched['poster_phone'] = phone;
                 needsReparse = true;
               }
             }
-          }
 
-          if (needsReparse) {
-            task = Task.fromJson(enriched);
-          }
+            if (task.posterName.isEmpty || task.posterName == 'Anonymous') {
+              final name = _loadName(id) ?? _findNameInAllLists(id);
+              if (name != null) {
+                enriched['poster_name'] = name;
+                needsReparse = true;
+              }
+            }
 
-          _detailCache[id] = task;
-          // Persist phone & name whenever we retrieve them from the network so
-          // that subsequent calls (and the next app session) find them quickly
-          // via _loadPhone/_loadName instead of relying solely on the API.
-          if (task.posterPhone != null && task.posterPhone!.trim().isNotEmpty) {
-            _savePhone(id, task.posterPhone!);
+            if (task.dropLatitude == null && task.dropAddress == null) {
+              Task? listTask;
+              for (final t in _myAcceptedTasks) {
+                if (t.id == id) { listTask = t; break; }
+              }
+              if (listTask != null) {
+                if (listTask.dropLatitude != null) {
+                  enriched['drop_location_lat'] = listTask.dropLatitude;
+                  enriched['drop_location_lng'] = listTask.dropLongitude;
+                  needsReparse = true;
+                }
+                if (listTask.dropAddress != null) {
+                  enriched['drop_location_address'] = listTask.dropAddress;
+                  needsReparse = true;
+                }
+              }
+            }
+
+            if (needsReparse) task = Task.fromJson(enriched);
+
+            _detailCache[id] = task;
+            if (task.posterPhone != null && task.posterPhone!.trim().isNotEmpty) {
+              _savePhone(id, task.posterPhone!);
+            }
+            if (task.posterName.isNotEmpty && task.posterName != 'Anonymous') {
+              _saveName(id, task.posterName);
+            }
+            return task;
           }
-          if (task.posterName.isNotEmpty && task.posterName != 'Anonymous') {
-            _saveName(id, task.posterName);
-          }
-          return task;
+        } catch (e) {
+          if (e is ApiException) lastApiError = e.message;
         }
-      } catch (_) {
-        // try next endpoint
       }
     }
 
@@ -626,7 +635,7 @@ class TaskProvider extends ChangeNotifier {
       return Task.fromJson(json);
     }
 
-    // Both direct API endpoints failed (404/405). Refresh /user/tasks so we
+    // Both direct API endpoints failed. Refresh /user/tasks so we
     // always get the latest status — the poster may have paid or verified
     // since the last fetch. Never return a stale cache without refreshing first.
     try {
@@ -636,6 +645,8 @@ class TaskProvider extends ChangeNotifier {
     final freshCached = _findCached(id);
     if (freshCached != null) return enrichWithSaved(freshCached);
 
+    // Surface the last API error so TaskDetailScreen can show a meaningful message.
+    if (lastApiError != null) _error = lastApiError;
     return null;
   }
 
@@ -681,7 +692,11 @@ class TaskProvider extends ChangeNotifier {
   ///   2. All users within 10 km of the task location (any task category).
   /// Both calls are fire-and-forget — failure never blocks the task post.
   void _triggerNewTaskNotifications(String taskId) {
-    Future.microtask(() async {
+    // Wait 3 s before firing notification endpoints so the DB connections
+    // used by POST /tasks and fetchMyTasks() are fully released first.
+    // This prevents connection-pool exhaustion that causes helpers to see
+    // "Task not found" when they tap a notification right after it arrives.
+    Future.delayed(const Duration(seconds: 3), () async {
       try {
         await ApiService.post('/tasks/$taskId/notify-skills');
       } catch (_) {}

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -27,6 +27,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _verifying = false;
   bool _rating = false;
   String? _error;
+  int _autoRetryCount = 0;
+  static const _maxAutoRetries = 3;
 
   @override
   void initState() {
@@ -34,18 +36,32 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     _loadTask();
   }
 
-  Future<void> _loadTask() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
+  Future<void> _loadTask({bool isAutoRetry = false}) async {
+    if (!isAutoRetry) _autoRetryCount = 0;
+    setState(() { _loading = true; _error = null; });
+    final provider = context.read<TaskProvider>();
+    final task = await provider.getTaskDetail(widget.taskId);
     if (!mounted) return;
+
+    if (task == null && _autoRetryCount < _maxAutoRetries) {
+      _autoRetryCount++;
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) _loadTask(isAutoRetry: true);
+      return;
+    }
+
     setState(() {
       _task = task;
       _loading = false;
-      _error = task == null ? 'Task not found' : null;
+      _error = task == null
+          ? (provider.error?.isNotEmpty == true
+              ? provider.error
+              : 'Task not found or no longer available.')
+          : null;
     });
+    if (task != null && mounted) {
+      context.read<TaskProvider>().fetchMyTasks().catchError((_) {});
+    }
   }
 
   Future<void> _accept() async {
@@ -691,6 +707,18 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       const Text(
+                        'Task Budget',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.gray,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text('₹${task.budget.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.dark)),
+                      const SizedBox(height: 4),
+                      const Text(
                         'Net Earning',
                         style: TextStyle(
                           fontSize: 11,
@@ -701,11 +729,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       Text('₹${task.netEarning.toStringAsFixed(0)}',
                           style: const TextStyle(
                               fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.success)),
-                      Text(
-                        task.serviceCharge != null && task.serviceCharge! > 0
-                            ? 'Total ₹${task.totalAmount.toStringAsFixed(0)} − 15% fee'
-                            : '− 15% platform fee',
-                        style: const TextStyle(color: AppColors.gray, fontSize: 11),
+                      const Text(
+                        '− 15% platform fee',
+                        style: TextStyle(color: AppColors.gray, fontSize: 11),
                       ),
                     ],
                   ),
@@ -992,9 +1018,17 @@ class _TimelineRow extends StatelessWidget {
   const _TimelineRow(this.label, this.time);
 
   String _format(DateTime d) {
-    // Always display in IST (UTC+05:30) regardless of device timezone.
-    final ist = d.toUtc().add(const Duration(hours: 5, minutes: 30));
-    final nowIst = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+    // Convert to IST using the absolute epoch value.
+    // microsecondsSinceEpoch is always UTC-based regardless of isUtc flag
+    // or device timezone — this prevents any double-conversion on MIUI devices.
+    final ist = DateTime.fromMicrosecondsSinceEpoch(
+      d.microsecondsSinceEpoch,
+      isUtc: true,
+    ).add(const Duration(hours: 5, minutes: 30));
+    final nowIst = DateTime.fromMicrosecondsSinceEpoch(
+      DateTime.now().microsecondsSinceEpoch,
+      isUtc: true,
+    ).add(const Duration(hours: 5, minutes: 30));
 
     // 12-hour AM/PM time
     final hour12 = ist.hour == 0 ? 12 : (ist.hour > 12 ? ist.hour - 12 : ist.hour);

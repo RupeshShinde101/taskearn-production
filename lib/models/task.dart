@@ -93,9 +93,9 @@ class Task {
       RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
 
   static DateTime _parseDate(dynamic value) {
-    if (value == null) return DateTime.now();
+    if (value == null) return DateTime.now().toUtc();
     final s = value.toString().trim();
-    if (s.isEmpty) return DateTime.now();
+    if (s.isEmpty) return DateTime.now().toUtc();
     final DateTime? iso;
     if (_hasTimezone(s)) {
       iso = DateTime.tryParse(s);
@@ -103,8 +103,9 @@ class Task {
       // No timezone marker — server sends UTC; append 'Z' to parse correctly.
       iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
     }
-    if (iso != null) return iso.isUtc ? iso.toLocal() : iso;
-    return DateTime.now();
+    // Always return UTC so microsecondsSinceEpoch gives the true epoch.
+    if (iso != null) return iso.isUtc ? iso : iso.toUtc();
+    return DateTime.now().toUtc();
   }
 
   /// Like [_parseDate] but returns null for null/empty/unparseable values.
@@ -119,7 +120,7 @@ class Task {
       iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
     }
     if (iso == null) return null;
-    return iso.isUtc ? iso.toLocal() : iso;
+    return iso.isUtc ? iso : iso.toUtc();
   }
 
   /// Returns the first non-empty string value found in [map] for any of [keys].
@@ -477,8 +478,8 @@ class TaskCategory {
 
   static const List<TaskCategory> all = [
     TaskCategory(id: 'delivery', label: 'Delivery', icon: '🚚'),
-    TaskCategory(id: 'pickup', label: 'Pickup', icon: '📦'),
-    TaskCategory(id: 'transport', label: 'Transport', icon: '🚗'),
+    // TaskCategory(id: 'pickup', label: 'Pickup', icon: '📦'),   // disabled
+    // TaskCategory(id: 'transport', label: 'Transport', icon: '🚗'), // disabled
     TaskCategory(id: 'moving', label: 'Moving', icon: '🏠'),
     TaskCategory(id: 'groceries', label: 'Groceries', icon: '🛒'),
     TaskCategory(id: 'cooking', label: 'Cooking', icon: '🍳'),
@@ -515,4 +516,62 @@ class TaskCategory {
       orElse: () => const TaskCategory(id: '', label: '', icon: '📋'),
     ).icon;
   }
+}
+
+/// A parent/group category for the hierarchical category picker in post task.
+class TaskCategoryGroup {
+  final String label;
+  final String icon;
+  final List<String> categoryIds; // ids from TaskCategory.all
+
+  const TaskCategoryGroup({
+    required this.label,
+    required this.icon,
+    required this.categoryIds,
+  });
+
+  List<TaskCategory> get subCategories => categoryIds
+      .map((id) => TaskCategory.all.firstWhere(
+            (c) => c.id == id,
+            orElse: () => TaskCategory(id: id, label: id, icon: '📋'),
+          ))
+      .toList();
+
+  static const List<TaskCategoryGroup> all = [
+    TaskCategoryGroup(
+      label: 'Engineering & Repair',
+      icon: '🔧',
+      categoryIds: ['electrician', 'plumbing', 'repair', 'carpentry', 'painting', 'vehicle', 'tech_support'],
+    ),
+    TaskCategoryGroup(
+      label: 'Home & Lifestyle',
+      icon: '🏠',
+      categoryIds: ['cleaning', 'laundry', 'cooking', 'household', 'gardening', 'beauty'],
+    ),
+    TaskCategoryGroup(
+      label: 'Delivery & Moving',
+      icon: '🚚',
+      categoryIds: ['delivery', 'moving'],
+    ),
+    TaskCategoryGroup(
+      label: 'Shopping & Errands',
+      icon: '🛒',
+      categoryIds: ['groceries', 'shopping', 'errands', 'event_help', 'queue_standing'],
+    ),
+    TaskCategoryGroup(
+      label: 'Professional',
+      icon: '💼',
+      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring'],
+    ),
+    TaskCategoryGroup(
+      label: 'Care Services',
+      icon: '❤️',
+      categoryIds: ['child_care', 'elder_care', 'pet_care'],
+    ),
+    TaskCategoryGroup(
+      label: 'Other',
+      icon: '📋',
+      categoryIds: ['other'],
+    ),
+  ];
 }

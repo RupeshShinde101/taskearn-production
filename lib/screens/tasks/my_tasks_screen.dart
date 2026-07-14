@@ -57,23 +57,36 @@ class _MyTasksScreenState extends State<MyTasksScreen>
       ),
       body: Consumer<TaskProvider>(
         builder: (_, tasks, __) {
-          if (tasks.isLoadingMy) {
+          // Show full spinner only on the very first load (no cached data yet).
+          // On subsequent refreshes show cached data + a subtle top progress bar.
+          final firstLoad = tasks.isLoadingMy && !tasks.hasMyTasksData;
+          if (firstLoad) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          return TabBarView(
-            controller: _tabs,
+          return Stack(
             children: [
-              _PostedTaskList(tasks: tasks.myPostedTasks),
-              _TaskList(
-                tasks: tasks.myAcceptedTasks,
-                emptyMsg: 'No accepted tasks',
-                onTap: (t) => context.push('/task-in-progress/${t.id}'),
+              TabBarView(
+                controller: _tabs,
+                children: [
+                  _PostedTaskList(tasks: tasks.myPostedTasks),
+                  _TaskList(
+                    tasks: tasks.myAcceptedTasks,
+                    emptyMsg: 'No accepted tasks',
+                    onTap: (t) => context.push('/task-in-progress/${t.id}'),
+                  ),
+                  _CompletedTaskList(
+                    tasks: tasks.myCompletedTasks,
+                    onTap: (t) => context.push('/task/${t.id}'),
+                  ),
+                ],
               ),
-              _CompletedTaskList(
-                tasks: tasks.myCompletedTasks,
-                onTap: (t) => context.push('/task/${t.id}'),
-              ),
+              // Subtle top bar shown while silently refreshing cached data.
+              if (tasks.isLoadingMy)
+                const Positioned(
+                  top: 0, left: 0, right: 0,
+                  child: LinearProgressIndicator(minHeight: 2),
+                ),
             ],
           );
         },

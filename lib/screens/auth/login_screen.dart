@@ -68,7 +68,51 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               // ── Logo ─────────────────────────────────────────────────
               Center(
-                child: Image.asset('assets/images/logo.png', height: 110),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset('assets/images/logo.png', height: 110),
+                    const SizedBox(height: 8),
+                    // "India's #1 Task Marketplace" gradient pill
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 5),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF6366F1), Color(0xFF0EA5E9)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF6366F1)
+                                .withValues(alpha: 0.25),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified_rounded,
+                              color: Colors.white, size: 12),
+                          SizedBox(width: 5),
+                          Text(
+                            "India's #1 Task Marketplace",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 18),
 
@@ -232,34 +276,12 @@ class _LoginScreenState extends State<LoginScreen> {
 class _FeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE0E7FF), Color(0xFFDBEAFE)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: const [
-              _AvatarPerson(
-                emoji: '\u{1F477}\u200D\u2642\uFE0F',
-                label: 'Find Work',
-                borderColor: Color(0xFF6366F1),
-              ),
-              _AvatarPerson(
-                emoji: '\u{1F469}\u200D\u{1F4BC}',
-                label: 'Post Tasks',
-                borderColor: Color(0xFF0EA5E9),
-              ),
-            ],
-          ),
-        ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Image.asset(
+        'assets/images/illustration.png',
+        width: double.infinity,
+        fit: BoxFit.fitWidth,
       ),
     );
   }

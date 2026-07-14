@@ -11,7 +11,7 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
   static const _tabs = [
     '/home',
     '/browse',
@@ -34,6 +34,9 @@ class _MainShellState extends State<MainShell> {
     super.dispose();
   }
 
+  /// Called from native Android when the back button / gesture is triggered.
+  /// Returns true  → Flutter handled it (Android does nothing).
+  /// Returns false → Android falls back to its default behaviour.
   Future<dynamic> _onNativeBack(MethodCall call) async {
     if (call.method != 'back_pressed' || !mounted) return false;
 
@@ -45,9 +48,11 @@ class _MainShellState extends State<MainShell> {
     }
 
     if (_currentIdx != 0) {
+      // Non-home tab → go to Home
       context.go('/home');
       return true;
     }
+    // Home tab → ask before exiting
     final shouldExit = await _showExitDialog();
     if (shouldExit == true && mounted) SystemNavigator.pop();
     return true;
@@ -92,6 +97,7 @@ class _MainShellState extends State<MainShell> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Header with gradient
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 24),
@@ -131,6 +137,7 @@ class _MainShellState extends State<MainShell> {
                     ],
                   ),
                 ),
+                // Body
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
                   child: Column(
@@ -147,6 +154,7 @@ class _MainShellState extends State<MainShell> {
                       const SizedBox(height: 24),
                       Row(
                         children: [
+                          // No button
                           Expanded(
                             child: OutlinedButton(
                               onPressed: () => Navigator.of(ctx).pop(false),
@@ -168,6 +176,7 @@ class _MainShellState extends State<MainShell> {
                             ),
                           ),
                           const SizedBox(width: 12),
+                          // Yes button
                           Expanded(
                             child: DecoratedBox(
                               decoration: BoxDecoration(
@@ -236,120 +245,244 @@ class _MainShellState extends State<MainShell> {
     _currentIdx = idx;
 
     return Scaffold(
-        body: widget.child,
-        bottomNavigationBar: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: AppColors.border)),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _NavItem(
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home,
-                    label: 'Home',
-                    selected: idx == 0,
-                    onTap: () => _onTap(0),
-                  ),
-                  _NavItem(
-                    icon: Icons.search_outlined,
-                    activeIcon: Icons.search,
-                    label: 'Browse',
-                    selected: idx == 1,
-                    onTap: () => _onTap(1),
-                  ),
-                  // Center "Post" button
-                  GestureDetector(
-                    onTap: () => context.push('/post-task'),
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(colors: AppColors.gradient),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Color(0x446366F1),
-                            blurRadius: 12,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.add, color: Colors.white, size: 28),
-                    ),
-                  ),
-                  _NavItem(
-                    icon: Icons.assignment_outlined,
-                    activeIcon: Icons.assignment,
-                    label: 'My Tasks',
-                    selected: idx == 2,
-                    onTap: () => _onTap(2),
-                  ),
-                  _NavItem(
-                    icon: Icons.person_outline,
-                    activeIcon: Icons.person,
-                    label: 'Profile',
-                    selected: idx == 3,
-                    onTap: () => _onTap(3),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      body: widget.child,
+      bottomNavigationBar: _FloatingNavBar(
+        selectedIndex: idx,
+        onTabTap: _onTap,
+        onPostTap: () => context.push('/post-task'),
+      ),
     );
   }
 }
 
-class _NavItem extends StatelessWidget {
+// ── Floating pill navigation bar ─────────────────────────────────────────────
+
+class _FloatingNavBar extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onTabTap;
+  final VoidCallback onPostTap;
+
+  const _FloatingNavBar({
+    required this.selectedIndex,
+    required this.onTabTap,
+    required this.onPostTap,
+  });
+
+  static const _items = [
+    (Icons.home_rounded,        'Home'),
+    (Icons.search_rounded,      'Browse'),
+    (Icons.assignment_rounded,  'My Tasks'),
+    (Icons.person_rounded,      'Profile'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+        child: Container(
+          height: 62,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(40),
+            border: Border.all(
+              color: const Color(0xFFE8E8F0),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF6366F1).withValues(alpha: 0.10),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Tab 0 & 1
+              for (int i = 0; i < 2; i++)
+                Expanded(
+                  child: _PillNavItem(
+                    icon: _items[i].$1,
+                    label: _items[i].$2,
+                    selected: selectedIndex == i,
+                    onTap: () => onTabTap(i),
+                  ),
+                ),
+              // Centre "+" post-task button
+              GestureDetector(
+                onTap: onPostTap,
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x706366F1),
+                        blurRadius: 12,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.add_rounded,
+                      color: Colors.white, size: 26),
+                ),
+              ),
+              // Tab 2 & 3
+              for (int i = 2; i < 4; i++)
+                Expanded(
+                  child: _PillNavItem(
+                    icon: _items[i].$1,
+                    label: _items[i].$2,
+                    selected: selectedIndex == i,
+                    onTap: () => onTabTap(i),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PillNavItem extends StatefulWidget {
   final IconData icon;
-  final IconData activeIcon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
-  const _NavItem({
+  const _PillNavItem({
     required this.icon,
-    required this.activeIcon,
     required this.label,
     required this.selected,
     required this.onTap,
   });
 
   @override
+  State<_PillNavItem> createState() => _PillNavItemState();
+}
+
+class _PillNavItemState extends State<_PillNavItem>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _expand;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: widget.selected ? 1.0 : 0.0,
+    );
+    _expand = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void didUpdateWidget(_PillNavItem old) {
+    super.didUpdateWidget(old);
+    if (widget.selected != old.selected) {
+      widget.selected ? _ctrl.forward() : _ctrl.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 64,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Icon(
-                selected ? activeIcon : icon,
-                key: ValueKey(selected),
-                color: selected ? AppColors.primary : AppColors.gray,
-                size: 24,
+      child: AnimatedBuilder(
+        animation: _expand,
+        builder: (_, __) {
+          final t = _expand.value;
+          return Center(
+            child: Container(
+              height: 42,
+              padding: EdgeInsets.symmetric(
+                horizontal: 4 + 10 * t,
+              ),
+              decoration: BoxDecoration(
+                // Active: indigo gradient; Inactive: transparent
+                gradient: t > 0.01
+                    ? LinearGradient(
+                        colors: [
+                          Color.lerp(Colors.transparent,
+                              const Color(0xFF6366F1), t)!,
+                          Color.lerp(Colors.transparent,
+                              const Color(0xFF4338CA), t)!,
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                borderRadius: BorderRadius.circular(21),
+                boxShadow: t > 0.5
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF6366F1)
+                              .withValues(alpha: 0.28 * t),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    widget.icon,
+                    size: 21,
+                    color: Color.lerp(
+                      const Color(0xFF9CA3AF),
+                      Colors.white,
+                      t,
+                    ),
+                  ),
+                  ClipRect(
+                    child: SizeTransition(
+                      sizeFactor: _expand,
+                      axis: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 5),
+                          Text(
+                            widget.label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: selected ? AppColors.primary : AppColors.gray,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

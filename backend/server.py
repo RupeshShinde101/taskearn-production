@@ -9453,6 +9453,19 @@ def notify_task_nearby(task_id):
             ''', (request.user_id,))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 
+        # Pre-fetch users already notified via notify-skills for this task
+        # so we skip them here and avoid duplicate FCM pushes.
+        try:
+            with get_db() as (_dc, _):
+                _dc.execute(f'''
+                    SELECT DISTINCT user_id FROM notifications
+                    WHERE task_id = {PH}
+                      AND notification_type = 'skill_matched'
+                ''', (task_id,))
+                _already_skill_notified = {str(r[0]) for r in _dc.fetchall()}
+        except Exception:
+            _already_skill_notified = set()
+
         notified = 0
         for user in candidates:
             try:
@@ -9461,6 +9474,10 @@ def notify_task_nearby(task_id):
                 if u_lat is None or u_lng is None:
                     continue
                 if _haversine_km(task_lat, task_lng, float(u_lat), float(u_lng)) > 10.0:
+                    continue
+                # Skip users who already received a skill_matched notification
+                # for this task — they don't need a second nearby_task push.
+                if str(user['id']) in _already_skill_notified:
                     continue
                 # Store in-app notification so it shows in the bell icon
                 try:

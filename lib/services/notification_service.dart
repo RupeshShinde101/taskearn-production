@@ -381,7 +381,14 @@ class NotificationService {
   /// broadcast before any listener exists (broadcast streams don't buffer).
   static Map<String, dynamic>? _pendingInitialTap;
 
+  // Guard against init() being called more than once (e.g. during hot-restart
+  // or if app.dart inadvertently calls it again), which would register duplicate
+  // onMessage listeners and cause every FCM push to show twice.
+  static bool _initialized = false;
+
   static Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
     // ── Local notifications setup ──────────────────────────────────────────
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(

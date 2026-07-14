@@ -1,18 +1,29 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// Top-level handler for background/terminated messages (must be outside class).
 ///
 /// The backend sends DATA-ONLY FCM messages (no notification key) so that this
 /// handler is always called — Android routes data-only messages here regardless
 /// of whether the app is in the foreground, background, or terminated.
+/// Background notification tap handler (must be top-level, vm:entry-point).
+@pragma('vm:entry-point')
+void _onBackgroundNotificationResponse(NotificationResponse response) {
+  // Intentionally minimal — navigation is handled when the app resumes.
+}
+
 @pragma('vm:entry-point')
 Future<void> _bgMessageHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
+  // Guard against [core/duplicate-app] if the isolate already has Firebase.
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp();
+  }
 
   // Skip if it somehow has a notification payload (OS would have shown it).
   if (message.notification != null) return;
@@ -177,10 +188,26 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       importance = Importance.high;
       break;
 
-    // ── Poster cancelled the accepted task ─────────────────────────────────
+    // ── Poster cancelled the accepted task (helper receives this) ───────────
     case 'task_cancelled_by_poster':
       title = data['title'] ?? 'Task Cancelled ⚠️';
       body = data['body'] ?? 'The poster has cancelled the task.';
+      channelId = 'workmate4u_main';
+      importance = Importance.max;
+      break;
+
+    // ── Poster receives confirmation after they cancel their own task ────────
+    case 'task_cancelled_confirmation':
+      title = data['title'] ?? 'Task Cancelled ✅';
+      body = data['body'] ?? 'Your task has been cancelled and removed.';
+      channelId = 'workmate4u_main';
+      importance = Importance.max;
+      break;
+
+    // ── Poster receives confirmation when their task was posted ──────────────
+    case 'task_posted':
+      title = data['title'] ?? 'Task Posted! 📋';
+      body = data['body'] ?? 'Your task has been posted successfully.';
       channelId = 'workmate4u_main';
       importance = Importance.max;
       break;
@@ -336,6 +363,10 @@ class NotificationService {
 
   static FirebaseMessaging get _fcm => FirebaseMessaging.instance;
 
+  // Called after every foreground FCM message so the notification section
+  // can refresh its list without requiring a manual pull-to-refresh.
+  static VoidCallback? onNewNotification;
+
   // Broadcast stream so any widget can listen for tapped notifications.
   static final StreamController<Map<String, dynamic>> onNotificationTap =
       StreamController.broadcast();
@@ -350,7 +381,14 @@ class NotificationService {
   /// broadcast before any listener exists (broadcast streams don't buffer).
   static Map<String, dynamic>? _pendingInitialTap;
 
+  // Guard against init() being called more than once (e.g. during hot-restart
+  // or if app.dart inadvertently calls it again), which would register duplicate
+  // onMessage listeners and cause every FCM push to show twice.
+  static bool _initialized = false;
+
   static Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
     // ── Local notifications setup ──────────────────────────────────────────
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
@@ -372,6 +410,7 @@ class NotificationService {
           }
         }
       },
+      onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
     );
 
     // ── Pre-create Android notification channels ───────────────────────────
@@ -410,6 +449,16 @@ class NotificationService {
     );
     debugPrint('[FCM] Permission status: ${settings.authorizationStatus}');
 
+    // ── Battery optimization exemption (Android only) ──────────────────────
+    // Without this, Android 13+ aggressively kills the FCM background process.
+    if (Platform.isAndroid) {
+      final batteryStatus = await Permission.ignoreBatteryOptimizations.status;
+      if (!batteryStatus.isGranted) {
+        await Permission.ignoreBatteryOptimizations.request();
+        debugPrint('[FCM] Battery optimization exemption requested');
+      }
+    }
+
     // ── Background handler ─────────────────────────────────────────────────
     FirebaseMessaging.onBackgroundMessage(_bgMessageHandler);
 
@@ -418,13 +467,16 @@ class NotificationService {
       debugPrint('[FCM] Foreground message: type=${message.data['type']} hasNotif=${message.notification != null}');
       final notification = message.notification;
       final type = message.data['type']?.toString() ?? '';
+
+
       final isMatch = type == 'task_matched' || type == 'matched_task' ||
           type == 'skill_matched' || type == 'nearby_task';
       final isPayment = type == 'task_completed' || type == 'verify_and_pay' ||
           type == 'payment_released' || type == 'payment_received' ||
           type == 'payment_done' || type == 'withdrawal_approved' ||
           type == 'withdrawal_rejected' || type == 'withdrawal_requested' ||
-          type == 'task_final_completed';
+          type == 'task_final_completed' || type == 'wallet_topup' ||
+          type == 'wallet_credited';
       final isAdmin = type == 'account_suspended' || type == 'admin_suspended' ||
           type == 'account_banned' || type == 'admin_banned' ||
           type == 'account_restored' || type == 'admin_warning' ||
@@ -536,7 +588,21 @@ class NotificationService {
             case 'admin_balance_adjusted':
               msgTitle ??= 'Wallet Balance Updated U0001f4b0';
               msgBody ??= 'Your wallet balance has been adjusted by admin.';
-              break;            default:
+              break;
+            case 'task_posted':
+              msgTitle ??= 'Task Posted! 📋';
+              msgBody ??= 'Your task has been posted successfully.';
+              break;
+            case 'task_cancelled_confirmation':
+              msgTitle ??= 'Task Cancelled ✅';
+              msgBody ??= 'Your task has been cancelled and removed.';
+              break;
+            case 'wallet_topup':
+            case 'wallet_credited':
+              msgTitle ??= 'Wallet Topped Up! 💰';
+              msgBody ??= 'Your wallet has been credited.';
+              break;
+            default:
               break;
           }
         }
@@ -565,6 +631,8 @@ class NotificationService {
           });
         }
       }
+      // Notify providers so the notification section auto-refreshes.
+      onNewNotification?.call();
     });
 
     // ── App opened from a background-state FCM notification ─────────────────
@@ -628,6 +696,30 @@ class NotificationService {
     );
   }
 
+  /// Shows an immediate local notification when the poster cancels an accepted task.
+  /// Uses workmate4u_payment (Importance.max) so it always shows as a heads-up popup
+  /// regardless of the workmate4u_main channel's importance level on the device.
+  static Future<void> showCancellationNotification(String taskTitle) async {
+    const androidDetails = AndroidNotificationDetails(
+      'workmate4u_payment',
+      'Payments',
+      channelDescription: 'Payment alerts and confirmations',
+      importance: Importance.max,
+      priority: Priority.max,
+      icon: '@mipmap/ic_launcher',
+      color: Color(0xFF10B981),
+      enableVibration: true,
+      playSound: true,
+    );
+    await _local.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: 'Task Cancelled \u2705',
+      body: 'Your task "$taskTitle" has been cancelled and removed.',
+      notificationDetails: const NotificationDetails(android: androidDetails),
+      payload: '{"type":"task_cancelled_confirmation"}',
+    );
+  }
+
   static Future<void> _showLocalNotification({
     required String title,
     required String body,
@@ -683,6 +775,8 @@ class NotificationService {
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
         color: Color(0xFF0EA5E9),
+        enableVibration: true,
+        playSound: true,
       );
     }
     const iosDetails = DarwinNotificationDetails();

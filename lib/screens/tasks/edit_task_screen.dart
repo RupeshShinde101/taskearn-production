@@ -274,9 +274,12 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       'price': budget,
       'budget': budget,
       if (charge > 0) 'service_charge': charge,
-      'latitude': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.latitude,
-      'longitude': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.longitude,
-      'address': combinedAddress,
+      // Nest location as the backend update_task endpoint expects.
+      'location': {
+        'lat': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.latitude,
+        'lng': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.longitude,
+        'address': combinedAddress ?? '',
+      },
       if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
         'pickup_address': _pickupAddrCtrl.text.trim(),
       if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty)

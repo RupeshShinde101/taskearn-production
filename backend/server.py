@@ -557,25 +557,28 @@ _kyc_columns_ensured = False
 _verify_columns_ensured = False
 
 def _ensure_verify_columns():
-    """Ensure verified_at, payment_released_at, helper_final_completed_at columns exist in tasks table"""
+    """Ensure verified_at, payment_released_at, helper_final_completed_at, is_hidden columns exist in tasks table"""
     global _verify_columns_ensured
     if _verify_columns_ensured:
         return
     try:
         with get_db() as (cursor, conn):
             if PH == '%s':
-                # PostgreSQL
+                # PostgreSQL — DDL needs explicit commit
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP")
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS payment_released_at TIMESTAMP")
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS helper_final_completed_at TIMESTAMP")
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE")
+                conn.commit()
             else:
                 # SQLite
                 cursor.execute("PRAGMA table_info(tasks)")
                 cols = [row[1] for row in cursor.fetchall()]
                 for col, typ in [('verified_at', 'TEXT'), ('payment_released_at', 'TEXT'),
-                                  ('helper_final_completed_at', 'TEXT')]:
+                                  ('helper_final_completed_at', 'TEXT'), ('is_hidden', 'INTEGER')]:
                     if col not in cols:
                         cursor.execute(f'ALTER TABLE tasks ADD COLUMN {col} {typ}')
+                conn.commit()
         _verify_columns_ensured = True
         print("✅ Verify flow columns verified")
     except Exception as e:
@@ -2629,52 +2632,60 @@ def create_task():
                 try: conn.rollback()
                 except Exception: pass
 
-            # Insert task
+            # Insert task and get its ID in one atomic operation (RETURNING avoids
+            # lastval() race with other concurrent sequences on the same connection).
             print('   Executing INSERT query...')
-            cursor.execute(f'''
-                INSERT INTO tasks (title, description, category, location_lat, location_lng,
-                                  location_address, drop_location_lat, drop_location_lng, drop_location_address,
-                                  price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
-            ''', (
-                html_escape(data['title']),
-                html_escape(data['description']),
-                html_escape(data['category']),
-                location.get('lat'),
-                location.get('lng'),
-                html_escape(location.get('address', '') or ''),
-                drop_location.get('lat') if drop_location else None,
-                drop_location.get('lng') if drop_location else None,
-                html_escape(drop_location.get('address', '') or '') if drop_location else None,
-                data['price'],
-                service_charge,
-                request.user_id,
-                posted_at,
-                expires_at,
-                soft_reason if soft_flagged else None
-            ))
-            print('   ✅ INSERT query executed successfully')
-            
-            # Get the inserted task ID
-            print('   Getting inserted task ID...')
-            try:
-                if config.USE_POSTGRES:
-                    cursor.execute('SELECT lastval() AS id')
-                    result = cursor.fetchone()
-                    task_id = result['id'] if result else None
-                    print(f"   PostgreSQL lastval() result: {result}")
-                else:
-                    cursor.execute('SELECT last_insert_rowid() AS id')
-                    result = cursor.fetchone()
-                    task_id = result[0] if result else None
-                    print(f"   SQLite last_insert_rowid() result: {result}")
-            except Exception as id_error:
-                print(f"❌ Error getting task ID: {id_error}")
-                import traceback
-                traceback.print_exc()
-                task_id = None
-            
-            print(f"   Extracted task_id: {task_id}")
+            if config.USE_POSTGRES:
+                cursor.execute(f'''
+                    INSERT INTO tasks (title, description, category, location_lat, location_lng,
+                                      location_address, drop_location_lat, drop_location_lng, drop_location_address,
+                                      price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
+                    RETURNING id
+                ''', (
+                    html_escape(data['title']),
+                    html_escape(data['description']),
+                    html_escape(data['category']),
+                    location.get('lat'),
+                    location.get('lng'),
+                    html_escape(location.get('address', '') or ''),
+                    drop_location.get('lat') if drop_location else None,
+                    drop_location.get('lng') if drop_location else None,
+                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    data['price'],
+                    service_charge,
+                    request.user_id,
+                    posted_at,
+                    expires_at,
+                    soft_reason if soft_flagged else None
+                ))
+                result = cursor.fetchone()
+                task_id = result['id'] if result else None
+            else:
+                cursor.execute(f'''
+                    INSERT INTO tasks (title, description, category, location_lat, location_lng,
+                                      location_address, drop_location_lat, drop_location_lng, drop_location_address,
+                                      price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
+                ''', (
+                    html_escape(data['title']),
+                    html_escape(data['description']),
+                    html_escape(data['category']),
+                    location.get('lat'),
+                    location.get('lng'),
+                    html_escape(location.get('address', '') or ''),
+                    drop_location.get('lat') if drop_location else None,
+                    drop_location.get('lng') if drop_location else None,
+                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    data['price'],
+                    service_charge,
+                    request.user_id,
+                    posted_at,
+                    expires_at,
+                    soft_reason if soft_flagged else None
+                ))
+                task_id = cursor.lastrowid
+            print(f'   ✅ INSERT query executed successfully, task_id={task_id}')
             
             if not task_id:
                 print("❌ Failed to get task ID after insertion")
@@ -2715,77 +2726,9 @@ def create_task():
         except Exception:
             pass
 
-        # Skill-match notifications are triggered in a background thread so
-        # the response is returned immediately without waiting for FCM calls.
-        def _skill_notify_bg(tid, poster_id, cat, title, desc, price):
-            try:
-                import json as _snj
-                import datetime as _dt
-                _ensure_bio_skills_columns()
-                _ensure_fcm_token_column()
-                _cat   = (cat   or '').lower()
-                _title = (title or '').lower()
-                _desc  = (desc  or '').lower()
-                with get_db() as (_cur, _):
-                    _cur.execute(f'''
-                        SELECT id, fcm_token, skills FROM users
-                        WHERE id != {PH}
-                          AND skills IS NOT NULL
-                          AND skills NOT IN ({PH}, {PH}, {PH})
-                    ''', (poster_id, '[]', '', 'null'))
-                    _candidates = [dict_from_row(r) for r in _cur.fetchall()]
-                _notified = 0
-                _n_title = '\U0001f4bc Task Matching Your Skills!'
-                _n_body  = f'"{title}" \u2014 \u20b9{price} \u2014 {cat}'
-                _n_data  = _snj.dumps({'type': 'skill_matched', 'taskId': tid,
-                                       'label': '\U0001f441\ufe0f View Task'})
-                _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
-                for _u in _candidates:
-                    try:
-                        _raw = _u.get('skills', '[]')
-                        _skills = [s.lower() for s in (
-                            _snj.loads(_raw) if isinstance(_raw, str) else (_raw or [])
-                        )]
-                        if not any(
-                            sk in _cat or _cat in sk or sk in _title or sk in _desc
-                            for sk in _skills
-                        ):
-                            continue
-                        # Insert in-app notification so it shows in the bell icon
-                        try:
-                            with get_db() as (_nc, _nconn):
-                                _nc.execute(f'''
-                                    INSERT INTO notifications
-                                        (user_id, task_id, notification_type, title, message, status, data, created_at)
-                                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                                ''', (_u['id'], tid, 'skill_matched',
-                                      _n_title, _n_body, 'unread', _n_data, _now))
-                                _nconn.commit()
-                        except Exception:
-                            pass
-                        # FCM push (only when the user has registered a device token)
-                        if _u.get('fcm_token'):
-                            send_fcm_to_user(
-                                _u['id'],
-                                _n_title,
-                                _n_body,
-                                data={'type': 'skill_matched', 'task_id': str(tid)},
-                                channel='workmate4u_matched',
-                            )
-                        _notified += 1
-                    except Exception:
-                        pass
-                print(f'[FCM] skill-match bg task={tid}: notified {_notified} user(s)')
-            except Exception as _e:
-                print(f'[FCM] skill-match bg error: {_e}')
-
-        _threading.Thread(
-            target=_skill_notify_bg,
-            args=(task_id, request.user_id,
-                  data.get('category', ''), data.get('title', ''),
-                  data.get('description', ''), data.get('price', 0)),
-            daemon=True,
-        ).start()
+        # Skill-match and nearby notifications are triggered by the Flutter client
+        # via /api/tasks/<id>/notify-skills and /api/tasks/<id>/notify-nearby after
+        # task creation. Do NOT send them inline here to avoid duplicates.
 
         response = {
             'success': True,
@@ -3295,22 +3238,27 @@ def poster_cancel_accepted_task(task_id):
 @require_auth
 def get_task(task_id):
     """Get a single task by ID — used when tapping a task_matched FCM notification."""
-    import datetime
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    _ensure_verify_columns()  # guarantees helper_final_completed_at + is_hidden exist
+    import datetime as _dt
+    _ensure_verify_columns()
+
+    def _iso(v):
+        if v is None:
+            return None
+        if hasattr(v, 'isoformat'):
+            if getattr(v, 'tzinfo', None) is None:
+                v = v.replace(tzinfo=_dt.timezone.utc)
+            return v.isoformat()
+        return str(v)
+
     try:
         with get_db() as (cursor, conn):
+            # Use t.* so we never fail on optional columns that may not exist
+            # yet (e.g. helper_final_completed_at, drop_location_*). We then
+            # access them via .get() which returns None for absent keys.
             cursor.execute(f'''
-                SELECT t.id, t.title, t.description, t.category,
-                       t.location_lat, t.location_lng, t.location_address,
-                       t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
-                       t.price, t.service_charge, t.posted_by, t.accepted_by,
-                       t.posted_at, t.expires_at, t.status,
-                       t.is_paid, t.completion_proof, t.accepted_at, t.completed_at,
-                       t.helper_final_completed_at,
+                SELECT t.*,
                        COALESCE(u.name, 'Anonymous') AS poster_name,
                        COALESCE(u.rating, 5.0)       AS poster_rating,
-                       COALESCE(u.tasks_posted, 0)   AS poster_tasks,
                        u.phone                        AS poster_phone,
                        h.name                         AS helper_name,
                        h.phone                        AS helper_phone,
@@ -3325,49 +3273,49 @@ def get_task(task_id):
         if not row:
             return jsonify({'success': False, 'message': 'Task not found'}), 404
         task = dict_from_row(row)
-        # Only expose poster_phone to the accepted helper (privacy)
-        show_poster_phone = (task.get('accepted_by') == request.user_id)
-        # Only expose helper_phone to the task poster
-        show_helper_phone = (task.get('posted_by') == request.user_id)
+        show_poster_phone = (str(task.get('accepted_by') or '') == str(request.user_id))
+        show_helper_phone = (str(task.get('posted_by') or '') == str(request.user_id))
+        completed_at = task.get('completed_at') or task.get('helper_final_completed_at')
         return jsonify({
             'success': True,
             'task': {
                 'id': task['id'],
-                'title': task['title'],
-                'description': task['description'],
-                'category': task['category'],
+                'title': task.get('title', ''),
+                'description': task.get('description', ''),
+                'category': task.get('category', ''),
                 'location': {
-                    'lat': task['location_lat'],
-                    'lng': task['location_lng'],
-                    'address': task['location_address']
+                    'lat': task.get('location_lat'),
+                    'lng': task.get('location_lng'),
+                    'address': task.get('location_address', '')
                 },
                 'drop_location': {
-                    'lat': task['drop_location_lat'],
-                    'lng': task['drop_location_lng'],
+                    'lat': task.get('drop_location_lat'),
+                    'lng': task.get('drop_location_lng'),
                     'address': task.get('drop_location_address') or ''
                 } if task.get('drop_location_lat') else None,
-                'price': float(task['price']),
+                'price': float(task.get('price') or 0),
                 'service_charge': float(task.get('service_charge') or 0),
                 'postedBy': {
                     'id': task.get('posted_by'),
-                    'name': task['poster_name'],
-                    'rating': float(task['poster_rating']),
-                    'tasksPosted': int(task['poster_tasks']),
+                    'name': task.get('poster_name', 'Anonymous'),
+                    'rating': float(task.get('poster_rating') or 5.0),
+                    'tasksPosted': int(task.get('tasks_posted') or 0),
                     'phone': task.get('poster_phone') or '' if show_poster_phone else ''
                 },
                 'poster_phone': task.get('poster_phone') or '' if show_poster_phone else '',
                 'helper_phone': task.get('helper_phone') or '' if show_helper_phone else '',
                 'accepted_by': task.get('accepted_by'),
                 'is_paid': task.get('is_paid', False),
-                'status': task['status'],
-                'postedAt': task['posted_at'],
-                'expiresAt': task['expires_at'],
-                'accepted_at': task.get('accepted_at'),
-                'completed_at': task.get('completed_at') or task.get('helper_final_completed_at'),
+                'status': task.get('status', 'active'),
+                'postedAt': _iso(task.get('posted_at')),
+                'expiresAt': _iso(task.get('expires_at')),
+                'accepted_at': _iso(task.get('accepted_at')),
+                'completed_at': _iso(completed_at),
             }
         })
     except Exception as e:
         print(f"[GET /api/tasks/{task_id}] Error: {e}")
+        import traceback; traceback.print_exc()
         return jsonify({'success': False, 'message': 'Failed to load task.'}), 500
 
 
@@ -3415,9 +3363,11 @@ def update_task(task_id):
                 return jsonify({'success': False, 'message': 'This task violates our content policy. ' + reason, 'policyViolation': True}), 422
 
             location = data.get('location', {})
-            location_lat = location.get('lat')
-            location_lng = location.get('lng')
-            location_address = location.get('address', '')
+            # Also accept flat latitude/longitude/address keys that the
+            # Flutter edit screen may send instead of the nested object.
+            location_lat = location.get('lat') or data.get('latitude') or data.get('location_lat')
+            location_lng = location.get('lng') or data.get('longitude') or data.get('location_lng')
+            location_address = location.get('address') or data.get('address') or data.get('location_address') or ''
 
             cursor.execute(f'''
                 UPDATE tasks
@@ -4506,45 +4456,29 @@ def get_user_tasks():
 
     with get_db() as (cursor, conn):
         if _run_48h_cleanup:
-            # --- 48-hour cleanup: wipe paid tasks older than 48 hours ---
-            try:
-                if config.USE_POSTGRES:
-                    cutoff_expr = "NOW() - INTERVAL '48 hours'"
-                else:
-                    cutoff_expr = "datetime('now', '-48 hours')"
-                cursor.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
-                old_task_rows = cursor.fetchall()
-                old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_task_rows]
-                if old_ids:
-                    _safe_delete_tasks(cursor, old_ids)
-                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_ids)})")
-                    conn.commit()
-            except Exception as cleanup_err:
-                print(f'[/api/user/tasks] 48h cleanup skipped: {cleanup_err}')
+            # Run cleanup in a background thread so it never delays the response.
+            def _bg_cleanup():
                 try:
-                    conn.rollback()
-                except Exception:
-                    pass
-
-            # --- 48-hour cleanup: also wipe completed tasks (new flow) older than 48 hours ---
-            try:
-                if config.USE_POSTGRES:
-                    cutoff_expr = "NOW() - INTERVAL '48 hours'"
-                else:
-                    cutoff_expr = "datetime('now', '-48 hours')"
-                cursor.execute(f"SELECT id FROM tasks WHERE status = 'done' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
-                completed_old_rows = cursor.fetchall()
-                completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
-                if completed_old_ids:
-                    _safe_delete_tasks(cursor, completed_old_ids)
-                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(completed_old_ids)})")
-                    conn.commit()
-            except Exception as cleanup_err2:
-                print(f'[/api/user/tasks] completed 48h cleanup skipped: {cleanup_err2}')
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
+                    import datetime as _dt_c
+                    with get_db() as (_cc, _cn):
+                        if config.USE_POSTGRES:
+                            cutoff_expr = "NOW() - INTERVAL '48 hours'"
+                        else:
+                            cutoff_expr = "datetime('now', '-48 hours')"
+                        _cc.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
+                        old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in _cc.fetchall()]
+                        if old_ids:
+                            _safe_delete_tasks(_cc, old_ids)
+                            _cc.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_ids)})")
+                        _cc.execute(f"SELECT id FROM tasks WHERE status = 'done' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
+                        done_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in _cc.fetchall()]
+                        if done_ids:
+                            _safe_delete_tasks(_cc, done_ids)
+                            _cc.execute(f"DELETE FROM tasks WHERE id IN ({','.join(done_ids)})")
+                except Exception as _ce:
+                    print(f'[cleanup] 48h cleanup error: {_ce}')
+            import threading as _th
+            _th.Thread(target=_bg_cleanup, daemon=True).start()
 
         # Posted tasks — exclude tasks removed/flagged by admin/AI (those are deleted or hidden)
         cursor.execute(f'''
@@ -9369,13 +9303,33 @@ def notify_task_skills(task_id):
                 )
                 if not matched:
                     continue
-                send_fcm_to_user(
-                    user['id'],
-                    '\U0001f4bc Task Matching Your Skills!',
-                    f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
-                    data={'type': 'skill_matched', 'task_id': str(task_id)},
-                    channel='workmate4u_matched',
-                )
+                import datetime as _nsdt, json as _nsj2
+                _n_title = '\U0001f4bc Task Matching Your Skills!'
+                _n_body  = f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}'
+                _n_data  = _nsj2.dumps({'type': 'skill_matched', 'taskId': str(task_id),
+                                        'label': '\U0001f441\ufe0f View Task'})
+                _now = _nsdt.datetime.now(_nsdt.timezone.utc).isoformat()
+                # Insert in-app notification (bell icon)
+                try:
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (user['id'], task_id, 'skill_matched',
+                              _n_title, _n_body, 'unread', _n_data, _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
+                # FCM push
+                if user.get('fcm_token'):
+                    send_fcm_to_user(
+                        user['id'],
+                        _n_title,
+                        _n_body,
+                        data={'type': 'skill_matched', 'task_id': str(task_id)},
+                        channel='workmate4u_matched',
+                    )
                 notified += 1
             except Exception:
                 pass
@@ -9434,6 +9388,19 @@ def notify_task_nearby(task_id):
             ''', (request.user_id,))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 
+        # Pre-fetch users already notified via notify-skills for this task
+        # so we skip them here and avoid duplicate FCM pushes.
+        try:
+            with get_db() as (_dc, _):
+                _dc.execute(f'''
+                    SELECT DISTINCT user_id FROM notifications
+                    WHERE task_id = {PH}
+                      AND notification_type = 'skill_matched'
+                ''', (task_id,))
+                _already_skill_notified = {str(r[0]) for r in _dc.fetchall()}
+        except Exception:
+            _already_skill_notified = set()
+
         notified = 0
         for user in candidates:
             try:
@@ -9443,6 +9410,28 @@ def notify_task_nearby(task_id):
                     continue
                 if _haversine_km(task_lat, task_lng, float(u_lat), float(u_lng)) > 10.0:
                     continue
+                # Skip users who already received a skill_matched notification
+                # for this task — they don't need a second nearby_task push.
+                if str(user['id']) in _already_skill_notified:
+                    continue
+                # Store in-app notification so it shows in the bell icon
+                try:
+                    import json as _nj, datetime as _dt
+                    _ndata = _nj.dumps({'type': 'nearby_task', 'taskId': task_id,
+                                        'label': '\U0001f441\ufe0f View Task'})
+                    _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (user['id'], task_id, 'nearby_task',
+                              '\U0001f4cd New Task Near You!',
+                              f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
+                              'unread', _ndata, _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
                 send_fcm_to_user(
                     user['id'],
                     '\U0001f4cd New Task Near You!',

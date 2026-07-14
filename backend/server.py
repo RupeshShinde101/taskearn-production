@@ -2782,13 +2782,9 @@ def create_task():
             except Exception as _e:
                 print(f'[FCM] skill-match bg error: {_e}')
 
-        _threading.Thread(
-            target=_skill_notify_bg,
-            args=(task_id, request.user_id,
-                  data.get('category', ''), data.get('title', ''),
-                  data.get('description', ''), data.get('price', 0)),
-            daemon=True,
-        ).start()
+        # NOTE: skill-match and nearby notifications are triggered by the Flutter
+        # client via /api/tasks/<id>/notify-skills and /api/tasks/<id>/notify-nearby
+        # after task creation. Do NOT fire _skill_notify_bg here to avoid duplicates.
 
         response = {
             'success': True,
@@ -9372,13 +9368,33 @@ def notify_task_skills(task_id):
                 )
                 if not matched:
                     continue
-                send_fcm_to_user(
-                    user['id'],
-                    '\U0001f4bc Task Matching Your Skills!',
-                    f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
-                    data={'type': 'skill_matched', 'task_id': str(task_id)},
-                    channel='workmate4u_matched',
-                )
+                import datetime as _nsdt, json as _nsj2
+                _n_title = '\U0001f4bc Task Matching Your Skills!'
+                _n_body  = f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}'
+                _n_data  = _nsj2.dumps({'type': 'skill_matched', 'taskId': str(task_id),
+                                        'label': '\U0001f441\ufe0f View Task'})
+                _now = _nsdt.datetime.now(_nsdt.timezone.utc).isoformat()
+                # Insert in-app notification (bell icon)
+                try:
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (user['id'], task_id, 'skill_matched',
+                              _n_title, _n_body, 'unread', _n_data, _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
+                # FCM push
+                if user.get('fcm_token'):
+                    send_fcm_to_user(
+                        user['id'],
+                        _n_title,
+                        _n_body,
+                        data={'type': 'skill_matched', 'task_id': str(task_id)},
+                        channel='workmate4u_matched',
+                    )
                 notified += 1
             except Exception:
                 pass
@@ -9437,6 +9453,19 @@ def notify_task_nearby(task_id):
             ''', (request.user_id,))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 
+        # Pre-fetch users already notified via notify-skills for this task
+        # so we skip them here and avoid duplicate FCM pushes.
+        try:
+            with get_db() as (_dc, _):
+                _dc.execute(f'''
+                    SELECT DISTINCT user_id FROM notifications
+                    WHERE task_id = {PH}
+                      AND notification_type = 'skill_matched'
+                ''', (task_id,))
+                _already_skill_notified = {str(r[0]) for r in _dc.fetchall()}
+        except Exception:
+            _already_skill_notified = set()
+
         notified = 0
         for user in candidates:
             try:
@@ -9445,6 +9474,10 @@ def notify_task_nearby(task_id):
                 if u_lat is None or u_lng is None:
                     continue
                 if _haversine_km(task_lat, task_lng, float(u_lat), float(u_lng)) > 10.0:
+                    continue
+                # Skip users who already received a skill_matched notification
+                # for this task — they don't need a second nearby_task push.
+                if str(user['id']) in _already_skill_notified:
                     continue
                 # Store in-app notification so it shows in the bell icon
                 try:

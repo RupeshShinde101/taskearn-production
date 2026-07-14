@@ -8,6 +8,10 @@ import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
 
 class BrowseScreen extends StatefulWidget {
+  /// Set by the home screen before calling context.go('/browse') so that the
+  /// browse screen can pre-select and filter by that category on arrival.
+  static String? jumpToCategory;
+
   const BrowseScreen({super.key});
 
   @override
@@ -20,9 +24,24 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _maxBudget = 5000;
   double _radiusKm = 10;
   Timer? _searchDebounce;
+  // Tracks the last category applied from the URL query param
+  String? _lastRouteCategory;
   /// Ticks every minute so tasks that cross the 24-h expiry boundary are
   /// removed from the visible list without needing a manual refresh.
   Timer? _expiryTicker;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final cat = BrowseScreen.jumpToCategory;
+    if (cat != null) {
+      BrowseScreen.jumpToCategory = null;
+      setState(() => _selectedCategory = cat);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    }
+  }
 
   @override
   void initState() {

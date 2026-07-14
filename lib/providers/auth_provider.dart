@@ -49,6 +49,9 @@ class AuthProvider extends ChangeNotifier {
     // No-op if already logged out (guard against multiple concurrent 401s).
     if (_status == AuthStatus.unauthenticated) return;
     debugPrint('[AUTH] Received 401 — token expired or invalid. Forcing logout.');
+    // Best-effort: delete Firebase token so the device stops receiving FCM
+    // messages even if the backend call below fails.
+    try { await NotificationService.clearFcmToken(); } catch (_) {}
     await StorageService.clearSession();
     _user = null;
     _status = AuthStatus.unauthenticated;
@@ -255,6 +258,10 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Delete the Firebase FCM token FIRST so this device immediately stops
+    // receiving push notifications, regardless of whether the backend call
+    // succeeds or fails.
+    try { await NotificationService.clearFcmToken(); } catch (_) {}
     try {
       await ApiService.post('/auth/logout');
     } catch (_) {}

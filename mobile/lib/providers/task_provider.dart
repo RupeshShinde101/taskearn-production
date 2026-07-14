@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
+import 'package:latlong2/latlong.dart';
 
 class TaskProvider extends ChangeNotifier {
   List<Task> _browseTasks = [];
@@ -116,12 +118,7 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  List<Task> get browseTasks {
-    // Filter dynamically so tasks that expire while the screen is open
-    // disappear without requiring a full refresh.
-    final cutoff = DateTime.now().subtract(const Duration(hours: 24));
-    return _browseTasks.where((t) => t.createdAt.isAfter(cutoff)).toList();
-  }
+  List<Task> get browseTasks => _browseTasks;
   List<Task> get myPostedTasks => _myPostedTasks;
   List<Task> get myAcceptedTasks => _myAcceptedTasks;
   List<Task> get myCompletedTasks => _myCompletedTasks;
@@ -207,9 +204,12 @@ class TaskProvider extends ChangeNotifier {
         endpoint = '/tasks/search';
         params['q'] = search;
         params['limit'] = '20';
+        if (category != null && category != 'all') params['category'] = category;
+        if (maxBudget != null) params['max_budget'] = '$maxBudget';
+        if (minBudget != null) params['min_budget'] = '$minBudget';
       } else {
         endpoint = '/tasks';
-        params['per_page'] = '20';
+        params['limit'] = '20';
       }
 
       final data = await ApiService.get(endpoint, queryParams: params);
@@ -217,11 +217,21 @@ class TaskProvider extends ChangeNotifier {
       // Posted tasks expire after 24 h — filter client-side in case the backend
       // doesn't clean them up immediately.
       final expiryCutoff = DateTime.now().subtract(const Duration(hours: 24));
-      final tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
+      var tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
         try { return Task.fromJson(j); } catch (_) { return null; }
       }).whereType<Task>()
           .where((t) => t.createdAt.isAfter(expiryCutoff))
           .toList();
+
+      // Client-side radius filter as fallback (backend may not have location index)
+      if (lat != null && lng != null && radiusKm != null) {
+        final userPos = LatLng(lat, lng);
+        tasks = tasks.where((t) {
+          final dist = LocationService.distanceBetween(
+              userPos, LatLng(t.latitude, t.longitude));
+          return dist <= radiusKm;
+        }).toList();
+      }
 
       _browseTasks.addAll(tasks);
       _hasMore = tasks.length == 20;
@@ -493,6 +503,9 @@ class TaskProvider extends ChangeNotifier {
     // For accepted/in-progress tasks, always fetch fresh from the API so we
     // get the full poster info (phone, avatar) that list endpoints omit.
     final cachedForType = _findCached(id);
+    // 'posted' == converted from 'active'; only skip the network for poster's
+    // own posted tasks or already-accepted tasks — NOT for plain browse tasks
+    // that another user wants to apply to (they need full poster info).
     final isOwnPostedOrAccepted =
         cachedForType != null &&
         (cachedForType.status == 'accepted' ||
@@ -512,17 +525,25 @@ class TaskProvider extends ChangeNotifier {
       return cachedForType;
     }
 
-    // Always try /tasks/$id first (works for active/browse tasks), then
-    // /tasks/$id/details as fallback (accepted/completed tasks only).
-    for (final path in ['/tasks/$id', '/tasks/$id/details']) {
-      try {
-        final data = await ApiService.get(path);
+    // Always try the API first for browse/open tasks so helpers get fresh data.
+    // Fall back to cache only if both network calls fail.
+    // For brand-new tasks arriving via FCM notification, the first attempt can
+    // occasionally fail with a transient error. We retry once after 1 s before
+    // giving up so fresh notifications always open correctly.
+    String? lastApiError;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (attempt == 1) {
+        // Brief pause before the retry so transient Railway/DNS issues clear.
+        await Future.delayed(const Duration(seconds: 1));
+      }
+      for (final path in ['/tasks/$id', '/tasks/$id/details']) {
+        try {
+          final data = await ApiService.get(path);
         final taskJson = data is Map<String, dynamic>
             ? (data['task'] ?? data['data'] ?? data)
             : null;
         if (taskJson is Map<String, dynamic>) {
           // Normalize the /tasks/$id/details response: that endpoint returns
-          // poster info under 'provider' but Task.fromJson expects 'posted_by'.
           // Map it so posterPhone, posterName etc. are extracted correctly.
           Map<String, dynamic> normalizedJson = taskJson;
           final providerObj = taskJson['provider'];
@@ -603,10 +624,12 @@ class TaskProvider extends ChangeNotifier {
           }
           return task;
         }
-      } catch (_) {
-        // try next endpoint
+      } catch (e) {
+        // Record the error; try next endpoint or next attempt.
+        if (e is ApiException) lastApiError = e.message;
       }
-    }
+      } // end inner for-loop (paths)
+    } // end retry loop
 
     // ── Fallback: inject saved phone/name into a task object ─────────────────
     Task enrichWithSaved(Task t) {
@@ -626,7 +649,7 @@ class TaskProvider extends ChangeNotifier {
       return Task.fromJson(json);
     }
 
-    // Both direct API endpoints failed (404/405). Refresh /user/tasks so we
+    // Both direct API endpoints failed. Refresh /user/tasks so we
     // always get the latest status — the poster may have paid or verified
     // since the last fetch. Never return a stale cache without refreshing first.
     try {
@@ -636,6 +659,8 @@ class TaskProvider extends ChangeNotifier {
     final freshCached = _findCached(id);
     if (freshCached != null) return enrichWithSaved(freshCached);
 
+    // Surface the last API error so TaskDetailScreen can show a meaningful message.
+    if (lastApiError != null) _error = lastApiError;
     return null;
   }
 

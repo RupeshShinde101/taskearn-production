@@ -2632,52 +2632,60 @@ def create_task():
                 try: conn.rollback()
                 except Exception: pass
 
-            # Insert task
+            # Insert task and get its ID in one atomic operation (RETURNING avoids
+            # lastval() race with other concurrent sequences on the same connection).
             print('   Executing INSERT query...')
-            cursor.execute(f'''
-                INSERT INTO tasks (title, description, category, location_lat, location_lng,
-                                  location_address, drop_location_lat, drop_location_lng, drop_location_address,
-                                  price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
-            ''', (
-                html_escape(data['title']),
-                html_escape(data['description']),
-                html_escape(data['category']),
-                location.get('lat'),
-                location.get('lng'),
-                html_escape(location.get('address', '') or ''),
-                drop_location.get('lat') if drop_location else None,
-                drop_location.get('lng') if drop_location else None,
-                html_escape(drop_location.get('address', '') or '') if drop_location else None,
-                data['price'],
-                service_charge,
-                request.user_id,
-                posted_at,
-                expires_at,
-                soft_reason if soft_flagged else None
-            ))
-            print('   ✅ INSERT query executed successfully')
-            
-            # Get the inserted task ID
-            print('   Getting inserted task ID...')
-            try:
-                if config.USE_POSTGRES:
-                    cursor.execute('SELECT lastval() AS id')
-                    result = cursor.fetchone()
-                    task_id = result['id'] if result else None
-                    print(f"   PostgreSQL lastval() result: {result}")
-                else:
-                    cursor.execute('SELECT last_insert_rowid() AS id')
-                    result = cursor.fetchone()
-                    task_id = result[0] if result else None
-                    print(f"   SQLite last_insert_rowid() result: {result}")
-            except Exception as id_error:
-                print(f"❌ Error getting task ID: {id_error}")
-                import traceback
-                traceback.print_exc()
-                task_id = None
-            
-            print(f"   Extracted task_id: {task_id}")
+            if config.USE_POSTGRES:
+                cursor.execute(f'''
+                    INSERT INTO tasks (title, description, category, location_lat, location_lng,
+                                      location_address, drop_location_lat, drop_location_lng, drop_location_address,
+                                      price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
+                    RETURNING id
+                ''', (
+                    html_escape(data['title']),
+                    html_escape(data['description']),
+                    html_escape(data['category']),
+                    location.get('lat'),
+                    location.get('lng'),
+                    html_escape(location.get('address', '') or ''),
+                    drop_location.get('lat') if drop_location else None,
+                    drop_location.get('lng') if drop_location else None,
+                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    data['price'],
+                    service_charge,
+                    request.user_id,
+                    posted_at,
+                    expires_at,
+                    soft_reason if soft_flagged else None
+                ))
+                result = cursor.fetchone()
+                task_id = result['id'] if result else None
+            else:
+                cursor.execute(f'''
+                    INSERT INTO tasks (title, description, category, location_lat, location_lng,
+                                      location_address, drop_location_lat, drop_location_lng, drop_location_address,
+                                      price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
+                ''', (
+                    html_escape(data['title']),
+                    html_escape(data['description']),
+                    html_escape(data['category']),
+                    location.get('lat'),
+                    location.get('lng'),
+                    html_escape(location.get('address', '') or ''),
+                    drop_location.get('lat') if drop_location else None,
+                    drop_location.get('lng') if drop_location else None,
+                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    data['price'],
+                    service_charge,
+                    request.user_id,
+                    posted_at,
+                    expires_at,
+                    soft_reason if soft_flagged else None
+                ))
+                task_id = cursor.lastrowid
+            print(f'   ✅ INSERT query executed successfully, task_id={task_id}')
             
             if not task_id:
                 print("❌ Failed to get task ID after insertion")
@@ -3264,6 +3272,18 @@ def get_task(task_id):
         show_poster_phone = (task.get('accepted_by') == request.user_id)
         # Only expose helper_phone to the task poster
         show_helper_phone = (task.get('posted_by') == request.user_id)
+        # Normalise datetime fields to ISO 8601 strings so Flutter can always
+        # parse them reliably (Flask 3.x serialises datetime objects as RFC 7231
+        # which Dart's DateTime.tryParse cannot handle).
+        import datetime as _dt
+        def _iso(v):
+            if v is None:
+                return None
+            if hasattr(v, 'isoformat'):
+                if getattr(v, 'tzinfo', None) is None:
+                    v = v.replace(tzinfo=_dt.timezone.utc)
+                return v.isoformat()
+            return str(v)
         return jsonify({
             'success': True,
             'task': {
@@ -3295,10 +3315,10 @@ def get_task(task_id):
                 'accepted_by': task.get('accepted_by'),
                 'is_paid': task.get('is_paid', False),
                 'status': task['status'],
-                'postedAt': task['posted_at'],
-                'expiresAt': task['expires_at'],
-                'accepted_at': task.get('accepted_at'),
-                'completed_at': task.get('completed_at') or task.get('helper_final_completed_at'),
+                'postedAt': _iso(task['posted_at']),
+                'expiresAt': _iso(task['expires_at']),
+                'accepted_at': _iso(task.get('accepted_at')),
+                'completed_at': _iso(task.get('completed_at') or task.get('helper_final_completed_at')),
             }
         })
     except Exception as e:

@@ -39,12 +39,20 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       _loading = true;
       _error = null;
     });
-    final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
+    final provider = context.read<TaskProvider>();
+    final task = await provider.getTaskDetail(widget.taskId);
     if (!mounted) return;
     setState(() {
       _task = task;
       _loading = false;
-      _error = task == null ? 'Task not found' : null;
+      if (task == null) {
+        // Show the actual API error when available, otherwise a generic message.
+        _error = provider.error?.isNotEmpty == true
+            ? provider.error
+            : 'Task not found or no longer available. It may have been removed.';
+      } else {
+        _error = null;
+      }
     });
     // Refresh user’s task list in the background so hasActiveAcceptedTask is
     // accurate (needed when arriving from a notification without prior browse).

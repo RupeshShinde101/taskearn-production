@@ -276,34 +276,12 @@ class _LoginScreenState extends State<LoginScreen> {
 class _FeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE0E7FF), Color(0xFFDBEAFE)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: const [
-              _AvatarPerson(
-                emoji: '\u{1F477}\u200D\u2642\uFE0F',
-                label: 'Find Work',
-                borderColor: Color(0xFF6366F1),
-              ),
-              _AvatarPerson(
-                emoji: '\u{1F469}\u200D\u{1F4BC}',
-                label: 'Post Tasks',
-                borderColor: Color(0xFF0EA5E9),
-              ),
-            ],
-          ),
-        ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Image.asset(
+        'assets/images/illustration.png',
+        width: double.infinity,
+        fit: BoxFit.fitWidth,
       ),
     );
   }

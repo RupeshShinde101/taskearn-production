@@ -73,6 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Image.asset('assets/images/logo.png', height: 110),
                     const SizedBox(height: 8),
+                    // "India's #1 Task Marketplace" gradient pill
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 5),
@@ -85,8 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color:
-                                const Color(0xFF6366F1).withValues(alpha: 0.25),
+                            color: const Color(0xFF6366F1)
+                                .withValues(alpha: 0.25),
                             blurRadius: 8,
                             offset: const Offset(0, 3),
                           ),
@@ -282,6 +283,57 @@ class _FeatureCard extends StatelessWidget {
         width: double.infinity,
         fit: BoxFit.fitWidth,
       ),
+    );
+  }
+}
+
+class _AvatarPerson extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final Color borderColor;
+
+  const _AvatarPerson({
+    required this.emoji,
+    required this.label,
+    required this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 58,
+          height: 58,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border:
+                Border.all(color: borderColor.withValues(alpha: 0.35), width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Center(
+            child: Text(emoji,
+                style: const TextStyle(fontSize: 26),
+                textAlign: TextAlign.center),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+      ],
     );
   }
 }

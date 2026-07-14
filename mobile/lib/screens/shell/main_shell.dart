@@ -423,8 +423,30 @@ class _PillNavItemState extends State<_PillNavItem>
               height: 52,
               padding: EdgeInsets.symmetric(horizontal: 8 + 4 * t),
               decoration: BoxDecoration(
-                color: t > 0.01 ? Colors.white.withValues(alpha: t) : null,
+                // Active: indigo gradient pill; Inactive: transparent
+                gradient: t > 0.01
+                    ? LinearGradient(
+                        colors: [
+                          Color.lerp(Colors.transparent,
+                              const Color(0xFF6366F1), t)!,
+                          Color.lerp(Colors.transparent,
+                              const Color(0xFF4338CA), t)!,
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
                 borderRadius: BorderRadius.circular(26),
+                boxShadow: t > 0.6
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF6366F1)
+                              .withValues(alpha: 0.3 * t),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -432,9 +454,11 @@ class _PillNavItemState extends State<_PillNavItem>
                   Icon(
                     widget.icon,
                     size: 22,
-                    color: t > 0.5
-                        ? const Color(0xFF4F46E5)
-                        : const Color(0xFF8E8EA0),
+                    color: Color.lerp(
+                      const Color(0xFF8E8EA0),
+                      Colors.white,
+                      t,
+                    ),
                   ),
                   ClipRect(
                     child: SizeTransition(
@@ -447,7 +471,7 @@ class _PillNavItemState extends State<_PillNavItem>
                           child: Text(
                             widget.label,
                             style: const TextStyle(
-                              color: Color(0xFF4F46E5),
+                              color: Colors.white,
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.2,

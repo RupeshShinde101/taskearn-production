@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/auth_provider.dart';
+import 'providers/notification_provider.dart';
 import 'services/notification_service.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -292,6 +293,16 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     // Otherwise, store the path and navigate once auth resolves.
     if (_authProvider?.status == AuthStatus.authenticated) {
       _router.push(destination);
+      // Mark the corresponding in-app notification as read so the bell badge
+      // and notification list stay in sync when the user opened via FCM tap.
+      if (taskId != null && taskId.isNotEmpty) {
+        try {
+          final ctx = _router.routerDelegate.navigatorKey.currentContext;
+          if (ctx != null) {
+            ctx.read<NotificationProvider>().markReadByTaskId(taskId);
+          }
+        } catch (_) {}
+      }
     } else {
       _pendingNavPath = destination;
     }

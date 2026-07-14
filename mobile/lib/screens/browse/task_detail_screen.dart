@@ -28,7 +28,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _rating = false;
   String? _error;
   int _autoRetryCount = 0;
-  static const _maxAutoRetries = 5;
+  static const _maxAutoRetries = 3;
 
   @override
   void initState() {
@@ -45,7 +45,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
     if (task == null && _autoRetryCount < _maxAutoRetries) {
       _autoRetryCount++;
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) _loadTask(isAutoRetry: true);
       return;
     }

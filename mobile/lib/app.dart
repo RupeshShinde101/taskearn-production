@@ -269,8 +269,18 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'admin_balance_adjusted',
     };
 
+    // Notification types whose task has been deleted — navigate to My Tasks
+    // instead of trying to open a non-existent task detail.
+    // Use go() for shell tab routes to avoid the navigator key assertion.
+    const deletedTaskTypes = {'task_expired', 'task_cancelled_confirmation'};
+    // Shell tab routes must use go() not push() — push() on an already-mounted
+    // ShellRoute child throws '!keyReservation.contains(key)'.
+    const shellTabRoutes = {'/my-tasks', '/home', '/browse', '/profile'};
+
     String destination;
-    if (taskId != null && taskId.isNotEmpty) {
+    if (deletedTaskTypes.contains(type)) {
+      destination = '/my-tasks';
+    } else if (taskId != null && taskId.isNotEmpty) {
       destination = inProgressTypes.contains(type)
           ? '/task-in-progress/$taskId'
           : '/task/$taskId';
@@ -292,7 +302,12 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     // If the user is already authenticated, navigate immediately.
     // Otherwise, store the path and navigate once auth resolves.
     if (_authProvider?.status == AuthStatus.authenticated) {
-      _router.push(destination);
+      // Shell tab routes must use go() to avoid the navigator key assertion.
+      if (shellTabRoutes.contains(destination)) {
+        _router.go(destination);
+      } else {
+        _router.push(destination);
+      }
       // Mark the corresponding in-app notification as read so the bell badge
       // and notification list stay in sync when the user opened via FCM tap.
       if (taskId != null && taskId.isNotEmpty) {

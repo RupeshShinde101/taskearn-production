@@ -700,6 +700,17 @@ class NotificationService {
     }
   }
 
+  /// Delete the FCM token from Firebase so this device stops receiving push
+  /// notifications immediately. Call this on logout and on force-logout (401).
+  static Future<void> clearFcmToken() async {
+    try {
+      await _fcm.deleteToken();
+      debugPrint('[FCM] Token deleted — device will no longer receive notifications');
+    } catch (e) {
+      debugPrint('[FCM] clearFcmToken error: $e');
+    }
+  }
+
   static void onTokenRefresh(void Function(String) callback) {
     _fcm.onTokenRefresh.listen(callback);
   }

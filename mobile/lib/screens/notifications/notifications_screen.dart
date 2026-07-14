@@ -22,22 +22,36 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _navigateForNotification(BuildContext context, AppNotification n) {
+    final type = n.type ?? '';
+    // Expired/cancelled notifications belong to deleted tasks.
+    // Use go() not push() — /my-tasks lives inside the ShellRoute so push()
+    // triggers '!keyReservation.contains(key)' when the tab is already mounted.
+    const noTaskTypes = {'task_expired', 'task_cancelled_confirmation'};
+    if (noTaskTypes.contains(type)) {
+      // Defer until the current frame (markRead notifyListeners) is done.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.go('/my-tasks');
+      });
+      return;
+    }
     final taskId = n.taskId;
     if (taskId == null || taskId.isEmpty) return;
-
     const inProgressTypes = {
       'task_assigned', 'task_accepted', 'task_completed_helper',
       'task_verify_sent', 'payment_released', 'payment_received',
       'payment_done', 'verify_and_pay', 'task_completed',
       'task_final_completed', 'task_cancelled_by_poster',
     };
-
-    final type = n.type ?? '';
-    if (inProgressTypes.contains(type)) {
-      context.push('/task-in-progress/$taskId');
-    } else {
-      context.push('/task/$taskId');
-    }
+    // Defer push to next frame so markRead's notifyListeners() rebuild
+    // doesn't conflict with the navigator key reservation.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (inProgressTypes.contains(type)) {
+        context.push('/task-in-progress/$taskId');
+      } else {
+        context.push('/task/$taskId');
+      }
+    });
   }
 
   @override
@@ -185,6 +199,7 @@ class _NotificationTile extends StatelessWidget {
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
+    if (diff.isNegative || diff.inSeconds < 60) return 'just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     return '${diff.inDays}d ago';

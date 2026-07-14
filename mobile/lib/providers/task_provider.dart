@@ -126,6 +126,12 @@ class TaskProvider extends ChangeNotifier {
   bool get isLoadingMy => _loadingMy;
   String? get error => _error;
   bool get hasMore => _hasMore;
+  /// True once tasks have been fetched at least once — used to decide whether
+  /// to show a full-screen spinner or just a subtle refresh indicator.
+  bool get hasMyTasksData =>
+      _myPostedTasks.isNotEmpty ||
+      _myAcceptedTasks.isNotEmpty ||
+      _myCompletedTasks.isNotEmpty;
 
   /// Cache a list of tasks (e.g. from the home screen) into [_browseTasks]
   /// so that [getTaskDetail] can find them without an extra network call.

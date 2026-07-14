@@ -22,6 +22,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _navigateForNotification(BuildContext context, AppNotification n) {
+    final type = n.type ?? '';
+    // Expired/cancelled notifications belong to deleted tasks.
+    // Use go() not push() — /my-tasks lives inside the ShellRoute so push()
+    // triggers '!keyReservation.contains(key)' when the tab is already mounted.
+    const noTaskTypes = {'task_expired', 'task_cancelled_confirmation'};
+    if (noTaskTypes.contains(type)) {
+      // Defer until the current frame (markRead notifyListeners) is done.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.go('/my-tasks');
+      });
+      return;
+    }
     final taskId = n.taskId;
     if (taskId == null || taskId.isEmpty) return;
     const inProgressTypes = {
@@ -30,12 +42,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'payment_done', 'verify_and_pay', 'task_completed',
       'task_final_completed', 'task_cancelled_by_poster',
     };
-    if (inProgressTypes.contains(n.type ?? '')) {
-      context.push('/task-in-progress/$taskId');
-    } else {
-      // skill_matched, nearby_task, task_posted → task detail with Apply button
-      context.push('/task/$taskId');
-    }
+    // Defer push to next frame so markRead's notifyListeners() rebuild
+    // doesn't conflict with the navigator key reservation.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (inProgressTypes.contains(type)) {
+        context.push('/task-in-progress/$taskId');
+      } else {
+        context.push('/task/$taskId');
+      }
+    });
   }
 
   @override

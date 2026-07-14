@@ -269,8 +269,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'admin_balance_adjusted',
     };
 
+    // Notification types whose task has been deleted — navigate to My Tasks
+    // instead of trying to open a non-existent task detail.
+    const deletedTaskTypes = {'task_expired', 'task_cancelled_confirmation'};
+
     String destination;
-    if (taskId != null && taskId.isNotEmpty) {
+    if (deletedTaskTypes.contains(type)) {
+      // Task was deleted when it expired/was cancelled — go to My Tasks.
+      destination = '/my-tasks';
+    } else if (taskId != null && taskId.isNotEmpty) {
       destination = inProgressTypes.contains(type)
           ? '/task-in-progress/$taskId'
           : '/task/$taskId';

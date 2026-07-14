@@ -686,7 +686,11 @@ class TaskProvider extends ChangeNotifier {
   ///   2. All users within 10 km of the task location (any task category).
   /// Both calls are fire-and-forget — failure never blocks the task post.
   void _triggerNewTaskNotifications(String taskId) {
-    Future.microtask(() async {
+    // Wait 3 s before firing notification endpoints so the DB connections
+    // used by POST /tasks and fetchMyTasks() are fully released first.
+    // This prevents connection-pool exhaustion that causes helpers to see
+    // "Task not found" when they tap a notification right after it arrives.
+    Future.delayed(const Duration(seconds: 3), () async {
       try {
         await ApiService.post('/tasks/$taskId/notify-skills');
       } catch (_) {}

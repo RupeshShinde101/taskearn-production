@@ -4456,45 +4456,29 @@ def get_user_tasks():
 
     with get_db() as (cursor, conn):
         if _run_48h_cleanup:
-            # --- 48-hour cleanup: wipe paid tasks older than 48 hours ---
-            try:
-                if config.USE_POSTGRES:
-                    cutoff_expr = "NOW() - INTERVAL '48 hours'"
-                else:
-                    cutoff_expr = "datetime('now', '-48 hours')"
-                cursor.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
-                old_task_rows = cursor.fetchall()
-                old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_task_rows]
-                if old_ids:
-                    _safe_delete_tasks(cursor, old_ids)
-                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_ids)})")
-                    conn.commit()
-            except Exception as cleanup_err:
-                print(f'[/api/user/tasks] 48h cleanup skipped: {cleanup_err}')
+            # Run cleanup in a background thread so it never delays the response.
+            def _bg_cleanup():
                 try:
-                    conn.rollback()
-                except Exception:
-                    pass
-
-            # --- 48-hour cleanup: also wipe completed tasks (new flow) older than 48 hours ---
-            try:
-                if config.USE_POSTGRES:
-                    cutoff_expr = "NOW() - INTERVAL '48 hours'"
-                else:
-                    cutoff_expr = "datetime('now', '-48 hours')"
-                cursor.execute(f"SELECT id FROM tasks WHERE status = 'done' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
-                completed_old_rows = cursor.fetchall()
-                completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
-                if completed_old_ids:
-                    _safe_delete_tasks(cursor, completed_old_ids)
-                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(completed_old_ids)})")
-                    conn.commit()
-            except Exception as cleanup_err2:
-                print(f'[/api/user/tasks] completed 48h cleanup skipped: {cleanup_err2}')
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
+                    import datetime as _dt_c
+                    with get_db() as (_cc, _cn):
+                        if config.USE_POSTGRES:
+                            cutoff_expr = "NOW() - INTERVAL '48 hours'"
+                        else:
+                            cutoff_expr = "datetime('now', '-48 hours')"
+                        _cc.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
+                        old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in _cc.fetchall()]
+                        if old_ids:
+                            _safe_delete_tasks(_cc, old_ids)
+                            _cc.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_ids)})")
+                        _cc.execute(f"SELECT id FROM tasks WHERE status = 'done' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
+                        done_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in _cc.fetchall()]
+                        if done_ids:
+                            _safe_delete_tasks(_cc, done_ids)
+                            _cc.execute(f"DELETE FROM tasks WHERE id IN ({','.join(done_ids)})")
+                except Exception as _ce:
+                    print(f'[cleanup] 48h cleanup error: {_ce}')
+            import threading as _th
+            _th.Thread(target=_bg_cleanup, daemon=True).start()
 
         # Posted tasks — exclude tasks removed/flagged by admin/AI (those are deleted or hidden)
         cursor.execute(f'''

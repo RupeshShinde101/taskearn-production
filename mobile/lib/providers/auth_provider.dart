@@ -181,6 +181,7 @@ class AuthProvider extends ChangeNotifier {
     String? dob,
     String? inviteCode,
     String? referralCode,
+    String? termsAcceptedAt,
   }) async {
     _loading = true;
     _error = null;
@@ -208,6 +209,8 @@ class AuthProvider extends ChangeNotifier {
         'invite_code': inviteCode.trim().toUpperCase(),
       if (referralCode != null && referralCode.isNotEmpty)
         'referral_code': referralCode.trim(),
+      if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
+      'terms_version': '2026-05-22',
     };
 
     // ── Attempt registration (one auto-retry on transient network errors) ──

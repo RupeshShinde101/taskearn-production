@@ -283,16 +283,20 @@ class _FloatingNavBar extends StatelessWidget {
         child: Container(
           height: 64,
           decoration: BoxDecoration(
-            color: const Color(0xFF1C1C1E),
+            gradient: const LinearGradient(
+              colors: [Color(0xFFF0EEFF), Color(0xFFE8E4FF)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
             borderRadius: BorderRadius.circular(36),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
+                color: const Color(0xFF6366F1).withValues(alpha: 0.18),
                 blurRadius: 24,
                 offset: const Offset(0, 8),
               ),
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
+                color: Colors.black.withValues(alpha: 0.08),
                 blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
@@ -429,8 +433,8 @@ class _PillNavItemState extends State<_PillNavItem>
                     widget.icon,
                     size: 22,
                     color: t > 0.5
-                        ? const Color(0xFF1C1C1E)
-                        : const Color(0xFF8E8E93),
+                        ? const Color(0xFF4F46E5)
+                        : const Color(0xFF8E8EA0),
                   ),
                   ClipRect(
                     child: SizeTransition(
@@ -443,7 +447,7 @@ class _PillNavItemState extends State<_PillNavItem>
                           child: Text(
                             widget.label,
                             style: const TextStyle(
-                              color: Color(0xFF1C1C1E),
+                              color: Color(0xFF4F46E5),
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.2,

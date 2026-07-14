@@ -466,23 +466,7 @@ class _PillNavItemState extends State<_PillNavItem>
                     child: SizeTransition(
                       sizeFactor: _expand,
                       axis: Axis.horizontal,
-                      child: Opacity(
-                        opacity: t,
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 6),
-                          child: Text(
-                            widget.label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                      ),
+                      child: const SizedBox.shrink(),
                     ),
                   ),
                 ],

@@ -3363,9 +3363,11 @@ def update_task(task_id):
                 return jsonify({'success': False, 'message': 'This task violates our content policy. ' + reason, 'policyViolation': True}), 422
 
             location = data.get('location', {})
-            location_lat = location.get('lat')
-            location_lng = location.get('lng')
-            location_address = location.get('address', '')
+            # Also accept flat latitude/longitude/address keys that the
+            # Flutter edit screen may send instead of the nested object.
+            location_lat = location.get('lat') or data.get('latitude') or data.get('location_lat')
+            location_lng = location.get('lng') or data.get('longitude') or data.get('location_lng')
+            location_address = location.get('address') or data.get('address') or data.get('location_address') or ''
 
             cursor.execute(f'''
                 UPDATE tasks

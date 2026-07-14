@@ -11,7 +11,7 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
   static const _tabs = [
     '/home',
     '/browse',
@@ -245,120 +245,253 @@ class _MainShellState extends State<MainShell> {
     _currentIdx = idx;
 
     return Scaffold(
-        body: widget.child,
-        bottomNavigationBar: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: AppColors.border)),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _NavItem(
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home,
-                    label: 'Home',
-                    selected: idx == 0,
-                    onTap: () => _onTap(0),
-                  ),
-                  _NavItem(
-                    icon: Icons.search_outlined,
-                    activeIcon: Icons.search,
-                    label: 'Browse',
-                    selected: idx == 1,
-                    onTap: () => _onTap(1),
-                  ),
-                  // Center "Post" button
-                  GestureDetector(
-                    onTap: () => context.push('/post-task'),
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(colors: AppColors.gradient),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Color(0x446366F1),
-                            blurRadius: 12,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.add, color: Colors.white, size: 28),
-                    ),
-                  ),
-                  _NavItem(
-                    icon: Icons.assignment_outlined,
-                    activeIcon: Icons.assignment,
-                    label: 'My Tasks',
-                    selected: idx == 2,
-                    onTap: () => _onTap(2),
-                  ),
-                  _NavItem(
-                    icon: Icons.person_outline,
-                    activeIcon: Icons.person,
-                    label: 'Profile',
-                    selected: idx == 3,
-                    onTap: () => _onTap(3),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      body: widget.child,
+      bottomNavigationBar: _FloatingNavBar(
+        selectedIndex: idx,
+        onTabTap: _onTap,
+        onPostTap: () => context.push('/post-task'),
+      ),
     );
   }
 }
 
-class _NavItem extends StatelessWidget {
+// ── Floating pill navigation bar ─────────────────────────────────────────────
+
+class _FloatingNavBar extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onTabTap;
+  final VoidCallback onPostTap;
+
+  const _FloatingNavBar({
+    required this.selectedIndex,
+    required this.onTabTap,
+    required this.onPostTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Left group: Home + Browse
+            _NavCapsule(
+              items: const [
+                (Icons.home_rounded,   'Home'),
+                (Icons.search_rounded, 'Browse'),
+              ],
+              startIndex: 0,
+              selectedIndex: selectedIndex,
+              onTap: onTabTap,
+            ),
+            // Centre "+" post-task FAB
+            GestureDetector(
+              onTap: onPostTap,
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.45),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.add_rounded,
+                    color: Colors.white, size: 26),
+              ),
+            ),
+            // Right group: My Tasks + Profile
+            _NavCapsule(
+              items: const [
+                (Icons.assignment_rounded, 'My Tasks'),
+                (Icons.person_rounded,     'Profile'),
+              ],
+              startIndex: 2,
+              selectedIndex: selectedIndex,
+              onTap: onTabTap,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// A rounded capsule that holds two nav items side-by-side.
+class _NavCapsule extends StatelessWidget {
+  final List<(IconData, String)> items;
+  final int startIndex;
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+
+  const _NavCapsule({
+    required this.items,
+    required this.startIndex,
+    required this.selectedIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F0F9),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6366F1).withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < items.length; i++)
+            _PillNavItem(
+              icon: items[i].$1,
+              label: items[i].$2,
+              selected: selectedIndex == startIndex + i,
+              onTap: () => onTap(startIndex + i),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PillNavItem extends StatefulWidget {
   final IconData icon;
-  final IconData activeIcon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
-  const _NavItem({
+  const _PillNavItem({
     required this.icon,
-    required this.activeIcon,
     required this.label,
     required this.selected,
     required this.onTap,
   });
 
   @override
+  State<_PillNavItem> createState() => _PillNavItemState();
+}
+
+class _PillNavItemState extends State<_PillNavItem>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _expand;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: widget.selected ? 1.0 : 0.0,
+    );
+    _expand = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void didUpdateWidget(_PillNavItem old) {
+    super.didUpdateWidget(old);
+    if (widget.selected != old.selected) {
+      widget.selected ? _ctrl.forward() : _ctrl.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 64,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Icon(
-                selected ? activeIcon : icon,
-                key: ValueKey(selected),
-                color: selected ? AppColors.primary : AppColors.gray,
-                size: 24,
-              ),
+      child: AnimatedBuilder(
+        animation: _expand,
+        builder: (_, __) {
+          final t = _expand.value;
+          return Container(
+            height: 44,
+            padding: EdgeInsets.symmetric(horizontal: 10 + 4 * t),
+            decoration: BoxDecoration(
+              gradient: t > 0.01
+                  ? LinearGradient(
+                      colors: [
+                        Color.lerp(Colors.transparent,
+                            const Color(0xFF6366F1), t)!,
+                        Color.lerp(Colors.transparent,
+                            const Color(0xFF4338CA), t)!,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: t > 0.6
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF6366F1)
+                            .withValues(alpha: 0.3 * t),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : null,
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: selected ? AppColors.primary : AppColors.gray,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  widget.icon,
+                  size: 20,
+                  color: Color.lerp(
+                    const Color(0xFF7B7B9A),
+                    Colors.white,
+                    t,
+                  ),
+                ),
+                ClipRect(
+                  child: SizeTransition(
+                    sizeFactor: _expand,
+                    axis: Axis.horizontal,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 5),
+                      child: Text(
+                        widget.label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

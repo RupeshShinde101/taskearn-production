@@ -250,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverToBoxAdapter(child: _buildAISuggested()),
           SliverToBoxAdapter(child: _buildTestimonials()),
           SliverToBoxAdapter(child: _buildCTA()),
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
     );

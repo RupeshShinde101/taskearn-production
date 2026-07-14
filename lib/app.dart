@@ -180,6 +180,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       _handleNotifTap(pendingTap);
     }
 
+    // Consume any notification tap that arrived during a background→foreground
+    // transition before the stream listener above was registered.
+    final pendingBgTap = NotificationService.consumePendingBackgroundTap();
+    if (pendingBgTap != null && pendingTap == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _handleNotifTap(pendingBgTap);
+      });
+    }
+
     // Show in-app popup when a task_completed event arrives while the poster
     // is actively using the app.
     _taskCompletedSub ??= NotificationService.onTaskCompleted.stream.listen((data) {

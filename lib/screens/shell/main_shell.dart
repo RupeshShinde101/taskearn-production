@@ -268,91 +268,107 @@ class _FloatingNavBar extends StatelessWidget {
     required this.onPostTap,
   });
 
-  static const _items = [
-    (Icons.home_rounded,        'Home'),
-    (Icons.search_rounded,      'Browse'),
-    (Icons.assignment_rounded,  'My Tasks'),
-    (Icons.person_rounded,      'Profile'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-        child: Container(
-          height: 62,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(40),
-            border: Border.all(
-              color: const Color(0xFFE8E8F0),
-              width: 1,
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Left group: Home + Browse
+            _NavCapsule(
+              items: const [
+                (Icons.home_rounded,   'Home'),
+                (Icons.search_rounded, 'Browse'),
+              ],
+              startIndex: 0,
+              selectedIndex: selectedIndex,
+              onTap: onTabTap,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.10),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // Tab 0 & 1
-              for (int i = 0; i < 2; i++)
-                Expanded(
-                  child: _PillNavItem(
-                    icon: _items[i].$1,
-                    label: _items[i].$2,
-                    selected: selectedIndex == i,
-                    onTap: () => onTabTap(i),
+            // Centre "+" post-task FAB
+            GestureDetector(
+              onTap: onPostTap,
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                ),
-              // Centre "+" post-task button
-              GestureDetector(
-                onTap: onPostTap,
-                child: Container(
-                  width: 50,
-                  height: 50,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.45),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
                     ),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0x706366F1),
-                        blurRadius: 12,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.add_rounded,
-                      color: Colors.white, size: 26),
+                  ],
                 ),
+                child: const Icon(Icons.add_rounded,
+                    color: Colors.white, size: 26),
               ),
-              // Tab 2 & 3
-              for (int i = 2; i < 4; i++)
-                Expanded(
-                  child: _PillNavItem(
-                    icon: _items[i].$1,
-                    label: _items[i].$2,
-                    selected: selectedIndex == i,
-                    onTap: () => onTabTap(i),
-                  ),
-                ),
-            ],
-          ),
+            ),
+            // Right group: My Tasks + Profile
+            _NavCapsule(
+              items: const [
+                (Icons.assignment_rounded, 'My Tasks'),
+                (Icons.person_rounded,     'Profile'),
+              ],
+              startIndex: 2,
+              selectedIndex: selectedIndex,
+              onTap: onTabTap,
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+// A rounded capsule that holds two nav items side-by-side.
+class _NavCapsule extends StatelessWidget {
+  final List<(IconData, String)> items;
+  final int startIndex;
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+
+  const _NavCapsule({
+    required this.items,
+    required this.startIndex,
+    required this.selectedIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F0F9),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6366F1).withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < items.length; i++)
+            _PillNavItem(
+              icon: items[i].$1,
+              label: items[i].$2,
+              selected: selectedIndex == startIndex + i,
+              onTap: () => onTap(startIndex + i),
+            ),
+        ],
       ),
     );
   }
@@ -385,7 +401,7 @@ class _PillNavItemState extends State<_PillNavItem>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 300),
       value: widget.selected ? 1.0 : 0.0,
     );
     _expand = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
@@ -414,72 +430,65 @@ class _PillNavItemState extends State<_PillNavItem>
         animation: _expand,
         builder: (_, __) {
           final t = _expand.value;
-          return Center(
-            child: Container(
-              height: 42,
-              padding: EdgeInsets.symmetric(
-                horizontal: 4 + 10 * t,
-              ),
-              decoration: BoxDecoration(
-                // Active: indigo gradient; Inactive: transparent
-                gradient: t > 0.01
-                    ? LinearGradient(
-                        colors: [
-                          Color.lerp(Colors.transparent,
-                              const Color(0xFF6366F1), t)!,
-                          Color.lerp(Colors.transparent,
-                              const Color(0xFF4338CA), t)!,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : null,
-                borderRadius: BorderRadius.circular(21),
-                boxShadow: t > 0.5
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFF6366F1)
-                              .withValues(alpha: 0.28 * t),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    widget.icon,
-                    size: 21,
-                    color: Color.lerp(
-                      const Color(0xFF9CA3AF),
-                      Colors.white,
-                      t,
-                    ),
+          return Container(
+            height: 44,
+            padding: EdgeInsets.symmetric(horizontal: 10 + 4 * t),
+            decoration: BoxDecoration(
+              gradient: t > 0.01
+                  ? LinearGradient(
+                      colors: [
+                        Color.lerp(Colors.transparent,
+                            const Color(0xFF6366F1), t)!,
+                        Color.lerp(Colors.transparent,
+                            const Color(0xFF4338CA), t)!,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: t > 0.6
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF6366F1)
+                            .withValues(alpha: 0.3 * t),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  widget.icon,
+                  size: 20,
+                  color: Color.lerp(
+                    const Color(0xFF7B7B9A),
+                    Colors.white,
+                    t,
                   ),
-                  ClipRect(
-                    child: SizeTransition(
-                      sizeFactor: _expand,
-                      axis: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 5),
-                          Text(
-                            widget.label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ],
+                ),
+                ClipRect(
+                  child: SizeTransition(
+                    sizeFactor: _expand,
+                    axis: Axis.horizontal,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 5),
+                      child: Text(
+                        widget.label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                        ),
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },

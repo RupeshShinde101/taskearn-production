@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -27,6 +27,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _verifying = false;
   bool _rating = false;
   String? _error;
+  int _autoRetryCount = 0;
+  static const _maxAutoRetries = 5;
 
   @override
   void initState() {
@@ -34,28 +36,29 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     _loadTask();
   }
 
-  Future<void> _loadTask() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadTask({bool isAutoRetry = false}) async {
+    if (!isAutoRetry) _autoRetryCount = 0;
+    setState(() { _loading = true; _error = null; });
     final provider = context.read<TaskProvider>();
     final task = await provider.getTaskDetail(widget.taskId);
     if (!mounted) return;
+
+    if (task == null && _autoRetryCount < _maxAutoRetries) {
+      _autoRetryCount++;
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) _loadTask(isAutoRetry: true);
+      return;
+    }
+
     setState(() {
       _task = task;
       _loading = false;
-      if (task == null) {
-        // Show the actual API error when available, otherwise a generic message.
-        _error = provider.error?.isNotEmpty == true
-            ? provider.error
-            : 'Task not found or no longer available. It may have been removed.';
-      } else {
-        _error = null;
-      }
+      _error = task == null
+          ? (provider.error?.isNotEmpty == true
+              ? provider.error
+              : 'Task not found or no longer available.')
+          : null;
     });
-    // Refresh user’s task list in the background so hasActiveAcceptedTask is
-    // accurate (needed when arriving from a notification without prior browse).
     if (task != null && mounted) {
       context.read<TaskProvider>().fetchMyTasks().catchError((_) {});
     }

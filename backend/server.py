@@ -3239,8 +3239,9 @@ def poster_cancel_accepted_task(task_id):
 def get_task(task_id):
     """Get a single task by ID — used when tapping a task_matched FCM notification."""
     import datetime
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    _ensure_verify_columns()  # guarantees helper_final_completed_at + is_hidden exist
+    # _ensure_verify_columns() is called lazily at startup; skip it on every
+    # request to avoid DDL latency on the hot path.  The columns are guaranteed
+    # to exist after the first successful call during app warm-up.
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''

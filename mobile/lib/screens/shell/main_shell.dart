@@ -419,53 +419,38 @@ class _PillNavItemState extends State<_PillNavItem>
         builder: (_, __) {
           final t = _expand.value;
           return Center(
-            child: Container(
-              height: 52,
-              padding: EdgeInsets.symmetric(horizontal: 8 + 6 * t),
-              decoration: BoxDecoration(
-                // Active: white card; Inactive: transparent
-                color: t > 0.01
-                    ? Color.lerp(Colors.transparent, Colors.white, t)
-                    : null,
-                borderRadius: BorderRadius.circular(26),
-                boxShadow: t > 0.5
-                    ? [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08 * t),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    widget.icon,
-                    size: 22,
-                    color: const Color(0xFF6366F1),
-                  ),
-                  ClipRect(
-                    child: SizeTransition(
-                      sizeFactor: _expand,
-                      axis: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  widget.icon,
+                  size: 22,
+                  color: const Color(0xFF6366F1),
+                ),
+                ClipRect(
+                  child: SizeTransition(
+                    sizeFactor: _expand,
+                    axis: Axis.horizontal,
+                    child: Opacity(
+                      opacity: t,
                       child: Padding(
-                        padding: const EdgeInsets.only(left: 7),
+                        padding: const EdgeInsets.only(left: 5),
                         child: Text(
                           widget.label,
                           style: const TextStyle(
                             color: Color(0xFF4F46E5),
-                            fontSize: 14,
+                            fontSize: 12,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.2,
                           ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },

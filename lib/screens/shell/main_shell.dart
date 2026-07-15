@@ -270,135 +270,150 @@ class _FloatingNavBar extends StatelessWidget {
   });
 
   static const _tabs = [
-    (Icons.home_rounded,       'Home'),
-    (Icons.search_rounded,     'Browse'),
-    (Icons.assignment_rounded, 'My Tasks'),
-    (Icons.person_rounded,     'Profile'),
+    Icons.home_rounded,
+    Icons.search_rounded,
+    Icons.assignment_rounded,
+    Icons.person_rounded,
   ];
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-        child: Container(
-          height: 66,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(36),
-            border: Border.all(
-              color: const Color(0xFFEEEEF5),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.14),
-                blurRadius: 28,
-                spreadRadius: -2,
-                offset: const Offset(0, 8),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.10),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(6),
-          child: Row(
-            children: [
-              // Tab 0 & 1
-              for (int i = 0; i < 2; i++)
-                Expanded(
-                  child: _PillNavItem(
-                    icon: _tabs[i].$1,
-                    label: _tabs[i].$2,
-                    selected: selectedIndex == i,
-                    onTap: () => onTabTap(i),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // ── Pill bar ──────────────────────────────────────────────
+            Container(
+              height: 60,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: const Color(0xFFEEEEF5), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.14),
+                    blurRadius: 24,
+                    spreadRadius: -2,
+                    offset: const Offset(0, 6),
                   ),
-                ),
-              // Centre "+" FAB
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+                  BoxShadow(
+                    color: AppColors.secondary.withValues(alpha: 0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  for (int i = 0; i < 2; i++)
+                    Expanded(
+                      child: _NavItem(
+                        icon: _tabs[i],
+                        selected: selectedIndex == i,
+                        onTap: () => onTabTap(i),
+                      ),
+                    ),
+                  // Gap reserved for the protruding FAB
+                  const SizedBox(width: 76),
+                  for (int i = 2; i < 4; i++)
+                    Expanded(
+                      child: _NavItem(
+                        icon: _tabs[i],
+                        selected: selectedIndex == i,
+                        onTap: () => onTabTap(i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // ── Centre "+" FAB — protrudes above the bar ─────────────
+            Positioned(
+              top: -22,
+              left: 0,
+              right: 0,
+              child: Center(
                 child: GestureDetector(
                   onTap: onPostTap,
                   child: Container(
-                    width: 50,
-                    height: 50,
+                    width: 72,
+                    height: 72,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
+                        colors: AppColors.gradient,
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF6366F1)
-                              .withValues(alpha: 0.50),
+                          color: AppColors.primary.withValues(alpha: 0.55),
+                          blurRadius: 24,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 8),
+                        ),
+                        BoxShadow(
+                          color: AppColors.secondary.withValues(alpha: 0.30),
                           blurRadius: 14,
-                          offset: const Offset(0, 5),
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.add_rounded,
-                        color: Colors.white, size: 26),
+                    child: const Icon(
+                      Icons.add_rounded,
+                      color: Colors.white,
+                      size: 38,
+                    ),
                   ),
                 ),
               ),
-              // Tab 2 & 3
-              for (int i = 2; i < 4; i++)
-                Expanded(
-                  child: _PillNavItem(
-                    icon: _tabs[i].$1,
-                    label: _tabs[i].$2,
-                    selected: selectedIndex == i,
-                    onTap: () => onTabTap(i),
-                  ),
-                ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _PillNavItem extends StatefulWidget {
+// ── Tab item — animates icon colour on selection ──────────────────────────────
+
+class _NavItem extends StatefulWidget {
   final IconData icon;
-  final String label;
   final bool selected;
   final VoidCallback onTap;
 
-  const _PillNavItem({
+  const _NavItem({
     required this.icon,
-    required this.label,
     required this.selected,
     required this.onTap,
   });
 
   @override
-  State<_PillNavItem> createState() => _PillNavItemState();
+  State<_NavItem> createState() => _NavItemState();
 }
 
-class _PillNavItemState extends State<_PillNavItem>
+class _NavItemState extends State<_NavItem>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _expand;
+  late final Animation<Color?> _color;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 250),
       value: widget.selected ? 1.0 : 0.0,
     );
-    _expand = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+    _color = ColorTween(
+      begin: AppColors.grayLight,
+      end: AppColors.primary,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
   }
 
   @override
-  void didUpdateWidget(_PillNavItem old) {
+  void didUpdateWidget(_NavItem old) {
     super.didUpdateWidget(old);
     if (widget.selected != old.selected) {
       widget.selected ? _ctrl.forward() : _ctrl.reverse();
@@ -417,61 +432,14 @@ class _PillNavItemState extends State<_PillNavItem>
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
-        animation: _expand,
+        animation: _ctrl,
         builder: (_, __) {
-          final t = _expand.value;
+          final t = _ctrl.value;
           return Center(
-            child: Container(
-              height: 52,
-              padding: EdgeInsets.symmetric(horizontal: 8 + 4 * t),
-              decoration: BoxDecoration(
-                // Active: indigo gradient pill; Inactive: transparent
-                gradient: t > 0.01
-                    ? LinearGradient(
-                        colors: [
-                          Color.lerp(Colors.transparent,
-                              const Color(0xFF6366F1), t)!,
-                          Color.lerp(Colors.transparent,
-                              const Color(0xFF4338CA), t)!,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : null,
-                borderRadius: BorderRadius.circular(26),
-                boxShadow: t > 0.6
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFF6366F1)
-                              .withValues(alpha: 0.3 * t),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    widget.icon,
-                    size: 22,
-                    color: Color.lerp(
-                      const Color(0xFF94A3B8),
-                      Colors.white,
-                      t,
-                    ),
-                  ),
-                  ClipRect(
-                    child: SizeTransition(
-                      sizeFactor: _expand,
-                      axis: Axis.horizontal,
-                      child: const SizedBox.shrink(),
-                    ),
-                  ),
-                ],
-              ),
+            child: Icon(
+              widget.icon,
+              size: 22.0 + 4.0 * t,
+              color: _color.value,
             ),
           );
         },

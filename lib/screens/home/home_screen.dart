@@ -731,7 +731,7 @@ class _HomeScreenState extends State<HomeScreen> {
             : const Color(0xFFF59E0B);
 
     return GestureDetector(
-      onTap: () => context.push('/task/\${task.id}'),
+      onTap: () => context.push('/task/${task.id}'),
       child: Container(
         width: 200,
         decoration: BoxDecoration(
@@ -814,7 +814,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ]),
                     const Spacer(),
                     Row(children: [
-                      Text('₹\${task.budget.toStringAsFixed(0)}',
+                      Text('₹${task.budget.toStringAsFixed(0)}',
                           style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w900,

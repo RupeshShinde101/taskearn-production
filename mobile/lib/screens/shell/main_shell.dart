@@ -11,7 +11,7 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> with TickerProviderStateMixin implements WidgetsBindingObserver {
+class _MainShellState extends State<MainShell> with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _tabs = [
     '/home',
     '/browse',

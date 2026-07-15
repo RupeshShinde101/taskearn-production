@@ -23,6 +23,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _cityName = 'Your City';
   List<Task> _suggestedTasks = [];
+  List<Task> _expiringTasks  = [];
 
   @override
   void initState() {
@@ -46,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
     context.read<NotificationProvider>().fetchNotifications();
     context.read<WalletProvider>().fetchWallet();
     _fetchSuggestedTasks();
+    _fetchExpiringTasks();
   }
 
   Future<void> _reverseGeocode(double lat, double lng) async {
@@ -59,6 +61,27 @@ class _HomeScreenState extends State<HomeScreen> {
       if (city != null && city.isNotEmpty) {
         setState(() => _cityName = city);
       }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchExpiringTasks() async {
+    try {
+      final data = await ApiService.get('/tasks',
+          queryParams: {'limit': '8', 'sort': 'expiry'});
+      if (!mounted || data == null) return;
+      final list = data is List ? data : (data['tasks'] as List? ?? []);
+      final tasks = <Task>[];
+      for (final item in list) {
+        try {
+          tasks.add(Task.fromJson(item as Map<String, dynamic>));
+        } catch (_) {}
+      }
+      // Only keep tasks that still have expiresAt set and are expiring within 6 hours
+      final cutoff = DateTime.now().add(const Duration(hours: 6));
+      final expiring = tasks
+          .where((t) => t.expiresAt != null && t.expiresAt!.isBefore(cutoff))
+          .toList();
+      if (mounted) setState(() => _expiringTasks = expiring);
     } catch (_) {}
   }
 
@@ -248,6 +271,8 @@ class _HomeScreenState extends State<HomeScreen> {
           SliverToBoxAdapter(child: _buildCategories()),
           if (_suggestedTasks.isNotEmpty)
             SliverToBoxAdapter(child: _buildAISuggested()),
+          if (_expiringTasks.isNotEmpty)
+            SliverToBoxAdapter(child: _buildExpiringSoon()),
           SliverToBoxAdapter(child: _buildTestimonials()),
           SliverToBoxAdapter(child: _buildCTA()),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -553,50 +578,267 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: cats.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 1.05,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(children: [
+            _catTile(cats[0]), const SizedBox(width: 10),
+            _catTile(cats[1]), const SizedBox(width: 10),
+            _catTile(cats[2]),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            _catTile(cats[3]), const SizedBox(width: 10),
+            _catTile(cats[4]), const SizedBox(width: 10),
+            _catTile(cats[5]),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            _catTile(cats[6]), const SizedBox(width: 10),
+            _catTile(cats[7]), const SizedBox(width: 10),
+            _catTile(cats[8]),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _catTile((String, String) cat) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          BrowseScreen.jumpToCategory = cat.$2.toLowerCase();
+          context.go('/browse');
+        },
+        child: AspectRatio(
+          aspectRatio: 1.05,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 8)
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(cat.$1, style: const TextStyle(fontSize: 30)),
+                const SizedBox(height: 6),
+                Text(cat.$2,
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.dark)),
+              ],
+            ),
+          ),
         ),
-        itemBuilder: (ctx, i) {
-          final cat = cats[i];
-          return GestureDetector(
-            onTap: () {
-              BrowseScreen.jumpToCategory = cat.$2.toLowerCase();
-              context.go('/browse');
-            },
-            child: Container(
+      ),
+    );
+  }
+
+  // ── EXPIRING SOON ─────────────────────────────────────────────
+  Widget _buildExpiringSoon() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFF59E0B), Color(0xFFEF4444)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 8)
-                ],
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: const Icon(Icons.timer_rounded,
+                  color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(cat.$1,
-                      style: const TextStyle(fontSize: 30)),
-                  const SizedBox(height: 6),
-                  Text(cat.$2,
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.dark)),
+                  Text('Expiring Soon',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700)),
+                  Text('Act fast before these tasks expire!',
+                      style: TextStyle(color: Colors.white70, fontSize: 11)),
                 ],
               ),
             ),
-          );
-        },
+            GestureDetector(
+              onTap: () => context.go('/browse'),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white54),
+                ),
+                child: const Text('See all',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ]),
+        ),
+        SizedBox(
+          height: 170,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            itemCount: _expiringTasks.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (ctx, i) =>
+                _buildExpiringCard(_expiringTasks[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpiringCard(Task task) {
+    final expires = task.expiresAt;
+    final diff = expires != null
+        ? expires.difference(DateTime.now())
+        : const Duration(hours: 1);
+    final hours = diff.inHours;
+    final mins  = diff.inMinutes.remainder(60);
+    final timeLabel = hours > 0 ? '${hours}h ${mins}m left' : '${diff.inMinutes}m left';
+    final urgentColor = hours < 2
+        ? const Color(0xFFEF4444)
+        : hours < 4
+            ? const Color(0xFFF97316)
+            : const Color(0xFFF59E0B);
+
+    return GestureDetector(
+      onTap: () => context.push('/task/\${task.id}'),
+      child: Container(
+        width: 200,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 10)
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 56,
+              decoration: BoxDecoration(
+                color: urgentColor,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(children: [
+                Text(_categoryEmoji(task.category),
+                    style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(task.category,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.timer_rounded,
+                        size: 10, color: urgentColor),
+                    const SizedBox(width: 2),
+                    Text(timeLabel,
+                        style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            color: urgentColor,
+                            height: 1.2)),
+                  ]),
+                ),
+              ]),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(task.title,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.dark),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 2),
+                    Row(children: [
+                      const Icon(Icons.person_outline,
+                          size: 12, color: AppColors.gray),
+                      const SizedBox(width: 3),
+                      Expanded(
+                          child: Text(task.posterName,
+                              style: const TextStyle(
+                                  fontSize: 11, color: AppColors.gray),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis)),
+                    ]),
+                    const Spacer(),
+                    Row(children: [
+                      Text('₹\${task.budget.toStringAsFixed(0)}',
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                              color: urgentColor)),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                            color: urgentColor,
+                            borderRadius: BorderRadius.circular(14)),
+                        child: const Text('Apply',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -19,6 +19,7 @@ class Task {
   final String? city;
   final double? distanceKm;
   final DateTime createdAt;
+  final DateTime? expiresAt;
   final DateTime? acceptedAt;
   final DateTime? completedAt;
   final double? helperRating;
@@ -66,6 +67,7 @@ class Task {
     this.city,
     this.distanceKm,
     required this.createdAt,
+    this.expiresAt,
     this.acceptedAt,
     this.completedAt,
     this.helperRating,
@@ -243,6 +245,7 @@ class Task {
       createdAt: _parseDate(
           json['created_at'] ?? json['postedAt'] ?? json['posted_at']
       ),
+      expiresAt: _parseDateOrNull(json['expiresAt'] ?? json['expires_at']),
       acceptedAt: _parseDateOrNull(json['accepted_at'] ?? json['acceptedAt']),
       completedAt: _parseDateOrNull(
           json['completed_at'] ?? json['completedAt'] ??

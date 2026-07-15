@@ -24,6 +24,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _descCtrl = TextEditingController();
   final _budgetCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
+  final _flatNameCtrl = TextEditingController();
+  final _areaCtrl    = TextEditingController();
+  String _addressType = 'home';
   // Delivery-specific: separate pickup & drop location fields
   final _pickupAddrCtrl = TextEditingController();
   final _dropAddrCtrl = TextEditingController();
@@ -259,6 +262,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _descCtrl.dispose();
     _budgetCtrl.dispose();
     _addressCtrl.dispose();
+    _flatNameCtrl.dispose();
+    _areaCtrl.dispose();
     _pickupAddrCtrl.dispose();
     _dropAddrCtrl.dispose();
     super.dispose();
@@ -297,6 +302,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           if (!_isDelivery && _addressCtrl.text.isEmpty && addr != null) {
             _addressCtrl.text = addr;
           }
+          // Auto-fill Area field with subLocality + locality
+          if (_areaCtrl.text.isEmpty) {
+            final areaStr = [p.subLocality, p.locality, p.administrativeArea]
+                .where((s) => s != null && s.isNotEmpty)
+                .map((s) => s!)
+                .join(', ');
+            if (areaStr.isNotEmpty) _areaCtrl.text = areaStr;
+          }
         }
       }
     } catch (_) {}
@@ -317,6 +330,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _locationLabel = addr;
         if (!_isDelivery && addr != null) _addressCtrl.text = addr;
       });
+      // Auto-fill Area field when empty
+      if (_areaCtrl.text.isEmpty && addr != null) {
+        _areaCtrl.text = addr;
+      }
     }
   }
 
@@ -748,8 +765,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           ? 'Pickup: $pickup\nDrop: $drop'
           : _locationLabel;
     } else {
-      final typed = _addressCtrl.text.trim();
-      combinedAddress = typed.isNotEmpty ? typed : _locationLabel;
+      final typed    = _addressCtrl.text.trim();
+      final flatName  = _flatNameCtrl.text.trim();
+      final area      = _areaCtrl.text.trim();
+      final addrParts = <String>[
+        if (flatName.isNotEmpty) flatName,
+        if (area.isNotEmpty) area,
+        if (typed.isNotEmpty) typed,
+      ];
+      combinedAddress = addrParts.isNotEmpty
+          ? addrParts.join(', ')
+          : _locationLabel;
     }
 
     final taskData = {
@@ -765,6 +791,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'lng': taskLocation.longitude,
         'address': combinedAddress ?? '',
       },
+      'address_type': _addressType,
       if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
         'pickup_address': _pickupAddrCtrl.text.trim(),
       if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty) ...{
@@ -1203,9 +1230,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ],
               ] else ...[
-                // Single address for non-delivery tasks
+                // ── Address / Landmark ──────────────────────────────────────
                 TextFormField(
                   controller: _addressCtrl,
+                  readOnly: true,
                   decoration: InputDecoration(
                     labelText: 'Address / Landmark (optional)',
                     prefixIcon: const Icon(Icons.location_on_outlined),
@@ -1231,6 +1259,120 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           color: AppColors.success, fontSize: 11),
                     ),
                   ),
+
+                // ── Flat / House / Building name ───────────────────────
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _flatNameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Flat / House / Building name',
+                    hintText: 'e.g. Flat 2B, Sunrise Apartments',
+                    prefixIcon: Icon(Icons.home_outlined),
+                  ),
+                ),
+
+                // ── Area / Sector / Locality ───────────────────────────
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _areaCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Area / Sector / Locality',
+                    hintText: 'e.g. Baner, Pune',
+                    prefixIcon: Icon(Icons.map_outlined),
+                  ),
+                ),
+
+                // ── Home / Work selector ───────────────────────────────
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _addressType = 'home'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: BoxDecoration(
+                            color: _addressType == 'home'
+                                ? AppColors.primary
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _addressType == 'home'
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.home_rounded,
+                                  size: 18,
+                                  color: _addressType == 'home'
+                                      ? Colors.white
+                                      : AppColors.gray),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Home',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: _addressType == 'home'
+                                      ? Colors.white
+                                      : AppColors.gray,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _addressType = 'work'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: BoxDecoration(
+                            color: _addressType == 'work'
+                                ? AppColors.primary
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _addressType == 'work'
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.work_rounded,
+                                  size: 18,
+                                  color: _addressType == 'work'
+                                      ? Colors.white
+                                      : AppColors.gray),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Work',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: _addressType == 'work'
+                                      ? Colors.white
+                                      : AppColors.gray,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
 
               const SizedBox(height: 14),

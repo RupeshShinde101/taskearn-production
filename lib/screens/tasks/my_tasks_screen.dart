@@ -121,7 +121,7 @@ class _PostedTaskList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchMyTasks(),
       child: ListView.builder(
-        padding: const EdgeInsets.only(bottom: 16),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
         itemCount: tasks.length,
         itemBuilder: (_, i) {
           final t = tasks[i];
@@ -982,7 +982,7 @@ class _CompletedTaskList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchMyTasks(),
       child: ListView.builder(
-        padding: const EdgeInsets.only(bottom: 16),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
         itemCount: visible.length,
         itemBuilder: (_, i) {
           final t = visible[i];

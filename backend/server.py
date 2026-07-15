@@ -2329,6 +2329,9 @@ def get_tasks():
     limit = request.args.get('limit', request.args.get('per_page', 20, type=int), type=int)
     limit = min(max(limit, 1), 100)  # clamp 1-100
 
+    # Sort param: 'newest' (default) or 'expiry' (soonest-expiring first)
+    sort_param = request.args.get('sort', 'newest').strip().lower()
+
     # Filter params
     category_filter = request.args.get('category', '').strip()
     max_budget = request.args.get('max_budget', type=float)
@@ -2393,7 +2396,7 @@ def get_tasks():
                     FROM tasks t
                     LEFT JOIN users u ON u.id = t.posted_by
                     {base_where}
-                    ORDER BY t.posted_at DESC
+                    ORDER BY {'t.expires_at ASC' if sort_param == 'expiry' else 't.posted_at DESC'}
                     LIMIT {PH} OFFSET {PH}
                 ''', tuple(base_params) + (limit, offset))
             else:
@@ -2410,7 +2413,7 @@ def get_tasks():
                     FROM tasks t
                     LEFT JOIN users u ON u.id = t.posted_by
                     {base_where}
-                    ORDER BY t.posted_at DESC
+                    ORDER BY {'t.expires_at ASC' if sort_param == 'expiry' else 't.posted_at DESC'}
                     LIMIT 200
                 ''', tuple(base_params))
             

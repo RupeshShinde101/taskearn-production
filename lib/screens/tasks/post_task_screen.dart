@@ -115,118 +115,183 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
   void _showSubCategorySheet(TaskCategoryGroup group) {
-    // Dismiss keyboard so it doesn’t fight with the bottom sheet
     FocusScope.of(context).unfocus();
-    showModalBottomSheet(
+    showGeneralDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      transitionDuration: const Duration(milliseconds: 260),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved =
+            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (ctx, _, __) {
+        final maxH = MediaQuery.of(ctx).size.height - 48;
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              constraints: BoxConstraints(maxWidth: 420, maxHeight: maxH),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 40,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 16),
-            // Title row
-            Row(
-              children: [
-                Text(group.icon, style: const TextStyle(fontSize: 24)),
-                const SizedBox(width: 10),
-                Text(
-                  group.label,
-                  style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.dark),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Select a specific category:',
-              style: TextStyle(fontSize: 13, color: AppColors.gray),
-            ),
-            const SizedBox(height: 16),
-            // Square grid — same style as the old flat picker
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: group.subCategories.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.0,
-              ),
-              itemBuilder: (_, i) {
-                final c = group.subCategories[i];
-                final sel = _selectedCategory == c.id;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedCategory = c.id;
-                      _autoFillDescription();
-                    });
-                    Navigator.pop(context);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    decoration: BoxDecoration(
-                      color: sel ? AppColors.primary : AppColors.light,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: sel ? AppColors.primary : AppColors.border,
-                        width: sel ? 2 : 1,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppColors.primary, AppColors.primaryDark],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      boxShadow: sel
-                          ? [BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.25),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            )]
-                          : null,
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(20)),
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Row(
                       children: [
-                        Text(c.icon, style: const TextStyle(fontSize: 22)),
-                        const SizedBox(height: 4),
-                        Text(
-                          c.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-                            color: sel ? Colors.white : AppColors.dark,
+                        Text(group.icon,
+                            style: const TextStyle(fontSize: 26)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(group.label,
+                                  style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white)),
+                              const Text('Select a specific category',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white70)),
+                            ],
                           ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.20),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close,
+                                color: Colors.white, size: 18),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                );
-              },
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: group.subCategories.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            mainAxisExtent: 90,
+                          ),
+                          itemBuilder: (_, i) {
+                            final c = group.subCategories[i];
+                            final sel = _selectedCategory == c.id;
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedCategory = c.id;
+                                  _autoFillDescription();
+                                });
+                                Navigator.pop(ctx);
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                decoration: BoxDecoration(
+                                  color: sel
+                                      ? AppColors.primary
+                                      : AppColors.light,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: sel
+                                        ? AppColors.primary
+                                        : AppColors.border,
+                                    width: sel ? 2 : 1,
+                                  ),
+                                  boxShadow: sel
+                                      ? [
+                                          BoxShadow(
+                                            color: AppColors.primary
+                                                .withValues(alpha: 0.25),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          )
+                                        ]
+                                      : null,
+                                ),
+                                child: Column(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  children: [
+                                    Text(c.icon,
+                                        style: const TextStyle(
+                                            fontSize: 22)),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      c.label,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: sel
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                        color: sel
+                                            ? Colors.white
+                                            : AppColors.dark,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -581,7 +646,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-        child: Padding(
+        child: SingleChildScrollView(
+          child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -749,6 +815,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

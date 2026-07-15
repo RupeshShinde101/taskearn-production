@@ -11,7 +11,7 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
+class _MainShellState extends State<MainShell> with TickerProviderStateMixin implements WidgetsBindingObserver {
   static const _tabs = [
     '/home',
     '/browse',
@@ -21,17 +21,30 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
 
   static const _channel = MethodChannel('com.workmate4u/navigation');
   int _currentIdx = 0;
+  bool _keyboardVisible = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _channel.setMethodCallHandler(_onNativeBack);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _channel.setMethodCallHandler(null);
     super.dispose();
+  }
+
+  /// Fires whenever window metrics change (keyboard open/close, rotation, etc.).
+  @override
+  void didChangeMetrics() {
+    final bottom = WidgetsBinding.instance.platformDispatcher.views.first.viewInsets.bottom;
+    final visible = bottom > 0;
+    if (visible != _keyboardVisible) {
+      _keyboardVisible = visible;
+    }
   }
 
   /// Called from native Android when the back button / gesture is triggered.
@@ -39,6 +52,13 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
   /// Returns false → Android falls back to its default behaviour.
   Future<dynamic> _onNativeBack(MethodCall call) async {
     if (call.method != 'back_pressed' || !mounted) return false;
+
+    // If the keyboard is currently visible, dismiss it and stop here.
+    // The user's next back press will trigger navigation.
+    if (_keyboardVisible) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      return true;
+    }
 
     // If there is a pushed route on the stack (e.g. task detail, notifications,
     // post-task, chat) — pop it normally and do NOT apply tab-level logic.

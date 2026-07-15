@@ -306,8 +306,7 @@ class Task {
           ?? json['pickup_address']?.toString()
           ?? json['pickupAddress']?.toString()
           ?? json['pickup_addr']?.toString()
-          ?? json['from_address']?.toString()
-          ?? locAddr?.toString(),  // location.address IS the pickup for delivery tasks
+          ?? json['from_address']?.toString(),
       dropAddress: (dropLoc is Map ? dropLoc['address'] : null)?.toString()
           ?? (destination is Map ? destination['address'] : null)?.toString()
           ?? json['drop_location_address']?.toString()

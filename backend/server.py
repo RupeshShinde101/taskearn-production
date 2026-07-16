@@ -2295,15 +2295,26 @@ def update_user_location():
         lng = float(lng)
     except (TypeError, ValueError):
         return jsonify({'success': False, 'message': 'lat and lng must be numbers'}), 400
+    import datetime as _dt
+    now_ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
     try:
         with get_db() as (cursor, conn):
-            cursor.execute(
-                f'UPDATE users SET last_lat = {PH}, last_lng = {PH}, '
-                f'last_location_updated_at = {PH} WHERE id = {PH}',
-                (lat, lng,
-                 __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
-                 request.user_id)
-            )
+            try:
+                cursor.execute(
+                    f'UPDATE users SET last_lat = {PH}, last_lng = {PH}, '
+                    f'last_location_updated_at = {PH} WHERE id = {PH}',
+                    (lat, lng, now_ts, request.user_id)
+                )
+            except Exception as col_err:
+                # Fallback for deployments where the column doesn't exist yet
+                if 'last_location_updated_at' in str(col_err):
+                    conn.rollback()
+                    cursor.execute(
+                        f'UPDATE users SET last_lat = {PH}, last_lng = {PH} WHERE id = {PH}',
+                        (lat, lng, request.user_id)
+                    )
+                else:
+                    raise
             conn.commit()
         return jsonify({'success': True})
     except Exception as e:

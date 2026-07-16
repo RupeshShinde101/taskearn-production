@@ -395,7 +395,7 @@ class _FloatingNavBar extends StatelessWidget {
                     child: const Icon(
                       Icons.add_rounded,
                       color: Colors.white,
-                      size: 36,
+                      size: 26,
                     ),
                   ),
                 ),
@@ -431,7 +431,7 @@ class _NavBarPainter extends CustomPainter {
   const _NavBarPainter({required this.notchRadius});
 
   static const _border  = Color(0xFFBDD5F6);
-  static const _fill    = Colors.white;
+  static const _fill    = Color.fromARGB(255, 230, 235, 255); // dark blue-white tint
 
   @override
   void paint(Canvas canvas, Size size) {

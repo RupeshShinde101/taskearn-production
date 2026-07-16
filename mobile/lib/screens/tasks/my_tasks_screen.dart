@@ -64,7 +64,15 @@ class _MyTasksScreenState extends State<MyTasksScreen>
             return const Center(child: CircularProgressIndicator());
           }
 
-          return Stack(
+          // Bottom inset so content never hides behind the floating navbar.
+          // viewPadding.bottom = raw device safe-area (unaffected by nested
+          // Scaffolds); +75 covers the navbar container (65) + padding (10).
+          final navbarInset =
+              MediaQuery.of(context).viewPadding.bottom + 75;
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: navbarInset),
+            child: Stack(
             children: [
               TabBarView(
                 controller: _tabs,
@@ -88,6 +96,7 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                   child: LinearProgressIndicator(minHeight: 2),
                 ),
             ],
+          ),
           );
         },
       ),
@@ -121,7 +130,8 @@ class _PostedTaskList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchMyTasks(),
       child: ListView.builder(
-        padding: const EdgeInsets.only(bottom: 16),
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewPadding.bottom + 80),
         itemCount: tasks.length,
         itemBuilder: (_, i) {
           final t = tasks[i];
@@ -982,7 +992,8 @@ class _CompletedTaskList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchMyTasks(),
       child: ListView.builder(
-        padding: const EdgeInsets.only(bottom: 16),
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewPadding.bottom + 80),
         itemCount: visible.length,
         itemBuilder: (_, i) {
           final t = visible[i];
@@ -1240,6 +1251,8 @@ class _TaskList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchMyTasks(),
       child: ListView.builder(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewPadding.bottom + 80),
         itemCount: tasks.length,
         itemBuilder: (_, i) {
           final t = tasks[i];

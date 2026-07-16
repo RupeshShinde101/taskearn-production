@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
@@ -12,6 +13,8 @@ class BrowseScreen extends StatefulWidget {
   /// Set by the home screen before calling context.go('/browse') so that the
   /// browse screen can pre-select and filter by that category on arrival.
   static String? jumpToCategory;
+  /// Set before navigating to show tasks sorted by soonest-expiring first.
+  static bool jumpToExpirySoon = false;
 
   const BrowseScreen({super.key});
 
@@ -25,6 +28,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _maxBudget = 5000;
   double _radiusKm = 10;
   Timer? _searchDebounce;
+  bool _sortByExpiry = false;  // set when navigating from Expiring Soon
 
   // User's current GPS location for radius filtering
   double? _userLat;
@@ -43,6 +47,14 @@ class _BrowseScreenState extends State<BrowseScreen> {
         if (mounted) _applyFilters();
       });
     }
+    // Consume the expiry-sort signal.
+    if (BrowseScreen.jumpToExpirySoon) {
+      BrowseScreen.jumpToExpirySoon = false;
+      _sortByExpiry = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    }
   }
 
   @override
@@ -51,7 +63,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     _searchCtrl.addListener(_onSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      // Fetch location first, then load tasks so radius filter applies immediately
+      // Resolve GPS first so the 10 km radius filter is applied from the start.
       await _fetchLocation();
       if (!mounted) return;
       _applyFilters();
@@ -85,7 +97,10 @@ class _BrowseScreenState extends State<BrowseScreen> {
     _searchDebounce = Timer(const Duration(milliseconds: 500), _applyFilters);
   }
 
-  void _applyFilters() {
+  void _applyFilters({bool sortByExpiry = false}) {
+    final currentUserId =
+        context.read<AuthProvider>().user?.id?.toString();
+    final useExpiry = sortByExpiry || _sortByExpiry;
     context.read<TaskProvider>().fetchBrowseTasks(
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
@@ -93,6 +108,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
           radiusKm: _userLat != null ? _radiusKm : null,
           lat: _userLat,
           lng: _userLng,
+          excludePosterId: currentUserId,
+          sort: useExpiry ? 'expiry' : null,
+          expiringSoon: useExpiry,
           refresh: true,
         );
   }
@@ -101,6 +119,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -185,7 +204,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context);
+                  Navigator.pop(ctx);
                   _applyFilters();
                 },
                 child: const Text('Apply Filters'),
@@ -331,7 +350,8 @@ class _BrowseScreenState extends State<BrowseScreen> {
                 return RefreshIndicator(
                   onRefresh: () async => _applyFilters(),
                   child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 96),
+                    padding: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).padding.bottom),
                     itemCount: tasks.browseTasks.length,
                     itemBuilder: (_, i) => TaskCard(
                       task: tasks.browseTasks[i],

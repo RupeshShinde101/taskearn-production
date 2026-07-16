@@ -24,6 +24,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _descCtrl = TextEditingController();
   final _budgetCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
+  final _flatNameCtrl = TextEditingController();
+  final _areaCtrl    = TextEditingController();
+  String _addressType = 'home';
   // Delivery-specific: separate pickup & drop location fields
   final _pickupAddrCtrl = TextEditingController();
   final _dropAddrCtrl = TextEditingController();
@@ -112,118 +115,183 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
   void _showSubCategorySheet(TaskCategoryGroup group) {
-    // Dismiss keyboard so it doesn’t fight with the bottom sheet
     FocusScope.of(context).unfocus();
-    showModalBottomSheet(
+    showGeneralDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      transitionDuration: const Duration(milliseconds: 260),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved =
+            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (ctx, _, __) {
+        final maxH = MediaQuery.of(ctx).size.height - 48;
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              constraints: BoxConstraints(maxWidth: 420, maxHeight: maxH),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 40,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 16),
-            // Title row
-            Row(
-              children: [
-                Text(group.icon, style: const TextStyle(fontSize: 24)),
-                const SizedBox(width: 10),
-                Text(
-                  group.label,
-                  style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.dark),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Select a specific category:',
-              style: TextStyle(fontSize: 13, color: AppColors.gray),
-            ),
-            const SizedBox(height: 16),
-            // Square grid — same style as the old flat picker
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: group.subCategories.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.0,
-              ),
-              itemBuilder: (_, i) {
-                final c = group.subCategories[i];
-                final sel = _selectedCategory == c.id;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedCategory = c.id;
-                      _autoFillDescription();
-                    });
-                    Navigator.pop(context);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    decoration: BoxDecoration(
-                      color: sel ? AppColors.primary : AppColors.light,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: sel ? AppColors.primary : AppColors.border,
-                        width: sel ? 2 : 1,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppColors.primary, AppColors.primaryDark],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      boxShadow: sel
-                          ? [BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.25),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            )]
-                          : null,
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(20)),
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Row(
                       children: [
-                        Text(c.icon, style: const TextStyle(fontSize: 22)),
-                        const SizedBox(height: 4),
-                        Text(
-                          c.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-                            color: sel ? Colors.white : AppColors.dark,
+                        Text(group.icon,
+                            style: const TextStyle(fontSize: 26)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(group.label,
+                                  style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white)),
+                              const Text('Select a specific category',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white70)),
+                            ],
                           ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.20),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close,
+                                color: Colors.white, size: 18),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                );
-              },
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: group.subCategories.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            mainAxisExtent: 90,
+                          ),
+                          itemBuilder: (_, i) {
+                            final c = group.subCategories[i];
+                            final sel = _selectedCategory == c.id;
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedCategory = c.id;
+                                  _autoFillDescription();
+                                });
+                                Navigator.pop(ctx);
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                decoration: BoxDecoration(
+                                  color: sel
+                                      ? AppColors.primary
+                                      : AppColors.light,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: sel
+                                        ? AppColors.primary
+                                        : AppColors.border,
+                                    width: sel ? 2 : 1,
+                                  ),
+                                  boxShadow: sel
+                                      ? [
+                                          BoxShadow(
+                                            color: AppColors.primary
+                                                .withValues(alpha: 0.25),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          )
+                                        ]
+                                      : null,
+                                ),
+                                child: Column(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  children: [
+                                    Text(c.icon,
+                                        style: const TextStyle(
+                                            fontSize: 22)),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      c.label,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: sel
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                        color: sel
+                                            ? Colors.white
+                                            : AppColors.dark,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -259,6 +327,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _descCtrl.dispose();
     _budgetCtrl.dispose();
     _addressCtrl.dispose();
+    _flatNameCtrl.dispose();
+    _areaCtrl.dispose();
     _pickupAddrCtrl.dispose();
     _dropAddrCtrl.dispose();
     super.dispose();
@@ -297,6 +367,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           if (!_isDelivery && _addressCtrl.text.isEmpty && addr != null) {
             _addressCtrl.text = addr;
           }
+          // Auto-fill Area field with subLocality + locality
+          if (_areaCtrl.text.isEmpty) {
+            final areaStr = [p.subLocality, p.locality, p.administrativeArea]
+                .where((s) => s != null && s.isNotEmpty)
+                .map((s) => s!)
+                .join(', ');
+            if (areaStr.isNotEmpty) _areaCtrl.text = areaStr;
+          }
         }
       }
     } catch (_) {}
@@ -317,6 +395,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _locationLabel = addr;
         if (!_isDelivery && addr != null) _addressCtrl.text = addr;
       });
+      // Auto-fill Area field when empty
+      if (_areaCtrl.text.isEmpty && addr != null) {
+        _areaCtrl.text = addr;
+      }
     }
   }
 
@@ -564,7 +646,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-        child: Padding(
+        child: SingleChildScrollView(
+          child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -733,6 +816,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             ],
           ),
         ),
+        ),
       ),
     );
     if (confirm != true || !mounted) return;
@@ -748,8 +832,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           ? 'Pickup: $pickup\nDrop: $drop'
           : _locationLabel;
     } else {
-      final typed = _addressCtrl.text.trim();
-      combinedAddress = typed.isNotEmpty ? typed : _locationLabel;
+      final typed    = _addressCtrl.text.trim();
+      final flatName  = _flatNameCtrl.text.trim();
+      final area      = _areaCtrl.text.trim();
+      final addrParts = <String>[
+        if (flatName.isNotEmpty) flatName,
+        if (area.isNotEmpty) area,
+        if (typed.isNotEmpty) typed,
+      ];
+      combinedAddress = addrParts.isNotEmpty
+          ? addrParts.join(', ')
+          : _locationLabel;
     }
 
     final taskData = {
@@ -765,6 +858,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'lng': taskLocation.longitude,
         'address': combinedAddress ?? '',
       },
+      'address_type': _addressType,
       if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
         'pickup_address': _pickupAddrCtrl.text.trim(),
       if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty) ...{
@@ -1203,9 +1297,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ],
               ] else ...[
-                // Single address for non-delivery tasks
+                // ── Address / Landmark ──────────────────────────────────────
                 TextFormField(
                   controller: _addressCtrl,
+                  readOnly: true,
                   decoration: InputDecoration(
                     labelText: 'Address / Landmark (optional)',
                     prefixIcon: const Icon(Icons.location_on_outlined),
@@ -1231,6 +1326,120 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           color: AppColors.success, fontSize: 11),
                     ),
                   ),
+
+                // ── Flat / House / Building name ───────────────────────
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _flatNameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Flat / House / Building name',
+                    hintText: 'e.g. Flat 2B, Sunrise Apartments',
+                    prefixIcon: Icon(Icons.home_outlined),
+                  ),
+                ),
+
+                // ── Area / Sector / Locality ───────────────────────────
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _areaCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Area / Sector / Locality',
+                    hintText: 'e.g. Baner, Pune',
+                    prefixIcon: Icon(Icons.map_outlined),
+                  ),
+                ),
+
+                // ── Home / Work selector ───────────────────────────────
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _addressType = 'home'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: BoxDecoration(
+                            color: _addressType == 'home'
+                                ? AppColors.primary
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _addressType == 'home'
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.home_rounded,
+                                  size: 18,
+                                  color: _addressType == 'home'
+                                      ? Colors.white
+                                      : AppColors.gray),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Home',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: _addressType == 'home'
+                                      ? Colors.white
+                                      : AppColors.gray,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _addressType = 'work'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: BoxDecoration(
+                            color: _addressType == 'work'
+                                ? AppColors.primary
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _addressType == 'work'
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.work_rounded,
+                                  size: 18,
+                                  color: _addressType == 'work'
+                                      ? Colors.white
+                                      : AppColors.gray),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Work',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: _addressType == 'work'
+                                      ? Colors.white
+                                      : AppColors.gray,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
 
               const SizedBox(height: 14),

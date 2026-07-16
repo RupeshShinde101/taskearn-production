@@ -178,6 +178,7 @@ class TaskProvider extends ChangeNotifier {
     double? radiusKm,
     double? minBudget,
     double? maxBudget,
+    String? excludePosterId,
     bool refresh = false,
   }) async {
     if (refresh) {
@@ -203,6 +204,8 @@ class TaskProvider extends ChangeNotifier {
         if (radiusKm != null) 'radius': '$radiusKm',
         if (minBudget != null) 'min_budget': '$minBudget',
         if (maxBudget != null) 'max_budget': '$maxBudget',
+        if (excludePosterId != null && excludePosterId.isNotEmpty)
+          'exclude_poster_id': excludePosterId,
       };
 
       if (search != null && search.isNotEmpty) {

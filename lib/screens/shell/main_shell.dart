@@ -314,10 +314,7 @@ class _FloatingNavBar extends StatelessWidget {
     return MediaQuery(
       data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
       child: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
+        child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Stack(
           clipBehavior: Clip.none,
@@ -429,9 +426,7 @@ class _FloatingNavBar extends StatelessWidget {
           ),
         ),
       ),
-    ),
-  ),
-  );
+    );
   }
 }
 

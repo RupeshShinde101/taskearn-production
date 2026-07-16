@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
@@ -86,6 +87,8 @@ class _BrowseScreenState extends State<BrowseScreen> {
   }
 
   void _applyFilters() {
+    final currentUserId =
+        context.read<AuthProvider>().user?.id?.toString();
     context.read<TaskProvider>().fetchBrowseTasks(
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
@@ -93,6 +96,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
           radiusKm: _userLat != null ? _radiusKm : null,
           lat: _userLat,
           lng: _userLng,
+          excludePosterId: currentUserId,
           refresh: true,
         );
   }

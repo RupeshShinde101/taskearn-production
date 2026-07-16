@@ -2366,6 +2366,8 @@ def get_tasks():
     lat = request.args.get('lat', type=float)
     lng = request.args.get('lng', type=float)
     radius_km = request.args.get('radius', type=float)
+    # Exclude tasks posted by a specific user (e.g. the browsing user's own tasks)
+    exclude_poster_id = request.args.get('exclude_poster_id', '').strip()
     
     # Throttle cleanup: run at most once every 5 minutes per process
     global _last_cleanup_time
@@ -2385,6 +2387,10 @@ def get_tasks():
             # Build WHERE clause with optional filters
             base_where = f"WHERE t.status = 'active' AND t.expires_at > {PH}"
             base_params = [now]
+
+            if exclude_poster_id:
+                base_where += f" AND t.posted_by != {PH}"
+                base_params.append(exclude_poster_id)
 
             if category_filter and category_filter != 'all':
                 base_where += f" AND t.category = {PH}"
@@ -9327,6 +9333,8 @@ def notify_task_skills(task_id):
                   AND id != {PH}
                   AND skills IS NOT NULL
                   AND skills NOT IN ({PH}, {PH}, {PH})
+                  AND last_lat IS NOT NULL
+                  AND last_lng IS NOT NULL
             ''', (request.user_id, '[]', '', 'null'))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 

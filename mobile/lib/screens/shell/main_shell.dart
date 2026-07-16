@@ -308,10 +308,18 @@ class _FloatingNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-        child: Stack(
+    // Disable system font-scaling inside the navbar so it never overflows
+    // on devices with large accessibility font sizes.
+    // Cap width at 480dp so the pill looks correct on tablets too.
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+      child: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Stack(
           clipBehavior: Clip.none,
           children: [
             // ── Notched pill bar ──────────────────────────────────────
@@ -418,9 +426,12 @@ class _FloatingNavBar extends StatelessWidget {
               ),
             ),
           ],
+          ),
         ),
       ),
-    );
+    ),
+  ),
+  );
   }
 }
 

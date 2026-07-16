@@ -37,17 +37,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadInitial() async {
-    // Defer until after the first frame to avoid setState-during-build errors.
+    // Fetch non-location data immediately (no GPS needed)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<NotificationProvider>().fetchNotifications();
       context.read<WalletProvider>().fetchWallet();
-      _fetchSuggestedTasks();
-      _fetchExpiringTasks();
     });
 
-    // Get GPS location in parallel; update city name + backend location
-    // once available, but don't block the above fetches on it.
+    // Get GPS first — tasks are location-dependent (10km radius)
     final location = await LocationService.getCurrentLocation();
     if (!mounted) return;
     if (location != null) {
@@ -55,6 +52,10 @@ class _HomeScreenState extends State<HomeScreen> {
           .updateUserLocation(location.latitude, location.longitude);
       _reverseGeocode(location.latitude, location.longitude);
     }
+
+    // Fetch tasks: with 10km radius if GPS available, without otherwise
+    _fetchSuggestedTasks(location?.latitude, location?.longitude);
+    _fetchExpiringTasks(location?.latitude, location?.longitude);
   }
 
   Future<void> _reverseGeocode(double lat, double lng) async {
@@ -71,16 +72,22 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _fetchExpiringTasks() async {
+  Future<void> _fetchExpiringTasks([double? lat, double? lng]) async {
     try {
       final currentUserId =
           context.read<AuthProvider>().user?.id?.toString();
-      final data = await ApiService.get('/tasks', queryParams: {
+      final params = <String, String>{
         'limit': '8',
         'sort': 'expiry',
         if (currentUserId != null && currentUserId.isNotEmpty)
           'exclude_poster_id': currentUserId,
-      });
+        if (lat != null && lng != null) ...{
+          'lat': lat.toString(),
+          'lng': lng.toString(),
+          'radius': '10',
+        },
+      };
+      final data = await ApiService.get('/tasks', queryParams: params);
       if (!mounted || data == null) return;
       final list = data is List ? data : (data['tasks'] as List? ?? []);
       final tasks = <Task>[];
@@ -98,15 +105,21 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _fetchSuggestedTasks() async {
+  Future<void> _fetchSuggestedTasks([double? lat, double? lng]) async {
     try {
       final currentUserId =
           context.read<AuthProvider>().user?.id?.toString();
-      final data = await ApiService.get('/tasks', queryParams: {
+      final params = <String, String>{
         'limit': '8',
         if (currentUserId != null && currentUserId.isNotEmpty)
           'exclude_poster_id': currentUserId,
-      });
+        if (lat != null && lng != null) ...{
+          'lat': lat.toString(),
+          'lng': lng.toString(),
+          'radius': '10',
+        },
+      };
+      final data = await ApiService.get('/tasks', queryParams: params);
       if (!mounted || data == null) return;
       final list = data is List ? data : (data['tasks'] as List? ?? []);
       final tasks = <Task>[];

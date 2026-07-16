@@ -936,9 +936,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ]),
         ),
-        SizedBox(
-          height: 246,
-          child: ListView.separated(
+        MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+          child: SizedBox(
+            height: 200,
+            child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             itemCount: _suggestedTasks.length,
@@ -946,6 +948,7 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (ctx, i) => _buildSuggestedCard(_suggestedTasks[i]),
           ),
         ),
+      ),
       ],
     );
   }
@@ -969,7 +972,6 @@ class _HomeScreenState extends State<HomeScreen> {
       onTap: () => context.push('/task/${task.id}'),
       child: Container(
         width: 220,
-        height: 210,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),

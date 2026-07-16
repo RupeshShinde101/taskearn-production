@@ -326,6 +326,7 @@ class _WalletScreenState extends State<WalletScreen>
 
   @override
   Widget build(BuildContext context) {
+    final sw = MediaQuery.of(context).size.width;
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       body: Consumer<WalletProvider>(
@@ -334,247 +335,102 @@ class _WalletScreenState extends State<WalletScreen>
             return const Center(child: CircularProgressIndicator());
           }
           final b = wallet.balance;
+          // Responsive sizing
+          final logoH  = sw * 0.13;
+          final balFS  = (sw * 0.09).clamp(28.0, 44.0);
+          final illW   = sw * 0.35;
+          final illH   = sw * 0.32;
+
           return Column(
             children: [
               // ── Dark gradient header ──────────────────────────────────
               Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Color(0xFF0A1628), Color(0xFF1B3A6E)],
+                    colors: [Color(0xFF0B1630), Color(0xFF1A3870)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                 ),
                 child: SafeArea(
                   bottom: false,
-                  child: Stack(
-                    children: [
-                      // Glowing circle decoration
-                      Positioned(
-                        right: -30,
-                        top: -20,
-                        child: Container(
-                          width: 180,
-                          height: 180,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        // Left: logo + balance
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Logo + Secure badge row
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  // W4U Logo
+                                  Image.asset(
+                                    'assets/images/logo_light.png',
+                                    height: logoH,
+                                    fit: BoxFit.contain,
+                                  ),
+                                  // Secure Wallet badge
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF059669),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.verified_rounded,
+                                            color: Colors.white, size: 13),
+                                        SizedBox(width: 4),
+                                        Text('Secure Wallet',
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              const Text('Available Balance',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 13)),
+                              const SizedBox(height: 4),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '\u20b9\',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: balFS,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: -1),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Top row: Logo + Secure badge
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                // W4U Logo (asset image)
-                                Image.asset(
-                                  'assets/images/logo.png',
-                                  height: 52,
-                                  fit: BoxFit.contain,
-                                ),
-                                // Secure Wallet badge
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF059669),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.verified_rounded,
-                                          color: Colors.white, size: 14),
-                                      SizedBox(width: 4),
-                                      Text('Secure Wallet',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            // Balance row: text left, wallet illustration right
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text('Available Balance',
-                                          style: TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 14)),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        '₹${b.balance.toStringAsFixed(2)}',
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 38,
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: -1),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                // 3D wallet illustration
-                                SizedBox(
-                                  width: 120,
-                                  height: 110,
-                                  child: Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      // Glow ring
-                                      Positioned(
-                                        bottom: 0,
-                                        left: 10,
-                                        child: Container(
-                                          width: 100,
-                                          height: 18,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.rectangle,
-                                            borderRadius: BorderRadius.circular(50),
-                                            color: const Color(0xFF3B82F6)
-                                                .withValues(alpha: 0.40),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: const Color(0xFF60A5FA)
-                                                    .withValues(alpha: 0.5),
-                                                blurRadius: 12,
-                                                spreadRadius: 4,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      // Wallet body
-                                      Positioned(
-                                        bottom: 8,
-                                        left: 4,
-                                        child: Container(
-                                          width: 88,
-                                          height: 72,
-                                          decoration: BoxDecoration(
-                                            gradient: const LinearGradient(
-                                              colors: [
-                                                Color(0xFF6366F1),
-                                                Color(0xFF4338CA),
-                                              ],
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                            ),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: const Color(0xFF4338CA)
-                                                    .withValues(alpha: 0.5),
-                                                blurRadius: 10,
-                                                offset: const Offset(0, 4),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Stack(
-                                            children: [
-                                              Positioned(
-                                                right: 8,
-                                                top: 12,
-                                                child: Container(
-                                                  width: 28,
-                                                  height: 28,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    color: const Color(0xFF818CF8)
-                                                        .withValues(alpha: 0.5),
-                                                  ),
-                                                  child: const Center(
-                                                    child: Text('₹',
-                                                        style: TextStyle(
-                                                            color: Colors.white,
-                                                            fontWeight:
-                                                                FontWeight.w900,
-                                                            fontSize: 14)),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      // Card 1 (orange)
-                                      Positioned(
-                                        top: 0,
-                                        right: 0,
-                                        child: Transform.rotate(
-                                          angle: 0.3,
-                                          child: Container(
-                                            width: 60,
-                                            height: 38,
-                                            decoration: BoxDecoration(
-                                              gradient: const LinearGradient(
-                                                colors: [
-                                                  Color(0xFFF59E0B),
-                                                  Color(0xFFD97706),
-                                                ],
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black
-                                                      .withValues(alpha: 0.25),
-                                                  blurRadius: 6,
-                                                  offset: const Offset(0, 3),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      // Card 2 (white/gray)
-                                      Positioned(
-                                        top: 4,
-                                        right: 8,
-                                        child: Transform.rotate(
-                                          angle: 0.1,
-                                          child: Container(
-                                            width: 55,
-                                            height: 34,
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFE2E8F0),
-                                              borderRadius:
-                                                  BorderRadius.circular(5),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black
-                                                      .withValues(alpha: 0.15),
-                                                  blurRadius: 4,
-                                                  offset: const Offset(0, 2),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-                          ],
+                        const SizedBox(width: 8),
+                        // Right: 3D wallet illustration
+                        SizedBox(
+                          width: illW,
+                          height: illH,
+                          child: Image.asset(
+                            'assets/images/wallet_illustration.png',
+                            fit: BoxFit.contain,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -595,7 +451,7 @@ class _WalletScreenState extends State<WalletScreen>
                   ],
                 ),
                 padding: const EdgeInsets.symmetric(
-                    vertical: 20, horizontal: 8),
+                    vertical: 18, horizontal: 8),
                 child: Row(
                   children: [
                     _ActionBtn(
@@ -628,40 +484,40 @@ class _WalletScreenState extends State<WalletScreen>
 
               // ── Blue stats bar ────────────────────────────────────────
               Container(
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1D4ED8),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 padding: const EdgeInsets.symmetric(
-                    vertical: 16, horizontal: 8),
+                    vertical: 14, horizontal: 8),
                 child: Row(
                   children: [
                     _StatItem(
                       icon: Icons.account_balance_wallet_outlined,
                       label: 'Earned',
-                      value: '₹${b.totalEarned.toStringAsFixed(0)}',
+                      value: '\u20b9\',
                     ),
-                    Container(width: 1, height: 36,
+                    Container(width: 1, height: 34,
                         color: Colors.white.withValues(alpha: 0.3)),
                     _StatItem(
                       icon: Icons.trending_up_rounded,
                       label: 'Spent',
-                      value: '₹${b.totalSpent.toStringAsFixed(0)}',
+                      value: '\u20b9\',
                     ),
-                    Container(width: 1, height: 36,
+                    Container(width: 1, height: 34,
                         color: Colors.white.withValues(alpha: 0.3)),
                     _StatItem(
                       icon: Icons.card_giftcard_rounded,
                       label: 'Cashback',
-                      value: '₹${b.totalCashback.toStringAsFixed(0)}',
+                      value: '\u20b9\',
                     ),
                   ],
                 ),
               ),
 
               // ── Tabs ─────────────────────────────────────────────────
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               TabBar(
                 controller: _tabs,
                 labelColor: AppColors.primary,
@@ -690,7 +546,6 @@ class _WalletScreenState extends State<WalletScreen>
   }
 }
 
-// ── Action button widget ──────────────────────────────────────────────────────
 class _ActionBtn extends StatelessWidget {
   final IconData icon;
   final String label;

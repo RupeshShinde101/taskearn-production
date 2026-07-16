@@ -28,6 +28,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _maxBudget = 5000;
   double _radiusKm = 10;
   Timer? _searchDebounce;
+  bool _sortByExpiry = false;  // set when navigating from Expiring Soon
 
   // User's current GPS location for radius filtering
   double? _userLat;
@@ -49,8 +50,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
     // Consume the expiry-sort signal.
     if (BrowseScreen.jumpToExpirySoon) {
       BrowseScreen.jumpToExpirySoon = false;
+      _sortByExpiry = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _applyFilters(sortByExpiry: true);
+        if (mounted) _applyFilters();
       });
     }
   }
@@ -106,7 +108,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
           lat: _userLat,
           lng: _userLng,
           excludePosterId: currentUserId,
-          sort: sortByExpiry ? 'expiry' : null,
+          sort: (sortByExpiry || _sortByExpiry) ? 'expiry' : null,
           refresh: true,
         );
   }

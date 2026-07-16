@@ -9274,20 +9274,22 @@ def delete_account():
 @require_auth
 def notify_task_skills(task_id):
     """Push FCM notification (type: skill_matched) to every user whose profile
-    skills overlap with this task's category/title/description.
-    No location radius — purely skill-based matching.
+    skills overlap with this task's category/title/description AND who is
+    within 10 km of the task location.
     Only the task poster may call this endpoint."""
     import json as _nsj
     try:
         with get_db() as (cursor, _):
             cursor.execute(
-                f'SELECT id, posted_by, title, category, description, price FROM tasks WHERE id = {PH}',
+                f'SELECT id, posted_by, title, category, description, price, '
+                f'location_lat, location_lng FROM tasks WHERE id = {PH}',
                 (task_id,)
             )
             task = dict_from_row(cursor.fetchone()) if cursor.rowcount != 0 else None
             if task is None:
                 cursor.execute(
-                    f'SELECT id, posted_by, title, category, description, price FROM tasks WHERE id = {PH}',
+                    f'SELECT id, posted_by, title, category, description, price, '
+                    f'location_lat, location_lng FROM tasks WHERE id = {PH}',
                     (task_id,)
                 )
                 row = cursor.fetchone()
@@ -9306,12 +9308,21 @@ def notify_task_skills(task_id):
         _task_title_display = task.get('title', '')
         _task_cat_display   = task.get('category', 'General')
 
+        # Task location for 10 km proximity filter
+        _task_lat = task.get('location_lat')
+        _task_lng = task.get('location_lng')
+        _has_task_location = _task_lat is not None and _task_lng is not None
+        if _has_task_location:
+            _task_lat = float(_task_lat)
+            _task_lng = float(_task_lng)
+
         _ensure_bio_skills_columns()
         _ensure_fcm_token_column()
+        _ensure_user_location_columns()
 
         with get_db() as (cursor, _):
             cursor.execute(f'''
-                SELECT id, fcm_token, skills FROM users
+                SELECT id, fcm_token, skills, last_lat, last_lng FROM users
                 WHERE fcm_token IS NOT NULL
                   AND id != {PH}
                   AND skills IS NOT NULL
@@ -9322,6 +9333,16 @@ def notify_task_skills(task_id):
         notified = 0
         for user in candidates:
             try:
+                # ── 10 km proximity check ──────────────────────────────
+                if _has_task_location:
+                    u_lat = user.get('last_lat')
+                    u_lng = user.get('last_lng')
+                    if u_lat is None or u_lng is None:
+                        continue  # skip users with no known location
+                    if _haversine_km(_task_lat, _task_lng,
+                                     float(u_lat), float(u_lng)) > 10.0:
+                        continue  # outside 10 km radius
+                # ── Skill match check ──────────────────────────────────
                 raw_skills = user.get('skills', '[]')
                 user_skills = [s.lower() for s in (
                     _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])

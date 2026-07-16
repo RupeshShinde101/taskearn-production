@@ -180,6 +180,7 @@ class TaskProvider extends ChangeNotifier {
     double? maxBudget,
     String? excludePosterId,
     String? sort,
+    bool expiringSoon = false,
     bool refresh = false,
   }) async {
     if (refresh) {
@@ -208,6 +209,7 @@ class TaskProvider extends ChangeNotifier {
         if (excludePosterId != null && excludePosterId.isNotEmpty)
           'exclude_poster_id': excludePosterId,
         if (sort != null && sort.isNotEmpty) 'sort': sort,
+        if (expiringSoon) 'expiring_soon': '1',
       };
 
       if (search != null && search.isNotEmpty) {

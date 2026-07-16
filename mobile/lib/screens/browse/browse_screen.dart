@@ -100,6 +100,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
   void _applyFilters({bool sortByExpiry = false}) {
     final currentUserId =
         context.read<AuthProvider>().user?.id?.toString();
+    final useExpiry = sortByExpiry || _sortByExpiry;
     context.read<TaskProvider>().fetchBrowseTasks(
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
@@ -108,7 +109,8 @@ class _BrowseScreenState extends State<BrowseScreen> {
           lat: _userLat,
           lng: _userLng,
           excludePosterId: currentUserId,
-          sort: (sortByExpiry || _sortByExpiry) ? 'expiry' : null,
+          sort: useExpiry ? 'expiry' : null,
+          expiringSoon: useExpiry,
           refresh: true,
         );
   }

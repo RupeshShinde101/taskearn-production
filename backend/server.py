@@ -2368,6 +2368,8 @@ def get_tasks():
     radius_km = request.args.get('radius', type=float)
     # Exclude tasks posted by a specific user (e.g. the browsing user's own tasks)
     exclude_poster_id = request.args.get('exclude_poster_id', '').strip()
+    # When true, only return tasks expiring within the next 5 hours (Expiring Soon browse)
+    expiring_soon = request.args.get('expiring_soon', '').strip().lower() in ('1', 'true')
     
     # Throttle cleanup: run at most once every 5 minutes per process
     global _last_cleanup_time
@@ -2391,6 +2393,14 @@ def get_tasks():
             if exclude_poster_id:
                 base_where += f" AND t.posted_by != {PH}"
                 base_params.append(exclude_poster_id)
+
+            if expiring_soon:
+                # Only tasks expiring within the next 5 hours
+                import datetime as _dt2
+                cutoff = (_dt2.datetime.now(_dt2.timezone.utc)
+                          + _dt2.timedelta(hours=5)).isoformat()
+                base_where += f" AND t.expires_at <= {PH}"
+                base_params.append(cutoff)
 
             if category_filter and category_filter != 'all':
                 base_where += f" AND t.category = {PH}"

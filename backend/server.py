@@ -2271,8 +2271,11 @@ def update_user_location():
     try:
         with get_db() as (cursor, conn):
             cursor.execute(
-                f'UPDATE users SET last_lat = {PH}, last_lng = {PH} WHERE id = {PH}',
-                (lat, lng, request.user_id)
+                f'UPDATE users SET last_lat = {PH}, last_lng = {PH}, '
+                f'last_location_updated_at = {PH} WHERE id = {PH}',
+                (lat, lng,
+                 __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
+                 request.user_id)
             )
             conn.commit()
         return jsonify({'success': True})
@@ -9291,9 +9294,12 @@ def notify_task_skills(task_id):
         _task_lat = task.get('location_lat')
         _task_lng = task.get('location_lng')
         _has_task_location = _task_lat is not None and _task_lng is not None
-        if _has_task_location:
-            _task_lat = float(_task_lat)
-            _task_lng = float(_task_lng)
+        if not _has_task_location:
+            # Cannot enforce radius without task location — skip all notifications
+            return jsonify({'success': True, 'notified': 0,
+                            'reason': 'task has no location — radius filter skipped'})
+        _task_lat = float(_task_lat)
+        _task_lng = float(_task_lng)
 
         _ensure_bio_skills_columns()
         _ensure_fcm_token_column()
@@ -9301,7 +9307,8 @@ def notify_task_skills(task_id):
 
         with get_db() as (cursor, _):
             cursor.execute(f'''
-                SELECT id, fcm_token, skills, last_lat, last_lng FROM users
+                SELECT id, fcm_token, skills, last_lat, last_lng,
+                       last_location_updated_at FROM users
                 WHERE fcm_token IS NOT NULL
                   AND id != {PH}
                   AND skills IS NOT NULL
@@ -9314,15 +9321,14 @@ def notify_task_skills(task_id):
         notified = 0
         for user in candidates:
             try:
-                # ── 10 km proximity check ──────────────────────────────
-                if _has_task_location:
-                    u_lat = user.get('last_lat')
-                    u_lng = user.get('last_lng')
-                    if u_lat is None or u_lng is None:
-                        continue  # skip users with no known location
-                    if _haversine_km(_task_lat, _task_lng,
-                                     float(u_lat), float(u_lng)) > 10.0:
-                        continue  # outside 10 km radius
+                # ── 10 km proximity check (task location guaranteed present) ──
+                u_lat = user.get('last_lat')
+                u_lng = user.get('last_lng')
+                if u_lat is None or u_lng is None:
+                    continue
+                if _haversine_km(_task_lat, _task_lng,
+                                 float(u_lat), float(u_lng)) > 10.0:
+                    continue  # outside 10 km radius
                 # ── Skill match check ──────────────────────────────────
                 raw_skills = user.get('skills', '[]')
                 user_skills = [s.lower() for s in (

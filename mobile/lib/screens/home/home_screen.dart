@@ -937,7 +937,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ]),
         ),
         SizedBox(
-          height: 200,
+          height: 246,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),

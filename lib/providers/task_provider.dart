@@ -179,6 +179,7 @@ class TaskProvider extends ChangeNotifier {
     double? minBudget,
     double? maxBudget,
     String? excludePosterId,
+    String? sort,
     bool refresh = false,
   }) async {
     if (refresh) {
@@ -206,6 +207,7 @@ class TaskProvider extends ChangeNotifier {
         if (maxBudget != null) 'max_budget': '$maxBudget',
         if (excludePosterId != null && excludePosterId.isNotEmpty)
           'exclude_poster_id': excludePosterId,
+        if (sort != null && sort.isNotEmpty) 'sort': sort,
       };
 
       if (search != null && search.isNotEmpty) {

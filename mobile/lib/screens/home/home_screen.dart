@@ -37,11 +37,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadInitial() async {
-    // Fire all non-location fetches immediately — they don't need GPS.
-    context.read<NotificationProvider>().fetchNotifications();
-    context.read<WalletProvider>().fetchWallet();
-    _fetchSuggestedTasks();
-    _fetchExpiringTasks();
+    // Defer until after the first frame to avoid setState-during-build errors.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<NotificationProvider>().fetchNotifications();
+      context.read<WalletProvider>().fetchWallet();
+      _fetchSuggestedTasks();
+      _fetchExpiringTasks();
+    });
 
     // Get GPS location in parallel; update city name + backend location
     // once available, but don't block the above fetches on it.

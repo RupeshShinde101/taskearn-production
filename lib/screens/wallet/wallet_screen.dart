@@ -336,10 +336,11 @@ class _WalletScreenState extends State<WalletScreen>
           }
           final b = wallet.balance;
           // Responsive sizing
-          final logoH  = sw * 0.13;
+          final logoH  = sw * 0.18;
+          final logoW  = sw * 0.22;
           final balFS  = (sw * 0.09).clamp(28.0, 44.0);
-          final illW   = sw * 0.35;
-          final illH   = sw * 0.32;
+          final illW   = sw * 0.40;
+          final illH   = sw * 0.40;
 
           return Column(
             children: [
@@ -354,83 +355,86 @@ class _WalletScreenState extends State<WalletScreen>
                 ),
                 child: SafeArea(
                   bottom: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        // Left: logo + balance
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Logo + Secure badge row
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  // W4U Logo
-                                  Image.asset(
-                                    'assets/images/logo_light.png',
-                                    height: logoH,
-                                    fit: BoxFit.contain,
-                                  ),
-                                  // Secure Wallet badge
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 5),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF059669),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.verified_rounded,
-                                            color: Colors.white, size: 13),
-                                        SizedBox(width: 4),
-                                        Text('Secure Wallet',
-                                            style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600)),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 14),
-                              const Text('Available Balance',
-                                  style: TextStyle(
-                                      color: Colors.white70, fontSize: 13)),
-                              const SizedBox(height: 4),
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  '₹${b.balance.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: balFS,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: -1),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Right: 3D wallet illustration
-                        SizedBox(
+                  child: Stack(
+                    children: [
+                      // Right: 3D wallet illustration (behind content)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Image.asset(
+                          'assets/images/wallet_illustration.png',
                           width: illW,
                           height: illH,
-                          child: Image.asset(
-                            'assets/images/wallet_illustration.png',
-                            fit: BoxFit.contain,
-                          ),
+                          fit: BoxFit.contain,
                         ),
-                      ],
-                    ),
+                      ),
+                      // Foreground: logo + balance (full width — no overflow risk)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Logo + Secure badge row
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // W4U Logo
+                                SizedBox(
+                                  width: logoW,
+                                  height: logoH,
+                                  child: Image.asset(
+                                    'assets/images/logo_light.png',
+                                    fit: BoxFit.contain,
+                                    alignment: Alignment.centerLeft,
+                                  ),
+                                ),
+                                // Secure Wallet badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF059669),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.verified_rounded,
+                                          color: Colors.white, size: 13),
+                                      SizedBox(width: 4),
+                                      Text('Secure Wallet',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            const Text('Available Balance',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 13)),
+                            const SizedBox(height: 4),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                '₹${b.balance.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: balFS,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

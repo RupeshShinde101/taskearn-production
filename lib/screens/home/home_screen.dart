@@ -969,6 +969,7 @@ class _HomeScreenState extends State<HomeScreen> {
       onTap: () => context.push('/task/${task.id}'),
       child: Container(
         width: 220,
+        height: 210,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),

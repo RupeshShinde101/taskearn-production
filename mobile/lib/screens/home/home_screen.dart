@@ -37,6 +37,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadInitial() async {
+    // Fire all non-location fetches immediately — they don't need GPS.
+    context.read<NotificationProvider>().fetchNotifications();
+    context.read<WalletProvider>().fetchWallet();
+    _fetchSuggestedTasks();
+    _fetchExpiringTasks();
+
+    // Get GPS location in parallel; update city name + backend location
+    // once available, but don't block the above fetches on it.
     final location = await LocationService.getCurrentLocation();
     if (!mounted) return;
     if (location != null) {
@@ -44,10 +52,6 @@ class _HomeScreenState extends State<HomeScreen> {
           .updateUserLocation(location.latitude, location.longitude);
       _reverseGeocode(location.latitude, location.longitude);
     }
-    context.read<NotificationProvider>().fetchNotifications();
-    context.read<WalletProvider>().fetchWallet();
-    _fetchSuggestedTasks();
-    _fetchExpiringTasks();
   }
 
   Future<void> _reverseGeocode(double lat, double lng) async {
@@ -66,8 +70,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchExpiringTasks() async {
     try {
-      final data = await ApiService.get('/tasks',
-          queryParams: {'limit': '8', 'sort': 'expiry'});
+      final currentUserId =
+          context.read<AuthProvider>().user?.id?.toString();
+      final data = await ApiService.get('/tasks', queryParams: {
+        'limit': '8',
+        'sort': 'expiry',
+        if (currentUserId != null && currentUserId.isNotEmpty)
+          'exclude_poster_id': currentUserId,
+      });
       if (!mounted || data == null) return;
       final list = data is List ? data : (data['tasks'] as List? ?? []);
       final tasks = <Task>[];
@@ -76,8 +86,8 @@ class _HomeScreenState extends State<HomeScreen> {
           tasks.add(Task.fromJson(item as Map<String, dynamic>));
         } catch (_) {}
       }
-      // Only keep tasks that still have expiresAt set and are expiring within 6 hours
-      final cutoff = DateTime.now().add(const Duration(hours: 6));
+      // Show tasks expiring within 5 hours (countdown timer shows urgency)
+      final cutoff = DateTime.now().add(const Duration(hours: 5));
       final expiring = tasks
           .where((t) => t.expiresAt != null && t.expiresAt!.isBefore(cutoff))
           .toList();
@@ -87,8 +97,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchSuggestedTasks() async {
     try {
-      final data = await ApiService.get('/tasks',
-          queryParams: {'limit': '8'});
+      final currentUserId =
+          context.read<AuthProvider>().user?.id?.toString();
+      final data = await ApiService.get('/tasks', queryParams: {
+        'limit': '8',
+        if (currentUserId != null && currentUserId.isNotEmpty)
+          'exclude_poster_id': currentUserId,
+      });
       if (!mounted || data == null) return;
       final list = data is List ? data : (data['tasks'] as List? ?? []);
       final tasks = <Task>[];

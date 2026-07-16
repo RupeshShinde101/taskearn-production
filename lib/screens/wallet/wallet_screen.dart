@@ -371,17 +371,11 @@ class _WalletScreenState extends State<WalletScreen>
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                // W4U Logo
-                                ShaderMask(
-                                  shaderCallback: (r) => const LinearGradient(
-                                    colors: [Color(0xFF60A5FA), Color(0xFF3B82F6)],
-                                  ).createShader(r),
-                                  child: const Text('W4U',
-                                      style: TextStyle(
-                                          fontSize: 28,
-                                          fontWeight: FontWeight.w900,
-                                          color: Colors.white,
-                                          letterSpacing: 1)),
+                                // W4U Logo (asset image)
+                                Image.asset(
+                                  'assets/images/logo.png',
+                                  height: 52,
+                                  fit: BoxFit.contain,
                                 ),
                                 // Secure Wallet badge
                                 Container(
@@ -432,35 +426,144 @@ class _WalletScreenState extends State<WalletScreen>
                                     ],
                                   ),
                                 ),
-                                // Wallet illustration (emoji-based)
-                                Container(
-                                  width: 100,
-                                  height: 90,
-                                  alignment: Alignment.center,
+                                // 3D wallet illustration
+                                SizedBox(
+                                  width: 120,
+                                  height: 110,
                                   child: Stack(
+                                    clipBehavior: Clip.none,
                                     children: [
+                                      // Glow ring
                                       Positioned(
                                         bottom: 0,
+                                        left: 10,
                                         child: Container(
-                                          width: 90,
-                                          height: 60,
+                                          width: 100,
+                                          height: 18,
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFF2563EB).withValues(alpha: 0.6),
-                                            borderRadius: BorderRadius.circular(12),
+                                            shape: BoxShape.rectangle,
+                                            borderRadius: BorderRadius.circular(50),
+                                            color: const Color(0xFF3B82F6)
+                                                .withValues(alpha: 0.40),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: const Color(0xFF60A5FA)
+                                                    .withValues(alpha: 0.5),
+                                                blurRadius: 12,
+                                                spreadRadius: 4,
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
-                                      const Positioned(
-                                        top: 0,
-                                        left: 10,
-                                        child: Text('💳',
-                                            style: TextStyle(fontSize: 30)),
-                                      ),
-                                      const Positioned(
+                                      // Wallet body
+                                      Positioned(
                                         bottom: 8,
+                                        left: 4,
+                                        child: Container(
+                                          width: 88,
+                                          height: 72,
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [
+                                                Color(0xFF6366F1),
+                                                Color(0xFF4338CA),
+                                              ],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: const Color(0xFF4338CA)
+                                                    .withValues(alpha: 0.5),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 4),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Stack(
+                                            children: [
+                                              Positioned(
+                                                right: 8,
+                                                top: 12,
+                                                child: Container(
+                                                  width: 28,
+                                                  height: 28,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: const Color(0xFF818CF8)
+                                                        .withValues(alpha: 0.5),
+                                                  ),
+                                                  child: const Center(
+                                                    child: Text('₹',
+                                                        style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontWeight:
+                                                                FontWeight.w900,
+                                                            fontSize: 14)),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      // Card 1 (orange)
+                                      Positioned(
+                                        top: 0,
                                         right: 0,
-                                        child: Text('👛',
-                                            style: TextStyle(fontSize: 36)),
+                                        child: Transform.rotate(
+                                          angle: 0.3,
+                                          child: Container(
+                                            width: 60,
+                                            height: 38,
+                                            decoration: BoxDecoration(
+                                              gradient: const LinearGradient(
+                                                colors: [
+                                                  Color(0xFFF59E0B),
+                                                  Color(0xFFD97706),
+                                                ],
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.25),
+                                                  blurRadius: 6,
+                                                  offset: const Offset(0, 3),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      // Card 2 (white/gray)
+                                      Positioned(
+                                        top: 4,
+                                        right: 8,
+                                        child: Transform.rotate(
+                                          angle: 0.1,
+                                          child: Container(
+                                            width: 55,
+                                            height: 34,
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFE2E8F0),
+                                              borderRadius:
+                                                  BorderRadius.circular(5),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.15),
+                                                  blurRadius: 4,
+                                                  offset: const Offset(0, 2),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),

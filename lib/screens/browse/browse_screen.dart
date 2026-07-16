@@ -13,6 +13,8 @@ class BrowseScreen extends StatefulWidget {
   /// Set by the home screen before calling context.go('/browse') so that the
   /// browse screen can pre-select and filter by that category on arrival.
   static String? jumpToCategory;
+  /// Set before navigating to show tasks sorted by soonest-expiring first.
+  static bool jumpToExpirySoon = false;
 
   const BrowseScreen({super.key});
 
@@ -44,6 +46,13 @@ class _BrowseScreenState extends State<BrowseScreen> {
         if (mounted) _applyFilters();
       });
     }
+    // Consume the expiry-sort signal.
+    if (BrowseScreen.jumpToExpirySoon) {
+      BrowseScreen.jumpToExpirySoon = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters(sortByExpiry: true);
+      });
+    }
   }
 
   @override
@@ -52,7 +61,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     _searchCtrl.addListener(_onSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      // Fetch location first, then load tasks so radius filter applies immediately
+      // Resolve GPS first so the 10 km radius filter is applied from the start.
       await _fetchLocation();
       if (!mounted) return;
       _applyFilters();
@@ -86,7 +95,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     _searchDebounce = Timer(const Duration(milliseconds: 500), _applyFilters);
   }
 
-  void _applyFilters() {
+  void _applyFilters({bool sortByExpiry = false}) {
     final currentUserId =
         context.read<AuthProvider>().user?.id?.toString();
     context.read<TaskProvider>().fetchBrowseTasks(
@@ -97,6 +106,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
           lat: _userLat,
           lng: _userLng,
           excludePosterId: currentUserId,
+          sort: sortByExpiry ? 'expiry' : null,
           refresh: true,
         );
   }

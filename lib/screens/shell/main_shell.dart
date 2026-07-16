@@ -300,8 +300,8 @@ class _FloatingNavBar extends StatelessWidget {
   ];
 
   // ── Geometry (dp) ──────────────────────────────────────────────────────────
-  static const _barH   = 65.0;          // bar height
-  static const _fabD   = 72.0;          // FAB diameter  (larger than bar!)
+  static const _barH   = 56.0;          // bar height
+  static const _fabD   = 62.0;          // FAB diameter  (larger than bar!)
   static const _fabR   = _fabD / 2;     // 36
   static const _notchR = _fabR + 6.0;   // 42 — circular arc radius of notch
   static const _gapW   = _notchR * 2 + 10; // Row gap = ~94
@@ -430,15 +430,21 @@ class _NavBarPainter extends CustomPainter {
   final double notchRadius;
   const _NavBarPainter({required this.notchRadius});
 
-  static const _border  = Color(0xFF4F46E5);
-  static const _fill    = Color(0xFFFAFAFF); // very-slight blue-white tint
+  static const _border  = Color(0xFFBDD5F6);
+  static const _fill    = Colors.white;
 
   @override
   void paint(Canvas canvas, Size size) {
     final path = _buildPath(size);
 
-    // Soft shadow
-    canvas.drawShadow(path, _border.withAlpha(25), 16, false);
+    // Blue outer glow
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFF4F46E5).withValues(alpha: 0.18)
+        ..style = PaintingStyle.fill
+        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 10),
+    );
 
     // Fill
     canvas.drawPath(path,
@@ -450,7 +456,7 @@ class _NavBarPainter extends CustomPainter {
       Paint()
         ..color = _border
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6
+        ..strokeWidth = 1.5
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
@@ -588,18 +594,17 @@ class _NavItemState extends State<_NavItem>
                 // Icon with soft blue pill bg when active
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
                     color: Color.lerp(
                         Colors.transparent,
-                        const Color(0xFFEFF6FF),
+                        const Color(0xFFDBEAFE),
                         t),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(widget.icon, size: 22, color: _color.value),
+                  child: Icon(widget.icon, size: 20, color: _color.value),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   widget.label,
                   style: TextStyle(
@@ -610,12 +615,12 @@ class _NavItemState extends State<_NavItem>
                     letterSpacing: 0.1,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 1),
                 // Underline indicator
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  width: 20 * t,
-                  height: 2.5,
+                  width: 16 * t,
+                  height: 2.0,
                   decoration: BoxDecoration(
                     color: Color.lerp(
                         Colors.transparent,

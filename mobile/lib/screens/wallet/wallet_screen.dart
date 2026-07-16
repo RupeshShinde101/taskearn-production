@@ -408,7 +408,7 @@ class _WalletScreenState extends State<WalletScreen>
                                 fit: BoxFit.scaleDown,
                                 alignment: Alignment.centerLeft,
                                 child: Text(
-                                  '\u20b9\',
+                                  '₹${b.balance.toStringAsFixed(2)}',
                                   style: TextStyle(
                                       color: Colors.white,
                                       fontSize: balFS,
@@ -496,21 +496,21 @@ class _WalletScreenState extends State<WalletScreen>
                     _StatItem(
                       icon: Icons.account_balance_wallet_outlined,
                       label: 'Earned',
-                      value: '\u20b9\',
+                      value: '₹${b.totalEarned.toStringAsFixed(0)}',
                     ),
                     Container(width: 1, height: 34,
                         color: Colors.white.withValues(alpha: 0.3)),
                     _StatItem(
                       icon: Icons.trending_up_rounded,
                       label: 'Spent',
-                      value: '\u20b9\',
+                      value: '₹${b.totalSpent.toStringAsFixed(0)}',
                     ),
                     Container(width: 1, height: 34,
                         color: Colors.white.withValues(alpha: 0.3)),
                     _StatItem(
                       icon: Icons.card_giftcard_rounded,
                       label: 'Cashback',
-                      value: '\u20b9\',
+                      value: '₹${b.totalCashback.toStringAsFixed(0)}',
                     ),
                   ],
                 ),

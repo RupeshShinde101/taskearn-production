@@ -101,6 +101,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -185,7 +186,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context);
+                  Navigator.pop(ctx);
                   _applyFilters();
                 },
                 child: const Text('Apply Filters'),
@@ -331,7 +332,8 @@ class _BrowseScreenState extends State<BrowseScreen> {
                 return RefreshIndicator(
                   onRefresh: () async => _applyFilters(),
                   child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 96),
+                    padding: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).padding.bottom),
                     itemCount: tasks.browseTasks.length,
                     itemBuilder: (_, i) => TaskCard(
                       task: tasks.browseTasks[i],

@@ -264,6 +264,9 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
     final idx = _indexForPath(location);
     _currentIdx = idx;
 
+    // With extendBody:true, Flutter auto-adjusts MediaQuery.padding.bottom
+    // for the body to equal navbarHeight + safeAreaBottom, so every screen
+    // that reads MediaQuery.of(context).padding.bottom gets the right value.
     return Scaffold(
       extendBody: true,
       body: widget.child,
@@ -290,11 +293,18 @@ class _FloatingNavBar extends StatelessWidget {
   });
 
   static const _tabs = [
-    Icons.home_rounded,
-    Icons.search_rounded,
-    Icons.assignment_rounded,
-    Icons.person_rounded,
+    (Icons.home_rounded,       'Home'),
+    (Icons.search_rounded,     'Search'),
+    (Icons.assignment_rounded, 'Tasks'),
+    (Icons.person_rounded,     'Profile'),
   ];
+
+  // ── Geometry (dp) ──────────────────────────────────────────────────────────
+  static const _barH   = 65.0;          // bar height
+  static const _fabD   = 72.0;          // FAB diameter  (larger than bar!)
+  static const _fabR   = _fabD / 2;     // 36
+  static const _notchR = _fabR + 6.0;   // 42 — circular arc radius of notch
+  static const _gapW   = _notchR * 2 + 10; // Row gap = ~94
 
   @override
   Widget build(BuildContext context) {
@@ -304,87 +314,105 @@ class _FloatingNavBar extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // ── Pill bar ──────────────────────────────────────────────
-            Container(
-              height: 60,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: const Color(0xFFEEEEF5), width: 1.2),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.14),
-                    blurRadius: 24,
-                    spreadRadius: -2,
-                    offset: const Offset(0, 6),
-                  ),
-                  BoxShadow(
-                    color: AppColors.secondary.withValues(alpha: 0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  for (int i = 0; i < 2; i++)
-                    Expanded(
-                      child: _NavItem(
-                        icon: _tabs[i],
-                        selected: selectedIndex == i,
-                        onTap: () => onTabTap(i),
+            // ── Notched pill bar ──────────────────────────────────────
+            CustomPaint(
+              painter: _NavBarPainter(notchRadius: _notchR),
+              child: SizedBox(
+                height: _barH,
+                child: Row(
+                  children: [
+                    for (int i = 0; i < 2; i++)
+                      Expanded(
+                        child: _NavItem(
+                          icon: _tabs[i].$1,
+                          label: _tabs[i].$2,
+                          selected: selectedIndex == i,
+                          onTap: () => onTabTap(i),
+                        ),
                       ),
-                    ),
-                  // Gap reserved for the protruding FAB
-                  const SizedBox(width: 76),
-                  for (int i = 2; i < 4; i++)
-                    Expanded(
-                      child: _NavItem(
-                        icon: _tabs[i],
-                        selected: selectedIndex == i,
-                        onTap: () => onTabTap(i),
+                    const SizedBox(width: _gapW),
+                    for (int i = 2; i < 4; i++)
+                      Expanded(
+                        child: _NavItem(
+                          icon: _tabs[i].$1,
+                          label: _tabs[i].$2,
+                          selected: selectedIndex == i,
+                          onTap: () => onTabTap(i),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
-            // ── Centre "+" FAB — protrudes above the bar ─────────────
+            // ── White halo behind FAB (bridges bar ↔ FAB seamlessly) ──
             Positioned(
-              top: -22,
+              bottom: _barH - _notchR,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  width: _notchR * 2 - 2,
+                  height: _notchR * 2 - 2,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+            // ── FAB button ────────────────────────────────────────────
+            Positioned(
+              bottom: _barH - _notchR,
               left: 0,
               right: 0,
               child: Center(
                 child: GestureDetector(
                   onTap: onPostTap,
                   child: Container(
-                    width: 72,
-                    height: 72,
+                    width: _fabD,
+                    height: _fabD,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: AppColors.gradient,
+                        colors: [Color(0xFF60A5FA), Color(0xFF2563EB)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.55),
-                          blurRadius: 24,
-                          spreadRadius: 2,
+                          color: const Color(0xFF3B82F6).withValues(alpha: 0.55),
+                          blurRadius: 20,
+                          spreadRadius: 1,
                           offset: const Offset(0, 8),
                         ),
                         BoxShadow(
-                          color: AppColors.secondary.withValues(alpha: 0.30),
-                          blurRadius: 14,
-                          offset: const Offset(0, 4),
+                          color: const Color(0xFF93C5FD).withValues(alpha: 0.30),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
                         ),
                       ],
                     ),
                     child: const Icon(
                       Icons.add_rounded,
                       color: Colors.white,
-                      size: 38,
+                      size: 36,
                     ),
+                  ),
+                ),
+              ),
+            ),
+            // ── Dot indicator below FAB ───────────────────────────────
+            Positioned(
+              bottom: 5,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF3B82F6),
+                    shape: BoxShape.circle,
                   ),
                 ),
               ),
@@ -396,15 +424,116 @@ class _FloatingNavBar extends StatelessWidget {
   }
 }
 
-// ── Tab item — animates icon colour on selection ──────────────────────────────
+// ── Notched pill CustomPainter ────────────────────────────────────────────────
+
+class _NavBarPainter extends CustomPainter {
+  final double notchRadius;
+  const _NavBarPainter({required this.notchRadius});
+
+  static const _border  = Color(0xFF4F46E5);
+  static const _fill    = Color(0xFFFAFAFF); // very-slight blue-white tint
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _buildPath(size);
+
+    // Soft shadow
+    canvas.drawShadow(path, _border.withAlpha(25), 16, false);
+
+    // Fill
+    canvas.drawPath(path,
+        Paint()..color = _fill..style = PaintingStyle.fill);
+
+    // Border
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = _border
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  Path _buildPath(Size size) {
+    final w   = size.width;
+    final h   = size.height;
+    final cr  = h / 2;         // pill corner radius (fully rounded)
+    final cx  = w / 2;
+    final nr  = notchRadius;   // 42 — matches FAB halo radius
+    final t   = 12.0;          // horizontal transition before arc starts
+
+    final path = Path();
+
+    // top-left pill corner
+    path.moveTo(cr, 0);
+
+    // top edge — left side
+    path.lineTo(cx - nr - t, 0);
+
+    // smooth cubic into the arc start (tangent match)
+    path.cubicTo(
+      cx - nr - t / 2, 0,   // ease out from flat
+      cx - nr, 0,            // arrive at arc tangent point
+      cx - nr, nr * 0.15,   // tiny drop before arc
+    );
+
+    // ── Circular arc for the notch ──────────────────────────────────
+    // Arc from left side to right side of notch, curving downward.
+    path.arcToPoint(
+      Offset(cx + nr, nr * 0.15),
+      radius: Radius.circular(nr),
+      clockwise: true,
+    );
+
+    // smooth cubic out of arc (mirror of entry)
+    path.cubicTo(
+      cx + nr, 0,
+      cx + nr + t / 2, 0,
+      cx + nr + t, 0,
+    );
+
+    // top edge — right side
+    path.lineTo(w - cr, 0);
+
+    // right pill end
+    path.arcToPoint(Offset(w, cr),
+        radius: Radius.circular(cr), clockwise: true);
+    path.lineTo(w, h - cr);
+    path.arcToPoint(Offset(w - cr, h),
+        radius: Radius.circular(cr), clockwise: true);
+
+    // bottom edge
+    path.lineTo(cr, h);
+
+    // left pill end
+    path.arcToPoint(Offset(0, h - cr),
+        radius: Radius.circular(cr), clockwise: true);
+    path.lineTo(0, cr);
+    path.arcToPoint(Offset(cr, 0),
+        radius: Radius.circular(cr), clockwise: true);
+
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(covariant _NavBarPainter old) =>
+      old.notchRadius != notchRadius;
+}
+
+// ── Tab item ──────────────────────────────────────────────────────────────────
 
 class _NavItem extends StatefulWidget {
   final IconData icon;
-  final bool selected;
+  final String   label;
+  final bool     selected;
   final VoidCallback onTap;
 
   const _NavItem({
     required this.icon,
+    required this.label,
     required this.selected,
     required this.onTap,
   });
@@ -416,19 +545,19 @@ class _NavItem extends StatefulWidget {
 class _NavItemState extends State<_NavItem>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<Color?> _color;
+  late final Animation<Color?>   _color;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 230),
       value: widget.selected ? 1.0 : 0.0,
     );
     _color = ColorTween(
-      begin: AppColors.grayLight,
-      end: AppColors.primary,
+      begin: const Color(0xFF94A3B8),
+      end: const Color(0xFF3B82F6),
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
   }
 
@@ -441,10 +570,7 @@ class _NavItemState extends State<_NavItem>
   }
 
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _ctrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -456,10 +582,49 @@ class _NavItemState extends State<_NavItem>
         builder: (_, __) {
           final t = _ctrl.value;
           return Center(
-            child: Icon(
-              widget.icon,
-              size: 22.0 + 4.0 * t,
-              color: _color.value,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon with soft blue pill bg when active
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Color.lerp(
+                        Colors.transparent,
+                        const Color(0xFFEFF6FF),
+                        t),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(widget.icon, size: 22, color: _color.value),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight:
+                        t > 0.5 ? FontWeight.w700 : FontWeight.w500,
+                    color: _color.value,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                // Underline indicator
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 20 * t,
+                  height: 2.5,
+                  decoration: BoxDecoration(
+                    color: Color.lerp(
+                        Colors.transparent,
+                        const Color(0xFF3B82F6),
+                        t),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
             ),
           );
         },

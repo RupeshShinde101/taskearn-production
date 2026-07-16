@@ -220,13 +220,10 @@ class TaskProvider extends ChangeNotifier {
 
       final data = await ApiService.get(endpoint, queryParams: params);
       final rawList = data['tasks'] as List? ?? [];
-      // Posted tasks expire after 24 h — filter client-side in case the backend
-      // doesn't clean them up immediately.
-      final expiryCutoff = DateTime.now().subtract(const Duration(hours: 24));
+      // Parse tasks — backend already excludes expired tasks (expires_at > now)
       var tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
         try { return Task.fromJson(j); } catch (_) { return null; }
       }).whereType<Task>()
-          .where((t) => t.createdAt.isAfter(expiryCutoff))
           .toList();
 
       // Client-side radius filter as fallback (backend may not have location index)

@@ -431,19 +431,28 @@ class _NavBarPainter extends CustomPainter {
   const _NavBarPainter({required this.notchRadius});
 
   static const _border  = Color(0xFFBDD5F6);
-  static const _fill    = Color(0xFFEEF2FF); // dark blue-white tint
+  static const _fill    = Colors.white;
 
   @override
   void paint(Canvas canvas, Size size) {
     final path = _buildPath(size);
 
-    // Blue outer glow
+    // Blue outer glow (wide soft halo)
     canvas.drawPath(
       path,
       Paint()
-        ..color = const Color(0xFF4F46E5).withValues(alpha: 0.18)
+        ..color = const Color(0xFF4F46E5).withValues(alpha: 0.22)
         ..style = PaintingStyle.fill
-        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 10),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 18),
+    );
+
+    // Hard drop-shadow below the bar
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFF3B82F6).withValues(alpha: 0.14)
+        ..style = PaintingStyle.fill
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
 
     // Fill

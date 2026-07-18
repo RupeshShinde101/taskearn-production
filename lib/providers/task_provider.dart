@@ -97,6 +97,7 @@ class TaskProvider extends ChangeNotifier {
   String? _error;
   int _currentPage = 1;
   bool _hasMore = true;
+  int _browseFetchVersion = 0; // incremented on every refresh to discard stale responses
 
   @override
   void dispose() {
@@ -184,6 +185,7 @@ class TaskProvider extends ChangeNotifier {
     bool refresh = false,
   }) async {
     if (refresh) {
+      _browseFetchVersion++;
       _currentPage = 1;
       _hasMore = true;
       _browseTasks = [];
@@ -191,6 +193,8 @@ class TaskProvider extends ChangeNotifier {
 
     if (!_hasMore) return;
 
+    // Capture token before await so stale responses can be detected and dropped
+    final _myVersion = _browseFetchVersion;
     _loadingBrowse = true;
     _error = null;
     // Use microtask so notifyListeners doesn't fire synchronously during build
@@ -243,8 +247,24 @@ class TaskProvider extends ChangeNotifier {
         }).toList();
       }
 
+      // Use backend pagination metadata when available, fall back to count heuristic
+      final pagination = data['pagination'] as Map?;
+      if (pagination != null) {
+        final page = (pagination['page'] as num?)?.toInt() ?? _currentPage;
+        final totalPages = (pagination['totalPages'] as num?)?.toInt() ?? 1;
+        _hasMore = page < totalPages;
+      } else {
+        _hasMore = tasks.length >= 20;
+      }
+
+      // Discard stale response — a newer refresh has reset the list
+      if (_myVersion != _browseFetchVersion) {
+        _loadingBrowse = false;
+        _notify();
+        return;
+      }
+
       _browseTasks.addAll(tasks);
-      _hasMore = tasks.length == 20;
       _currentPage++;
     } catch (e) {
       _error = e.toString();

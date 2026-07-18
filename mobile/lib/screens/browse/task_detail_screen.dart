@@ -585,9 +585,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Edit Task',
               onPressed: () async {
-                final updated = await Navigator.push<bool>(
-                  context,
+                final updated = await Navigator.of(context, rootNavigator: true).push<bool>(
                   MaterialPageRoute(
+                    fullscreenDialog: true,
                     builder: (_) => EditTaskScreen(task: task),
                   ),
                 );

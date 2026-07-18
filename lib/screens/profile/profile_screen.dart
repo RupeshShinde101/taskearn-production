@@ -649,67 +649,222 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isGoogleUser = auth.user?.authProvider == 'google';
     final passwordCtrl = TextEditingController();
     bool obscure = true;
+    bool deleting = false;
 
-    showDialog<void>(
+    showGeneralDialog<void>(
       context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Delete Account'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'This will permanently delete your account and all your data. '
-                  'This action cannot be undone.',
-                ),
-                if (!isGoogleUser) ...[
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: passwordCtrl,
-                    obscureText: obscure,
-                    decoration: InputDecoration(
-                      labelText: 'Confirm Password',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        icon: Icon(obscure
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined),
-                        onPressed: () =>
-                            setDialogState(() => obscure = !obscure),
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withOpacity(0.55),
+      transitionDuration: const Duration(milliseconds: 260),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (dialogCtx, _, __) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.danger.withOpacity(0.18),
+                    blurRadius: 32,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Red header
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFDC2626), Color(0xFFEF4444)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 60, height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.delete_forever_rounded,
+                              color: Colors.white, size: 30),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text('Delete Account',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 18,
+                                fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 4),
+                        const Text('This action is permanent',
+                            style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  // Body
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('The following will be permanently removed:',
+                            style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600,
+                                color: Color(0xFF1E293B))),
+                        const SizedBox(height: 12),
+                        ...[
+                          '\ud83d\udccb Your profile & personal details',
+                          '\ud83d\udcb0 Wallet balance & transaction history',
+                          '\ud83d\udccc Posted & accepted tasks',
+                          '\u2b50 Ratings & reviews',
+                        ].map((item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(item, style: const TextStyle(
+                              fontSize: 13, color: Color(0xFF475569))),
+                        )),
+                        if (!isGoogleUser) ...[
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          const SizedBox(height: 10),
+                          const Text('Enter your password to confirm:',
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1E293B))),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: passwordCtrl,
+                            obscureText: obscure,
+                            decoration: InputDecoration(
+                              hintText: 'Your password',
+                              prefixIcon: const Icon(Icons.lock_outline,
+                                  color: AppColors.danger),
+                              suffixIcon: IconButton(
+                                icon: Icon(obscure
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                    color: AppColors.gray),
+                                onPressed: () =>
+                                    setDialogState(() => obscure = !obscure),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: Color(0xFFFCA5A5)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                    color: AppColors.danger, width: 1.5),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFFFFF5F5),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 14),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.of(dialogCtx).pop(),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF475569),
+                                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                  padding: const EdgeInsets.symmetric(vertical: 13),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                ),
+                                child: const Text('Keep Account',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w600, fontSize: 13)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: deleting ? null
+                                      : const LinearGradient(colors: [
+                                          Color(0xFFDC2626), Color(0xFFEF4444)]),
+                                  color: deleting ? const Color(0xFFD1D5DB) : null,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: deleting ? [] : [
+                                    BoxShadow(
+                                      color: AppColors.danger.withOpacity(0.35),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    )
+                                  ],
+                                ),
+                                child: ElevatedButton(
+                                  onPressed: deleting ? null : () async {
+                                    setDialogState(() => deleting = true);
+                                    Navigator.of(dialogCtx).pop();
+                                    if (!context.mounted) return;
+                                    final result = await auth.deleteAccount(
+                                        password: isGoogleUser
+                                            ? null
+                                            : passwordCtrl.text);
+                                    if (!context.mounted) return;
+                                    if (result['success'] != true) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                        content: Text(result['message'] ??
+                                            'Failed to delete account. Please contact support.'),
+                                        backgroundColor: AppColors.danger,
+                                      ));
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.transparent,
+                                    shadowColor: Colors.transparent,
+                                    padding: const EdgeInsets.symmetric(vertical: 13),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: deleting
+                                      ? const SizedBox(
+                                          width: 18, height: 18,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2, color: Colors.white))
+                                      : const Text('Delete',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(dialogCtx).pop(),
-                child: const Text('Cancel')),
-            TextButton(
-                onPressed: () async {
-                  Navigator.of(dialogCtx).pop();
-                  if (!context.mounted) return;
-                  final result = await auth.deleteAccount(
-                      password:
-                          isGoogleUser ? null : passwordCtrl.text);
-                  if (!context.mounted) return;
-                  if (result['success'] != true) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(result['message'] ??
-                            'Failed to delete account. Please contact support.'),
-                        backgroundColor: AppColors.danger,
-                      ),
-                    );
-                  }
-                },
-                child: const Text('Delete',
-                    style: TextStyle(color: AppColors.danger))),
-          ],
         ),
       ),
     );

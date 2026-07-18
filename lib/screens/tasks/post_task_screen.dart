@@ -105,14 +105,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
-  void _appendPrompt(String text) {
-    final current = _descCtrl.text.trimRight();
-    _descCtrl.text = current.isEmpty ? '$text: ' : '$current\n$text: ';
-    _descCtrl.selection =
-        TextSelection.fromPosition(TextPosition(offset: _descCtrl.text.length));
-    setState(() {});
-  }
-
   /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
   void _showSubCategorySheet(TaskCategoryGroup group) {
     FocusScope.of(context).unfocus();
@@ -1127,34 +1119,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         ? 'Min 10 characters'
                         : null,
               ),
-              // Per-category prompt chips
-              if ((_prompts[_selectedCategory] ?? []).isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text('Add details:',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.gray,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: (_prompts[_selectedCategory]!).map((p) {
-                    return ActionChip(
-                      label: Text(p,
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.dark)),
-                      onPressed: () => _appendPrompt(p),
-                      backgroundColor: AppColors.light,
-                      side:
-                          const BorderSide(color: AppColors.border),
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 4),
-                      visualDensity: VisualDensity.compact,
-                    );
-                  }).toList(),
-                ),
-              ],
               const SizedBox(height: 14),
 
               // Budget

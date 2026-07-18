@@ -36,7 +36,7 @@ class PrivacyScreen extends StatelessWidget {
             ]),
 
             _section('3. Information We Collect', null, subsections: [
-              _SubSection('3.1 Information you provide directly',
+              const _SubSection('3.1 Information you provide directly',
                   'We collect the following data when you register or use the app:',
                   bullets: [
                     'Full name — account identity, ratings, communication between task parties.',
@@ -51,14 +51,14 @@ class PrivacyScreen extends StatelessWidget {
                     'Support tickets, chat & voice-call metadata — customer support and dispute resolution.',
                     'UPI/bank details for payouts (Taskers) — collected and stored by Razorpay; we hold only a token reference.',
                   ]),
-              _SubSection('3.2 Information collected automatically', null,
+              const _SubSection('3.2 Information collected automatically', null,
                   bullets: [
                     'Device data: device model, OS version, app version, language.',
                     'Approximate & precise location: only when you grant app permission — used for nearby task matching, distance display and live tracking during a task.',
                     'Usage data: features used, error logs, timestamps.',
                     'IP address: for security, fraud prevention and abuse-rate limiting.',
                   ]),
-              _SubSection('3.3 Information from third parties', null,
+              const _SubSection('3.3 Information from third parties', null,
                   bullets: [
                     'Google (if you use Sign-in with Google) — basic profile claims.',
                     'Razorpay — payment status, last-4 digits / instrument type, refund/chargeback events. We do NOT receive your full card or bank credentials.',
@@ -82,16 +82,16 @@ class PrivacyScreen extends StatelessWidget {
                 'Lawful basis (DPDP Act, 2023): primarily your consent and the necessity of processing for performance of the contract you enter into with us by using the Platform.'),
 
             _section('5. Who We Share Information With', null, subsections: [
-              _SubSection('5.1 With other users',
+              const _SubSection('5.1 With other users',
                   'Your display name, profile photo, ratings and approximate location are visible on the Platform. After a Tasker accepts a task, both parties\' phone numbers and exact task location may be shared between them to enable the task.'),
-              _SubSection('5.2 With service providers', null, bullets: [
+              const _SubSection('5.2 With service providers', null, bullets: [
                 'Razorpay Software Pvt. Ltd. — payment gateway, KYC for payouts, fraud screening.',
                 'Google LLC — Sign-In authentication and Google Maps navigation links.',
                 'Twilio SendGrid — transactional email delivery.',
                 'Netlify — frontend hosting & CDN.',
                 'Railway — backend hosting and managed PostgreSQL database.',
               ]),
-              _SubSection('5.3 With law enforcement / regulators',
+              const _SubSection('5.3 With law enforcement / regulators',
                   'When required by a valid Indian court order or to comply with applicable law (including the IT Act and IT Rules, 2021), or where necessary to investigate fraud, prevent harm or enforce our Terms.'),
             ]),
             _infoBox(

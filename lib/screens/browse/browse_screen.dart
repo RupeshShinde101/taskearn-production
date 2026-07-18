@@ -14,6 +14,8 @@ class BrowseScreen extends StatefulWidget {
   static String? jumpToCategory;
   /// Set before navigating to show tasks sorted by soonest-expiring first.
   static bool jumpToExpirySoon = false;
+  /// Set by AI Suggested 'See all' to pre-populate the search field with a skill keyword.
+  static String? jumpToSearch;
 
   const BrowseScreen({super.key});
 
@@ -51,6 +53,15 @@ class _BrowseScreenState extends State<BrowseScreen> {
     if (BrowseScreen.jumpToExpirySoon) {
       BrowseScreen.jumpToExpirySoon = false;
       _sortByExpiry = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    }
+    // Consume skill search signal from AI Suggested 'See all'.
+    final skillSearch = BrowseScreen.jumpToSearch;
+    if (skillSearch != null) {
+      BrowseScreen.jumpToSearch = null;
+      _searchCtrl.text = skillSearch;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _applyFilters();
       });

@@ -954,7 +954,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             GestureDetector(
-              onTap: () => context.go('/browse'),
+              onTap: () {
+                final skills = context.read<AuthProvider>().user?.skills ?? [];
+                if (skills.isNotEmpty) BrowseScreen.jumpToSearch = skills.first;
+                context.go('/browse');
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(

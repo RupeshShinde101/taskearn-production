@@ -50,10 +50,44 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   bool _loading = false;
   bool _gettingLocation = false;
 
+  static const Map<String, List<String>> _prompts = {
+    'delivery':    ['What to deliver?', 'Pickup point?', 'Drop point?', 'Item size/weight?', 'Urgent?'],
+    'pickup':      ['What to pick up?', 'From where?', 'Fragile?', 'Time constraint?'],
+    'transport':   ['How many people/items?', 'Vehicle type needed?', 'Luggage?'],
+    'moving':      ['How many rooms?', 'Pickup floor?', 'Drop floor?', 'Need packing help?'],
+    'groceries':   ['Which items?', 'Which store/area?', 'Brand preference?'],
+    'cleaning':    ['How many rooms?', 'Type of cleaning?', 'Time slot?', 'Pets at home?'],
+    'cooking':     ['How many people?', 'What cuisine/dishes?', 'Dietary restrictions?'],
+    'laundry':     ['How many clothes?', 'Wash + fold or just fold?', 'Pick up from home?'],
+    'repair':      ['What to repair?', 'Brand/model?', 'How long broken?'],
+    'tutoring':    ['Which subject?', 'Grade/level?', 'Hours needed?'],
+    'carpentry':   ['What carpentry work?', 'Materials needed?'],
+    'painting':    ['What to paint?', 'Colour preference?', 'Area size?'],
+    'pet_care':    ['Type of pet?', 'Care needed?', 'Duration?'],
+    'child_care':  ['Age of child?', 'Duration?', 'Special needs?'],
+    'elder_care':  ['Type of care?', 'Duration?', 'Medical needs?'],
+    'photography': ['Type of shoot?', 'Duration?', 'Location?'],
+    'data_entry':  ['Type of data?', 'Volume/pages?', 'Deadline?'],
+    'gardening':   ['Type of work?', 'Garden size?', 'Tools needed?'],
+    'errands':     ['What errand?', 'Location?', 'Time constraint?'],
+    'event_help':  ['Event type?', 'No. of guests?', 'What help needed?'],
+    'tech_support':['Device type?', 'What issue?', 'OS/software?'],
+    'other':       ['Describe the task clearly?', 'Skills needed?', 'Expected duration?'],
+  };
+
+  void _autoFillDescription() {
+    final prompts = _prompts[_selectedCategory];
+    if (prompts == null || prompts.isEmpty) return;
+    _descCtrl.text = prompts.map((p) => 'Q: \$p\nA: ').join('\n\n');
+    _descCtrl.selection = TextSelection.fromPosition(const TextPosition(offset: 0));
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     _getLocation();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillDescription());
   }
 
   @override
@@ -266,7 +300,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 children: TaskCategory.all.map((c) {
                   final sel = _selectedCategory == c.id;
                   return GestureDetector(
-                    onTap: () => setState(() => _selectedCategory = c.id),
+                    onTap: () {
+                      setState(() => _selectedCategory = c.id);
+                      _autoFillDescription();
+                    },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),

@@ -235,8 +235,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.next,
                             validator: (v) {
-                              if (v == null || !v.contains('@'))
+                              if (v == null || !v.contains('@')) {
                                 return 'Enter valid email';
+                              }
                               return null;
                             },
                           ),
@@ -308,10 +309,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             size: 20,
                                             color: Color(0xFF94A3B8)),
                                         const SizedBox(width: 12),
-                                        Expanded(
+                                        const Expanded(
                                           child: Text(
                                             'Date of birth',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: Color(0xFF1E293B),
                                               fontSize: 15,
                                               fontWeight: FontWeight.w400,
@@ -735,7 +736,7 @@ class _SocialBtn extends StatelessWidget {
 /// Google "G" logo
 class _GoogleLogo extends StatelessWidget {
   final double size;
-  const _GoogleLogo({this.size = 18});
+  const _GoogleLogo({this.size = 24});
 
   @override
   Widget build(BuildContext context) {

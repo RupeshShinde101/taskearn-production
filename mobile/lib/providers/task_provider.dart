@@ -39,9 +39,15 @@ class TaskProvider extends ChangeNotifier {
       _savedPosterNames[taskId] ?? StorageService.getString('pn_$taskId');
   bool _loadingBrowse = false;
   bool _loadingMy = false;
+  bool _disposed = false;
   String? _error;
   int _currentPage = 1;
   bool _hasMore = true;
+  int _browseFetchVersion = 0;
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
 
   List<Task> get browseTasks => _browseTasks;
   List<Task> get myPostedTasks => _myPostedTasks;
@@ -83,6 +89,9 @@ class TaskProvider extends ChangeNotifier {
     double? radiusKm,
     double? minBudget,
     double? maxBudget,
+    String? excludePosterId,
+    String? sort,
+    bool expiringSoon = false,
     bool refresh = false,
   }) async {
     if (refresh) {
@@ -112,6 +121,10 @@ class TaskProvider extends ChangeNotifier {
         if (radiusKm != null) 'radius': '$radiusKm',
         if (minBudget != null) 'min_budget': '$minBudget',
         if (maxBudget != null) 'max_budget': '$maxBudget',
+        if (excludePosterId != null && excludePosterId.isNotEmpty)
+          'exclude_poster_id': excludePosterId,
+        if (sort != null && sort.isNotEmpty) 'sort': sort,
+        if (expiringSoon) 'expiring_soon': '1',
       };
 
       final data = await ApiService.get('/tasks', queryParams: params);

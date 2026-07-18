@@ -293,12 +293,25 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               // Description
               TextFormField(
                 controller: _descCtrl,
-                maxLines: 4,
-                decoration: const InputDecoration(
+                maxLines: 8,
+                decoration: InputDecoration(
                   labelText: 'Description',
-                  hintText: 'Describe what needs to be done…',
-                  prefixIcon: Icon(Icons.description_outlined),
+                  hintText: 'Q: What needs to be done?\nA: Describe clearly...\n\n- Add requirements as bullets',
+                  hintStyle: const TextStyle(color: Color(0xFFB0B8C8), fontSize: 12.5, height: 1.7),
+                  prefixIcon: const Icon(Icons.description_outlined),
                   alignLabelWithHint: true,
+                  contentPadding: const EdgeInsets.all(14),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().length < 10) ? 'Min 10 characters' : null,

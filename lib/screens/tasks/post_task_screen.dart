@@ -32,16 +32,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _dropAddrCtrl = TextEditingController();
 
   String _selectedCategory = 'delivery';
-  /// Stores the last template auto-filled into the description field so we can
-  /// detect whether the user has modified it before replacing on category change.
-  String _lastAutoFilledDesc = '';
   final _categorySearchCtrl = TextEditingController();
   String _categorySearch = '';
   LatLng? _location;
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
   bool _gettingLocation = false;
-  final bool _showAllCategories = false;
+  // _showAllCategories removed (unused)
   // Per-field lat/lng for delivery categories
   LatLng? _pickupLocation;
   LatLng? _dropLocation;
@@ -296,7 +293,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (prompts == null || prompts.isEmpty) return;
     final newTemplate = prompts.map((p) => 'Q: $p\nA: ').join('\n\n');
     _descCtrl.text = newTemplate;
-    _lastAutoFilledDesc = newTemplate;
     _descCtrl.selection =
         TextSelection.fromPosition(const TextPosition(offset: 0));
   }

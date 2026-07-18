@@ -81,11 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
         'sort': 'expiry',
         if (currentUserId != null && currentUserId.isNotEmpty)
           'exclude_poster_id': currentUserId,
-        if (lat != null && lng != null) ...{
-          'lat': lat.toString(),
-          'lng': lng.toString(),
-          'radius': '10',
-        },
       };
       final data = await ApiService.get('/tasks', queryParams: params);
       if (!mounted || data == null) return;
@@ -113,11 +108,6 @@ class _HomeScreenState extends State<HomeScreen> {
         'limit': '8',
         if (currentUserId != null && currentUserId.isNotEmpty)
           'exclude_poster_id': currentUserId,
-        if (lat != null && lng != null) ...{
-          'lat': lat.toString(),
-          'lng': lng.toString(),
-          'radius': '10',
-        },
       };
       final data = await ApiService.get('/tasks', queryParams: params);
       if (!mounted || data == null) return;

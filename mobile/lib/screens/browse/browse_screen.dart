@@ -105,7 +105,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
           maxBudget: _maxBudget < 5000 ? _maxBudget : null,
-          radiusKm: _userLat != null ? _radiusKm : null,
+          radiusKm: null,
           lat: _userLat,
           lng: _userLng,
           excludePosterId: currentUserId,

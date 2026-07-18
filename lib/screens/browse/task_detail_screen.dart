@@ -743,9 +743,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               // Description
               const Text('Description',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              const SizedBox(height: 8),
-              Text(task.description,
-                  style: const TextStyle(color: AppColors.gray, height: 1.6)),
+              const SizedBox(height: 10),
+              _DescriptionCard(text: task.description),
 
               const Divider(height: 28),
 
@@ -755,7 +754,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               const SizedBox(height: 8),
               // Delivery tasks: show pickup + drop separately
               if (const {'delivery', 'pickup', 'transport', 'moving'}
-                      .contains(task.category?.toLowerCase()) &&
+                      .contains(task.category.toLowerCase()) &&
                   (task.pickupAddress != null || task.dropAddress != null)) ...[
                 if (task.pickupAddress != null) ...[
                   Row(
@@ -959,6 +958,94 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       bottomNavigationBar: bottomBar,
     );
   }
+}
+
+// ── Smart description card ───────────────────────────────────────────────────
+
+class _DescriptionCard extends StatelessWidget {
+  final String text;
+  const _DescriptionCard({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = text.split('\n').map((l) => l.trim()).toList();
+    final widgets = <Widget>[];
+    int i = 0;
+    while (i < lines.length) {
+      final line = lines[i];
+      if (line.isEmpty) {
+        if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 6));
+        i++; continue;
+      }
+      final qm = RegExp(r'^[Qq](uestion)?[:.] *(.+)').firstMatch(line);
+      if (qm != null) {
+        if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 14));
+        widgets.add(_DRow(badge: 'Q', color: AppColors.primary, text: qm.group(2)!.trim(), bold: true));
+        if (i + 1 < lines.length) {
+          final am = RegExp(r'^[Aa](nswer)?[:.] *(.+)').firstMatch(lines[i + 1].trim());
+          if (am != null) {
+            widgets.add(const SizedBox(height: 6));
+            widgets.add(Padding(padding: const EdgeInsets.only(left: 28), child: _DRow(badge: 'A', color: AppColors.success, text: am.group(2)!.trim(), bold: false)));
+            i += 2; continue;
+          }
+        }
+        i++; continue;
+      }
+      final am = RegExp(r'^[Aa](nswer)?[:.] *(.+)').firstMatch(line);
+      if (am != null) {
+        widgets.add(const SizedBox(height: 6));
+        widgets.add(Padding(padding: const EdgeInsets.only(left: 28), child: _DRow(badge: 'A', color: AppColors.success, text: am.group(2)!.trim(), bold: false)));
+        i++; continue;
+      }
+      if (RegExp(r'^[-•*→] +').hasMatch(line)) {
+        widgets.add(const SizedBox(height: 4));
+        widgets.add(Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(padding: const EdgeInsets.only(top: 5), child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle))),
+          const SizedBox(width: 8),
+          Expanded(child: Text(line.replaceFirst(RegExp(r'^[-•*→] +'), ''), style: const TextStyle(color: Color(0xFF374151), fontSize: 13.5, height: 1.6))),
+        ]));
+        i++; continue;
+      }
+      final kv = RegExp(r'^([A-Za-z][A-Za-z /]{0,28}): +(.+)$').firstMatch(line);
+      if (kv != null) {
+        if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 7));
+        widgets.add(Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${kv.group(1)!}:', style: const TextStyle(color: Color(0xFF111827), fontSize: 13, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 5),
+          Expanded(child: Text(kv.group(2)!, style: const TextStyle(color: Color(0xFF4B5563), fontSize: 13, height: 1.55))),
+        ]));
+        i++; continue;
+      }
+      widgets.add(Text(line, style: const TextStyle(color: Color(0xFF374151), fontSize: 13.5, height: 1.65)));
+      i++;
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: widgets),
+    );
+  }
+}
+
+class _DRow extends StatelessWidget {
+  final String badge, text;
+  final Color color;
+  final bool bold;
+  const _DRow({required this.badge, required this.color, required this.text, required this.bold});
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(5)), child: Text(badge, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800))),
+      const SizedBox(width: 8),
+      Expanded(child: Text(text, style: TextStyle(color: bold ? const Color(0xFF111827) : const Color(0xFF4B5563), fontSize: 13.5, fontWeight: bold ? FontWeight.w600 : FontWeight.w400, height: 1.55))),
+    ],
+  );
 }
 
 class _UserRow extends StatelessWidget {

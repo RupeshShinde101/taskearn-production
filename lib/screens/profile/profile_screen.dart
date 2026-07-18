@@ -475,7 +475,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     color: AppColors.danger.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: Icon(Icons.logout_rounded,
+                                  child: const Icon(Icons.logout_rounded,
                                       color: AppColors.danger, size: 22),
                                 ),
                                 const SizedBox(width: 14),

@@ -9338,16 +9338,11 @@ def notify_task_skills(task_id):
         _task_title_display = task.get('title', '')
         _task_cat_display   = task.get('category', 'General')
 
-        # Task location for 10 km proximity filter
+        # Task location — kept for display but NOT used to filter users
         _task_lat = task.get('location_lat')
         _task_lng = task.get('location_lng')
-        _has_task_location = _task_lat is not None and _task_lng is not None
-        if not _has_task_location:
-            # Cannot enforce radius without task location — skip all notifications
-            return jsonify({'success': True, 'notified': 0,
-                            'reason': 'task has no location — radius filter skipped'})
-        _task_lat = float(_task_lat)
-        _task_lng = float(_task_lng)
+        _task_lat = float(_task_lat) if _task_lat is not None else None
+        _task_lng = float(_task_lng) if _task_lng is not None else None
 
         _ensure_bio_skills_columns()
         _ensure_fcm_token_column()
@@ -9355,29 +9350,18 @@ def notify_task_skills(task_id):
 
         with get_db() as (cursor, _):
             cursor.execute(f'''
-                SELECT id, fcm_token, skills, last_lat, last_lng,
-                       last_location_updated_at FROM users
+                SELECT id, fcm_token, skills FROM users
                 WHERE fcm_token IS NOT NULL
                   AND id != {PH}
                   AND skills IS NOT NULL
                   AND skills NOT IN ({PH}, {PH}, {PH})
-                  AND last_lat IS NOT NULL
-                  AND last_lng IS NOT NULL
             ''', (request.user_id, '[]', '', 'null'))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 
         notified = 0
         for user in candidates:
             try:
-                # ── 10 km proximity check (task location guaranteed present) ──
-                u_lat = user.get('last_lat')
-                u_lng = user.get('last_lng')
-                if u_lat is None or u_lng is None:
-                    continue
-                if _haversine_km(_task_lat, _task_lng,
-                                 float(u_lat), float(u_lng)) > 10.0:
-                    continue  # outside 10 km radius
-                # ── Skill match check ──────────────────────────────────
+                # ── Skill match check (no location filter) ────────────────
                 raw_skills = user.get('skills', '[]')
                 user_skills = [s.lower() for s in (
                     _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])

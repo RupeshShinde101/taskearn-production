@@ -41,7 +41,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
   bool _gettingLocation = false;
-  bool _showAllCategories = false;
+  final bool _showAllCategories = false;
   // Per-field lat/lng for delivery categories
   LatLng? _pickupLocation;
   LatLng? _dropLocation;
@@ -103,14 +103,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     } else {
       setState(() => _calculatedDistanceKm = null);
     }
-  }
-
-  void _appendPrompt(String text) {
-    final current = _descCtrl.text.trimRight();
-    _descCtrl.text = current.isEmpty ? '$text: ' : '$current\n$text: ';
-    _descCtrl.selection =
-        TextSelection.fromPosition(TextPosition(offset: _descCtrl.text.length));
-    setState(() {});
   }
 
   /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
@@ -302,15 +294,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void _autoFillDescription() {
     final prompts = _prompts[_selectedCategory];
     if (prompts == null || prompts.isEmpty) return;
-    final newTemplate = prompts.join('\n');
-    final current = _descCtrl.text;
-    // Replace when: field is empty OR it still contains the last auto-filled template
-    if (current.trim().isEmpty || current == _lastAutoFilledDesc) {
-      _descCtrl.text = newTemplate;
-      _lastAutoFilledDesc = newTemplate;
-      _descCtrl.selection =
-          TextSelection.fromPosition(const TextPosition(offset: 0));
-    }
+    final newTemplate = prompts.map((p) => 'Q: $p\nA: ').join('\n\n');
+    _descCtrl.text = newTemplate;
+    _lastAutoFilledDesc = newTemplate;
+    _descCtrl.selection =
+        TextSelection.fromPosition(const TextPosition(offset: 0));
   }
 
   @override
@@ -1115,46 +1103,29 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               // Description
               TextFormField(
                 controller: _descCtrl,
-                maxLines: 4,
-                decoration: const InputDecoration(
+                maxLines: 8,
+                decoration: InputDecoration(
                   labelText: 'Description',
-                  hintText: 'Describe what needs to be done\u2026',
-                  prefixIcon: Icon(Icons.description_outlined),
+                  prefixIcon: const Icon(Icons.description_outlined),
                   alignLabelWithHint: true,
+                  contentPadding: const EdgeInsets.all(14),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().length < 10)
                         ? 'Min 10 characters'
                         : null,
               ),
-              // Per-category prompt chips
-              if ((_prompts[_selectedCategory] ?? []).isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text('Add details:',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.gray,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: (_prompts[_selectedCategory]!).map((p) {
-                    return ActionChip(
-                      label: Text(p,
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.dark)),
-                      onPressed: () => _appendPrompt(p),
-                      backgroundColor: AppColors.light,
-                      side:
-                          const BorderSide(color: AppColors.border),
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 4),
-                      visualDensity: VisualDensity.compact,
-                    );
-                  }).toList(),
-                ),
-              ],
               const SizedBox(height: 14),
 
               // Budget

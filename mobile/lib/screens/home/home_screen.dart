@@ -23,6 +23,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _cityName = 'Your City';
   List<Task> _suggestedTasks = [];
+  Map<String, int> _taskMatchPct = {}; // taskId -> match percentage (60-100)
   List<Task> _expiringTasks  = [];
 
   @override
@@ -102,27 +103,71 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchSuggestedTasks([double? lat, double? lng]) async {
     try {
-      final currentUserId =
-          context.read<AuthProvider>().user?.id.toString();
+      final auth = context.read<AuthProvider>();
+      final currentUserId = auth.user?.id.toString();
+      final userSkills = (auth.user?.skills ?? [])
+          .map((s) => s.toLowerCase().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+
+      // Fetch more tasks so we have enough to rank
       final params = <String, String>{
-        'limit': '8',
+        'limit': '30',
         if (currentUserId != null && currentUserId.isNotEmpty)
           'exclude_poster_id': currentUserId,
       };
       final data = await ApiService.get('/tasks', queryParams: params);
       if (!mounted || data == null) return;
       final list = data is List ? data : (data['tasks'] as List? ?? []);
-      final tasks = <Task>[];
+      final allTasks = <Task>[];
       for (final item in list) {
         try {
-          tasks.add(Task.fromJson(item as Map<String, dynamic>));
+          allTasks.add(Task.fromJson(item as Map<String, dynamic>));
         } catch (_) {}
       }
+
+      // Score each task by skill overlap
+      final scored = <MapEntry<Task, int>>[];
+      for (final task in allTasks) {
+        final text =
+            '${task.category} ${task.title}'.toLowerCase();
+        if (userSkills.isEmpty) {
+          // No skills set: show all with base score
+          scored.add(MapEntry(task, 0));
+        } else {
+          int hits = 0;
+          for (final skill in userSkills) {
+            if (text.contains(skill)) hits++;
+          }
+          // Only include tasks that match at least one skill
+          if (hits > 0) scored.add(MapEntry(task, hits));
+        }
+      }
+
+      // Sort by score descending, take top 8
+      scored.sort((a, b) => b.value.compareTo(a.value));
+      final top = scored.take(8).toList();
+
+      // Compute match percentages
+      final pctMap = <String, int>{};
+      for (final e in top) {
+        if (userSkills.isEmpty) {
+          pctMap[e.key.id] = 75; // generic suggestion
+        } else {
+          // Normalize to 60-100% range
+          final pct = (60 + (e.value / userSkills.length * 40))
+              .round()
+              .clamp(60, 100);
+          pctMap[e.key.id] = pct;
+        }
+      }
+
       if (mounted) {
-        setState(() => _suggestedTasks = tasks);
-        // Cache into TaskProvider so getTaskDetail can find them when
-        // the user taps Apply, avoiding a 'Task not found' error.
-        context.read<TaskProvider>().cacheTasksForBrowse(tasks);
+        setState(() {
+          _suggestedTasks = top.map((e) => e.key).toList();
+          _taskMatchPct = pctMap;
+        });
+        context.read<TaskProvider>().cacheTasksForBrowse(_suggestedTasks);
       }
     } catch (_) {}
   }
@@ -935,7 +980,10 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             itemCount: _suggestedTasks.length,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (ctx, i) => _buildSuggestedCard(_suggestedTasks[i]),
+            itemBuilder: (ctx, i) => _buildSuggestedCard(
+                _suggestedTasks[i],
+                _taskMatchPct[_suggestedTasks[i].id] ?? 75,
+              ),
           ),
         ),
       ),
@@ -957,7 +1005,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return '\u{1F6E0}';
   }
 
-  Widget _buildSuggestedCard(Task task) {
+  Widget _buildSuggestedCard(Task task, int matchPct) {
     return GestureDetector(
       onTap: () => context.push('/task/${task.id}'),
       child: Container(
@@ -1019,7 +1067,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text('85%\nmatch',
+                  child: Text('$matchPct%\nmatch',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontSize: 9,

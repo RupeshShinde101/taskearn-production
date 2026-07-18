@@ -174,8 +174,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             setState(() => _obscure = !_obscure),
                       ),
                       validator: (v) {
-                        if (v == null || v.length < 6)
+                        if (v == null || v.length < 6) {
                           return 'Minimum 6 characters';
+                        }
                         return null;
                       },
                     ),
@@ -232,7 +233,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 child: _SocialBtn(
                   label: 'Continue with Google',
-                  icon: _GoogleLogo(),
+                  icon: const _GoogleLogo(),
                   onTap: auth.isLoading ? null : _loginWithGoogle,
                 ),
               ),
@@ -464,7 +465,7 @@ class _SocialBtn extends StatelessWidget {
 /// Google "G" logo
 class _GoogleLogo extends StatelessWidget {
   final double size;
-  const _GoogleLogo({this.size = 18});
+  const _GoogleLogo({this.size = 24});
 
   @override
   Widget build(BuildContext context) {

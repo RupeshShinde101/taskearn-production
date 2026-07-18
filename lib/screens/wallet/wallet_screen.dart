@@ -326,88 +326,202 @@ class _WalletScreenState extends State<WalletScreen>
 
   @override
   Widget build(BuildContext context) {
+    final sw = MediaQuery.of(context).size.width;
     return Scaffold(
-      appBar: AppBar(title: const Text('My Wallet')),
+      backgroundColor: const Color(0xFFF1F5F9),
       body: Consumer<WalletProvider>(
         builder: (_, wallet, __) {
           if (wallet.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
-
           final b = wallet.balance;
+          // Responsive sizing
+          final logoH  = sw * 0.18;
+          final logoW  = sw * 0.22;
+          final balFS  = (sw * 0.09).clamp(28.0, 44.0);
+          final illW   = sw * 0.40;
+          final illH   = sw * 0.40;
 
           return Column(
             children: [
-              // Balance card
+              // ── Dark gradient header ──────────────────────────────────
               Container(
-                margin: const EdgeInsets.all(16),
-                child: GradientContainer(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF0B1630), Color(0xFF1A3870)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: SafeArea(
+                  bottom: false,
+                  child: Stack(
                     children: [
-                      const Text('Available Balance',
-                          style: TextStyle(
-                              color: Colors.white70, fontSize: 13)),
-                      const SizedBox(height: 4),
-                      Text(
-                        '₹${b.balance.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 36,
-                            fontWeight: FontWeight.w800),
+                      // Right: 3D wallet illustration (behind content)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Image.asset(
+                          'assets/images/wallet_illustration.png',
+                          width: illW,
+                          height: illH,
+                          fit: BoxFit.contain,
+                        ),
                       ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          _StatCol(
-                              label: 'Earned',
-                              value: '₹${b.totalEarned.toStringAsFixed(0)}'),
-                          _StatCol(
-                              label: 'Spent',
-                              value: '₹${b.totalSpent.toStringAsFixed(0)}'),
-                          _StatCol(
-                              label: 'Cashback',
-                              value:
-                                  '₹${b.totalCashback.toStringAsFixed(0)}'),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _showAddMoney,
-                              icon: const Icon(Icons.add, size: 18),
-                              label: const Text('Add Money'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: AppColors.primary,
-                                minimumSize: const Size(0, 42),
+                      // Foreground: logo + balance (full width — no overflow risk)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Logo + Secure badge row
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // W4U Logo
+                                SizedBox(
+                                  width: logoW,
+                                  height: logoH,
+                                  child: Image.asset(
+                                    'assets/images/logo_light.png',
+                                    fit: BoxFit.contain,
+                                    alignment: Alignment.centerLeft,
+                                  ),
+                                ),
+                                // Secure Wallet badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF059669),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.verified_rounded,
+                                          color: Colors.white, size: 13),
+                                      SizedBox(width: 4),
+                                      Text('Secure Wallet',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            const Text('Available Balance',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 13)),
+                            const SizedBox(height: 4),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                '₹${b.balance.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: balFS,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -1),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _showWithdraw,
-                              icon: const Icon(Icons.arrow_upward, size: 18),
-                              label: const Text('Withdraw'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                side: const BorderSide(color: Colors.white70),
-                                minimumSize: const Size(0, 42),
-                              ),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
 
-              // Tabs
+              // ── White action buttons card ─────────────────────────────
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                transform: Matrix4.translationValues(0, -1, 0),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.symmetric(
+                    vertical: 18, horizontal: 8),
+                child: Row(
+                  children: [
+                    _ActionBtn(
+                      icon: Icons.add_rounded,
+                      label: 'Add Money',
+                      color: const Color(0xFF3B82F6),
+                      onTap: _showAddMoney,
+                    ),
+                    _ActionBtn(
+                      icon: Icons.arrow_upward_rounded,
+                      label: 'Withdraw',
+                      color: const Color(0xFF7C3AED),
+                      onTap: _showWithdraw,
+                    ),
+                    _ActionBtn(
+                      icon: Icons.receipt_long_rounded,
+                      label: 'History',
+                      color: const Color(0xFF059669),
+                      onTap: () => _tabs.animateTo(0),
+                    ),
+                    _ActionBtn(
+                      icon: Icons.account_balance_wallet_rounded,
+                      label: 'My Earnings',
+                      color: const Color(0xFFF59E0B),
+                      onTap: () => _tabs.animateTo(1),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Blue stats bar ────────────────────────────────────────
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1D4ED8),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(
+                    vertical: 14, horizontal: 8),
+                child: Row(
+                  children: [
+                    _StatItem(
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'Earned',
+                      value: '₹${b.totalEarned.toStringAsFixed(0)}',
+                    ),
+                    Container(width: 1, height: 34,
+                        color: Colors.white.withValues(alpha: 0.3)),
+                    _StatItem(
+                      icon: Icons.trending_up_rounded,
+                      label: 'Spent',
+                      value: '₹${b.totalSpent.toStringAsFixed(0)}',
+                    ),
+                    Container(width: 1, height: 34,
+                        color: Colors.white.withValues(alpha: 0.3)),
+                    _StatItem(
+                      icon: Icons.card_giftcard_rounded,
+                      label: 'Cashback',
+                      value: '₹${b.totalCashback.toStringAsFixed(0)}',
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Tabs ─────────────────────────────────────────────────
+              const SizedBox(height: 10),
               TabBar(
                 controller: _tabs,
                 labelColor: AppColors.primary,
@@ -431,6 +545,90 @@ class _WalletScreenState extends State<WalletScreen>
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _ActionBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ActionBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
+            ),
+            const SizedBox(height: 8),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Stats item widget ─────────────────────────────────────────────────────────
+class _StatItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _StatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white70, size: 22),
+          const SizedBox(height: 4),
+          Text(value,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15)),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white70, fontSize: 11)),
+        ],
       ),
     );
   }

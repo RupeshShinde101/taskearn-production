@@ -754,7 +754,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 8),
               // Delivery tasks: show pickup + drop separately
-              if (task.pickupAddress != null || task.dropAddress != null) ...[
+              if (const {'delivery', 'pickup', 'transport', 'moving'}
+                      .contains(task.category.toLowerCase()) &&
+                  (task.pickupAddress != null || task.dropAddress != null)) ...[
                 if (task.pickupAddress != null) ...[
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

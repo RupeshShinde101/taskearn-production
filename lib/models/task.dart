@@ -19,6 +19,7 @@ class Task {
   final String? city;
   final double? distanceKm;
   final DateTime createdAt;
+  final DateTime? expiresAt;
   final DateTime? acceptedAt;
   final DateTime? completedAt;
   final double? helperRating;
@@ -66,6 +67,7 @@ class Task {
     this.city,
     this.distanceKm,
     required this.createdAt,
+    this.expiresAt,
     this.acceptedAt,
     this.completedAt,
     this.helperRating,
@@ -243,6 +245,7 @@ class Task {
       createdAt: _parseDate(
           json['created_at'] ?? json['postedAt'] ?? json['posted_at']
       ),
+      expiresAt: _parseDateOrNull(json['expiresAt'] ?? json['expires_at']),
       acceptedAt: _parseDateOrNull(json['accepted_at'] ?? json['acceptedAt']),
       completedAt: _parseDateOrNull(
           json['completed_at'] ?? json['completedAt'] ??
@@ -270,8 +273,7 @@ class Task {
           ?? json['pickup_address']?.toString()
           ?? json['pickupAddress']?.toString()
           ?? json['pickup_addr']?.toString()
-          ?? json['from_address']?.toString()
-          ?? locAddr?.toString(),  // location.address IS the pickup for delivery tasks
+          ?? json['from_address']?.toString(),
       dropAddress: (dropLoc is Map ? dropLoc['address'] : null)?.toString()
           ?? (destination is Map ? destination['address'] : null)?.toString()
           ?? json['drop_location_address']?.toString()

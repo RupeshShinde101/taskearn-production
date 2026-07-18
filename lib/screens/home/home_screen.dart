@@ -38,14 +38,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadInitial() async {
-    // Fetch non-location data immediately (no GPS needed)
+    // All fetches start immediately on the first frame — nothing waits for GPS.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<NotificationProvider>().fetchNotifications();
       context.read<WalletProvider>().fetchWallet();
+      _fetchSuggestedTasks();
+      _fetchExpiringTasks();
     });
 
-    // Get GPS first — tasks are location-dependent (10km radius)
+    // GPS runs in parallel — only needed for city name + backend location update.
     final location = await LocationService.getCurrentLocation();
     if (!mounted) return;
     if (location != null) {
@@ -53,10 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
           .updateUserLocation(location.latitude, location.longitude);
       _reverseGeocode(location.latitude, location.longitude);
     }
-
-    // Fetch tasks: with 10km radius if GPS available, without otherwise
-    _fetchSuggestedTasks(location?.latitude, location?.longitude);
-    _fetchExpiringTasks(location?.latitude, location?.longitude);
   }
 
   Future<void> _reverseGeocode(double lat, double lng) async {
@@ -73,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _fetchExpiringTasks([double? lat, double? lng]) async {
+  Future<void> _fetchExpiringTasks() async {
     try {
       final currentUserId =
           context.read<AuthProvider>().user?.id.toString();
@@ -101,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _fetchSuggestedTasks([double? lat, double? lng]) async {
+  Future<void> _fetchSuggestedTasks() async {
     try {
       final auth = context.read<AuthProvider>();
       final currentUserId = auth.user?.id.toString();
@@ -112,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Fetch more tasks so we have enough to rank
       final params = <String, String>{
-        'limit': '30',
+        'limit': '20',
         if (currentUserId != null && currentUserId.isNotEmpty)
           'exclude_poster_id': currentUserId,
       };

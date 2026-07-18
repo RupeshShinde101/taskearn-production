@@ -619,7 +619,6 @@ class _InputField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final bool obscureText;
   final Widget? suffix;
-  final void Function(String)? onFieldSubmitted;
   final String? Function(String?)? validator;
 
   const _InputField({
@@ -630,7 +629,6 @@ class _InputField extends StatelessWidget {
     this.textInputAction,
     this.obscureText = false,
     this.suffix,
-    this.onFieldSubmitted,
     this.validator,
   });
 
@@ -641,7 +639,7 @@ class _InputField extends StatelessWidget {
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       obscureText: obscureText,
-      onFieldSubmitted: onFieldSubmitted,
+      onFieldSubmitted: null,
       validator: validator,
       style: const TextStyle(
         fontSize: 15,
@@ -735,14 +733,13 @@ class _SocialBtn extends StatelessWidget {
 
 /// Google "G" logo
 class _GoogleLogo extends StatelessWidget {
-  final double size;
-  const _GoogleLogo({this.size = 24});
+  const _GoogleLogo();
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size,
-      height: size,
+      width: 24,
+      height: 24,
       child: CustomPaint(painter: _GoogleLogoPainter()),
     );
   }

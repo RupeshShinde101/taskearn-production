@@ -294,15 +294,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void _autoFillDescription() {
     final prompts = _prompts[_selectedCategory];
     if (prompts == null || prompts.isEmpty) return;
-    final newTemplate = prompts.join('\n');
-    final current = _descCtrl.text;
-    // Replace when: field is empty OR it still contains the last auto-filled template
-    if (current.trim().isEmpty || current == _lastAutoFilledDesc) {
-      _descCtrl.text = newTemplate;
-      _lastAutoFilledDesc = newTemplate;
-      _descCtrl.selection =
-          TextSelection.fromPosition(const TextPosition(offset: 0));
-    }
+    final newTemplate = prompts.map((p) => 'Q: $p\nA: ').join('\n\n');
+    _descCtrl.text = newTemplate;
+    _lastAutoFilledDesc = newTemplate;
+    _descCtrl.selection =
+        TextSelection.fromPosition(const TextPosition(offset: 0));
   }
 
   @override

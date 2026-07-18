@@ -41,11 +41,11 @@ class TermsScreen extends StatelessWidget {
                 isWarning: true),
 
             _section('3. Your Account', null, subsections: [
-              _SubSection('3.1 Registration',
+              const _SubSection('3.1 Registration',
                   'You may register using either email + password or "Sign in with Google". You are responsible for keeping your credentials confidential and for every activity that occurs under your account.'),
-              _SubSection('3.2 One Account Per User',
+              const _SubSection('3.2 One Account Per User',
                   'Each individual may hold only one active Workmate4u account. Creating multiple accounts to defraud, evade fees, manipulate ratings or bypass suspensions is prohibited and may result in permanent termination and forfeiture of any wallet balance.'),
-              _SubSection('3.3 Account Security',
+              const _SubSection('3.3 Account Security',
                   'Notify us at info@workmate4u.com immediately if you suspect unauthorised access. Workmate4u is not responsible for losses arising from your failure to safeguard your credentials.'),
             ]),
 
@@ -59,13 +59,13 @@ class TermsScreen extends StatelessWidget {
                 'Workmate4u only provides the technology platform (listings, matching, in-app chat and voice calls, payment routing through Razorpay, ratings, wallet ledger and dispute support). We are NOT a party to any agreement between a Task Poster and a Tasker, we are NOT the employer of any Tasker, and we do not perform tasks ourselves.\n\nThis Platform is provided in compliance with the Information Technology Act, 2000 and the IT (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021.'),
 
             _section('5. Posting & Accepting Tasks', null, subsections: [
-              _SubSection('5.1 Task Posting Rules', null, bullets: [
+              const _SubSection('5.1 Task Posting Rules', null, bullets: [
                 'Tasks must be lawful and clearly described.',
                 'Minimum task budget is ₹100; maximum is ₹40,000 (subject to change with notice).',
                 'Posters must have sufficient wallet balance to cover the task price plus the applicable service charge before posting.',
                 'Posters must not request anything that discriminates based on caste, religion, gender, sexual orientation, disability or any other protected characteristic.',
               ]),
-              _SubSection('5.2 Prohibited Tasks',
+              const _SubSection('5.2 Prohibited Tasks',
                   'You must not post or accept tasks that involve:',
                   bullets: [
                     'Anything illegal under Indian law, including narcotics, weapons, counterfeit goods, hawala, or money laundering;',
@@ -75,27 +75,27 @@ class TermsScreen extends StatelessWidget {
                     'Soliciting cash, gifts or off-Platform payments to circumvent service charges;',
                     'Hate speech, harassment, threats or content prohibited under the IT Rules, 2021.',
                   ]),
-              _SubSection('5.3 Tasker Conduct',
+              const _SubSection('5.3 Tasker Conduct',
                   'Taskers must complete tasks honestly, on time, and to the standard described. Misrepresentation of skills, identity or completion status may result in suspension and reversal of payment.'),
             ]),
 
             _section('6. Wallet, Service Charges & Payments', null,
                 subsections: [
-                  _SubSection('6.1 Workmate4u Wallet',
+                  const _SubSection('6.1 Workmate4u Wallet',
                       'Each user has an internal wallet ledger. Posters top up the wallet via Razorpay (UPI, cards, net-banking, wallets) before posting a task. The full task budget plus any applicable service charge is debited from the Poster\'s wallet at task creation and held by Workmate4u until task completion or cancellation.'),
-                  _SubSection('6.2 Service Charges & Platform Commission',
+                  const _SubSection('6.2 Service Charges & Platform Commission',
                       'A service charge applies only for Delivery & Pick/Drop tasks (₹10–₹35 by distance; up to ₹40 for large items). All other categories have ₹0 service charge.\n\nPlatform commission on task completion:\n• Delivery, Pickup, Transport, Moving — 15% commission\n• All other categories — 17% commission\n\nThe Tasker sees their net estimated earnings before accepting any task.'),
-                  _SubSection('6.3 Payouts to Taskers',
+                  const _SubSection('6.3 Payouts to Taskers',
                       'On task completion confirmed by the Poster (or after the dispute window), the task earnings net of commission are credited to the Tasker\'s wallet. Payouts are processed via Razorpay subject to KYC verification.'),
-                  _SubSection('6.4 Cancellations & Refunds', null, bullets: [
+                  const _SubSection('6.4 Cancellations & Refunds', null, bullets: [
                     'If a task is cancelled before acceptance, the full amount (price + service charge) is refunded to the Poster\'s wallet.',
                     'If a Tasker abandons a task, the price is refunded; service charge may be retained at our discretion.',
                     'Disputes are reviewed within a reasonable timeframe; our decision is binding for releasing the held amount.',
                     'Razorpay fees on direct refunds may be deducted per Razorpay\'s policies.',
                   ]),
-                  _SubSection('6.5 Negative Wallet Balance',
+                  const _SubSection('6.5 Negative Wallet Balance',
                       'If a wallet balance becomes negative, the account is automatically suspended until the user adds sufficient funds to bring the balance back to ₹0 or above.'),
-                  _SubSection('6.6 Off-Platform Payments Prohibited',
+                  const _SubSection('6.6 Off-Platform Payments Prohibited',
                       'Requesting or paying any portion of the task price outside the Workmate4u Platform voids dispute protection and may result in permanent account termination.'),
                 ]),
 
@@ -234,9 +234,9 @@ class TermsScreen extends StatelessWidget {
             decoration: BoxDecoration(
               color: const Color(0xFF6366F1).withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border(
+              border: const Border(
                   left:
-                      BorderSide(color: const Color(0xFF6366F1), width: 3)),
+                      BorderSide(color: Color(0xFF6366F1), width: 3)),
             ),
             child: Text(title,
                 style: const TextStyle(

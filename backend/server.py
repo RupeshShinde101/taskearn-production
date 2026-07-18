@@ -2295,12 +2295,26 @@ def update_user_location():
         lng = float(lng)
     except (TypeError, ValueError):
         return jsonify({'success': False, 'message': 'lat and lng must be numbers'}), 400
+    import datetime as _dt
+    now_ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
     try:
         with get_db() as (cursor, conn):
-            cursor.execute(
-                f'UPDATE users SET last_lat = {PH}, last_lng = {PH} WHERE id = {PH}',
-                (lat, lng, request.user_id)
-            )
+            try:
+                cursor.execute(
+                    f'UPDATE users SET last_lat = {PH}, last_lng = {PH}, '
+                    f'last_location_updated_at = {PH} WHERE id = {PH}',
+                    (lat, lng, now_ts, request.user_id)
+                )
+            except Exception as col_err:
+                # Fallback for deployments where the column doesn't exist yet
+                if 'last_location_updated_at' in str(col_err):
+                    conn.rollback()
+                    cursor.execute(
+                        f'UPDATE users SET last_lat = {PH}, last_lng = {PH} WHERE id = {PH}',
+                        (lat, lng, request.user_id)
+                    )
+                else:
+                    raise
             conn.commit()
         return jsonify({'success': True})
     except Exception as e:
@@ -2356,6 +2370,9 @@ def get_tasks():
     limit = request.args.get('limit', request.args.get('per_page', 20, type=int), type=int)
     limit = min(max(limit, 1), 100)  # clamp 1-100
 
+    # Sort param: 'newest' (default) or 'expiry' (soonest-expiring first)
+    sort_param = request.args.get('sort', 'newest').strip().lower()
+
     # Filter params
     category_filter = request.args.get('category', '').strip()
     max_budget = request.args.get('max_budget', type=float)
@@ -2363,6 +2380,10 @@ def get_tasks():
     lat = request.args.get('lat', type=float)
     lng = request.args.get('lng', type=float)
     radius_km = request.args.get('radius', type=float)
+    # Exclude tasks posted by a specific user (e.g. the browsing user's own tasks)
+    exclude_poster_id = request.args.get('exclude_poster_id', '').strip()
+    # When true, only return tasks expiring within the next 5 hours (Expiring Soon browse)
+    expiring_soon = request.args.get('expiring_soon', '').strip().lower() in ('1', 'true')
     
     # Throttle cleanup: run at most once every 5 minutes per process
     global _last_cleanup_time
@@ -2382,6 +2403,18 @@ def get_tasks():
             # Build WHERE clause with optional filters
             base_where = f"WHERE t.status = 'active' AND t.expires_at > {PH}"
             base_params = [now]
+
+            if exclude_poster_id:
+                base_where += f" AND t.posted_by != {PH}"
+                base_params.append(exclude_poster_id)
+
+            if expiring_soon:
+                # Only tasks expiring within the next 5 hours
+                import datetime as _dt2
+                cutoff = (_dt2.datetime.now(_dt2.timezone.utc)
+                          + _dt2.timedelta(hours=5)).isoformat()
+                base_where += f" AND t.expires_at <= {PH}"
+                base_params.append(cutoff)
 
             if category_filter and category_filter != 'all':
                 base_where += f" AND t.category = {PH}"
@@ -2420,7 +2453,7 @@ def get_tasks():
                     FROM tasks t
                     LEFT JOIN users u ON u.id = t.posted_by
                     {base_where}
-                    ORDER BY t.posted_at DESC
+                    ORDER BY {'t.expires_at ASC' if sort_param == 'expiry' else 't.posted_at DESC'}
                     LIMIT {PH} OFFSET {PH}
                 ''', tuple(base_params) + (limit, offset))
             else:
@@ -2437,7 +2470,7 @@ def get_tasks():
                     FROM tasks t
                     LEFT JOIN users u ON u.id = t.posted_by
                     {base_where}
-                    ORDER BY t.posted_at DESC
+                    ORDER BY {'t.expires_at ASC' if sort_param == 'expiry' else 't.posted_at DESC'}
                     LIMIT 200
                 ''', tuple(base_params))
             
@@ -9271,20 +9304,22 @@ def delete_account():
 @require_auth
 def notify_task_skills(task_id):
     """Push FCM notification (type: skill_matched) to every user whose profile
-    skills overlap with this task's category/title/description.
-    No location radius — purely skill-based matching.
+    skills overlap with this task's category/title/description AND who is
+    within 10 km of the task location.
     Only the task poster may call this endpoint."""
     import json as _nsj
     try:
         with get_db() as (cursor, _):
             cursor.execute(
-                f'SELECT id, posted_by, title, category, description, price FROM tasks WHERE id = {PH}',
+                f'SELECT id, posted_by, title, category, description, price, '
+                f'location_lat, location_lng FROM tasks WHERE id = {PH}',
                 (task_id,)
             )
             task = dict_from_row(cursor.fetchone()) if cursor.rowcount != 0 else None
             if task is None:
                 cursor.execute(
-                    f'SELECT id, posted_by, title, category, description, price FROM tasks WHERE id = {PH}',
+                    f'SELECT id, posted_by, title, category, description, price, '
+                    f'location_lat, location_lng FROM tasks WHERE id = {PH}',
                     (task_id,)
                 )
                 row = cursor.fetchone()
@@ -9303,22 +9338,46 @@ def notify_task_skills(task_id):
         _task_title_display = task.get('title', '')
         _task_cat_display   = task.get('category', 'General')
 
+        # Task location for 10 km proximity filter
+        _task_lat = task.get('location_lat')
+        _task_lng = task.get('location_lng')
+        _has_task_location = _task_lat is not None and _task_lng is not None
+        if not _has_task_location:
+            # Cannot enforce radius without task location — skip all notifications
+            return jsonify({'success': True, 'notified': 0,
+                            'reason': 'task has no location — radius filter skipped'})
+        _task_lat = float(_task_lat)
+        _task_lng = float(_task_lng)
+
         _ensure_bio_skills_columns()
         _ensure_fcm_token_column()
+        _ensure_user_location_columns()
 
         with get_db() as (cursor, _):
             cursor.execute(f'''
-                SELECT id, fcm_token, skills FROM users
+                SELECT id, fcm_token, skills, last_lat, last_lng,
+                       last_location_updated_at FROM users
                 WHERE fcm_token IS NOT NULL
                   AND id != {PH}
                   AND skills IS NOT NULL
                   AND skills NOT IN ({PH}, {PH}, {PH})
+                  AND last_lat IS NOT NULL
+                  AND last_lng IS NOT NULL
             ''', (request.user_id, '[]', '', 'null'))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 
         notified = 0
         for user in candidates:
             try:
+                # ── 10 km proximity check (task location guaranteed present) ──
+                u_lat = user.get('last_lat')
+                u_lng = user.get('last_lng')
+                if u_lat is None or u_lng is None:
+                    continue
+                if _haversine_km(_task_lat, _task_lng,
+                                 float(u_lat), float(u_lng)) > 10.0:
+                    continue  # outside 10 km radius
+                # ── Skill match check ──────────────────────────────────
                 raw_skills = user.get('skills', '[]')
                 user_skills = [s.lower() for s in (
                     _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])

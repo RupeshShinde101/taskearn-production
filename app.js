@@ -68,7 +68,20 @@ let selectedTask = null;
 let gpsWatchId = null;
 let isGPSActive = false;
 let modalTaskCoords = null; // Stores picked location for task posting
+let modalDropCoords = null; // Stores picked drop location for delivery/transport task posting
 let pendingReleaseTaskId = null; // Task ID awaiting penalty confirmation
+let _taskDetailMiniMap = null; // Leaflet mini-map inside task detail modal — kept global so it can be properly destroyed
+let _currentTaskList = []; // Tracks the currently displayed task list for sort without re-creating closures
+
+// Global interval IDs — stored so they can all be cleared on beforeunload to free memory.
+let _timerIntervalId = null;
+let _notifIntervalId = null;
+let _autoRefreshIntervalId = null;
+let _taskTimersStarted = false; // Guard: prevent startTaskTimers() from registering duplicate intervals.
+
+// Categories that carry a distance-based service charge (Delivery / Pick&Drop).
+// All other categories have NO service charge. Commission: 15% delivery/pickup, 17% others.
+const DELIVERY_CATEGORIES = new Set(['delivery', 'pickup', 'transport', 'moving']);
 
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
@@ -114,28 +127,30 @@ const SERVICE_CHARGES = {
     'other': { charge: 50, time: '1-3 hours', level: 'Medium' }
 };
 
-function getServiceCharge(category, distanceKm) {
-    const info = SERVICE_CHARGES[category];
-    // Distance-based categories: ₹10–₹40 scaled by km when known.
-    if (info && info.distance) {
-        if (typeof distanceKm === 'number' && distanceKm > 0) {
-            const base = category === 'moving' ? 20 : 10;
-            const perKm = category === 'moving' ? 2.5 : 1.5;
-            return Math.max(10, Math.min(40, Math.round(base + perKm * distanceKm)));
-        }
-        return info.charge;
+function getServiceCharge(category, distanceKm, vehicleKey) {
+    // Distance-based platform service charge for Delivery and Pick & Drop.
+    // Formula: ₹10 base + ₹2/km, rounded to nearest ₹5, capped at ₹40.
+    // This is separate from the task budget (which is the worker's fare).
+    if (category === 'delivery' || category === 'transport') {
+        const km = (typeof distanceKm === 'number' && distanceKm > 0) ? distanceKm : 0;
+        const raw = 10 + 2 * km;
+        return Math.min(40, Math.max(10, Math.round(raw / 5) * 5));
     }
-    return info?.charge || 50;
+    // All other categories: no service charge.
+    return 0;
 }
 
 function getServiceChargeInfo(category) {
     return SERVICE_CHARGES[category] || SERVICE_CHARGES['other'];
 }
 
-// Returns the per-category service charge for a task object, honouring any
-// saved service_charge value. Falls back to the category default.
+// Returns the per-category service charge for a task object.
+// Service charge ONLY applies to Delivery/Pick&Drop categories.
+// All other categories return 0 regardless of any stored value.
 function getTaskServiceCharge(task) {
     if (!task) return 0;
+    // Non-delivery categories: always 0 (override any legacy stored value)
+    if (!DELIVERY_CATEGORIES.has(task.category)) return 0;
     if (task.service_charge !== undefined && task.service_charge !== null && task.service_charge !== '') {
         return parseFloat(task.service_charge) || 0;
     }
@@ -170,20 +185,37 @@ function syncRatedTaskIds(ids) {
     } catch(e) {}
 }
 
-// Task Posting Fee = 5% platform fee charged on top of (price + service charge).
-// Applies to ALL categories.
-function getTaskPlatformFee(task) {
-    if (!task) return 0;
-    const price = parseFloat(task.price || task.amount || 0) || 0;
-    const sc = getTaskServiceCharge(task);
-    return Math.round((price + sc) * 0.05 * 100) / 100;
-}
+// Task Posting Fee: DISABLED. Previously 5% platform fee — commented out for future use.
+// function getTaskPlatformFee(task) {
+//     if (!task) return 0;
+//     const price = parseFloat(task.price || task.amount || 0) || 0;
+//     const sc = getTaskServiceCharge(task);
+//     return Math.round((price + sc) * 0.05 * 100) / 100;
+// }
+function getTaskPlatformFee(task) { return 0; } // DISABLED — no posting fee
 
-// Returns the final task value the poster pays = price + service charge + platform fee.
+// Returns the final task value the poster pays = price + service charge (no posting fee).
 function getTaskFinalValue(task) {
     if (!task) return 0;
     const price = parseFloat(task.price || task.amount || 0) || 0;
-    return price + getTaskServiceCharge(task) + getTaskPlatformFee(task);
+    return price + getTaskServiceCharge(task);
+}
+
+// Commission rates: Delivery/Pickup/Transport/Moving = 15%, all others = 17%.
+const DELIVERY_COMMISSION_CATS = new Set(['delivery', 'pickup', 'transport', 'moving']);
+function getCommissionRate(category) {
+    return DELIVERY_COMMISSION_CATS.has(category) ? 0.15 : 0.17;
+}
+
+// Returns what the helper actually receives after platform commission.
+// Commission: 15% for delivery/pickup/transport/moving, 17% for all others.
+// Always uses getTaskServiceCharge() so non-delivery tasks get sc=0 (ignores any legacy stored value).
+function getHelperEarnings(task) {
+    if (!task) return 0;
+    const price = parseFloat(task.price || task.amount || 0) || 0;
+    const sc = getTaskServiceCharge(task); // enforces 0 for non-delivery categories
+    const rate = getCommissionRate(task.category || 'other');
+    return Math.round((price + sc) * (1 - rate) * 100) / 100;
 }
 
 // Default location: New Delhi, India
@@ -337,133 +369,126 @@ function showNotification(message, type = 'info', duration = 5000) {
     if (!container) {
         container = document.createElement('div');
         container.id = 'notification-container';
-        container.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 10000;
-            max-width: 400px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        `;
+        container.style.cssText = [
+            'position:fixed',
+            'bottom:24px',
+            'left:50%',
+            'transform:translateX(-50%)',
+            'z-index:10000',
+            'display:flex',
+            'flex-direction:column',
+            'align-items:center',
+            'gap:10px',
+            'pointer-events:none',
+            'width:max-content',
+            'max-width:calc(100vw - 32px)'
+        ].join(';');
         document.body.appendChild(container);
     }
-    
+
+    // Icon + colours per type
+    const META = {
+        success: { icon: 'fa-circle-check',     bg: '#10b981', border: '#059669' },
+        error:   { icon: 'fa-circle-xmark',      bg: '#ef4444', border: '#dc2626' },
+        warning: { icon: 'fa-triangle-exclamation', bg: '#f59e0b', border: '#d97706' },
+        offline: { icon: 'fa-wifi-slash',         bg: '#64748b', border: '#475569' },
+        info:    { icon: 'fa-circle-info',        bg: '#6366f1', border: '#4f46e5' },
+    };
+    const m = META[type] || META.info;
+
     // Create notification element
     const notification = document.createElement('div');
-    const bgColor = type === 'error' ? '#ff4444' : type === 'success' ? '#44dd44' : '#4444ff';
-    const bgColor2 = type === 'error' ? '#cc0000' : type === 'success' ? '#00aa00' : '#0000cc';
-    
-    notification.style.cssText = `
-        background: linear-gradient(135deg, ${bgColor}, ${bgColor2});
-        color: white;
-        padding: 16px 20px;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        animation: slideIn 0.3s ease-out;
-        font-size: 14px;
-        line-height: 1.4;
+    notification.style.cssText = [
+        `background:${m.bg}`,
+        `border:1.5px solid ${m.border}`,
+        'color:#fff',
+        'padding:11px 16px 11px 14px',
+        'border-radius:12px',
+        'box-shadow:0 8px 24px rgba(0,0,0,0.18)',
+        'animation:toastIn 0.28s cubic-bezier(0.34,1.56,0.64,1) forwards',
+        'font-size:14px',
+        'line-height:1.4',
+        'display:flex',
+        'align-items:center',
+        'gap:10px',
+        'pointer-events:all',
+        'cursor:pointer',
+        'max-width:360px',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif'
+    ].join(';');
+
+    const safeMsg = message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    notification.innerHTML = `
+        <i class="fas ${m.icon}" style="font-size:16px;flex-shrink:0;"></i>
+        <span style="flex:1;">${safeMsg}</span>
+        <button aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:0.7;cursor:pointer;padding:0 0 0 6px;font-size:16px;line-height:1;flex-shrink:0;" onclick="this.closest('[id]').remove ? this.closest('div').remove() : null">&times;</button>
     `;
-    
-    notification.textContent = message;
     container.appendChild(notification);
     
-    // Add animation keyframes if not exists
+    // Add animation keyframes if not present
     if (!document.getElementById('notification-styles')) {
         const style = document.createElement('style');
         style.id = 'notification-styles';
         style.textContent = `
-            @keyframes slideIn {
-                from {
-                    transform: translateX(400px);
-                    opacity: 0;
-                }
-                to {
-                    transform: translateX(0);
-                    opacity: 1;
-                }
+            @keyframes toastIn {
+                from { opacity: 0; transform: translateY(16px) scale(0.95); }
+                to   { opacity: 1; transform: translateY(0)   scale(1);    }
             }
-            @keyframes slideOut {
-                from {
-                    transform: translateX(0);
-                    opacity: 1;
-                }
-                to {
-                    transform: translateX(400px);
-                    opacity: 0;
-                }
+            @keyframes toastOut {
+                from { opacity: 1; transform: translateY(0)   scale(1);    }
+                to   { opacity: 0; transform: translateY(12px) scale(0.95); }
             }
         `;
         document.head.appendChild(style);
     }
-    
+
+    container.appendChild(notification);
+
+    // Progress bar for auto-dismiss
+    const bar = document.createElement('div');
+    bar.style.cssText = [
+        'position:absolute',
+        'bottom:0',
+        'left:0',
+        `width:100%`,
+        'height:3px',
+        'background:rgba(255,255,255,0.4)',
+        'border-radius:0 0 12px 12px',
+        `transition:width ${duration}ms linear`
+    ].join(';');
+    notification.style.position = 'relative';
+    notification.style.overflow = 'hidden';
+    notification.appendChild(bar);
+    requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = '0%'; }));
+
     // Remove after duration
     const timeout = setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease-out forwards';
-        setTimeout(() => notification.remove(), 300);
+        notification.style.animation = 'toastOut 0.25s ease-in forwards';
+        setTimeout(() => notification.remove(), 250);
     }, duration);
-    
-    // Allow manual close
-    notification.style.cursor = 'pointer';
+
+    // Click dismiss
     notification.addEventListener('click', () => {
         clearTimeout(timeout);
-        notification.style.animation = 'slideOut 0.3s ease-out forwards';
-        setTimeout(() => notification.remove(), 300);
+        notification.style.animation = 'toastOut 0.25s ease-in forwards';
+        setTimeout(() => notification.remove(), 250);
     });
 }
 
 // Initialize IndexedDB on load
 initIndexedDB().then(dbAvailable => {
     if (!STORAGE_AVAILABLE && !dbAvailable) {
-        alert('⚠️ Warning: Your browser cannot save data. Please:\n\n1. Use https://www.workmate4u.com (not file://)\n2. Disable private/incognito mode\n3. Allow cookies and site data\n\nYour account will NOT be saved!');
+        // Non-blocking warning — alert() here blocks the renderer thread on
+        // page load which can trigger Chrome's hung-tab watchdog.
+        try {
+            if (typeof showToast === 'function') {
+                showToast('⚠️ Browser cannot save data. Use https://www.workmate4u.com and disable private/incognito mode.', 'error', 8000);
+            } else {
+                console.warn('Browser storage unavailable — account data will not persist.');
+            }
+        } catch (e) { console.warn('Storage warning failed:', e); }
     }
 });
-
-// ========================================
-// SECURE PASSWORD HASHING (Web Crypto API)
-// ========================================
-
-// Generate cryptographically secure random salt
-function generateSalt(length = 16) {
-    const array = new Uint8Array(length);
-    crypto.getRandomValues(array);
-    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-// Hash password with salt using SHA-256
-async function hashPassword(password, salt) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(salt + password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
-    return hashHex;
-}
-
-// Create secure password hash with new salt
-async function createPasswordHash(password) {
-    const salt = generateSalt();
-    const hash = await hashPassword(password, salt);
-    return { salt, hash };
-}
-
-// Verify password against stored hash
-async function verifyPassword(password, storedSalt, storedHash) {
-    const hash = await hashPassword(password, storedSalt);
-    return hash === storedHash;
-}
-
-// Generate secure session token
-function generateSessionToken() {
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-// Generate unique user ID
-function generateUserId() {
-    return 'TE' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
-}
 
 // Get all registered users (with IndexedDB fallback)
 async function getStoredUsersAsync() {
@@ -473,7 +498,6 @@ async function getStoredUsersAsync() {
             const users = localStorage.getItem(STORAGE_KEYS.USERS);
             if (users) {
                 const parsed = JSON.parse(users);
-                console.log('📦 Loaded users from localStorage:', Object.keys(parsed).length, 'users');
                 return parsed;
             }
         } catch (e) {
@@ -484,7 +508,6 @@ async function getStoredUsersAsync() {
     // Fallback to IndexedDB
     const idbData = await loadFromIndexedDB(STORAGE_KEYS.USERS);
     if (idbData) {
-        console.log('📦 Loaded users from IndexedDB:', Object.keys(idbData).length, 'users');
         // Sync back to localStorage if available
         if (STORAGE_AVAILABLE) {
             try { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(idbData)); } catch(e) {}
@@ -521,7 +544,6 @@ async function saveUsersAsync(users) {
             localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
             const verify = localStorage.getItem(STORAGE_KEYS.USERS);
             if (verify) {
-                console.log('✅ Users saved to localStorage:', Object.keys(users).length, 'users');
                 saved = true;
             }
         } catch (e) {
@@ -532,7 +554,6 @@ async function saveUsersAsync(users) {
     // Also save to IndexedDB as backup
     const idbSaved = await saveToIndexedDB(STORAGE_KEYS.USERS, users);
     if (idbSaved) {
-        console.log('✅ Users backed up to IndexedDB');
         saved = true;
     }
     
@@ -553,7 +574,7 @@ function saveUsers(users) {
         saveToIndexedDB(STORAGE_KEYS.USERS, users);
         const verify = localStorage.getItem(STORAGE_KEYS.USERS);
         if (verify) {
-            console.log('✅ Users saved to storage:', Object.keys(users).length, 'users');
+            console.log('✅ Users saved to storage:', Object.keys(users).length);
             return true;
         }
         return false;
@@ -563,60 +584,7 @@ function saveUsers(users) {
     }
 }
 
-// Get user by email
-function getUserByEmail(email) {
-    const users = getStoredUsers();
-    return Object.values(users).find(u => u.email.toLowerCase() === email.toLowerCase());
-}
-
-// Get user by email (async with IndexedDB fallback)
-async function getUserByEmailAsync(email) {
-    const users = await getStoredUsersAsync();
-    return Object.values(users).find(u => u.email.toLowerCase() === email.toLowerCase());
-}
-
-// Register new user with secure password hashing
-async function registerUser(userData) {
-    // Use async to get users from both localStorage and IndexedDB
-    const users = await getStoredUsersAsync();
-    const userId = generateUserId();
-    
-    // Hash password with salt using SHA-256
-    const { salt, hash } = await createPasswordHash(userData.password);
-    
-    const newUser = {
-        id: userId,
-        name: userData.name,
-        email: userData.email.toLowerCase(),
-        passwordHash: hash,      // Store hash, never plain password
-        passwordSalt: salt,      // Store salt for verification
-        phone: userData.phone || '',
-        dob: userData.dob,
-        rating: 5.0,
-        tasksPosted: 0,
-        tasksCompleted: 0,
-        totalEarnings: 0,
-        joinedAt: new Date().toISOString(),
-        sessionToken: generateSessionToken(), // Secure session token
-        postedTasks: [],
-        acceptedTasks: [],
-        completedTasks: []
-    };
-    
-    users[userId] = newUser;
-    
-    // Save to both localStorage and IndexedDB
-    const saved = await saveUsersAsync(users);
-    if (!saved) {
-        console.error('❌ Failed to save user data!');
-    } else {
-        console.log('✅ New user registered:', newUser.email);
-    }
-    
-    return newUser;
-}
-
-// Update user data
+// Serialize task for storage (convert dates to ISO strings, remove circular refs)
 async function updateUserData(userId, updates) {
     const users = await getStoredUsersAsync();
     // Create user entry if it doesn't exist yet (e.g., registered via backend API)
@@ -677,7 +645,6 @@ async function loadCurrentSessionAsync() {
             const apiUserStr = localStorage.getItem('taskearn_user');
             if (apiToken && apiUserStr) {
                 const apiUser = JSON.parse(apiUserStr);
-                console.log('✅ Found API session for:', apiUser.name || apiUser.email);
                 // Verify token is still valid with the backend
                 if (typeof AuthAPI !== 'undefined' && AuthAPI.getCurrentUser) {
                     try {
@@ -687,8 +654,16 @@ async function loadCurrentSessionAsync() {
                             clearCurrentSession();
                             return null;
                         }
-                        console.log('✅ API token verified with backend');
-                        return verifyResult.user;
+                        // Merge locally-cached task data into fresh server profile so tasks
+                        // show immediately on the first render (before syncUserTasksFromServer).
+                        return {
+                            ...verifyResult.user,
+                            acceptedTasks:  apiUser.acceptedTasks  || verifyResult.user.acceptedTasks,
+                            postedTasks:    apiUser.postedTasks    || verifyResult.user.postedTasks,
+                            completedTasks: apiUser.completedTasks || verifyResult.user.completedTasks,
+                            totalEarnings:  apiUser.totalEarnings  != null ? apiUser.totalEarnings  : verifyResult.user.totalEarnings,
+                            tasksCompleted: apiUser.tasksCompleted != null ? apiUser.tasksCompleted : verifyResult.user.tasksCompleted
+                        };
                     } catch (verifyErr) {
                         // Network error — fall back to cached user so offline usage still works
                         console.warn('⚠️ Could not verify token with server (offline?), using cached session:', verifyErr.message);
@@ -720,7 +695,6 @@ async function loadCurrentSessionAsync() {
     }
     
     if (!session) {
-        console.log('ℹ️ No saved session found');
         return null;
     }
     
@@ -728,10 +702,9 @@ async function loadCurrentSessionAsync() {
     users = await getStoredUsersAsync();
     
     if (users[session.id]) {
-        console.log('✅ Found saved session for:', users[session.id].name);
         return users[session.id];
     } else {
-        console.log('⚠️ Session user not found in storage, clearing session');
+        console.warn('⚠️ Session user not found in storage, clearing');
         clearCurrentSession();
         return null;
     }
@@ -746,26 +719,21 @@ function loadCurrentSession() {
         const apiUserStr = localStorage.getItem('taskearn_user');
         if (apiToken && apiUserStr) {
             const apiUser = JSON.parse(apiUserStr);
-            console.log('✅ Found API session for:', apiUser.name || apiUser.email);
             return apiUser;
         }
         
         // Check local session
         const session = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-        console.log('🔍 Checking for saved session...');
         if (session) {
             const user = JSON.parse(session);
             // Refresh user data from storage to get latest data
             const users = getStoredUsers();
             if (users[user.id]) {
-                console.log('✅ Found saved session for:', users[user.id].name);
                 return users[user.id];
             } else {
-                console.log('⚠️ Session user not found in storage, clearing session');
+                console.warn('⚠️ Session user not found in storage, clearing');
                 clearCurrentSession();
             }
-        } else {
-            console.log('ℹ️ No saved session found');
         }
         return null;
     } catch (e) {
@@ -805,94 +773,6 @@ function clearCurrentSession() {
         console.error('Error clearing session:', e);
     }
 }
-
-// Validate login with secure password verification
-async function validateLogin(email, password) {
-    // Use async version to check both localStorage and IndexedDB
-    const user = await getUserByEmailAsync(email);
-    if (!user) {
-        console.log('❌ Login failed: No user found with email:', email);
-        return null;
-    }
-    
-    console.log('🔐 Found user, verifying password for:', user.name);
-    
-    // Support legacy plain-text passwords (migration)
-    if (user.password && !user.passwordHash) {
-        console.log('🔄 Legacy password detected, checking...');
-        if (user.password === password) {
-            // Migrate to hashed password
-            await migrateUserPassword(user.id, password);
-            return await getUserByEmailAsync(email); // Return updated user
-        }
-        console.log('❌ Legacy password mismatch');
-        return null;
-    }
-    
-    // Verify hashed password
-    if (user.passwordHash && user.passwordSalt) {
-        console.log('🔐 Verifying hashed password...');
-        const isValid = await verifyPassword(password, user.passwordSalt, user.passwordHash);
-        if (isValid) {
-            console.log('✅ Password verified successfully');
-            // Refresh session token on login
-            const users = await getStoredUsersAsync();
-            users[user.id].sessionToken = generateSessionToken();
-            users[user.id].lastLogin = new Date().toISOString();
-            await saveUsersAsync(users);
-            return users[user.id];
-        } else {
-            console.log('❌ Password hash mismatch');
-        }
-    } else {
-        console.log('❌ No password hash found for user');
-    }
-    
-    return null;
-}
-
-// Migrate legacy plain-text password to hashed
-async function migrateUserPassword(userId, plainPassword) {
-    const users = await getStoredUsersAsync();
-    if (users[userId]) {
-        const { salt, hash } = await createPasswordHash(plainPassword);
-        users[userId].passwordHash = hash;
-        users[userId].passwordSalt = salt;
-        users[userId].sessionToken = generateSessionToken();
-        delete users[userId].password; // Remove plain-text password
-        await saveUsersAsync(users);
-        console.log('✅ User password migrated to secure hash');
-    }
-}
-
-// Debug function to reset a user's password (for troubleshooting)
-async function resetUserPassword(email, newPassword) {
-    const users = await getStoredUsersAsync();
-    const user = Object.values(users).find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (user) {
-        const { salt, hash } = await createPasswordHash(newPassword);
-        users[user.id].passwordHash = hash;
-        users[user.id].passwordSalt = salt;
-        await saveUsersAsync(users);
-        console.log('✅ Password reset for:', email);
-        return true;
-    }
-    console.log('❌ User not found:', email);
-    return false;
-}
-
-// Debug: List all users
-async function debugListUsers() {
-    const users = await getStoredUsersAsync();
-    console.log('=== All Registered Users ===');
-    Object.values(users).forEach(u => {
-        console.log(`- ${u.name} (${u.email}) - ID: ${u.id}`);
-        console.log(`  Has passwordHash: ${!!u.passwordHash}, Has salt: ${!!u.passwordSalt}`);
-    });
-    return users;
-}
-
-// Debug functions removed from window scope for production security
 
 // Serialize task for storage (convert dates to ISO strings, remove circular refs)
 function serializeTask(task) {
@@ -947,26 +827,42 @@ function deserializeTasks(tasks) {
     return tasks.map(t => deserializeTask(t));
 }
 
-// Task Data - Initially empty, loaded from server
-// Demo tasks are only shown if server is unavailable
+// Task data — loaded from server on init
 let tasks = [];
-
-// Demo tasks for offline/fallback mode
-// PRODUCTION MODE - NO DEMO DATA
-// All data comes from the production API backend
-
 let myPostedTasks = [];
 let myAcceptedTasks = [];
 let myCompletedTasks = [];
+let userActiveTask = null; // Helper's current active (accepted) task — enforces one task at a time
 let myPaidPostedTasks = []; // Poster's paid/completed task history (for rating helper)
 
-// ========================================
-// LIVE CATEGORY COUNTS
-// ========================================
+async function fetchUserActiveTask() {
+    if (!currentUser) { userActiveTask = null; refreshActiveTaskBanner(); return; }
+    try {
+        const result = await apiRequest('/user/active-task', { method: 'GET' });
+        if (result && result.success !== undefined) {
+            userActiveTask = (result.hasActiveTask && result.task) ? result.task : null;
+        }
+    } catch (e) {
+        console.warn('⚠️ Could not fetch active task:', e.message);
+    }
+    refreshActiveTaskBanner();
+}
 
-// ========================================
-// AI-MATCHED RECOMMENDED TASKS
-// ========================================
+function refreshActiveTaskBanner() {
+    var banner = document.getElementById('activeTaskBanner');
+    if (!banner) return;
+    if (userActiveTask) {
+        banner.innerHTML =
+            '<div class="active-task-alert">' +
+            '<i class="fas fa-clock"></i>' +
+            '<span><strong>Active task:</strong> ' + escapeHtml(userActiveTask.title || '') + '</span>' +
+            '<a href="task-in-progress.html?taskId=' + userActiveTask.id + '" class="active-task-alert-link">' +
+            '<i class="fas fa-arrow-right"></i> Continue</a></div>';
+        banner.style.display = 'block';
+    } else {
+        banner.style.display = 'none';
+    }
+}
 
 async function loadRecommendedTasks() {
     const container = document.getElementById('recommendedTasksList');
@@ -990,7 +886,7 @@ async function loadRecommendedTasks() {
         section.style.display = 'block';
         container.innerHTML = result.tasks.map(t => {
             const distText = t.distanceKm != null ? `${t.distanceKm.toFixed(1)} km` : '?';
-            const total = getTaskFinalValue(t).toFixed(0);
+            const total = Math.round((parseFloat(t.price)||0) + (parseFloat(t.service_charge)||0));
             const catLabel = formatCategory ? formatCategory(t.category) : t.category;
             return `
             <div class="task-card recommended-task-card" onclick="openTaskDetail(${t.id})">
@@ -1013,6 +909,11 @@ async function loadRecommendedTasks() {
 }
 
 async function loadCategoryCounts() {
+    // If tasks are already loaded locally, compute from them — no extra API call
+    if (tasks && tasks.length > 0) {
+        updateCategoryCardsFromTasks();
+        return;
+    }
     try {
         if (typeof TasksAPI !== 'undefined' && TasksAPI.getCategoryCounts) {
             const result = await TasksAPI.getCategoryCounts();
@@ -1021,7 +922,6 @@ async function loadCategoryCounts() {
                 return;
             }
         }
-        // Fallback: compute from already-loaded tasks array
         updateCategoryCardsFromTasks();
     } catch (e) {
         console.warn('Category counts fetch failed, using local tasks:', e.message);
@@ -1066,83 +966,94 @@ function loadNotifications() {
  * Fetch notifications from backend and sync with localStorage
  * This also parses any JSON action data from the notifications
  */
+/** Map a raw server notification row to the UI shape */
+function _mapServerNotification(n) {
+    let action = null;
+    try {
+        if (n.data && typeof n.data === 'string') action = JSON.parse(n.data);
+        else if (n.data && typeof n.data === 'object') action = n.data;
+    } catch (e) {}
+
+    const typeMap = {
+        task_completed: 'warning', task_accepted: 'success', task_assigned: 'success',
+        task_completed_helper: 'success', task_posted: 'info', task_released: 'warning',
+        task_expired: 'warning', payment_received: 'success', payment_released: 'success',
+        payment_done: 'success', payment_completed: 'warning', wallet_topup: 'success',
+        withdrawal_requested: 'info', account_suspended: 'error',
+        account_restored: 'success', account_banned: 'error'
+    };
+    // For payment_received / payment_released notifications, inject a "View Breakdown" action
+    // so the helper can tap to see the full earnings popup from the notification bell.
+    if ((n.notification_type === 'payment_received' || n.notification_type === 'payment_released') && action) {
+        action.type = action.type || n.notification_type;
+    }
+    return {
+        id: n.id,
+        type: typeMap[n.notification_type] || 'info',
+        title: n.title || 'Notification',
+        message: n.message || '',
+        taskId: n.task_id,
+        read: n.status === 'read',
+        createdAt: n.created_at,
+        action
+    };
+}
+
 async function syncNotificationsFromServer() {
-    if (!currentUser) return [];
-    
+    // In-flight guard: prevents concurrent stacked calls (e.g. from 3x
+    // renderDashboard() during init or from the 30 s interval overlapping
+    // with an auto-refresh-triggered renderDashboard).
+    if (window._syncNotifInFlight) return [];
+    // Rate-limit: skip if called within the last 20 seconds.
+    const _now = Date.now();
+    if (window._lastNotifSync && (_now - window._lastNotifSync) < 20000) return [];
+    window._syncNotifInFlight = true;
+    window._lastNotifSync = _now;
+    // Capture user locally. The user may log out (currentUser -> null) while
+    // the apiRequest below is in-flight; without this, currentUser.id throws
+    // after the await resolves.
+    const user = currentUser;
+    if (!user) { window._syncNotifInFlight = false; return []; }
+
     try {
         const r = await apiRequest('/notifications', { method: 'GET' });
-        if (!r.success) return loadNotifications(); // Fallback to local
-        const result = r.data || {};
-        
-        if (result.success && result.notifications) {
-            // Convert server format to UI format
-            const serverNotifications = result.notifications.map(n => {
-                // Parse action data from JSON strings
-                let action = null;
-                try {
-                    if (n.data && typeof n.data === 'string') {
-                        action = JSON.parse(n.data);
-                    } else if (n.data && typeof n.data === 'object') {
-                        action = n.data;
-                    }
-                } catch (e) {
-                    console.warn('Could not parse notification action data:', e);
-                }
-                
-                // Map notification_type to UI type
-                let uiType = 'info';
-                if (n.notification_type === 'task_completed') uiType = 'warning';
-                else if (n.notification_type === 'task_accepted') uiType = 'success';
-                else if (n.notification_type === 'task_assigned') uiType = 'success';
-                else if (n.notification_type === 'task_completed_helper') uiType = 'success';
-                else if (n.notification_type === 'task_posted') uiType = 'info';
-                else if (n.notification_type === 'task_released') uiType = 'warning';
-                else if (n.notification_type === 'task_expired') uiType = 'warning';
-                else if (n.notification_type === 'payment_received' || n.notification_type === 'payment_done') uiType = 'success';
-                else if (n.notification_type === 'payment_completed') uiType = 'warning';
-                else if (n.notification_type === 'wallet_topup') uiType = 'success';
-                else if (n.notification_type === 'withdrawal_requested') uiType = 'info';
-                else if (n.notification_type === 'account_suspended') uiType = 'error';
-                else if (n.notification_type === 'account_restored') uiType = 'success';
-                else if (n.notification_type === 'account_banned') uiType = 'error';
-                
-                return {
-                    id: n.id,
-                    type: uiType,
-                    title: n.title || 'Notification',
-                    message: n.message || '',
-                    taskId: n.task_id,
-                    read: n.status === 'read',
-                    createdAt: n.created_at,
-                    action: action
-                };
-            });
-            
-            // Merge with local notifications (keep local ones that don't exist on server)
+        if (!currentUser) return []; // logged out mid-flight
+        const result = (r.data) || {};
+
+        if (r.success && result.success && Array.isArray(result.notifications)) {
+            const serverNotifications = result.notifications.map(_mapServerNotification);
+
+            // Keep any local-only notifications (client-side ones with timestamp IDs)
             const localNotifications = loadNotifications();
             const serverIds = new Set(serverNotifications.map(n => n.id));
-            const localOnlyNotifications = localNotifications.filter(n => !serverIds.has(n.id));
-            
-            // Combine: server notifications first, then local-only ones
-            const merged = [...serverNotifications, ...localOnlyNotifications];
-            
-            // Save to localStorage
-            localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
+            const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
+            const merged = [...serverNotifications, ...localOnly].slice(0, 50); // cap to prevent OOM
+
+            localStorage.setItem(`notifications_${user.id}`, JSON.stringify(merged));
             notifications = merged;
             updateNotificationUI();
-            
             return merged;
         }
     } catch (error) {
         console.warn('Could not sync notifications from server:', error.message);
+    } finally {
+        window._syncNotifInFlight = false;
     }
-    
-    return loadNotifications(); // Fallback to local
+
+    // Fallback: always ensure in-memory array matches localStorage
+    const local = loadNotifications();
+    if (local.length > 0) {
+        notifications = local;
+        updateNotificationUI();
+    }
+    return local;
 }
 
 function saveNotifications() {
     if (!currentUser) return;
-    localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(notifications));
+    // Keep only the 50 most recent notifications to prevent localStorage bloat.
+    const capped = notifications.slice(0, 50);
+    localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(capped));
 }
 
 function addNotification(notification) {
@@ -1187,7 +1098,7 @@ function updateNotificationUI() {
         } else {
             list.innerHTML = notifications.slice(0, 20).map(n => {
                 // Check if notification has action buttons
-                const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task');
+                const hasActions = n.action && (n.action.type === 'payment' || n.action.type === 'task' || n.action.type === 'verify_and_pay' || n.action.type === 'mark_complete');
                 const actionButton = hasActions ? `
                     <button class="notification-action-btn" onclick="event.stopPropagation(); handleNotificationAction(${n.id}, '${n.action.type}', ${n.taskId || 'null'})">
                         ${n.action.label || (n.action.type === 'payment' ? 'Pay Now' : 'View')}
@@ -1254,6 +1165,7 @@ function getRequiredVehicle(text) {
     if (/bike/i.test(label)) key = 'bike';
     else if (/auto/i.test(label)) key = 'auto';
     else if (/mini/i.test(label)) key = 'mini';
+    else if (/suv/i.test(label)) key = 'suv';
     else if (/sedan/i.test(label)) key = 'sedan';
     return { key, label };
 }
@@ -1333,14 +1245,14 @@ function confirmDeleteAccount() {
     .then(r => {
         const data = r.data || {};
         if (data.success) {
-            alert('Account deleted. We\'re sorry to see you go.');
+            try { showToast('Account deleted. We\'re sorry to see you go.', 'success', 3000); } catch(e) {}
             localStorage.clear();
-            window.location.reload();
+            setTimeout(() => window.location.reload(), 1500);
         } else {
-            alert(data.message || 'Failed to delete account');
+            try { showToast(data.message || 'Failed to delete account', 'error'); } catch(e) {}
         }
     })
-    .catch(() => alert('Could not reach the server. Please check your connection and try again.'));
+    .catch(() => { try { showToast('Could not reach the server. Please check your connection and try again.', 'error'); } catch(e) {} });
 }
 
 // ========================================
@@ -1384,8 +1296,8 @@ function openDisputeModal(taskId) {
 function submitDispute(taskId) {
     const reason = document.getElementById('disputeReason').value;
     const details = document.getElementById('disputeDetails').value;
-    if (!reason) { alert('Please select a reason'); return; }
-    
+    if (!reason) { try { showToast('Please select a reason', 'error'); } catch(e) {} return; }
+
     apiRequest('/tasks/' + taskId + '/dispute', {
         method: 'POST',
         body: JSON.stringify({ reason, details })
@@ -1393,9 +1305,9 @@ function submitDispute(taskId) {
     .then(r => {
         const data = r.data || {};
         closeModal('disputeModal');
-        alert(data.message || (data.success ? 'Dispute filed!' : 'Failed'));
+        try { showToast(data.message || (data.success ? 'Dispute filed!' : 'Failed'), data.success ? 'success' : 'error'); } catch(e) {}
     })
-    .catch(() => alert('Could not reach the server. Please check your connection and try again.'));
+    .catch(() => { try { showToast('Could not reach the server. Please check your connection and try again.', 'error'); } catch(e) {} });
 }
 
 // ========================================
@@ -1439,14 +1351,14 @@ function exportTransactionsCSV() {
         a.click();
         URL.revokeObjectURL(url);
     })
-    .catch(() => alert('Failed to export. Try again.'));
+    .catch(() => { try { showToast('Failed to export. Try again.', 'error'); } catch(e) {} });
 }
 
 function toggleNotifications() {
     const dropdown = document.getElementById('notificationDropdown');
     if (!dropdown) return;
 
-    // Move dropdown to body once so it escapes any stacking context
+    // Move dropdown to body once so it escapes any stacking context / overflow:hidden parents
     if (!dropdown.dataset.movedToBody) {
         document.body.appendChild(dropdown);
         dropdown.dataset.movedToBody = 'true';
@@ -1454,8 +1366,8 @@ function toggleNotifications() {
 
     const isOpen = dropdown.classList.toggle('active');
 
-    // Position dropdown near the bell icon on desktop
     if (isOpen) {
+        // Position near bell on desktop
         const bell = document.querySelector('.notification-bell');
         if (bell && window.innerWidth > 768) {
             const rect = bell.getBoundingClientRect();
@@ -1464,9 +1376,15 @@ function toggleNotifications() {
             dropdown.style.left = 'auto';
             dropdown.style.transform = 'none';
         }
+
+        // Immediately render whatever we have in memory (fast, may be stale)
+        updateNotificationUI();
+
+        // Then fetch fresh from server and re-render
+        _fetchAndRenderNotifications();
     }
 
-    // Manage overlay
+    // Manage backdrop overlay
     let overlay = document.getElementById('notificationOverlay');
     if (isOpen) {
         if (!overlay) {
@@ -1476,18 +1394,57 @@ function toggleNotifications() {
             document.body.appendChild(overlay);
         }
         overlay.classList.add('active');
-        overlay.onmousedown = function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleNotifications();
+        overlay.ontouchend = function(e) {
+            if (e.target === overlay) { e.preventDefault(); e.stopPropagation(); toggleNotifications(); }
         };
-        overlay.ontouchstart = function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleNotifications();
+        overlay.onmousedown = function(e) {
+            e.preventDefault(); e.stopPropagation(); toggleNotifications();
         };
     } else if (overlay) {
         overlay.classList.remove('active');
+    }
+}
+
+/** Fetch notifications from server, update in-memory array, and re-render dropdown list */
+async function _fetchAndRenderNotifications() {
+    if (!currentUser) return;
+    const list = document.getElementById('notificationList');
+
+    // Show loading skeleton inside the list while fetching
+    if (list && (!notifications || notifications.length === 0)) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:#94a3b8;"><i class="fas fa-spinner fa-spin" style="font-size:1.4rem;"></i></div>';
+    }
+
+    try {
+        const r = await apiRequest('/notifications', { method: 'GET' });
+        const result = (r && r.data) || {};
+
+        if (r && r.success && result.success && Array.isArray(result.notifications)) {
+            const serverNotifications = result.notifications.map(_mapServerNotification);
+            const localNotifications = loadNotifications();
+            const serverIds = new Set(serverNotifications.map(n => n.id));
+            const localOnly = localNotifications.filter(n => !serverIds.has(n.id));
+            const merged = [...serverNotifications, ...localOnly].slice(0, 50); // cap to prevent OOM
+
+            localStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(merged));
+            notifications = merged;
+        } else if (!notifications || notifications.length === 0) {
+            // Server failed — fall back to localStorage
+            const local = loadNotifications();
+            if (local.length > 0) notifications = local;
+        }
+    } catch (e) {
+        // Network error — use localStorage if in-memory is empty
+        if (!notifications || notifications.length === 0) {
+            const local = loadNotifications();
+            if (local.length > 0) notifications = local;
+        }
+    }
+
+    // Re-render (dropdown may still be open)
+    const dropdown = document.getElementById('notificationDropdown');
+    if (dropdown && dropdown.classList.contains('active')) {
+        updateNotificationUI();
     }
 }
 
@@ -1576,6 +1533,39 @@ async function handleNotificationAction(notificationId, actionType, taskId) {
         console.log(`💳 Processing payment for task ${taskId} from notification`);
         closeNotifDropdown();
         await processPaymentFromNotification(taskId, notification);
+    } else if (actionType === 'verify_and_pay' && taskId) {
+        console.log(`✅ Verify & Pay for task ${taskId} from notification`);
+        closeNotifDropdown();
+        await showPaymentInvoice(taskId);
+    } else if (actionType === 'mark_complete' && taskId) {
+        console.log(`🎉 Mark completed for task ${taskId} from notification`);
+        closeNotifDropdown();
+        await markTaskCompleted(taskId);
+    } else if ((actionType === 'payment_received' || actionType === 'payment_released') && notification.action) {
+        // Helper tapped a "Payment Received" notification — show earnings breakdown popup
+        console.log(`💰 Showing payment received popup from notification`);
+        closeNotifDropdown();
+        const d = notification.action;
+        const taskPriceRaw = parseFloat(d.taskAmount || d.price || 0);
+        const scRaw = parseFloat(d.serviceCharge || d.service_charge || 0);
+        const totalRaw = taskPriceRaw + scRaw || parseFloat(d.totalTaskValue || d.amount || 0);
+        const earnRaw = parseFloat(d.helperEarnings || d.amount || 0);
+        const commRaw = parseFloat(d.commission || d.helperCommission || 0) || (totalRaw - earnRaw);
+        const commRate = totalRaw > 0 ? Math.round((commRaw / totalRaw) * 100) : 0;
+        let bal = parseFloat(currentUser?.wallet || 0);
+        try { const wd = await WalletAPI.get(); if (wd) bal = parseFloat(wd.balance || wd.wallet?.balance || bal); } catch(e) {}
+        showHelperPaymentPopup({
+            title: d.taskTitle || notification.message || 'Task',
+            taskId: taskId,
+            taskAmount: taskPriceRaw || (totalRaw - scRaw),
+            serviceCharge: scRaw,
+            totalTaskValue: totalRaw,
+            commission: commRaw,
+            helperEarnings: earnRaw,
+            commissionPct: commRate,
+            newBalance: bal,
+            posterName: d.posterName || 'the poster'
+        });
     } else if (actionType === 'task' && taskId) {
         console.log(`📋 Opening task ${taskId}`);
         closeNotifDropdown();
@@ -1646,18 +1636,9 @@ function notifyTaskPoster(task, acceptedBy) {
             read: false,
             createdAt: new Date().toISOString()
         });
-        localStorage.setItem(`notifications_${posterUser.id}`, JSON.stringify(posterNotifications));
+        localStorage.setItem(`notifications_${posterUser.id}`, JSON.stringify(posterNotifications.slice(0, 50))); // cap to prevent OOM
     }
 }
-
-// Close notification dropdown when clicking outside
-document.addEventListener('click', function(e) {
-    const wrapper = document.getElementById('notificationWrapper');
-    const dropdown = document.getElementById('notificationDropdown');
-    if (wrapper && dropdown && !wrapper.contains(e.target)) {
-        dropdown.classList.remove('active');
-    }
-});
 
 // ========================================
 // INITIALIZATION
@@ -1666,10 +1647,19 @@ document.addEventListener('click', function(e) {
 // Standalone sync of the current user's posted/accepted/completed tasks from the server.
 // Called independently of TasksAPI.getAll() so tasks always appear even if the
 // global task list endpoint fails.
-async function syncUserTasksFromServer() {
-    if (!currentUser) return;
+async function syncUserTasksFromServer(silent = false) {
+    // In-flight guard: prevents concurrent stacked calls from the init
+    // parallel loads + the 20 s user-sync interval firing at the same time.
+    if (window._syncUserTasksInFlight) return;
+    window._syncUserTasksInFlight = true;
+    // Capture user locally — same race as syncNotificationsFromServer: a
+    // logout during the in-flight UserAPI.getTasks() call would set
+    // currentUser to null and later currentUser.id accesses would throw.
+    const user = currentUser;
+    if (!user) { window._syncUserTasksInFlight = false; return; }
     try {
         const userTasksResult = await UserAPI.getTasks();
+        if (!currentUser) return; // logged out mid-flight
         if (!userTasksResult || !userTasksResult.success) {
             console.warn('syncUserTasksFromServer: API returned failure', userTasksResult);
             return;
@@ -1702,17 +1692,36 @@ async function syncUserTasksFromServer() {
                 };
             });
 
+            // Move any already-local tasks now marked paid/completed into history
+            // (handles login case where postedTasks from API includes all statuses)
+            // NOTE: status='completed' means helper finished OLD flow — poster still needs
+            // to pay. Only 'paid' and 'payment_released' are truly done from poster's side.
+            myPostedTasks.forEach(pt => {
+                if (pt.status === 'paid' || pt.status === 'payment_released') {
+                    if (!myPaidPostedTasks.find(p => p.id === pt.id)) {
+                        myPaidPostedTasks.push({
+                            id: pt.id, title: pt.title, category: pt.category,
+                            price: pt.price, service_charge: pt.service_charge || 0,
+                            status: pt.status, accepted_by: pt.accepted_by || pt.acceptedBy,
+                            helper_name: pt.helper_name || 'Helper', postedAt: pt.postedAt
+                        });
+                    }
+                }
+            });
+
             // Add DB tasks not yet in local list
             dbPosted.forEach(dbTask => {
                 if (dbTask.status === 'active' && new Date(dbTask.expires_at) <= new Date()) return;
-                if (dbTask.status === 'paid') {
-                    // Add to paid history
+                if (dbTask.status === 'paid' || dbTask.status === 'payment_released') {
+                    // Add to paid/released history (task done — move out of active section)
+                    // NOTE: status='completed' is NOT included here — it means helper finished
+                    // but poster hasn't paid yet. Keep it in myPostedTasks so poster can pay.
                     if (!myPaidPostedTasks.find(pt => pt.id === dbTask.id)) {
                         myPaidPostedTasks.push({
                             id: dbTask.id, title: dbTask.title, category: dbTask.category,
                             price: parseFloat(dbTask.price),
                             service_charge: parseFloat(dbTask.service_charge || 0),
-                            status: 'paid', accepted_by: dbTask.accepted_by,
+                            status: dbTask.status, accepted_by: dbTask.accepted_by,
                             helper_name: dbTask.helper_name || 'Helper', postedAt: dbTask.posted_at
                         });
                     }
@@ -1731,27 +1740,31 @@ async function syncUserTasksFromServer() {
                         helper_name: dbTask.helper_name, helper_phone: dbTask.helper_phone,
                         helper_rating: dbTask.helper_rating,
                         helper_tasks_completed: dbTask.helper_tasks_completed,
-                        postedBy: { id: currentUser.id, name: currentUser.name },
-                        location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address }
+                        postedBy: { id: user.id, name: user.name },
+                        location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address },
+                        drop_location: dbTask.drop_location_lat ? { lat: dbTask.drop_location_lat, lng: dbTask.drop_location_lng, address: dbTask.drop_location_address || '' } : null
                     });
                 }
             });
 
-            // Remove paid and expired-active tasks
+            // Remove only truly-done tasks: 'paid' and 'payment_released' mean poster has paid.
+            // status='completed' means OLD flow — helper finished but poster hasn't paid yet;
+            // keep it visible in posted tasks so poster can verify and pay.
             myPostedTasks = myPostedTasks.filter(t => {
-                if (t.status === 'paid') return false;
+                if (t.status === 'paid' || t.status === 'payment_released') return false;
                 if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
                 return true;
             });
         }
 
         // ── Sync accepted tasks ────────────────────────────────────────────
-        if (userTasksResult.acceptedTasks) {
+        if (Array.isArray(userTasksResult.acceptedTasks)) {
             const dbAccepted = userTasksResult.acceptedTasks;
             const dbAcceptedMap = {};
             dbAccepted.forEach(t => { dbAcceptedMap[t.id] = t; });
 
-            // Remove local tasks no longer in DB accepted list
+            // Only remove local tasks when DB returned a non-empty list (authoritative).
+            // An empty list from the DB is trusted — user has no accepted tasks.
             myAcceptedTasks = myAcceptedTasks.filter(at => !!dbAcceptedMap[at.id]);
 
             // Update remaining local tasks with DB data
@@ -1771,8 +1784,8 @@ async function syncUserTasksFromServer() {
 
             // Add DB tasks not in local list
             dbAccepted.forEach(dbTask => {
-                // Skip accepted tasks whose original expiry has passed
-                if (dbTask.status === 'accepted' && dbTask.expires_at && new Date(dbTask.expires_at) <= new Date()) return;
+                // Note: do NOT skip based on expiry — accepted tasks should always show
+                // regardless of the original posting expiry window
                 if (myAcceptedTasks.find(at => at.id == dbTask.id)) return;
                 const taskObj = {
                     id: dbTask.id, title: dbTask.title, description: dbTask.description,
@@ -1787,11 +1800,12 @@ async function syncUserTasksFromServer() {
                     poster_phone: dbTask.poster_phone || '',
                     poster_email: dbTask.poster_email || '',
                     poster_user_id: dbTask.poster_user_id || dbTask.posted_by || '',
-                    location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address || '' }
+                    location: { lat: dbTask.location_lat, lng: dbTask.location_lng, address: dbTask.location_address || '' },
+                    drop_location: dbTask.drop_location_lat ? { lat: dbTask.drop_location_lat, lng: dbTask.drop_location_lng, address: dbTask.drop_location_address || '' } : null
                 };
                 if (dbTask.status === 'paid' || dbTask.status === 'completed') {
                     if (!myCompletedTasks.find(ct => ct.id == dbTask.id)) {
-                        taskObj.earnedAmount = getTaskFinalValue(taskObj) * 0.88;
+                        taskObj.earnedAmount = getHelperEarnings(taskObj);
                         taskObj.paidAt = dbTask.paid_at || dbTask.helper_final_completed_at || dbTask.completed_at || new Date().toISOString();
                         myCompletedTasks.push(taskObj);
                     }
@@ -1803,19 +1817,19 @@ async function syncUserTasksFromServer() {
             // Move newly-paid/completed items from myAcceptedTasks to myCompletedTasks
             myAcceptedTasks.filter(t => t.status === 'paid' || t.status === 'completed').forEach(pt => {
                 if (!myCompletedTasks.find(ct => ct.id == pt.id)) {
-                    pt.earnedAmount = getTaskFinalValue(pt) * 0.88;
+                    pt.earnedAmount = getHelperEarnings(pt);
                     pt.paidAt = pt.paidAt || pt.paid_at || pt.helper_final_completed_at || new Date().toISOString();
                     myCompletedTasks.push(pt);
-                    currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
-                    currentUser.totalEarnings = Math.round(
-                        (parseFloat(currentUser.totalEarnings || 0) + pt.earnedAmount) * 100) / 100;
+                    user.tasksCompleted = (user.tasksCompleted || 0) + 1;
+                    user.totalEarnings = Math.round(
+                        (parseFloat(user.totalEarnings || 0) + pt.earnedAmount) * 100) / 100;
                 }
             });
 
-            // Remove paid/completed/expired from myAcceptedTasks
+            // Remove only paid/completed from myAcceptedTasks
+            // Do NOT filter by expiry — accepted tasks stay visible until paid/completed
             myAcceptedTasks = myAcceptedTasks.filter(t => {
                 if (t.status === 'paid' || t.status === 'completed') return false;
-                if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
                 return true;
             });
 
@@ -1831,40 +1845,63 @@ async function syncUserTasksFromServer() {
         }
 
         // Persist to localStorage
-        updateUserData(currentUser.id, {
+        updateUserData(user.id, {
             postedTasks: serializeTasks(myPostedTasks),
             acceptedTasks: serializeTasks(myAcceptedTasks),
             completedTasks: serializeTasks(myCompletedTasks),
-            tasksCompleted: currentUser.tasksCompleted,
-            totalEarnings: currentUser.totalEarnings
+            tasksCompleted: user.tasksCompleted,
+            totalEarnings: user.totalEarnings
         });
 
-        // Notify poster of tasks awaiting payment
-        const awaitingPayment = myPostedTasks.filter(t => t.status === 'completed');
-        if (awaitingPayment.length > 0) {
+        // Notify poster of tasks awaiting payment — suppress in silent mode (fast-poll
+        // interval) and rate-limit to once every 5 minutes to avoid toast spam.
+        // Covers both old flow (completed) and new flow (verify_pending).
+        const awaitingPayment = myPostedTasks.filter(t => t.status === 'completed' || t.status === 'verify_pending');
+        const _nowSync = Date.now();
+        if (!silent && awaitingPayment.length > 0 &&
+            (!window._lastAwaitingPaymentToast || (_nowSync - window._lastAwaitingPaymentToast) > 300000)) {
+            window._lastAwaitingPaymentToast = _nowSync;
             showToast(`💰 ${awaitingPayment.length} task(s) completed and awaiting your payment!`, 5000);
         }
 
+        // Derive userActiveTask from synced data — avoids a separate /user/active-task API call
+        try {
+            const _activeFromSync = myAcceptedTasks.find(function(t) { return t.status === 'accepted'; });
+            userActiveTask = _activeFromSync
+                ? { id: _activeFromSync.id, title: _activeFromSync.title, price: _activeFromSync.price,
+                    category: _activeFromSync.category, acceptedAt: _activeFromSync.acceptedAt }
+                : null;
+            refreshActiveTaskBanner();
+        } catch (_e) {}
+
     } catch (e) {
         console.warn('syncUserTasksFromServer failed:', e.message);
+    } finally {
+        window._syncUserTasksInFlight = false;
     }
 }
 
 // Load tasks from backend API (PRODUCTION ONLY - NO LOCAL FALLBACKS)
 async function loadTasksFromServer() {
+    // Single-flight guard — prevents overlapping requests from stacking when
+    // the network is slow. Without this, the 60 s auto-refresh + acceptTask
+    // error reconcile + manual refresh button can all fire concurrently,
+    // each one re-rendering tasks + re-creating Leaflet markers. On low-RAM
+    // devices this stack of in-flight renders is a primary cause of the
+    // "Aw Snap" renderer OOM crash.
+    if (window._loadTasksInFlight) {
+        console.log('⏸️ loadTasksFromServer already in-flight, skipping');
+        return false;
+    }
+    window._loadTasksInFlight = true;
     try {
         console.log('📡 Loading tasks from backend server...');
         showTaskListSkeletons();
-        console.log('🔑 API Token exists:', !!localStorage.getItem('taskearn_token'));
-        console.log('🌐 API URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : window.TASKEARN_API_URL);
         
         if (typeof TasksAPI !== 'undefined' && TasksAPI.getAll) {
-            console.log('🚀 Calling TasksAPI.getAll...');
             const result = await TasksAPI.getAll();
-            console.log('📥 Raw server response:', JSON.stringify(result, null, 2));
             
             if (result.success && result.tasks) {
-                console.log('✅ Tasks received:', result.tasks.length);
                 
                 // Map server tasks with proper date parsing
                 const serverTasks = result.tasks.map(t => ({
@@ -1875,19 +1912,6 @@ async function loadTasksFromServer() {
                 
                 console.log('📊 Server tasks after parsing:', serverTasks.length);
                 tasks = serverTasks;
-                
-                // ✅ Sync myPostedTasks and myAcceptedTasks with REAL DB statuses.
-                // Delegates to the standalone syncUserTasksFromServer() function.
-                if (currentUser) {
-                    try {
-                        await syncUserTasksFromServer();
-                    } catch (e) {
-                        console.warn('Could not sync user tasks from DB:', e.message);
-                    }
-                }
-                
-                console.log('✅ Loaded', serverTasks.length, 'tasks from server');
-                console.log('📋 Total tasks now:', tasks.length);
                 renderTasks();
                 renderDashboard();
                 addTaskMarkers();
@@ -1903,13 +1927,20 @@ async function loadTasksFromServer() {
                             postedAt: new Date(t.postedAt),
                             expiresAt: new Date(t.expiresAt)
                         }));
+                        // Never use alert() here — it BLOCKS the renderer thread,
+                        // and Chrome's hung-tab watchdog can kill the tab with
+                        // "Aw Snap! Crashpad_NotConnectedToHandler" when the user
+                        // hits accept on a task during an offline state.
                         try {
                             if (typeof showNotification === 'function') {
-                                showNotification('⚠️ Backend offline. Showing cached tasks.', 'warning');
+                                showNotification('Offline mode — showing cached tasks.', 'offline');
+                            } else if (typeof showToast === 'function') {
+                                showToast('⚠️ Backend offline — showing cached tasks.');
+                            } else {
+                                console.warn('Backend offline — showing cached tasks.');
                             }
                         } catch (e) {
-                            console.warn('showNotification not available, using alert');
-                            alert('⚠️ Backend offline. Showing cached tasks.');
+                            console.warn('Notification failed:', e.message);
                         }
                         renderTasks();
                         addTaskMarkers();
@@ -1920,11 +1951,14 @@ async function loadTasksFromServer() {
                 }
                 try {
                     if (typeof showNotification === 'function') {
-                        showNotification('⚠️ Backend offline. No cached data available.', 'warning');
+                        showNotification('Cannot reach server. No cached data found.', 'offline');
+                    } else if (typeof showToast === 'function') {
+                        showToast('⚠️ Backend offline. No cached data available.');
+                    } else {
+                        console.warn('Backend offline. No cached data available.');
                     }
                 } catch (e) {
-                    console.warn('Using alert instead of showNotification');
-                    alert('⚠️ Backend offline. No cached data available.');
+                    console.warn('Notification failed:', e.message);
                 }
                 tasks = [];
                 renderTasks();
@@ -1970,7 +2004,7 @@ async function loadTasksFromServer() {
             console.error('❌ TasksAPI not available');
             try {
                 if (typeof showNotification === 'function') {
-                    showNotification('⚠️ Working in offline mode. Some features may be limited.', 'warning');
+                    showNotification('Working offline — some features limited.', 'offline');
                 }
             } catch (e) {
                 console.warn('showNotification not available');
@@ -1991,7 +2025,7 @@ async function loadTasksFromServer() {
                 }));
                 try {
                     if (typeof showNotification === 'function') {
-                        showNotification('⚠️ Backend unavailable. Showing cached tasks.', 'warning');
+                        showNotification('Backend unavailable — showing cached tasks.', 'offline');
                     }
                 } catch (e) {
                     console.warn('showNotification not available');
@@ -2004,19 +2038,9 @@ async function loadTasksFromServer() {
             }
         }
         
-        // Show helpful error message with troubleshooting steps
-        const errorMsg = `⚠️ Cannot connect to backend server.\n\n` +
-                        `This could be due to:\n` +
-                        `1. Railway deployment not started yet\n` +
-                        `2. Network connectivity issues\n` +
-                        `3. Backend service temporarily down\n\n` +
-                        `Using offline mode with local data.`;
         try {
             if (typeof showNotification === 'function') {
-                showNotification(errorMsg, 'error', 8000);
-            } else {
-                console.warn(errorMsg);
-                alert(errorMsg);
+                showNotification('Backend unavailable — showing offline mode.', 'offline', 7000);
             }
         } catch (e) {
             console.warn('Cannot show notification:', e);
@@ -2025,6 +2049,8 @@ async function loadTasksFromServer() {
         tasks = [];
         renderTasks();
         return false;
+    } finally {
+        window._loadTasksInFlight = false;
     }
 }
 
@@ -2058,6 +2084,9 @@ async function refreshWalletBalance() {
                 } else if (walletData.balance < 0) {
                     setDebtSuspension(Math.abs(walletData.balance));
                 }
+
+                // Mark walletLow on currentUser so dashboard banner shows
+                currentUser.walletLow = walletData.balance < 100;
                 
                 // Update UI if wallet display exists
                 const walletDisplay = document.querySelector('[data-wallet-balance]');
@@ -2080,12 +2109,56 @@ async function refreshWalletBalance() {
 
 document.addEventListener('DOMContentLoaded', async function() {
     try {
+        // Check trial status — show closed overlay if trial is full or expired
+        (async function checkTrialStatus() {
+            try {
+                var apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ||
+                    (typeof window.TASKEARN_API_URL !== 'undefined' && window.TASKEARN_API_URL) ||
+                    'https://taskearn-production-production.up.railway.app/api';
+                var resp = await fetch(apiBase + '/trial/status');
+                if (!resp.ok) return; // trial endpoint missing → trial not active
+                var data = await resp.json();
+                if (!data.trial) return; // trial mode disabled by admin
+
+                // Show centred popup card with slots remaining — dismissible
+                if (data.active && !document.getElementById('trial-slots-banner') && !sessionStorage.getItem('trial-banner-dismissed')) {
+                    var overlay = document.createElement('div');
+                    overlay.id = 'trial-slots-banner';
+                    overlay.style.cssText = 'position:fixed;inset:0;z-index:89999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);';
+                    overlay.innerHTML = '<div style="position:relative;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:18px;padding:28px 32px 24px;max-width:320px;width:90%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.35);">' +
+                        '<button onclick="sessionStorage.setItem(\'trial-banner-dismissed\',\'1\');document.getElementById(\'trial-slots-banner\').remove()" style="position:absolute;top:12px;right:14px;background:rgba(255,255,255,0.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;" aria-label="Dismiss">&times;</button>' +
+                        '<div style="font-size:38px;margin-bottom:10px;">🚀</div>' +
+                        '<div style="font-size:17px;font-weight:700;margin-bottom:6px;">Closed Beta Trial</div>' +
+                        '<div style="font-size:28px;font-weight:800;margin:8px 0;"><strong>' + data.slotsRemaining + '</strong> <span style="font-size:15px;font-weight:500;">of ' + data.maxUsers + ' spots left</span></div>' +
+                        '<div style="font-size:13px;opacity:0.85;margin-bottom:18px;">Closes on <strong>' + data.endDate + '</strong></div>' +
+                        '<button onclick="sessionStorage.setItem(\'trial-banner-dismissed\',\'1\');document.getElementById(\'trial-slots-banner\').remove()" style="background:#fff;color:#6366f1;border:none;padding:10px 28px;border-radius:999px;font-weight:700;font-size:14px;cursor:pointer;">Got it!</button>' +
+                    '</div>';
+                    overlay.addEventListener('click', function(e) {
+                        if (e.target === overlay) { sessionStorage.setItem('trial-banner-dismissed','1'); overlay.remove(); }
+                    });
+                    document.body.appendChild(overlay);
+                }
+
+                // Full or expired — block new signups with overlay
+                if (!data.active) {
+                    var msg = data.expired
+                        ? 'The 30-day beta trial has ended.'
+                        : 'All 100 beta spots have been taken.';
+                    // Disable all signup buttons & forms instead of a hard block overlay
+                    document.querySelectorAll('#signupModal, [onclick*="signupModal"], [data-modal="signupModal"]').forEach(function(el) {
+                        el.style.pointerEvents = 'none'; el.style.opacity = '0.5';
+                    });
+                    // Show closed banner at bottom
+                    var closedBar = document.createElement('div');
+                    closedBar.id = 'trial-closed-banner';
+                    closedBar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:89999;background:#dc2626;color:#fff;text-align:center;font-size:13px;font-weight:600;padding:8px 16px;box-shadow:0 -2px 10px rgba(0,0,0,0.18);';
+                    closedBar.innerHTML = '🔒 Trial Closed &mdash; ' + msg + ' Public launch coming soon!';
+                    document.body.appendChild(closedBar);
+                }
+            } catch (e) { /* silently ignore — trial status fetch is non-critical */ }
+        })();
+
         console.log('🚀 Workmate4u Starting...');
-        console.log('📦 localStorage available:', STORAGE_AVAILABLE);
-        console.log('🔑 API Token:', localStorage.getItem('taskearn_token') ? 'EXISTS (✅)' : 'MISSING (❌)');
-        console.log('🌐 Backend URL:', window.TASKEARN_API_URL);
-        console.log('🔌 TasksAPI available:', typeof TasksAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
-        console.log('🔌 AuthAPI available:', typeof AuthAPI !== 'undefined' ? 'YES (✅)' : 'NO (❌)');
         
         // Wait for IndexedDB to initialize
         try {
@@ -2100,19 +2173,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Check and clear expired suspension
         checkAndClearSuspension();
         
-        // Debug: Show all stored users (using async version for full support)
-        try {
-            const allUsers = await getStoredUsersAsync();
-            console.log('👥 Registered users:', Object.keys(allUsers).length);
-            
-            // List registered user emails for debugging
-            if (Object.keys(allUsers).length > 0) {
-                console.log('📧 Registered emails:', Object.values(allUsers).map(u => u.email));
-            }
-        } catch (e) {
-            console.warn('⚠️ Could not load users:', e.message);
-        }
-        
         // Check for existing session (using async version)
         try {
             const savedUser = await loadCurrentSessionAsync();
@@ -2121,16 +2181,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 myPostedTasks = deserializeTasks(savedUser.postedTasks);
                 myAcceptedTasks = deserializeTasks(savedUser.acceptedTasks);
                 myCompletedTasks = deserializeTasks(savedUser.completedTasks);
-                console.log('✅ Session restored for:', currentUser.name);
-                console.log('📋 Posted tasks:', myPostedTasks.length);
-                console.log('✔️ Accepted tasks:', myAcceptedTasks.length);
                 
                 // Check if user has API token (backend authentication)
                 const hasApiToken = !!localStorage.getItem('taskearn_token');
                 if (!hasApiToken) {
-                    console.warn('⚠️ Local-only user detected:', currentUser.email);
-                    console.warn('⚠️ This user needs to be migrated to backend on next login');
-                    // Show migration warning banner
+                    // Show migration warning banner for local-only users
                     setTimeout(() => {
                         try {
                             const banner = document.getElementById('migrationWarningBanner');
@@ -2140,7 +2195,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                         } catch (e) {
                             console.warn('⚠️ Could not show migration banner:', e.message);
                         }
-                        console.warn('📢 User needs to re-login to migrate to backend');
                     }, 2000);
                 }
                 
@@ -2165,10 +2219,19 @@ document.addEventListener('DOMContentLoaded', async function() {
                     console.warn('⚠️ Dashboard render failed:', e.message);
                 }
 
+                // If on profile.html, load profile immediately now that currentUser is set
+                try {
+                    var _profilePage = (window.location.pathname.split('/').pop() || '').toLowerCase();
+                    if (_profilePage === 'profile.html') { loadProfilePage(); }
+                } catch (e) {}
+
                 // Prompt Google users to complete profile if phone/DOB missing
                 if (currentUser.authProvider === 'google' && (!currentUser.phone || !currentUser.dob)) {
                     setTimeout(() => showCompleteProfileModal(), 1500);
                 }
+
+                // Subscribe to push notifications (non-blocking, after a short delay)
+                setTimeout(() => { try { initPushNotifications(); } catch (_) {} }, 3000);
             } else {
                 console.log('👤 No active session - user needs to login');
             }
@@ -2191,36 +2254,36 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('⚠️ Event listener setup failed:', e.message);
         }
         
-        // Sync user tasks independently so they load even if getAll fails
-        if (currentUser) {
-            try {
-                await syncUserTasksFromServer();
-                renderDashboard();
-            } catch (e) {
-                console.warn('⚠️ Initial user task sync failed:', e.message);
-            }
-        }
-
-        // Load tasks and category counts in PARALLEL (not serial)
+        // Load all server data in parallel (tasks + user tasks + suspension in one batch)
         try {
-            await Promise.all([
-                loadTasksFromServer().catch(e => console.warn('⚠️ Could not load tasks from server:', e.message)),
-                loadCategoryCounts().catch(e => console.warn('⚠️ Category counts failed:', e.message))
-            ]);
+            const parallelLoads = [
+                loadTasksFromServer().catch(e => console.warn('⚠️ Could not load tasks from server:', e.message))
+            ];
+            if (currentUser) {
+                parallelLoads.push(
+                    syncUserTasksFromServer().catch(e => console.warn('⚠️ User task sync failed:', e.message))
+                );
+            }
+            await Promise.all(parallelLoads);
         } catch (e) {
             console.warn('⚠️ Parallel load failed:', e.message);
         }
+        // Category counts derived from now-loaded tasks array — no extra API call
+        try { updateCategoryCardsFromTasks(); } catch (e) {}
+        // userActiveTask already derived inside syncUserTasksFromServer
+        // Single renderDashboard here — replaces the duplicate call below.
+        if (currentUser) { renderDashboard(); }
 
         // Load AI recommended tasks (after main tasks so userLocation is set)
         loadRecommendedTasks().catch(e => console.log('Recommendations unavailable:', e.message));
 
-        // Re-render all views with fresh server data
+        // Start timers (task expiry + user-sync interval + notification poll)
+        // renderTasks() is NOT called here — loadTasksFromServer() already rendered
+        // the task list above with fresh server data. A second call is redundant work.
         try {
-            renderTasks();
-            renderDashboard();
             startTaskTimers();
         } catch (e) {
-            console.warn('⚠️ Task rendering failed:', e.message);
+            console.warn('⚠️ Task timer start failed:', e.message);
         }
 
         // Auto-open payment invoice if ?pay=TASK_ID is in URL (from email Pay Now button)
@@ -2236,7 +2299,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         // Refresh tasks from server every 60 seconds (was 30s — reduced for performance)
-        setInterval(() => {
+        _autoRefreshIntervalId = setInterval(() => {
             if (document.hidden) return; // Skip refresh when tab is not visible
             try {
                 Promise.all([
@@ -2249,16 +2312,25 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }, 60000);
         
-        // Event delegation for Accept Task buttons (more reliable than inline onclick)
+        // Event delegation for Accept Task buttons — fallback for any dynamically
+        // created buttons that don't have an inline onclick. Buttons that use the
+        // inline onclick (added in renderTasks) call event.stopPropagation() so
+        // they never reach this handler; this only fires for edge-case buttons.
         document.addEventListener('click', function(e) {
             var btn = e.target.closest('.task-card-accept-btn');
+            console.log('Click event:', e.target, 'Closest accept button:', btn);
             if (btn) {
+                // Skip locked buttons (Task In Progress / Accepted state)
+                if (btn.classList.contains('task-card-accept-locked')) return;
+                // Skip if button already has its own inline onclick (rendered by renderTasks)
+                if (btn.hasAttribute('onclick')) return;
                 e.stopPropagation();
                 e.preventDefault();
                 var card = btn.closest('.task-card');
+                console.log('Accept button clicked for task card:', card);
                 var taskId = card ? card.getAttribute('data-task-id') : null;
+                console.log('Task ID:', taskId);
                 if (taskId) {
-                    console.log('🖱️ Accept button clicked via delegation, taskId:', taskId);
                     acceptTask(parseInt(taskId, 10));
                 }
                 return;
@@ -2266,7 +2338,31 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
 
         console.log('✅ Workmate4u Ready!');
-        
+
+        // Release all resources when navigating away to free memory
+        window.addEventListener('beforeunload', function() {
+            // Clear all timers
+            try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (_) {}
+            try { if (_notifIntervalId) { clearInterval(_notifIntervalId); _notifIntervalId = null; } } catch (_) {}
+            try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (_) {}
+            try { stopSuspensionTimer(); } catch (_) {}
+            try { if (window._notifAudioCtx) { window._notifAudioCtx.close(); window._notifAudioCtx = null; } } catch (_) {}
+            try { if (window._heroQuotesIntervalId) { clearInterval(window._heroQuotesIntervalId); window._heroQuotesIntervalId = null; } } catch (_) {}
+            try { if (window._urgencyPulseIntervalId) { clearInterval(window._urgencyPulseIntervalId); window._urgencyPulseIntervalId = null; } } catch (_) {}
+            // Clear Leaflet map markers
+            try {
+                taskMarkers.forEach(function(m) { try { if (map && map.hasLayer(m)) map.removeLayer(m); } catch (_) {} });
+                taskMarkers = [];
+            } catch (_) {}
+            // Destroy Leaflet maps
+            try { if (_taskDetailMiniMap) { _taskDetailMiniMap.remove(); _taskDetailMiniMap = null; } } catch (_) {}
+            try { if (map) { map.remove(); map = null; } } catch (_) {}
+            // Clear GPS watcher
+            try { if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; } } catch (_) {}
+            // Release large in-memory arrays
+            try { tasks = []; _currentTaskList = []; } catch (_) {}
+        });
+
         // Initialize Google Sign-In (if GIS loaded before app.js)
         setTimeout(() => initGoogleSignIn(), 500);
     } catch (error) {
@@ -2551,8 +2647,17 @@ function addTaskMarkers() {
     });
     taskMarkers = [];
 
+    // Hard cap on marker count to prevent OOM when the backend returns
+    // an unusually large task list (e.g. when filters fail server-side).
+    // 200 markers is plenty for any visible viewport; beyond that, Leaflet
+    // DivIcon DOM nodes start eating hundreds of MB on low-RAM devices and
+    // trigger renderer OOM crashes ("Aw Snap! Crashpad_NotConnectedToHandler").
+    const MAX_MARKERS = 200;
+    let _markerCount = 0;
+
     // Add markers for active, non-expired tasks
     tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired').forEach(task => {
+        if (_markerCount >= MAX_MARKERS) return;
         if (!task.location || !task.location.lat || !task.location.lng) return;
         const icon = getTaskIcon(task.category);
         const marker = L.marker([task.location.lat, task.location.lng], { icon }).addTo(map);
@@ -2565,6 +2670,7 @@ function addTaskMarkers() {
         });
 
         taskMarkers.push(marker);
+        _markerCount++;
     });
 }
 
@@ -2650,6 +2756,7 @@ function getTaskIcon(category) {
 // ========================================
 
 function showRouteTo(task) {
+    if (!task.location || task.location.lat == null) return;
     clearRoute();
 
     // Draw a simple line from user to task
@@ -2675,7 +2782,7 @@ function showRouteTo(task) {
 function showDistancePanel(km, mins, task) {
     const panel = document.getElementById('distanceInfo');
     const serviceCharge = getTaskPostingFee(task);
-    const totalEarnings = getTaskFinalValue(task);
+    const helperEarns = getHelperEarnings(task);
     const chargeInfo = getServiceChargeInfo(task.category);
     
     if (panel) {
@@ -2684,8 +2791,8 @@ function showDistancePanel(km, mins, task) {
             <div class="distance-value">${km} km</div>
             <div class="eta">~${mins} min drive</div>
             <div class="price-info">
-                <div class="total-price">Earn: <strong>₹${totalEarnings.toFixed(0)}</strong></div>
-                <small style="color:#10b981;">${task.category === 'transport' ? '\u20b9' + parseFloat(task.price).toFixed(0) + ' (no posting fee)' : '\u20b9' + parseFloat(task.price).toFixed(0) + ' + \u20b9' + serviceCharge.toFixed(0) + ' (' + chargeInfo.level + ')'}</small>
+                <div class="total-price">Earn: <strong>₹${helperEarns.toFixed(0)}</strong></div>
+                <small style="color:#10b981;">${DELIVERY_COMMISSION_CATS.has(task.category) ? '₹' + parseFloat(task.price).toFixed(0) + ' + ₹' + serviceCharge.toFixed(0) + ' (' + chargeInfo.level + ')' : '₹' + parseFloat(task.price).toFixed(0)}</small>
             </div>
             <button class="directions-btn" onclick="openGoogleMaps(${task.location.lat}, ${task.location.lng})">
                 <i class="fas fa-directions"></i> Navigate
@@ -2773,6 +2880,23 @@ function showTaskListSkeletons() {
     `).join('');
 }
 
+// Standalone sort handler — uses _currentTaskList so renderTasks doesn't have to
+// re-create a closure (and capture a large array) on every call.
+window._sortTasks = function(by) {
+    const c = document.getElementById('tasksList');
+    if (c) c.dataset.sort = by;
+    let sorted = [..._currentTaskList];
+    if (by === 'earn_desc') sorted.sort((a, b) => getHelperEarnings(b) - getHelperEarnings(a));
+    else if (by === 'earn_asc') sorted.sort((a, b) => getHelperEarnings(a) - getHelperEarnings(b));
+    else if (by === 'time') sorted.sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
+    else sorted.sort((a, b) => {
+        const dA = (a.location && a.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng) : Infinity;
+        const dB = (b.location && b.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng) : Infinity;
+        return dA - dB;
+    });
+    renderTasks(sorted);
+};
+
 function renderTasks(filtered = null) {
     const container = document.getElementById('tasksList');
     if (!container) return;
@@ -2788,7 +2912,7 @@ function renderTasks(filtered = null) {
             if (sel && sel.value && sel.value !== 'all'
                 && typeof window.applyFilters === 'function'
                 && Array.isArray(tasks) && tasks.length > 0) {
-                window.applyFilters();
+                window.applyFilters(true); // silent — no toast, no server search on auto-refresh
                 return;
             }
         } catch (e) { /* fall through to default render */ }
@@ -2801,19 +2925,27 @@ function renderTasks(filtered = null) {
         return true;
     });
 
-    // Sort by distance
+    // Sort by distance (tasks without coordinates go to the end)
     list.sort((a, b) => {
-        const dA = getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng);
-        const dB = getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng);
+        const dA = (a.location && a.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, a.location.lat, a.location.lng) : Infinity;
+        const dB = (b.location && b.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, b.location.lat, b.location.lng) : Infinity;
         return dA - dB;
     });
 
     if (list.length === 0) {
+        const _allActiveTasks = tasks.filter(t => t.status === 'active' && getTimeLeft(t.expiresAt) !== 'Expired');
+        const _hasTasksBeyondRadius = _allActiveTasks.length > 0 && _allActiveTasks.length > list.length;
         container.innerHTML = `
             <div class="empty-state">
-                <i class="fas fa-search"></i>
-                <h3>No tasks available</h3>
-                <p>No nearby tasks match your filters right now. Try widening your distance or budget range, or check back later.</p>
+                <div class="empty-state-icon"><i class="fas fa-magnifying-glass"></i></div>
+                <h3>No tasks found nearby</h3>
+                <p>${_hasTasksBeyondRadius ? 'There are <strong>' + _allActiveTasks.length + ' tasks</strong> available — try expanding your radius.' : 'No nearby tasks match your filters right now. Try widening your search or check back later.'}</p>
+                <div class="empty-state-tips">
+                    <button class="empty-state-tip-btn" onclick="document.getElementById('filterDistance').value=50; document.getElementById('distanceValue').textContent='50'; applyFilters();"><i class="fas fa-location-dot"></i> Expand to 50 km</button>
+                    <button class="empty-state-tip-btn" onclick="document.getElementById('minBudget').value=''; document.getElementById('maxBudget').value=''; applyFilters();"><i class="fas fa-indian-rupee-sign"></i> Clear budget</button>
+                    <button class="empty-state-tip-btn" onclick="loadTasksFromServer();"><i class="fas fa-rotate-right"></i> Refresh</button>
+                </div>
+                <button class="btn btn-outline empty-state-reset" onclick="clearFilters()"><i class="fas fa-times-circle"></i> Clear All Filters</button>
             </div>
         `;
         return;
@@ -2824,33 +2956,100 @@ function renderTasks(filtered = null) {
     const displayList = showAll ? list : list.slice(0, INITIAL_SHOW);
     const hasMore = list.length > INITIAL_SHOW;
 
+    // Update (or inject) the toolbar above the card grid
+    let toolbar = document.getElementById('tasksToolbar');
+    if (!toolbar) {
+        toolbar = document.createElement('div');
+        toolbar.id = 'tasksToolbar';
+        toolbar.className = 'tasks-toolbar';
+        container.parentNode.insertBefore(toolbar, container);
+    }
+    const sortVal = container.dataset.sort || 'distance';
+    toolbar.innerHTML = `
+        <div class="tt-left">
+            <span class="tt-count"><i class="fas fa-bolt" style="color:#6366f1;"></i> <strong>${list.length}</strong> tasks available</span>
+        </div>
+        <div class="tt-right">
+            <label class="tt-sort-label" for="taskSortSelect"><i class="fas fa-sort"></i> Sort:</label>
+            <select id="taskSortSelect" class="tt-sort-select" onchange="window._sortTasks(this.value)">
+                <option value="distance" ${sortVal==='distance'?'selected':''}>Nearest</option>
+                <option value="earn_desc" ${sortVal==='earn_desc'?'selected':''}>Highest Earn</option>
+                <option value="earn_asc" ${sortVal==='earn_asc'?'selected':''}>Lowest Earn</option>
+                <option value="time" ${sortVal==='time'?'selected':''}>Expiring Soon</option>
+            </select>
+        </div>
+    `;
+
+    // Sort helper
+    _currentTaskList = list; // update module-level reference (no closure needed)
+
     const isHelper = currentUser && currentUser.id;
     container.innerHTML = displayList.map(task => {
-        const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
+        const dist = (task.location && task.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng) : null;
         const timeLeft = getTimeLeft(task.expiresAt);
         const rating = task.postedBy && task.postedBy.rating ? task.postedBy.rating : null;
         const isOwn = isHelper && task.postedBy && task.postedBy.id === currentUser.id;
 
         const _veh = getRequiredVehicle(task.description);
         const _vehBadge = _veh ? `<span class="task-vehicle-badge" title="Required vehicle">${escapeHtml(_veh.label)}</span>` : '';
+
+        const posterName = (task.postedBy && task.postedBy.name) ? task.postedBy.name : 'Poster';
+        const posterInitial = posterName.charAt(0).toUpperCase();
+        const posterFirstName = escapeHtml(posterName.split(' ')[0]);
+        const timerClass = getTimerUrgencyClass(timeLeft);
+        const taskValue = Math.round(parseFloat(task.price || 0) + getTaskServiceCharge(task));
+        const earnAmount = Math.round(getHelperEarnings(task));
+
         return `
-            <div class="task-card" data-task-id="${task.id}" onclick="onTaskCardClick(${task.id})">
-                <div class="task-card-header">
-                    <span class="task-category">${formatCategory(task.category)}</span>
-                    ${_vehBadge}
-                    <span class="task-price">₹${getTaskFinalValue(task)}</span>
-                    ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" style="cursor:pointer;margin-left:6px;font-size:16px;color:#94a3b8;" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
+            <div class="task-card task-card-v2" data-task-id="${task.id}" data-category="${task.category}" onclick="onTaskCardClick(${task.id})">
+                <div class="tc-body">
+                    <div class="tc-top-row">
+                        <div class="tc-cat-chip">
+                            <i class="${getCategoryIcon(task.category)}"></i>
+                            <span>${formatCategory(task.category)}</span>
+                        </div>
+                        <div class="tc-top-right">
+                            ${_vehBadge}
+                            ${currentUser ? `<span class="bookmark-icon" onclick="event.stopPropagation(); toggleBookmark(${task.id}, this)" title="Bookmark"><i class="far fa-bookmark"></i></span>` : ''}
+                        </div>
+                    </div>
+                    <h4 class="tc-title">${escapeHtml(task.title)}</h4>
+                    <p class="tc-desc">${formatTaskDescription(task.description, { compact: true })}</p>
+                    <div class="tc-stats">
+                        <span class="tc-stat tc-stat-location"><i class="fas fa-map-marker-alt"></i> ${dist != null ? dist.toFixed(1) + ' km' : 'Location N/A'}</span>
+                        ${rating ? `<span class="tc-stat tc-stat-rating"><i class="fas fa-star"></i> ${rating.toFixed(1)}</span>` : ''}
+                        <span class="tc-stat ${timerClass}"><i class="fas fa-clock"></i> ${timeLeft}</span>
+                    </div>
+                    <div class="tc-footer">
+                        <div class="tc-poster">
+                            <div class="tc-avatar">${posterInitial}</div>
+                            <span class="tc-poster-name">${posterFirstName}</span>
+                            ${task.postedBy && task.postedBy.verified ? '<span class="tc-poster-verified" title="Verified poster"><i class="fas fa-check-circle"></i></span>' : ''}
+                            ${task.postedBy && task.postedBy.tasks_posted > 0 ? `<span class="tc-poster-taskcount">${task.postedBy.tasks_posted} posted</span>` : ''}
+                        </div>
+                        <div class="tc-earn">
+                            <span class="tc-task-val">Task Value ₹${taskValue}</span>
+                            <div class="tc-earn-row">
+                                <span class="tc-earn-label">You Earn</span>
+                                <span class="tc-earn-amount">₹${earnAmount}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ${!isOwn ? (() => {
+                        const myAccepted = myAcceptedTasks.find(at => at.id === task.id && (at.status === 'accepted' || at.status === 'in_progress'));
+                        if (myAccepted) {
+                            // Helper has accepted THIS task — show share button
+                            return `<div class="tc-action-row">
+                                <button class="task-card-accept-btn tc-accept-main task-card-accept-locked" disabled><i class="fas fa-check-circle"></i> Accepted</button>
+                                <button class="tc-share-btn" onclick="event.stopPropagation(); shareTask(${task.id});" title="Share task on WhatsApp"><i class="fab fa-whatsapp"></i></button>
+                            </div>`;
+                        }
+                        if (myAcceptedTasks.some(at => at.status === 'in_progress' || at.status === 'accepted')) {
+                            return `<button class="task-card-accept-btn task-card-accept-locked" disabled title="Complete your current task before accepting a new one"><i class="fas fa-lock"></i> Task In Progress</button>`;
+                        }
+                        return `<button class="task-card-accept-btn" data-accept-task-id="${task.id}" onclick="event.stopPropagation(); acceptTask(${task.id})"><i class="fas fa-check-circle"></i> Accept Task</button>`;
+                    })() : ''}
                 </div>
-                <h4>${escapeHtml(task.title)}</h4>
-                <p class="task-desc-summary">${formatTaskDescription(task.description, { compact: true })}</p>
-                <div class="task-meta">
-                    <span><i class="fas fa-map-marker-alt"></i> ${dist.toFixed(1)} km</span>
-                    ${rating ? '<span><i class="fas fa-star" style="color:#f59e0b;"></i> ' + rating.toFixed(1) + '</span>' : ''}
-                    <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft}</span>
-                </div>
-                ${!isOwn ? `<button class="task-card-accept-btn" data-accept-task-id="${task.id}">
-                    <i class="fas fa-check"></i> Accept Task
-                </button>` : ''}
             </div>
         `;
     }).join('');
@@ -2874,7 +3073,7 @@ function onTaskCardClick(taskId) {
     highlightTaskCard(taskId);
     selectedTask = task;
 
-    if (map) {
+    if (map && task.location && task.location.lat != null) {
         map.setView([task.location.lat, task.location.lng], 15);
 
         // Open popup
@@ -2913,13 +3112,14 @@ function openTaskDetail(taskId) {
     window._lastTaskId = taskId;
     console.log('✅ Opening task detail for:', task.title);
 
-    const dist = getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng);
+    const dist = (task.location && task.location.lat != null) ? getDistance(userLocation.lat, userLocation.lng, task.location.lat, task.location.lng) : null;
     const timeLeft = getTimeLeft(task.expiresAt);
+    const DISTANCE_CATS_DETAIL = new Set(['transport', 'pickup', 'delivery', 'moving']);
+    const hasDropLocation = task.drop_location && task.drop_location.lat != null;
+    const isDistanceCat = DISTANCE_CATS_DETAIL.has(task.category);
     
     // Check if current user is the task owner
     const isOwner = currentUser && task.postedBy && task.postedBy.id === currentUser.id;
-    
-    console.log('📋 Task details - isOwner:', isOwner, 'User:', currentUser?.id, 'Poster:', task.postedBy?.id);
 
     const content = `
         <div class="task-detail-header">
@@ -2928,8 +3128,9 @@ function openTaskDetail(taskId) {
             ${isOwner ? '<span class="owner-badge"><i class="fas fa-user-check"></i> Your Task</span>' : ''}
             <h2>${escapeHtml(task.title)}</h2>
             <div class="task-detail-meta">
-                <span><i class="fas fa-map-marker-alt"></i> ${task.location.address}</span>
-                <span><i class="fas fa-ruler"></i> ${dist.toFixed(1)} km away</span>
+                <span><i class="fas fa-map-marker-alt"></i> ${(task.location && task.location.address) || 'Location not specified'}</span>
+                ${hasDropLocation ? `<span><i class="fas fa-flag-checkered"></i> Drop: ${escapeHtml(task.drop_location.address || '')}</span>` : ''}
+                ${dist != null ? `<span><i class="fas fa-ruler"></i> ${dist.toFixed(1)} km away</span>` : ''}
                 <span class="task-timer"><i class="fas fa-clock"></i> ${timeLeft} left</span>
             </div>
         </div>
@@ -2941,13 +3142,29 @@ function openTaskDetail(taskId) {
         
         <div class="task-detail-map" id="taskDetailMap"></div>
         
-        <div class="task-detail-price">
-            <div>
-                <h3>Your Earnings</h3>
-                <small>₹${parseFloat(task.price)} + ₹${getTaskServiceCharge(task)} service charge${task.category === 'transport' ? '' : ' + 5% posting fee'}</small>
+        ${isOwner ? `
+        <div class="task-detail-price task-detail-price-breakdown">
+            <div class="price-breakdown-row">
+                <span>Budget</span><span>₹${parseFloat(task.price).toFixed(2)}</span>
             </div>
-            <span class="price">₹${getTaskFinalValue(task)}</span>
-        </div>
+            ${getTaskServiceCharge(task) > 0 ? `
+            <div class="price-breakdown-row">
+                <span>Service Charge <small>(Delivery/Distance)</small></span><span>+₹${getTaskServiceCharge(task).toFixed(2)}</span>
+            </div>` : ''}
+            <div class="price-breakdown-row price-breakdown-total">
+                <h3>Total You Pay</h3><span class="price">₹${Math.round(getTaskFinalValue(task))}</span>
+            </div>
+        </div>` : `
+        <div class="task-detail-price task-detail-price-breakdown">
+            ${getTaskServiceCharge(task) > 0 ? `
+            <div class="price-breakdown-row" style="color:var(--text-secondary);">
+                <span>Task Value</span><span>₹${(parseFloat(task.price)+getTaskServiceCharge(task)).toFixed(2)}</span>
+            </div>` : ''}
+            <div class="price-breakdown-row price-breakdown-total">
+                <div><h3>You Earn</h3><small>After ${Math.round(getCommissionRate(task.category||'other')*100)}% platform commission</small></div>
+                <span class="price">₹${Math.round(getHelperEarnings(task))}</span>
+            </div>
+        </div>`}
         
         <div class="task-poster">
             <div class="poster-avatar"><i class="fas fa-user"></i></div>
@@ -2992,9 +3209,9 @@ function openTaskDetail(taskId) {
             <button class="btn btn-secondary" style="flex: 1; padding: 12px; margin: 5px; background: #0ea5e9; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="navigateToTask(${task.location.lat}, ${task.location.lng}, '${task.title.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" title="Get directions to task location">
                 <i class="fas fa-map-marker-alt"></i> Navigate
             </button>
-            <button class="btn btn-primary modal-accept-btn" data-accept-task-id="${task.id}" style="flex: 1; padding: 12px; margin: 5px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="acceptTask(${task.id})">
-                <i class="fas fa-check"></i> Accept
-            </button>
+            ${userActiveTask
+                ? `<a href="task-in-progress.html?taskId=${userActiveTask.id}" class="btn btn-primary" style="flex: 1; padding: 12px; margin: 5px; background: #f59e0b; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px;"><i class="fas fa-arrow-right"></i> View Active Task</a>`
+                : `<button class="btn btn-primary modal-accept-btn" data-accept-task-id="${task.id}" style="flex: 1; padding: 12px; margin: 5px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="acceptTask(${task.id})"><i class="fas fa-check"></i> Accept</button>`}
             ` : ''}
         </div>
     `;
@@ -3004,24 +3221,43 @@ function openTaskDetail(taskId) {
     console.log('✅ Modal content updated with Navigate and Accept buttons');
     openModal('taskDetailModal');
 
-    // Mini map
+    // Mini map — destroy any previous instance before creating a new one to prevent memory leaks
     setTimeout(() => {
+        try {
+            if (_taskDetailMiniMap) {
+                _taskDetailMiniMap.remove();
+                _taskDetailMiniMap = null;
+            }
+        } catch (_) {}
         const el = document.getElementById('taskDetailMap');
-        if (el && !el._leaflet_id) {
-            const miniMap = L.map('taskDetailMap', {
-                center: [task.location.lat, task.location.lng],
+        if (el && typeof L !== 'undefined' && task.location && task.location.lat != null) {
+            // Clear the leaflet_id flag so Leaflet allows re-initialisation on the same element
+            delete el._leaflet_id;
+            const mapCenter = [task.location.lat, task.location.lng];
+            _taskDetailMiniMap = L.map('taskDetailMap', {
+                center: mapCenter,
                 zoom: 15,
                 zoomControl: false,
                 dragging: false,
                 scrollWheelZoom: false
             });
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(_taskDetailMiniMap);
+            // Pickup marker
             L.marker([task.location.lat, task.location.lng], {
                 icon: getTaskIcon(task.category)
-            }).addTo(miniMap);
+            }).addTo(_taskDetailMiniMap);
+            // Drop location marker and route line for delivery/transport categories
+            if (hasDropLocation) {
+                const dropIcon = L.divIcon({ className: 'task-marker', html: '<div style="background:#ef4444;color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);">🏁</div>', iconSize: [32,32], iconAnchor: [16,16] });
+                L.marker([task.drop_location.lat, task.drop_location.lng], { icon: dropIcon }).addTo(_taskDetailMiniMap);
+                L.polyline([[task.location.lat, task.location.lng], [task.drop_location.lat, task.drop_location.lng]], {
+                    color: '#6366f1', weight: 3, dashArray: '6,6'
+                }).addTo(_taskDetailMiniMap);
+                _taskDetailMiniMap.fitBounds([[task.location.lat, task.location.lng], [task.drop_location.lat, task.drop_location.lng]], { padding: [20, 20] });
+            }
             // Modal animates in — Leaflet caches initial 0px container; force redraw after layout settles
-            setTimeout(() => { try { miniMap.invalidateSize(); } catch(_){} }, 250);
-            setTimeout(() => { try { miniMap.invalidateSize(); } catch(_){} }, 600);
+            setTimeout(() => { try { _taskDetailMiniMap && _taskDetailMiniMap.invalidateSize(); } catch(_){} }, 250);
+            setTimeout(() => { try { _taskDetailMiniMap && _taskDetailMiniMap.invalidateSize(); } catch(_){} }, 600);
         }
     }, 200);
 }
@@ -3215,11 +3451,59 @@ function navigateToTask(lat, lng, taskTitle) {
     closeModal('taskDetailModal');
 }
 
+// Show a confirmation popup after a task is accepted.
+// The helper must tap "Continue to Task" to navigate — no automatic redirect.
+function showTaskAcceptedModal(taskId, taskTitle) {
+    var old = document.getElementById('_taskAcceptedModal');
+    if (old) old.remove();
+
+    // Inject animation keyframe once
+    if (!document.getElementById('_tam_style')) {
+        var s = document.createElement('style');
+        s.id = '_tam_style';
+        s.textContent = '@keyframes _tam_in{from{transform:scale(0.85);opacity:0}to{transform:scale(1);opacity:1}}';
+        document.head.appendChild(s);
+    }
+
+    var overlay = document.createElement('div');
+    overlay.id = '_taskAcceptedModal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100000;padding:20px;box-sizing:border-box;';
+    var titleHtml = taskTitle ? '<p style="margin:10px 0 0;font-size:14px;color:#666;line-height:1.5;">' + taskTitle + '</p>' : '';
+    overlay.innerHTML =
+        '<div style="background:#fff;border-radius:20px;padding:36px 24px;max-width:300px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);animation:_tam_in 0.25s ease;">' +
+            '<div style="width:72px;height:72px;background:linear-gradient(135deg,#10b981,#059669);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
+                '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+            '</div>' +
+            '<h2 style="margin:0;font-size:22px;font-weight:700;color:#111;">Task Accepted!</h2>' +
+            titleHtml +
+        '</div>';
+    document.body.appendChild(overlay);
+
+    // Auto-dismiss after 2.5 s; also dismiss on tap
+    var dismiss = function() { if (overlay.parentNode) overlay.remove(); };
+    setTimeout(dismiss, 2500);
+    overlay.addEventListener('click', dismiss);
+}
+
 async function acceptTask(taskId) {
     console.log('🎯 acceptTask called with taskId:', taskId, 'type:', typeof taskId);
 
-    // Immediate visual feedback — disable only accept-specific buttons
-    var acceptBtns = document.querySelectorAll('.task-card-accept-btn, .modal-accept-btn');
+    // Re-entrance guard — prevent a second invocation from kicking off another
+    // fetch / setTimeout / button-mutation cycle while the first is still
+    // pending. Without this, rapid double-clicks (or duplicate event handlers
+    // firing on the same tap) accumulate background fetches that keep the
+    // Netlify proxy connections open and can freeze the browser when the
+    // network is flaky.
+    if (window._acceptInFlight) {
+        console.log('⏸️ acceptTask already in-flight, ignoring duplicate call');
+        return;
+    }
+    window._acceptInFlight = true;
+
+    // Immediate visual feedback — disable only accept-specific buttons.
+    // Skip buttons that are already locked (e.g. .task-card-accept-locked)
+    // so resetAcceptButtons can't accidentally re-enable them later.
+    var acceptBtns = document.querySelectorAll('.task-card-accept-btn:not(.task-card-accept-locked), .modal-accept-btn');
     acceptBtns.forEach(function(btn) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accepting...';
@@ -3259,120 +3543,198 @@ async function acceptTask(taskId) {
         return;
     }
 
-    // Find task in local array (optional — used for localStorage save only)
+    // Find task in local array — used for localStorage pre-save and optimistic navigation
     var task = tasks.find(function(t) { return t.id == taskId; });
-    // Don't block if task not found locally — we can still call the API
+
+    // Pre-save task data to localStorage BEFORE the API call so that
+    // task-in-progress.html always has display data even when the network
+    // drops the response in transit (proxy timeout, flaky 4G, etc.).
+    try {
+        var _td = task || {};
+        var _tl = _td.location || {};
+        var _tDrop = _td.drop_location || null;
+        localStorage.setItem('currentTask', JSON.stringify({
+            id: taskId,
+            title: _td.title || '',
+            description: _td.description || '',
+            category: _td.category || '',
+            price: _td.price || 0,
+            service_charge: _td.service_charge || 0,
+            location: {
+                lat: parseFloat(_tl.lat) || null,
+                lng: parseFloat(_tl.lng) || null,
+                address: _tl.address || ''
+            },
+            drop_location: _tDrop ? {
+                lat: parseFloat(_tDrop.lat) || null,
+                lng: parseFloat(_tDrop.lng) || null,
+                address: _tDrop.address || ''
+            } : null,
+            providerId: _td.postedBy ? _td.postedBy.id : null,
+            providerName: _td.postedBy ? _td.postedBy.name : null,
+            providerPhone: _td.postedBy ? _td.postedBy.phone : null,
+            providerRating: _td.postedBy ? _td.postedBy.rating : null,
+            expiresAt: _td.expiresAt || null,
+            postedAt: _td.postedAt || null,
+            startTime: Date.now()
+        }));
+    } catch (e) {}
+
+    // AGGRESSIVE EARLY TEARDOWN — done BEFORE the network call.
+    //
+    // Symptom this addresses: Chrome "Aw Snap! Out of Memory" on browse.html
+    // immediately after tapping Accept. The renderer was running out of memory
+    // while waiting on the 20s API call because browse.html still held:
+    //   - the Leaflet map + up to 200 marker DivIcon DOM nodes
+    //   - 60s auto-refresh interval that could fire mid-wait and double the
+    //     marker/render allocation
+    //   - the route polyline + the task list innerHTML
+    //   - the full tasks[] array (can be megabytes of JSON)
+    //
+    // Since we are about to navigate away on success, none of this is needed.
+    // Tearing it down NOW (synchronously, before await) means the page is
+    // already lean while the network request is in flight, giving the browser
+    // plenty of headroom to allocate the response body + run the navigation.
+    try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (e) {}
+    try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (e) {}
+    try { if (typeof _notifIntervalId !== 'undefined' && _notifIntervalId) { clearInterval(_notifIntervalId); _notifIntervalId = null; } } catch (e) {}
+    try { if (typeof clearRoute === 'function') clearRoute(); } catch (e) {}
+    try {
+        if (typeof taskMarkers !== 'undefined' && taskMarkers && taskMarkers.length) {
+            taskMarkers.forEach(function(m) { try { if (map && map.hasLayer(m)) map.removeLayer(m); } catch(_){} });
+            taskMarkers = [];
+        }
+    } catch (e) {}
+    // Drop the task list DOM — accepts buttons are already disabled and the
+    // user is about to leave the page. Keeps a tiny placeholder so they see
+    // SOMETHING if the redirect is delayed.
+    try {
+        var _list = document.getElementById('tasksList');
+        if (_list) _list.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#64748b;font-size:14px;"><i class="fas fa-spinner fa-spin" style="font-size:24px;margin-bottom:12px;display:block;"></i>Accepting task...</div>';
+    } catch (e) {}
+    // Release the in-memory task arrays. We do NOT touch myAcceptedTasks — it
+    // gets updated below on success, and we need it for the optimistic redirect
+    // on failure.
+    try { tasks = []; _currentTaskList = []; } catch (e) {}
 
     try {
-        console.log('📡 Calling API to accept task:', taskId);
-
-        // Call the accept API
+        // 20-second timeout via Promise.race — Netlify functions can take up to
+        // ~10 s on cold start + Railway round-trip on flaky carrier networks.
+        // An 8 s timeout was firing BEFORE the backend response and showing a
+        // misleading "Network error" toast even though the task had been
+        // accepted server-side. 20 s gives the legitimate response time to
+        // arrive on slow networks while still capping any true hang.
+        var _acceptTimeoutHandle = null;
+        var _acceptTimeout = new Promise(function(_, reject) {
+            _acceptTimeoutHandle = setTimeout(function() { reject(new Error('accept_timeout')); }, 20000);
+        });
         var data;
-        if (typeof TasksAPI !== 'undefined' && TasksAPI.accept) {
-            data = await TasksAPI.accept(taskId);
-        } else {
-            // Fallback: direct fetch if TasksAPI unavailable
-            console.warn('⚠️ TasksAPI not available, using direct fetch');
-            var apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) || 
-                          (typeof window.TASKEARN_API_URL !== 'undefined' && window.TASKEARN_API_URL) ||
-                          'https://taskearn-production-production.up.railway.app/api';
-            var token = localStorage.getItem('taskearn_token');
-            var resp = await fetch(apiBase + '/tasks/' + taskId + '/accept', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': token ? ('Bearer ' + token) : ''
-                },
-                mode: 'cors'
-            });
-            data = await resp.json();
-            data._httpSuccess = resp.ok;
+        try {
+            data = await Promise.race([TasksAPI.accept(taskId), _acceptTimeout]);
+        } finally {
+            // Clear the timeout once the race settles so its closure (which
+            // holds a reference to the reject() callback) is released
+            // immediately instead of lingering in memory for 20 s.
+            if (_acceptTimeoutHandle) clearTimeout(_acceptTimeoutHandle);
         }
 
-        console.log('📥 Accept API response:', JSON.stringify(data));
-
-        // Accept ANY successful response — be lenient
-        var isSuccess = data && (data.success === true || data._httpSuccess === true || data.message === 'Task accepted successfully');
+        var isSuccess = data && (data.success === true || data.message === 'Task accepted successfully');
 
         if (isSuccess) {
-            console.log('✅ Task accepted successfully!');
-
-            // Update local state (non-critical)
-            if (task) {
-                task.status = 'accepted';
-                task.acceptedBy = currentUser;
-                task.acceptedAt = new Date().toISOString();
-                try { myAcceptedTasks.push(task); } catch(e) {}
-            }
-
-            // Save task data for task-in-progress page (non-critical)
+            // Update local state (non-critical — never let this block the redirect)
             try {
-                var taskData = task || {};
-                var taskLocation = (taskData.location) || {};
-                localStorage.setItem('currentTask', JSON.stringify({
-                    id: taskId,
-                    title: taskData.title || '',
-                    description: taskData.description || '',
-                    category: taskData.category || '',
-                    price: taskData.price || 0,
-                    service_charge: taskData.service_charge || 0,
-                    location: {
-                        lat: parseFloat(taskLocation.lat) || 19.0760,
-                        lng: parseFloat(taskLocation.lng) || 72.8777
-                    },
-                    providerId: taskData.postedBy ? taskData.postedBy.id : null,
-                    providerName: taskData.postedBy ? taskData.postedBy.name : null,
-                    providerPhone: taskData.postedBy ? taskData.postedBy.phone : null,
-                    providerRating: taskData.postedBy ? taskData.postedBy.rating : null,
-                    expiresAt: taskData.expiresAt || null,
-                    postedAt: taskData.postedAt || null,
-                    startTime: Date.now()
-                }));
-            } catch (e) {
-                console.warn('localStorage save failed (non-critical):', e);
-            }
-
-            // Non-blocking updates
-            try {
+                if (task) {
+                    task.status = 'accepted';
+                    task.acceptedBy = currentUser;
+                    task.acceptedAt = new Date().toISOString();
+                    myAcceptedTasks.push(task);
+                }
                 if (typeof updateUserData === 'function' && currentUser.id) {
                     updateUserData(currentUser.id, {
                         acceptedTasks: typeof serializeTasks === 'function' ? serializeTasks(myAcceptedTasks) : []
-                    }).catch(function(e) { console.warn('updateUserData failed:', e); });
+                    }).catch(function() {});
                 }
                 try { closeModal('taskDetailModal'); } catch(e) {}
                 try { if (typeof clearRoute === 'function') clearRoute(); } catch(e) {}
-            } catch (e) {
-                console.warn('Non-critical post-accept update failed:', e);
-            }
+            } catch (e) {}
 
-            // REDIRECT — this is the critical action
-            console.log('🚀 Redirecting to task-in-progress.html for task:', taskId);
-            window.location.href = 'task-in-progress.html?taskId=' + taskId;
-            return;
-        } else {
-            // API returned an error
-            var errorMsg = (data && data.message) ? data.message : 'Failed to accept task. Please try again.';
-            console.error('❌ Accept API returned failure:', errorMsg);
-            if (data && data.needsKyc) {
-                try { closeModal('taskDetailModal'); } catch(e) {}
-                showKYCRequiredPopup('accept tasks');
-            } else {
-                showToast('❌ ' + errorMsg);
+            // Redirect to task-in-progress.html (the helper's working view).
+            // Heavy teardown was already done synchronously above before the
+            // API call; here we just nuke the map itself (last big object)
+            // and navigate.
+            try { if (map) { map.remove(); map = null; } } catch (e) {}
+
+            // currentTask is already pre-saved to localStorage above, so
+            // task-in-progress.html can render instantly even on a flaky network.
+            // Use location.replace so the back-button does not return to a stale
+            // browse.html that still believes the task is active.
+            try {
+                window.location.replace('task-in-progress.html?taskId=' + encodeURIComponent(taskId));
+            } catch (e) {
+                window.location.href = 'task-in-progress.html?taskId=' + encodeURIComponent(taskId);
             }
-            resetAcceptButtons();
+            return;
+
+        } else if (data && data.hasActiveTask) {
+            userActiveTask = { id: data.activeTaskId, title: data.activeTaskTitle };
+            try { closeModal('taskDetailModal'); } catch(e) {}
+            showToast('⚠️ You already have an active task. Complete it before accepting another.');
+            // We tore down the task list/markers/intervals BEFORE the API call,
+            // so a normal renderTasks() would render against an empty array.
+            // Reload the page so the user sees a correct, fresh browse view
+            // (with the active-task banner restored).
+            try { setTimeout(function(){ window.location.reload(); }, 1200); } catch (e) { window.location.reload(); }
+            return;
+
+        } else if (data && data.needsKyc) {
+            try { closeModal('taskDetailModal'); } catch(e) {}
+            showKYCRequiredPopup('accept tasks');
+            // KYC flow is modal-based; reload so the user can re-browse after KYC.
+            try { setTimeout(function(){ window.location.reload(); }, 1200); } catch (e) {}
+            return;
+
+        } else {
+            showToast('❌ ' + ((data && data.message) || 'Failed to accept task. Please try again.'));
+            // Tasks list was torn down; reload to restore a working browse view.
+            try { setTimeout(function(){ window.location.reload(); }, 1500); } catch (e) { window.location.reload(); }
+            return;
         }
+
     } catch (err) {
-        console.error('❌ Error accepting task:', err);
-        showToast('❌ Network error. Please check your connection and try again.');
-        resetAcceptButtons();
+        // Network failure or 20-second timeout. The backend may have actually
+        // accepted the task even though we never saw the response.
+        //
+        // Two cases:
+        //   1) The accept genuinely succeeded server-side — task-in-progress.html
+        //      will load fine, its 15 s tracking poll will confirm.
+        //   2) The accept genuinely failed — task-in-progress.html's startTaskWatch
+        //      receives "task gone / not accepted by you" and redirects back to
+        //      browse.html via handleTaskGone().
+        //
+        // Either way, redirecting is safer than staying on browse.html with a
+        // misleading "network error" toast on a task that actually got accepted.
+        // currentTask is already pre-saved to localStorage above.
+        console.warn('acceptTask timed out / errored, optimistically redirecting:', err && err.message);
+        try { if (_autoRefreshIntervalId) { clearInterval(_autoRefreshIntervalId); _autoRefreshIntervalId = null; } } catch (e) {}
+        try { if (_timerIntervalId) { clearInterval(_timerIntervalId); _timerIntervalId = null; } } catch (e) {}
+        // Destroy the Leaflet map before navigating — same as the success path.
+        // Leaving it alive causes OOM when task-in-progress.html loads its own map.
+        try { if (map) { map.remove(); map = null; } } catch (e) {}
+        try {
+            window.location.replace('task-in-progress.html?taskId=' + encodeURIComponent(taskId));
+        } catch (e) {
+            window.location.href = 'task-in-progress.html?taskId=' + encodeURIComponent(taskId);
+        }
     }
 }
 
 // Reset accept buttons back to their original state
 function resetAcceptButtons() {
-    document.querySelectorAll('.task-card-accept-btn').forEach(function(btn) {
+    window._acceptInFlight = false;
+    // Exclude locked buttons so their "Task In Progress" / "Accepted" state is preserved.
+    document.querySelectorAll('.task-card-accept-btn:not(.task-card-accept-locked)').forEach(function(btn) {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-check"></i> Accept Task';
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> Accept Task';
     });
     document.querySelectorAll('.modal-accept-btn').forEach(function(btn) {
         btn.disabled = false;
@@ -3802,6 +4164,7 @@ function penaltyContinueTask() {
             providerName: task.postedBy?.name || 'Task Poster',
             providerPhone: task.postedBy?.phone || '',
             location: task.location || {},
+            drop_location: task.drop_location || null,
             startTime: task.acceptedAt ? new Date(task.acceptedAt).getTime() : Date.now()
         }));
         window.location.href = 'task-in-progress.html?taskId=' + task.id;
@@ -3825,6 +4188,7 @@ function goToTaskInProgress(taskId) {
         providerName: task.postedBy?.name || 'Task Poster',
         providerPhone: task.postedBy?.phone || '',
         location: task.location || {},
+        drop_location: task.drop_location || null,
         startTime: task.acceptedAt ? new Date(task.acceptedAt).getTime() : Date.now()
     }));
     window.location.href = 'task-in-progress.html?taskId=' + task.id;
@@ -3917,7 +4281,10 @@ async function penaltyConfirmRelease() {
 
     showToast('✅ Task released. ₹' + penalty + ' penalty deducted from wallet.');
     pendingReleaseTaskId = null;
+    userActiveTask = null;
+    refreshActiveTaskBanner();
     renderDashboard();
+    renderTasks();
 }
 
 async function abandonTask(taskId) {
@@ -3992,9 +4359,7 @@ async function deleteTask(taskId) {
     try {
         var result;
         if (typeof TasksAPI !== 'undefined' && TasksAPI.delete) {
-            console.log('📡 Calling TasksAPI.delete for task:', taskId);
             result = await TasksAPI.delete(taskId);
-            console.log('📥 Delete API response:', JSON.stringify(result));
         } else {
             // Fallback: direct fetch
             console.warn('⚠️ TasksAPI not available, using direct fetch');
@@ -4015,7 +4380,6 @@ async function deleteTask(taskId) {
                 mode: 'cors'
             });
             result = await resp.json();
-            console.log('📥 Direct fetch delete response:', JSON.stringify(result));
         }
 
         if (!result || !result.success) {
@@ -4509,7 +4873,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
     const baseAmount = task.price || 0;
     const svcCharge = task.service_charge || 0;
     const totalTaskVal = baseAmount + svcCharge;
-    const posterFee = totalTaskVal * 0.05;
+    // Posting fee DISABLED: const posterFee = totalTaskVal * 0.05;
     const content = `
         <div style="text-align: center; padding: 20px;">
             <div style="font-size: 60px; margin-bottom: 15px;">✅</div>
@@ -4526,10 +4890,6 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
                     <span style="color: #999;">Service Charge:</span>
                     <span style="font-weight: 600; color: #fbbf24;">+₹${svcCharge.toFixed(2)}</span>
                 </div>` : ''}
-                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span style="color: #999;">Posting Fee (5%):</span>
-                    <span style="font-weight: 600; color: #fbbf24;">+₹${posterFee.toFixed(2)}</span>
-                </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                     <span style="color: #999;">Total Paid:</span>
                     <span style="font-weight: 600; color: #ef4444;">-₹${totalPaid.toFixed(2)}</span>
@@ -4560,7 +4920,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
  * Show "Payment Received" pop-up for the helper
  * Called when helper logs in and checks for paid tasks
  */
-function checkAndShowPaymentReceived() {
+async function checkAndShowPaymentReceived() {
     if (!currentUser) return;
     
     // Check if any accepted tasks were recently paid
@@ -4568,76 +4928,134 @@ function checkAndShowPaymentReceived() {
     const shownPayments = JSON.parse(localStorage.getItem(paidKey) || '[]');
     
     for (const task of myAcceptedTasks) {
-        if ((task.status === 'paid' || task.status === 'completed') && !shownPayments.includes(task.id)) {
-            const taskAmount = task.price || 0;
-            const serviceCharge = task.service_charge || task.serviceCharge || 0;
+        if ((task.status === 'paid' || task.status === 'completed' || task.status === 'payment_released') && !shownPayments.includes(task.id)) {
+            const taskAmount = parseFloat(task.price || 0);
+            const serviceCharge = getTaskServiceCharge(task);
             const totalTaskValue = taskAmount + serviceCharge;
-            const helperEarnings = totalTaskValue * 0.88;
-            
+            const _commRate = getCommissionRate(task.category || 'other');
+            const commission = Math.round(totalTaskValue * _commRate * 100) / 100;
+            const helperEarnings = Math.round((totalTaskValue - commission) * 100) / 100;
+            const _commPct = Math.round(_commRate * 100);
+
             // Move paid task from accepted to completed
             myAcceptedTasks = myAcceptedTasks.filter(t => t.id != task.id);
             task.earnedAmount = helperEarnings;
             myCompletedTasks.push(task);
-            
+
             // Update profile stats
             currentUser.tasksCompleted = (currentUser.tasksCompleted || 0) + 1;
             currentUser.totalEarnings = parseFloat(currentUser.totalEarnings || 0) + helperEarnings;
             currentUser.totalEarnings = Math.round(currentUser.totalEarnings * 100) / 100;
-            
-            // Persist everything
+
             updateUserData(currentUser.id, {
                 acceptedTasks: serializeTasks(myAcceptedTasks),
                 completedTasks: serializeTasks(myCompletedTasks),
                 tasksCompleted: currentUser.tasksCompleted,
                 totalEarnings: currentUser.totalEarnings
             });
-            
-            // Refresh wallet balance from server
-            refreshWalletBalance();
-            
-            const content = `
-                <div style="text-align: center; padding: 20px;">
-                    <div style="font-size: 60px; margin-bottom: 15px;">💰</div>
-                    <h2 style="color: #4ade80; margin-bottom: 10px;">Payment Received!</h2>
-                    <p style="color: #888; margin-bottom: 20px;">You've been paid for completing a task!</p>
-                    
-                    <div style="background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; border-radius: 12px; padding: 20px; margin-bottom: 20px; text-align: left;">
-                        <h4 style="margin-bottom: 15px;">${escapeHtml(task.title)}</h4>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="color: #999;">Task Amount:</span>
-                            <span style="font-weight: 600;">₹${totalTaskValue.toFixed(2)}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="color: #999;">Commission (12%):</span>
-                            <span style="font-weight: 600; color: #ef4444;">-₹${(totalTaskValue * 0.12).toFixed(2)}</span>
-                        </div>
-                        <hr style="border-color: rgba(255,255,255,0.1); margin: 12px 0;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <span style="font-weight: 600;">You Received:</span>
-                            <span style="font-weight: 700; font-size: 18px; color: #4ade80;">+₹${helperEarnings.toFixed(2)}</span>
-                        </div>
-                    </div>
-                    
-                    <button class="btn btn-primary btn-block" onclick="triggerPendingRate()">
-                        <i class="fas fa-star"></i> Rate Poster
-                    </button>
-                </div>
-            `;
-            document.getElementById('taskSuccessContent').innerHTML = content;
-            window.__pendingRate = {
+
+            // Fetch live wallet balance then show popup
+            let newBalance = parseFloat(currentUser.wallet || currentUser.walletBalance || 0);
+            try {
+                const walletData = await WalletAPI.get();
+                if (walletData && walletData.success !== false) {
+                    newBalance = parseFloat(walletData.balance || walletData.wallet?.balance || newBalance);
+                }
+            } catch (e) {}
+
+            showHelperPaymentPopup({
+                title: task.title,
                 taskId: task.id,
-                taskTitle: task.title || '',
-                otherName: (task.postedBy && task.postedBy.name) || 'the poster',
-                role: 'helper'
-            };
-            openModal('taskSuccessModal');
-            
-            // Mark this payment as shown
+                taskAmount,
+                serviceCharge,
+                totalTaskValue,
+                commission,
+                helperEarnings,
+                commissionPct: _commPct,
+                newBalance,
+                posterName: (task.postedBy && task.postedBy.name) || 'the poster'
+            });
+
             shownPayments.push(task.id);
             localStorage.setItem(paidKey, JSON.stringify(shownPayments));
-            break; // Show one at a time
+            break;
         }
     }
+}
+
+/**
+ * Show a rich "Payment Received" popup to the helper with full price breakdown.
+ * @param {Object} p - breakdown data
+ */
+function showHelperPaymentPopup(p) {
+    ensureTaskSuccessModal();
+    const content = `
+        <div style="padding: 20px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 56px; margin-bottom: 10px;">💰</div>
+                <h2 style="color: #4ade80; margin: 0 0 6px 0;">Payment Received!</h2>
+                <p style="color: #888; margin: 0; font-size: 14px;">You've been paid for completing a task</p>
+            </div>
+
+            <div style="background: rgba(30,30,40,.9); border: 1px solid rgba(74,222,128,.3); border-radius: 12px; padding: 16px; margin-bottom: 14px;">
+                <div style="font-weight: 600; font-size: 15px; color: #fff; margin-bottom: 2px;">${escapeHtml(p.title || '')}</div>
+                <div style="font-size: 12px; color: #888;">Task completed</div>
+            </div>
+
+            <div style="background: rgba(30,30,40,.9); border: 1px solid rgba(74,222,128,.3); border-radius: 12px; padding: 16px; margin-bottom: 14px;">
+                <div style="font-size: 12px; color: #a78bfa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;"><i class="fas fa-receipt"></i> Earnings Breakdown</div>
+
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="color:#ccc;">Task Budget</span>
+                    <span style="color:#fff; font-weight:600;">₹${p.taskAmount.toFixed(2)}</span>
+                </div>
+                ${p.serviceCharge > 0 ? `
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="color:#ccc;">Service Charge <span style="font-size:11px;opacity:.7;">(Delivery/Distance)</span></span>
+                    <span style="color:#fbbf24; font-weight:600;">+₹${p.serviceCharge.toFixed(2)}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,.07);">
+                    <span style="color:#ccc;">Total Task Value</span>
+                    <span style="color:#fff; font-weight:600;">₹${p.totalTaskValue.toFixed(2)}</span>
+                </div>` : '<div style="border-bottom:1px solid rgba(255,255,255,.07); margin-bottom:8px;"></div>'}
+
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="color:#ccc;">Platform Commission <span style="font-size:11px;opacity:.7;">(${p.commissionPct}%)</span></span>
+                    <span style="color:#ef4444; font-weight:600;">-₹${p.commission.toFixed(2)}</span>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; padding-top:10px; border-top:2px solid rgba(74,222,128,.4); font-size:18px; font-weight:800;">
+                    <span style="color:#fff;">You Received</span>
+                    <span style="color:#4ade80;">+₹${p.helperEarnings.toFixed(2)}</span>
+                </div>
+            </div>
+
+            <div style="background: rgba(30,30,40,.9); border: 1px solid rgba(74,222,128,.3); border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+                <div style="font-size: 12px; color: #a78bfa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;"><i class="fas fa-wallet"></i> Wallet</div>
+                <div style="display:flex; justify-content:space-between;">
+                    <span style="color:#ccc;">Updated Balance</span>
+                    <span style="color:#fbbf24; font-weight:700; font-size:16px;">₹${parseFloat(p.newBalance).toFixed(2)}</span>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-secondary" style="flex:1; padding:13px; border-radius:10px; background:#333; border:1px solid #555;" onclick="closeModal('taskSuccessModal');">
+                    <i class="fas fa-times"></i> Close
+                </button>
+                <button class="btn btn-primary" style="flex:1; padding:13px; border-radius:10px; background:linear-gradient(135deg,#6366f1,#4f46e5);" onclick="closeModal('taskSuccessModal'); markTaskCompleted(${JSON.stringify(p.taskId)});">
+                    <i class="fas fa-check-circle"></i> Mark as Completed
+                </button>
+            </div>
+        </div>
+    `;
+    document.getElementById('taskSuccessContent').innerHTML = content;
+    window.__pendingRate = {
+        taskId: p.taskId,
+        taskTitle: p.title || '',
+        otherName: p.posterName || 'the poster',
+        role: 'helper'
+    };
+    openModal('taskSuccessModal');
 }
 
 /**
@@ -4678,8 +5096,11 @@ async function showPaymentInvoice(taskId) {
         return;
     }
 
+    // Accepted statuses for payment: legacy completed/pending_payment + new verify_pending flow
+    const payableStatuses = ['completed', 'pending_payment', 'verify_pending'];
+
     // If local status is stale, fetch real status from server before showing error
-    if (task.status !== 'completed' && task.status !== 'pending_payment') {
+    if (!payableStatuses.includes(task.status)) {
         console.log(`⚠️ Local task status is '${task.status}', fetching real status from server...`);
         try {
             const userTasksResult = await UserAPI.getTasks();
@@ -4702,7 +5123,7 @@ async function showPaymentInvoice(taskId) {
         }
 
         // Check again after server sync
-        if (task.status !== 'completed' && task.status !== 'pending_payment') {
+        if (!payableStatuses.includes(task.status)) {
             showToast(`❌ Task status is '${task.status}', payment requires 'completed' status.`);
             return;
         }
@@ -4712,9 +5133,11 @@ async function showPaymentInvoice(taskId) {
     const taskAmount = task.price || 0;
     const serviceCharge = task.service_charge || 0;
     const totalTaskValue = taskAmount + serviceCharge;
-    const helperCommission = totalTaskValue * 0.12;
-    const posterFee = totalTaskValue * 0.05;
-    const totalCost = totalTaskValue + posterFee;
+    const commRate = getCommissionRate(task.category || 'other');
+    const helperCommission = totalTaskValue * commRate;
+    // Poster posting fee: DISABLED (was 5%)
+    // const posterFee = totalTaskValue * 0.05;
+    const totalCost = totalTaskValue; // No posting fee
     const helperNetReceives = totalTaskValue - helperCommission;
 
     // Fetch real wallet balance from server
@@ -4758,18 +5181,11 @@ async function showPaymentInvoice(taskId) {
                     <span style="color: #ccc;">Budget (Task Price)</span>
                     <span style="color: #fff; font-weight: 600;">₹${taskAmount.toFixed(2)}</span>
                 </div>
+                ${serviceCharge > 0 ? `
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <span style="color: #ccc;">Service Charge</span>
-                    <span style="color: #fbbf24; font-weight: 600;">${serviceCharge > 0 ? '+₹' + serviceCharge.toFixed(2) : '₹0.00'}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 700;">
-                    <span style="color: #fff;">Task Value</span>
-                    <span style="color: #fff;">₹${totalTaskValue.toFixed(2)}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <span style="color: #ccc;">Posting Fee (5%)</span>
-                    <span style="color: #fbbf24; font-weight: 600;">+₹${posterFee.toFixed(2)}</span>
-                </div>
+                    <span style="color: #ccc;">Service Charge <span style="font-size:11px;opacity:0.7;">(Delivery/Distance)</span></span>
+                    <span style="color: #fbbf24; font-weight: 600;">+₹${serviceCharge.toFixed(2)}</span>
+                </div>` : ''}
                 <div style="display: flex; justify-content: space-between; padding: 12px 0 0 0; border-top: 2px solid rgba(139, 92, 246, 0.4); font-size: 18px; font-weight: 800;">
                     <span style="color: #fff;">Total to Pay</span>
                     <span style="color: #ef4444;">₹${totalCost.toFixed(2)}</span>
@@ -4860,9 +5276,10 @@ async function executePayment(taskId) {
     const taskAmount = task.price || 0;
     const serviceCharge = task.service_charge || 0;
     const totalTaskValue = taskAmount + serviceCharge;
-    const helperCommission = totalTaskValue * 0.12;
-    const posterFee = totalTaskValue * 0.05;
-    const totalCost = totalTaskValue + posterFee;
+    const commRate2 = getCommissionRate(task.category || 'other');
+    const helperCommission = totalTaskValue * commRate2;
+    // Poster posting fee DISABLED: const posterFee = totalTaskValue * 0.05;
+    const totalCost = totalTaskValue; // No posting fee
     const helperNetReceives = totalTaskValue - helperCommission;
 
     try {
@@ -4973,24 +5390,25 @@ async function handleTaskSubmit(event) {
     const customBudgetValue = parseInt(document.getElementById('customBudget').value) || 0;
     let baseBudget = customBudgetValue > 0 ? customBudgetValue : selectedBudget;
     
-    // Enforce minimum ₹100
-    if (baseBudget < MIN_TASK_PRICE) {
+    const category = document.getElementById('modalTaskCategory').value;
+    // No minimum for delivery/pickup/transport — price auto-calculated from distance
+    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < MIN_TASK_PRICE) {
         baseBudget = MIN_TASK_PRICE;
         showToast('⚠️ Minimum task budget is ₹' + MIN_TASK_PRICE);
     }
     
     const totalPrice = baseBudget + currentBonus;
-    const category = document.getElementById('modalTaskCategory').value;
     // Distance-aware service charge for pick&drop / delivery / moving.
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const serviceCharge = getServiceCharge(category, distanceKm);
-    const platformFeeForSubmit = Math.round((totalPrice + serviceCharge) * 0.05 * 100) / 100;
-    const totalPayable = totalPrice + serviceCharge + platformFeeForSubmit;
+    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    const serviceCharge = getServiceCharge(category, distanceKm, vehicleKey);
+    // Posting fee DISABLED: const platformFeeForSubmit = Math.round((totalPrice + serviceCharge) * 0.05 * 100) / 100;
+    const platformFeeForSubmit = 0; // No posting fee
+    const totalPayable = totalPrice + serviceCharge; // No posting fee
 
     // If a specific vehicle was chosen for ride/delivery categories, surface it
     // on the task so only taskers with that vehicle are eligible.
-    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
-    const VEHICLE_LABEL = { bike: '\uD83C\uDFCD\uFE0F Bike', auto: '\uD83D\uDEFA Auto', mini: '\uD83D\uDE97 Mini Car', sedan: '\uD83D\uDE99 Sedan' };
+    const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛺 Auto', mini: '🚗 Mini Cab', sedan: '🚙 Sedan', suv: '🚐 SUV' };
     let descriptionText = document.getElementById('modalTaskDescription').value || '';
     if (vehicleKey && VEHICLE_LABEL[vehicleKey] && !descriptionText.includes('Required vehicle:')) {
         descriptionText = '🚕 Required vehicle: ' + VEHICLE_LABEL[vehicleKey]
@@ -5022,6 +5440,27 @@ async function handleTaskSubmit(event) {
         return;
     }
 
+    // Resolve drop location for delivery/transport categories
+    const DISTANCE_CATS_SUBMIT = new Set(['transport', 'pickup', 'delivery', 'moving']);
+    let dropLat = null, dropLng = null, dropAddress = '';
+    if (DISTANCE_CATS_SUBMIT.has(category)) {
+        const dropAddrEl = document.getElementById('modalTaskLocation_drop');
+        const dropAddrText = dropAddrEl ? (dropAddrEl.value || '').trim() : '';
+        if (modalDropCoords) {
+            dropLat = modalDropCoords.lat;
+            dropLng = modalDropCoords.lng;
+            dropAddress = dropAddrText;
+        } else if (dropAddrText) {
+            showToast('📍 Looking up drop location...');
+            const dropGeo = await geocodeAddress(dropAddrText);
+            if (dropGeo) {
+                dropLat = dropGeo.lat;
+                dropLng = dropGeo.lng;
+                dropAddress = dropAddrText;
+            }
+        }
+    }
+
     const taskData = {
         title: document.getElementById('modalTaskTitle').value,
         category: category,
@@ -5031,6 +5470,8 @@ async function handleTaskSubmit(event) {
             lng: taskLng,
             address: addressText
         },
+        drop_location: (dropLat !== null) ? { lat: dropLat, lng: dropLng, address: dropAddress } : null,
+        dropLocation: (dropLat !== null) ? { lat: dropLat, lng: dropLng, address: dropAddress } : null,
         price: totalPrice,
         serviceCharge: serviceCharge,
         totalPaid: totalPayable
@@ -5038,26 +5479,20 @@ async function handleTaskSubmit(event) {
 
     // Reset for next post
     modalTaskCoords = null;
+    modalDropCoords = null;
 
     // Try to save to server first
     let serverTaskId = null;
     let serverSaveError = null;
     
     // Task posting requires API authentication (already checked above)
-    console.log('📤 Attempting to post task to server...');
-    console.log('🔑 Has API token:', !!hasApiToken);
-    console.log('👤 Current user:', currentUser?.name, currentUser?.id);
-    console.log('📦 Task data:', JSON.stringify(taskData, null, 2));
     
     try {
         if (typeof TasksAPI !== 'undefined' && TasksAPI.create) {
-            console.log('🚀 Calling TasksAPI.create...');
             const result = await TasksAPI.create(taskData);
-            console.log('📥 Server response:', JSON.stringify(result, null, 2));
             
             if (result.success) {
                 serverTaskId = result.taskId;
-                console.log('✅ Task saved to server with ID:', serverTaskId);
                 showToast('✅ Task posted successfully!');
             } else {
                 serverSaveError = result.message;
@@ -5138,9 +5573,6 @@ async function handleTaskSubmit(event) {
     // Show success modal with edit option
     showTaskPostedSuccess(newTask);
 }
-
-// Check if backend API is healthy and available
-async function checkBackendHealth() { return false; }
 
 // Check if user has proper backend authentication
 function isUserBackendAuthenticated() {
@@ -5225,9 +5657,38 @@ async function handleLogin(event) {
                 // ✅ FIX: Load tasks from server FIRST, then render UI
                 // This ensures the marketplace shows newly posted tasks from other accounts
                 const tasksLoaded = await loadTasksFromServer();
-                
+
+                // Check active task state for one-task-at-a-time enforcement
+                fetchUserActiveTask().catch(e => console.warn('Active task check failed:', e.message));
+
                 // Render dashboard after tasks are fully loaded
                 setTimeout(() => renderDashboard(), 100);
+
+                // Subscribe to push notifications after login (non-blocking)
+                setTimeout(() => { try { initPushNotifications(); } catch (_) {} }, 3500);
+
+                // Profile completeness nudge (shown once per session)
+                setTimeout(() => {
+                    if (sessionStorage.getItem('_profileNudgeDone')) return;
+                    sessionStorage.setItem('_profileNudgeDone', '1');
+                    const missing = [];
+                    if (!currentUser.phone) missing.push('phone number');
+                    if (!currentUser.profile_photo && !currentUser.profilePhoto) missing.push('profile photo');
+                    if (!currentUser.bio) missing.push('bio');
+                    if (missing.length > 0) {
+                        const nudge = document.createElement('div');
+                        nudge.id = '_profileNudge';
+                        nudge.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:14px;padding:14px 18px;z-index:9999;max-width:360px;width:calc(100% - 32px);box-shadow:0 8px 30px rgba(0,0,0,0.3);animation:slideUpPWA 0.3s ease;display:flex;align-items:center;gap:12px;';
+                        nudge.innerHTML = '<span style="font-size:1.5rem;">👤</span><div style="flex:1;"><strong style="display:block;font-size:14px;">Complete your profile</strong><span style="font-size:12px;opacity:0.85;">Add your ' + missing.join(' & ') + ' to get more tasks</span></div><a href="profile.html" style="background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:7px 12px;text-decoration:none;font-size:12px;font-weight:700;white-space:nowrap;">Update</a><button onclick="document.getElementById(\'_profileNudge\').remove()" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:1rem;padding:0 0 0 6px;"><i class="fas fa-times"></i></button>';
+                        document.body.appendChild(nudge);
+                        setTimeout(() => { const e = document.getElementById('_profileNudge'); if (e) e.remove(); }, 8000);
+                    }
+                }, 2000);
+                
+                // If on profile.html, refresh profile UI (was stuck at "Loading...")
+                if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {
+                    setTimeout(() => loadProfilePage(), 150);
+                }
                 
                 return;
             } else {
@@ -5254,6 +5715,7 @@ async function handleSignup(event) {
 
     const firstName = document.getElementById('signupFirstName').value.trim();
     const lastName = document.getElementById('signupLastName').value.trim();
+    const inviteCode = (document.getElementById('signupInviteCode')?.value || '').trim().toUpperCase();
     const email = document.getElementById('signupEmail').value.trim();
     const password = document.getElementById('signupPassword').value;
     const phone = document.getElementById('signupPhone')?.value || '';
@@ -5295,7 +5757,8 @@ async function handleSignup(event) {
                 email: email,
                 password: password,
                 phone: phone,
-                dob: dob
+                dob: dob,
+                invite_code: inviteCode
             });
             
             if (result.success) {
@@ -5333,6 +5796,9 @@ async function handleSignup(event) {
                     updateNavForUser();
                     const tasksLoaded = await loadTasksFromServer();
                     setTimeout(() => renderDashboard(), 100);
+                    if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {
+                        setTimeout(() => loadProfilePage(), 150);
+                    }
                     setTimeout(showOnboarding, 500);
                 }
                 
@@ -5430,6 +5896,9 @@ async function verifyEmailOTP() {
             updateNavForUser();
             const tasksLoaded = await loadTasksFromServer();
             setTimeout(() => renderDashboard(), 100);
+            if ((window.location.pathname.split('/').pop() || '').toLowerCase() === 'profile.html') {
+                setTimeout(() => loadProfilePage(), 150);
+            }
 
             // Phone verification is currently optional — go straight to onboarding.
             // Users can verify their phone later from Profile if/when desired.
@@ -5704,6 +6173,15 @@ function openUserProfile() {
 var _photoJustUploaded = false;
 
 function loadProfilePage() {
+    // Fast-path: if currentUser not yet set by async session restore,
+    // read the cached user from localStorage so the profile renders instantly
+    // instead of waiting 1-3 seconds for the Railway token-verify round-trip.
+    if (!currentUser) {
+        try {
+            const _cached = localStorage.getItem('taskearn_user');
+            if (_cached) currentUser = JSON.parse(_cached);
+        } catch (_e) {}
+    }
     if (!currentUser) return;
     
     // Render from currentUser immediately, then refresh from server
@@ -5749,9 +6227,13 @@ function renderProfileUI() {
     if (nameEl) nameEl.textContent = currentUser.name || 'User';
     
     var sinceEl = document.getElementById('profileMemberSince');
-    if (sinceEl && currentUser.joinedAt) {
-        sinceEl.innerHTML = '<i class="fas fa-calendar-alt"></i> Member since ' +
-            new Date(currentUser.joinedAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long' });
+    if (sinceEl) {
+        if (currentUser.joinedAt) {
+            sinceEl.innerHTML = '<i class="fas fa-calendar-alt"></i> Member since ' +
+                new Date(currentUser.joinedAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long' });
+        } else {
+            sinceEl.innerHTML = '<i class="fas fa-calendar-alt"></i> Member';
+        }
     }
     
     // Stats — use server-computed values first, fall back to client-side
@@ -5760,7 +6242,7 @@ function renderProfileUI() {
     if (!totalEarned && myCompletedTasks.length > 0) {
         totalEarned = myCompletedTasks.reduce(function(sum, t) {
             if (t.earnedAmount) return sum + t.earnedAmount;
-            return sum + (getTaskFinalValue(t) * 0.88);
+            return sum + getHelperEarnings(t);
         }, 0);
         totalEarned = Math.round(totalEarned * 100) / 100;
     }
@@ -5834,7 +6316,7 @@ function renderProfileUI() {
         if (listEl && myCompletedTasks.length > 0) {
             listEl.innerHTML = myCompletedTasks.slice().reverse().map(function(t) {
                 var amt = getTaskFinalValue(t);
-                var earned = t.earnedAmount || (amt * 0.88);
+                var earned = t.earnedAmount || getHelperEarnings(t);
                 var date = t.completedAt ? new Date(t.completedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
                 return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border,#e2e8f0);">' +
                     '<div><div style="font-weight:600;font-size:14px;">' + (t.title || 'Task') + '</div><div style="font-size:12px;color:#94a3b8;">' + date + '</div></div>' +
@@ -5864,7 +6346,25 @@ function toggleEarningsDetail() {
     }
 }
 
+function toggleReviewsSection() {
+    var panel = document.getElementById('reviewsCollapsible');
+    var btn = document.getElementById('reviewsToggleBtn');
+    var chevron = document.getElementById('reviewsChevron');
+    if (!panel) return;
+    var isHidden = panel.style.display === 'none' || panel.style.display === '';
+    panel.style.display = isHidden ? 'block' : 'none';
+    if (btn) btn.innerHTML = isHidden
+        ? 'Hide <i class="fas fa-chevron-up" id="reviewsChevron" style="font-size:10px;"></i>'
+        : 'Show <i class="fas fa-chevron-down" id="reviewsChevron" style="font-size:10px;"></i>';
+}
+
 async function loadProfileReviews() {
+    if (!currentUser) {
+        try {
+            const _c = localStorage.getItem('taskearn_user');
+            if (_c) currentUser = JSON.parse(_c);
+        } catch (_e) {}
+    }
     if (!currentUser) return;
     var container = document.getElementById('profileReviewsList');
     if (!container) return;
@@ -5876,13 +6376,17 @@ async function loadProfileReviews() {
             var reviews = data.reviews || [];
             var stats = data.stats || {};
             
+            // Backend returns camelCase keys: totalReviews, avgRating
+            var totalReviews = stats.totalReviews || stats.total_reviews || 0;
+            var avgRating = stats.avgRating || stats.avg_rating || null;
+            
             // Update rating stat with server value
             var sr = document.getElementById('statRating');
-            if (sr && stats.avg_rating) sr.textContent = parseFloat(stats.avg_rating).toFixed(1);
+            if (sr && avgRating) sr.textContent = parseFloat(avgRating).toFixed(1);
             
             // Update reviews count
             var rc = document.getElementById('reviewsCount');
-            if (rc) rc.textContent = (stats.total_reviews || 0) + ' review' + ((stats.total_reviews || 0) !== 1 ? 's' : '');
+            if (rc) rc.textContent = totalReviews + ' review' + (totalReviews !== 1 ? 's' : '');
             
             if (reviews.length === 0) {
                 container.innerHTML = '<p style="text-align:center;color:#94a3b8;padding:20px;font-size:14px;">No reviews yet. Complete tasks to get reviews!</p>';
@@ -6081,7 +6585,43 @@ function toggleChangePassword() {
         document.getElementById('currentPassword').value = '';
         document.getElementById('newPassword2').value = '';
         document.getElementById('confirmPassword2').value = '';
+        var bar = document.getElementById('pwdStrengthBar');
+        if (bar) { bar.style.width = '0'; }
+        var txt = document.getElementById('pwdStrengthText');
+        if (txt) { txt.textContent = ''; }
     }
+}
+
+function togglePwdEye(inputId, btn) {
+    var input = document.getElementById(inputId);
+    if (!input) return;
+    var isText = input.type === 'text';
+    input.type = isText ? 'password' : 'text';
+    var icon = btn.querySelector('i');
+    if (icon) { icon.className = isText ? 'fas fa-eye' : 'fas fa-eye-slash'; }
+}
+
+function updatePwdStrengthBar(pwd) {
+    var bar = document.getElementById('pwdStrengthBar');
+    var txt = document.getElementById('pwdStrengthText');
+    if (!bar || !txt) return;
+    if (!pwd) { bar.style.width = '0'; txt.textContent = ''; return; }
+    var score = 0;
+    if (pwd.length >= 6)  score++;
+    if (pwd.length >= 10) score++;
+    if (/[A-Z]/.test(pwd)) score++;
+    if (/[0-9]/.test(pwd)) score++;
+    if (/[^A-Za-z0-9]/.test(pwd)) score++;
+    var levels = [
+        {w:'20%', c:'#ef4444', t:'Weak'},
+        {w:'40%', c:'#f59e0b', t:'Fair'},
+        {w:'65%', c:'#f59e0b', t:'Moderate'},
+        {w:'85%', c:'#10b981', t:'Strong'},
+        {w:'100%',c:'#059669', t:'Very Strong'}
+    ];
+    var l = levels[Math.min(score, 5) - 1] || levels[0];
+    bar.style.width = l.w; bar.style.background = l.c;
+    txt.textContent = l.t; txt.style.color = l.c;
 }
 
 async function saveNewPassword() {
@@ -6110,16 +6650,27 @@ async function saveNewPassword() {
 (function() {
     var page = (window.location.pathname.split('/').pop() || '').toLowerCase();
     if (page === 'profile.html') {
+        function bindPhotoInput() {
+            var inp = document.getElementById('profilePhotoInput');
+            if (inp && !inp._bound) {
+                inp._bound = true;
+                inp.addEventListener('change', handleProfilePhoto);
+            }
+        }
         function initProfile() {
-            setTimeout(function() {
-                loadProfilePage();
-                // Bind file input via JS for better mobile reliability
-                var inp = document.getElementById('profilePhotoInput');
-                if (inp && !inp._bound) {
-                    inp._bound = true;
-                    inp.addEventListener('change', handleProfilePhoto);
+            // Poll until currentUser is set by the async session restore (network verify may take >300ms)
+            var _attempts = 0;
+            function _tryLoad() {
+                bindPhotoInput();
+                if (typeof currentUser !== 'undefined' && currentUser) {
+                    loadProfilePage();
+                } else if (_attempts++ < 20) {
+                    // Retry every 300ms for up to 6 seconds
+                    setTimeout(_tryLoad, 300);
                 }
-            }, 300);
+                // After max retries, if still no user — page will show login prompt via updateNavForUser
+            }
+            setTimeout(_tryLoad, 300);
         }
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initProfile);
@@ -6130,14 +6681,14 @@ async function saveNewPassword() {
 })();
 
 function logout() {
-    // Call server logout to invalidate session_token
+    // Call server logout to invalidate session_token. Route through apiRequest
+    // so the /api prefix + Netlify proxy fallback are both applied — a bare
+    // fetch('/auth/logout') resolves against the page origin (no /api) and
+    // returns 400.
     const token = localStorage.getItem('taskearn_token');
-    if (token) {
+    if (token && typeof apiRequest === 'function') {
         try {
-            fetch((typeof API_URL !== 'undefined' ? API_URL : '') + '/auth/logout', {
-                method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + token }
-            }).catch(() => {});
+            apiRequest('/auth/logout', { method: 'POST' }).catch(() => {});
         } catch (e) {}
     }
 
@@ -6198,14 +6749,20 @@ function switchTab(tab) {
 function renderDashboard() {
     updateAuthenticationStatus(); // Update auth status indicator
     
-    // Show wallet low warning if applicable
-    if (currentUser && currentUser.walletLow) {
+    // Show earn nudge card if wallet is low / negative
+    const walletBal = currentUser ? (currentUser.wallet || 0) : 0;
+    if (currentUser && (currentUser.walletLow || walletBal < 0)) {
         const walletWarningEl = document.getElementById('walletLowWarning');
         if (walletWarningEl) {
             walletWarningEl.innerHTML = `
-                <div class="alert alert-warning" style="margin-bottom: 15px; padding: 12px; border-radius: 6px; background-color: #fff3cd; border-left: 4px solid #ffc107; display: flex; justify-content: space-between; align-items: center;">
-                    <span><i class="fas fa-exclamation-triangle"></i> Wallet balance is low (₹${currentUser.wallet || 0}). <a href="wallet.html" style="text-decoration: underline; font-weight: bold;">Top up now</a></span>
-                    <button type="button" class="close" onclick="this.parentElement.style.display='none';" style="background: none; border: none; cursor: pointer; font-size: 20px;">&times;</button>
+                <div style="margin-bottom:18px;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%);color:#fff;padding:18px 20px;display:flex;align-items:center;gap:16px;box-shadow:0 4px 20px rgba(99,102,241,0.25);">
+                    <div style="width:48px;height:48px;background:rgba(255,255,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.4rem;">💼</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:700;font-size:1rem;margin-bottom:2px;">Ready to earn more?</div>
+                        <div style="font-size:0.8rem;opacity:0.85;">Tasks near you are waiting. Accept one and grow your wallet today.</div>
+                    </div>
+                    <a href="browse.html" style="flex-shrink:0;background:#fff;color:#6366f1;font-weight:700;font-size:0.82rem;padding:9px 16px;border-radius:10px;text-decoration:none;white-space:nowrap;">Browse Tasks →</a>
+                    <button onclick="this.parentElement.parentElement.style.display='none'" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:1.1rem;flex-shrink:0;padding:0 0 0 4px;"><i class="fas fa-times"></i></button>
                 </div>
             `;
             walletWarningEl.style.display = 'block';
@@ -6219,6 +6776,7 @@ function renderDashboard() {
 
     // Highlight task if navigated from notification
     const urlHighlight = new URLSearchParams(window.location.search).get('highlight');
+    const urlAction = new URLSearchParams(window.location.search).get('action');
     if (urlHighlight) {
         function tryHighlight() {
             const taskEl = document.querySelector(`[data-task-id="${urlHighlight}"]`);
@@ -6232,6 +6790,11 @@ function renderDashboard() {
         }
         // Retry: card may not exist until server data loads
         setTimeout(() => { if (!tryHighlight()) setTimeout(tryHighlight, 2000); }, 300);
+
+        // Auto-open payment invoice if action=pay (from verify_and_pay notification)
+        if (urlAction === 'pay') {
+            setTimeout(() => { if (typeof showPaymentInvoice === 'function') showPaymentInvoice(parseInt(urlHighlight)); }, 800);
+        }
     }
     
     // Sync notifications from server (non-blocking) so poster sees Pay Now from helper
@@ -6288,53 +6851,102 @@ async function posterCancelTask(taskId) {
 window.posterCancelTask = posterCancelTask;
 
 // ── Verify & Pay Task (Poster releases payment from task card) ─────────────
-async function verifyAndPayTask(taskId, amount, btnEl) {
-    if (!confirm('Release payment of ₹' + parseFloat(amount).toFixed(2) + ' to the helper?')) return;
-    const token = localStorage.getItem('taskearn_token');
-    if (!token) { alert('Please login first'); return; }
-    if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...'; }
-    try {
-        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/pay-helper', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
-        });
-        const result = await resp.json();
-        if (result.success) {
-            showToast('✅ Payment released! Helper has been notified.', 'success');
-            loadUserTasks();
-        } else {
-            alert(result.message || 'Payment failed. Please try again.');
-            if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
-        }
-    } catch (e) {
-        alert('Network error. Please try again.');
-        if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Verify & Pay Now'; }
-    }
+// Shows the full payment invoice popup so the poster can review the breakdown.
+async function verifyAndPayTask(taskId) {
+    if (!currentUser) { try { showToast('Please login first', 'error'); } catch(e) {} return; }
+    await showPaymentInvoice(taskId);
 }
 window.verifyAndPayTask = verifyAndPayTask;
 
 // ── Mark Task Completed (Helper after payment released) ────────────────────
 async function markTaskCompleted(taskId) {
     const token = localStorage.getItem('taskearn_token');
-    if (!token) { alert('Please login first'); return; }
+    if (!token) { try { showToast('Please login first', 'error'); } catch(e) {} return; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
-        const resp = await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/mark-completed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
-        });
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/mark-completed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        } catch (netErr) {
+            // Direct API failed (blocked on mobile networks) — fall back to Netlify proxy
+            console.warn('Direct API failed, trying proxy:', netErr.message);
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/mark-completed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        }
         const result = await resp.json();
         if (result.success) {
             myAcceptedTasks = myAcceptedTasks.filter(t => t.id != taskId);
             renderAcceptedTasks();
             openRatingPopup(taskId);
         } else {
-            alert(result.message || 'Could not mark as completed. Please try again.');
+            try { showToast(result.message || 'Could not mark as completed. Please try again.', 'error'); } catch(e) {}
         }
     } catch (e) {
-        alert('Network error. Please try again.');
+        console.error('markTaskCompleted error:', e);
+        try { showToast('Network error. Please check your connection and try again.', 'error'); } catch(_) {}
     }
 }
 window.markTaskCompleted = markTaskCompleted;
+
+// ── Verify Task Done (Helper: accepted → verify_pending) ──────────────────
+async function verifyTaskDone(taskId, btnEl) {
+    const token = localStorage.getItem('taskearn_token');
+    if (!token) { try { showToast('Please login first', 'error'); } catch(e) {} return; }
+    if (!confirm('Have you completed this task? The poster will be notified to verify and pay.')) return;
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Sending...'; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
+    try {
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        } catch (netErr) {
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+            });
+        }
+        const result = await resp.json();
+        if (result.success) {
+            showToast('✅ Verification sent! Waiting for poster to pay.', 'success');
+            // Update local task status so UI reflects change immediately
+            const task = myAcceptedTasks.find(t => t.id == taskId);
+            if (task) task.status = 'verify_pending';
+            renderAcceptedTasks();
+            await syncUserTasksFromServer();
+            renderDashboard();
+            // Share prompt — invite others to earn
+            setTimeout(() => {
+                if (localStorage.getItem('share_task_prompt_shown')) return;
+                localStorage.setItem('share_task_prompt_shown', '1');
+                const title = task ? task.title : 'a task';
+                const waText = encodeURIComponent(`I just completed "${title}" on Workmate4u and got paid! 💸\nYou can also earn money doing tasks nearby 👉 https://workmate4u.com`);
+                const el = document.createElement('div');
+                el.id = 'shareEarnPrompt';
+                el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;border-radius:14px;padding:16px 18px;z-index:9999;max-width:360px;width:calc(100% - 32px);box-shadow:0 8px 30px rgba(0,0,0,0.3);animation:slideUpPWA 0.3s ease;';
+                el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🎉</span><div style="flex:1;"><strong style="display:block;margin-bottom:2px;">Great work!</strong><span style="font-size:0.8rem;opacity:0.75;">Share your success with friends</span></div><button onclick="document.getElementById('shareEarnPrompt').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:1rem;"><i class="fas fa-times"></i></button></div><a href="https://wa.me/?text=${waText}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;background:#25D366;color:#fff;border-radius:10px;padding:10px;text-decoration:none;font-weight:700;"><i class="fab fa-whatsapp"></i> Share on WhatsApp</a>`;
+                document.body.appendChild(el);
+                setTimeout(() => { const e = document.getElementById('shareEarnPrompt'); if (e) e.remove(); }, 10000);
+            }, 2000);
+        } else {
+            try { showToast(result.message || 'Could not send verification. Please try again.', 'error'); } catch(_) {}
+            if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-double"></i> Verify Task Done'; }
+        }
+    } catch (e) {
+        try { showToast('Network error. Please try again.', 'error'); } catch(_) {}
+        if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-check-double"></i> Verify Task Done'; }
+    }
+}
+window.verifyTaskDone = verifyTaskDone;
 
 // ── Rating Popup ───────────────────────────────────────────────────────────
 function openRatingPopup(taskId) {
@@ -6383,40 +6995,60 @@ window.openRatingPopup = openRatingPopup;
 function closeRatingPopup() {
     const popup = document.getElementById('taskRatingPopup');
     if (popup) popup.style.display = 'none';
-    loadUserTasks();
 }
 window.closeRatingPopup = closeRatingPopup;
 
 async function submitTaskRating() {
     const taskId = document.getElementById('ratingTaskId')?.value;
-    const selectedStar = document.querySelector('#taskRatingPopup .rating-star.selected');
-    const rating = selectedStar ? parseInt(selectedStar.dataset.value) : 0;
+    // querySelectorAll returns all selected stars (1 through N); take the last one's value
+    const selectedStars = document.querySelectorAll('#taskRatingPopup .rating-star.selected');
+    const rating = selectedStars.length ? parseInt(selectedStars[selectedStars.length - 1].dataset.value) : 0;
     const review = document.getElementById('ratingReviewText')?.value.trim() || '';
     if (!rating) { closeRatingPopup(); return; }
     const token = localStorage.getItem('taskearn_token');
     if (!token) { closeRatingPopup(); return; }
+    const apiBase = window.API_BASE_URL || 'https://taskearn-production-production.up.railway.app/api';
+    const proxyBase = '/.netlify/functions/api-proxy/api';
     try {
-        await fetch((window.API_BASE_URL || '') + '/tasks/' + taskId + '/rate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ rating: rating, review: review })
-        });
-    } catch (e) {}
+        let resp;
+        try {
+            resp = await fetch(apiBase + '/tasks/' + taskId + '/rate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ rating: rating, review: review })
+            });
+        } catch (netErr) {
+            resp = await fetch(proxyBase + '/tasks/' + taskId + '/rate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ rating: rating, review: review })
+            });
+        }
+        const result = await resp.json();
+        if (!result.success) {
+            console.warn('Rating submit:', result.message);
+        }
+    } catch (e) {
+        console.error('submitTaskRating error:', e);
+    }
     showToast('⭐ Thank you for your rating!', 'success');
+    await syncUserTasksFromServer();
+    renderDashboard();
     closeRatingPopup();
 }
 window.submitTaskRating = submitTaskRating;
 
-
+function renderPostedTasks() {
     const el = document.getElementById('myPostedTasks');
     if (!el) return;
 
-    // Show active (non-expired) and accepted posted tasks
+    // Show active (incl. expired), accepted, and completed posted tasks.
+    // 'completed' = old flow where helper pressed Mark Done — poster still needs to pay;
+    // 'paid' and 'payment_released' are truly done and go to history instead.
     const visiblePostedTasks = myPostedTasks.filter(t => {
-        if (t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'payment_released') return true;
+        if (t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'completed') return true;
         if (t.status !== 'active') return false;
-        if (getTimeLeft(t.expiresAt) === 'Expired') return false;
-        return true;
+        return true; // include expired — rendered with Expired badge
     });
 
     if (visiblePostedTasks.length === 0) {
@@ -6426,7 +7058,7 @@ window.submitTaskRating = submitTaskRating;
 
     el.innerHTML = visiblePostedTasks.map(t => {
         let helperHTML = '';
-        if ((t.status === 'accepted' || t.status === 'completed' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'payment_released') && t.accepted_by) {
+        if ((t.status === 'accepted' || t.status === 'pending_payment' || t.status === 'verify_pending' || t.status === 'completed') && t.accepted_by) {
             const hName = t.helper_name || t.helperName || 'Helper';
             const hPhone = t.helper_phone || t.helperPhone || '';
             const hRating = t.helper_rating || t.helperRating || 0;
@@ -6450,15 +7082,27 @@ window.submitTaskRating = submitTaskRating;
                 </div>`;
         }
 
+        const isExpiredTask = t.status === 'active' && getTimeLeft(t.expiresAt) === 'Expired';
         let statusLabel = t.status;
         let statusClass = t.status;
-        if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
-        else if (t.status === 'completed' || t.status === 'pending_payment') { statusLabel = 'Awaiting Payment'; statusClass = 'warning'; }
-        else if (t.status === 'verify_pending') { statusLabel = '⏳ Verify & Pay'; statusClass = 'warning'; }
+        if (isExpiredTask) { statusLabel = '⏰ Expired'; statusClass = 'expired'; }
+        else if (t.status === 'accepted') { statusLabel = 'Accepted'; statusClass = 'accepted'; }
+        else if (t.status === 'pending_payment') { statusLabel = 'Awaiting Payment'; statusClass = 'warning'; }
+        else if (t.status === 'completed' || t.status === 'verify_pending') { statusLabel = '⏳ Verify & Pay'; statusClass = 'warning'; }
         else if (t.status === 'payment_released') { statusLabel = '✅ Payment Released'; statusClass = 'paid'; }
 
         let actionsHTML = '';
-        if (t.status === 'active') {
+        if (isExpiredTask) {
+            actionsHTML = `<div class="task-actions" style="margin-top:10px;">
+                <div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:13px;color:#ef4444;">
+                    <i class="fas fa-clock"></i> This task expired without being accepted.
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-danger" style="flex:1;" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
+                    <button class="btn btn-primary" style="flex:1;" onclick="openEditTask(${t.id})"><i class="fas fa-rotate-right"></i> Re-post</button>
+                </div>
+            </div>`;
+        } else if (t.status === 'active') {
             actionsHTML = `<div class="task-actions">
                     <button class="btn btn-edit" onclick="openEditTask(${t.id})"><i class="fas fa-edit"></i> Edit</button>
                     <button class="btn btn-danger" onclick="deleteTask(${t.id})"><i class="fas fa-trash"></i> Delete</button>
@@ -6469,12 +7113,13 @@ window.submitTaskRating = submitTaskRating;
                         <i class="fas fa-times-circle"></i> Cancel & Delete Task
                     </button>
                 </div>`;
-        } else if (t.status === 'verify_pending') {
+        } else if (t.status === 'verify_pending' || t.status === 'completed') {
+            // Both statuses mean "helper finished, poster needs to verify and pay"
+            // verify_pending = new flow; completed = old/legacy flow
             const totalAmt = getTaskFinalValue(t);
-            const posterCost = (totalAmt * 1.05).toFixed(2);
             actionsHTML = `<div class="task-actions" style="margin-top:10px;">
-                    <button class="btn" style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:700;padding:12px;border-radius:10px;border:none;font-size:15px;" onclick="verifyAndPayTask(${t.id},${posterCost})">
-                        <i class="fas fa-check-circle"></i> ✅ Verify & Pay Now (₹${posterCost})
+                    <button class="btn" style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:700;padding:12px;border-radius:10px;border:none;font-size:15px;" onclick="verifyAndPayTask(${t.id})">
+                        <i class="fas fa-check-circle"></i> ✅ Verify & Pay Now (₹${totalAmt.toFixed(2)})
                     </button>
                 </div>`;
         }
@@ -6487,7 +7132,7 @@ window.submitTaskRating = submitTaskRating;
                     <span class="task-status ${statusClass}">${statusLabel}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
-                <div class="task-meta"><span>₹${getTaskFinalValue(t)}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
+                <div class="task-meta"><span>₹${Math.round((parseFloat(t.price)||0)+(parseFloat(t.service_charge)||0))}</span><span>${getTimeLeft(t.expiresAt)}</span></div>
                 ${helperHTML}
                 ${actionsHTML}
             </div>
@@ -6499,10 +7144,9 @@ function renderAcceptedTasks() {
     const el = document.getElementById('myAcceptedTasks');
     if (!el) return;
 
-    // Filter out paid and expired-accepted tasks
+    // Filter out only paid tasks — expiry is irrelevant once accepted
     const visibleAcceptedTasks = myAcceptedTasks.filter(t => {
         if (t.status === 'paid') return false;
-        if (t.status === 'accepted' && getTimeLeft(t.expiresAt) === 'Expired') return false;
         return true;
     });
 
@@ -6528,7 +7172,7 @@ function renderAcceptedTasks() {
                 <p style="color: #fbbf24; margin-bottom: 8px;">
                     <i class="fas fa-clock"></i> Waiting for task poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${(getTaskFinalValue(t) * 0.88).toFixed(0)} (after 12% commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${getHelperEarnings(t).toFixed(0)} (after ${Math.round(getCommissionRate(t.category||'other')*100)}% commission)</p>
             </div>`;
         } else if (t.status === 'verify_pending') {
             // Helper sent verification, waiting for poster to pay
@@ -6538,7 +7182,7 @@ function renderAcceptedTasks() {
                 <p style="color: #d97706; margin-bottom: 8px; font-weight:600;">
                     <i class="fas fa-hourglass-half"></i> Verification sent! Waiting for poster to pay...
                 </p>
-                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${(getTaskFinalValue(t) * 0.88).toFixed(0)} (after 12% commission)</p>
+                <p style="color: #666; font-size: 13px; margin: 0;">You'll receive ₹${getHelperEarnings(t).toFixed(0)} (after ${Math.round(getCommissionRate(t.category||'other')*100)}% commission)</p>
             </div>`;
         } else if (t.status === 'payment_released') {
             // Payment released, helper needs to mark as completed
@@ -6554,14 +7198,18 @@ function renderAcceptedTasks() {
             </div>`;
         } else {
             // Still in progress - show action buttons
-            const posterPhone = t.postedBy?.phone || '';
+            const posterPhone = t.poster_phone || t.postedBy?.phone || '';
             const taskLat = t.location?.lat || '';
             const taskLng = t.location?.lng || '';
-            actionHTML = `<div class="task-actions" style="display:flex;flex-wrap:wrap;gap:8px;">
-                <button class="btn btn-success" style="flex:1;min-width:120px;" onclick="event.stopPropagation(); completeTask(${t.id})"><i class="fas fa-check"></i> Mark Complete</button>
-                <button class="btn" style="flex:1;min-width:120px;background:#ef4444;color:#fff;" onclick="event.stopPropagation(); abandonTask(${t.id})"><i class="fas fa-times"></i> Release Task</button>
-                ${posterPhone ? `<a href="tel:${escapeHtml(posterPhone)}" class="btn" style="flex:1;min-width:120px;background:#6366f1;color:#fff;text-decoration:none;text-align:center;display:inline-flex;align-items:center;justify-content:center;gap:4px;" onclick="event.stopPropagation();"><i class="fas fa-phone"></i> Contact</a>` : ''}
-                ${taskLat && taskLng ? `<button class="btn" style="flex:1;min-width:120px;background:#0ea5e9;color:#fff;" onclick="event.stopPropagation(); navigateToTask(${taskLat}, ${taskLng}, '${escapeHtml(t.title).replace(/'/g, "\\\\'")}')"><i class="fas fa-map-marker-alt"></i> Navigate</button>` : ''}
+            actionHTML = `<div style="margin-top:10px;">
+                <button onclick="event.stopPropagation(); verifyTaskDone(${t.id}, this)" style="width:100%;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;border:none;border-radius:8px;padding:12px;font-weight:700;font-size:15px;cursor:pointer;margin-bottom:8px;">
+                    <i class="fas fa-check-double"></i> Verify Task Done
+                </button>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                    ${posterPhone ? `<a href="tel:${escapeHtml(posterPhone)}" class="btn" style="flex:1;min-width:120px;background:#6366f1;color:#fff;text-decoration:none;text-align:center;display:inline-flex;align-items:center;justify-content:center;gap:4px;" onclick="event.stopPropagation();"><i class="fas fa-phone"></i> Contact</a>` : ''}
+                    ${taskLat && taskLng ? `<button class="btn" style="flex:1;min-width:120px;background:#0ea5e9;color:#fff;" onclick="event.stopPropagation(); navigateToTask(${taskLat}, ${taskLng}, '${escapeHtml(t.title).replace(/'/g, "\\\\'")}')"><i class="fas fa-map-marker-alt"></i> Navigate</button>` : ''}
+                    <button class="btn" style="flex:1;min-width:120px;background:#ef4444;color:#fff;" onclick="event.stopPropagation(); abandonTask(${t.id})"><i class="fas fa-times"></i> Release Task</button>
+                </div>
             </div>`;
         }
         
@@ -6573,7 +7221,7 @@ function renderAcceptedTasks() {
                     <span class="task-status ${statusColor}">${statusHTML}</span>
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
-                <div class="task-meta"><span>₹${getTaskFinalValue(t)}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
+                <div class="task-meta"><span>Earn: ₹${Math.round(getHelperEarnings(t))}</span><span>${t.expiresAt ? getTimeLeft(t.expiresAt) : (t.location && t.location.address ? t.location.address : '')}</span></div>
                 ${actionHTML}
             </div>
         `;
@@ -6602,7 +7250,7 @@ function renderCompletedTasks() {
         pendingHTML = `<div style="margin-bottom:20px;">
             <h4 style="margin:0 0 12px;color:#059669;"><i class="fas fa-hand-holding-usd"></i> Payment Received — Tap to Finalize</h4>
             ${pendingComplete.map(t => {
-                const earned = t.earnedAmount || (getTaskFinalValue(t) * 0.88);
+                const earned = t.earnedAmount || Math.round(getHelperEarnings(t) * 100) / 100;
                 return `<div class="my-task-card" style="border:2px solid #10b981;">
                     <div class="my-task-card-header">
                         <span class="task-category">${formatCategory(t.category)}</span>
@@ -6618,22 +7266,23 @@ function renderCompletedTasks() {
         </div>`;
     }
 
-    // Calculate total earned (after 12% commission)
+    // Calculate total earned (after platform commission)
     const totalEarned = visible.reduce((s, t) => {
         if (t.earnedAmount) return s + t.earnedAmount;
-        return s + (getTaskFinalValue(t) * 0.88);
+        return s + Math.round(getHelperEarnings(t) * 100) / 100;
     }, 0);
 
     el.innerHTML = `
         <div style="background:linear-gradient(135deg,#10b981,#34d399);color:white;padding:25px;border-radius:15px;text-align:center;margin-bottom:20px;">
             <h3 style="margin:0;">Total Earned</h3>
             <p style="font-size:2.5rem;font-weight:800;margin:10px 0;">₹${totalEarned.toFixed(2)}</p>
-            <small style="opacity:0.9;">${visible.length} task${visible.length > 1 ? 's' : ''} completed (after 12% commission)</small>
+            <small style="opacity:0.9;">${visible.length} task${visible.length > 1 ? 's' : ''} completed (after platform commission)</small>
         </div>
         ${pendingHTML}
         ${visible.map(t => {
-            const amt = getTaskFinalValue(t);
-            const earned = t.earnedAmount || (amt * 0.88);
+            const taskBaseVal = (parseFloat(t.price)||0) + (parseFloat(t.service_charge)||0);
+            const earned = t.earnedAmount || getHelperEarnings(t);
+            const _commPct2 = Math.round(getCommissionRate(t.category||'other') * 100);
             const posterName = t.poster_name || (t.postedBy && t.postedBy.name) || 'Poster';
             const posterId = t.poster_user_id || (t.postedBy && t.postedBy.id) || t.posted_by || '';
             const posterPhone = t.poster_phone || (t.postedBy && t.postedBy.phone) || '';
@@ -6648,10 +7297,11 @@ function renderCompletedTasks() {
 
             // Poster contact section
             let contactHTML = '';
+            const _pidBadge = posterId ? `<span style="font-size:11px;color:#888;background:rgba(99,102,241,0.12);padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:400;">ID: ${escapeHtml(String(posterId))}</span>` : '';
             if (posterPhone || posterEmail) {
                 contactHTML = `<div style="background:var(--card-bg,rgba(99,102,241,0.06));border:1px solid var(--border-color,rgba(99,102,241,0.2));border-radius:10px;padding:12px;margin:10px 0;">
                     <div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Poster Details</div>
-                    <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(posterName)}</div>
+                    <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(posterName)}${_pidBadge}</div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
                         ${posterPhone ? `<a href="tel:${escapeHtml(posterPhone)}" class="btn" style="flex:1;min-width:100px;background:#4ade80;color:#000;text-align:center;padding:8px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fas fa-phone"></i> Call</a>` : ''}
                         ${posterPhone ? `<a href="https://wa.me/${posterPhone.replace(/[^0-9]/g,'')}" target="_blank" class="btn" style="flex:1;min-width:100px;background:#25D366;color:#fff;text-align:center;padding:8px;border-radius:8px;font-weight:600;text-decoration:none;font-size:13px;"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
@@ -6659,7 +7309,9 @@ function renderCompletedTasks() {
                     </div>
                 </div>`;
             } else if (posterName && posterName !== 'Poster') {
-                contactHTML = `<p style="color:#888;font-size:13px;margin-bottom:6px;">Posted by: <strong>${escapeHtml(posterName)}</strong></p>`;
+                contactHTML = `<p style="color:#888;font-size:13px;margin-bottom:6px;">Posted by: <strong>${escapeHtml(posterName)}</strong>${_pidBadge}</p>`;
+            } else if (posterId) {
+                contactHTML = `<p style="color:#888;font-size:13px;margin-bottom:6px;">Poster ID: <strong>${escapeHtml(String(posterId))}</strong></p>`;
             }
 
             return `<div class="my-task-card">
@@ -6669,7 +7321,7 @@ function renderCompletedTasks() {
                 </div>
                 <h4>${escapeHtml(t.title)}</h4>
                 ${contactHTML}
-                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${amt.toFixed(2)} - 12% commission)</small></p>
+                <p>Earned: <strong style="color:#10b981;">₹${earned.toFixed(2)}</strong> <small>(₹${taskBaseVal.toFixed(2)} task value − ${_commPct2}% commission)</small></p>
                 <div style="margin-top:10px;">${rateBtn}</div>
             </div>`;
         }).join('')}
@@ -6680,12 +7332,19 @@ function renderPaidPostedTasks() {
     const el = document.getElementById('myPaidPostedTasks');
     if (!el) return;
 
-    if (myPaidPostedTasks.length === 0) {
+    // 48h cutoff — same window as completed tasks
+    const _paidCutoff = Date.now() - (48 * 3600 * 1000);
+    const _visiblePaid = myPaidPostedTasks.filter(t => {
+        const ts = t.completedAt || t.postedAt;
+        return !ts || new Date(ts).getTime() > _paidCutoff;
+    });
+
+    if (_visiblePaid.length === 0) {
         el.innerHTML = '<div class="empty-state" style="padding:20px 0;"><i class="fas fa-history"></i><h3 style="font-size:15px;">No paid tasks yet</h3></div>';
         return;
     }
 
-    el.innerHTML = myPaidPostedTasks.map(t => {
+    el.innerHTML = _visiblePaid.map(t => {
         const helperName = t.helper_name || 'Helper';
         const helperId = t.accepted_by || '';
         const alreadyRated = hasRatedTask(t.id);
@@ -6713,7 +7372,7 @@ function renderPaidPostedTasks() {
 
 let _searchDebounceTimer = null;
 
-function applyFilters() {
+function applyFilters(silent = false) {
     const cat = document.getElementById('filterCategory').value;
     const dist = parseInt(document.getElementById('filterDistance').value);
     const minB = parseInt(document.getElementById('minBudget').value) || 0;
@@ -6725,15 +7384,22 @@ function applyFilters() {
     const filtered = tasks.filter(t => {
         if (t.status !== 'active') return false;
         if (getTimeLeft(t.expiresAt) === 'Expired') return false;
-        const d = getDistance(userLocation.lat, userLocation.lng, t.location.lat, t.location.lng);
+        // Guard: skip distance filter for tasks without valid coordinates
+        if (t.location && t.location.lat != null && t.location.lng != null) {
+            const d = getDistance(userLocation.lat, userLocation.lng, t.location.lat, t.location.lng);
+            if (d > dist) return false;
+        }
         if (cat !== 'all' && t.category !== cat) return false;
-        if (d > dist) return false;
         if (t.price < minB || t.price > maxB) return false;
         if (searchTerm && !(t.title || '').toLowerCase().includes(searchTerm) && !(t.description || '').toLowerCase().includes(searchTerm)) return false;
         return true;
     });
 
     renderTasks(filtered);
+    // Silent mode: called from auto-refresh — skip toast + server search to
+    // prevent toast spam every 60 s and block the recursive server-search
+    // re-call chain that can cause OOM on low-RAM devices.
+    if (silent) return;
     showToast('Found ' + filtered.length + ' tasks');
 
     // Also do server-side search for broader results (debounced)
@@ -6768,7 +7434,8 @@ function applyFilters() {
 }
 
 function clearFilters() {
-    document.getElementById('filterCategory').value = 'all';
+    var _catEl = document.getElementById('filterCategory');
+    if (_catEl) { _catEl.value = 'all'; _catEl.dispatchEvent(new Event('change', { bubbles: true })); }
     document.getElementById('filterDistance').value = 10;
     document.getElementById('distanceValue').textContent = '10';
     document.getElementById('minBudget').value = '';
@@ -6780,7 +7447,8 @@ function clearFilters() {
 }
 
 function filterByCategory(cat) {
-    document.getElementById('filterCategory').value = cat;
+    var _catEl2 = document.getElementById('filterCategory');
+    if (_catEl2) { _catEl2.value = cat; _catEl2.dispatchEvent(new Event('change', { bubbles: true })); }
     applyFilters();
     scrollToSection('find-tasks');
 }
@@ -6803,6 +7471,50 @@ function getTimeLeft(expires) {
     const h = Math.floor(diff / 3600000);
     const m = Math.floor((diff % 3600000) / 60000);
     return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+}
+
+function getCategoryIcon(cat) {
+    const icons = {
+        household: 'fas fa-home',
+        delivery: 'fas fa-truck',
+        tutoring: 'fas fa-book-open',
+        transport: 'fas fa-car',
+        vehicle: 'fas fa-wrench',
+        repair: 'fas fa-tools',
+        photography: 'fas fa-camera',
+        freelance: 'fas fa-laptop-code',
+        waste: 'fas fa-trash-alt',
+        cleaning: 'fas fa-broom',
+        cooking: 'fas fa-utensils',
+        petcare: 'fas fa-paw',
+        gardening: 'fas fa-leaf',
+        shopping: 'fas fa-shopping-bag',
+        eventhelp: 'fas fa-calendar-check',
+        moving: 'fas fa-dolly',
+        techsupport: 'fas fa-headset',
+        beauty: 'fas fa-spa',
+        laundry: 'fas fa-tshirt',
+        catering: 'fas fa-concierge-bell',
+        babysitting: 'fas fa-baby',
+        eldercare: 'fas fa-user-friends',
+        fitness: 'fas fa-dumbbell',
+        painting: 'fas fa-paint-roller',
+        electrician: 'fas fa-bolt',
+        plumbing: 'fas fa-faucet',
+        carpentry: 'fas fa-hammer',
+        tailoring: 'fas fa-cut',
+    };
+    return icons[cat] || 'fas fa-briefcase';
+}
+
+function getTimerUrgencyClass(timeLeft) {
+    if (!timeLeft || timeLeft === 'Expired') return 'tc-timer-expired';
+    // Only minutes left (no hours, no days) — very urgent
+    if (/^\d+m/.test(timeLeft) && !timeLeft.includes('h') && !timeLeft.includes('d')) return 'tc-timer-urgent';
+    // Under 3 hours
+    const hMatch = timeLeft.match(/^(\d+)h/);
+    if (hMatch && parseInt(hMatch[1]) < 3) return 'tc-timer-warning';
+    return 'tc-timer-ok';
 }
 
 function formatCategory(cat) {
@@ -6845,29 +7557,45 @@ function formatCategory(cat) {
 // ========================================
 
 function openModal(id) {
-    document.getElementById(id)?.classList.add('active');
-    document.body.classList.add('modal-open');
+    // Block posting tasks when wallet is in debt
     if (id === 'postTaskModal') {
+        if (typeof isDebtSuspended === 'function' && isDebtSuspended()) {
+            try { showDebtSuspendedPopup(); } catch(e) {
+                showToast('❌ Your account has a negative balance. Top up your wallet to post tasks.');
+            }
+            return;
+        }
         resetBonusOnModalOpen();
     }
+    document.getElementById(id)?.classList.add('active');
+    document.body.classList.add('modal-open');
     // Re-attempt Google Sign-In init when login/signup modal opens. If the
     // GIS library hasn't finished loading yet, poll briefly until it does.
     if (id === 'loginModal' || id === 'signupModal') {
         if (typeof initGoogleSignIn === 'function') {
+            // Delay slightly so the modal is painted and the container has a
+            // real width before Google's renderButton measures it. Without this
+            // delay, renderButton runs while the container is still 0-wide and
+            // produces an invisible / zero-width button.
             const tryInit = (attempts) => {
                 if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-                    try { initGoogleSignIn(); } catch (e) { console.warn('Google init retry failed', e); }
+                    try { initGoogleSignIn(true); } catch (e) { console.warn('Google init retry failed', e); }
                 } else if (attempts < 30) {
                     setTimeout(() => tryInit(attempts + 1), 200);
                 }
             };
-            tryInit(0);
+            setTimeout(() => tryInit(0), 80);
         }
     }
 }
 
 function closeModal(id) {
     document.getElementById(id)?.classList.remove('active');
+    // Destroy the mini Leaflet map when the task-detail modal is closed to free memory
+    if (id === 'taskDetailModal' && _taskDetailMiniMap) {
+        try { _taskDetailMiniMap.remove(); } catch (_) {}
+        _taskDetailMiniMap = null;
+    }
     // Only unlock scroll when no modal is open
     if (!document.querySelector('.modal.active')) {
         document.body.classList.remove('modal-open');
@@ -6885,25 +7613,26 @@ function toggleMobileMenu() {
 
 function hardRefreshApp() {
     toggleMobileMenu();
-    // Tell service worker to skip waiting and take over immediately
+    var clearAndReload = function() {
+        if ('caches' in window) {
+            caches.keys().then(function(keys) {
+                return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+            }).then(function() { location.reload(true); }).catch(function() { location.reload(true); });
+        } else {
+            location.reload(true);
+        }
+    };
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistration().then(function(reg) {
-            if (reg && reg.waiting) {
-                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-            }
-            // Clear all SW caches then reload
-            if ('caches' in window) {
-                caches.keys().then(function(keys) {
-                    Promise.all(keys.map(function(k) { return caches.delete(k); })).then(function() {
-                        location.reload(true);
-                    });
-                });
+            if (reg) {
+                if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                reg.unregister().then(clearAndReload).catch(clearAndReload);
             } else {
-                location.reload(true);
+                clearAndReload();
             }
-        }).catch(function() { location.reload(true); });
+        }).catch(clearAndReload);
     } else {
-        location.reload(true);
+        clearAndReload();
     }
 }
 
@@ -6958,25 +7687,29 @@ function updateTotalBudgetDisplay() {
     const customBudget = parseInt(document.getElementById('customBudget')?.value) || 0;
     let baseBudget = customBudget > 0 ? customBudget : selectedBudget;
     
-    // Enforce minimum ₹100
-    if (baseBudget < MIN_TASK_PRICE) {
+    // ₹100 minimum only for non-distance categories; delivery/pickup use km-based price
+    const category = document.getElementById('modalTaskCategory')?.value || 'other';
+    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < MIN_TASK_PRICE) {
         baseBudget = MIN_TASK_PRICE;
     }
     
     const total = baseBudget + currentBonus;
     
-    // Get service charge based on selected category (distance-aware for pick&drop / delivery / moving).
-    const category = document.getElementById('modalTaskCategory')?.value || 'other';
+    // Get service charge based on selected category.
+    // Service charge ONLY for Delivery/Pick&Drop categories; 0 for everything else.
     const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const serviceCharge = getServiceCharge(category, distanceKm);
+    const vehicleKeyForCharge = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    const serviceCharge = getServiceCharge(category, distanceKm, vehicleKeyForCharge); // 0 for non-delivery
     const chargeInfo = getServiceChargeInfo(category);
 
-    // Task Posting Fee = 5% of (budget + service charge). Applies to all categories.
-    const platformFee = Math.round((total + serviceCharge) * 0.05 * 100) / 100;
-    const totalPayable = total + serviceCharge + platformFee; // What poster pays
-    const taskValueForHelper = total + serviceCharge; // Helper-side gross (price + service charge)
-    const helperCommission = Math.round(taskValueForHelper * 0.12 * 100) / 100; // 12% platform commission on helper
-    const workerEarns = taskValueForHelper - helperCommission; // Net amount credited to helper wallet
+    // Task Posting Fee: DISABLED (was 5%). No fee added to poster's total.
+    // const platformFee = Math.round((total + serviceCharge) * 0.05 * 100) / 100;
+    const platformFee = 0; // DISABLED
+    const totalPayable = total + serviceCharge; // What poster pays (no posting fee)
+    const taskValueForHelper = total + serviceCharge;
+    const commissionRate = getCommissionRate(category); // 15% delivery, 17% others
+    const helperCommission = Math.round(taskValueForHelper * commissionRate * 100) / 100;
+    const workerEarns = taskValueForHelper - helperCommission;
     
     const displayEl = document.getElementById('totalBudgetDisplay');
     if (displayEl) {
@@ -7012,15 +7745,15 @@ function updateTotalBudgetDisplay() {
         serviceChargeTime.textContent = chargeInfo.time;
     }
     if (platformFeeDisplay) {
-        platformFeeDisplay.textContent = '₹' + platformFee.toFixed(0);
+        platformFeeDisplay.textContent = '₹0';
     }
 
-    // Always show the platform-fee row (applies to all categories).
+    // Hide the platform-fee row (posting fee disabled).
     const platformRow = platformFeeDisplay ? platformFeeDisplay.closest('.charge-row') : null;
-    if (platformRow) platformRow.style.display = '';
-    // Always show the service-charge row (applies to all categories).
-    const feeRow = serviceChargeDisplay ? serviceChargeDisplay.closest('.charge-row') : null;
-    const timeRow = serviceChargeTime ? serviceChargeTime.closest('.charge-row') : null;
+    if (platformRow) platformRow.style.display = 'none';
+    // Show service-charge row ONLY for Delivery/Pick&Drop categories.
+    const feeRow = document.getElementById('serviceChargeRow');
+    const timeRow = document.getElementById('serviceChargeTimeRow');
     if (feeRow) feeRow.style.display = serviceCharge > 0 ? '' : 'none';
     if (timeRow) timeRow.style.display = serviceCharge > 0 ? '' : 'none';
 }
@@ -7079,6 +7812,44 @@ async function getModalLocation() {
     }
 }
 
+async function getModalDropLocation() {
+    const input = document.getElementById('modalTaskLocation_drop');
+    if (!input) return;
+
+    if (!navigator.geolocation) {
+        showToast('GPS not supported. Please type an address.');
+        return;
+    }
+
+    input.value = 'Locating...';
+    try {
+        const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true, timeout: 10000, maximumAge: 30000
+            });
+        });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        window.modalDropCoords = { lat, lng };
+
+        // Reverse-geocode to get address text
+        try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`, {
+                headers: { 'Accept-Language': 'en' }
+            });
+            const data = await resp.json();
+            input.value = data.display_name || 'Drop Location';
+        } catch {
+            input.value = 'Drop Location';
+        }
+        showToast('📍 Drop location set from GPS');
+    } catch (err) {
+        console.warn('GPS error (drop):', err.message);
+        input.value = '';
+        showToast('Could not get GPS. Please type a drop address.');
+    }
+}
+
 async function geocodeAddress(address) {
     try {
         const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=in`, {
@@ -7100,29 +7871,56 @@ function setMinDateTime() {
 }
 
 function startTaskTimers() {
-    setInterval(() => {
+    // Guard: only register intervals once per page lifecycle to avoid
+    // duplicate timer stacking which multiplies render/network work.
+    if (_taskTimersStarted) return;
+    _taskTimersStarted = true;
+
+    // Faster user-task status interval (20 s) — gives near-real-time badge
+    // updates for posted/accepted task status (accepted → verify_pending → paid)
+    // without the overhead of re-fetching all public tasks.
+    // renderTasks() is intentionally NOT called here — the 60 s auto-refresh
+    // re-fetches all public tasks from the server and re-renders with fresh data.
+    _timerIntervalId = setInterval(() => {
+        if (document.hidden) return; // Skip heavy work when tab is not visible
+        // Local expiry scan (no network — instant)
+        const now = new Date();
         tasks.forEach(t => {
-            if (t.status === 'active' && new Date(t.expiresAt) <= new Date()) {
+            if (t.status === 'active' && new Date(t.expiresAt) <= now) {
                 t.status = 'expired';
             }
         });
-        // Remove expired-active posted tasks and expired-accepted tasks
         myPostedTasks = myPostedTasks.filter(t => {
-            if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+            if (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) <= now) return false;
             return true;
         });
         myAcceptedTasks = myAcceptedTasks.filter(t => {
-            if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= new Date()) return false;
+            if (t.status === 'accepted' && t.expiresAt && new Date(t.expiresAt) <= now) return false;
             return true;
         });
-        renderTasks();
-        renderPostedTasks();
-        renderAcceptedTasks();
-        addTaskMarkers();
-    }, 60000);
+        // Sync user task statuses from server (silent — no toast), then re-render
+        // posted/accepted sections with the freshly synced data.
+        if (currentUser) {
+            syncUserTasksFromServer(true).then(() => {
+                try { renderPostedTasks(); } catch (_) {}
+                try { renderAcceptedTasks(); } catch (_) {}
+            }).catch(() => {
+                // Network blip — still render with whatever local data we have
+                try { renderPostedTasks(); } catch (_) {}
+                try { renderAcceptedTasks(); } catch (_) {}
+            });
+        } else {
+            try { renderPostedTasks(); } catch (_) {}
+            try { renderAcceptedTasks(); } catch (_) {}
+        }
+        // NOTE: addTaskMarkers() intentionally not called here — re-creating
+        // all Leaflet marker objects was the primary cause of OOM crashes.
+        // Markers update only when fresh task data arrives from loadTasksFromServer.
+    }, 20000);
 
     // Sync notifications from server every 30 seconds
-    setInterval(() => {
+    _notifIntervalId = setInterval(() => {
+        if (document.hidden) return;
         if (currentUser) {
             syncNotificationsFromServer();
         }
@@ -7165,7 +7963,7 @@ function setupEventListeners() {
     // Close modals on backdrop click
     document.querySelectorAll('.modal').forEach(m => {
         m.onclick = function(e) {
-            if (e.target === this) {
+            if (e.target === this && !this.getAttribute('data-required')) {
                 this.classList.remove('active');
                 if (!document.querySelector('.modal.active')) {
                     document.body.classList.remove('modal-open');
@@ -7178,8 +7976,10 @@ function setupEventListeners() {
     // Escape key
     document.onkeydown = function(e) {
         if (e.key === 'Escape') {
-            document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active'));
-            document.body.classList.remove('modal-open');
+            document.querySelectorAll('.modal.active').forEach(m => {
+                if (!m.getAttribute('data-required')) m.classList.remove('active');
+            });
+            if (!document.querySelector('.modal.active')) document.body.classList.remove('modal-open');
             clearRoute();
         }
     };
@@ -7465,8 +8265,8 @@ window.nudgeBudget = nudgeBudget;
 // ========================================
 
 // Initialize Google Sign-In buttons when GIS library loads
-async function initGoogleSignIn() {
-    console.log('🔄 initGoogleSignIn called');
+async function initGoogleSignIn(forceRender) {
+    console.log('🔄 initGoogleSignIn called, forceRender=', !!forceRender);
     
     if (typeof google === 'undefined' || !google.accounts) {
         console.log('⏳ Google GIS library not loaded yet');
@@ -7477,20 +8277,35 @@ async function initGoogleSignIn() {
         try {
             // Use apiRequest so the Netlify proxy fallback kicks in if the
             // direct Railway URL fails to resolve (Indian ISP blocks etc).
+            // If the backend is still cold, retry a few times before giving up.
             let configResp = null;
-            if (typeof apiRequest === 'function') {
-                const r = await apiRequest('/config/google-client-id');
-                configResp = r && r.data ? r.data : null;
-            } else {
-                const API_BASE = window.API_BASE_URL || '/.netlify/functions/api-proxy/api';
-                const resp = await fetch(API_BASE + '/config/google-client-id');
-                configResp = await resp.json();
+            let lastError = null;
+            for (let attempt = 1; attempt <= 4; attempt += 1) {
+                try {
+                    if (typeof apiRequest === 'function') {
+                        const r = await apiRequest('/config/google-client-id');
+                        configResp = r && r.data ? r.data : null;
+                    } else {
+                        const API_BASE = window.API_BASE_URL || '/.netlify/functions/api-proxy/api';
+                        const resp = await fetch(API_BASE + '/config/google-client-id');
+                        configResp = await resp.json();
+                    }
+                    console.log('📦 Google client ID response:', configResp);
+                    if (configResp && configResp.success && configResp.clientId) {
+                        window.GOOGLE_CLIENT_ID = configResp.clientId;
+                        break;
+                    }
+                } catch (e) {
+                    lastError = e;
+                    console.warn(`⚠️ Google client ID fetch attempt ${attempt} failed:`, e && e.message);
+                }
+                if (!window.GOOGLE_CLIENT_ID && attempt < 4) {
+                    await new Promise(resolve => setTimeout(resolve, attempt * 3000));
+                }
             }
-            console.log('📦 Google client ID response:', configResp);
-            if (configResp && configResp.success && configResp.clientId) {
-                window.GOOGLE_CLIENT_ID = configResp.clientId;
-            } else {
+            if (!window.GOOGLE_CLIENT_ID) {
                 console.warn('❌ Google client ID not available');
+                if (lastError) console.warn('   Last error:', lastError.message || lastError);
                 return;
             }
         } catch (e) {
@@ -7545,26 +8360,78 @@ async function initGoogleSignIn() {
         }
         return container;
     }
-    const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');
-    if (loginBtn && !loginBtn.children.length) {
-        google.accounts.id.renderButton(loginBtn, {
-            type: 'standard',
-            size: 'large',
-            text: 'signin_with',
-            theme: 'outline',
-            width: 300
+    // Render Google's official Sign In button. Under mandatory FedCM (Chrome
+    // 2025+), google.accounts.id.prompt() called from a custom click handler
+    // is unreliable — Chrome silently suppresses it depending on cookie state,
+    // prior dismissals, and FedCM quota. renderButton() always works because
+    // GIS owns the click and routes it through FedCM correctly.
+    function renderOfficialGoogleBtn(container, labelText) {
+        if (!container) return;
+        // Replace the node entirely — calling renderButton() on a container
+        // that already holds a Google button silently fails after the first
+        // render (GIS detects its own DOM and skips re-render).
+        const fresh = document.createElement('div');
+        fresh.id = container.id;
+        fresh.style.cssText = container.style.cssText;
+        container.parentNode.replaceChild(fresh, container);
+        container = fresh;
+        try {
+            google.accounts.id.renderButton(container, {
+                type: 'standard',
+                theme: 'outline',
+                size: 'large',
+                text: /sign up/i.test(labelText) ? 'signup_with' : 'signin_with',
+                shape: 'rectangular',
+                logo_alignment: 'left',
+                width: 300
+            });
+        } catch (e) {
+            console.warn('Google renderButton failed:', e);
+            renderGooglePlaceholder(container, labelText + '');
+        }
+    }
+
+    function renderGooglePlaceholder(container, labelText) {
+        if (!container) return;
+        container.innerHTML = '';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = labelText;
+        btn.setAttribute('aria-label', labelText);
+        btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;gap:10px;width:300px;max-width:100%;height:44px;padding:0 16px;border:1px solid #dadce0;border-radius:4px;background:#fff;color:#3c4043;font:500 14px Arial, sans-serif;box-shadow:0 1px 2px rgba(60,64,67,.08);cursor:pointer;';
+        const logo = document.createElement('span');
+        logo.style.cssText = 'width:18px;height:18px;border-radius:50%;background:conic-gradient(#ea4335 0 25%, #fbbc05 25% 50%, #34a853 50% 75%, #4285f4 75% 100%);display:inline-block;flex:0 0 18px;';
+        const text = document.createElement('span');
+        text.textContent = labelText;
+        btn.appendChild(logo);
+        btn.appendChild(text);
+        btn.addEventListener('click', function() {
+            if (typeof initGoogleSignIn === 'function') {
+                initGoogleSignIn(true);
+            }
         });
+        container.appendChild(btn);
+    }
+
+    // Show a visible fallback immediately so the user never sees an empty
+    // hole while the backend/client ID is still loading.
+    const loginFallback = document.getElementById('googleSignInBtn_login');
+    if (loginFallback && !loginFallback.querySelector('button')) {
+        renderGooglePlaceholder(loginFallback, 'Continue with Google');
+    }
+    const signupFallback = document.getElementById('googleSignInBtn_signup');
+    if (signupFallback && !signupFallback.querySelector('button')) {
+        renderGooglePlaceholder(signupFallback, 'Continue with Google');
+    }
+
+    const loginBtn = ensureGoogleBtnContainer('loginModal', 'googleSignInBtn_login');
+    if (loginBtn) {
+        renderOfficialGoogleBtn(loginBtn, 'Sign in with Google');
         console.log('✅ Google button rendered in login modal');
     }
     const signupBtn = ensureGoogleBtnContainer('signupModal', 'googleSignInBtn_signup');
-    if (signupBtn && !signupBtn.children.length) {
-        google.accounts.id.renderButton(signupBtn, {
-            type: 'standard',
-            size: 'large',
-            text: 'signup_with',
-            theme: 'outline',
-            width: 300
-        });
+    if (signupBtn) {
+        renderOfficialGoogleBtn(signupBtn, 'Sign up with Google');
         console.log('✅ Google button rendered in signup modal');
     }
     
@@ -7589,16 +8456,39 @@ async function handleGoogleCredentialResponse(response) {
         showToast('❌ Google login cancelled', 'error');
         return;
     }
-    
+
+    // If the Google button is in the signup modal, grab the invite code
+    const signupModal = document.getElementById('signupModal');
+    const inviteField = document.getElementById('signupInviteCode');
+    const isSignupContext = signupModal && signupModal.classList.contains('active');
+    let inviteCode = '';
+
+    if (isSignupContext && inviteField) {
+        inviteCode = inviteField.value.trim().toUpperCase();
+        if (!inviteCode) {
+            // Scroll to and highlight the invite code field
+            inviteField.focus();
+            inviteField.style.borderColor = '#ef4444';
+            inviteField.style.boxShadow = '0 0 0 3px rgba(239,68,68,0.2)';
+            setTimeout(() => {
+                inviteField.style.borderColor = '';
+                inviteField.style.boxShadow = '';
+            }, 3000);
+            showToast('❌ Please enter your invite code first', 'error');
+            return;
+        }
+    }
+
     try {
-        // Send the ID token to our backend
+        // Send the ID token (and invite code if present) to our backend
         const result = await apiRequest('/auth/google', {
             method: 'POST',
             body: JSON.stringify({
-                credential: response.credential
+                credential: response.credential,
+                invite_code: inviteCode
             })
         });
-        
+
         if (result.success && result.data && result.data.success) {
             // Store token - data is nested inside result.data
             if (result.data.token) {
@@ -7667,11 +8557,11 @@ function showCompleteProfileModal() {
                     <i class="fas fa-check"></i> Save & Continue
                 </button>
             </form>
-            <button onclick="closeModal('completeProfileModal')" style="width:100%;margin-top:8px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:13px;padding:8px;">
-                I'll do this later
-            </button>
         </div>`;
+    modal.setAttribute('data-required', '1');
     document.body.appendChild(modal);
+    // Prevent backdrop click from dismissing
+    modal.onclick = function(e) { if (e.target === modal) e.stopImmediatePropagation(); };
 }
 
 async function submitCompleteProfile(e) {
@@ -7775,11 +8665,13 @@ async function submitKYC() {
             window._kycBackBase64 = null;
             loadKYCStatus();
         } else {
-            const msg = (result && result.message) || 'KYC submission failed';
+            let msg = (result && result.message) || 'KYC submission failed';
+            // "Invalid JSON response" means the server returned a non-JSON error (e.g. 413 payload too large)
+            if (!msg || msg === 'Invalid JSON response' || msg.toLowerCase().includes('invalid json')) {
+                msg = 'Upload failed — the images may be too large. Please try photos taken at lower resolution.';
+            }
             console.error('[KYC] Rejected by server:', msg, result);
-            // Use a longer-lived alert so user actually sees the reason
-            showToast('❌ ' + msg, 'error');
-            try { alert('KYC was rejected:\n\n' + msg); } catch(_) {}
+            showToast('❌ ' + msg, 'error', 6000);
         }
     } catch (err) {
         console.error('[KYC] Submit failed:', err);
@@ -7790,19 +8682,45 @@ async function submitKYC() {
     }
 }
 
-function previewKYCImage(input, side) {
+function compressKYCImage(file) {
+    return new Promise(function(resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const MAX_W = 1200, MAX_H = 1000;
+                let w = img.width, h = img.height;
+                if (w > MAX_W || h > MAX_H) {
+                    const scale = Math.min(MAX_W / w, MAX_H / h);
+                    w = Math.round(w * scale);
+                    h = Math.round(h * scale);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', 0.82));
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+async function previewKYCImage(input, side) {
     const file = input.files[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-        showToast('❌ Image too large. Max 5MB', 'error');
+    if (file.size > 15 * 1024 * 1024) {
+        showToast('❌ Image too large. Max 15MB', 'error');
         input.value = '';
         return;
     }
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const data = e.target.result;
+    try {
+        const data = await compressKYCImage(file);
         if (side === 'back') {
             window._kycBackBase64 = data;
             const preview = document.getElementById('kycBackPreview');
@@ -7820,8 +8738,10 @@ function previewKYCImage(input, side) {
             if (preview) preview.style.display = '';
             if (uploadArea) uploadArea.style.display = 'none';
         }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+        showToast('❌ Could not process image. Please try a different file.', 'error');
+        input.value = '';
+    }
 }
 
 function clearKYCImage(side) {
@@ -7892,7 +8812,8 @@ async function loadKYCStatus() {
             } else if (status === 'rejected') {
                 badge.textContent = 'Rejected';
                 badge.style.background = '#fee2e2'; badge.style.color = '#dc2626';
-                if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626;"><i class="fas fa-times-circle"></i> Rejected</span>';
+                const reason = kyc.flagReason ? escapeHtml(kyc.flagReason) : '';
+                if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626;"><i class="fas fa-times-circle"></i> Rejected' + (reason ? ' — ' + reason : '') + '</span>';
                 if (formSection) formSection.style.display = '';
             }
         }
@@ -7984,13 +8905,89 @@ async function unblockUser(userId) {
 // ========================================
 // PUSH NOTIFICATIONS
 // ========================================
-// Push notification feature has been removed.
-// Stub functions kept as no-ops to avoid breaking any cached HTML still
-// referencing them (e.g. older browser cache calling testPushNotification()).
-function initPushNotifications() {}
-function requestPushPermission() {}
-function enablePushAndSubscribe() {}
-function testPushNotification() {}
+
+/**
+ * Subscribe the current user to web push notifications.
+ * Called once after login (or when user explicitly enables them).
+ * Silently exits if the browser doesn't support push or permission is denied.
+ */
+async function initPushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    // Don't re-subscribe if we've already done it this session
+    if (sessionStorage.getItem('push_subscribed')) return;
+
+    const permission = Notification.permission;
+    if (permission === 'denied') return;
+
+    // Ask permission only if not yet granted
+    if (permission !== 'granted') {
+        const result = await Notification.requestPermission();
+        if (result !== 'granted') return;
+    }
+
+    await enablePushAndSubscribe();
+}
+
+async function enablePushAndSubscribe() {
+    try {
+        // Fetch VAPID public key from our server
+        const { success, publicKey } = await PushAPI.getVapidKey();
+        if (!success || !publicKey) return;
+
+        const reg = await navigator.serviceWorker.ready;
+
+        // Check for existing subscription first
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+            // Convert base64url public key to Uint8Array
+            const appServerKey = urlBase64ToUint8Array(publicKey);
+            sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: appServerKey
+            });
+        }
+
+        // Send subscription to our backend (with optional location)
+        let lat = null, lng = null;
+        try {
+            const pos = await new Promise((res, rej) =>
+                navigator.geolocation.getCurrentPosition(res, rej, { timeout: 3000 })
+            );
+            lat = pos.coords.latitude;
+            lng = pos.coords.longitude;
+        } catch (_) {}
+
+        await PushAPI.subscribe(sub.toJSON(), lat, lng);
+        sessionStorage.setItem('push_subscribed', '1');
+        console.log('[push] Subscribed to push notifications');
+    } catch (e) {
+        console.warn('[push] Subscribe failed:', e);
+    }
+}
+
+async function disablePushNotifications() {
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) await sub.unsubscribe();
+        await PushAPI.unsubscribe();
+        sessionStorage.removeItem('push_subscribed');
+        console.log('[push] Unsubscribed from push notifications');
+    } catch (e) {
+        console.warn('[push] Unsubscribe failed:', e);
+    }
+}
+
+/** Convert a base64url string to a Uint8Array (required by PushManager.subscribe) */
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+// Legacy no-op stubs (kept for any older cached pages that call them)
+function requestPushPermission() { initPushNotifications(); }
 function showPushBannerIfNeeded() {
     const banner = document.getElementById('pushBanner');
     if (banner) banner.style.display = 'none';
@@ -8155,6 +9152,8 @@ window.confirmPhoneOTP = confirmPhoneOTP;
 window.resetPhoneOTP = resetPhoneOTP;
 window.loadRecommendedTasks = loadRecommendedTasks;
 window.enablePushAndSubscribe = enablePushAndSubscribe;
+// Stub — kept for backward-compat with older cached HTML that may call this directly.
+function testPushNotification() {}
 window.testPushNotification = testPushNotification;
 window.showPushBannerIfNeeded = showPushBannerIfNeeded;
 window.loadCategoryCounts = loadCategoryCounts;
@@ -8191,6 +9190,7 @@ window.toggleNotifications = toggleNotifications;
 window.markAsRead = markAsRead;
 window.clearAllNotifications = clearAllNotifications;
 window.handleNotificationAction = handleNotificationAction;
+window.showHelperPaymentPopup = showHelperPaymentPopup;
 window.executePayment = executePayment;
 window.showPaymentInvoice = showPaymentInvoice;
 window.goToTaskInProgress = goToTaskInProgress;
@@ -8387,7 +9387,7 @@ function startOTPTimer() {
         
         if (seconds <= 0) {
             clearInterval(forgotPasswordState.otpTimer);
-            if (timerEl) timerEl.innerHTML = '<span style="color: var(--danger);">OTP expired</span>';
+            if (timerEl) timerEl.innerHTML = '<span style="color: var(--gray);">You can request a new OTP</span>';
             if (resendBtn) resendBtn.disabled = false;
         } else {
             if (timerEl) timerEl.innerHTML = `Resend OTP in <strong>${seconds}s</strong>`;
@@ -8601,6 +9601,85 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+
+// ========================================
+// HOMEPAGE ATTRACTION FEATURES
+// ========================================
+
+// 1. Hero quote rotation
+(function initHeroQuotes() {
+    function rotate() {
+        const quotes = document.querySelectorAll('.hero-quote');
+        if (!quotes.length) return;
+        let active = 0;
+        quotes.forEach((q, i) => { if (q.classList.contains('active')) active = i; });
+        quotes[active].classList.remove('active');
+        quotes[(active + 1) % quotes.length].classList.add('active');
+    }
+    // Use a single DOMContentLoaded-safe initialiser — never create two intervals.
+    function start() {
+        if (document.querySelector('.hero-quote')) window._heroQuotesIntervalId = setInterval(rotate, 4000);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start, { once: true });
+    } else {
+        start();
+    }
+})();
+
+// 2. Earnings Calculator
+function updateCalc() {
+    const ratePerTask = parseInt(document.getElementById('calcCategory')?.value || 500);
+    // Cap tasks/day at 8 — beyond that is unrealistic for a single person
+    const tasksPerDay = Math.min(8, parseInt(document.getElementById('calcTasks')?.value || 3));
+    // Direct "days per week" slider (replaces broken hours→days conversion)
+    const daysPerWeek = Math.min(7, parseInt(document.getElementById('calcDays')?.value || 5));
+
+    // ~4.33 weeks per month
+    const tasksPerMonth = Math.round(tasksPerDay * daysPerWeek * 4.33);
+    const gross = tasksPerMonth * ratePerTask;
+    // Platform deducts commission from helper: 17% general, 15% delivery categories
+    // Using 17% as a conservative default for the earnings calculator
+    const platformCut = Math.round(gross * 0.17);
+    const net = gross - platformCut;
+    const weekly = Math.round(net / 4.33);
+
+    const el   = document.getElementById('calcMonthly');
+    const elW  = document.getElementById('calcWeekly');
+    const elP  = document.getElementById('calcPlatformCut');
+    const elTM = document.getElementById('calcTasksMonth');
+
+    if (el)   el.textContent  = '₹' + net.toLocaleString('en-IN');
+    if (elW)  elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
+    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (17%)';
+    if (elTM) elTM.textContent = tasksPerMonth + ' tasks/month';
+}
+window.updateCalc = updateCalc;
+document.addEventListener('DOMContentLoaded', updateCalc);
+
+// 3. Urgency indicator: pulse task cards expiring in < 2h
+(function addUrgencyPulse() {
+    function check() {
+        document.querySelectorAll('.task-card[data-task-id]').forEach(card => {
+            const id = card.dataset.taskId;
+            const task = (typeof tasks !== 'undefined') && tasks.find(t => t.id == id);
+            if (!task) return;
+            const ms = new Date(task.expiresAt) - Date.now();
+            if (ms > 0 && ms < 2 * 3600 * 1000) {
+                card.classList.add('tc-urgent');
+            } else {
+                card.classList.remove('tc-urgent');
+            }
+        });
+    }
+    window._urgencyPulseIntervalId = setInterval(check, 60000);
+    document.addEventListener('DOMContentLoaded', () => setTimeout(check, 2000));
+})();
+
+// 5. Hero stat counter animation handled by index.html inline script
+// which fetches real-time data from /api/platform-stats and caches it.
+
 
 
 

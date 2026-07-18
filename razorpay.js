@@ -5,6 +5,28 @@
 const RAZORPAY_KEY_ID = 'rzp_live_Sah3BHaaEDLUJr'; // Live Key ID - Updated March 17
 
 // ========================================
+// LAZY SDK LOADER
+// ========================================
+// Razorpay's checkout SDK preloads ~20 JS chunks as soon as it initialises,
+// saturating the browser connection pool and causing ERR_INSUFFICIENT_RESOURCES.
+// Solution: never load the SDK at page-load time; load it only when the user
+// actually triggers a payment action.
+let _rzpSDKPromise = null;
+function loadRazorpaySDK() {
+    if (typeof Razorpay !== 'undefined') return Promise.resolve();
+    if (_rzpSDKPromise) return _rzpSDKPromise;
+    _rzpSDKPromise = new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        s.async = true;
+        s.onload = resolve;
+        s.onerror = function() { _rzpSDKPromise = null; reject(new Error('Failed to load Razorpay SDK')); };
+        document.head.appendChild(s);
+    });
+    return _rzpSDKPromise;
+}
+
+// ========================================
 // PAYMENT FUNCTIONS
 // ========================================
 
@@ -35,7 +57,10 @@ async function initiatePayment(task, user, onSuccess, onError) {
         if (!orderData.success) {
             throw new Error(orderData.message || 'Failed to create order');
         }
-        
+
+        // Load SDK on demand — never loaded at page-start to avoid ERR_INSUFFICIENT_RESOURCES
+        await loadRazorpaySDK();
+
         // Open Razorpay checkout
         const options = {
             key: orderData.keyId || RAZORPAY_KEY_ID,
@@ -304,6 +329,9 @@ async function addMoneyToWallet(amount, onSuccess, onError) {
             }
         };
         
+        // Load SDK on demand — never loaded at page-start to avoid ERR_INSUFFICIENT_RESOURCES
+        await loadRazorpaySDK();
+
         const razorpay = new Razorpay(options);
         razorpay.on('payment.failed', function(response) {
             if (onError) onError({

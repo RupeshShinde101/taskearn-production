@@ -26,10 +26,10 @@ if __name__ == '__main__':
     print("🚀 TaskEarn Backend API Server Starting")
     print("="*70)
     
-    # Initialize database (create tables if needed)
+    # Initialize database (PostgreSQL only)
     print("📦 Initializing database...")
     try:
-        init_db()  # Use init_db() which handles both PostgreSQL and SQLite
+        init_db()
         print("✅ Database ready")
     except Exception as e:
         print(f"⚠️ Database warning: {e}")

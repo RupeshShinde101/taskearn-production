@@ -11,11 +11,14 @@
     <title>Task In Progress - Workmate4u</title>
     <link rel="manifest" href="manifest.json">
     <meta name="robots" content="noindex, nofollow">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Leaflet.js - Free OpenStreetMap (No API Key Required) -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Non-blocking CSS: preload then swap to stylesheet — prevents render-blocking
+         which causes RESULT_CODE_HUNG on slow mobile connections (Chrome watchdog fires
+         when renderer appears frozen for 30 s waiting on CDN downloads). -->
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" as="style" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous"></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+    <!-- Leaflet CSS/JS are loaded lazily inside loadMapNow() to avoid OOM crash on mobile -->
     <style>
         * {
             margin: 0;
@@ -518,11 +521,23 @@
     <div class="container">
         <!-- Map Section -->
         <div class="location-section">
+            <!-- Map placeholder shown until Leaflet tiles load (prevents OOM/crash on mobile) -->
+            <div id="mapPlaceholder" onclick="loadMapNow()" style="position:absolute;inset:0;z-index:5;background:#e4eaf4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;">
+                <div style="width:64px;height:64px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,0.12);">
+                    <i class="fas fa-map-location-dot" style="font-size:28px;color:#3b6dff;"></i>
+                </div>
+                <div style="text-align:center;padding:0 24px;">
+                    <div style="font-size:15px;font-weight:600;color:#1f2937;margin-bottom:4px;">📍 Task Location</div>
+                    <div id="mapPlaceholderAddr" style="font-size:13px;color:#4b5563;">Getting location...</div>
+                </div>
+                <div style="font-size:12px;color:#6b7280;background:white;padding:6px 18px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">Tap to view map</div>
+            </div>
             <div id="map"></div>
             <!-- Location Info Overlay -->
             <div class="location-info">
-                <strong>📍 Task Location:</strong>
+                <strong>📍 Pickup Location:</strong>
                 <div id="taskLocation">Loading location...</div>
+                <div id="taskDropLocation" style="display:none;margin-top:4px;"><strong>🏁 Drop Location:</strong> <span id="taskDropLocationText"></span></div>
             </div>
             <!-- Center on location button -->
             <button class="map-btn map-btn-locate" onclick="centerMapOnTask()" title="Center on Task">
@@ -574,7 +589,11 @@
                 <div class="navigation-section">
                     <button class="btn-navigate" onclick="openNavigation()" title="Navigate to task location">
                         <i class="fas fa-map-marker-alt"></i>
-                        Navigate
+                        Navigate to Pickup
+                    </button>
+                    <button id="btnNavigateDrop" class="btn-navigate" onclick="openDropNavigation()" title="Navigate to drop location" style="display:none;background:linear-gradient(135deg,#8b5cf6 0%,#6d28d9 100%);">
+                        <i class="fas fa-flag-checkered"></i>
+                        Navigate to Drop
                     </button>
                     <a id="callPosterBtn" class="btn-call-poster" href="tel:" title="Call task poster" style="display:none;">
                         <i class="fas fa-phone"></i>
@@ -616,8 +635,55 @@
         </div>
     </div>
 
+    <!-- Payment Received Modal (shown when poster approves & pays) -->
+    <div id="paymentReceivedOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:20000;align-items:center;justify-content:center;padding:16px;">
+        <div style="background:#1a1a2e;border:1px solid rgba(74,222,128,.35);border-radius:20px;max-width:420px;width:100%;padding:0;overflow:hidden;">
+            <!-- Green header strip -->
+            <div style="background:linear-gradient(135deg,#10b981,#059669);padding:24px;text-align:center;">
+                <div style="font-size:52px;margin-bottom:8px;">💰</div>
+                <h2 style="color:#fff;margin:0 0 4px;font-size:22px;">Payment Released!</h2>
+                <p style="color:rgba(255,255,255,.85);margin:0;font-size:13px;">The poster has approved and paid for your work</p>
+            </div>
+            <!-- Breakdown body -->
+            <div style="padding:20px;">
+                <div id="prTaskTitle" style="font-weight:600;font-size:15px;color:#f1f5f9;margin-bottom:16px;text-align:center;"></div>
+
+                <!-- Earnings breakdown -->
+                <div style="background:rgba(255,255,255,.05);border:1px solid rgba(74,222,128,.2);border-radius:12px;padding:16px;margin-bottom:14px;">
+                    <div style="font-size:11px;color:#a78bfa;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;"><i class="fas fa-receipt"></i> Earnings Breakdown</div>
+                    <div id="prBudgetRow" style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                        <span style="color:#94a3b8;">Task Budget</span>
+                        <span style="color:#f1f5f9;font-weight:600;"></span>
+                    </div>
+                    <div id="prScRow" style="display:none;justify-content:space-between;margin-bottom:8px;">
+                        <span style="color:#94a3b8;">Service Charge</span>
+                        <span style="color:#fbbf24;font-weight:600;"></span>
+                    </div>
+                    <div id="prTotalRow" style="display:none;justify-content:space-between;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.08);">
+                        <span style="color:#94a3b8;">Total Task Value</span>
+                        <span style="color:#f1f5f9;font-weight:600;"></span>
+                    </div>
+                    <div id="prCommRow" style="display:flex;justify-content:space-between;margin-bottom:0;padding-top:4px;border-top:1px solid rgba(255,255,255,.08);">
+                        <span style="color:#94a3b8;">Platform Commission</span>
+                        <span style="color:#ef4444;font-weight:600;"></span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;padding-top:12px;border-top:2px solid rgba(74,222,128,.4);margin-top:12px;">
+                        <span style="color:#fff;font-weight:700;font-size:16px;">You Receive</span>
+                        <span id="prEarnings" style="color:#4ade80;font-weight:800;font-size:20px;">₹0</span>
+                    </div>
+                </div>
+
+                <!-- Mark as Completed button -->
+                <button id="markCompleteBtn" onclick="markAsCompleted()" style="width:100%;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;padding:15px;border-radius:12px;font-size:16px;font-weight:700;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;">
+                    <i class="fas fa-check-circle"></i> Mark as Completed
+                </button>
+                <p style="color:#64748b;font-size:12px;text-align:center;margin:0;">Tap to confirm task completion and release to your wallet</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Release Penalty Modal -->
-    <div id="releasePenaltyOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:none;align-items:center;justify-content:center;">
+    <div id="releasePenaltyOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;border-radius:16px;max-width:400px;width:90%;padding:24px;text-align:center;">
             <div style="width:56px;height:56px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
                 <i class="fas fa-exclamation-triangle" style="font-size:24px;color:#ef4444;"></i>
@@ -698,11 +764,54 @@
         const urlParams = new URLSearchParams(window.location.search);
         const taskIdFromUrl = urlParams.get('taskId') || null;
 
-        // API URL
-        const API_URL = 'https://taskearn-production-production.up.railway.app/api';
-        // Netlify proxy fallback (used automatically when direct Railway DNS
-        // is blocked by the user's ISP/carrier — common on Indian mobile data).
+        // Pre-populate currentTask from localStorage immediately at parse time —
+        // before DOMContentLoaded, before the load event, before any API call.
+        (function() {
+            try {
+                var saved = localStorage.getItem('currentTask');
+                if (saved) { Object.assign(currentTask, JSON.parse(saved)); }
+            } catch(e) {}
+        })();
+
+        // Populate critical UI elements as soon as the DOM is ready.
+        // The load event (which triggers the API call) can take up to 10 seconds
+        // on cold Railway starts — this ensures the user sees real task data
+        // instantly instead of placeholder text.
+        document.addEventListener('DOMContentLoaded', function() {
+            var el;
+            if (currentTask.title && currentTask.title !== 'Grocery Shopping') {
+                if ((el = document.getElementById('taskTitle'))) el.textContent = currentTask.title;
+            }
+            if (currentTask.providerName && currentTask.providerName !== 'Rupesh Shinde') {
+                if ((el = document.getElementById('providerName'))) el.textContent = currentTask.providerName;
+            }
+            if (currentTask.providerPhone && currentTask.providerPhone !== '+91 9876543210') {
+                if ((el = document.getElementById('providerPhone'))) el.textContent = currentTask.providerPhone;
+                var callBtn = document.getElementById('callPosterBtn');
+                if (callBtn) {
+                    callBtn.href = 'tel:' + String(currentTask.providerPhone).replace(/\s+/g, '');
+                    callBtn.style.display = 'flex';
+                }
+            }
+        });
+
+        // Always route through Netlify proxy — no direct Railway call from browser.
+        // This prevents ERR_NAME_NOT_RESOLVED / TCP hangs causing RESULT_CODE_HUNG.
         const PROXY_URL = '/.netlify/functions/api-proxy/api';
+        // Lightweight non-blocking toast — used throughout this page.
+        // app.js is not loaded here so we define our own.
+        function _pageToast(msg, isError) {
+            var t = document.createElement('div');
+            t.style.cssText =
+                'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+                'z-index:99999;background:' + (isError ? '#ef4444' : '#10b981') + ';' +
+                'color:#fff;padding:12px 20px;border-radius:8px;font-size:14px;' +
+                'font-weight:600;max-width:90vw;text-align:center;' +
+                'box-shadow:0 4px 12px rgba(0,0,0,.3);pointer-events:none;';
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 3500);
+        }
         async function apiFetch(path, options) {
             options = options || {};
             options.headers = options.headers || {};
@@ -710,13 +819,16 @@
             if (token && !options.headers['Authorization']) {
                 options.headers['Authorization'] = 'Bearer ' + token;
             }
+            // 10-second timeout: prevents indefinite hang if proxy/server is slow
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 10000);
             try {
-                const r = await fetch(API_URL + path, options);
+                const r = await fetch(PROXY_URL + path, { ...options, signal: controller.signal });
+                clearTimeout(tid);
                 return r;
             } catch (e) {
-                // DNS / network failure — try the Netlify edge proxy
-                console.warn('Direct API failed, falling back to proxy:', e.message);
-                return await fetch(PROXY_URL + path, options);
+                clearTimeout(tid);
+                throw e;
             }
         }
 
@@ -731,10 +843,14 @@
             try { if (timerInterval) clearInterval(timerInterval); } catch (e) {}
             try { if (window._taskWatchInterval) clearInterval(window._taskWatchInterval); } catch (e) {}
             try { localStorage.removeItem('currentTask'); } catch (e) {}
+            // Use a non-blocking toast instead of alert() — alert() freezes the renderer thread
             try {
-                alert('This task was cancelled by the poster and has been removed. You will be redirected to browse tasks.');
+                const _toast = document.createElement('div');
+                _toast.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#ef4444;color:#fff;padding:18px 16px;text-align:center;font-size:14px;font-weight:600;letter-spacing:.01em;';
+                _toast.textContent = 'This task was cancelled by the poster. Redirecting...';
+                document.body.appendChild(_toast);
             } catch (e) {}
-            window.location.replace('browse.html');
+            setTimeout(() => window.location.replace('browse.html'), 2500);
         }
 
         // Periodically check that the task still exists and is still assigned
@@ -749,15 +865,44 @@
             const myId = me && me.id;
 
             async function check() {
+                // Skip if a previous check is still in flight — on a slow 2G/3G
+                // connection the 15 s tick can fire while the previous request
+                // is still pending. Without this guard the requests stack
+                // indefinitely, holding onto fetch buffers + AbortController
+                // closures, and eventually exhausts memory on low-RAM devices.
+                if (window._taskWatchInFlight) return;
+                window._taskWatchInFlight = true;
                 try {
                     const res = await apiFetch('/tracking/' + taskId, {
                         headers: { 'Authorization': 'Bearer ' + token }
                     });
-                    if (res.status === 404) { handleTaskGone(); return; }
+                    if (res.status === 404) {
+                        // Honour the same 60-second grace period as loadTaskDetails — the
+                        // visibilitychange event fires during Chrome's navigation animation
+                        // which can trigger check() within the first few seconds of page load,
+                        // before the backend has finished committing the task acceptance.
+                        const _justAccepted = currentTask.startTime &&
+                            (Date.now() - currentTask.startTime) < 60000;
+                        if (_justAccepted) return;
+                        // Require TWO consecutive 404s before declaring the task gone.
+                        // A single 404 can happen during Railway cold starts or transient
+                        // proxy hiccups; without this we falsely kick the user back to
+                        // browse.html on flaky mobile networks.
+                        window._taskWatch404Count = (window._taskWatch404Count || 0) + 1;
+                        if (window._taskWatch404Count >= 2) { handleTaskGone(); }
+                        return;
+                    }
+                    // Reset the 404 streak on any non-404 response.
+                    window._taskWatch404Count = 0;
                     if (!res.ok) return; // transient — try again next tick
                     const result = await res.json();
                     if (!result || result.success === false) {
-                        if (/not found/i.test((result && result.message) || '')) { handleTaskGone(); return; }
+                        if (/not found/i.test((result && result.message) || '')) {
+                            // Same 60-second grace period as the 404 path above.
+                            const _jA = currentTask.startTime &&
+                                (Date.now() - currentTask.startTime) < 60000;
+                            if (!_jA) { handleTaskGone(); }
+                        }
                         return;
                     }
                     const t = result.tracking || {};
@@ -772,11 +917,14 @@
                     }
                     // If payment was released, redirect to completed tasks
                     if (t.status === 'payment_released') {
-                        window.location.href = 'index.html?tab=accepted-tasks';
+                        // Show payment popup instead of silently redirecting
+                        showPaymentReleasedPopup(t);
                         return;
                     }
                 } catch (e) {
                     // network blip — ignore
+                } finally {
+                    window._taskWatchInFlight = false;
                 }
             }
             window._taskWatchInterval = setInterval(check, 15000);
@@ -804,17 +952,37 @@
 
             // If we have a taskId from URL but no proper data, fetch from API
             const taskId = taskIdFromUrl || currentTask.id;
+            // Track whether the primary tracking fetch already ran so the
+            // drop_location fallback below doesn't fire a duplicate request
+            // for the same endpoint when _hasLocal was false.
+            let _trackingFetched = false;
+            const token = localStorage.getItem('taskearn_token') || '';
             if (taskId) {
-                const token = localStorage.getItem('taskearn_token') || '';
-                if (token) {
+                // Skip the initial /tracking fetch entirely when we already have
+                // full task data in localStorage. The periodic watch still polls
+                // every 15s, so we don't miss state changes — but on page load
+                // this saves one round-trip and avoids a confusing 404 in the
+                // console if the task was deleted while the user wasn't here.
+                const _hasLocal = currentTask && currentTask.title && currentTask.providerName &&
+                                  currentTask.providerPhone && currentTask.status;
+                if (token && !_hasLocal) {
+                    _trackingFetched = true;
                     try {
                         const res = await apiFetch('/tracking/' + taskId, {
                             headers: { 'Authorization': 'Bearer ' + token }
                         });
-                        // If task no longer exists (poster cancelled & deleted it), bail out
+                        // If task no longer exists — but honour a 60-second grace period
+                        // right after accept (DB write may still be in flight on slow networks).
                         if (res.status === 404) {
-                            handleTaskGone();
-                            return;
+                            const _justAccepted = currentTask.startTime &&
+                                (Date.now() - currentTask.startTime) < 60000;
+                            // Same two-strikes rule as the periodic watch: a single
+                            // cold-start 404 should not redirect the user.
+                            if (!_justAccepted) {
+                                window._taskWatch404Count = (window._taskWatch404Count || 0) + 1;
+                                if (window._taskWatch404Count >= 2) { handleTaskGone(); }
+                            }
+                            return; // use localStorage data already loaded above
                         }
                         const result = await res.json();
                         if (result.success && result.tracking) {
@@ -822,22 +990,69 @@
                             currentTask.id = t.taskId || taskId;
                             currentTask.title = t.title || currentTask.title;
                             currentTask.price = t.price || currentTask.price || currentTask.amount;
+                            currentTask.status = t.status || currentTask.status;
                             if (t.poster) {
                                 currentTask.providerName = t.poster.name || currentTask.providerName;
                                 currentTask.providerPhone = t.poster.phone || currentTask.providerPhone;
                             }
                             if (t.pickup && t.pickup.lat) {
                                 currentTask.location = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address };
+                                // Update map placeholder with real address
+                                const _phAddr = document.getElementById('mapPlaceholderAddr');
+                                if (_phAddr) _phAddr.textContent = t.pickup.address || (parseFloat(t.pickup.lat).toFixed(4) + ', ' + parseFloat(t.pickup.lng).toFixed(4));
+                            }
+                            // Map destination → drop_location (for delivery/transport tasks)
+                            if (t.destination && t.destination.lat &&
+                                t.destination.lat !== (t.pickup && t.pickup.lat)) {
+                                currentTask.drop_location = { lat: t.destination.lat, lng: t.destination.lng, address: t.destination.address || '' };
+                                // Re-run location display in case map was already shown before API responded
+                                if (typeof displayLocationInfo === 'function') displayLocationInfo();
                             }
                             console.log('✅ Loaded task from API tracking:', currentTask);
+                            // Update verify button based on current task status
+                            updateVerifyButtonState(t.status);
+                            // If payment already released, show the popup immediately on page load
+                            if (t.status === 'payment_released') {
+                                showPaymentReleasedPopup(t);
+                            }
                         } else if (result && result.success === false && /not found/i.test(result.message || '')) {
                             handleTaskGone();
                             return;
+                        } else if (result.tracking && result.tracking.status === 'payment_released') {
+                            // Already paid — show popup immediately on load
+                            showPaymentReleasedPopup(result.tracking);
                         }
                     } catch (e) {
                         console.warn('Tracking API fetch failed:', e.message);
                     }
                 }
+            }
+
+            // Fallback: even when we had full local data (_hasLocal=true), the old localStorage
+            // save didn't include drop_location. Fetch tracking just for that field so the
+            // Navigate to Drop button appears on delivery/transport tasks accepted before the fix.
+            // Skip when _trackingFetched=true (the !_hasLocal path already ran the same endpoint).
+            if (token && !_trackingFetched && !currentTask.drop_location && taskId) {
+                try {
+                    const _dRes = await apiFetch('/tracking/' + taskId, {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    if (_dRes.ok) {
+                        const _dResult = await _dRes.json();
+                        if (_dResult.success && _dResult.tracking) {
+                            const _dt = _dResult.tracking;
+                            if (_dt.destination && _dt.destination.lat &&
+                                _dt.destination.lat !== (_dt.pickup && _dt.pickup.lat)) {
+                                currentTask.drop_location = {
+                                    lat: _dt.destination.lat,
+                                    lng: _dt.destination.lng,
+                                    address: _dt.destination.address || ''
+                                };
+                                if (typeof displayLocationInfo === 'function') displayLocationInfo();
+                            }
+                        }
+                    }
+                } catch (_e) { /* network blip — ignore */ }
             }
 
             // Update UI with task details
@@ -878,11 +1093,42 @@
 
 
 
+        // Update verify button UI based on current task status
+        function updateVerifyButtonState(status) {
+            const btn = document.getElementById('verifyBtn');
+            if (!btn) return;
+            if (status === 'verify_pending') {
+                btn.disabled = true;
+                btn.style.background = 'linear-gradient(135deg,#94a3b8,#64748b)';
+                btn.innerHTML = '<i class="fas fa-hourglass-half"></i> Waiting for Poster to Pay...';
+            } else if (status === 'payment_released') {
+                btn.disabled = true;
+                btn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+                btn.innerHTML = '<i class="fas fa-check-circle"></i> Payment Released!';
+            } else if (status === 'completed' || status === 'paid') {
+                btn.disabled = true;
+                btn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+                btn.innerHTML = '<i class="fas fa-trophy"></i> Task Completed!';
+            }
+        }
+
         // Verify task done (NEW FLOW — replaces completeTask)
         async function verifyTask() {
             const currentUser = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
             if (!currentUser) {
-                alert('Please login first');
+                _pageToast('Please login first', true);
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // If task is already verify_pending, don't call API again
+            if (currentTask.status === 'verify_pending') {
+                _pageToast('✅ Verification already sent! Waiting for the poster to pay.');
+                return;
+            }
+            if (currentTask.status === 'payment_released') {
+                _pageToast('🎉 Payment has been released!');
+                window.location.href = 'index.html?tab=accepted-tasks';
                 return;
             }
 
@@ -890,13 +1136,13 @@
             const token = localStorage.getItem('taskearn_token') || '';
 
             if (!token) {
-                alert('Session expired. Please login again.');
+                _pageToast('Session expired. Please login again.', true);
                 window.location.href = 'index.html';
                 return;
             }
 
             // Disable button to prevent double-click
-            const btn = document.querySelector('.btn-complete');
+            const btn = document.getElementById('verifyBtn');
             if (btn) {
                 btn.disabled = true;
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending Verification...';
@@ -911,12 +1157,42 @@
                         'Authorization': 'Bearer ' + token
                     }
                 });
-                if (res.status === 404) { handleTaskGone(); return; }
+
+                // Handle 401 — session expired, redirect to login (NOT task gone)
+                if (res.status === 401) {
+                    _pageToast('Session expired. Please login again.', true);
+                    window.location.href = 'index.html';
+                    return;
+                }
+
+                // 404 with "already verify_pending" or "not accepted by you" — don't treat as task gone
+                if (res.status === 404) {
+                    const errJson = await res.json().catch(() => ({}));
+                    const msg = (errJson && errJson.message) || '';
+                    // If task status already changed (verify_pending), show friendly message
+                    if (/not accepted by you/i.test(msg) || /already/i.test(msg)) {
+                        currentTask.status = 'verify_pending';
+                        updateVerifyButtonState('verify_pending');
+                        _pageToast('✅ Verification already sent! Waiting for the poster to pay.');
+                        return;
+                    }
+                    // Real task-gone case
+                    handleTaskGone();
+                    return;
+                }
+
                 const result = await res.json();
 
                 if (!result.success) {
+                    // "not accepted by you" means already verify_pending — handle gracefully
+                    if (/not accepted by you/i.test(result.message || '') || /already/i.test(result.message || '')) {
+                        currentTask.status = 'verify_pending';
+                        updateVerifyButtonState('verify_pending');
+                        _pageToast('✅ Verification already sent! Waiting for the poster to pay.');
+                        return;
+                    }
                     if (/not found/i.test(result.message || '')) { handleTaskGone(); return; }
-                    alert(result.message || 'Could not send verification');
+                    _pageToast(result.message || 'Could not send verification', true);
                     if (btn) {
                         btn.disabled = false;
                         btn.innerHTML = '<i class="fas fa-shield-check"></i> Verify Task Done';
@@ -924,8 +1200,9 @@
                     return;
                 }
                 console.log('✅ Backend: Task verification sent to poster');
+                currentTask.status = 'verify_pending';
             } catch (err) {
-                alert('Could not reach the server. Please check your connection and try again.');
+                _pageToast('Could not reach the server. Please check your connection and try again.', true);
                 console.error('Backend verify failed:', err.message);
                 if (btn) {
                     btn.disabled = false;
@@ -947,12 +1224,118 @@
                 localStorage.setItem(`user_${currentUser.id}_data`, JSON.stringify(helperData));
             }
 
+            // Update button to show waiting state (prevent re-click)
+            updateVerifyButtonState('verify_pending');
             clearInterval(timerInterval);
             document.getElementById('confirmModal').classList.add('active');
         }
 
         // Keep legacy completeTask as alias for backward compat
         async function completeTask() { return verifyTask(); }
+
+        // ─── Payment Released Popup ─────────────────────────────────────────
+        let _paymentPopupShown = false;
+        function showPaymentReleasedPopup(trackingOrData) {
+            if (_paymentPopupShown) return;
+            _paymentPopupShown = true;
+
+            // Stop the polling — we already detected the status
+            if (window._taskWatchInterval) {
+                clearInterval(window._taskWatchInterval);
+                window._taskWatchInterval = null;
+            }
+
+            // Update verify button state
+            updateVerifyButtonState('payment_released');
+
+            // Populate breakdown from tracking data or from currentTask
+            const taskTitle = (trackingOrData && trackingOrData.title) || currentTask.title || 'Task';
+            const taskAmount = (trackingOrData && (trackingOrData.price || trackingOrData.taskAmount)) || currentTask.price || currentTask.amount || 0;
+            const sc = (trackingOrData && (trackingOrData.service_charge || trackingOrData.serviceCharge)) || currentTask.service_charge || 0;
+            const total = taskAmount + sc;
+
+            // Commission: 15% for delivery/transport, 17% for others
+            const cat = (currentTask.category || '').toLowerCase();
+            const isDelivery = (cat === 'delivery' || cat === 'transport' || cat === 'moving' || cat === 'pickup');
+            const commPct = isDelivery ? 15 : 17;
+            const commission = Math.round(total * commPct / 100);
+            const earned = total - commission;
+
+            // Set task title
+            const titleEl = document.getElementById('prTaskTitle');
+            if (titleEl) titleEl.textContent = taskTitle;
+
+            // Budget row
+            const budgetRow = document.getElementById('prBudgetRow');
+            if (budgetRow) budgetRow.querySelector('span:last-child').textContent = '₹' + taskAmount;
+
+            // Service charge row (only if > 0)
+            const scRow = document.getElementById('prScRow');
+            if (scRow) {
+                if (sc > 0) {
+                    scRow.style.display = 'flex';
+                    scRow.querySelector('span:last-child').textContent = '+₹' + sc;
+                }
+            }
+
+            // Total row (only if sc > 0)
+            const totalRow = document.getElementById('prTotalRow');
+            if (totalRow) {
+                if (sc > 0) {
+                    totalRow.style.display = 'flex';
+                    totalRow.querySelector('span:last-child').textContent = '₹' + total;
+                }
+            }
+
+            // Commission row
+            const commRow = document.getElementById('prCommRow');
+            if (commRow) commRow.querySelector('span:last-child').textContent = '-₹' + commission + ' (' + commPct + '%)';
+
+            // Earnings
+            const earnEl = document.getElementById('prEarnings');
+            if (earnEl) earnEl.textContent = '₹' + earned;
+
+            // Show overlay
+            const overlay = document.getElementById('paymentReceivedOverlay');
+            if (overlay) overlay.style.display = 'flex';
+        }
+
+        // Called when helper taps "Mark as Completed"
+        async function markAsCompleted() {
+            const btn = document.getElementById('markCompleteBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Marking Complete...';
+            }
+
+            const taskId = currentTask.id;
+            const token = localStorage.getItem('taskearn_token') || '';
+            try {
+                let res;
+                res = await apiFetch('/tasks/' + taskId + '/mark-completed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+                });
+                const result = await res.json();
+                if (result.success || res.ok) {
+                    // Clear stored task
+                    try { localStorage.removeItem('currentTask'); } catch (e) {}
+                    window.location.href = 'index.html?tab=accepted-tasks';
+                } else {
+                    _pageToast(result.message || 'Could not mark as completed. Please try again.', true);
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark as Completed';
+                    }
+                }
+            } catch (err) {
+                _pageToast('Network error. Please try again.', true);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check-circle"></i> Mark as Completed';
+                }
+            }
+        }
 
         // Proceed to payment
         function proceedToPayment() {
@@ -963,17 +1346,13 @@
             window.location.href = 'index.html?tab=accepted-tasks';
         }
 
-        // Service charge lookup (mirrors SERVICE_CHARGES in app.js)
+        // Service charge fallback — only delivery/pickup/transport/moving carry a charge.
+        // Mirrors backend get_service_charge() and app.js getTaskServiceCharge().
         function getServiceChargeForCategory(category) {
-            const charges = {
-                'delivery': 30, 'pickup': 30, 'document': 30, 'errand': 35,
-                'groceries': 40, 'laundry': 40, 'shopping': 40, 'gardening': 50, 'cleaning': 50, 'cooking': 50,
-                'repair': 60, 'assembly': 60, 'tech-support': 60, 'event-help': 60, 'tailoring': 60, 'beauty': 60, 'petcare': 60,
-                'tutoring': 70, 'babysitting': 70, 'fitness': 70, 'photography': 70, 'painting': 70, 'moving': 80, 'eldercare': 80,
-                'carpentry': 90, 'electrician': 100, 'plumbing': 100,
-                'other': 50
-            };
-            return charges[category] || 50;
+            const DELIVERY_CATS = new Set(['delivery', 'pickup', 'transport', 'moving']);
+            if (!DELIVERY_CATS.has(category)) return 0;
+            const charges = { 'delivery': 15, 'pickup': 15, 'transport': 15, 'moving': 40 };
+            return charges[category] ?? 15;
         }
 
         // Helper: shared suspension utilities (reads localStorage cache synced from server)
@@ -1029,7 +1408,10 @@
             }
 
             // Calculate total value with service charge fallback
-            const serviceCharge = currentTask.service_charge || getServiceChargeForCategory(currentTask.category);
+            // Use ?? (nullish coalescing) so 0 (non-delivery tasks) is NOT treated as missing.
+            const serviceCharge = (currentTask.service_charge != null && currentTask.service_charge !== '')
+                ? parseFloat(currentTask.service_charge)
+                : getServiceChargeForCategory(currentTask.category);
             const taskValue = (currentTask.price || currentTask.amount || 0) + serviceCharge;
             const penalty = Math.round(taskValue * 0.10);
             const user = JSON.parse(localStorage.getItem('taskearn_user') || 'null');
@@ -1060,7 +1442,10 @@
             const token = localStorage.getItem('taskearn_token') || '';
             // Calculate total value with service charge fallback (for UI only;
             // backend computes the authoritative penalty inside /abandon).
-            const serviceCharge = currentTask.service_charge || getServiceChargeForCategory(currentTask.category);
+            // Use explicit null check so 0 (non-delivery tasks) is NOT treated as missing.
+            const serviceCharge = (currentTask.service_charge != null && currentTask.service_charge !== '')
+                ? parseFloat(currentTask.service_charge)
+                : getServiceChargeForCategory(currentTask.category);
             const taskValue = (currentTask.price || currentTask.amount || 0) + serviceCharge;
             let penalty = Math.round(taskValue * 0.10);
 
@@ -1074,7 +1459,7 @@
                     });
                     const result = await res.json();
                     if (!result.success) {
-                        alert(result.message || 'Could not release task');
+                        _pageToast(result.message || 'Could not release task', true);
                         return;
                     }
                     if (typeof result.releasePenalty === 'number') penalty = result.releasePenalty;
@@ -1097,53 +1482,63 @@
                         localStorage.setItem('taskearn_suspended_until', String(new Date(result.suspendedUntil).getTime()));
                     }
                 } catch (err) {
-                    alert('Network error. Please try again.');
+                    _pageToast('Network error. Please try again.', true);
                     return;
                 }
             }
 
             clearInterval(timerInterval);
-            alert('Task released. ?' + penalty + ' penalty deducted from your wallet.');
+            _pageToast('Task released. ₹' + penalty + ' penalty deducted from your wallet.');
             window.location.href = 'index.html';
         }
 
         // Initialize on page load
-        window.addEventListener('load', async function() {
-            await loadTaskDetails();
-            if (_taskGoneHandled) return; // task was already deleted; redirect in-flight
+        window.addEventListener('load', function() {
+            // Fire loadTaskDetails without await — the UI is already pre-populated
+            // from DOMContentLoaded (localStorage data). The API call inside
+            // loadTaskDetails enriches the display in the background. Starting the
+            // timer and task watch immediately means the helper sees a live page
+            // instead of a frozen white screen for the duration of the API wait.
+            loadTaskDetails(); // intentionally not awaited
+
+            // Start timer and task watch immediately — they're safe to run even
+            // before the API response arrives. handleTaskGone() (called from within
+            // loadTaskDetails) will cancel both intervals if the task no longer exists.
             showLocation();
-            initializeMap();
             startTaskWatch();
-            
-            // Sync suspension from server (handles cleared cache)
-            try {
-                const token = localStorage.getItem('taskearn_token');
-                if (token) {
-                    const res = await apiFetch('/auth/me', {
-                        headers: { 'Authorization': 'Bearer ' + token }
-                    });
-                    const result = await res.json();
-                    if (result && result.success && result.user) {
-                        if (result.user.timerSuspended && result.user.suspendedUntil) {
-                            localStorage.setItem('taskearn_suspended_until', String(new Date(result.user.suspendedUntil).getTime()));
-                        }
-                        if (result.user.debtSuspended) {
-                            localStorage.setItem('taskearn_debt_suspended', 'true');
-                            localStorage.setItem('taskearn_debt_amount', String(result.user.debtAmount || 0));
-                        }
-                        // Re-check suspension after sync
-                        if (isAccountSuspended()) {
-                            if (isDebtSuspended()) {
-                                showDebtSuspendedOverlay();
-                            } else {
-                                showSuspendedOverlay();
+
+            // Defer suspension sync — run after 2 s so it doesn't block the initial
+            // page render. A second API call immediately after loadTaskDetails() can
+            // push total wait time past Chrome's hung-tab threshold (30 s).
+            setTimeout(async function() {
+                try {
+                    const token = localStorage.getItem('taskearn_token');
+                    if (token) {
+                        const res = await apiFetch('/auth/me', {
+                            headers: { 'Authorization': 'Bearer ' + token }
+                        });
+                        const result = await res.json();
+                        if (result && result.success && result.user) {
+                            if (result.user.timerSuspended && result.user.suspendedUntil) {
+                                localStorage.setItem('taskearn_suspended_until', String(new Date(result.user.suspendedUntil).getTime()));
+                            }
+                            if (result.user.debtSuspended) {
+                                localStorage.setItem('taskearn_debt_suspended', 'true');
+                                localStorage.setItem('taskearn_debt_amount', String(result.user.debtAmount || 0));
+                            }
+                            if (isAccountSuspended()) {
+                                if (isDebtSuspended()) {
+                                    showDebtSuspendedOverlay();
+                                } else {
+                                    showSuspendedOverlay();
+                                }
                             }
                         }
                     }
+                } catch (e) {
+                    console.warn('Suspension sync failed:', e.message);
                 }
-            } catch (e) {
-                console.warn('Suspension sync failed:', e.message);
-            }
+            }, 2000);
         });
 
     </script>
@@ -1153,11 +1548,44 @@
         let map;
         let taskMarker;
 
+        // Lazy-load helper: dynamically injects Leaflet CSS+JS then initializes map
+        let _leafletLoading = false;
+        function loadMapNow() {
+            if (map || _leafletLoading) return;
+            const ph = document.getElementById('mapPlaceholder');
+            if (ph) ph.style.display = 'none';
+            // If Leaflet already loaded (e.g. second call), init immediately
+            if (window.L) { initializeMap(); return; }
+            _leafletLoading = true;
+            // Inject Leaflet CSS
+            const css = document.createElement('link');
+            css.rel = 'stylesheet';
+            css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+            document.head.appendChild(css);
+            // Inject Leaflet JS then init map once loaded
+            const js = document.createElement('script');
+            js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+            js.onload = function() { _leafletLoading = false; initializeMap(); };
+            js.onerror = function() {
+                _leafletLoading = false;
+                const p = document.getElementById('mapPlaceholder');
+                if (p) { p.style.display = 'flex'; }
+                const a = document.getElementById('mapPlaceholderAddr');
+                if (a) a.textContent = 'Map unavailable — check your connection';
+            };
+            document.head.appendChild(js);
+        }
+
         // Initialize Leaflet map
         function initializeMap() {
+            const _ph = document.getElementById('mapPlaceholder');
+            if (_ph) _ph.style.display = 'none';
             try {
                 // Create map centered on task location or default
-                const mapCenter = currentTask.location || { lat: 28.6139, lng: 77.2090 }; // Delhi default
+                // Guard against location object with null lat/lng
+                const mapCenter = (currentTask.location && currentTask.location.lat != null)
+                    ? currentTask.location
+                    : { lat: 28.6139, lng: 77.2090 }; // Delhi default
                 
                 map = L.map('map', {
                     center: [mapCenter.lat, mapCenter.lng],
@@ -1172,7 +1600,7 @@
                 }).addTo(map);
 
                 // Add task location marker
-                if (currentTask.location) {
+                if (currentTask.location && currentTask.location.lat != null) {
                     taskMarker = L.marker([currentTask.location.lat, currentTask.location.lng], {
                         icon: L.icon({
                             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
@@ -1186,7 +1614,26 @@
 
                     // Add popup to marker
                     const taskTitle = currentTask.title || 'Task Location';
-                    taskMarker.bindPopup(`<strong>${taskTitle}</strong><br/>Task location`);
+                    taskMarker.bindPopup(`<strong>${taskTitle}</strong><br/>Pickup location`);
+
+                    // Add drop location marker and polyline if present
+                    if (currentTask.drop_location && currentTask.drop_location.lat) {
+                        const dropLatLng = [currentTask.drop_location.lat, currentTask.drop_location.lng];
+                        const dropIcon = L.divIcon({
+                            html: '<div style="font-size:24px;line-height:1;">🏁</div>',
+                            className: '',
+                            iconSize: [24, 24],
+                            iconAnchor: [12, 12]
+                        });
+                        L.marker(dropLatLng, { icon: dropIcon })
+                            .addTo(map)
+                            .bindPopup(`<strong>Drop-off Location</strong><br/>${currentTask.drop_location.address || ''}`);
+                        L.polyline([[currentTask.location.lat, currentTask.location.lng], dropLatLng], {
+                            color: '#8b5cf6', weight: 3, dashArray: '6,6', opacity: 0.8
+                        }).addTo(map);
+                        // Fit map to show both markers
+                        map.fitBounds([[currentTask.location.lat, currentTask.location.lng], dropLatLng], { padding: [40, 40] });
+                    }
 
                     // Display location address
                     displayLocationInfo();
@@ -1219,6 +1666,18 @@
             } else {
                 locationDiv.textContent = 'Location available on map';
             }
+            // Show drop location if present
+            if (currentTask.drop_location && (currentTask.drop_location.address || currentTask.drop_location.lat)) {
+                const dropDiv = document.getElementById('taskDropLocation');
+                const dropText = document.getElementById('taskDropLocationText');
+                if (dropDiv && dropText) {
+                    dropText.textContent = currentTask.drop_location.address ||
+                        `${currentTask.drop_location.lat.toFixed(4)}, ${currentTask.drop_location.lng.toFixed(4)}`;
+                    dropDiv.style.display = '';
+                }
+                const dropNavBtn = document.getElementById('btnNavigateDrop');
+                if (dropNavBtn) dropNavBtn.style.display = '';
+            }
         }
 
         // Center map on task location
@@ -1234,7 +1693,7 @@
         // Open navigation to task location
         function openNavigation() {
             if (!currentTask.location) {
-                alert('Location not available');
+                _pageToast('Location not available', true);
                 return;
             }
 
@@ -1280,8 +1739,29 @@
                 window.open(mapsUrl, '_blank');
             }
         }
+
+        function openDropNavigation() {
+            if (!currentTask.drop_location || !currentTask.drop_location.lat) {
+                _pageToast('Drop location not available', true);
+                return;
+            }
+            const lat = currentTask.drop_location.lat;
+            const lng = currentTask.drop_location.lng;
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (isMobile) {
+                const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                if (isIOS) {
+                    window.location.href = `maps://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
+                    setTimeout(() => { window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`; }, 1000);
+                } else {
+                    window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+                }
+            } else {
+                window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank');
+            }
+        }
     </script>
-<script src="sw-register.js?v=20260420_recovery"></script>
-    <script src="back-button.js?v=20260506_hideWorker"></script>
+<script defer src="sw-register.js?v=20260420_recovery"></script>
+    <script defer src="back-button.js?v=20260506_hideWorker"></script>
 </body>
 </html>

@@ -1,5 +1,10 @@
 .env
 .env.local
+.env.production
+.env.staging
+backend/.env
+backend/.env.*
+!backend/.env.example
 __pycache__/
 *.pyc
 *.db
@@ -102,3 +107,26 @@ api_connectivity_log.txt
 test_output.txt
 taskearn-backend.zip
 api_diagnostic_tool.py
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+.packages
+flutter/
+
+# Flutter build outputs (in addition to build/ above)
+build/
+*.apk
+*.aab
+*.ipa
+
+# Keystore files (sensitive — never commit these)
+*.jks
+*.keystore
+android/app/keystore/
+
+# Flutter generated files
+lib/generated/
+android/app/src/main/GeneratedPluginRegistrant.java

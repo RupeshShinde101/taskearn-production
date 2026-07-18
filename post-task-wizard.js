@@ -19,7 +19,14 @@
     const TOTAL_STEPS = 4;
 
     // Categories that are distance-priced (and thus need pickup + drop)
-    const DISTANCE_CATS = new Set(['transport', 'delivery', 'moving']);
+    const DISTANCE_CATS = new Set(['transport', 'pickup', 'delivery', 'moving']);
+
+    // Dynamically show/hide the "Min ₹100" label based on selected category
+    function updateBudgetMinLabel() {
+        const cat = document.getElementById('modalTaskCategory')?.value || '';
+        const lbl = document.getElementById('wmBudgetMinLabel');
+        if (lbl) lbl.style.display = DISTANCE_CATS.has(cat) ? 'none' : '';
+    }
 
     let currentStep = 1;
 
@@ -74,6 +81,12 @@
                 ? 'Choose a vehicle to see the fair distance price, then set your budget.'
                 : 'Choose a fair budget. Add a small nudge to attract taskers faster.';
         }
+        updateBudgetMinLabel();
+        // Show/hide the drop location field for distance categories
+        const dropRow = $('wmDropLocationRow');
+        if (dropRow) dropRow.style.display = isDistance ? '' : 'none';
+        // Update service charge display whenever category changes
+        try { if (typeof window.updateTotalBudgetDisplay === 'function') window.updateTotalBudgetDisplay(); } catch (e) {}
     }
 
     function validateStep(step) {
@@ -102,7 +115,9 @@
             }
         } else if (step === 3) {
             const v = parseFloat(($('customBudget') || {}).value);
-            if (!v || v < 100) return 'Minimum task budget is ₹100.';
+            const cat3 = ($('modalTaskCategory') || {}).value || '';
+            const noMin = cat3 === 'delivery' || cat3 === 'transport';
+            if (!v || (!noMin && v < 100)) return noMin ? 'Please enter a budget.' : 'Minimum task budget is ₹100.';
         }
         return null;
     }
@@ -134,7 +149,7 @@
         const drop = dropEl ? (dropEl.value || '').trim() : '';
         const budget = parseFloat(($('customBudget') || {}).value) || 0;
         const veh = window.__wmSelectedVehicle;
-        const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛺 Auto', mini: '🚗 Mini Car', sedan: '🚙 Sedan' };
+        const VEHICLE_LABEL = { bike: '🏍️ Bike', auto: '🛺 Auto', mini: '🚗 Mini Cab', sedan: '🚙 Sedan', suv: '🚐 SUV' };
         const distance = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance.toFixed(1) + ' km' : null;
 
         const rows = [];
@@ -223,6 +238,10 @@
     function reset() {
         currentStep = 1;
         clearStepError();
+        // Clear drop location on wizard reset
+        const dropEl = $('modalTaskLocation_drop');
+        if (dropEl) dropEl.value = '';
+        if (typeof window !== 'undefined') window.modalDropCoords = null;
         applyCategoryLabels();
         goToStep(1, { skipValidate: true });
     }
@@ -333,6 +352,12 @@
 
         mc.classList.add('modal-large', 'wm-wizard-modal');
         mc.innerHTML = WIZARD_MARKUP;
+        // Re-initialize category picker combobox on the newly-injected elements
+        // (category-picker.js already ran autoInit on the old HTML, so the new
+        // plain <select> needs a fresh enhance() pass).
+        if (typeof window.WMCategoryPickerReInit === 'function') {
+            window.WMCategoryPickerReInit();
+        }
     }
 
     const WIZARD_MARKUP = `
@@ -366,18 +391,19 @@
                         <button type="button" class="wm-when-chip" data-when="today-evening">Today evening</button>
                         <button type="button" class="wm-when-chip" data-when="tomorrow-morning">Tomorrow 9am</button>
                     </div>
-                    <div class="form-group" style="margin-top:18px;"><label for="modalTaskLocation">Task Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
+                    <div class="form-group" style="margin-top:18px;"><label for="modalTaskLocation">Pickup Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation" placeholder="Enter the address where task needs to be done" required><button type="button" class="location-btn" onclick="getModalLocation()"><i class="fas fa-map-marker-alt"></i> Use My Location</button></div></div>
+                    <div class="form-group" id="wmDropLocationRow" style="display:none;margin-top:10px;"><label for="modalTaskLocation_drop">Drop-off Location</label><div class="location-input-wrapper"><input type="text" id="modalTaskLocation_drop" placeholder="Enter the drop-off / delivery address"><button type="button" class="location-btn" onclick="getModalDropLocation()"><i class="fas fa-flag-checkered"></i> Drop GPS</button></div></div>
                 </section>
                 <section class="wm-step" data-step="3" role="tabpanel" hidden>
                     <div class="wm-step-head"><h3 id="wmStep3Heading"><i class="fas fa-rupee-sign"></i> Fair price &amp; budget</h3><p class="wm-step-sub" id="wmStep3Sub">Choose a fair budget. Add a small nudge to attract taskers faster.</p></div>
                     <div id="wmPriceHintSlot"></div>
-                    <div class="form-group"><label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em">(Min ₹100)</span></label><div class="budget-selector budget-selector-compact"><input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="100" style="flex:1;font-size:1.05rem;padding:11px 14px;"></div></div>
+                    <div class="form-group"><label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em" id="wmBudgetMinLabel">(Min ₹100)</span></label><div class="budget-selector budget-selector-compact"><input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="0" style="flex:1;font-size:1.05rem;padding:11px 14px;"></div></div>
                     <div class="form-group"><label><i class="fas fa-plus-circle"></i> Nudge Budget (Optional)</label><div class="bonus-section"><p class="bonus-hint">Small bumps to attract taskers faster. Tap to add to your budget.</p><div class="bonus-options"><button type="button" class="bonus-btn" onclick="nudgeBudget(10)">+₹10</button><button type="button" class="bonus-btn" onclick="nudgeBudget(20)">+₹20</button><button type="button" class="bonus-btn" onclick="nudgeBudget(50)">+₹50</button><button type="button" class="bonus-btn bonus-btn-minus" onclick="nudgeBudget(-10)">−₹10</button></div><div class="total-budget-display"><span>Task Budget:</span><strong id="totalBudgetDisplay">₹100</strong></div></div></div>
                 </section>
                 <section class="wm-step" data-step="4" role="tabpanel" hidden>
                     <div class="wm-step-head"><h3><i class="fas fa-receipt"></i> Review &amp; Post</h3><p class="wm-step-sub">Quick summary of what you're posting and the total amount you'll pay.</p></div>
                     <div class="wm-review-summary" id="wmReviewSummary"></div>
-                    <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Charges</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span><span id="serviceChargeAmount">₹50</span></div><div class="charge-row" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">1-3 hours</span></div><div class="charge-row" style="color:#d97706;"><span>+ Task Posting Fee (5%):</span><span id="platformFeeAmount">₹8</span></div><div class="charge-row total"><span><strong>Final Task Value:</strong></span><span><strong id="totalPayable">₹150</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> 5% Task Posting Fee applies to all categories. Service charge: Delivery/Pick&amp;Drop ₹10–₹40 (by distance) | Medium ₹40–50 | Skilled ₹60–70 | Expert ₹70–80 | Professional ₹90–100</p></div>
+                    <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Charges</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" id="serviceChargeRow" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Delivery</span>):</span><span id="serviceChargeAmount">₹15</span></div><div class="charge-row" id="serviceChargeTimeRow" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">15-30 mins</span></div><div class="charge-row" style="color:#d97706;display:none;"><span>+ Platform Fee:</span><span id="platformFeeAmount">₹0</span></div><div class="charge-row total"><span><strong>Total You Pay:</strong></span><span><strong id="totalPayable">₹100</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> No platform posting fee — you pay exactly what you set. Service charge (₹10–₹40 by distance) applies <strong>only to Delivery &amp; Pick/Drop</strong> tasks.</p></div>
                     <div class="task-info-box"><i class="fas fa-info-circle"></i><div><strong>Task Visibility</strong><p>Your task will be visible to nearby taskers for 24 hours. You can edit or delete the task anytime before it's accepted.</p></div></div>
                 </section>
                 <div class="wm-step-actions">
@@ -427,6 +453,12 @@
     }
 
     if (document.readyState === 'loading') {
+        // Upgrade legacy modal HTML NOW (synchronously) while the DOM is already available
+        // (scripts at bottom of <body> can access the DOM even before DOMContentLoaded).
+        // This ensures category-picker.js's autoInit() — which fires on DOMContentLoaded,
+        // after this registration — will find the new #modalTaskCategory from the wizard
+        // markup rather than the stale legacy <select> that gets destroyed by the upgrade.
+        autoUpgradeLegacyModal();
         document.addEventListener('DOMContentLoaded', init);
     } else {
         init();

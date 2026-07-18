@@ -19,8 +19,10 @@
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Tutorials & Training - Workmate4u">
     <meta name="twitter:description" content="Step-by-step video tutorials to master Workmate4u — India's #1 freelance marketplace.">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" as="style" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous"></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
     <link rel="stylesheet" href="styles.css?v=20260506_hideWorker">
     <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_uifix2">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -595,7 +597,7 @@
         <p>&copy; 2026 Workmate4u India. All rights reserved. | <a href="index.html">Home</a> · <a href="help.html">Help Center</a> · <a href="contact.html">Contact</a></p>
     </div>
 
-    <script src="app.js"></script>
+    <script defer src="app.js?v=20260506_hideWorker"></script>
     <script>
         // Play tutorial video - replace thumbnail with YouTube embed
         function playTutorial(el, videoId) {
@@ -628,6 +630,6 @@
             if (loader) { loader.style.opacity = '0'; setTimeout(function() { loader.style.display = 'none'; }, 300); }
         });
     </script>
-    <script src="back-button.js?v=20260506_hideWorker"></script>
+    <script defer src="back-button.js?v=20260506_hideWorker"></script>
 </body>
 </html>

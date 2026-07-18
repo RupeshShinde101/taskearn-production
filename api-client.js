@@ -3,6 +3,18 @@
 // Connect frontend to Python backend
 // ========================================
 
+// Silence harmless aborted-fetch rejections. Without this, every health-check /
+// task-watch AbortController abort produces an "Uncaught (in promise) AbortError"
+// red entry in DevTools. On long sessions these accumulate, retain the Response
+// + closure scope, and on low-RAM Android devices contribute to OOM tab kills.
+window.addEventListener('unhandledrejection', function(e) {
+    var r = e && e.reason;
+    if (r && (r.name === 'AbortError' || r.message === 'accept_timeout' ||
+              /aborted|signal is aborted/i.test(r.message || ''))) {
+        e.preventDefault();
+    }
+});
+
 // Production: suppress debug logs (keep console.warn and console.error)
 (function() {
     if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
@@ -48,28 +60,31 @@ console.log('☁️ On Netlify:', ON_NETLIFY);
 console.log('🔒 Force mobile proxy:', FORCE_MOBILE_PROXY);
 
 // If not pre-set by inline HTML script, determine it now
-if (!API_BASE_URL) {
-    var __host = (window.location.hostname || '').toLowerCase();
-    var IS_LOCAL = __host === 'localhost' || __host === '127.0.0.1' || __host === '0.0.0.0';
-    var IS_STAGING = __host.indexOf('staging') !== -1 || __host.indexOf('deploy-preview') !== -1;
+var __host = (window.location.hostname || '').toLowerCase();
+var IS_LOCAL = __host === 'localhost' || __host === '127.0.0.1' || __host === '0.0.0.0';
+var IS_STAGING = __host.indexOf('staging') !== -1 || __host.indexOf('deploy-preview') !== -1;
 
+if (!API_BASE_URL) {
     if (IS_LOCAL) {
         // Local development: hit local Flask
         API_BASE_URL = 'http://localhost:5000/api';
         console.log('💻 Local dev: using http://localhost:5000/api');
-    } else if (IS_STAGING) {
-        // Staging / PR previews: hit staging Railway service
-        // (override here once you create the staging Railway URL)
-        API_BASE_URL = window.STAGING_API_URL
-            || 'https://taskearn-production-staging.up.railway.app/api';
-        console.log('🧪 Staging: using', API_BASE_URL);
-    } else if (MOBILE && ON_NETLIFY) {
+    } else if (ON_NETLIFY) {
+        // All production/staging Netlify users go through proxy — avoids browser-side
+        // DNS failures when the Railway domain changes (only one place to update: netlify.toml)
         API_BASE_URL = '/.netlify/functions/api-proxy/api';
-        console.log('📱 Mobile on Netlify: Using proxy');
+        console.log('☁️ Netlify: Using proxy for all users');
     } else {
         API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        console.log('🌍 Using Railway production server');
+        console.log('🌍 Using Railway production server (non-Netlify)');
     }
+}
+
+// Override: if an inline HTML script pre-set the Railway URL but we are on Netlify,
+// redirect to proxy. This prevents ERR_NAME_NOT_RESOLVED when Railway domain changes.
+if (API_BASE_URL && API_BASE_URL.includes('railway.app') && ON_NETLIFY && !IS_LOCAL) {
+    API_BASE_URL = '/.netlify/functions/api-proxy/api';
+    console.log('☁️ Overriding inline Railway URL → proxy (on Netlify)');
 }
 
 console.log('=====================================');
@@ -83,11 +98,12 @@ async function checkRailwayHealth() {
         return; // Already checked or explicitly offline
     }
     
-    // Skip health check for mobile users using proxy (proxy handles it)
-    if (MOBILE && ON_NETLIFY && PROXY_AVAILABLE) {
-        console.log('⏭️ Skipping Railway health check for mobile users (using proxy)');
+    // Skip health check entirely when on Netlify — all requests go through the proxy,
+    // so a direct Railway check from the browser is unnecessary and would fail on DNS change.
+    if (ON_NETLIFY) {
+        console.log('⏭️ Skipping Railway health check (on Netlify, using proxy)');
         RAILWAY_CHECKED = true;
-        RAILWAY_AVAILABLE = true; // Assume available when using proxy
+        RAILWAY_AVAILABLE = true;
         return;
     }
     
@@ -121,9 +137,9 @@ async function checkRailwayHealth() {
     RAILWAY_CHECKED = true;
 }
 
-// Check if Netlify proxy is working (for mobile users)
+// Check if Netlify proxy is working (for all Netlify users)
 async function checkProxyHealth() {
-    if (PROXY_CHECKED || !MOBILE || !ON_NETLIFY) {
+    if (PROXY_CHECKED || !ON_NETLIFY) {
         return; // Already checked or not applicable
     }
     
@@ -155,28 +171,20 @@ async function checkProxyHealth() {
         } else {
             PROXY_AVAILABLE = false;
             console.warn('⚠️ Proxy returned unexpected status:', response.status);
-            // Fallback to Railway
-            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-            console.log('📱 Proxy unavailable, falling back to Railway for mobile');
+            // No Railway fallback — proxy is the only route on Netlify
         }
     } catch (error) {
         PROXY_AVAILABLE = false;
         console.warn('⚠️ Proxy health check failed:', error.message);
-        
-        // IMPORTANT: If proxy is blocked (CORB error), fall back to Railway immediately
-        if (error.message.includes('Failed to fetch') || error.name === 'AbortError') {
-            console.log('📱 Proxy blocked or timeout - using Railway backend directly');
-            // Try to use Railway directly (some carriers might not block it on this second attempt)
-            API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api';
-        }
+        // No Railway fallback — proxy is the only route on Netlify
     }
     
     PROXY_CHECKED = true;
 }
 
 // Run health checks in the background (non-blocking)
-// SKIP for mobile on Netlify - they MUST use proxy, no fallback needed
-if (!MOBILE || !ON_NETLIFY) {
+// SKIP entirely on Netlify - all users use proxy, no direct Railway checks needed
+if (!ON_NETLIFY) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
@@ -217,13 +225,33 @@ window.apiFetch = async function apiFetchGlobal(path, options) {
     // Build direct + proxy URLs from the same path. Strip /api prefix if present
     // so we can prepend the proper base for each route.
     var apiPath = path.indexOf('/api/') === 0 ? path.substring(4) : path;
-    var directBase = 'https://taskearn-production-production.up.railway.app/api';
     var proxyBase = '/.netlify/functions/api-proxy/api';
+    var directBase = IS_LOCAL
+        ? 'http://localhost:5000/api'
+        : (ON_NETLIFY ? proxyBase : 'https://taskearn-production-production.up.railway.app/api');
+
+    // 15-second hard timeout per request. Without this, a stalled mobile
+    // connection can keep the fetch hanging indefinitely, exhausting the
+    // browser's max-concurrent-connections pool and freezing the UI.
+    function _doFetch(url, timeoutMs) {
+        if (options.signal) {
+            // Caller supplied their own AbortController — respect it.
+            return fetch(url, options);
+        }
+        var controller = new AbortController();
+        var tid = setTimeout(function() { controller.abort(); }, timeoutMs || 15000);
+        var opts = Object.assign({}, options, { signal: controller.signal });
+        return fetch(url, opts).finally(function() { clearTimeout(tid); });
+    }
+
     try {
-        return await fetch(directBase + apiPath, options);
+        return await _doFetch(directBase + apiPath, 15000);
     } catch (e) {
-        console.warn('apiFetch: direct failed, falling back to proxy:', e && e.message);
-        return await fetch(proxyBase + apiPath, options);
+        if (!ON_NETLIFY && directBase !== proxyBase) {
+            console.warn('apiFetch: direct failed, falling back to proxy:', e && e.message);
+            return await _doFetch(proxyBase + apiPath, 15000);
+        }
+        throw e;
     }
 };
 
@@ -282,14 +310,8 @@ async function apiRequest(endpoint, options = {}) {
         // Handle token expiration - only clear if we actually had an API token
         if (response.status === 401) {
             const token = localStorage.getItem('taskearn_token');
-            console.log('❌ 401 Unauthorized response received!');
-            console.log('   Error message:', data.message);
-            console.log('   Token exists:', !!token);
             if (token) {
-                console.log('   Token length:', token.length);
-                console.log('   Token preview:', token.substring(0, 30) + '...');
                 localStorage.removeItem('taskearn_token');
-                console.log('⚠️  Token cleared from localStorage');
                 // Show session expired overlay if not already shown
                 if (!document.getElementById('sessionExpiredOverlay')) {
                     const overlay = document.createElement('div');
@@ -309,7 +331,41 @@ async function apiRequest(endpoint, options = {}) {
                 }
             }
         }
-        
+
+        // 5xx = backend is cold-starting, overloaded, or temporarily failing.
+        // Retry GETs with back-off so the UI can recover automatically.
+        const method = (options.method || 'GET').toUpperCase();
+        const retryCount = options._retry504Count || 0;
+        if (response.status >= 500 && method === 'GET' && retryCount < 2) {
+            const waitMs = 4000 * (retryCount + 1);
+            console.warn(`⚠️ ${response.status} on ${endpoint} — backend may be warming or unstable, retrying in ${waitMs / 1000}s...`);
+            await new Promise(r => setTimeout(r, waitMs));
+            return apiRequest(endpoint, { ...options, _retry504Count: retryCount + 1 });
+        }
+
+        // Cache successful GET responses so we can recover gracefully if the
+        // backend has a transient cold-start timeout later.
+        if (response.ok && method === 'GET') {
+            try {
+                localStorage.setItem('taskearn_cached_' + endpoint, JSON.stringify(data));
+            } catch (_) {}
+        }
+
+        // If retries are exhausted and this is still a 5xx GET, return cached
+        // data when available instead of hard-failing the UI.
+        if (response.status >= 500 && method === 'GET') {
+            try {
+                const cached = localStorage.getItem('taskearn_cached_' + endpoint);
+                if (cached) {
+                    return {
+                        success: true,
+                        status: 200,
+                        data: { ...JSON.parse(cached), stale: true, message: 'Showing cached data while server wakes up.' }
+                    };
+                }
+            } catch (_) {}
+        }
+
         return { success: response.ok, status: response.status, data };
         
     } catch (error) {
@@ -396,43 +452,7 @@ async function apiRequest(endpoint, options = {}) {
             }
         }
 
-        // For desktop or if proxy failed for other reasons, try fallback
-        if (isUsingProxy && isNetworkError && !MOBILE) {
-            console.warn('⚠️ Desktop proxy request failed. Falling back to Railway...');
-            
-            // Try Railway directly
-            const railwayUrl = `https://taskearn-production-production.up.railway.app/api${endpoint}`;
-            
-            try {
-                const railwayResponse = await fetch(railwayUrl, {
-                    ...options,
-                    headers,
-                    mode: 'cors'
-                });
-                
-                let railwayData;
-                try {
-                    railwayData = await railwayResponse.json();
-                } catch (parseError) {
-                    railwayData = { success: false, message: 'Invalid response' };
-                }
-                
-                console.log('✅ Railway fallback successful');
-                return { success: railwayResponse.ok, status: railwayResponse.status, data: railwayData };
-                
-            } catch (railwayError) {
-                console.error('❌ Railway fallback also failed:', railwayError.message);
-                return {
-                    success: false,
-                    status: 0,
-                    data: {
-                        success: false,
-                        message: 'Cannot connect to backend. Try VPN.',
-                        offline: true
-                    }
-                };
-            }
-        }
+        // On Netlify, proxy is the only route — no Railway fallback needed here
         
         // Handle other network errors
         let errorMessage = 'Network error: ' + error.message;
@@ -458,7 +478,6 @@ async function apiRequest(endpoint, options = {}) {
 
 function setAuthToken(token) {
     localStorage.setItem('taskearn_token', token);
-    console.log('✅ Auth token saved to localStorage');
 }
 
 function clearAuthToken() {
@@ -488,22 +507,14 @@ function getUserFromStorage() {
 const AuthAPI = {
     // Register new user
     async register(userData) {
-        console.log('📝 Starting registration with data:', userData);
         const result = await apiRequest('/auth/register', {
             method: 'POST',
             body: JSON.stringify(userData)
         });
         
-        console.log('✅ Register API response:', result);
-        
         if (result.success && result.data && result.data.token) {
-            console.log('🎯 Setting auth token...');
             setAuthToken(result.data.token);
             saveUserToStorage(result.data.user);
-        } else if (result.success && result.data) {
-            console.log('⚠️ Success but no token in response:', result.data);
-        } else if (!result.success) {
-            console.log('❌ Registration failed:', result.data?.message || result.data);
         }
         
         // Return the actual response data from backend
@@ -512,22 +523,14 @@ const AuthAPI = {
     
     // Login user
     async login(email, password) {
-        console.log('🔑 Starting login for:', email);
         const result = await apiRequest('/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email, password })
         });
         
-        console.log('✅ Login API response:', result);
-        
         if (result.success && result.data && result.data.token) {
-            console.log('🎯 Setting auth token...');
             setAuthToken(result.data.token);
             saveUserToStorage(result.data.user);
-        } else if (result.success && result.data) {
-            console.log('⚠️ Success but no token:', result.data);
-        } else if (!result.success) {
-            console.log('❌ Login failed:', result.data?.message || result.data);
         }
         
         // Return the actual response data from backend
@@ -617,7 +620,7 @@ const AuthAPI = {
     
     // Check if logged in
     isLoggedIn() {
-        return !!authToken;
+        return !!localStorage.getItem('taskearn_token');
     },
     
     // Get stored user
@@ -674,11 +677,14 @@ const TasksAPI = {
             method: 'GET'
         });
         
-        // Cache successful results
+        // Cache successful results — cap at 50 tasks to prevent localStorage
+        // from growing into hundreds of KB which causes "Out of Memory" on low-RAM devices.
         if (result.data && result.data.success && result.data.tasks) {
             try {
-                localStorage.setItem('cached_tasks', JSON.stringify(result.data.tasks));
-                console.log('💾 Tasks cached to localStorage');
+                const MAX_CACHED = 50;
+                const tasksToCache = result.data.tasks.slice(0, MAX_CACHED);
+                localStorage.setItem('cached_tasks', JSON.stringify(tasksToCache));
+                console.log(`💾 Tasks cached to localStorage (${tasksToCache.length}/${result.data.tasks.length})`);
             } catch (e) {
                 console.warn('⚠️ Could not cache tasks:', e);
             }
@@ -1051,6 +1057,9 @@ const NotificationsAPI = {
 // ========================================
 
 async function checkBackendHealth() {
+    // On Netlify, the proxy itself is the public edge and already tested.
+    // Skip backend-health noise here to prevent repetitive console 504 logs.
+    if (ON_NETLIFY) return true;
     const result = await apiRequest('/health', { method: 'GET' });
     return result.success;
 }
@@ -1155,13 +1164,33 @@ const KYCAPI = {
     }
 };
 
-// Push Notifications API removed — stub returns to keep any cached
-// frontend code from crashing if it still tries to call PushAPI methods.
+// Push Notifications API
+// NOTE: Uses apiRequest() so it inherits the proxy fallback and correct base URL.
+// DO NOT use fetch(`${API_BASE_URL}/api/push/...`) here — when the proxy fallback
+// switches API_BASE_URL to /.netlify/functions/api-proxy/api the path would become
+// /api/api/push/... (double /api) causing 404s.
 const PushAPI = {
-    getVapidKey: async () => ({ success: false, message: 'Push notifications removed' }),
-    subscribe:   async () => ({ success: false, message: 'Push notifications removed' }),
-    unsubscribe: async () => ({ success: false, message: 'Push notifications removed' }),
-    test:        async () => ({ success: false, message: 'Push notifications removed' })
+    getVapidKey: async () => {
+        try {
+            const r = await apiRequest('/push/vapid-key', { method: 'GET' });
+            return r.data || { success: false };
+        } catch (e) { return { success: false, message: e.message }; }
+    },
+    subscribe: async (subscription, lat, lng) => {
+        try {
+            const r = await apiRequest('/push/subscribe', {
+                method: 'POST',
+                body: JSON.stringify({ subscription, lat, lng })
+            });
+            return r.data || { success: false };
+        } catch (e) { return { success: false, message: e.message }; }
+    },
+    unsubscribe: async () => {
+        try {
+            const r = await apiRequest('/push/unsubscribe', { method: 'POST', body: '{}' });
+            return r.data || { success: false };
+        } catch (e) { return { success: false, message: e.message }; }
+    }
 };
 
 // Export for use
@@ -1180,14 +1209,11 @@ window.SearchAPI = SearchAPI;
 window.ReportAPI = ReportAPI;
 window.CategoriesAPI = CategoriesAPI;
 window.KYCAPI = KYCAPI;
-window.PushAPI = PushAPI;
 window.checkBackendHealth = checkBackendHealth;
 
 // Log backend status on load
 checkBackendHealth().then(healthy => {
-    if (healthy) {
-        console.log('✅ Backend server connected');
-    } else {
-        console.warn('⚠️ Backend server not available. Run: python backend/server.py');
+    if (!healthy) {
+        console.warn('⚠️ Backend server not available');
     }
 });

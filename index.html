@@ -113,7 +113,7 @@
         "mainEntity": [
             {"@type": "Question", "name": "What is Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Workmate4u is India's leading freelance marketplace that connects people who need tasks done with skilled freelancers nearby. You can hire freelancers for delivery, cleaning, tutoring, repairs, photography and more."}},
             {"@type": "Question", "name": "How do I hire a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Sign up for free, post your task with a description and budget, and local freelancers will accept your task. Track progress in real-time and pay securely through Razorpay."}},
-            {"@type": "Question", "name": "How much can I earn as a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Earnings depend on the tasks you complete. Freelancers earn between ₹50 to ₹10,000+ per task depending on complexity and distance. Top earners make over ₹40,000 per month."}},
+            {"@type": "Question", "name": "How much can I earn as a freelancer on Workmate4u?", "acceptedAnswer": {"@type": "Answer", "text": "Earnings depend on the tasks you complete and their availability in your area. Task budgets typically range from ₹100 to ₹2,000 per task. The platform deducts 15% for delivery/pickup tasks and 17% for all other categories from the helper's payout. A dedicated helper completing 3–5 tasks per day, 5 days a week can realistically earn ₹5,000–₹15,000 per month. Actual earnings vary by city, category, and task availability."}},
             {"@type": "Question", "name": "Is Workmate4u free to join?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, creating an account on Workmate4u is completely free. A small service charge is deducted only when a task is completed successfully."}},
             {"@type": "Question", "name": "Which cities does Workmate4u operate in?", "acceptedAnswer": {"@type": "Answer", "text": "Workmate4u operates across all major Indian cities including Mumbai, Delhi, Bangalore, Hyderabad, Pune, Chennai, Kolkata, and many more. Any location in India with internet access is supported."}},
             {"@type": "Question", "name": "Is Workmate4u safe and secure?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. All payments are processed through Razorpay (PCI-DSS compliant). Users are verified, and we have a rating system, KYC verification, and safety guidelines to protect both clients and freelancers."}}
@@ -125,10 +125,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" as="style" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous"></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" as="style" onload="this.onload=null;this.rel='stylesheet'"><noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></noscript>
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
     <!-- Razorpay Checkout - Loaded dynamically -->
     <script>
@@ -140,12 +142,8 @@
             script.async = true;
             document.head.appendChild(script);
         }
-        // Load after DOM ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', loadRazorpayScript);
-        } else {
-            loadRazorpayScript();
-        }
+        // NOTE: Razorpay is loaded lazily by razorpay.js when a payment is triggered.
+        // Do NOT auto-load here — it causes ERR_INSUFFICIENT_RESOURCES by preloading ~20 chunks at page start.
     </script>
     <link rel="stylesheet" href="styles.css?v=20260506_hideWorker">
     <link rel="stylesheet" href="mobile-enhancements.css?v=20260505_uifix2">
@@ -183,6 +181,11 @@
         })();
     </script>
 <script src="mobile-enhancements.js?v=20260502_findtasks" defer></script>
+<!-- Early shim: openModal/closeModal available before app.js finishes loading -->
+<script>
+function openModal(id){var el=document.getElementById(id);if(el){el.classList.add('active');document.body.classList.add('modal-open');}}
+function closeModal(id){var el=document.getElementById(id);if(el){el.classList.remove('active');}if(!document.querySelector('.modal.active'))document.body.classList.remove('modal-open');}
+</script>
 </head>
 <body class="has-tab-bar">
 <script>if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}</script>
@@ -297,15 +300,15 @@
                 </div>
                 <div class="hero-stats">
                     <div class="stat">
-                        <h3 id="heroStatUsers">--</h3>
-                        <p>Active Users in India</p>
+                        <h3 id="heroStatUsers">500+</h3>
+                        <p>Active Users in India</p>                        npm install -g @railway/cli
                     </div>
                     <div class="stat">
-                        <h3 id="heroStatTasks">--</h3>
+                        <h3 id="heroStatTasks">200+</h3>
                         <p>Tasks Completed</p>
                     </div>
                     <div class="stat">
-                        <h3 id="heroStatEarned">--</h3>
+                        <h3 id="heroStatEarned">₹1L+</h3>
                         <p>Earned by Taskers</p>
                     </div>
                 </div>
@@ -503,7 +506,7 @@
                 if (dist && /^[0-9]+$/.test(dist)) qs.push('dist=' + encodeURIComponent(dist));
                 if (minB && /^[0-9]+$/.test(minB)) qs.push('min=' + encodeURIComponent(minB));
                 if (maxB && /^[0-9]+$/.test(maxB)) qs.push('max=' + encodeURIComponent(maxB));
-                window.location.href = 'browse.html' + (qs.length ? ('?' + qs.join('&')) : '');
+                window.location.href = 'browse.html' + (qs.length ? ('₹' + qs.join('&')) : '');
             } catch (e) {
                 window.location.href = 'browse.html';
             }
@@ -518,6 +521,63 @@
             } catch (e) {}
         }
     </script>
+
+    <!-- Quick Category Browse Grid -->
+    <section class="cat-grid-section" id="quick-categories">
+        <div class="container">
+            <div class="section-header animate-on-scroll">
+                <span class="section-badge">Browse Fast</span>
+                <h2>What do you need <span class="gradient-text">done today?</span></h2>
+                <p>Tap a category to instantly find available tasks near you</p>
+            </div>
+            <div class="cat-icon-grid">
+                <a href="browse.html?category=delivery" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#f97316,#fb923c);"><i class="fas fa-motorcycle"></i></div>
+                    <span>Delivery</span>
+                </a>
+                <a href="browse.html?category=transport" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);"><i class="fas fa-car"></i></div>
+                    <span>Pick &amp; Drop</span>
+                </a>
+                <a href="browse.html?category=cleaning" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#06b6d4,#0284c7);"><i class="fas fa-broom"></i></div>
+                    <span>Cleaning</span>
+                </a>
+                <a href="browse.html?category=tutoring" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#10b981,#059669);"><i class="fas fa-graduation-cap"></i></div>
+                    <span>Tutoring</span>
+                </a>
+                <a href="browse.html?category=repair" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#ef4444,#dc2626);"><i class="fas fa-wrench"></i></div>
+                    <span>Repairs</span>
+                </a>
+                <a href="browse.html?category=cooking" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#f59e0b,#d97706);"><i class="fas fa-utensils"></i></div>
+                    <span>Cooking</span>
+                </a>
+                <a href="browse.html?category=electrician" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);"><i class="fas fa-bolt"></i></div>
+                    <span>Electrician</span>
+                </a>
+                <a href="browse.html?category=plumbing" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#3b82f6,#2563eb);"><i class="fas fa-faucet"></i></div>
+                    <span>Plumbing</span>
+                </a>
+                <a href="browse.html?category=groceries" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#84cc16,#65a30d);"><i class="fas fa-shopping-basket"></i></div>
+                    <span>Groceries</span>
+                </a>
+                <a href="browse.html?category=beauty" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#ec4899,#db2777);"><i class="fas fa-spa"></i></div>
+                    <span>Beauty</span>
+                </a>
+                <a href="browse.html?category=petcare" class="cat-icon-card">
+                    <div class="cat-icon-wrap" style="background:linear-gradient(135deg,#f97316,#ea580c);"><i class="fas fa-paw"></i></div>
+                    <span>Pet Care</span>
+                </a>
+            </div>
+        </div>
+    </section>
 
     <!-- Categories Section -->
     <section class="categories" id="categories">
@@ -542,32 +602,54 @@
         </div>
     </section>
 
-    <!-- Testimonials Section -->
-    <section class="testimonials">
+    <!-- Earnings Calculator -->
+    <section class="calc-section" id="earnings-calc">
         <div class="container">
             <div class="section-header animate-on-scroll">
-                <span class="section-badge">Reviews</span>
-                <h2>Real Reviews, <span class="gradient-text">Coming Soon</span></h2>
-                <p>Workmate4u is newly launched. Live reviews will appear here as our community grows.</p>
+                <span class="section-badge">💰 Estimate</span>
+                <h2>How Much Can <span class="gradient-text">You Earn?</span></h2>
+                <p>Pick your category and hours per week to get your estimated monthly income</p>
             </div>
-
-            <div class="reviews-launch-card animate-on-scroll">
-                <div class="reviews-launch-icon">
-                    <i class="fas fa-comments"></i>
+            <div class="calc-card animate-on-scroll">
+                <div class="calc-inputs">
+                    <div class="calc-group">
+                        <label>Task Category</label>
+                        <select id="calcCategory" onchange="updateCalc()">
+                            <option value="500">🏍️ Delivery / Pick &amp; Drop</option>
+                            <option value="350">🧹 Cleaning Services</option>
+                            <option value="400">📚 Tutoring</option>
+                            <option value="450">🔧 Repairs / Electrician</option>
+                            <option value="300">🛒 Groceries / Errands</option>
+                            <option value="600">📷 Photography</option>
+                            <option value="280">🍳 Cooking</option>
+                            <option value="250">🐾 Pet Care</option>
+                        </select>
+                    </div>
+                    <div class="calc-group">
+                        <label>Working Days per Week: <strong id="calcDaysLabel">5</strong> days</label>
+                        <input type="range" id="calcDays" min="1" max="7" value="5" oninput="document.getElementById('calcDaysLabel').textContent=this.value; updateCalc();">
+                    </div>
+                    <div class="calc-group">
+                        <label>Tasks per Day: <strong id="calcTasksLabel">3</strong></label>
+                        <input type="range" id="calcTasks" min="1" max="8" value="3" oninput="document.getElementById('calcTasksLabel').textContent=this.value; updateCalc();">
+                    </div>
                 </div>
-                <h3>Be one of our first reviewers</h3>
-                <p>We're committed to showing only verified, real feedback from people who actually post or complete tasks on Workmate4u. No fake testimonials, ever.</p>
+                <div class="calc-result">
+                    <div class="calc-result-inner">
+                        <div class="calc-monthly">
+                            <span class="calc-label">Estimated Monthly Take-Home</span>
+                            <span class="calc-value" id="calcMonthly">₹28,600</span>
+                        </div>
+                        <div class="calc-breakdown" style="display:flex;flex-direction:column;gap:4px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span id="calcTasksMonth">65 tasks/month</span>
+                                <span id="calcWeekly">₹6,606/week</span>
+                            </div>
 
-                <ul class="reviews-launch-list">
-                    <li><i class="fas fa-check-circle"></i> Reviews show only after a task is completed and approved</li>
-                    <li><i class="fas fa-check-circle"></i> Each review is tied to a verified user and a real task</li>
-                    <li><i class="fas fa-check-circle"></i> Live stats at the top of the page reflect actual platform activity</li>
-                </ul>
-
-                <div class="reviews-launch-cta">
-                    <a href="feedback.html" class="btn btn-primary">
-                        <i class="fas fa-bolt"></i> Get Started &amp; Be the First
-                    </a>
+                        </div>
+                        <p style="font-size:0.75rem;opacity:0.6;margin:8px 0 12px;line-height:1.5;">Estimate based on average task prices. Actual earnings depend on task availability, your location, and acceptance rate.</p>
+                        <a href="browse.html" class="btn btn-primary calc-cta-btn"><i class="fas fa-bolt"></i> Start Earning Now</a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -592,7 +674,7 @@
                 </details>
                 <details style="background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer;">
                     <summary style="font-weight: 600; font-size: 1.05rem; color: #1e293b; list-style: none; display: flex; justify-content: space-between; align-items: center;">How much can I earn as a freelancer? <i class="fas fa-chevron-down" style="color: #6c5ce7; font-size: 14px;"></i></summary>
-                    <p style="margin-top: 12px; color: #64748b; line-height: 1.7;">Earnings depend on the tasks you complete. Freelancers earn between ₹50 to ₹10,000+ per task depending on complexity and distance. Top earners make over ₹40,000 per month on Workmate4u.</p>
+                    <p style="margin-top: 12px; color: #64748b; line-height: 1.7;">Earnings depend on the tasks you complete and their availability in your area. Task budgets typically range from ₹100 to ₹2,000 per task. The platform deducts 15% for delivery/pickup tasks and 17% for all other categories from the helper's payout. A dedicated helper completing 3–5 tasks per day, 5 days a week can realistically earn ₹5,000–₹15,000 per month. Use the calculator above to estimate your income based on your category and schedule.</p>
                 </details>
                 <details style="background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer;">
                     <summary style="font-weight: 600; font-size: 1.05rem; color: #1e293b; list-style: none; display: flex; justify-content: space-between; align-items: center;">Is Workmate4u free to join? <i class="fas fa-chevron-down" style="color: #6c5ce7; font-size: 14px;"></i></summary>
@@ -728,6 +810,11 @@
                 <div class="form-group">
                     <label for="signupPassword">Password</label>
                     <input type="password" id="signupPassword" placeholder="Create a strong password" required>
+                </div>
+                <div class="form-group">
+                    <label for="signupInviteCode">Invite Code <span style="color:#6366f1;font-weight:700;">*</span></label>
+                    <input type="text" id="signupInviteCode" placeholder="Enter your invite code" autocomplete="off" required style="letter-spacing:2px;text-transform:uppercase;">
+                    <small style="color:#6366f1;">This is a closed beta — you need an invite code to join.</small>
                 </div>
                 <div class="form-group">
                     <label class="checkbox-label">
@@ -1034,9 +1121,9 @@
                     <!-- Slot for category-picker.js to inject vehicle chips + fair-price hint -->
                     <div id="wmPriceHintSlot"></div>
                     <div class="form-group">
-                        <label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em">(Min ₹100)</span></label>
+                        <label>Task Budget <span style="font-weight:400;color:#64748b;font-size:0.85em" id="wmBudgetMinLabel">(Min ₹100)</span></label>
                         <div class="budget-selector budget-selector-compact">
-                            <input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="100" style="flex:1;font-size:1.05rem;padding:11px 14px;">
+                            <input type="number" id="customBudget" placeholder="Enter your budget (₹)" min="0" style="flex:1;font-size:1.05rem;padding:11px 14px;">
                         </div>
                     </div>
                     <div class="form-group">
@@ -1076,24 +1163,24 @@
                                 <span>Task Budget:</span>
                                 <span id="displayTaskBudget">₹100</span>
                             </div>
-                            <div class="charge-row" style="color: #10b981;">
-                                <span>+ Service Charge (<span id="serviceChargeLevel">Medium</span>):</span>
-                                <span id="serviceChargeAmount">₹50</span>
+                            <div class="charge-row" id="serviceChargeRow" style="color: #10b981;">
+                                <span>+ Service Charge (<span id="serviceChargeLevel">Delivery</span>):</span>
+                                <span id="serviceChargeAmount">₹15</span>
                             </div>
-                            <div class="charge-row" style="font-size: 12px; color: #666;">
+                            <div class="charge-row" id="serviceChargeTimeRow" style="font-size: 12px; color: #666;">
                                 <span>Est. Time:</span>
                                 <span id="serviceChargeTime">1-3 hours</span>
                             </div>
-                            <div class="charge-row" style="color: #d97706;">
-                                <span>+ Task Posting Fee (5%):</span>
-                                <span id="platformFeeAmount">₹8</span>
+                            <div class="charge-row" style="color: #d97706; display: none;">
+                                <span>+ Platform Fee:</span>
+                                <span id="platformFeeAmount">₹0</span>
                             </div>
                             <div class="charge-row total">
                                 <span><strong>Final Task Value:</strong></span>
                                 <span><strong id="totalPayable">₹158</strong></span>
                             </div>
                         </div>
-                        <p class="charge-note"><i class="fas fa-info-circle"></i> 5% Task Posting Fee applies to all categories. Service charge: Delivery/Pick&amp;Drop ₹10–₹40 (by distance) | Medium ₹40–50 | Skilled ₹60–70 | Expert ₹70–80 | Professional ₹90–100</p>
+                        <p class="charge-note"><i class="fas fa-info-circle"></i> No platform posting fee — you pay only your set budget. Service charge (delivery/pickup): ₹10–₹40 by distance.</p>
                     </div>
                     <div class="task-info-box">
                         <i class="fas fa-info-circle"></i>
@@ -1355,18 +1442,18 @@
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     
     <!-- API Client for Python Backend -->
-    <script src="api-client.js?v=20260506_hideWorker"></script>
-    <script src="shared.js?v=20260506_hideWorker"></script>
-    <script src="category-picker.js?v=20260506_hideWorker"></script>
-    <script src="post-task-wizard.js?v=20260506_hideWorker"></script>
+    <script defer src="api-client.js?v=20260506_hideWorker"></script>
+    <script defer src="shared.js?v=20260506_hideWorker"></script>
+    <script defer src="category-picker.js?v=20260514_scfix"></script>
+    <script defer src="post-task-wizard.js?v=20260514_scfix"></script>
     
     <!-- Google Sign-In -->
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
     
     <!-- Razorpay Payment Integration -->
-    <script src="razorpay.js?v=20260404_accept_v2"></script>
+    <script defer src="razorpay.js?v=20260404_accept_v2"></script>
     
-    <script src="app.js?v=20260506_hideWorker"></script>
+    <script defer src="app.js?v=20260514_markbtn"></script>
     
     <!-- Scroll Animations + Page Loader -->
     <script>
@@ -1447,19 +1534,16 @@
                 } catch(e) {}
             }
 
-            fetch(statsBase + '/platform-stats')
-                .catch(function() { return fetch('/.netlify/functions/api-proxy/api/platform-stats'); })
+            // On Netlify, always use the proxy first to avoid CORS pre-flight errors
+            // against the Railway origin. Fall back to direct only when not on Netlify.
+            var statsFetch = onNetlify
+                ? fetch('/.netlify/functions/api-proxy/api/platform-stats')
+                : fetch(statsBase + '/platform-stats')
+                    .catch(function() { return fetch('/.netlify/functions/api-proxy/api/platform-stats'); });
+            statsFetch
                 .then(function(r) { return r.json(); })
                 .then(applyStats)
-                .catch(function() {
-                    // Direct call failed (Indian ISP blocking Fastly/Railway is common).
-                    // Retry via Netlify proxy if we are on a Netlify deploy.
-                    if (!onNetlify) return;
-                    fetch('/.netlify/functions/api-proxy/api/platform-stats')
-                        .then(function(r) { return r.json(); })
-                        .then(applyStats)
-                        .catch(function() { /* both failed; cached values stay */ });
-                });
+                .catch(function() { /* failed; cached values stay */ });
         }
 
         function formatCount(n) {
@@ -1514,7 +1598,7 @@ function acceptCookies(){localStorage.setItem('cookieConsent','accepted');docume
 function declineCookies(){localStorage.setItem('cookieConsent','declined');document.getElementById('cookieConsent').style.display='none';}
 </script>
 
-<script src="sw-register.js?v=20260420_recovery"></script>
+<script defer src="sw-register.js?v=20260420_recovery"></script>
 
 <nav class="bottom-tab-bar" aria-label="Main navigation">
     <a href="index.html" class="active" aria-label="Home"><i class="fas fa-home"></i><span>Home</span></a>

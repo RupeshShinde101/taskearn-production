@@ -1,0 +1,1174 @@
+••9f6899d security: remove admin.html from public web - redirect to 404
+
+42fe301 chore: consolidate admin panel - replaced admin.html with WorkmateAdmin notice
+
+1449e9d feat: SOS admin push, profile nudge, admin withdrawal UI, withdrawal status UI, PWA offline, sitemap update
+
+f6dafee fix: notification dropdown always empty - fetch live on open, fix fallback path populating notifications array
+
+13568e4 fix: honest earnings calculator - fix 7-day overflow bug, transparent 12% breakdown, remove fake ••c%40k claim
+
+afb87eb fix: block debt users posting tasks, fix wallet CSS, fix notif popup empty+touch, UI polish
+
+efde6d4 fix: remove duplicate pywebpush==1.14.0 pin (conflicts with 2.0.0)
+
+93cb38a feat: implement web push notifications (VAPID, subscribe/unsubscribe, sw push handler)
+
+ef18e8d feat: fix bottom nav CSS, saved payment details on withdraw, admin-review flow
+
+4f41357 fix: remove duplicate PWA install banner, keep only sw-register.js version
+
+d28ae8e feat: replace wallet warning with attractive purple earn nudge card
+
+67f00fa fix: wallet low warning ••• show 'Your wallet balance is low. Start earning today!'
+
+5c77018 feat: expiry UX, trust signals, share prompt, wallet CTA, expand radius action
+
+dbbc128 remove: referral banner section from homepage
+
+ec05323 remove: hero quotes carousel from homepage
+
+4cd69e4 remove: View All card from category icon grid
+
+834e326 remove: Sneha Bangalore quote from hero carousel
+
+8f743ce remove: testimonials/reviews and top earners leaderboard from homepage
+
+e4b8168 fix: show WhatsApp share button only when helper has accepted THIS task
+
+9bf7998 feat: growth features ••• quotes carousel, category grid, real testimonials, leaderboard, earnings calc, referral banner, PWA prompt, urgency badges, WhatsApp share
+
+517fcb1 feat: service charge only for Delivery/Pick&Drop ••• all other categories SC=0
+
+d39a632 feat: clean pricing model ••• task value=budget+sc, poster pays+5% fee, helper earns%•0.88
+
+e68fe8f style: redesign empty state for browse tasks (icon, tips chips, clear btn)
+
+01ac88c style: gradient highlight on browse section subtitle
+
+b7f150c fix: userActiveTask ReferenceError in renderTasks; add staging--workmate4 to CORS
+
+3cb43af feat: remove map from browse page, add compact horizontal filter bar
+
+a2daefa fix: price consistency (helperEarnings), staging CORS, browse toolbar + 3-col grid layout
+
+3f2c356 fix(toast): replace verbose backend-offline alert with clean bottom-center toast notifications
+
+cbb3ccf feat(browse): enhanced task card v2 UI with category icons, colour accents, urgency timer, poster avatar and earnings display
+
+1987004 fix: require invite code for Google sign-up during trial period
+
+85fecea security: admin is_admin column, require_admin decorator, fix self-delete for Google users, Redis rate limiter, JWT 4h default
+
+c0308e2 security: remove phone from public task list, mask error messages, add API CSP header
+
+72093c1 fix: block deleted users from re-registering via Google (deleted_accounts table)
+
+07f411e feat: make phone number mandatory for Google sign-in users
+
+c54f2bd fix: trial banner now shows as centered popup card with X button and Got it dismiss
+
+af77a38 fix: move trial banner to bottom of screen, add dismiss button so it doesn't block nav/content
+
+2f75fc1 feat: closed beta trial ••• invite code + 100-user cap + 30-day expiry + trial status banner
+
+a973256 fix: star rating always saved as 1 star (querySelector returned first star); Next button hidden behind keyboard (100vh -> 100dvh)
+
+f5e4240 fix: remove pull-to-refresh from browse/task pages, fix update banner showing in loop after refresh
+
+fb75bfc fix: correct netlify build - use separate script to avoid shell escaping bugs that broke CSS paths
+
+00889c2 fix: SW update/refresh now clears caches, unregisters SW, and stamps HTML asset query strings on deploy
+
+9eb195a feat: ratings & reviews section collapsed by default with Show/Hide toggle
+
+ecd2ac5 fix: ratings & reviews showing 0 ••• fix camelCase key mismatch (totalReviews/avgRating) and add localStorage fallback for currentUser
+
+1726f7e fix: profile shows data instantly using cached localStorage user ••• no more blank fields waiting for network verify
+
+806e45c fix: profile card stuck loading ••• poll for currentUser in IIFE instead of fixed 300ms, also trigger from DOMContentLoaded session restore
+
+a3e2242 fix: profile stuck loading after login/signup; paid tasks missing from history; 48h limit on paid task history
+
+8c03e34 fix: remove completed tasks from posted section ••• route to history like paid/payment_released
+
+8e65f29 fix: 5 bugs ••• paid tasks in posted section, notification amounts, invoice popup from notif, amount consistency, poster ID in completed tasks
+
+08ab392 fix: KYC invalid JSON response ••• compress images, proper error messages, flagReason in status
+
+074051b fix: consistent task value calculation across all sections
+
+fd57884 fix: show payment invoice popup on Verify & Pay Now click
+
+161db1b feat: add Verify Task Done button on accepted task cards
+
+ee27a41 fix: accepted tasks always show + SW update banner on every deploy
+
+3b01908 fix: accepted tasks not showing in accepted section
+
+14d140a fix: SW update banner now correctly reloads to new version without hard refresh
+
+08401fc fix: restore missing renderPostedTasks function declaration in app.js
+
+6ba7756 feat: new verify-and-pay task flow
+
+967946a fix: tasks not showing after accept ••• clean up orphaned sync code, add independent syncUserTasksFromServer call, fix FK violation in 48h cleanup
+
+fb594dc feat: store completed tasks for 48h with poster details; auto-wipe after 48h from DB and UI
+
+dafea55 fix: remove Connected to server status indicator from index page
+
+9ae7d38 feat: add bidirectional rating/review for task poster and helper
+
+26e296f feat(pricing): apply 5% Task Posting Fee to all categories (including Pick&Drop); calculate on budget + service charge
+
+1922011 feat: change task visibility from 12 hours to 24 hours (backend + UI)
+
+bfbb534 Fix local sessions not responding: verify JWT on load and fix AuthAPI.me() call
+
+ae0afe5 Initial plan
+
+de83cd5 Fix mobile layout (add bottom tab bar HTML) and edit task button issues
+
+ffff481 Address code review: fix validation, type checks, stack trace exposure, and JS error handling
+
+2888fec Fix edit task buttons: add backend PUT endpoint and API call in saveTaskEdit
+
+062409c fix: hide Worker Earns row from poster review (index/posted/wizard); remove bike from Pick&Drop description placeholder
+
+17c58b1 fix(pricing): worker earns shows net after 12% commission deduction
+
+b6cb467 fix(pricing): restore service charge for Pick&Drop; only waive 5% Task Posting Fee for transport (frontend+backend+emails); cache bump
+
+6d55beb fix(pricing): align backend service charges; rename emails to Posting Fee/Platform Fee; refactor inline price+fee to getTaskFinalValue (handles legacy transport)
+
+c1648ec feat(pricing): zero posting fee for Pick&Drop; rename to Posting Fee/Final Task Value; helper getTaskFinalValue used on cards
+
+f6a15ed feat(wizard): regroup as When+Where (step 2) and Vehicle+Budget (step 3); mobile overflow fixes
+
+8d0b89c feat(wizard): merge Location+Budget into one step; remove bike from Pick&Drop; tighter typography
+
+fc70d87 Revert "style(wizard): square modal on mobile (side = min(100vw, 100vh)); drop progress bar and condense type to fit"
+
+f608202 style(wizard): square modal on mobile (side = min(100vw, 100vh)); drop progress bar and condense type to fit
+
+bb9cc8d style(wizard): bigger description textarea (180px); tighter mobile vertical rhythm so form feels square on S24-class phones
+
+ef42354 style(wizard): wider square-ish modal (820x820 max) with bigger step labels; mobile stays fullscreen
+
+b0dcd53 feat(ui): fixed-height wizard with internal scroll; responsive vehicle chips & review summary; required-vehicle badge on task cards
+
+a5ed4c3 feat(post-task): redesign giant scroll form into 5-step tabbed wizard (Basics/When/Location/Budget/Review) with per-category labels, quick-when chips, and review summary; auto-upgrade legacy modal on posted/accepted/completed
+
+f0f5aeb fix(post-task): server now honors client-supplied serviceCharge so task cards reflect distance-aware fee from modal
+
+ae9c22e feat(post-task): inject required-vehicle line into description; auto-recalc on Use My Location; vehicle change syncs service charge; browse card prefers stored service_charge
+
+7ab85d9 tweak(price-hint): remove Ola/Rapido fare line; cleaner header
+
+5f8f989 tweak(price-hint): label base fare as 'service charge' for clarity
+
+4bb9581 fix(category-picker): syntax error from duplicated else block; smart typeahead picker now loads
+
+07826dd fix(service-charge): cap pick&drop/delivery/moving fees at \u20b910-\u20b940, scaled by distance; add transport entry; update legend
+
+7c29e3d feat(post-task): auto-apply suggested fair price to budget; fix pickup geocode w/ proximity bias; replace big budget chips with single input + small +-10/20/50 nudge buttons; clearer pickup-not-found error
+
+455b503 fix(map-picker): show search results above the map (z-index + stacking context); polish input + dropdown styling
+
+cc4b95f fix(map-picker): proximity-biased search ••• results near pickup, distance badge per row, 2-char threshold, clearer empty/error states
+
+82f0fdf fix(post-task): explicit 'Calculate fair price' button + 'Calculating•••' loading state + clear error messages when geocoding fails
+
+eb595b6 feat(post-task): Ola/Rapido-style pick & drop ••• vehicle classes (Bike/Auto/Mini/Sedan), OSRM road route, ETA, pickup map picker, inline route preview map
+
+6f5fa1a feat(map-picker): live multi-result search dropdown for drop location
+
+f75f824 feat(post-task): map-picker for drop location; show only distance pricing for travel categories
+
+f03af01 feat(post-task): distance-based pricing for pick&drop, delivery, moving
+
+1b9fef3 feat(post-task): category-based price suggestion banner with quick-set chips
+
+6e60a25 feat(tasks): render Q&A description as readable cards in helper view
+
+e68abf8 feat(post-task): Q&A answer slots in description templates
+
+e19c492 feat(post-task): category-specific description templates auto-fill
+
+cf6e7ab feat(category-picker): unique emoji icon per category
+
+364bc28 feat(category-picker): autocomplete + grouped categories (Home Repairs, Errands, Digital & Skills...)
+
+c439db3 fix(dark-mode): tutorial-cta card was hardcoded white, hiding 'How Workmate4u Works'
+
+984de14 fix(dark-mode): hero gradient + low-contrast text overrides
+
+f83c950 fix(profile): move Logout + Delete Account to dedicated Danger Zone card at bottom; remove Delete Account from generic profile modal (now profile.html only); bump app.js cache so setTheme() is loaded - theme buttons now work
+
+e6f3ed0 feat(theme): theme switcher only in profile > Appearance card - removed dark-mode-toggle navbar button from all 17 other pages; added Light/Dark buttons with active outline; new setTheme() helper
+
+f2bc7d4 fix(map): force Leaflet invalidateSize() after init on browse, task-detail mini-map, task-in-progress, poster-live-tracking - tiles were rendering only top-left because containers had 0px during animation/safe-area layout
+
+d56cdb2 fix(encoding): restore UTF-8 in HTML files - rupee, bullet, emoji symbols were corrupted to mojibake by PowerShell Set-Content; reapplied shared.js cache bump via UTF-8 safe edits
+
+4b9df79 fix(nav): bottom-bar Post (+) button now works on browse/profile/wallet - falls back to index.html#post when modal not on page; auto-opens modal on hash
+
+5b2ec6e debug(kyc): surface server rejection reason in console + alert so users see WHY 400 was returned
+
+423bbed feat(kyc): anti-fraud checks - Verhoeff Aadhaar checksum, SHA-256 image-hash dedup across users (rejects shared/stolen documents), document-number dedup, Pillow image-quality check, mandatory legal declaration checkbox; suspect submissions go to pending review instead of auto-verify
+
+f6677c1 feat(ux): universal floating back button (back-button.js) auto-injected on all non-home pages - fixes iOS/Android devices without hardware back; supports Esc key, falls back to sensible parent if no history
+
+7edeff6 feat(safety): expanded scam keyword block list (advance-fee/gift-card/wire-transfer/MLM/credentials/fake-docs/platform-bypass) + soft-flag for admin review (data-entry, refer-and-earn, deposit, urgent-payment); flag_reason surfaces on WorkmateAdmin fraud-alerts; block phone/email/wa.me in tasks
+
+bfb3f24 fix(admin): expire overdue active tasks on dashboard-stats and analytics fetch so admin sees correct status
+
+2cc9097 fix(task-in-progress): redirect helper to browse if poster cancels & deletes task - polls /tracking every 15s and on tab focus, handles 404 on load/complete
+
+adba2b8 feat(tasks): poster-cancel now permanently deletes task from DB - removes from website, browse, and admin panel; helper notified
+
+5a3a168 fix(tasks): poster-cancel has no suspension/daily-cap - suspension applies only to helper releases
+
+17185aa feat(tasks): poster can cancel accepted task and re-list it - new POST /tasks/<id>/poster-cancel endpoint with daily-cap suspension; Cancel & Re-list button on posted tasks; helper notified
+
+f065b8e style(reviews/rating): theme-aware reviews popup with avatars+date, hover preview + rating words on rate modal
+
+d4a0e44 fix(reviews): View Reviews used non-existent TasksAPI.makeRequest; route through RatingsAPI.getReviews
+
+5b39333 fix(csp): allow nominatim.openstreetmap.org in connect-src for reverse geocoding
+
+9a66cdf fix(network): proxy fallback everywhere - tracking.html(7 fetches), wallet.html(3), chat.html, razorpay.js, feedback.html, contact.html, tracking.js, index.html platform-stats; add window.apiFetch in api-client.js
+
+95534f2 fix(network+csp): proxy fallback in task-in-progress, poster-live-tracking, payment-qr; allow leaflet markers in CSP img-src
+
+c6d6221 fix(ratings): rate buttons broken by JSON.stringify in onclick attribute (embedded quotes broke HTML); use stashed window.__pendingRate context
+
+8537a63 fix(network): route completeTask, payHelper, dispute, bookmark, notifications, deleteAccount through apiRequest for proxy fallback; remove duplicate openRateUserModal; fix wrong token key
+
+ec5b805 feat(ratings): mutual poster<->helper rating modal triggered after payment, persists to /api/task/<id>/rate
+
+e3eabd5 feat(safety): block spam/fraud tasks (bulk account creation, OTP work, fake reviews, crypto, hacking, etc.) at task creation
+
+b9d6118 feat(kyc): make KYC verification mandatory for posting and accepting tasks (backend + frontend enforcement)
+
+26ac454 fix(theme): define --primary-gradient so suspension modal Add Money button renders
+
+1cd06f3 fix(home): browse matching tasks 404 - replace rupee symbol with ? in querystring
+
+1bccfc3 feat(theme): comprehensive dark-mode readability fixes for popups and content pages
+
+9bb18bc feat(release-penalty): atomic 10% helper penalty inside /tasks/<id>/abandon
+
+2bc8d93 feat(debt-suspension): suspend on ANY negative wallet balance
+
+b5bc44f fix(kyc): accept 'verified' status for withdrawal gate
+
+4af4671 chore(wallet): clarify withdrawal gate comment - KYC only, phone optional
+
+9b4b0e6 feat(verification): make phone OTP optional, keep email + KYC mandatory
+
+da891b6 debug(sms-otp): log full provider response body + optional SMS_DEBUG flag
+
+efe2667 fix(sms-otp): switch from Fast2SMS OTP route to Quick SMS route
+
+b82edb8 fix(sms-otp): hide raw Fast2SMS provider errors from end users
+
+20654a5 fix(phone-otp): use get_db() as contextmanager properly
+
+e5ee602 fix(phone-otp): defensive table create + remove undefined dict_from_row + surface real errors
+
+1590913 fix(google-signin): route google-client-id fetch through apiRequest
+
+51f2fad fix(google-signin): wait for GIS library load before rendering button
+
+f4779b5 fix(google-signin): inject Google button container into all login/signup modals
+
+04d76ca fix(encoding): repair mojibake in HTML files via ftfy + fix Google button render
+
+36fdf98 fix(google-signin): enable FedCM for Chrome desktop
+
+b3a686a feat(auth): chain phone OTP after email verification + Google profile completion
+
+6693032 fix: bump api-client.js cache version to 20260503_phoneotp
+
+5d73d73 feat(security): phone OTP verification + KYC-gated withdrawals
+
+110f93e feat(network): auto-fallback to Netlify proxy on direct backend failure
+
+f23afdf fix(stats): include 'paid' tasks in completed counter (homepage + admin)
+
+1fc1719 chore(workflow): environment-aware api-client + CONTRIBUTING.md
+
+0f44664 fix(home): restore India flag emoji + replace corrupted '???' debug log placeholder
+
+78d6fc3 feat(feedback): auto-send feedback via backend (DB + SendGrid email)
+
+da10c1e feat(feedback): add /feedback.html review form, link from home Reviews CTA
+
+e1bc899 content(reviews): replace fake testimonials with honest 'reviews after launch' card
+
+54d4d64 content(reviews): refresh testimonials to match current features (AI matching, wallet/UPI, 29 categories, home filter)
+
+46b5d45 fix(home): use '?' query separator (was corrupted to rupee sign causing 404)
+
+57d79bc style(home): alternating section backgrounds + generous vertical spacing
+
+7498c71 feat(home,browse,ai): filter-only home, redirect to browse, mobile-safe AI recs
+
+671e855 style(tasks): add breathing room between task cards
+
+7a3702d style(tasks): add breathing room between task cards (gap 24-28px, padding 20px)
+
+0ef42d0 fix: GPS bootstrap on map-less pages + sticky category filter
+
+af789c4 feat(home): align find-tasks list next to filter box, max 6 cards
+
+1c4db7e style(desktop): polish modals + toasts, tighten section spacing
+
+60097b0 deploy
+
+939f521 fix(home): remove embedded map from index.html (kept on browse.html)
+
+c9163b7 feat(home): replace category grid with single button -> dedicated categories.html page
+
+c8420ae feat(home): collapse Popular Categories behind toggle button + per-category browse pages
+
+a968db0 feat(home): replace 4-step 'How It Works' with compact 'Watch Tutorial' CTA -> tutorials.html
+
+af38ca2 revert: keep central Post tab on browse.html bottom bar (user clarification)
+
+a063f83 fix(browse): hide central 'Post' tab on browse.html bottom bar - browse page is for finding tasks only
+
+ca77fcf fix(browse): remove 'Post a Task' button from empty-state - browse now shows only available tasks
+
+6461432 style: refine 'Find Tasks Near You' section on index.html
+
+71b5487 feat(mobile-ux): native-app feel - tokens, sheets, skeletons, haptics, PTR
+
+45add23 fix: rupee symbol in JS formatRupees + Min/Max placeholders, remove stray paste
+
+f5bec23 fix: permanent mojibake repair - rupee and bullet symbols in index.html
+
+12cd37c audit: fix broken handlers, dedupe code, remove 152 dead files
+
+a1870cb legal: rewrite Terms & Privacy + add Cookie Policy to match actual platform
+
+2ff1b8c feat: remove push notification feature + repair all mojibake via ftfy
+
+aafdaf3 fix: convert env-var VAPID private key from raw b64url to PEM
+
+bf9e03a fix: VAPID private key must be PEM for pywebpush
+
+4539091 fix: PushAPI was reading vapidKey from wrapper, not server body
+
+0ce9d0d fix: 33 'A-tilde' mojibake + auto-generate VAPID keys when env missing
+
+4832ba1 fix: 4 voice-call.html corruptions + verbose push notification diagnostics
+
+0819033 fix: push API double-prefix bug (/api/api/push/...) -> 404
+
+d9031ad fix: encoding mojibake in 6 HTML files + robust test push flow
+
+c36a59b fix: clean all 33 corrupted symbols + add test push button
+
+26ea97f feat: foreground in-app push notifications + fix console.log emoji corruption
+
+40d2264 Fix all remaining corrupted rupee symbols in JS string literals (formatRupees, wallet stats, penalty display)
+
+5dce2ad Move push notification banner from browse page to home page
+
+d17d937 Fix remaining emoji corruption and force-refresh push subscriptions on mobile
+
+5dfc8cf Fix all corrupted rupee and emoji symbols across 12 HTML files (160 occurrences)
+
+f073d86 Fix push notifications: userVisibleOnly typo, dead function, lat/lng update, test endpoint, enable banner
+
+8154404 Fix corrupted symbols: restore emoji and rupee sign stripped by formatter
+
+13efdb9 Add AI task matching + 10km geo-push notifications for delivery tasks
+
+3e9650b Show Refresh App button in mobile menu for logged-in users too
+
+a2174be Add Refresh App button to hamburger menu on all pages
+
+321d486 Hero stats: show cached values when backend is offline
+
+f49514d Remove start.sh from .gitignore so Railway deploys correctly
+
+82ae6bc Force-add start.sh (was in .gitignore - caused Railway to fail)
+
+e56906d Fix Railway build failure + AudioContext console error
+
+6d667fd Fix hero stats: remove hardcoded counter, use real-time API only
+
+eae3de7 Fix scroll permanently blocked on all devices
+
+f8d801f Bust service worker cache: bump CACHE_NAME to v20260428
+
+5c7ee24 Fix scroll lock + toast code bug + cache bust all pages
+
+3c61d42 Fix JS TypeError, Google double-init, CSP, preload warnings
+
+accbf8a KYC: store Aadhaar back image, show in admin panel, fix Android upload
+
+e5eca21 Fix KYC submit: backend now accepts documentImageFront + documentImageBack
+
+4b607b5 KYC: Aadhaar requires front+back image, PAN requires front only
+
+2e6008c Fix iOS moveable screen, hero stats animation, viewport-fit=cover all pages
+
+49920d7 Allow tutorials.html in robots.txt
+
+d9e2fab Fix browse.html netlify canonical, add missing og:url to contact+referral
+
+1bbe6bb Fix SEO redirects: remove www from canonical/og/sitemap, fix netlify.toml redirect chain, remove self-referencing and loop redirects
+
+e3b76e9 Change PWA id to bypass stuck WebAPK, new start_url with query param
+
+7f1e894 Make SW install instant: non-blocking cache, immediate skipWaiting
+
+7c3d62f Fix PWA install: no-cache manifest, SW recovery, cache-bust sw-register across all pages
+
+2d0f88e Add iOS install prompt (Share > Add to Home Screen)
+
+7430d12 Fix SW caching: reorder headers so sw.js no-cache wins, add updateViaCache none
+
+aa1eef5 Fix PWA install: remove '/' from SW cache, add root redirect, resilient caching
+
+ca02cc7 Fix task-in-progress poster details via API fallback, fix PWA manifest for install
+
+985372e Fix PWA: update cache, add install prompt, maskable icons, match theme color
+
+69d9d9e Add contact/navigate to accepted cards, fix in-progress buttons, pay email redirect to invoice
+
+ab29eca Cache-bust app.js, add earnings breakdown to helper payment email
+
+5308c34 Fix task value using actual service_charge instead of category lookup
+
+4f058f2 Remove helper receives from poster breakdown, add price breakdown + Pay Now to completion email
+
+6e4d1ce Add tutorials & training page with video tutorial cards
+
+87cecbb Update Instagram social link to real profile URL
+
+369ad8d Production readiness: error handlers, secure health endpoint, Razorpay key validation
+
+6b8207a Security hardening: remove token logging, enforce logout invalidation, wallet balance check, HSTS preload
+
+b671515 Add IndexNow API key for faster search engine indexing
+
+43fa03e Add Google Search Console verification file + meta tag
+
+b67fdda SEO: Add 301 redirect, generate og-image.png, update meta tags
+
+c79a8c6 Full SEO overhaul: keyword-optimize for 'freelance marketplace India'
+
+cc608fb SEO: Fix domain consistency + add schemas for search visibility
+
+87b9645 Fix hero stats API URL + auto-clear expired suspensions
+
+6f8f630 feat: real-time platform stats on hero section
+
+ca82797 feat: require phone number & DOB for Google sign-in users
+
+e2bbccc Remove multi-language support, keep English only
+
+329eece KYC: add document upload, auto-verify on submit, show in admin panel
+
+933bc1c Fix Google login response: access result.data for nested response structure
+
+b7b43e7 Fix Google button: use direct fetch, fix width param, add logging
+
+e79067d Switch to official Google rendered button instead of unreliable One Tap prompt
+
+bb14efe Fix Google login: double /api/ prefix and wrong token storage key
+
+6c2490b Fix double /api/ prefix in Google client ID endpoint
+
+6e0c7e3 fix: Google Sign-In - switch to One Tap ID token flow
+
+3883fbe feat: Add 8 new platform features
+
+a6cfbbb Security hardening: XSS fix, input validation, rate limiting, CORS, prototype pollution fix
+
+b0169ce Fix PWA auto-update: users no longer need to clear cache or reinstall
+
+2da755b Fix: update old Razorpay key in wallet/payment pages, add wallet credit in webhook
+
+8e24b0d Fix CSP: allow all Razorpay subdomains (cdn, api, checkout-static)
+
+cf019ee Update Razorpay key ID
+
+2f91381 Fix: API_BASE -> API_BASE_URL, add delete account to profile, export window functions
+
+71f2123 Fix: revert hamburger to div with role=button to fix mobile styling
+
+12c7966 Fix hamburger button styling after div-to-button accessibility change
+
+344aac4 Audit: dead code cleanup, security fixes, new features & accessibility
+
+c6abe5e Fix debt recovery: add penalty revenue to Razorpay wallet-topup-verify (actual payment flow)
+
+7cd59f6 Fix penalty revenue: only count as revenue when user tops up negative balance, not on deduction
+
+4272728 Credit debt recovery to company wallet when user tops up negative balance
+
+8a9dbbe Credit penalty amounts to company wallet as platform revenue
+
+053627e Fix profile real-time stats, add reviews section, improve wallet mobile styling
+
+362d8aa Use single app icon for iOS and Android (remove maskable/SVG entries)
+
+8d25950 Add PWA icons (192x192, 512x512) for app install support on Chrome and Safari
+
+dfae3e6 Improve mobile styling: larger touch targets, better spacing, section padding, modals, OTP inputs
+
+b3882e4 Make notification dropdown more compact on mobile
+
+b73fc66 Fix signup terms/privacy links to point to actual pages
+
+8786910 Fix notification visibility: show full text, add View All link, mobile nav to notifications page
+
+b8cc866 Launch readiness fixes: security, rate limits, cleanup
+
+4d66906 Reduce task list space: show 6 initially + View All button, compact cards
+
+e3aacad Remove all EmailJS code - use SendGrid only for all OTP/email
+
+b952c35 add sendgrid to requirements.txt for email verification
+
+df25751 feat: EmailJS fallback for email verification OTP
+
+bcc2491 feat: mandatory email verification on signup
+
+b57d6fb remove chat option, keep only Call and WhatsApp contact buttons
+
+3e9e82a fix: remove orphaned syntax that broke all JS (Login/Signup buttons)
+
+c0247a7 fix: helper info lost during task serialization to localStorage
+
+b8157ae fix: posted tasks not rendering after server load
+
+d7b310f fix: poster can now view helper info after task acceptance
+
+f700524 security: add CSRF origin validation for state-changing requests
+
+304390d security: launch-ready fixes - mandatory payment verification, protect debug endpoints, remove embedded admin panels, clean repo
+
+1d15c51 revert: remove mistaken revenue changes from admin.html
+
+1f99451 fix: show revenue cards inline on admin dashboard
+
+21c2139 feat: add real Revenue Dashboard to admin panel with live API data
+
+42793d2 feat: full-width task cards grid below map in Browse/Find Tasks sections
+
+d1a7b05 fix: use SAVEPOINTs for FK cleanup in delete_task (PG transaction abort)
+
+b564915 fix: clean up foreign key references before deleting task
+
+485cc58 fix: deleteTask robustness - login check, explicit renderPostedTasks, better feedback
+
+3425a9d fix: deleteTask not actually deleting - 3 bugs fixed
+
+afd84f0 fix: remove overbroad .btn-primary selector from acceptTask, clean up duplicates
+
+5e0381d fix: bulletproof acceptTask with event delegation, fallback API, visual feedback
+
+3004406 feat: add Accept button on task cards + bulletproof redirect
+
+bd22df5 fix: bust stale SW cache, switch JS to network-first, update all cache-busting versions
+
+db5bc1d fix: accept_task robust fallback if is_banned column missing
+
+6137deb fix: admin panel full access - suspension, ban, delete, balance adjust
+
+b949fea feat: add helper-side server notifications
+
+1b7646b feat: implement complete server-side notification system
+
+fd2401c fix: icons/emojis not loading without hard refresh + bell icon
+
+9dd0dc6 perf: optimize page load speed - defer JS/CSS, fix caching, reduce fonts
+
+9de2ed1 Fix email verify: escape LIKE pattern for psycopg2, fix expires_at datetime comparison
+
+d83d69d Fix verify button: remove async/await, add loading state, better error handling
+
+4dddf50 Fix email verification: move OTP to backend (SendGrid), server-side validation
+
+e2d1c4b Fix email verification: ensure EmailJS init, add missing validity param, better error logging
+
+911d00f Fix profile page: close unclosed suspensionBanner div that hid settings sections
+
+65ddb65 Major feature update: PWA, dark mode, search, share, onboarding, earnings, email verify, admin panel enhancements
+
+5567b71 Admin panel: fix auth bug, add audit log, refund API, task moderation, analytics endpoints
+
+73870c1 Fix encoding: remove BOM from all HTML files, fix mojibake emojis and symbols in index.html
+
+0694d34 Polish round 2: page loader bar, spinner, focus states, empty state styling, tooltips, form validation states, task card hover, typing indicator CSS
+
+e5f60ad Visual polish: scroll animations, hero gradient, gradient text, card effects, stats counter
+
+0f9ac76 Add contact messages backend: saves to DB + sends via EmailJS
+
+c129525 Fix UI issues: rupee encoding, contact form EmailJS, notifications clear, remove debug exposure
+
+d9ba8b4 Launch-ready polish: new pages, security headers, UX improvements
+
+34a34e4 Fix garbled UTF-8 emoji characters in index.html
+
+af42ec8 Make Popular Task Categories dynamic with live counts from database
+
+2243cfc Fix: mobile login 'invalid JSON response'
+
+1b9f3d3 Remove splash intro animation
+
+90d09e6 Add 2-sec splash intro animation with W4u logo
+
+9e0026e Remove dead security-related code and files
+
+7a78ab6 Restore OTP in forgot-password response for EmailJS delivery
+
+a6d12d3 Security hardening: CORS lockdown, rate limiting, headers, input sanitization
+
+4081de5 Fix: release count X/3 not persisting across navigations
+
+4021136 Fix: release count not incrementing after each task release
+
+268f202 Fix: is_suspended column missing + always show X/3 release count
+
+520301c Fix: release suspension now guaranteed to work - ensure columns before use
+
+fc0c244 Fix: abandon 500 error - make release counting and suspension checks fail-safe
+
+0d920c2 Fix: release suspension not triggering - merge release counting into abandon endpoint
+
+a517ae9 Fix: suspended_until column missing - dead profile_photo migration aborted PostgreSQL transaction
+
+e260c7c Fix accept button redirect + clean dead localStorage keys
+
+510119e Fix debt clear at >=0 + prevent cache-clear bypass of suspension
+
+2518c19 Fix logout not clearing session + debt suspension threshold at -500
+
+1a8bd72 Migrate pre-existing localStorage suspensions to server DB
+
+c97e1a8 Move suspension state to server DB for cross-device consistency
+
+4acad13 Add two-layer suspension: timer (48hr) + debt (until balance >= 0)
+
+25f6eac Fix penalty deduction: allow negative wallet balance, use total task price
+
+9739924 Fix task accept button + redirect, suspension persistence, wallet penalty deduction
+
+869f01f Fix accept redirect: immediate redirect, protect against non-critical failures
+
+4c69018 Fix acceptTask: add error feedback, loading state, robustness
+
+b848167 Fix: ensure suspension banner visible after every render
+
+d6e9193 Fix suspension banner/modal: dynamic JS injection replaces hardcoded HTML
+
+5ab67b8 Fix mobile suspension clearing prematurely - timer now immune to localStorage wipes
+
+b72ad1f Fix mobile suspension: add timer banner to index.html & browse.html, show popup on page load/login when suspended
+
+5acb635 Fix all corrupted symbols: U+FFFD replacement chars in index.html meta/testimonials, profile.html placeholders
+
+3ad6d81 Fix corrupted rupee symbols: replace ? with ••c% across all HTML files
+
+e1d9598 Fix corrupted India flag emoji in index.html hero badge
+
+f545f7f Fix mobile suspension: popup always shows, timer starts on server restore, backend includes suspended_until in 403, consolidated restoration logic, updated cache busters
+
+72a0db6 Fix logout stuck, suspension modal on mobile, profile timer
+
+fe3f6e4 Fix corrupted emoji characters in index.html (mojibake)
+
+a7d52f8 Fix suspension persistence and penalty wallet deduction
+
+fc1db9d Replace workmate4u.netlify.app with www.workmate4u.com across all files
+
+ada08b3 fix: position profile username properly in white area on desktop view
+
+12f1df0 feat: complete suspension system overhaul - 48hr countdown timer, popups, auto-unsuspend
+
+c8d9b91 fix: correct service charge calculation - You Pay and Worker Earns now include service charge
+
+7189d90 fix: restore corrupted rupee symbols and special characters across HTML files
+
+3ad2697 fix: restore rupee symbol in index.html stats
+
+3af6704 fix: release button - cache bust, fallback confirm if modal missing
+
+d850957 fix: release button on accepted tasks page + newest-first ordering
+
+53dbfde chore: change minimum task budget from 50 to 100 rupees
+
+a3e793b feat: helper penalty system - 10% deduction on task release, 3/day limit, 48h suspension
+
+1fb3660 feat: implement SEO meta tags, structured data, sitemap and robots.txt
+
+431d864 fix: task location now uses geocoding instead of random offsets
+
+195640a fix: map loading errors, remove duplicate updateMapMarkers, add invalidateSize
+
+f89f26e fix: show total amount (price + service charge) on all task cards
+
+569afba fix: update profile earnings on task completion and payment
+
+9a40de2 fix: replace TaskEarn branding in nav logo and footer across all pages
+
+9f32448 rebrand: rename TaskEarn to Workmate4u across all UI files
+
+eaee7d0 fix: release task permanently removes from accepted section
+
+e184919 chore: replace all company emails with info@workmate4u.com
+
+32fb148 fix: support all image types up to 2MB with auto-compression
+
+c3a0b68 fix: profile photo not saving/displaying after selection
+
+11aaf08 fix: profile photo update - reset file input, update cache busters
+
+e853703 fix: profile changes (photo, info, password) now persist after refresh
+
+8cdfdd5 fix: notification dropdown now position:fixed on desktop too, anchored to bell icon, above overlay
+
+8a75bcb fix: move notification dropdown to body so overlay no longer blocks Pay Now button clicks
+
+98bde28 fix: notification Pay Now and Clear All buttons now work - prevent DOM removal click-outside race, stop propagation on buttons
+
+7804ef9 fix: Pay Now from notification - close dropdown, fetch task from server, export missing globals, stop event propagation
+
+bb037ef fix: mobile notification dropdown now fullscreen, remove dead notification panel code
+
+94dc999 style: swap My Tasks dashboard and Categories sections in index.html
+
+403025c fix: enable task acceptance from browse page
+
+06afa6d feat: full profile page with photo upload, name/email/phone editing, password change
+
+469fa6d style: hide bottom tab bar on desktop, show only on mobile (<=768px)
+
+7e6b2d3 style: polish multi-page CSS with design system variables, glassmorphism, and better interactions
+
+6d19b70 feat: multi-page architecture ••• separate browse/posted/accepted/completed pages
+
+78785c1 feat: add task abandon/release - revert accepted tasks back to active
+
+0f6314e Fix: Mark Task Completed button visible on mobile + dead code cleanup
+
+c891217 Fix: Deleted tasks now removed from backend DB, invisible to all users
+
+a27e3a6 Fix: Upload section tasks now visible to other users + remove dead code
+
+0755529 Posted Tasks section shows only active posted tasks, payment via notifications only
+
+42ddd26 Fix: Add Money button now redirects to wallet.html
+
+ce93849 Fix: Remove expired task cards from My Tasks + dead code cleanup
+
+fd272cf Remove paid & expired task cards from all sections
+
+d4e2a40 Filter out expired & paid tasks from Browse and Posted sections
+
+0153ffa Fix task status sync: poster now sees 'completed' status for payment
+
+b212917 Fix cache-busting + remove 720 lines dead Razorpay/payment code
+
+95c43e8 Redesign Pay Now with styled invoice modal showing full service charge breakdown
+
+24fcf94 Fix payment invoice to include service charge breakdown, remove legacy payment reception dead code
+
+ff991cb Fix payment bug: check poster balance before crediting helper, remove local wallet fallbacks
+
+1fd5d8c Fix forgot password: use backend API for OTP generation, verification, and password reset
+
+4c6a352 Fix clear all notifications: delete from server, not just locally
+
+8fadeaa Remove tracking link from wallet page nav
+
+5f99e4b Add wallet link to mobile menu HTML (fix missing file)
+
+e3afda4 Add wallet link to mobile hamburger menu
+
+d796ac0 Fix syntax error: remove stray closing brace in create_razorpay_payout
+
+7ae0656 Revert RazorpayX from withdrawal: use simple pending flow for admin processing
+
+483f2cf Fix RazorpayX payout: proper contact/fund_account/payout flow
+
+e4f825a Fix Razorpay payout error: graceful fallback for standard API keys
+
+9247bd4 Fix withdrawal balance bug: use server balance instead of stale localStorage
+
+94a433c Make withdrawal modal interface smaller and more compact
+
+924fcf1 Implement secure wallet withdrawal via Razorpay Payouts
+
+87a56af Fix notifications and payment flow: two-step complete then pay
+
+2930371 Remove all localhost references, use production server only
+
+34a71d0 Fix notification delivery, wallet transfer, add payment pop-ups for poster and helper
+
+b1506da Fix Mark Task Completed button - add missing .modal CSS selector
+
+0c378b2 Remove ~667 lines of dead/duplicate payment code
+
+39c7524 Fix Mark Complete button hidden on mobile - make details section scrollable with sticky button
+
+14e56cd Fix task-in-progress completeTask to notify poster with Pay Now and work offline
+
+1364545 Implement two-step payment: helper completes -> poster gets Pay Now notification -> wallet transfer
+
+1a3517b Remove Contact button and chat feature, keep only Accept and calling
+
+a75b75b Add Call Poster button on task-in-progress page for helper
+
+cc0dc5d Revert "Add notification + track helper + call feature on task acceptance"
+
+4369dc7 Add notification + track helper + call feature on task acceptance
+
+80a2237 fix: restore notification panel, remove toast notification
+
+253d68f fix: remove notification UI and fix posted tasks persistence when backend is offline
+
+c0ea675 fix: remove unused font-weight 300 and add preconnect hints to reduce preload warnings
+
+2c0b3f9 fix: PostgreSQL boolean type mismatch for is_active column
+
+b86b74d remove: notification panel from My Tasks section
+
+559cf18 feat: Remove task popups from map markers
+
+a22bfa3 fix: Use actual service_charge from task object instead of recalculating
+
+ffb4f50 fix: Add display block to distance-info.show class for proper visibility
+
+8ed2945 fix: Show correct task value and add View Details button to map popup
+
+ac21883 fix: Remove duplicate Leaflet.js script load from body
+
+3d5caae fix: Add cache busting for task-in-progress.html map controls
+
+6890ce6 fix: Make Navigate, Contact, and Accept buttons visible
+
+c8da3a4 debug: Add logging to task detail modal and fix quote escaping
+
+3c56c55 fix: Update cache-busting version with timestamp
+
+6b499e6 fix: Show correct task value on map and force cache bust for navigate button
+
+d43e4a9 fix: Update cache-busting version for app.js to load latest navigate feature
+
+5b360f0 feat: Add Navigate option to task detail modal
+
+ec4442a feat: Add navigation button to task-in-progress page
+
+669a5f1 feat: Add Leaflet.js map to task-in-progress page
+
+0149a57 refactor: Simplify task-in-progress page - remove payment info, chat, and calling features
+
+8c8b5f8 fix: Use actual stored service_charge instead of category default in payment breakdown
+
+a9f7fea docs: Add comprehensive Pay Now feature documentation
+
+fa9405b feat: Add Pay Now notification with commission deduction from poster wallet
+
+1a8d733 docs: Add database migration completion documentation and automation script
+
+1b0f907 fix: Add service_charge and paid_at column migrations to tasks table
+
+74d5ce9 fix: Fix IndentationError by removing duplicate code in complete_task endpoint
+
+d27357a feat: Implement immediate wallet deduction on task completion
+
+149ab72 Fix: Update frontend payment flow to match corrected backend logic
+
+db86859 Fix: Correct wallet deduction flow for task completion and payment
+
+0fd79c4 Feature: Send all platform fees to Razorpay UPI link (razorpay.me/@taskern)
+
+b0bdbfd Fix: Correct indentation error in SQLite database initialization
+
+ebfaa64 Fix: Create system company user (id=1) for platform wallet
+
+b148060 Fix: Resolve PostgreSQL type mismatch errors in task completion
+
+eadfe25 Feature: Integrate Razorpay Payouts for automatic bank settlements
+
+f184824 Fix: Embed admin dashboard HTML directly in Flask route instead of serving file
+
+8af9bd5 Fix: Improve admin dashboard file serving with better path resolution and static file routing
+
+ac9316b Fix: Add Flask route to serve admin-dashboard.html file
+
+35c61fe Feature: Complete platform settlement system with bank details and admin dashboard
+
+59f5a41 Feature: Display platform income breakdown in task completion modal
+
+deadbc6 Feature: Show helper net earnings prominently on task completion
+
+89d8323 Fix: Resolve fetchone() error in complete_task endpoint
+
+6cfab9c Feature: Auto-deductions, wallet warnings, and smart payments
+
+10d6f95 Fix: Paise/Rupees conversion bug in wallet deposits - Add defensive auto-detection
+
+689c748 Fix: Clarify payment flow - helper waits for poster to pay, not vice versa
+
+da5158f Fix: Call backend API when accepting task to save to database
+
+7b3ab8d Add DATABASE_URL debugging to health endpoint
+
+d79c291 Force Railway redeploy to activate PostgreSQL DATABASE_URL
+
+527aee0 Add Railway PostgreSQL environment variables setup guide
+
+2fec8b2 Fix: Filter expired tasks from available tasks marketplace
+
+7986051 Fix: Correct API_BASE_URL to API_URL and update modalAmount in loadTaskDetails()
+
+f1ca459 Fix: Remove health_check endpoint causing decorator error
+
+9dd96d8 Fix: Make cleanup function non-fatal on startup to prevent worker boot failure
+
+aa3cf7d Fix: Remove broken Google Maps code from task-in-progress.html
+
+f657fa4 Simplify: Remove Google Maps, simplify payment flow, add database cleanup for old tasks
+
+eebee63 Fix: Use single consistent SECRET_KEY everywhere to fix token validation
+
+a265538 Fix: Remove duplicate create_payment_order endpoint to fix Railway deployment
+
+e84aae4 Implement real Razorpay payment integration with order creation and signature verification
+
+69accf2 Add production SECRET_KEY to token fallback keys for compatibility
+
+4116c02 Add detailed token logging for debugging 401 errors
+
+2ae02e1 Add SECRET_KEY logging for debugging
+
+cc207f7 Add debug logging for token validation
+
+0f92479 Fix: Ensure lat/lng are numbers for Google Maps - convert strings to parseFloat
+
+120190d Add debug logging to pay_helper endpoint + status documentation
+
+92757e9 Remove suspension check from accept_task (columns don't exist on Railway)
+
+ff2d4a2 Handle missing suspension columns in accept_task gracefully
+
+3fa14d8 Add error handling to accept_task endpoint
+
+2a6ae60 Fix: Use correct TasksAPI object instead of taskApi
+
+69589a8 Frontend: Add pay-helper payment UI and button for completed tasks
+
+9dc9d04 Clean up: remove duplicate auto-credit code from complete_task endpoint
+
+e1691a3 Backend only: Remove frontend routes - serve API endpoints only
+
+581c5af Add static file serving for frontend (index.html, CSS, JS) - fixes Not Found error
+
+236a20f FIX: Call backend API to process task completion and commission deduction
+
+7b10af2 Complete payment system: implement real money transactions with commission (20%), negative wallet balance, and account suspension at -500 rupees
+
+3e04adc Fix task creation: improve database initialization and error handling for Railway
+
+edfbdf9 Add INLINE mobile proxy forcing - cannot be cached, will run before any scripts load
+
+fd7a646 CRITICAL: Remove hardcoded Railway URL - let api-client.js do full mobile/Netlify detection
+
+f41aa2f Add cache-busting version strings to force reload of latest JS code
+
+066529c Force mobile traffic through Netlify proxy only - avoid DNS blocking of Railway
+
+ba31873 CRITICAL FIX: Remove duplicate closing braces causing app not to load on mobile
+
+ced5404 Fix CORB errors - improve proxy handler and add intelligent fallback to Railway
+
+53eea47 Improve mobile debugging - add robust proxy fallback and comprehensive health checks
+
+b887ab2 Fix mobile ISP blocking - route mobile traffic through Netlify proxy relay
+
+4773e5a Fix mobile button responsiveness - wrap DOMContentLoaded in comprehensive error handling
+
+ebafbbe Fix DNS/Railway connectivity issues: Add offline mode, better error handling, status page
+
+6424538 a"••• Final production summary - All systems live and operational
+
+ddfc9c8 Add production live documentation - System ready for users
+
+5d95c1b Production deployment: Fixed Socket.IO, improved run.py, added verification scripts
+
+4959628 Fix production errors: Add notification system, improve error handling, and fix database syntax
+
+273c974 Add project completion summary - All features implemented
+
+57f4056 Add comprehensive deployment and testing guide v2.0
+
+53aed5d Fix chat API endpoints for Socket.IO integration
+
+5397c9a Implement real-time chat system and voice calling feature
+
+a4b9c3f Implement Task In Progress workflow with Google Maps and payment redirect
+
+d3c9810 Add missing loadAllTransactions function in wallet.html
+
+cb29d7f Implement Razorpay signature verification for wallet topup - only credit on verified payments
+
+e077e4a Load Razorpay dynamically to eliminate preload warnings
+
+809f928 Fix wallet topup - change transaction type to 'topup' and add debug endpoint
+
+ccde4a7 Disable virtual wallet transactions - only Razorpay payments allowed
+
+9dce35f Remove broken fallback mechanism - Razorpay auth failure needs credential fix on Railway
+
+ec10c4d Add fallback order creation if Razorpay API fails - ensures wallet topup works even without Razorpay
+
+ab3dcb9 Add detailed logging to wallet top-up order creation for debugging 500 errors
+
+233892a Fix wallet top-up API URL - remove duplicate /api prefix
+
+6ef568d Add Razorpay wallet top-up with real money - Open payment gateway with QR code and payment options
+
+f30276e Fix timestamp comparison - use ::date cast instead of LIKE operator for PostgreSQL timestamp columns
+
+d9b9ff9 Fix helper/dashboard 500 error - use correct table name 'wallets' instead of 'user_wallets'
+
+de67d1a Fix payment flow: Simplify Razorpay integration, add comprehensive logging, improve error handling
+
+0d39b57 Implement Razorpay as primary payment method - Always use real money for paid tasks, keep wallet for transaction records, 90/10 commission split
+
+35f1449 Fix wallet/topup endpoint to use correct wallets table instead of non-existent wallet_balance column
+
+15d1935 Fix indentation error in helper/dashboard endpoint - remove duplicate code
+
+0ea60c6 Fix backend 500 errors: Add proper NULL handling to wallet/topup and helper/dashboard endpoints
+
+f3a83f5 Enhance real-time payment: instant wallet deduction, faster animations (1sec), loading button states like Rapido/Zomato
+
+666f860 Fix JavaScript syntax error: remove extra closing braces
+
+52e9d34 Update Razorpay keys to valid live key: rzp_live_SRt7rogPTT3FuK
+
+9ea0bb5 Improve Razorpay error handling: add fallback messages, mark wallet as fastest payment method
+
+84f6da5 Fix wallet add money: connect to backend /wallet/topup endpoint with proper error handling
+
+a4eddf8 Fix real-time payment: use payment modal for posted tasks, add real-time feedback, improve helperId handling
+
+fce60c8 Make webhook work without secret (optional verification)
+
+f959f28 Add Razorpay webhook signature verification and security enhancements
+
+b74653e Add backend wallet payment endpoints: wallet-pay, transaction logging, balance checks
+
+f705297 Add production payment system: wallet, Razorpay, UPI integration with commission split
+
+ee93ee2 Remove all local storage fallbacks and demo data - Production mode only
+
+61aed44 Update API URLs from localhost to production Railway backend (taskearn-production-production.up.railway.app)
+
+a0b47f6 Rebrand TaskEarn to Workmate4u - Update all branding references
+
+cdafe21 Add registration tests and verify fix
+
+7be2390 Fix user registration: Add proper transaction commits to database context manager
+
+a6986f3 Implement Razorpay payment integration with payment split between helper and company
+
+7c91c47 Fix CSS text color visibility issues in payment reception modal - improve contrast
+
+54f6f77 Add comprehensive payment implementation completion summary
+
+f1f7928 Add payment system quick start guide and testing instructions
+
+ee4fcd6 Fix UTF-8 encoding for Windows backend and add comprehensive payment system documentation
+
+bf41dc4 Add company commission tracking and wallet management functions
+
+35cdd09 Implement payment reception system for helpers with commission deduction
+
+80dfb42 Fix profile updates after actions (post, accept, complete tasks) and improve chat initialization with better task loading
+
+f807788 Fix posted task persistence issue on logout/login - restore tasks from local storage if API doesn't return them
+
+5f8d859 Complete task acceptance feature with browse tab, contact provider, and task cards
+
+e29aef8 Production deployment ready: Updated API endpoints, added deployment scripts and guides, configured Netlify functions
+
+47896be Update Netlify config with correct Railway backend URL
+
+1f05d5a CRITICAL FIX: Improve database initialization - add try/except, proper commits, and manual init endpoint
+
+d560a02 CRITICAL: Fix Railway backend deployment - copy entire backend dir, add startup script, explicit .dockerignore rules
+
+194fd45 Add root-level Dockerfile and .dockerignore for Railway - independent of directory config
+
+9c90884 CRITICAL FIX: Railway PORT environment variable expansion - use shell wrapper and proper variable syntax
+
+d888aea Fix: Add diagnostic endpoint and improve Flask configuration for Railway deployment
+
+a48e2a3 Fix CORS issues and improve API error handling - ready for Netlify deployment
+
+d5c590f Configure Netlify deployment with Railway PostgreSQL backend
+
+cfef789 a"••• Security fix: Remove exposed credentials from .env.example, add .env to gitignore
+
+493b439 Fix critical bugs: datetime.UTC -> datetime.timezone.utc, psycopg2.connect config error
+
+ecf7116 Update DATABASE_URL with Railway PostgreSQL connection string
+
+2acc505 Update Railway API URL to taskearn-production-production.up.railway.app
+
+ac768da Update Railway API URL for production
+
+e00786c Remove hardcoded Mapbox token - use environment variables instead
+
+f5dba1a Add withdrawal feature and fix wallet login flow
+
+30ab03a Prepare for Railway deployment
+
+a1a2dce TaskEarn production ready
+
+2a23f55 Fix: Backend syntax error causing 500 errors on task creation
+
+6745bd2 Fix: Auto-migrate local users to server, show warnings for local-only tasks
+
+e51870e Fix: Tasks now save to server and mobile profile shows after login
+
+403f1e8 Fix: Load tasks from server - all users see all tasks
+
+d74a730 Add PostgreSQL support
+
+28c5ebe Add Netlify config
+
+95fe5d6 Update frontend to use Railway backend URL
+
+34b6ca8 Fix server startup for Railway
+
+3a1b0a8 Fix Railway build - remove psycopg2
+
+92359ba Update platform fee to 10%
+
+bd82c04 Add payment flow for completed tasks with 2% platform fee
+
+67e1f40 Simplify requirements for Railway
+
+ea40b34 Simplify Railway config with nixpacks.toml
+
+e0af307 Fix gunicorn command
+
+a64c2bd Fix Railway deployment - use Nixpacks and gunicorn
+
+b33d443 TaskEarn - Complete platform with Razorpay integration
+

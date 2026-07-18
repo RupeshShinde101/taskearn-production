@@ -1,10 +1,9 @@
 """
 Database module for TaskEarn
-Supports both SQLite (development) and PostgreSQL (production)
+PostgreSQL-only database backend
 """
 
 import os
-import sqlite3
 import datetime
 from contextlib import contextmanager
 from config import get_config
@@ -18,45 +17,116 @@ try:
     POSTGRES_AVAILABLE = True
 except ImportError:
     POSTGRES_AVAILABLE = False
-    print("⚠️ psycopg2 not installed, using SQLite only")
+    print("❌ psycopg2 not installed")
 
 
 # ========================================
 # DATABASE CONNECTION
 # ========================================
 
-def get_postgres_connection():
-    """Get PostgreSQL connection"""
+def _build_secure_dsn(database_url: str, connect_timeout: int = 3) -> str:
+    """
+    Build a DSN for Railway PostgreSQL.
+
+    Railway private networking (*.railway.internal):
+      - No TLS on the internal network → sslmode=disable
+      - "Connection terminated unexpectedly" is caused by sslmode=require/prefer
+        sending a TLS handshake that the private Postgres instance rejects.
+
+    Railway public proxy (*.proxy.rlwy.net or external host):
+      - TLS is terminated at the proxy layer, not on Postgres itself.
+      - sslmode=require causes the same "Connection terminated unexpectedly"
+        because the Postgres process behind the proxy doesn't speak TLS.
+      - sslmode=prefer tries TLS and silently falls back → safe.
+
+    Rule: use disable for internal hostnames, prefer for everything else.
+    """
+    import urllib.parse as _up
+    parsed = _up.urlparse(database_url)
+    qs = dict(_up.parse_qsl(parsed.query))
+
+    # Detect Railway private-network hostnames
+    hostname = parsed.hostname or ''
+    is_private = (
+        hostname.endswith('.railway.internal')
+        or hostname == 'postgres.railway.internal'
+        or hostname.endswith('.internal')
+    )
+
+    if 'sslmode' not in qs:
+        qs['sslmode'] = 'disable' if is_private else 'prefer'
+
+    # Fail fast on network issues
+    qs.setdefault('connect_timeout', str(connect_timeout))
+    new_query = _up.urlencode(qs)
+    secured = parsed._replace(query=new_query)
+    return _up.urlunparse(secured)
+
+
+def get_postgres_connection(retries: int = 2, delay: float = 0.3, connect_timeout: int = 3,
+                            database_url: str = None):
+    """
+    Get a PostgreSQL connection with retry logic for transient Railway
+    proxy drops (e.g. during deploys or idle-connection recycling).
+
+    Pass database_url to override the default DATABASE_URL (used by admin routes
+    to connect via the public proxy URL instead of the internal hostname).
+    """
     if not POSTGRES_AVAILABLE:
         raise Exception("PostgreSQL driver not installed")
-    
-    conn = psycopg2.connect(config.DATABASE_URL)
-    return conn
 
+    import time as _time
 
-def get_sqlite_connection():
-    """Get SQLite connection"""
-    conn = sqlite3.connect(config.SQLITE_DATABASE, timeout=30.0, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    # Enable WAL mode to help with concurrent access
-    conn.execute("PRAGMA journal_mode=WAL")
-    # Increase timeout for locked database
-    conn.execute("PRAGMA busy_timeout=5000")  
-    return conn
+    url = database_url or config.DATABASE_URL
+    dsn = _build_secure_dsn(url, connect_timeout=connect_timeout)
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            conn = psycopg2.connect(dsn)
+            with conn.cursor() as _cur:
+                # Enforce a per-statement timeout (30 s is generous for this app)
+                _cur.execute("SET statement_timeout = '30s'")
+                _cur.execute("SET search_path = public")
+            conn.commit()
+            return conn
+        except psycopg2.OperationalError as exc:
+            last_exc = exc
+            if attempt < retries:
+                print(f"⚠️  DB connection attempt {attempt} failed: {exc} — retrying in {delay}s")
+                _time.sleep(delay)
+                delay *= 2  # exponential back-off
+            else:
+                print(f"❌  DB connection failed after {retries} attempts: {exc}")
+    raise last_exc
 
 
 @contextmanager
 def get_db():
-    """Get database connection (PostgreSQL or SQLite)"""
+    """
+    Get PostgreSQL database connection.
+
+    When called from an admin route (require_admin sets flask.g.use_admin_db = True),
+    automatically uses ADMIN_DATABASE_URL (public proxy) instead of DATABASE_URL
+    (internal hostname) so admin-panel requests work even when private networking
+    DNS is unavailable.
+    """
     conn = None
     try:
-        if config.USE_POSTGRES and POSTGRES_AVAILABLE:
-            conn = get_postgres_connection()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-        else:
-            conn = get_sqlite_connection()
-            cursor = conn.cursor()
-        
+        if not POSTGRES_AVAILABLE:
+            raise RuntimeError("PostgreSQL driver not installed")
+
+        # Check if this is an admin-context request (set by require_admin decorator)
+        db_url = None
+        try:
+            from flask import g as _g
+            if getattr(_g, 'use_admin_db', False):
+                db_url = config.ADMIN_DATABASE_URL
+        except RuntimeError:
+            pass  # Outside request context — use default URL
+
+        conn = get_postgres_connection(database_url=db_url)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
         yield cursor, conn
     except Exception as e:
         if conn:
@@ -140,7 +210,8 @@ def init_postgres_db():
                 otp VARCHAR(10) NOT NULL,
                 created_at TIMESTAMP NOT NULL,
                 expires_at TIMESTAMP NOT NULL,
-                used BOOLEAN DEFAULT FALSE
+                used BOOLEAN DEFAULT FALSE,
+                otp_verified BOOLEAN DEFAULT FALSE
             )
         ''')
         
@@ -271,6 +342,7 @@ def init_postgres_db():
                 rated_id VARCHAR(50) NOT NULL REFERENCES users(id),
                 rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
                 review TEXT,
+                task_title TEXT,
                 punctuality INTEGER,
                 communication INTEGER,
                 quality INTEGER,
@@ -512,6 +584,19 @@ def init_postgres_db():
                 UNIQUE(user_id)
             )
         ''')
+
+        # Deleted accounts blocklist — prevents re-registration via Google or email
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS deleted_accounts (
+                email VARCHAR(255) PRIMARY KEY,
+                google_id VARCHAR(255),
+                deleted_at TIMESTAMP DEFAULT NOW()
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id
+            ON deleted_accounts (google_id) WHERE google_id IS NOT NULL
+        ''')
         
         # Commit CREATE TABLEs and ensure clean transaction state for ALTER TABLEs
         conn.commit()
@@ -599,6 +684,13 @@ def init_postgres_db():
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE
         ''')
+
+        # Admin flag column
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE
+        ''')
+        # Grant admin to system user (id='1') if not already set
+        cursor.execute("UPDATE users SET is_admin = TRUE WHERE id = '1' AND (is_admin IS NULL OR is_admin = FALSE)")
         
         # Ensure service_charge column exists in tasks table (migration)
         print("[DB] Adding service_charge column to tasks table if missing...")
@@ -630,6 +722,24 @@ def init_postgres_db():
             print("[DB] ✅ push_subscriptions lat/lng columns added or already exist")
         except Exception as e:
             print(f"[DB] ⚠️  Could not add lat/lng to push_subscriptions: {e}")
+
+        # Ensure otp_verified column exists in password_resets (security migration)
+        try:
+            cursor.execute('''
+                ALTER TABLE password_resets ADD COLUMN IF NOT EXISTS otp_verified BOOLEAN DEFAULT FALSE
+            ''')
+            print("[DB] \u2705 otp_verified column added or already exists in password_resets")
+        except Exception as e:
+            print(f"[DB] \u26a0\ufe0f  Could not add otp_verified to password_resets: {e}")
+
+        # Add drop location columns for delivery/transport tasks
+        try:
+            cursor.execute('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS drop_location_lat DECIMAL(10,8)')
+            cursor.execute('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS drop_location_lng DECIMAL(11,8)')
+            cursor.execute('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS drop_location_address TEXT')
+            print("[DB] \u2705 drop_location columns added or already exist")
+        except Exception as e:
+            print(f"[DB] \u26a0\ufe0f  Could not add drop_location columns: {e}")
         
         # ========================================
         # CREATE SYSTEM/COMPANY USER
@@ -676,402 +786,70 @@ def init_postgres_db():
 
 
 def init_sqlite_db():
-    """Initialize SQLite database tables"""
-    with get_db() as (cursor, conn):
-        # Users table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                phone TEXT,
-                dob TEXT,
-                rating REAL DEFAULT 5.0,
-                tasks_posted INTEGER DEFAULT 0,
-                tasks_completed INTEGER DEFAULT 0,
-                total_earnings REAL DEFAULT 0,
-                is_suspended BOOLEAN DEFAULT 0,
-                suspension_reason TEXT,
-                suspended_at TEXT,
-                suspended_until TEXT,
-                daily_releases INTEGER DEFAULT 0,
-                daily_release_date TEXT,
-                profile_photo TEXT,
-                joined_at TEXT NOT NULL,
-                last_login TEXT,
-                session_token TEXT
-            )
-        ''')
-        
-        # Tasks table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                description TEXT,
-                category TEXT,
-                location_lat REAL,
-                location_lng REAL,
-                location_address TEXT,
-                price REAL NOT NULL,
-                service_charge REAL DEFAULT 0,
-                posted_by TEXT NOT NULL,
-                posted_at TEXT NOT NULL,
-                expires_at TEXT,
-                accepted_by TEXT,
-                accepted_at TEXT,
-                completed_at TEXT,
-                status TEXT DEFAULT 'active',
-                FOREIGN KEY (posted_by) REFERENCES users(id),
-                FOREIGN KEY (accepted_by) REFERENCES users(id)
-            )
-        ''')
-        
-        # Password resets table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS password_resets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                token TEXT NOT NULL,
-                otp TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                used INTEGER DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # Payments table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER,
-                poster_id INTEGER,
-                helper_id INTEGER,
-                razorpay_order_id TEXT,
-                razorpay_payment_id TEXT,
-                razorpay_signature TEXT,
-                amount REAL NOT NULL,
-                platform_fee REAL,
-                currency TEXT DEFAULT 'INR',
-                status TEXT DEFAULT 'pending',
-                created_at TEXT NOT NULL,
-                verified_at TEXT,
-                paid_at TEXT,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (poster_id) REFERENCES users(id),
-                FOREIGN KEY (helper_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # Location tracking table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS location_tracking (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                user_type TEXT NOT NULL,
-                latitude REAL NOT NULL,
-                longitude REAL NOT NULL,
-                accuracy REAL,
-                heading REAL,
-                speed REAL,
-                recorded_at TEXT NOT NULL,
-                is_active INTEGER DEFAULT 1,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # Create index for faster location queries
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_location_task 
-            ON location_tracking(task_id, user_id, recorded_at DESC)
-        ''')
-        
-        # Wallet table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS wallets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT UNIQUE NOT NULL,
-                balance REAL DEFAULT 0,
-                total_added REAL DEFAULT 0,
-                total_spent REAL DEFAULT 0,
-                total_earned REAL DEFAULT 0,
-                total_cashback REAL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # Wallet transactions table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS wallet_transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                wallet_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                type TEXT NOT NULL,
-                amount REAL NOT NULL,
-                balance_after REAL NOT NULL,
-                description TEXT,
-                reference_id TEXT,
-                task_id INTEGER,
-                status TEXT DEFAULT 'completed',
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (wallet_id) REFERENCES wallets(id),
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (task_id) REFERENCES tasks(id)
-            )
-        ''')
-        
-        # Referrals table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS referrals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                referrer_id TEXT NOT NULL,
-                referred_id TEXT NOT NULL,
-                referral_code TEXT NOT NULL,
-                reward_amount REAL DEFAULT 50,
-                referrer_rewarded INTEGER DEFAULT 0,
-                referred_rewarded INTEGER DEFAULT 0,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (referrer_id) REFERENCES users(id),
-                FOREIGN KEY (referred_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # Chat messages table (group chat per task)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                user_name TEXT,
-                message TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # Task proofs table (photo proof)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS task_proofs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                proof_type TEXT NOT NULL,
-                image_url TEXT,
-                otp_code TEXT,
-                otp_verified INTEGER DEFAULT 0,
-                notes TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # Helper ratings table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS helper_ratings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER NOT NULL,
-                rater_id TEXT NOT NULL,
-                rated_id TEXT NOT NULL,
-                rating INTEGER NOT NULL,
-                review TEXT,
-                punctuality INTEGER,
-                communication INTEGER,
-                quality INTEGER,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (rater_id) REFERENCES users(id),
-                FOREIGN KEY (rated_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # SOS alerts table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sos_alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                task_id INTEGER,
-                latitude REAL,
-                longitude REAL,
-                alert_type TEXT DEFAULT 'emergency',
-                status TEXT DEFAULT 'active',
-                resolved_at TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (task_id) REFERENCES tasks(id)
-            )
-        ''')
-        
-        # Scheduled tasks table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS scheduled_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                task_template TEXT NOT NULL,
-                schedule_type TEXT NOT NULL,
-                schedule_time TEXT,
-                schedule_days TEXT,
-                next_run TEXT,
-                last_run TEXT,
-                is_active INTEGER DEFAULT 1,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        ''')
-        
-        # Notifications table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                task_id INTEGER,
-                notification_type TEXT NOT NULL,
-                title TEXT NOT NULL,
-                message TEXT,
-                status TEXT DEFAULT 'unread',
-                data TEXT,
-                created_at TEXT NOT NULL,
-                read_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (task_id) REFERENCES tasks(id)
-            )
-        ''')
-        
-        # Create index for faster notification queries
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_notifications_user_status 
-            ON notifications(user_id, status)
-        ''')
-        
-        # Platform settlements table - tracks payouts to company bank account
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS platform_settlements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                settlement_date TEXT NOT NULL,
-                period_start TEXT NOT NULL,
-                period_end TEXT NOT NULL,
-                total_income DECIMAL NOT NULL,
-                helper_commission DECIMAL NOT NULL,
-                poster_fees DECIMAL NOT NULL,
-                amount_settled DECIMAL NOT NULL,
-                razorpay_payout_id TEXT,
-                status TEXT DEFAULT 'pending',
-                bank_account_last4 TEXT,
-                notes TEXT,
-                processed_at TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT
-            )
-        ''')
-        
-        # Company bank details table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS company_bank_details (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_number TEXT NOT NULL,
-                ifsc_code TEXT NOT NULL,
-                account_holder_name TEXT,
-                bank_name TEXT,
-                is_active INTEGER DEFAULT 1,
-                updated_at TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-        ''')
-        
-        # SQLite migrations - add missing columns to existing tables
-        print("[DB] Applying SQLite migrations...")
-        
-        # Users table: add suspension timer columns
-        try:
-            cursor.execute('PRAGMA table_info(users)')
-            user_columns = [row[1] for row in cursor.fetchall()]
-            if 'suspended_until' not in user_columns:
-                cursor.execute('ALTER TABLE users ADD COLUMN suspended_until TEXT')
-                print("[DB] ✅ suspended_until column added")
-            if 'daily_releases' not in user_columns:
-                cursor.execute('ALTER TABLE users ADD COLUMN daily_releases INTEGER DEFAULT 0')
-                print("[DB] ✅ daily_releases column added")
-            if 'daily_release_date' not in user_columns:
-                cursor.execute('ALTER TABLE users ADD COLUMN daily_release_date TEXT')
-                print("[DB] ✅ daily_release_date column added")
-        except Exception as e:
-            print(f"[DB] ⚠️  User column migration error: {e}")
-        
-        try:
-            cursor.execute('PRAGMA table_info(tasks)')
-            columns = [row[1] for row in cursor.fetchall()]
-            
-            if 'service_charge' not in columns:
-                print("[DB] Adding service_charge column to tasks...")
-                cursor.execute('ALTER TABLE tasks ADD COLUMN service_charge REAL DEFAULT 0')
-                print("[DB] ✅ service_charge column added")
-            else:
-                print("[DB] ✅ service_charge column already exists")
-                
-            if 'paid_at' not in columns:
-                print("[DB] Adding paid_at column to tasks...")
-                cursor.execute('ALTER TABLE tasks ADD COLUMN paid_at TEXT')
-                print("[DB] ✅ paid_at column added")
-            else:
-                print("[DB] ✅ paid_at column already exists")
-        except Exception as e:
-            print(f"[DB] ⚠️  SQLite migration error: {e}")
-        
-                # ========================================
-        # CREATE SYSTEM/COMPANY USER
-        # ========================================
-        # Ensure a company user with id '1' exists for the platform wallet
-        try:
-            cursor.execute('SELECT id FROM users WHERE id = ?', ('1',))
-            company_user = cursor.fetchone()
-            
-            if not company_user:
-                print("[DB] Creating system company user...")
-                cursor.execute('''
-                    INSERT INTO users (
-                        id, name, email, password_hash, rating, 
-                        tasks_posted, tasks_completed, joined_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    '1',  # user_id
-                    'TaskEarn System',
-                    'system@taskearn.com',
-                    'SYSTEM_ACCOUNT_NO_PASSWORD',
-                    5.0,
-                    0,
-                    0,
-                    datetime.datetime.now(datetime.timezone.utc).isoformat()
-                ))
-                print("[DB] ✅ System user created successfully")
-            else:
-                print("[DB] System user already exists")
-        except Exception as e:
-            print(f"[DB] ⚠️  System user creation warning: {e}")
-            # Don't fail if user already exists or has a unique constraint issue
-        
-        print("[DB] ✅ SQLite database initialized successfully")
+    """Deprecated. SQLite support has been removed."""
+    raise RuntimeError("SQLite support has been removed. Configure DATABASE_URL for PostgreSQL.")
+
+
+def _harden_postgres_security():
+    """
+    Drop dangerous PostgreSQL extensions and set protective timeouts.
+    Called automatically on every backend startup when using PostgreSQL.
+    This ensures the database cannot be used for outbound network scanning
+    even if an attacker gains access to the DB session.
+    """
+    DANGEROUS_EXTENSIONS = ['dblink', 'postgres_fdw', 'pg_net', 'http', 'plperlu', 'plpythonu']
+    try:
+        conn = get_postgres_connection()
+        with conn.cursor() as cur:
+            # Drop network-capable extensions that were used for port scanning
+            for ext in DANGEROUS_EXTENSIONS:
+                try:
+                    cur.execute(f"DROP EXTENSION IF EXISTS {ext} CASCADE")
+                    print(f"[Security] ✅ Dropped extension (if existed): {ext}")
+                except Exception as ex:
+                    print(f"[Security] ℹ️  Could not drop {ext}: {ex}")
+
+            # Set DB-level statement timeout (60s max per query)
+            try:
+                cur.execute("ALTER DATABASE railway SET statement_timeout = '60s'")
+                print("[Security] ✅ statement_timeout = 60s set on database")
+            except Exception as ex:
+                print(f"[Security] ℹ️  statement_timeout not set: {ex}")
+
+            # Kill abandoned transactions after 2 minutes
+            try:
+                cur.execute("ALTER DATABASE railway SET idle_in_transaction_session_timeout = '120s'")
+                print("[Security] ✅ idle_in_transaction_session_timeout = 120s set on database")
+            except Exception as ex:
+                print(f"[Security] ℹ️  idle_in_transaction_session_timeout not set: {ex}")
+
+            # Revoke file-system access from public
+            for fn in [
+                "pg_read_server_files(text)",
+                "pg_ls_dir(text)",
+            ]:
+                try:
+                    cur.execute(f"REVOKE EXECUTE ON FUNCTION {fn} FROM PUBLIC")
+                    print(f"[Security] ✅ Revoked PUBLIC execute on {fn}")
+                except Exception:
+                    pass  # Function may not exist in this PG version
+
+        conn.commit()
+        conn.close()
+        print("[Security] ✅ PostgreSQL hardening complete")
+    except Exception as e:
+        print(f"[Security] ⚠️  PostgreSQL hardening skipped: {e}")
 
 
 def init_db():
     """Initialize database based on configuration"""
-    try:
-        if config.USE_POSTGRES and POSTGRES_AVAILABLE:
-            print("[DB] Initializing PostgreSQL database...")
-            init_postgres_db()
-        else:
-            print("[DB] Initializing SQLite database...")
-            init_sqlite_db()
-    except Exception as e:
-        print(f"[DB] ⚠️  Database initialization warning: {e}")
-        # Don't crash the app, just log the warning
-        # Tables might already exist
+    if not POSTGRES_AVAILABLE:
+        raise RuntimeError("PostgreSQL driver not installed")
+
+    print("[DB] Initializing PostgreSQL database...")
+    init_postgres_db()
+    # Harden DB security on every startup (idempotent — safe to run repeatedly)
+    _harden_postgres_security()
 
 
 # ========================================
@@ -1088,7 +866,5 @@ def dict_from_row(row):
 
 
 def get_placeholder():
-    """Get SQL placeholder based on database type"""
-    if config.USE_POSTGRES and POSTGRES_AVAILABLE:
-        return '%s'
-    return '?'
+    """Get SQL placeholder for PostgreSQL."""
+    return '%s'

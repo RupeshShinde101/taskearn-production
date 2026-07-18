@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Team Panel - Workmate4u Admin</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        /* ─── Sidebar ─────────────────────────────────── */
+        .sidebar {
+            width: 260px;
+            min-height: 100vh;
+            background: #1e293b;
+            border-right: 1px solid rgba(255,255,255,.07);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        .sidebar-header {
+            padding: 24px 20px 16px;
+            border-bottom: 1px solid rgba(255,255,255,.07);
+        }
+        .sidebar-logo {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 18px; font-weight: 700; color: #e2e8f0;
+        }
+        .sidebar-logo i { color: #6366f1; font-size: 22px; }
+        .sidebar-subtitle {
+            font-size: 11px; color: #64748b; margin-top: 4px;
+        }
+        .sidebar-nav { padding: 16px 12px; flex: 1; }
+        .nav-label {
+            font-size: 10px; font-weight: 600; color: #475569;
+            letter-spacing: 1px; text-transform: uppercase;
+            padding: 0 8px; margin-bottom: 8px;
+        }
+        .agent-btn {
+            width: 100%; display: flex; align-items: center; gap: 12px;
+            padding: 12px 12px;
+            border: none; background: transparent;
+            border-radius: 10px; cursor: pointer;
+            text-align: left; color: #94a3b8;
+            font-family: inherit; font-size: 14px; font-weight: 500;
+            transition: all .15s;
+            margin-bottom: 4px;
+        }
+        .agent-btn:hover { background: rgba(99,102,241,.1); color: #e2e8f0; }
+        .agent-btn.active { background: rgba(99,102,241,.2); color: #e2e8f0; }
+        .agent-btn .agent-icon {
+            width: 36px; height: 36px; border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; flex-shrink: 0;
+        }
+        .agent-btn .badge {
+            margin-left: auto; background: #6366f1; color: #fff;
+            font-size: 10px; font-weight: 700; border-radius: 20px;
+            padding: 2px 7px; min-width: 20px; text-align: center;
+        }
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid rgba(255,255,255,.07);
+            font-size: 12px; color: #475569;
+        }
+        .sidebar-footer a {
+            color: #6366f1; text-decoration: none;
+        }
+
+        /* ─── Main Content ─────────────────────────────── */
+        .main {
+            flex: 1; display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        .topbar {
+            padding: 18px 28px;
+            border-bottom: 1px solid rgba(255,255,255,.07);
+            display: flex; align-items: center; justify-content: space-between;
+            background: #1e293b;
+        }
+        .topbar h1 { font-size: 20px; font-weight: 700; color: #f1f5f9; }
+        .topbar .topbar-meta { font-size: 13px; color: #64748b; }
+        .topbar-actions { display: flex; gap: 10px; }
+        .btn-refresh {
+            padding: 8px 16px; background: #6366f1; color: #fff;
+            border: none; border-radius: 8px; cursor: pointer;
+            font-family: inherit; font-size: 13px; font-weight: 600;
+            display: flex; align-items: center; gap: 6px;
+            transition: background .15s;
+        }
+        .btn-refresh:hover { background: #4f46e5; }
+        .content-area {
+            flex: 1; overflow-y: auto; padding: 28px;
+        }
+
+        /* ─── Agent Hero ───────────────────────────────── */
+        .agent-hero {
+            display: flex; align-items: center; gap: 20px;
+            background: linear-gradient(135deg, rgba(99,102,241,.2) 0%, rgba(139,92,246,.1) 100%);
+            border: 1px solid rgba(99,102,241,.3);
+            border-radius: 16px; padding: 24px; margin-bottom: 28px;
+        }
+        .agent-hero-icon {
+            width: 64px; height: 64px; border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 28px; flex-shrink: 0;
+        }
+        .agent-hero-info h2 { font-size: 22px; font-weight: 700; color: #f1f5f9; }
+        .agent-hero-info p { color: #94a3b8; font-size: 14px; margin-top: 4px; line-height: 1.5; }
+        .agent-status-pill {
+            margin-left: auto; padding: 6px 14px;
+            border-radius: 20px; font-size: 12px; font-weight: 600;
+            display: flex; align-items: center; gap: 6px;
+            flex-shrink: 0;
+        }
+        .agent-status-pill.active { background: rgba(34,197,94,.15); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+        .agent-status-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+        /* ─── Stat Cards ───────────────────────────────── */
+        .stats-row {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px; margin-bottom: 28px;
+        }
+        .stat-card {
+            background: #1e293b; border: 1px solid rgba(255,255,255,.07);
+            border-radius: 12px; padding: 18px 20px;
+        }
+        .stat-card .stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
+        .stat-card .stat-value { font-size: 28px; font-weight: 700; color: #f1f5f9; margin-top: 6px; }
+        .stat-card .stat-change { font-size: 12px; color: #4ade80; margin-top: 4px; }
+
+        /* ─── Section Title ────────────────────────────── */
+        .section-title {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .section-title h3 { font-size: 16px; font-weight: 700; color: #f1f5f9; }
+        .section-title span { font-size: 12px; color: #64748b; }
+
+        /* ─── Report Cards ─────────────────────────────── */
+        .reports-list { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
+        .report-card {
+            background: #1e293b;
+            border: 1px solid rgba(255,255,255,.07);
+            border-radius: 14px; padding: 20px;
+        }
+        .report-card.status-info    { border-left: 4px solid #6366f1; }
+        .report-card.status-warning { border-left: 4px solid #f59e0b; }
+        .report-card.status-critical{ border-left: 4px solid #ef4444; }
+        .report-card.status-ok      { border-left: 4px solid #22c55e; }
+        .report-card.status-resolved{ border-left: 4px solid #22c55e; }
+
+        .report-header {
+            display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+            margin-bottom: 12px;
+        }
+        .report-title { font-size: 15px; font-weight: 600; color: #f1f5f9; }
+        .report-time { font-size: 11px; color: #64748b; white-space: nowrap; }
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 10px; border-radius: 20px;
+            font-size: 11px; font-weight: 600; flex-shrink: 0;
+        }
+        .status-badge.info     { background: rgba(99,102,241,.15); color: #818cf8; }
+        .status-badge.warning  { background: rgba(245,158,11,.15); color: #fbbf24; }
+        .status-badge.critical { background: rgba(239,68,68,.15); color: #f87171; }
+        .status-badge.ok       { background: rgba(34,197,94,.15); color: #4ade80; }
+        .status-badge.resolved { background: rgba(34,197,94,.15); color: #4ade80; }
+
+        .report-summary { font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 14px; }
+
+        .report-stats {
+            display: flex; flex-wrap: wrap; gap: 10px;
+        }
+        .report-stat {
+            background: rgba(255,255,255,.05);
+            border-radius: 8px; padding: 8px 14px;
+            font-size: 12px; color: #94a3b8;
+        }
+        .report-stat strong { color: #e2e8f0; }
+
+        /* ─── Fixes List ───────────────────────────────── */
+        .fixes-list { display: flex; flex-direction: column; gap: 10px; }
+        .fix-card {
+            background: #1e293b; border: 1px solid rgba(255,255,255,.07);
+            border-radius: 12px; padding: 14px 18px;
+            display: flex; align-items: flex-start; gap: 14px;
+        }
+        .fix-icon {
+            width: 36px; height: 36px; border-radius: 9px;
+            background: rgba(34,197,94,.1); color: #4ade80;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px; flex-shrink: 0;
+        }
+        .fix-info { flex: 1; min-width: 0; }
+        .fix-action { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+        .fix-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
+        .fix-time { font-size: 11px; color: #475569; white-space: nowrap; }
+
+        /* ─── Empty State ──────────────────────────────── */
+        .empty-state {
+            text-align: center; padding: 48px 24px;
+            background: #1e293b; border: 1px solid rgba(255,255,255,.07);
+            border-radius: 14px;
+        }
+        .empty-state i { font-size: 40px; color: #334155; margin-bottom: 12px; display: block; }
+        .empty-state p { color: #64748b; font-size: 14px; }
+
+        /* ─── Loading ──────────────────────────────────── */
+        .loading-spinner {
+            display: flex; align-items: center; justify-content: center;
+            padding: 48px; color: #64748b; gap: 10px;
+        }
+        .spinner { width: 20px; height: 20px; border: 2px solid #334155; border-top-color: #6366f1; border-radius: 50%; animation: spin .6s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ─── Toast ────────────────────────────────────── */
+        .toast {
+            position: fixed; bottom: 24px; right: 24px;
+            background: #1e293b; border: 1px solid rgba(255,255,255,.1);
+            padding: 12px 20px; border-radius: 10px;
+            font-size: 13px; color: #e2e8f0;
+            box-shadow: 0 8px 30px rgba(0,0,0,.5);
+            z-index: 9999; display: none; align-items: center; gap: 10px;
+        }
+        .toast.show { display: flex; }
+        .toast.success { border-left: 3px solid #22c55e; }
+        .toast.error   { border-left: 3px solid #ef4444; }
+
+        /* ─── Auth Modal ───────────────────────────────── */
+        .auth-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,.85);
+            z-index: 9000; display: flex; align-items: center; justify-content: center;
+        }
+        .auth-box {
+            background: #1e293b; border: 1px solid rgba(255,255,255,.1);
+            border-radius: 20px; padding: 40px; max-width: 380px; width: 90%;
+            text-align: center;
+        }
+        .auth-box h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+        .auth-box p { font-size: 13px; color: #94a3b8; margin-bottom: 24px; }
+        .auth-box input {
+            width: 100%; padding: 12px 16px;
+            background: #0f172a; border: 1px solid rgba(255,255,255,.1);
+            border-radius: 10px; color: #e2e8f0; font-family: inherit; font-size: 14px;
+            margin-bottom: 14px; outline: none;
+        }
+        .auth-box input:focus { border-color: #6366f1; }
+        .auth-box button {
+            width: 100%; padding: 12px; background: #6366f1; color: #fff;
+            border: none; border-radius: 10px; cursor: pointer;
+            font-family: inherit; font-size: 15px; font-weight: 600;
+        }
+        .auth-box button:hover { background: #4f46e5; }
+        .auth-error { color: #f87171; font-size: 12px; margin-top: 8px; display: none; }
+
+        /* ─── Responsive ───────────────────────────────── */
+        @media (max-width: 768px) {
+            .sidebar { width: 60px; }
+            .sidebar-header, .sidebar-footer, .nav-label, .agent-btn span { display: none; }
+            .agent-btn { padding: 12px; justify-content: center; }
+            .agent-btn .badge { display: none; }
+            .content-area { padding: 16px; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Auth Overlay -->
+<div class="auth-overlay" id="authOverlay">
+    <div class="auth-box">
+        <i class="fas fa-robot" style="font-size:40px;color:#6366f1;margin-bottom:16px;display:block;"></i>
+        <h2>AI Team Panel</h2>
+        <p>Admin access required. Enter your admin token to continue.</p>
+        <input type="password" id="tokenInput" placeholder="Admin token" autocomplete="off">
+        <div class="auth-error" id="authError">Invalid token. Please try again.</div>
+        <button onclick="authenticate()"><i class="fas fa-unlock"></i> Access Panel</button>
+    </div>
+</div>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo">
+            <i class="fas fa-robot"></i>
+            <span>AI Team</span>
+        </div>
+        <div class="sidebar-subtitle">Workmate4u Agent Monitor</div>
+    </div>
+
+    <nav class="sidebar-nav">
+        <div class="nav-label">AI Agents</div>
+        <button class="agent-btn active" onclick="selectAgent('security_agent')" id="btn-security_agent">
+            <div class="agent-icon" style="background:rgba(239,68,68,.15);color:#f87171;">
+                <i class="fas fa-shield-alt"></i>
+            </div>
+            <span>Security Agent</span>
+            <span class="badge" id="badge-security_agent">0</span>
+        </button>
+        <button class="agent-btn" onclick="selectAgent('spam_fraud_agent')" id="btn-spam_fraud_agent">
+            <div class="agent-icon" style="background:rgba(245,158,11,.15);color:#fbbf24;">
+                <i class="fas fa-ban"></i>
+            </div>
+            <span>Spam &amp; Fraud</span>
+            <span class="badge" id="badge-spam_fraud_agent">0</span>
+        </button>
+        <button class="agent-btn" onclick="selectAgent('bug_fixer')" id="btn-bug_fixer">
+            <div class="agent-icon" style="background:rgba(34,197,94,.15);color:#4ade80;">
+                <i class="fas fa-bug"></i>
+            </div>
+            <span>Bug Fixer</span>
+            <span class="badge" id="badge-bug_fixer">0</span>
+        </button>
+        <button class="agent-btn" onclick="selectAgent('content_agent')" id="btn-content_agent">
+            <div class="agent-icon" style="background:rgba(139,92,246,.15);color:#a78bfa;">
+                <i class="fas fa-file-alt"></i>
+            </div>
+            <span>Content Monitor</span>
+            <span class="badge" id="badge-content_agent">0</span>
+        </button>
+    </nav>
+
+    <div class="sidebar-footer">
+        <a href="javascript:void(0)" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </div>
+</aside>
+
+<!-- Main Content -->
+<div class="main">
+    <div class="topbar">
+        <div>
+            <h1 id="pageTitle">Security Agent</h1>
+            <div class="topbar-meta" id="pageSubtitle">Monitors login anomalies &amp; suspicious activity</div>
+        </div>
+        <div class="topbar-actions">
+            <button class="btn-refresh" onclick="loadCurrentAgent()">
+                <i class="fas fa-sync-alt" id="refreshIcon"></i> Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="content-area" id="contentArea">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <span>Loading agent data…</span>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"><i class="fas fa-info-circle"></i> <span id="toastMsg"></span></div>
+
+<script>
+// ─── Config ────────────────────────────────────────────────────────────────
+const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? 'http://localhost:5000/api'
+    : 'https://taskearn-production-production.up.railway.app/api';
+
+const PROXY_BASE = '/.netlify/functions/api-proxy/api';
+
+const AGENT_META = {
+    security_agent: {
+        name: 'Security Agent',
+        icon: '<i class="fas fa-shield-alt"></i>',
+        iconStyle: 'background:rgba(239,68,68,.15);color:#f87171;',
+        subtitle: 'Monitors login anomalies, suspicious account activity & access patterns',
+        fixIcon: 'fa-lock',
+    },
+    spam_fraud_agent: {
+        name: 'Spam & Fraud Agent',
+        icon: '<i class="fas fa-ban"></i>',
+        iconStyle: 'background:rgba(245,158,11,.15);color:#fbbf24;',
+        subtitle: 'Detects and removes spam tasks, fake users & fraudulent activity',
+        fixIcon: 'fa-user-slash',
+    },
+    bug_fixer: {
+        name: 'Bug Fixer Agent',
+        icon: '<i class="fas fa-bug"></i>',
+        iconStyle: 'background:rgba(34,197,94,.15);color:#4ade80;',
+        subtitle: 'Identifies and resolves backend errors, API failures & code defects',
+        fixIcon: 'fa-wrench',
+    },
+    content_agent: {
+        name: 'Content Monitor',
+        icon: '<i class="fas fa-file-alt"></i>',
+        iconStyle: 'background:rgba(139,92,246,.15);color:#a78bfa;',
+        subtitle: 'Reviews task descriptions, user profiles & content policy violations',
+        fixIcon: 'fa-eye-slash',
+    },
+};
+
+let authToken = '';
+let currentAgent = 'security_agent';
+let allBadges = {};
+
+// ─── Auth ───────────────────────────────────────────────────────────────────
+function authenticate() {
+    const val = document.getElementById('tokenInput').value.trim();
+    if (!val) return;
+    authToken = val;
+    // Try a quick API call to verify
+    apiFetch('/admin/dashboard-stats')
+        .then(data => {
+            if (data.success !== false) {
+                document.getElementById('authOverlay').style.display = 'none';
+                loadAllBadges().then(() => loadCurrentAgent());
+            } else {
+                showAuthError();
+            }
+        })
+        .catch(() => showAuthError());
+}
+
+function showAuthError() {
+    const el = document.getElementById('authError');
+    el.style.display = 'block';
+    authToken = '';
+}
+
+function logout() {
+    authToken = '';
+    document.getElementById('authOverlay').style.display = 'flex';
+    document.getElementById('tokenInput').value = '';
+    document.getElementById('authError').style.display = 'none';
+}
+
+// ─── API Helper ─────────────────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+    const tryFetch = async (base) => {
+        const res = await fetch(base + path, { ...opts, headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+    };
+
+    try { return await tryFetch(API_BASE); }
+    catch (e) {
+        if (location.hostname !== 'localhost') {
+            try { return await tryFetch(PROXY_BASE); }
+            catch (e2) { throw e2; }
+        }
+        throw e;
+    }
+}
+
+// ─── Badge Counts ────────────────────────────────────────────────────────────
+async function loadAllBadges() {
+    try {
+        const data = await apiFetch('/ai-team/reports');
+        if (!data.success) return;
+        const counts = {};
+        (data.reports || []).forEach(r => {
+            counts[r.agent_id] = (counts[r.agent_id] || 0) + 1;
+        });
+        allBadges = counts;
+        Object.entries(counts).forEach(([id, n]) => {
+            const el = document.getElementById('badge-' + id);
+            if (el) el.textContent = n;
+        });
+    } catch (_) {}
+}
+
+// ─── Agent Selection ─────────────────────────────────────────────────────────
+function selectAgent(agentId) {
+    document.querySelectorAll('.agent-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById('btn-' + agentId);
+    if (btn) btn.classList.add('active');
+    currentAgent = agentId;
+    loadCurrentAgent();
+}
+
+// ─── Load Agent Page ─────────────────────────────────────────────────────────
+async function loadCurrentAgent() {
+    const meta = AGENT_META[currentAgent] || {
+        name: currentAgent, icon: '<i class="fas fa-robot"></i>',
+        iconStyle: 'background:rgba(99,102,241,.15);color:#818cf8;',
+        subtitle: 'AI Agent', fixIcon: 'fa-check',
+    };
+
+    document.getElementById('pageTitle').textContent = meta.name;
+    document.getElementById('pageSubtitle').textContent = meta.subtitle;
+
+    // Spin refresh icon
+    const ic = document.getElementById('refreshIcon');
+    ic.style.animation = 'spin .6s linear infinite';
+
+    const area = document.getElementById('contentArea');
+    area.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><span>Loading ${meta.name} data…</span></div>`;
+
+    try {
+        const [reportsData, fixesData] = await Promise.all([
+            apiFetch(`/ai-team/reports?agent_id=${encodeURIComponent(currentAgent)}`),
+            apiFetch(`/ai-team/fixes?agent_id=${encodeURIComponent(currentAgent)}`),
+        ]);
+
+        const reports = (reportsData.success ? reportsData.reports : []) || [];
+        const fixes   = (fixesData.success   ? fixesData.fixes   : []) || [];
+
+        // Aggregate stats from all reports
+        const aggStats = {};
+        reports.forEach(r => {
+            Object.entries(r.stats || {}).forEach(([k, v]) => {
+                aggStats[k] = (aggStats[k] || 0) + (Number(v) || 0);
+            });
+        });
+
+        area.innerHTML = buildAgentPage(meta, reports, fixes, aggStats);
+    } catch (err) {
+        area.innerHTML = `<div class="empty-state">
+            <i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i>
+            <p>Failed to load data: ${err.message}</p>
+        </div>`;
+    }
+
+    ic.style.animation = '';
+}
+
+// ─── Build Agent Page HTML ────────────────────────────────────────────────────
+function buildAgentPage(meta, reports, fixes, aggStats) {
+    const statsKeys = Object.keys(aggStats);
+    const statCards = statsKeys.length > 0
+        ? statsKeys.map(k => `
+            <div class="stat-card">
+                <div class="stat-label">${formatKey(k)}</div>
+                <div class="stat-value">${aggStats[k]}</div>
+                <div class="stat-change">Total across all reports</div>
+            </div>`).join('')
+        : `<div class="stat-card">
+                <div class="stat-label">Total Reports</div>
+                <div class="stat-value">${reports.length}</div>
+                <div class="stat-change">All time</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Problems Fixed</div>
+                <div class="stat-value">${fixes.length}</div>
+                <div class="stat-change">Resolved actions</div>
+            </div>`;
+
+    const reportsHtml = reports.length > 0
+        ? reports.map(r => buildReportCard(r)).join('')
+        : `<div class="empty-state">
+            <i class="fas fa-clipboard-check"></i>
+            <p>No reports from this agent yet.</p>
+          </div>`;
+
+    const fixesHtml = fixes.length > 0
+        ? fixes.map(f => buildFixCard(f, meta.fixIcon)).join('')
+        : `<div class="empty-state">
+            <i class="fas fa-tools"></i>
+            <p>No fix actions recorded for this agent yet.</p>
+          </div>`;
+
+    // Extract "fixed problems" from report stats (items that look like resolved/fixed counts)
+    const fixedFromReports = [];
+    reports.forEach(r => {
+        const stats = r.stats || {};
+        const fixes_list = (r.fixes || []);
+        fixes_list.forEach(f => fixedFromReports.push({ label: f, time: r.created_at }));
+        // Also extract stats items that imply fixes
+        Object.entries(stats).forEach(([k, v]) => {
+            if ((k.includes('fix') || k.includes('resolved') || k.includes('removed') || k.includes('block')) && v > 0) {
+                fixedFromReports.push({ label: `${formatKey(k)}: ${v}`, time: r.created_at });
+            }
+        });
+    });
+
+    const fixedFromReportsHtml = fixedFromReports.length > 0
+        ? fixedFromReports.map(f => `
+            <div class="fix-card">
+                <div class="fix-icon"><i class="fas fa-check"></i></div>
+                <div class="fix-info">
+                    <div class="fix-action">${escHtml(f.label)}</div>
+                    <div class="fix-meta">Extracted from agent report</div>
+                </div>
+                <div class="fix-time">${f.time}</div>
+            </div>`).join('')
+        : '';
+
+    return `
+        <!-- Agent Hero -->
+        <div class="agent-hero">
+            <div class="agent-hero-icon" style="${meta.iconStyle}">${meta.icon}</div>
+            <div class="agent-hero-info">
+                <h2>${meta.name}</h2>
+                <p>${meta.subtitle}</p>
+            </div>
+            <div class="agent-status-pill active">
+                <span class="dot"></span> Active
+            </div>
+        </div>
+
+        <!-- Aggregated Stats -->
+        <div class="stats-row">${statCards}</div>
+
+        <!-- Reports Section -->
+        <div class="section-title">
+            <h3><i class="fas fa-file-alt" style="color:#6366f1;margin-right:8px;"></i>Agent Reports</h3>
+            <span>${reports.length} report${reports.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="reports-list">${reportsHtml}</div>
+
+        <!-- Problems Fixed Section -->
+        <div class="section-title">
+            <h3><i class="fas fa-wrench" style="color:#22c55e;margin-right:8px;"></i>Problems This Agent Fixed</h3>
+            <span>${fixes.length + fixedFromReports.length} action${(fixes.length + fixedFromReports.length) !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="fixes-list">
+            ${fixedFromReportsHtml}
+            ${fixesHtml}
+        </div>
+    `;
+}
+
+function buildReportCard(r) {
+    const status = (r.status || 'info').toLowerCase();
+    const statsHtml = Object.entries(r.stats || {})
+        .map(([k, v]) => `<div class="report-stat"><strong>${v}</strong> ${formatKey(k)}</div>`)
+        .join('');
+
+    return `
+        <div class="report-card status-${status}">
+            <div class="report-header">
+                <div>
+                    <div class="report-title">${escHtml(r.title || 'Agent Report')}</div>
+                    <div class="report-time">${r.created_at || '—'}</div>
+                </div>
+                <span class="status-badge ${status}">${ucfirst(status)}</span>
+            </div>
+            ${r.summary ? `<div class="report-summary">${escHtml(r.summary)}</div>` : ''}
+            ${statsHtml ? `<div class="report-stats">${statsHtml}</div>` : ''}
+        </div>`;
+}
+
+function buildFixCard(f, iconClass) {
+    const actionLabel = formatAction(f.action || '');
+    const meta = f.resource_type ? `${f.resource_type} #${f.resource_id || ''}` : '';
+    const details = f.details && typeof f.details === 'object'
+        ? Object.entries(f.details)
+            .filter(([, v]) => v && typeof v === 'string')
+            .map(([k, v]) => `${formatKey(k)}: ${escHtml(String(v).slice(0, 60))}`)
+            .join(' · ')
+        : '';
+
+    return `
+        <div class="fix-card">
+            <div class="fix-icon"><i class="fas ${iconClass || 'fa-check'}"></i></div>
+            <div class="fix-info">
+                <div class="fix-action">${actionLabel}</div>
+                <div class="fix-meta">${meta}${details ? ' — ' + details : ''}</div>
+            </div>
+            <div class="fix-time">${f.created_at || '—'}</div>
+        </div>`;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function formatKey(k) {
+    return k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function formatAction(a) {
+    const map = {
+        flag_task:        'Task Flagged',
+        remove_task:      'Task Removed',
+        suspend_user:     'User Suspended',
+        unsuspend_user:   'User Unsuspended',
+        ban_user:         'User Banned',
+        unban_user:       'User Unbanned',
+        delete_user:      'User Deleted',
+        adjust_balance:   'Balance Adjusted',
+        block_content:    'Content Blocked',
+        resolve_dispute:  'Dispute Resolved',
+    };
+    return map[a] || formatKey(a);
+}
+
+function ucfirst(s) {
+    if (!s) return '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    const m = document.getElementById('toastMsg');
+    m.textContent = msg;
+    t.className = `toast show ${type}`;
+    setTimeout(() => t.className = 'toast', 3500);
+}
+
+// ─── Enter key on token input ────────────────────────────────────────────────
+document.getElementById('tokenInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') authenticate();
+});
+
+// ─── Auto-auth from localStorage ────────────────────────────────────────────
+(function () {
+    const saved = localStorage.getItem('wm4u_admin_token');
+    if (saved) {
+        authToken = saved;
+        apiFetch('/admin/dashboard-stats')
+            .then(d => {
+                if (d && d.success !== false) {
+                    document.getElementById('authOverlay').style.display = 'none';
+                    loadAllBadges().then(() => loadCurrentAgent());
+                } else {
+                    authToken = '';
+                    localStorage.removeItem('wm4u_admin_token');
+                }
+            })
+            .catch(() => {
+                authToken = '';
+                localStorage.removeItem('wm4u_admin_token');
+            });
+    }
+})();
+
+// Save token on successful auth (patch authenticate)
+const _origAuth = authenticate;
+window.authenticate = function () {
+    const val = document.getElementById('tokenInput').value.trim();
+    if (!val) return;
+    authToken = val;
+    apiFetch('/admin/dashboard-stats')
+        .then(data => {
+            if (data.success !== false) {
+                localStorage.setItem('wm4u_admin_token', val);
+                document.getElementById('authOverlay').style.display = 'none';
+                loadAllBadges().then(() => loadCurrentAgent());
+            } else {
+                showAuthError();
+            }
+        })
+        .catch(() => showAuthError());
+};
+</script>
+</body>
+</html>

@@ -24,8 +24,10 @@ const TrackingConfig = {
     MAP_DEFAULTS: {
         center: [77.2090, 28.6139], // Delhi, India
         zoom: 14,
-        style: null // No map available
+        style: 'mapbox://styles/mapbox/streets-v12'
     },
+    
+    MAPBOX_TOKEN: window.MAPBOX_TOKEN || '',
     
     AVG_SPEED_CITY: 20,
     AVG_SPEED_HIGHWAY: 50
@@ -38,6 +40,9 @@ const TrackingConfig = {
 class Workmate4uTracker {
     constructor(options = {}) {
         this.mapContainer = options.mapContainer || 'trackingMap';
+        this.apiUrl = options.apiUrl
+            || window.TASKEARN_API_URL
+            || 'https://taskearn-production-production.up.railway.app/api';
         
         this.map = null;
         this.markers = {
@@ -694,8 +699,9 @@ async function getActiveTrackingTasks() {
     try {
         let response;
         const opts = { headers: { 'Authorization': `Bearer ${token}` } };
+        const directUrl = window.TASKEARN_API_URL || 'https://taskearn-production-production.up.railway.app/api';
         try {
-            response = await fetch(`${window.TASKEARN_API_URL}/user/active-tracking`, opts);
+            response = await fetch(`${directUrl}/user/active-tracking`, opts);
         } catch (netErr) {
             console.warn('Direct active-tracking failed, using proxy:', netErr && netErr.message);
             const proxy = window.TASKEARN_PROXY_URL || '/.netlify/functions/api-proxy/api';

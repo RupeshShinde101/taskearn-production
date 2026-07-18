@@ -10,8 +10,10 @@
     <meta name="keywords" content="Workmate4u browse tasks, find tasks nearby, earn money tasks, Workmate4u.com">
     <meta name="robots" content="noindex, nofollow">
     <link rel="canonical" href="https://workmate4u.com/browse.html">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" as="style" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous"></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
     <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <script>
@@ -22,8 +24,8 @@
             s.async = true;
             document.head.appendChild(s);
         }
-        if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', loadRazorpayScript); }
-        else { loadRazorpayScript(); }
+        // NOTE: Razorpay is loaded lazily by razorpay.js when a payment is triggered.
+        // Do NOT auto-load here — it causes ERR_INSUFFICIENT_RESOURCES by preloading ~20 chunks at page start.
     </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="styles.css?v=20260506_hideWorker">
@@ -32,8 +34,14 @@
         (function() {
             var ua = navigator.userAgent.toLowerCase();
             var mob = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
-            if (mob) { window.API_BASE_URL = '/.netlify/functions/api-proxy/api'; window.FORCE_MOBILE_PROXY = true; }
-            else { window.API_BASE_URL = 'https://taskearn-production-production.up.railway.app/api'; window.FORCE_MOBILE_PROXY = false; }
+        // Always use proxy on Netlify (workmate4u.com / *.netlify.app).
+        // Browser never resolves Railway's domain — prevents ERR_NAME_NOT_RESOLVED.
+        var h = location.hostname;
+        if (h.indexOf('workmate4u.com') !== -1 || h.indexOf('netlify.app') !== -1 || h.indexOf('netlify.live') !== -1) {
+            window.API_BASE_URL = '/.netlify/functions/api-proxy/api';
+            window.FORCE_MOBILE_PROXY = true;
+        }
+        // Local dev: api-client.js will set API_BASE_URL to localhost/Railway
         })();
     </script>
 <script src="mobile-enhancements.js?v=20260502_findtasks" defer></script>
@@ -93,98 +101,73 @@
         </ul>
     </div>
 
-    <!-- Find Tasks Section with Map -->
+    <!-- Find Tasks Section -->
     <section class="find-tasks" id="find-tasks" style="padding-top: 90px;">
         <div class="container">
             <div class="section-header">
                 <span class="section-badge">Earn Money</span>
                 <h2>Find Tasks Near You</h2>
-                <p>Browse available tasks on the map and start earning today</p>
+                <p>Browse available tasks and <span style="background:linear-gradient(90deg,#6366f1,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:600;">start earning today</span> <span style="font-size:1rem;">💰</span></p>
             </div>
-            <div class="tasks-wrapper">
-                <div class="tasks-sidebar">
-                    <div class="tasks-filter">
-                        <div class="filter-header">
-                            <h3><i class="fas fa-filter"></i> Filters</h3>
-                            <button class="clear-filters" onclick="clearFilters()">Clear All</button>
-                        </div>
-                        <div class="filter-group">
-                            <label>Search</label>
-                            <div style="position:relative;">
-                                <input type="text" id="filterSearch" placeholder="Search tasks..." oninput="applyFilters()" style="width:100%;padding:10px 36px 10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
-                                <i class="fas fa-search" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#94a3b8;"></i>
-                            </div>
-                        </div>
-                        <div class="filter-group">
-                            <label>Category</label>
-                            <select id="filterCategory">
-                                <option value="all">All Categories</option>
-                                <option value="household">Household Chores</option>
-                                <option value="delivery">Delivery Services</option>
-                                <option value="tutoring">Online Tutoring</option>
-                                <option value="transport">Pick & Drop</option>
-                                <option value="vehicle">Vehicle Services</option>
-                                <option value="repair">Repairs & Mechanical</option>
-                                <option value="photography">Photography</option>
-                                <option value="freelance">Freelance Services</option>
-                                <option value="waste">Waste Collection</option>
-                                <option value="cleaning">Cleaning Services</option>
-                                <option value="cooking">Cooking & Chef</option>
-                                <option value="petcare">Pet Care</option>
-                                <option value="gardening">Gardening & Lawn</option>
-                                <option value="shopping">Shopping & Errands</option>
-                                <option value="eventhelp">Event Help</option>
-                                <option value="moving">Moving & Packing</option>
-                                <option value="techsupport">Tech Support</option>
-                                <option value="beauty">Beauty & Wellness</option>
-                                <option value="laundry">Laundry & Ironing</option>
-                                <option value="catering">Catering Services</option>
-                                <option value="babysitting">Babysitting</option>
-                                <option value="eldercare">Elder Care</option>
-                                <option value="fitness">Fitness Training</option>
-                                <option value="painting">Painting & Decor</option>
-                                <option value="electrician">Electrician</option>
-                                <option value="plumbing">Plumbing</option>
-                                <option value="carpentry">Carpentry</option>
-                                <option value="tailoring">Tailoring & Alterations</option>
-                                <option value="other">Other</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label>Distance</label>
-                            <input type="range" id="filterDistance" min="1" max="50" value="10">
-                            <span class="range-value"><span id="distanceValue">10</span> km</span>
-                        </div>
-                        <div class="filter-group">
-                            <label>Budget Range</label>
-                            <div class="budget-inputs">
-                                <input type="number" id="minBudget" placeholder="Min ₹">
-                                <span>-</span>
-                                <input type="number" id="maxBudget" placeholder="Max ₹">
-                            </div>
-                        </div>
-                        <button class="btn btn-primary btn-block" onclick="applyFilters()">
-                            <i class="fas fa-search"></i> Apply Filters
-                        </button>
-                    </div>
+            <!-- Compact horizontal filter bar -->
+            <div class="browse-filter-bar">
+                <div class="bfb-search">
+                    <i class="fas fa-search bfb-search-icon"></i>
+                    <input type="text" id="filterSearch" placeholder="Search tasks…" oninput="applyFilters()">
                 </div>
-                <div class="tasks-map">
-                    <div class="tracking-status" id="trackingStatus">
-                        <span class="tracking-dot"></span>
-                        <span>GPS Tracking: <strong id="trackingText">Connecting...</strong></span>
-                    </div>
-                    <div id="map"></div>
-                    <div class="map-controls">
-                        <button class="map-btn" onclick="centerOnUser()" title="My Location"><i class="fas fa-crosshairs"></i></button>
-                        <button class="map-btn" onclick="toggleTracking()" id="trackingBtn" title="Toggle Live Tracking"><i class="fas fa-satellite-dish"></i></button>
-                        <button class="map-btn" onclick="zoomIn()" title="Zoom In"><i class="fas fa-plus"></i></button>
-                        <button class="map-btn" onclick="zoomOut()" title="Zoom Out"><i class="fas fa-minus"></i></button>
-                        <button class="map-btn" onclick="toggleMapType()" title="Map Type"><i class="fas fa-layer-group"></i></button>
-                    </div>
-                    <div class="distance-info" id="distanceInfo"></div>
+                <select id="filterCategory" class="bfb-select" onchange="applyFilters()">
+                    <option value="all">All Categories</option>
+                    <option value="household">Household Chores</option>
+                    <option value="delivery">Delivery Services</option>
+                    <option value="tutoring">Online Tutoring</option>
+                    <option value="transport">Pick &amp; Drop</option>
+                    <option value="vehicle">Vehicle Services</option>
+                    <option value="repair">Repairs &amp; Mechanical</option>
+                    <option value="photography">Photography</option>
+                    <option value="freelance">Freelance Services</option>
+                    <option value="waste">Waste Collection</option>
+                    <option value="cleaning">Cleaning Services</option>
+                    <option value="cooking">Cooking &amp; Chef</option>
+                    <option value="petcare">Pet Care</option>
+                    <option value="gardening">Gardening &amp; Lawn</option>
+                    <option value="shopping">Shopping &amp; Errands</option>
+                    <option value="eventhelp">Event Help</option>
+                    <option value="moving">Moving &amp; Packing</option>
+                    <option value="techsupport">Tech Support</option>
+                    <option value="beauty">Beauty &amp; Wellness</option>
+                    <option value="laundry">Laundry &amp; Ironing</option>
+                    <option value="catering">Catering Services</option>
+                    <option value="babysitting">Babysitting</option>
+                    <option value="eldercare">Elder Care</option>
+                    <option value="fitness">Fitness Training</option>
+                    <option value="painting">Painting &amp; Decor</option>
+                    <option value="electrician">Electrician</option>
+                    <option value="plumbing">Plumbing</option>
+                    <option value="carpentry">Carpentry</option>
+                    <option value="tailoring">Tailoring &amp; Alterations</option>
+                    <option value="other">Other</option>
+                </select>
+                <div class="bfb-distance">
+                    <i class="fas fa-location-dot"></i>
+                    <input type="range" id="filterDistance" min="1" max="50" value="10"
+                        oninput="document.getElementById('distanceValue').textContent=this.value; applyFilters()">
+                    <span><span id="distanceValue">10</span> km</span>
                 </div>
+                <div class="bfb-budget">
+                    <input type="number" id="minBudget" placeholder="Min ₹" onchange="applyFilters()">
+                    <span>–</span>
+                    <input type="number" id="maxBudget" placeholder="Max ₹" onchange="applyFilters()">
+                </div>
+                <button class="bfb-clear" onclick="clearFilters()"><i class="fas fa-times"></i> Clear</button>
             </div>
-            
+
+            <div id="activeTaskBanner" style="display:none;margin-bottom:16px;"></div>
+
+            <!-- Hidden stubs so existing JS refs don't throw -->
+            <div id="map" style="display:none;height:0;"></div>
+            <div id="distanceInfo" style="display:none;"></div>
+            <div id="trackingStatus" style="display:none;"></div>
+
             <div class="tasks-list-fullwidth" id="tasksList">
                 <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>
                 <div class="skeleton-card"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div>
@@ -215,7 +198,7 @@
                 <button type="submit" class="btn btn-primary btn-block">Login</button>
             </form>
             <div class="social-divider" style="display:flex;align-items:center;gap:12px;margin:18px 0 14px;"><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"><span style="color:#94a3b8;font-size:13px;white-space:nowrap;">or continue with</span><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"></div>
-            <button type="button" onclick="handleGoogleLogin()" class="btn btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#333;border:1px solid #dadce0;padding:11px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;"><svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Sign in with Google</button>
+            <div id="googleSignInBtn_login" style="display:flex;justify-content:center;min-height:44px;"></div>
             <div class="modal-footer"><p>Don't have an account? <a href="#" onclick="switchModal('loginModal', 'signupModal')">Sign Up</a></p></div>
         </div>
     </div>
@@ -232,13 +215,13 @@
                 </div>
                 <div class="form-group"><label for="signupEmail">Email Address</label><input type="email" id="signupEmail" placeholder="your@email.com" required></div>
                 <div class="form-group"><label for="signupPhone">Phone Number</label><input type="tel" id="signupPhone" placeholder="+91 98765 43210" required></div>
-                <div class="form-group"><label for="signupDOB">Date of Birth</label><input type="date" id="signupDOB" required><small>You must be 16 or older to use Workmate4u</small></div>
+                <div class="form-group"><label for="signupDOB">Date of Birth</label><input type="date" id="signupDOB" required><small>You must be 16 or older to use Workmate4u</small></div><div class="form-group"><label for="signupInviteCode">Invite Code <span style="color:#6366f1;font-weight:700;">*</span></label><input type="text" id="signupInviteCode" placeholder="Enter your invite code" autocomplete="off" required style="letter-spacing:2px;text-transform:uppercase;"><small style="color:#6366f1;">Closed beta — invite code required.</small></div>
                 <div class="form-group"><label for="signupPassword">Password</label><input type="password" id="signupPassword" placeholder="Create a strong password" required></div>
                 <div class="form-group"><label class="checkbox-label"><input type="checkbox" required> I agree to the <a href="terms.html" target="_blank">Terms of Service</a> and <a href="privacy.html" target="_blank">Privacy Policy</a></label></div>
                 <button type="submit" class="btn btn-primary btn-block">Create Account</button>
             </form>
             <div class="social-divider" style="display:flex;align-items:center;gap:12px;margin:18px 0 14px;"><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"><span style="color:#94a3b8;font-size:13px;white-space:nowrap;">or sign up with</span><hr style="flex:1;border:none;border-top:1px solid #e2e8f0;"></div>
-            <button type="button" onclick="handleGoogleLogin()" class="btn btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#333;border:1px solid #dadce0;padding:11px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;"><svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Sign up with Google</button>
+            <div id="googleSignInBtn_signup" style="display:flex;justify-content:center;min-height:44px;"></div>
             <div class="modal-footer"><p>Already have an account? <a href="#" onclick="switchModal('signupModal', 'loginModal')">Login</a></p></div>
         </div>
     </div>
@@ -386,13 +369,13 @@
 
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-    <script src="api-client.js?v=20260506_hideWorker"></script>
-    <script src="shared.js?v=20260506_hideWorker"></script>
-    <script src="category-picker.js?v=20260506_hideWorker"></script>
-    <script src="post-task-wizard.js?v=20260506_hideWorker"></script>
+    <script defer src="api-client.js?v=20260506_hideWorker"></script>
+    <script defer src="shared.js?v=20260506_hideWorker"></script>
+    <script defer src="category-picker.js?v=20260514_scfix"></script>
+    <script defer src="post-task-wizard.js?v=20260514_scfix"></script>
     <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.onGoogleLibraryLoad)window.onGoogleLibraryLoad()"></script>
-    <script src="razorpay.js?v=20260404_accept_v2"></script>
-    <script src="app.js?v=20260506_hideWorker"></script>
+    <script defer src="razorpay.js?v=20260404_accept_v2"></script>
+    <script defer src="app.js?v=20260506_hideWorker"></script>
     <script>
         // Auto-apply filters from URL on load (linked from index.html / categories.html)
         // Supported params: category, dist, min, max
@@ -416,7 +399,7 @@
                 var sel = document.getElementById('filterCategory');
                 if (sel && cat) {
                     var opt = sel.querySelector('option[value="' + cat + '"]');
-                    if (opt) sel.value = cat;
+                    if (opt) { sel.value = cat; sel.dispatchEvent(new Event('change', { bubbles: true })); }
                 }
                 if (dist) {
                     var distEl = document.getElementById('filterDistance');
@@ -447,8 +430,8 @@
         })();
     </script>
     <script>(function(){var l=document.getElementById('pageLoader');if(l){l.classList.add('active');window.addEventListener('load',function(){l.classList.remove('active');l.classList.add('done');setTimeout(function(){l.remove()},600)})}})()</script>
-<script src="sw-register.js?v=20260420_recovery"></script>
-    <script src="back-button.js?v=20260506_hideWorker"></script>
+<script defer src="sw-register.js?v=20260420_recovery"></script>
+    <script defer src="back-button.js?v=20260506_hideWorker"></script>
 
 <nav class="bottom-tab-bar" aria-label="Main navigation">
     <a href="index.html" aria-label="Home"><i class="fas fa-home"></i><span>Home</span></a>
@@ -459,3 +442,6 @@
 </nav>
 </body>
 </html>
+
+
+

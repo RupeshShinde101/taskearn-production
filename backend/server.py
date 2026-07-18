@@ -1,6 +1,6 @@
 """
 TaskEarn Backend Server - Production Ready
-Flask + PostgreSQL/SQLite + bcrypt + JWT + Razorpay
+Flask + PostgreSQL + bcrypt + JWT + Razorpay
 """
 
 import sys
@@ -45,13 +45,30 @@ except ImportError:
 config = get_config()
 app = Flask(__name__)
 
+# ── JSON provider: emit ISO-8601 for datetime objects ────────────────────────
+# Flask 3.0's default provider serialises datetime as RFC-1123 HTTP-date
+# (e.g. "Thu, 12 Jul 2026 10:30:00 GMT") which Dart's DateTime.tryParse
+# cannot read, causing every task timestamp to fall back to DateTime.now().
+# Overriding here ensures every jsonify() call returns proper ISO strings.
+from flask.json.provider import DefaultJSONProvider as _DefaultJSONProvider
+
+class _IsoDateJSONProvider(_DefaultJSONProvider):
+    def default(self, o):
+        if isinstance(o, (datetime.datetime, datetime.date)):
+            return o.isoformat()
+        return super().default(o)
+
+app.json_provider_class = _IsoDateJSONProvider
+app.json = _IsoDateJSONProvider(app)
+# ────────────────────────────────────────────────────────────────────────────
+
 # Rate limiter — protects auth endpoints from brute force
 if _has_limiter:
     limiter = Limiter(
         get_remote_address,
         app=app,
         default_limits=[],
-        storage_uri="memory://"
+        storage_uri=os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
     )
 else:
     limiter = None
@@ -79,6 +96,7 @@ CORS(app,
      max_age=3600)
 
 app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20 MB — enough for two compressed KYC images
 
 # ========================================
 # ERROR HANDLERS — prevent raw tracebacks in production
@@ -95,6 +113,10 @@ def method_not_allowed(error):
 @app.errorhandler(500)
 def server_error(error):
     return jsonify({'success': False, 'message': 'Internal server error'}), 500
+
+@app.errorhandler(413)
+def request_too_large(error):
+    return jsonify({'success': False, 'message': 'Upload too large. Please use smaller images.'}), 413
 
 # Add security + CORS headers to all responses
 @app.after_request
@@ -116,6 +138,7 @@ def add_security_headers(response):
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=(self)'
+    response.headers['Content-Security-Policy'] = "default-src 'none'"
     
     # Cache headers for API responses
     if request.path.startswith('/api/'):
@@ -168,23 +191,355 @@ def handle_preflight_and_csrf():
 # ========================================
 # DATABASE INITIALIZATION
 # ========================================
-# Initialize database on app startup (works with gunicorn)
-try:
-    print("🔄 Initializing database...")
-    init_db()
-    print("✅ Database initialized successfully")
-except Exception as e:
-    print(f"⚠️  Error initializing database: {e}")
-    print("   Database may already be initialized or connection issue")
+# Run init_db() in a background thread so the server starts accepting
+# requests (and passes Railway's health checks) immediately, even if the
+# database is slow to accept connections on cold start.
+import threading as _threading
 
-# Placeholder for SQL queries (? for SQLite, %s for PostgreSQL)
+def _bg_init_db():
+    try:
+        print("🔄 Initializing database (background)...")
+        init_db()
+        print("✅ Database initialized successfully")
+    except Exception as e:
+        print(f"⚠️  Error initializing database: {e}")
+        print("   Database may already be initialized or connection issue")
+
+_threading.Thread(target=_bg_init_db, daemon=True, name="db-init").start()
+
+def ensure_platform_account():
+    """Create the platform system account (user_id='1') if it doesn't exist.
+    This account holds company revenue (commission, platform_fee, penalty income).
+    """
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f"SELECT id FROM users WHERE id = {PH}", ('1',))
+            if not cursor.fetchone():
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f"""
+                    INSERT INTO users (id, name, email, password_hash, joined_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                """, ('1', 'Platform Account', 'platform@internal.taskern', 'PLATFORM_NO_AUTH', now))
+                print("✅ Platform user account created (id='1')")
+            cursor.execute(f"SELECT id FROM wallets WHERE user_id = {PH}", ('1',))
+            if not cursor.fetchone():
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f"""
+                    INSERT INTO wallets (user_id, balance, total_added, total_spent, total_earned, total_cashback, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                """, ('1', 0, 0, 0, 0, 0, now))
+                print("✅ Platform wallet created (user_id='1')")
+    except Exception as e:
+        print(f"⚠️  Could not ensure platform account: {e}")
+
+try:
+    ensure_platform_account()
+except Exception as e:
+    print(f"⚠️  Platform account setup failed: {e}")
+
+# Placeholder for SQL queries (%s for PostgreSQL)
 PH = get_placeholder()
+
+# ========================================
+# VAPID / PUSH NOTIFICATION CONFIG
+# ========================================
+
+VAPID_PUBLIC_KEY  = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'admin@workmate4u.com')
+
+
+def send_push_to_user(user_id, title, body, url='/notifications.html'):
+    """Send a web push notification to all subscriptions for a user.
+    Silently skips if pywebpush is not installed or VAPID keys are missing."""
+    if not _has_webpush or not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'SELECT subscription_json FROM push_subscriptions WHERE user_id = {PH}',
+                (str(user_id),)
+            )
+            rows = cursor.fetchall()
+        stale_users = []
+        for row in rows:
+            sub_json = dict_from_row(row).get('subscription_json') if hasattr(row, 'keys') else row[0]
+            try:
+                sub = json.loads(sub_json)
+                webpush(
+                    subscription_info=sub,
+                    data=json.dumps({'title': title, 'body': body, 'url': url}),
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={'sub': f'mailto:{VAPID_CLAIMS_EMAIL}'}
+                )
+            except WebPushException as exc:
+                resp = exc.response
+                if resp is not None and resp.status_code in (404, 410):
+                    stale_users.append(str(user_id))
+            except Exception:
+                pass
+        if stale_users:
+            with get_db() as (cursor2, conn2):
+                cursor2.execute(
+                    f'DELETE FROM push_subscriptions WHERE user_id = {PH}',
+                    (str(user_id),)
+                )
+    except Exception as e:
+        print(f'[push] Error sending to user {user_id}: {e}')
+
+
+# ========================================
+# FCM (FIREBASE CLOUD MESSAGING) — Android/iOS push
+# ========================================
+
+_has_fcm = False
+try:
+    import firebase_admin
+    from firebase_admin import credentials as fb_credentials
+    from firebase_admin import messaging as fb_messaging
+
+    _firebase_sa_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '')
+    if _firebase_sa_json:
+        import json as _json_fcm
+        _cred = fb_credentials.Certificate(_json_fcm.loads(_firebase_sa_json))
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(_cred)
+        _has_fcm = True
+        print('[FCM] Firebase Admin SDK initialized ✅')
+    else:
+        print('[FCM] FIREBASE_SERVICE_ACCOUNT_JSON not set — FCM push disabled')
+except ImportError:
+    print('[FCM] firebase-admin not installed — FCM push disabled')
+except Exception as _fcm_init_err:
+    print(f'[FCM] Init error: {_fcm_init_err}')
+
+_fcm_columns_ensured = False
+_bio_skills_columns_ensured = False
+_user_location_columns_ensured = False
+_google_auth_schema_ensured = False
+_gender_column_ensured = False
+
+def _ensure_user_location_columns():
+    """Add last_lat / last_lng columns to users table (one-time per process)."""
+    global _user_location_columns_ensured
+    if _user_location_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':  # PostgreSQL
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lat FLOAT')
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lng FLOAT')
+            else:           # SQLite
+                cursor.execute('PRAGMA table_info(users)')
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'last_lat' not in cols:
+                    cursor.execute('ALTER TABLE users ADD COLUMN last_lat FLOAT')
+                if 'last_lng' not in cols:
+                    cursor.execute('ALTER TABLE users ADD COLUMN last_lng FLOAT')
+            conn.commit()
+        _user_location_columns_ensured = True
+    except Exception as e:
+        print(f'\u26a0\ufe0f _ensure_user_location_columns error: {e}')
+
+
+def _ensure_terms_columns():
+    """Add terms_accepted_at / terms_version to users (lazy migration)."""
+    global _terms_columns_ensured
+    if _terms_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':   # PostgreSQL
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ')
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version TEXT')
+            else:             # SQLite
+                cursor.execute('PRAGMA table_info(users)')
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'terms_accepted_at' not in cols:
+                    cursor.execute('ALTER TABLE users ADD COLUMN terms_accepted_at TEXT')
+                if 'terms_version' not in cols:
+                    cursor.execute('ALTER TABLE users ADD COLUMN terms_version TEXT')
+            conn.commit()
+        _terms_columns_ensured = True
+    except Exception as e:
+        print(f'Warning: _ensure_terms_columns error: {e}')
+
+def _ensure_gender_column():
+    """Add gender column to users table if it does not exist (one-time per process)."""
+    global _gender_column_ensured
+    if _gender_column_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(10)")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'gender' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN gender VARCHAR(10)")
+            conn.commit()
+        _gender_column_ensured = True
+    except Exception as e:
+        print(f'⚠️ _ensure_gender_column error: {e}')
+
+def _ensure_bio_skills_columns():
+    """Add bio and skills columns to users table if they do not exist (one-time per process)."""
+    global _bio_skills_columns_ensured
+    if _bio_skills_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS skills TEXT")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'bio' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT")
+                if 'skills' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN skills TEXT")
+            conn.commit()
+        _bio_skills_columns_ensured = True
+    except Exception as e:
+        print(f'⚠️ _ensure_bio_skills_columns error: {e}')
+
+def _ensure_fcm_token_column():
+    """Add fcm_token column to users table if it does not exist (one-time per process)."""
+    global _fcm_columns_ensured
+    if _fcm_columns_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'fcm_token' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN fcm_token TEXT")
+            conn.commit()
+        _fcm_columns_ensured = True
+    except Exception as e:
+        print(f'⚠️ _ensure_fcm_token_column error: {e}')
+
+
+def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main'):
+    """Send an FCM push notification to the user's registered device.
+    Falls back silently if firebase-admin is not configured.
+
+    channel values:
+      workmate4u_main    — general task updates (high importance)
+      workmate4u_matched — nearby task matches  (max importance)
+      workmate4u_payment — payment events       (max importance)
+    """
+    if not _has_fcm:
+        return
+    _ensure_fcm_token_column()
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(f'SELECT fcm_token FROM users WHERE id = {PH}', (str(user_id),))
+            row = cursor.fetchone()
+        if not row:
+            print(f'[FCM] ⚠️ No user row for user_id={user_id} — skipping push')
+            return
+        token = dict_from_row(row).get('fcm_token') if hasattr(row, 'keys') else row[0]
+        if not token:
+            print(f'[FCM] ⚠️ No FCM token registered for user_id={user_id} — skipping push')
+            return
+
+        # All data values must be strings for FCM data messages
+        payload = {'type': data.get('type', 'general') if data else 'general',
+                   'title': title, 'body': body}
+        if data:
+            for k, v in data.items():
+                payload[str(k)] = str(v)
+
+        # Data-only message — no 'notification' key so the FCM SDK always
+        # routes it to the Flutter background handler (_bgMessageHandler) even
+        # when the app is killed.  The handler itself creates the local
+        # notification on the correct channel with the right importance.
+        message = fb_messaging.Message(
+            data=payload,
+            android=fb_messaging.AndroidConfig(
+                priority='high',   # FCM delivery priority — wakes up device
+            ),
+            apns=fb_messaging.APNSConfig(
+                headers={'apns-priority': '10'},
+                payload=fb_messaging.APNSPayload(
+                    aps=fb_messaging.Aps(content_available=True),
+                ),
+            ),
+            token=token,
+        )
+        fb_messaging.send(message)
+        print(f'[FCM] ✉ "{title}" → user {user_id}')
+    except Exception as e:
+        print(f'[FCM] Error sending to user {user_id}: {e}')
+
+
+def _safe_delete_tasks(cursor, task_ids):
+    """Remove all FK-referenced rows for the given task ID(s) so the caller can
+    then safely DELETE FROM tasks.
+
+    Preserves history notifications (task_posted, task_expired,
+    task_cancelled_confirmation) by NULLing their task_id rather than
+    deleting them — the poster keeps a record even after the task is gone.
+    wallet_transactions are also NULLed (audit trail).
+
+    Every statement runs inside its own SAVEPOINT so a single table being
+    absent (e.g. in a dev environment) never aborts the whole transaction.
+    """
+    if not task_ids:
+        return
+    if isinstance(task_ids, (int, str)):
+        task_ids = [task_ids]
+    ids = [str(t) for t in task_ids if t is not None]
+    if not ids:
+        return
+
+    # IDs come from DB queries (not user input) — safe to interpolate.
+    in_clause = f"({','.join(ids)})"
+    history_types = "('task_posted','task_expired','task_cancelled_confirmation')"
+
+    steps = [
+        # Preserve history notifications — NULL the FK ref instead of deleting
+        f'UPDATE notifications SET task_id = NULL WHERE task_id IN {in_clause} AND notification_type IN {history_types}',
+        # Delete all remaining task-linked notifications (no FK refs left)
+        f'DELETE FROM notifications WHERE task_id IN {in_clause}',
+        # Preserve wallet transaction audit trail — NULL the FK ref
+        f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id IN {in_clause}',
+        # Delete all other FK-referencing rows
+        f'DELETE FROM task_releases WHERE task_id IN {in_clause}',
+        f'DELETE FROM reviews WHERE task_id IN {in_clause}',
+        f'DELETE FROM helper_ratings WHERE task_id IN {in_clause}',
+        f'DELETE FROM task_proofs WHERE task_id IN {in_clause}',
+        f'DELETE FROM chat_messages WHERE task_id IN {in_clause}',
+        f'DELETE FROM location_tracking WHERE task_id IN {in_clause}',
+        f'DELETE FROM sos_alerts WHERE task_id IN {in_clause}',
+        f'DELETE FROM payments WHERE task_id IN {in_clause}',
+    ]
+    for i, sql in enumerate(steps):
+        sp = f'sp_del_{i}'
+        try:
+            cursor.execute(f'SAVEPOINT {sp}')
+            cursor.execute(sql)
+            cursor.execute(f'RELEASE SAVEPOINT {sp}')
+        except Exception:
+            try:
+                cursor.execute(f'ROLLBACK TO SAVEPOINT {sp}')
+            except Exception:
+                pass
+
 
 # ========================================
 # HELPER FUNCTIONS
 # ========================================
 
 _suspension_columns_ensured = False
+_last_cleanup_time = None  # throttle cleanup_old_tasks to at most once per 5 min
+_last_user_tasks_cleanup = None  # throttle 48h cleanup in /api/user/tasks
 
 def _ensure_suspension_columns():
     """Ensure suspension-related columns exist in the users table (one-time check per process)"""
@@ -223,27 +578,31 @@ def _ensure_suspension_columns():
 _kyc_columns_ensured = False
 
 _verify_columns_ensured = False
+_terms_columns_ensured = False
 
 def _ensure_verify_columns():
-    """Ensure verified_at, payment_released_at, helper_final_completed_at columns exist in tasks table"""
+    """Ensure verified_at, payment_released_at, helper_final_completed_at, is_hidden columns exist in tasks table"""
     global _verify_columns_ensured
     if _verify_columns_ensured:
         return
     try:
         with get_db() as (cursor, conn):
             if PH == '%s':
-                # PostgreSQL
+                # PostgreSQL — DDL needs explicit commit
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP")
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS payment_released_at TIMESTAMP")
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS helper_final_completed_at TIMESTAMP")
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE")
+                conn.commit()
             else:
                 # SQLite
                 cursor.execute("PRAGMA table_info(tasks)")
                 cols = [row[1] for row in cursor.fetchall()]
                 for col, typ in [('verified_at', 'TEXT'), ('payment_released_at', 'TEXT'),
-                                  ('helper_final_completed_at', 'TEXT')]:
+                                  ('helper_final_completed_at', 'TEXT'), ('is_hidden', 'INTEGER')]:
                     if col not in cols:
                         cursor.execute(f'ALTER TABLE tasks ADD COLUMN {col} {typ}')
+                conn.commit()
         _verify_columns_ensured = True
         print("✅ Verify flow columns verified")
     except Exception as e:
@@ -251,16 +610,27 @@ def _ensure_verify_columns():
 
 
 def _ensure_helper_ratings_review():
-    """Ensure review column exists in helper_ratings table"""
+    """Ensure all optional columns exist in helper_ratings table"""
+    EXTRA_COLS = [
+        ('review',        'TEXT'),
+        ('task_title',    'TEXT'),
+        ('punctuality',   'INTEGER'),
+        ('communication', 'INTEGER'),
+        ('quality',       'INTEGER'),
+    ]
     try:
         with get_db() as (cursor, conn):
             if PH == '%s':
-                cursor.execute("ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS review TEXT")
+                # PostgreSQL: ADD COLUMN IF NOT EXISTS is safe to run repeatedly
+                for col, typ in EXTRA_COLS:
+                    cursor.execute(f"ALTER TABLE helper_ratings ADD COLUMN IF NOT EXISTS {col} {typ}")
             else:
+                # SQLite: check column list first
                 cursor.execute("PRAGMA table_info(helper_ratings)")
-                cols = [row[1] for row in cursor.fetchall()]
-                if 'review' not in cols:
-                    cursor.execute("ALTER TABLE helper_ratings ADD COLUMN review TEXT")
+                existing = {row[1] for row in cursor.fetchall()}
+                for col, typ in EXTRA_COLS:
+                    if col not in existing:
+                        cursor.execute(f"ALTER TABLE helper_ratings ADD COLUMN {col} {typ}")
     except Exception as e:
         print(f"⚠️ _ensure_helper_ratings_review: {e}")
 
@@ -600,35 +970,22 @@ def flag_task_content(title, description):
 
 
 def get_service_charge(category):
-    """Return service charge for the given category. Aligned with frontend SERVICE_CHARGES.
-    Note: the 5% Task Posting Fee (platform fee) is separate and applies to all categories."""
-    service_charges = {
-        # Pick & Drop — distance-based on frontend; 0 flat service charge on backend (platform fee still applies)
-        'transport': 0,
-        # Quick tasks (15-30 mins) — distance-based on frontend; default flat here
-        'delivery': 15, 'pickup': 30, 'document': 30,
-        'errand': 35,
-
-        # Medium tasks (1-2 hours) — ₹40-50
-        'groceries': 40, 'laundry': 40, 'shopping': 40,
-        'gardening': 50, 'cleaning': 50, 'cooking': 50,
-
-        # Skilled tasks (2-4 hours) — ₹60-70
-        'repair': 60, 'assembly': 60, 'tech-support': 60,
-        'event-help': 60, 'tailoring': 60, 'beauty': 60, 'petcare': 60,
-
-        # Time-intensive tasks (3-6 hours) — ₹70-80
-        'tutoring': 70, 'babysitting': 70, 'fitness': 70,
-        'photography': 70, 'painting': 70, 'moving': 80,
-        'eldercare': 80,
-
-        # Professional/High-skill tasks — ₹90-100
-        'carpentry': 90, 'electrician': 100, 'plumbing': 100,
-
-        # Vehicle related — ₹40
-        'vehicle': 40
+    """Return service charge for the given category.
+    Service charge ONLY applies to Delivery/Pick&Drop categories (delivery, pickup, transport, moving).
+    All other categories return 0.
+    Commission rates: Delivery/Pickup/Transport/Moving = 15%, all others = 17%."""
+    # Only Delivery/Pick&Drop categories carry a service charge
+    DELIVERY_CATEGORIES = {'delivery', 'pickup', 'transport', 'moving'}
+    if category not in DELIVERY_CATEGORIES:
+        return 0
+    # Flat fallback on backend (frontend uses distance-aware calculation)
+    delivery_charges = {
+        'delivery': 15,
+        'pickup':   15,
+        'transport': 15,
+        'moving':   40,
     }
-    return service_charges.get(category, 50)
+    return delivery_charges.get(category, 15)
 
 
 def get_user_by_email(email):
@@ -651,6 +1008,19 @@ def user_to_response(user):
     """Convert user dict to safe response (no password)"""
     if not user:
         return None
+    _ensure_bio_skills_columns()
+    _ensure_gender_column()
+    import json as _json_u
+    _skills_raw = user.get('skills')
+    if isinstance(_skills_raw, list):
+        _skills = _skills_raw
+    elif isinstance(_skills_raw, str) and _skills_raw.strip():
+        try:
+            _skills = _json_u.loads(_skills_raw)
+        except Exception:
+            _skills = []
+    else:
+        _skills = []
     
     # Get wallet balance
     wallet = get_or_create_wallet(user['id'])
@@ -709,7 +1079,11 @@ def user_to_response(user):
         'phone': user.get('phone'),
         'dob': user.get('dob'),
         'profilePhoto': user.get('profile_photo'),
-        'rating': float(user.get('rating', 5.0)),
+        'avatar': user.get('profile_photo'),
+        'bio': user.get('bio'),
+        'skills': _skills,
+        'rating': float(user.get('rating') or 0),
+        'ratingCount': 0,
         'tasksPosted': user.get('tasks_posted', 0),
         'tasksCompleted': user.get('tasks_completed', 0),
         'totalEarnings': float(user.get('total_earnings', 0)),
@@ -730,7 +1104,8 @@ def user_to_response(user):
         'authProvider': user.get('auth_provider', 'email'),
         'kycStatus': user.get('kyc_status', 'none'),
         'kycDocumentType': user.get('kyc_document_type'),
-        'phoneVerified': bool(user.get('phone_verified', False))
+        'phoneVerified': bool(user.get('phone_verified', False)),
+        'gender': user.get('gender')
     }
 
 
@@ -766,6 +1141,38 @@ def require_auth(f):
         
         request.user_id = user_id
         request.user_email = payload['email']
+        return f(*args, **kwargs)
+    return decorated
+
+
+def require_admin(f):
+    """Decorator to require admin privileges (is_admin=True in DB)"""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # First ensure the user is authenticated
+        auth_header = request.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '')
+        if not token:
+            return jsonify({'success': False, 'message': 'Authentication required'}), 401
+        payload = verify_jwt_token(token)
+        if not payload:
+            return jsonify({'success': False, 'message': 'Invalid or expired token'}), 401
+        user_id = payload['user_id']
+        request.user_id = user_id
+        request.user_email = payload['email']
+        # Mark this request as admin context so get_db() uses ADMIN_DATABASE_URL
+        from flask import g
+        g.use_admin_db = True
+        # Check is_admin flag
+        try:
+            with get_db() as (cursor, conn):
+                cursor.execute(f'SELECT is_admin FROM users WHERE id = {PH}', (user_id,))
+                row = cursor.fetchone()
+                if not row or not dict_from_row(row).get('is_admin'):
+                    return jsonify({'success': False, 'message': 'Admin access required'}), 403
+        except Exception:
+            return jsonify({'success': False, 'message': 'Admin access required'}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -899,108 +1306,194 @@ def disconnect():
 def register():
     """Register a new user"""
     data = request.get_json()
-    
-    # Validate required fields
-    required = ['name', 'email', 'password', 'dob']
-    for field in required:
-        if not data.get(field):
-            return jsonify({'success': False, 'message': f'{field} is required'}), 400
-    
-    name = html_escape(data['name'].strip())
-    email = data['email'].strip().lower()
-    password = data['password']
-    phone = data.get('phone', '').strip()
-    dob = data['dob']
-    
-    # Validate email
-    if not validate_email(email):
-        return jsonify({'success': False, 'message': 'Invalid email format'}), 400
-    
-    # Validate password
-    is_valid, message = validate_password(password)
-    if not is_valid:
-        return jsonify({'success': False, 'message': message}), 400
-    
-    # Check if email already exists
-    if get_user_by_email(email):
-        return jsonify({'success': False, 'message': 'Email already registered'}), 400
-    
-    # Validate age (must be 16+)
+    if not data:
+        return jsonify({'success': False, 'message': 'Request body required'}), 400
+
     try:
-        dob_date = datetime.datetime.strptime(dob, '%Y-%m-%d')
-        age = (datetime.datetime.now() - dob_date).days // 365
-        if age < 16:
-            return jsonify({'success': False, 'message': 'You must be 16 or older'}), 400
-    except ValueError:
-        return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
-    
-    # Create user
-    user_id = generate_user_id()
-    password_hash = generate_password_hash(password, method='pbkdf2:sha256')
-    joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    
-    with get_db() as (cursor, conn):
-        try:
-            cursor.execute(f'''
-                INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (user_id, name, email, password_hash, phone, dob, joined_at))
-            conn.commit()  # Explicitly commit the transaction
-        except Exception as e:
-            conn.rollback()  # Rollback on error
-            print(f"[ERROR] Registration failed: {str(e)}")
+        # ---- TRIAL MODE CHECKS ----
+        if config.TRIAL_ACTIVE:
+            import datetime as _dt
+            # Check invite code
+            invite_code = (data.get('invite_code') or '').strip().upper()
+            if invite_code != config.TRIAL_INVITE_CODE.upper():
+                return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.'}), 403
+            # Check trial end date
+            try:
+                end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
+            except ValueError:
+                end_date = _dt.date.today() + _dt.timedelta(days=30)
+            if _dt.date.today() > end_date:
+                return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
+            # Check user cap
+            try:
+                with get_db() as (cursor, conn):
+                    cursor.execute('SELECT COUNT(*) as cnt FROM users')
+                    row = dict_from_row(cursor.fetchone())
+                    if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
+                        return jsonify({'success': False, 'message': 'All 100 trial spots are taken. We\'ll notify you when we launch publicly!'}), 403
+            except Exception as _cnt_e:
+                _cnt_err = str(_cnt_e).lower()
+                if any(k in _cnt_err for k in ['connect', 'relation', 'does not exist']):
+                    return jsonify({'success': False, 'message': 'Service is starting up. Please try again in a few seconds.'}), 503
+                raise
+
+        # Validate required fields
+        required = ['name', 'email', 'password', 'dob']
+        for field in required:
+            if not data.get(field):
+                return jsonify({'success': False, 'message': f'{field} is required'}), 400
+
+        name = html_escape(data['name'].strip())
+        email = data['email'].strip().lower()
+        password = data['password']
+        phone = data.get('phone', '').strip()
+        dob = data['dob']
+
+        # Validate email
+        if not validate_email(email):
+            return jsonify({'success': False, 'message': 'Invalid email format'}), 400
+
+        # Validate password
+        is_valid, message = validate_password(password)
+        if not is_valid:
+            return jsonify({'success': False, 'message': message}), 400
+
+        # Check if email already exists
+        if get_user_by_email(email):
             return jsonify({'success': False, 'message': 'Email already registered'}), 400
-    
-    # Generate token
-    token = generate_jwt_token(user_id, email)
-    user = get_user_by_id(user_id)
-    
-    # Auto-send email verification OTP
-    otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
-    otp_expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)).isoformat()
-    
-    with get_db() as (cursor, conn):
-        cursor.execute(f'''
-            INSERT INTO password_resets (user_id, token, otp, created_at, expires_at)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (user_id, 'email_verify_' + secrets.token_hex(16), otp,
-              datetime.datetime.now(datetime.timezone.utc).isoformat(), otp_expires))
-    
-    if config.SENDGRID_API_KEY:
+
+        # Validate age (must be 16+)
         try:
-            from sendgrid import SendGridAPIClient
-            from sendgrid.helpers.mail import Mail
-            message = Mail(
-                from_email=config.FROM_EMAIL,
-                to_emails=email,
-                subject=f'{config.APP_NAME} - Verify Your Email',
-                html_content=f'''
-                    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;">
-                        <h2 style="color:#6366f1;">Welcome to Workmate4u!</h2>
-                        <p>Hi {name},</p>
-                        <p>Your email verification code is:</p>
-                        <h1 style="color:#6366f1;font-size:36px;letter-spacing:6px;text-align:center;
-                            background:#f0f0ff;padding:16px;border-radius:10px;">{otp}</h1>
-                        <p>This code expires in <strong>10 minutes</strong>.</p>
-                        <p style="color:#888;font-size:13px;">If you didn't create this account, please ignore this email.</p>
-                    </div>
-                '''
-            )
-            sg = SendGridAPIClient(config.SENDGRID_API_KEY)
-            sg.send(message)
-        except Exception as e:
-            print(f"⚠️ SendGrid email error: {e}")
-    else:
-        print(f"⚠️ SendGrid not configured — OTP email not sent for {email}")
+            dob_date = datetime.datetime.strptime(dob, '%Y-%m-%d')
+            age = (datetime.datetime.now() - dob_date).days // 365
+            if age < 16:
+                return jsonify({'success': False, 'message': 'You must be 16 or older'}), 400
+        except ValueError:
+            return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
+
+        # Create user
+        user_id = generate_user_id()
+        password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+        joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        with get_db() as (cursor, conn):
+            try:
+                _ensure_terms_columns()
+                terms_at = data.get('terms_accepted_at') or joined_at
+                terms_ver = data.get('terms_version', '2026-05-22')
+                cursor.execute(f'''
+                    INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at, terms_accepted_at, terms_version)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (user_id, name, email, password_hash, phone, dob, joined_at, terms_at, terms_ver))
+                conn.commit()  # Explicitly commit the transaction
+            except Exception as e:
+                conn.rollback()  # Rollback on error
+                print(f"[ERROR] Registration failed: {str(e)}")
+                return jsonify({'success': False, 'message': 'Email already registered'}), 400
+
+        # Generate token
+        token = generate_jwt_token(user_id, email)
+        user = get_user_by_id(user_id)
+
+        # Auto-send email verification OTP
+        otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        otp_expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)).isoformat()
+
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                INSERT INTO password_resets (user_id, token, otp, created_at, expires_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'email_verify_' + secrets.token_hex(16), otp,
+                  datetime.datetime.now(datetime.timezone.utc).isoformat(), otp_expires))
     
-    response = {
-        'success': True,
-        'message': 'Registration successful. Please verify your email.',
-        'token': token,
-        'user': user_to_response(user),
-        'requiresVerification': True
-    }
-    return jsonify(response), 201
+        if config.SENDGRID_API_KEY:
+            try:
+                from sendgrid import SendGridAPIClient
+                from sendgrid.helpers.mail import Mail
+                message = Mail(
+                    from_email=config.FROM_EMAIL,
+                    to_emails=email,
+                    subject=f'{config.APP_NAME} - Verify Your Email',
+                    html_content=f'''
+                        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;">
+                            <h2 style="color:#6366f1;">Welcome to Workmate4u!</h2>
+                            <p>Hi {name},</p>
+                            <p>Your email verification code is:</p>
+                            <h1 style="color:#6366f1;font-size:36px;letter-spacing:6px;text-align:center;
+                                background:#f0f0ff;padding:16px;border-radius:10px;">{otp}</h1>
+                            <p>This code expires in <strong>10 minutes</strong>.</p>
+                            <p style="color:#888;font-size:13px;">If you didn't create this account, please ignore this email.</p>
+                        </div>
+                    '''
+                )
+                sg = SendGridAPIClient(config.SENDGRID_API_KEY)
+                sg.send(message)
+            except Exception as e:
+                print(f"⚠️ SendGrid email error: {e}")
+        else:
+            print(f"⚠️ SendGrid not configured — OTP email not sent for {email}")
+
+        response = {
+            'success': True,
+            'message': 'Registration successful. Please verify your email.',
+            'token': token,
+            'user': user_to_response(user),
+            'requiresVerification': True
+        }
+        return jsonify(response), 201
+
+    except Exception as e:
+        print(f'[REGISTER] Error: {e}')
+        import traceback; traceback.print_exc()
+        err = str(e).lower()
+        if any(k in err for k in [
+            'could not connect', 'connection', 'timeout', 'server closed',
+            'operationalerror', 'database', 'relation', 'does not exist',
+        ]):
+            return jsonify({'success': False, 'message': 'Service is starting up. Please try again in a few seconds.'}), 503
+        return jsonify({'success': False, 'message': 'Registration failed. Please try again.'}), 500
+
+
+# -----------------------------------------------------------------------
+# TRIAL STATUS ENDPOINT — public, no auth needed
+# Returns whether trial is active, slots remaining, and end date.
+# -----------------------------------------------------------------------
+@app.route('/api/trial/status', methods=['GET'])
+def trial_status():
+    """Return current trial status (public endpoint)"""
+    import datetime as _dt
+    if not config.TRIAL_ACTIVE:
+        return jsonify({'trial': False})
+
+    now_date = _dt.date.today()
+    try:
+        end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
+    except ValueError:
+        end_date = now_date + _dt.timedelta(days=30)
+
+    expired = now_date > end_date
+
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('SELECT COUNT(*) as cnt FROM users')
+            row = dict_from_row(cursor.fetchone())
+            total_users = row['cnt'] or 0
+    except Exception:
+        total_users = 0
+
+    slots_remaining = max(0, config.TRIAL_MAX_USERS - total_users)
+    full = total_users >= config.TRIAL_MAX_USERS
+
+    return jsonify({
+        'trial': True,
+        'active': not expired and not full,
+        'expired': expired,
+        'full': full,
+        'slotsRemaining': slots_remaining,
+        'totalUsers': total_users,
+        'maxUsers': config.TRIAL_MAX_USERS,
+        'endDate': config.TRIAL_END_DATE,
+    })
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -1008,44 +1501,66 @@ def register():
 def login():
     """Login user"""
     data = request.get_json()
-    
+    if not data:
+        return jsonify({'success': False, 'message': 'Request body required'}), 400
+
     email = data.get('email', '').strip().lower()
     password = data.get('password', '')
-    
+
     if not email or not password:
         return jsonify({'success': False, 'message': 'Email and password required'}), 400
-    
-    # Get user
-    user = get_user_by_email(email)
-    if not user:
-        return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
-    
-    # Verify password
-    if not check_password_hash(user['password_hash'], password):
-        return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
-    
-    # Check if user is banned
-    if user.get('is_banned'):
-        return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
-    
-    # Update last login
-    with get_db() as (cursor, conn):
-        last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        session_token = secrets.token_hex(32)
-        cursor.execute(f'''
-            UPDATE users SET last_login = {PH}, session_token = {PH} WHERE id = {PH}
-        ''', (last_login, session_token, user['id']))
-    
-    # Generate token
-    token = generate_jwt_token(user['id'], email)
-    user = get_user_by_id(user['id'])
-    
-    return jsonify({
-        'success': True,
-        'message': 'Login successful',
-        'token': token,
-        'user': user_to_response(user)
-    })
+
+    try:
+        # Get user
+        user = get_user_by_email(email)
+        if not user:
+            return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+
+        # If this account is linked to Google sign-in, guide the user clearly.
+        if user.get('auth_provider') == 'google':
+            return jsonify({
+                'success': False,
+                'message': 'This account uses Google Sign-In. Please continue with Google.',
+                'needsGoogleSignIn': True
+            }), 400
+
+        # Verify password
+        if not check_password_hash(user['password_hash'], password):
+            return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+
+        # Check if user is banned
+        if user.get('is_banned'):
+            return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
+
+        # Update last login
+        with get_db() as (cursor, conn):
+            last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            session_token = secrets.token_hex(32)
+            cursor.execute(f'''
+                UPDATE users SET last_login = {PH}, session_token = {PH} WHERE id = {PH}
+            ''', (last_login, session_token, user['id']))
+
+        # Generate token
+        token = generate_jwt_token(user['id'], email)
+        user = get_user_by_id(user['id'])
+
+        return jsonify({
+            'success': True,
+            'message': 'Login successful',
+            'token': token,
+            'user': user_to_response(user)
+        })
+
+    except Exception as e:
+        print(f'[LOGIN] Error: {e}')
+        import traceback; traceback.print_exc()
+        err = str(e).lower()
+        if any(k in err for k in [
+            'could not connect', 'connection', 'timeout', 'server closed',
+            'operationalerror', 'database', 'relation', 'does not exist',
+        ]):
+            return jsonify({'success': False, 'message': 'Login service is starting up. Please try again in a few seconds.'}), 503
+        return jsonify({'success': False, 'message': 'Login failed. Please try again.'}), 500
 
 
 @app.route('/api/auth/me', methods=['GET'])
@@ -1095,9 +1610,10 @@ def get_current_user():
             
             real_earnings = credit_total - deduction_total
             
-            # Ratings count
+            # Compute live rating + count from helper_ratings
             cursor.execute(f'''
-                SELECT COUNT(*) as cnt FROM helper_ratings WHERE rated_id = {PH}
+                SELECT AVG(rating) as avg_r, COUNT(*) as cnt
+                FROM helper_ratings WHERE rated_id = {PH}
             ''', (request.user_id,))
             row = dict_from_row(cursor.fetchone())
             reviews_count = int(row['cnt'] or 0)
@@ -1108,6 +1624,23 @@ def get_current_user():
             if real_earnings > 0:
                 resp['totalEarnings'] = round(real_earnings, 2)
             resp['reviewsCount'] = reviews_count
+            resp['ratingCount'] = reviews_count
+            avg_r_val = float(row['avg_r'] or 0)
+            if reviews_count > 0:
+                resp['rating'] = round(avg_r_val, 2)
+            # Compute rank from reviews + rating
+            if reviews_count == 0:
+                resp['rank'] = 'New'
+            elif reviews_count >= 50 and avg_r_val >= 4.8:
+                resp['rank'] = 'Elite'
+            elif reviews_count >= 25 and avg_r_val >= 4.5:
+                resp['rank'] = 'Platinum'
+            elif reviews_count >= 10 and avg_r_val >= 4.0:
+                resp['rank'] = 'Gold'
+            elif reviews_count >= 5 and avg_r_val >= 3.5:
+                resp['rank'] = 'Silver'
+            else:
+                resp['rank'] = 'Bronze'
     except Exception as e:
         print(f'⚠️ Stats computation error: {e}')
     
@@ -1120,9 +1653,12 @@ def get_current_user():
 @app.route('/api/auth/logout', methods=['POST'])
 @require_auth
 def logout():
-    """Logout user (invalidate session)"""
+    """Logout user (invalidate session and clear FCM token)"""
     with get_db() as (cursor, conn):
-        cursor.execute(f'UPDATE users SET session_token = NULL WHERE id = {PH}', (request.user_id,))
+        cursor.execute(
+            f'UPDATE users SET session_token = NULL, fcm_token = NULL WHERE id = {PH}',
+            (request.user_id,)
+        )
     
     return jsonify({'success': True, 'message': 'Logged out successfully'})
 
@@ -1577,9 +2113,12 @@ def verify_otp():
         ''', (reset_token, otp, False if config.USE_POSTGRES else 0, now))
         
         reset_record = cursor.fetchone()
-    
-    if not reset_record:
-        return jsonify({'success': False, 'message': 'Invalid or expired OTP'}), 400
+        if not reset_record:
+            return jsonify({'success': False, 'message': 'Invalid or expired OTP'}), 400
+        
+        # Mark OTP as verified so reset_password can confirm the step was completed
+        cursor.execute(f'UPDATE password_resets SET otp_verified = {PH} WHERE token = {PH}',
+                       (True if config.USE_POSTGRES else 1, reset_token))
     
     return jsonify({
         'success': True,
@@ -1607,15 +2146,15 @@ def reset_password():
     with get_db() as (cursor, conn):
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
-        # Get reset record
+        # Get reset record — also require that OTP was actually verified
         cursor.execute(f'''
             SELECT * FROM password_resets 
-            WHERE token = {PH} AND used = {PH} AND expires_at > {PH}
-        ''', (reset_token, False if config.USE_POSTGRES else 0, now))
+            WHERE token = {PH} AND used = {PH} AND otp_verified = {PH} AND expires_at > {PH}
+        ''', (reset_token, False if config.USE_POSTGRES else 0, True if config.USE_POSTGRES else 1, now))
         
         reset_record = cursor.fetchone()
         if not reset_record:
-            return jsonify({'success': False, 'message': 'Invalid or expired reset token'}), 400
+            return jsonify({'success': False, 'message': 'Invalid or expired reset token. Please verify your OTP first.'}), 400
         
         reset_record = dict_from_row(reset_record)
         
@@ -1643,10 +2182,17 @@ def reset_password():
 def update_profile():
     """Update user profile"""
     data = request.get_json()
-    
-    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob']
+    _ensure_bio_skills_columns()
+    import json as _json_profile
+
+    _ensure_gender_column()
+    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio', 'gender']
     updates = {k: v for k, v in data.items() if k in allowed_fields}
-    
+
+    # Skills: stored as JSON string in the DB
+    if 'skills' in data and isinstance(data['skills'], list):
+        updates['skills'] = _json_profile.dumps(data['skills'])
+
     # Validate DOB / age if provided
     if 'dob' in updates:
         try:
@@ -1656,7 +2202,7 @@ def update_profile():
                 return jsonify({'success': False, 'message': 'You must be 16 or older to use Workmate4u'}), 400
         except ValueError:
             return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
-    
+
     # Validate email uniqueness if changing email
     if 'email' in updates:
         new_email = updates['email'].strip().lower()
@@ -1666,12 +2212,28 @@ def update_profile():
         if existing and existing['id'] != request.user_id:
             return jsonify({'success': False, 'message': 'Email already in use'}), 400
         updates['email'] = new_email
-    
-    # Limit profile photo size (max ~2MB base64 after client compression)
-    if 'profile_photo' in updates and updates['profile_photo']:
+
+    # Validate phone uniqueness if changing phone
+    if 'phone' in updates:
+        new_phone = (updates['phone'] or '').strip()
+        if new_phone:
+            # Skip uniqueness check if the number belongs to this user already
+            current_user = get_user_by_id(request.user_id)
+            current_phone = (current_user.get('phone') or '').strip() if current_user else ''
+            if new_phone != current_phone:
+                with get_db() as (cursor, _ph_check):
+                    cursor.execute(
+                        f'SELECT id FROM users WHERE phone = {PH} AND id != {PH}',
+                        (new_phone, request.user_id)
+                    )
+                    if cursor.fetchone():
+                        return jsonify({'success': False, 'message': 'Phone number already in use'}), 400
+        updates['phone'] = new_phone or None
+
+    if 'profile_photo' in updates and updates.get('profile_photo'):
         if len(updates['profile_photo']) > 2800000:
             return jsonify({'success': False, 'message': 'Photo too large. Max 2MB.'}), 400
-    
+
     if not updates:
         return jsonify({'success': False, 'message': 'No valid fields to update'}), 400
     
@@ -1689,6 +2251,75 @@ def update_profile():
         'message': 'Profile updated',
         'user': user_to_response(user)
     })
+
+
+@app.route('/api/user/device-token', methods=['POST'])
+@require_auth
+def save_device_token():
+    """Save or refresh the user's FCM device token for push notifications."""
+    _ensure_fcm_token_column()
+    body = request.get_json() or {}
+    token = body.get('token', '').strip()
+    if not token:
+        return jsonify({'success': False, 'message': 'token required'}), 400
+    try:
+        with get_db() as (cursor, conn):
+            # Remove this token from any other user first (prevents cross-account notifications)
+            cursor.execute(
+                f'UPDATE users SET fcm_token = NULL WHERE fcm_token = {PH} AND id != {PH}',
+                (token, request.user_id)
+            )
+            cursor.execute(
+                f'UPDATE users SET fcm_token = {PH} WHERE id = {PH}',
+                (token, request.user_id)
+            )
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[FCM] device-token save error: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/user/location', methods=['POST'])
+@require_auth
+def update_user_location():
+    """Save the user's last known GPS coordinates for proximity-based notifications."""
+    _ensure_user_location_columns()
+    body = request.get_json() or {}
+    lat = body.get('lat')
+    lng = body.get('lng')
+    if lat is None or lng is None:
+        return jsonify({'success': False, 'message': 'lat and lng required'}), 400
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'lat and lng must be numbers'}), 400
+    import datetime as _dt
+    now_ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    try:
+        with get_db() as (cursor, conn):
+            try:
+                cursor.execute(
+                    f'UPDATE users SET last_lat = {PH}, last_lng = {PH}, '
+                    f'last_location_updated_at = {PH} WHERE id = {PH}',
+                    (lat, lng, now_ts, request.user_id)
+                )
+            except Exception as col_err:
+                # Fallback for deployments where the column doesn't exist yet
+                if 'last_location_updated_at' in str(col_err):
+                    conn.rollback()
+                    cursor.execute(
+                        f'UPDATE users SET last_lat = {PH}, last_lng = {PH} WHERE id = {PH}',
+                        (lat, lng, request.user_id)
+                    )
+                else:
+                    raise
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[Location] save error: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @app.route('/api/user/change-password', methods=['POST'])
@@ -1730,81 +2361,124 @@ def change_password():
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
-    """Get all active tasks (non-expired) with optional pagination"""
+    """Get all active tasks (non-expired) with optional pagination and filtering"""
     import datetime
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     # Pagination params
     page = request.args.get('page', type=int)
-    limit = request.args.get('limit', 20, type=int)
+    limit = request.args.get('limit', request.args.get('per_page', 20, type=int), type=int)
     limit = min(max(limit, 1), 100)  # clamp 1-100
+
+    # Sort param: 'newest' (default) or 'expiry' (soonest-expiring first)
+    sort_param = request.args.get('sort', 'newest').strip().lower()
+
+    # Filter params
+    category_filter = request.args.get('category', '').strip()
+    max_budget = request.args.get('max_budget', type=float)
+    min_budget = request.args.get('min_budget', type=float)
+    lat = request.args.get('lat', type=float)
+    lng = request.args.get('lng', type=float)
+    radius_km = request.args.get('radius', type=float)
+    # Exclude tasks posted by a specific user (e.g. the browsing user's own tasks)
+    exclude_poster_id = request.args.get('exclude_poster_id', '').strip()
+    # When true, only return tasks expiring within the next 5 hours (Expiring Soon browse)
+    expiring_soon = request.args.get('expiring_soon', '').strip().lower() in ('1', 'true')
     
-    print(f"\n[GET /api/tasks] Fetching tasks at {now}")
-    
-    # Mark expired tasks and notify posters on each fetch
+    # Throttle cleanup: run at most once every 5 minutes per process
+    global _last_cleanup_time
     try:
-        cleanup_old_tasks()
+        _now_dt = datetime.datetime.now(datetime.timezone.utc)
+        if _last_cleanup_time is None or (_now_dt - _last_cleanup_time).total_seconds() > 300:
+            _last_cleanup_time = _now_dt
+            try:
+                cleanup_old_tasks()
+            except Exception:
+                pass
     except Exception:
         pass
     
     try:
         with get_db() as (cursor, conn):
-            # Build query
-            base_where = f"WHERE status = 'active' AND expires_at > {PH}"
+            # Build WHERE clause with optional filters
+            base_where = f"WHERE t.status = 'active' AND t.expires_at > {PH}"
+            base_params = [now]
+
+            if exclude_poster_id:
+                base_where += f" AND t.posted_by != {PH}"
+                base_params.append(exclude_poster_id)
+
+            if expiring_soon:
+                # Only tasks expiring within the next 5 hours
+                import datetime as _dt2
+                cutoff = (_dt2.datetime.now(_dt2.timezone.utc)
+                          + _dt2.timedelta(hours=5)).isoformat()
+                base_where += f" AND t.expires_at <= {PH}"
+                base_params.append(cutoff)
+
+            if category_filter and category_filter != 'all':
+                base_where += f" AND t.category = {PH}"
+                base_params.append(category_filter)
+            if max_budget is not None:
+                base_where += f" AND t.price <= {PH}"
+                base_params.append(max_budget)
+            if min_budget is not None:
+                base_where += f" AND t.price >= {PH}"
+                base_params.append(min_budget)
+            if lat is not None and lng is not None and radius_km is not None:
+                # Haversine formula — filter tasks within radius_km of user's location
+                base_where += f"""
+                    AND t.location_lat IS NOT NULL AND t.location_lng IS NOT NULL
+                    AND (6371 * acos(LEAST(1.0,
+                        cos(radians({PH})) * cos(radians(t.location_lat)) *
+                        cos(radians(t.location_lng) - radians({PH})) +
+                        sin(radians({PH})) * sin(radians(t.location_lat))
+                    ))) <= {PH}"""
+                base_params.extend([lat, lng, lat, radius_km])
             
             if page is not None:
                 # Paginated mode
-                cursor.execute(f'SELECT COUNT(*) as total FROM tasks {base_where}', (now,))
+                cursor.execute(f'SELECT COUNT(*) as total FROM tasks t {base_where}', tuple(base_params))
                 total = dict_from_row(cursor.fetchone())['total']
                 
                 offset = (page - 1) * limit
                 cursor.execute(f'''
-                    SELECT id, title, description, category, location_lat, location_lng, 
-                           location_address, price, service_charge, posted_by, posted_at, expires_at, status
-                    FROM tasks
+                    SELECT t.id, t.title, t.description, t.category,
+                           t.location_lat, t.location_lng, t.location_address,
+                           t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
+                           t.price, t.service_charge, t.posted_by, t.posted_at, t.expires_at, t.status,
+                           COALESCE(u.name, 'Anonymous') AS poster_name,
+                           COALESCE(u.rating, 5.0)       AS poster_rating,
+                           COALESCE(u.tasks_posted, 0)   AS poster_tasks
+                    FROM tasks t
+                    LEFT JOIN users u ON u.id = t.posted_by
                     {base_where}
-                    ORDER BY posted_at DESC
+                    ORDER BY {'t.expires_at ASC' if sort_param == 'expiry' else 't.posted_at DESC'}
                     LIMIT {PH} OFFSET {PH}
-                ''', (now, limit, offset))
+                ''', tuple(base_params) + (limit, offset))
             else:
-                # Legacy: return all (with safety limit)
+                # Legacy: return all active (with safety limit), single JOIN
                 total = None
                 cursor.execute(f'''
-                    SELECT id, title, description, category, location_lat, location_lng, 
-                           location_address, price, service_charge, posted_by, posted_at, expires_at, status
-                    FROM tasks
+                    SELECT t.id, t.title, t.description, t.category,
+                           t.location_lat, t.location_lng, t.location_address,
+                           t.drop_location_lat, t.drop_location_lng, t.drop_location_address,
+                           t.price, t.service_charge, t.posted_by, t.posted_at, t.expires_at, t.status,
+                           COALESCE(u.name, 'Anonymous') AS poster_name,
+                           COALESCE(u.rating, 5.0)       AS poster_rating,
+                           COALESCE(u.tasks_posted, 0)   AS poster_tasks
+                    FROM tasks t
+                    LEFT JOIN users u ON u.id = t.posted_by
                     {base_where}
-                    ORDER BY posted_at DESC
+                    ORDER BY {'t.expires_at ASC' if sort_param == 'expiry' else 't.posted_at DESC'}
                     LIMIT 200
-                ''', (now,))
+                ''', tuple(base_params))
             
             rows = cursor.fetchall()
-            print(f"[GET /api/tasks] Found {len(rows)} active tasks")
             
             task_list = []
-            for task in rows:
-                task = dict_from_row(task)
-                
-                # Get poster info separately
-                poster_name = 'Anonymous'
-                poster_phone = ''
-                poster_rating = 5.0
-                poster_tasks = 0
-                
-                try:
-                    poster_id = task.get('posted_by')
-                    if poster_id:
-                        cursor.execute(f'SELECT name, phone, rating, tasks_posted FROM users WHERE id = {PH}', (poster_id,))
-                        user_row = cursor.fetchone()
-                        if user_row:
-                            user = dict_from_row(user_row)
-                            poster_name = user.get('name', 'Anonymous')
-                            poster_phone = user.get('phone', '')
-                            poster_rating = float(user.get('rating', 5.0))
-                            poster_tasks = int(user.get('tasks_posted', 0))
-                except:
-                    pass  # Use defaults if user not found
-                
+            for row in rows:
+                task = dict_from_row(row)
                 task_list.append({
                     'id': task['id'],
                     'title': task['title'],
@@ -1815,25 +2489,25 @@ def get_tasks():
                         'lng': task['location_lng'],
                         'address': task['location_address']
                     },
+                    'drop_location': {
+                        'lat': task['drop_location_lat'],
+                        'lng': task['drop_location_lng'],
+                        'address': task.get('drop_location_address') or ''
+                    } if task.get('drop_location_lat') else None,
                     'price': float(task['price']),
-                    'service_charge': float(task.get('service_charge', 0)),
+                    'service_charge': float(task.get('service_charge') or 0),
                     'postedBy': {
                         'id': task.get('posted_by'),
-                        'name': poster_name,
-                        'phone': poster_phone,
-                        'rating': poster_rating,
-                        'tasksPosted': poster_tasks
+                        'name': task['poster_name'],
+                        'rating': float(task['poster_rating']),
+                        'tasksPosted': int(task['poster_tasks'])
                     },
                     'postedAt': task['posted_at'],
                     'expiresAt': task['expires_at'],
                     'status': task['status']
                 })
         
-        print(f"[GET /api/tasks] Returning {len(task_list)} tasks to client")
-        response = {
-            'success': True,
-            'tasks': task_list
-        }
+        response = {'success': True, 'tasks': task_list}
         if total is not None:
             response['pagination'] = {
                 'page': page,
@@ -1847,9 +2521,17 @@ def get_tasks():
         print(f"[GET /api/tasks] Error: {e}")
         import traceback
         traceback.print_exc()
+        err = str(e).lower()
+        if any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database']):
+            return jsonify({
+                'success': True,
+                'tasks': [],
+                'stale': True,
+                'message': 'Server is warming up. Showing empty task list temporarily.'
+            }), 200
         return jsonify({
             'success': False,
-            'message': f'Error fetching tasks: {str(e)}'
+            'message': 'Failed to load tasks. Please try again.'
         }), 500
 
 
@@ -1874,7 +2556,10 @@ def get_category_counts():
         return jsonify({'success': True, 'counts': counts})
     except Exception as e:
         print(f"[GET /api/tasks/category-counts] Error: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        err = str(e).lower()
+        if any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database']):
+            return jsonify({'success': True, 'counts': {}, 'stale': True}), 200
+        return jsonify({'success': False, 'message': 'Failed to load category counts.'}), 500
 
 
 @app.route('/api/tasks', methods=['POST'])
@@ -1899,6 +2584,17 @@ def create_task():
                 'message': 'KYC verification is required before posting tasks. Please complete KYC in your Profile.',
                 'needsKyc': True,
                 'kycStatus': kyc_status_post
+            }), 403
+
+        # Block task posting when wallet is in debt (negative balance)
+        poster_wallet = get_or_create_wallet(request.user_id)
+        poster_balance = float(poster_wallet.get('balance', 0))
+        if poster_balance < 0:
+            return jsonify({
+                'success': False,
+                'message': f'Your wallet has a negative balance of ₹{abs(poster_balance):.2f}. Please top up to clear your debt before posting tasks.',
+                'debtSuspended': True,
+                'debtAmount': abs(poster_balance)
             }), 403
 
         data = request.get_json()
@@ -1983,6 +2679,7 @@ def create_task():
             expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)).isoformat()
             
             location = data.get('location', {})
+            drop_location = data.get('dropLocation') or data.get('drop_location') or {}
             
             print(f"   Posted at: {posted_at}")
             print(f"   Expires at: {expires_at}")
@@ -1995,48 +2692,60 @@ def create_task():
                 try: conn.rollback()
                 except Exception: pass
 
-            # Insert task
+            # Insert task and get its ID in one atomic operation (RETURNING avoids
+            # lastval() race with other concurrent sequences on the same connection).
             print('   Executing INSERT query...')
-            cursor.execute(f'''
-                INSERT INTO tasks (title, description, category, location_lat, location_lng, 
-                                  location_address, price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
-            ''', (
-                html_escape(data['title']),
-                html_escape(data['description']),
-                html_escape(data['category']),
-                location.get('lat'),
-                location.get('lng'),
-                html_escape(location.get('address', '') or ''),
-                data['price'],
-                service_charge,
-                request.user_id,
-                posted_at,
-                expires_at,
-                soft_reason if soft_flagged else None
-            ))
-            print('   ✅ INSERT query executed successfully')
-            
-            # Get the inserted task ID
-            print('   Getting inserted task ID...')
-            try:
-                if config.USE_POSTGRES:
-                    cursor.execute('SELECT lastval() AS id')
-                    result = cursor.fetchone()
-                    task_id = result['id'] if result else None
-                    print(f"   PostgreSQL lastval() result: {result}")
-                else:
-                    cursor.execute('SELECT last_insert_rowid() AS id')
-                    result = cursor.fetchone()
-                    task_id = result[0] if result else None
-                    print(f"   SQLite last_insert_rowid() result: {result}")
-            except Exception as id_error:
-                print(f"❌ Error getting task ID: {id_error}")
-                import traceback
-                traceback.print_exc()
-                task_id = None
-            
-            print(f"   Extracted task_id: {task_id}")
+            if config.USE_POSTGRES:
+                cursor.execute(f'''
+                    INSERT INTO tasks (title, description, category, location_lat, location_lng,
+                                      location_address, drop_location_lat, drop_location_lng, drop_location_address,
+                                      price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
+                    RETURNING id
+                ''', (
+                    html_escape(data['title']),
+                    html_escape(data['description']),
+                    html_escape(data['category']),
+                    location.get('lat'),
+                    location.get('lng'),
+                    html_escape(location.get('address', '') or ''),
+                    drop_location.get('lat') if drop_location else None,
+                    drop_location.get('lng') if drop_location else None,
+                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    data['price'],
+                    service_charge,
+                    request.user_id,
+                    posted_at,
+                    expires_at,
+                    soft_reason if soft_flagged else None
+                ))
+                result = cursor.fetchone()
+                task_id = result['id'] if result else None
+            else:
+                cursor.execute(f'''
+                    INSERT INTO tasks (title, description, category, location_lat, location_lng,
+                                      location_address, drop_location_lat, drop_location_lng, drop_location_address,
+                                      price, service_charge, posted_by, posted_at, expires_at, status, flag_reason)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'active', {PH})
+                ''', (
+                    html_escape(data['title']),
+                    html_escape(data['description']),
+                    html_escape(data['category']),
+                    location.get('lat'),
+                    location.get('lng'),
+                    html_escape(location.get('address', '') or ''),
+                    drop_location.get('lat') if drop_location else None,
+                    drop_location.get('lng') if drop_location else None,
+                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    data['price'],
+                    service_charge,
+                    request.user_id,
+                    posted_at,
+                    expires_at,
+                    soft_reason if soft_flagged else None
+                ))
+                task_id = cursor.lastrowid
+            print(f'   ✅ INSERT query executed successfully, task_id={task_id}')
             
             if not task_id:
                 print("❌ Failed to get task ID after insertion")
@@ -2065,7 +2774,21 @@ def create_task():
             
             print(f"✅ Task created successfully with ID: {task_id}")
         
-        # Push notification feature removed.
+        # FCM push — confirm to poster that their task was posted
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                'Task Posted! 📋',
+                f'Your task "{data["title"]}" has been posted. Budget: ₹{data["price"]}. It will expire in 24 hours.',
+                data={'type': 'task_posted', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
+        # Skill-match and nearby notifications are triggered by the Flutter client
+        # via /api/tasks/<id>/notify-skills and /api/tasks/<id>/notify-nearby after
+        # task creation. Do NOT send them inline here to avoid duplicates.
 
         response = {
             'success': True,
@@ -2082,150 +2805,183 @@ def create_task():
         import traceback
         traceback.print_exc()
         print('='*60)
-        return jsonify({'success': False, 'message': f'Task creation failed: {str(e)}'}), 500
+        return jsonify({'success': False, 'message': 'Task creation failed. Please try again.'}), 500
 
 
 @app.route('/api/tasks/<int:task_id>/accept', methods=['POST'])
 @require_auth
 def accept_task(task_id):
-    """Accept a task"""
+    """Accept a task — all checks + write done in a single DB connection"""
+    import json as _json_acc
     try:
-        # Check phone number is set (required to contact task poster)
-        user_check = get_user_by_id(request.user_id)
-        if user_check and not user_check.get('phone'):
-            return jsonify({'success': False, 'message': 'Please add your phone number in Profile before accepting tasks. It is required so the task poster can contact you.', 'needsPhone': True}), 400
-
-        # KYC must be verified to accept tasks
-        kyc_status_acc = (user_check.get('kyc_status') if user_check else None) or 'none'
-        if kyc_status_acc not in ('approved', 'verified'):
-            return jsonify({
-                'success': False,
-                'message': 'KYC verification is required before accepting tasks. Please complete KYC in your Profile.',
-                'needsKyc': True,
-                'kycStatus': kyc_status_acc
-            }), 403
-
-        # Ensure suspension columns exist
+        # _ensure_suspension_columns is guarded by a flag; noop after first call
         _ensure_suspension_columns()
 
-        # Server-side suspension check (admin + timer + ban)
-        cursor_user = None
+        poster_id = None
+        helper_name = 'Someone'
+        task = None
+
         with get_db() as (cursor, conn):
-            try:
-                cursor.execute(f'SELECT is_suspended, suspended_until, suspension_reason, is_banned FROM users WHERE id = {PH}', (request.user_id,))
-            except Exception:
-                # Fallback if is_banned column doesn't exist yet
-                conn.rollback()
-                cursor.execute(f'SELECT is_suspended, suspended_until, suspension_reason FROM users WHERE id = {PH}', (request.user_id,))
-            cursor_user = cursor.fetchone()
-        
-        if cursor_user:
-            user_dict = dict_from_row(cursor_user) if not isinstance(cursor_user, dict) else cursor_user
-            
-            # Check permanent ban first
-            if user_dict.get('is_banned'):
+            # ── 1. Fetch user + wallet balance in one query ──────────────────
+            cursor.execute(f'''
+                SELECT u.id, u.name, u.phone, u.kyc_status,
+                       u.is_suspended, u.suspended_until, u.suspension_reason, u.is_banned,
+                       COALESCE(w.balance, 0) AS wallet_balance
+                FROM users u
+                LEFT JOIN wallets w ON w.user_id = u.id
+                WHERE u.id = {PH}
+            ''', (request.user_id,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            u = dict_from_row(user_row)
+
+            # ── 2. Phone check ────────────────────────────────────────────────
+            if not u.get('phone'):
+                return jsonify({
+                    'success': False,
+                    'message': 'Please add your phone number in Profile before accepting tasks. It is required so the task poster can contact you.',
+                    'needsPhone': True
+                }), 400
+
+            # ── 3. KYC check ─────────────────────────────────────────────────
+            kyc_status_acc = u.get('kyc_status') or 'none'
+            if kyc_status_acc not in ('approved', 'verified'):
+                return jsonify({
+                    'success': False,
+                    'message': 'KYC verification is required before accepting tasks. Please complete KYC in your Profile.',
+                    'needsKyc': True,
+                    'kycStatus': kyc_status_acc
+                }), 403
+
+            # ── 4. Ban / suspension checks ───────────────────────────────────
+            if u.get('is_banned'):
                 return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
-            
-            # Check admin suspension (is_suspended=True without suspended_until = permanent admin suspension)
-            is_suspended = user_dict.get('is_suspended', False)
-            sus_until = user_dict.get('suspended_until')
-            sus_reason = user_dict.get('suspension_reason', '')
-            
+
+            is_suspended = u.get('is_suspended', False)
+            sus_until = u.get('suspended_until')
+            sus_reason = u.get('suspension_reason', '')
+
             if is_suspended and not sus_until:
-                # Admin-imposed suspension (no expiry) — block
                 return jsonify({'success': False, 'message': f'Your account is suspended by admin. Reason: {sus_reason or "Contact support"}'}), 403
-            
+
             if sus_until:
                 try:
-                    if isinstance(sus_until, str):
-                        sus_dt = datetime.datetime.fromisoformat(sus_until.replace('Z', '+00:00'))
-                    else:
-                        sus_dt = sus_until
+                    sus_dt = datetime.datetime.fromisoformat(str(sus_until).replace('Z', '+00:00')) if isinstance(sus_until, str) else sus_until
                     if sus_dt.tzinfo is None:
                         sus_dt = sus_dt.replace(tzinfo=datetime.timezone.utc)
                     if datetime.datetime.now(datetime.timezone.utc) < sus_dt:
                         return jsonify({'success': False, 'message': 'Your account is suspended. Please wait until the suspension period ends.'}), 403
                     else:
-                        # Timer suspension expired — clear it and notify user
+                        # Timer expired — clear inline (non-critical)
                         try:
-                            with get_db() as (cur2, conn2):
-                                cur2.execute(f'UPDATE users SET is_suspended = {PH}, suspended_until = {PH}, suspension_reason = {PH} WHERE id = {PH}',
-                                             (False, None, None, request.user_id))
-                                import json as _json2
-                                _now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                                cur2.execute(f'''
-                                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
-                                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                                ''', (request.user_id, 'account_restored',
-                                      'Account Restored! ✅',
-                                      'Your suspension period has ended. You can now accept tasks again.',
-                                      'unread', _json2.dumps({'type': 'system'}), _now))
+                            _now_s = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            cursor.execute(f'UPDATE users SET is_suspended = {PH}, suspended_until = {PH}, suspension_reason = {PH} WHERE id = {PH}',
+                                           (False, None, None, request.user_id))
+                            cursor.execute(f'''
+                                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                            ''', (request.user_id, 'account_restored', 'Account Restored! ✅',
+                                  'Your suspension period has ended. You can now accept tasks again.',
+                                  'unread', _json_acc.dumps({'type': 'system'}), _now_s))
                         except Exception:
-                            pass  # Non-critical, continue allowing task acceptance
-                except:
+                            pass
+                except Exception:
                     pass
-        
-        # Check debt suspension
-        wallet = get_or_create_wallet(request.user_id)
-        if float(wallet.get('balance', 0)) < 0:
-            return jsonify({'success': False, 'message': 'Your wallet balance is negative. Add money to bring it back to ₹0 to restore task acceptance.'}), 403
 
-        with get_db() as (cursor, conn):
-            # Check if task exists and is active
+            # ── 5. Wallet debt check ─────────────────────────────────────────
+            if float(u.get('wallet_balance', 0)) < 0:
+                return jsonify({'success': False, 'message': 'Your wallet balance is negative. Add money to bring it back to ₹0 to restore task acceptance.'}), 403
+
+            # ── 6. Fetch task (must be active) ───────────────────────────────
             cursor.execute(f'SELECT * FROM tasks WHERE id = {PH} AND status = {PH}', (task_id, 'active'))
-            task = cursor.fetchone()
-            
-            if not task:
+            task_row = cursor.fetchone()
+            if not task_row:
                 return jsonify({'success': False, 'message': 'Task not found or already taken'}), 404
-            
-            task = dict_from_row(task)
-            
-            # Can't accept own task
+            task = dict_from_row(task_row)
+
             if task['posted_by'] == request.user_id:
                 return jsonify({'success': False, 'message': 'Cannot accept your own task'}), 400
-            
-            # Accept task
+
+            # ── 7. One-task-at-a-time check ──────────────────────────────────
+            cursor.execute(f'SELECT id, title FROM tasks WHERE accepted_by = {PH} AND status = {PH}', (request.user_id, 'accepted'))
+            existing_task = cursor.fetchone()
+            if existing_task:
+                existing_task = dict_from_row(existing_task)
+                return jsonify({
+                    'success': False,
+                    'message': 'You already have an active task in progress. Complete or release your current task before accepting a new one.',
+                    'hasActiveTask': True,
+                    'activeTaskId': existing_task['id'],
+                    'activeTaskTitle': existing_task['title']
+                }), 409
+
+            # ── 8. Accept + notify (all in same transaction) ─────────────────
+            helper_name = u.get('name') or 'Someone'
             accepted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cursor.execute(f'''
                 UPDATE tasks SET status = 'accepted', accepted_by = {PH}, accepted_at = {PH}
                 WHERE id = {PH}
             ''', (request.user_id, accepted_at, task_id))
-            
-            # Create notification for task poster
+
             poster_id = task['posted_by']
-            cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (request.user_id,))
-            helper_row = cursor.fetchone()
-            helper_name = (dict_from_row(helper_row) if helper_row else {}).get('name', 'Someone')
-            
-            import json
-            action_data = json.dumps({
-                'type': 'task',
-                'label': '👁️ View Task',
-                'taskId': task_id
-            })
+            action_data = _json_acc.dumps({'type': 'task', 'label': '👁️ View Task', 'taskId': task_id})
+
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (poster_id, task_id, 'task_accepted',
-                  'Task Accepted! 🎉',
+            ''', (poster_id, task_id, 'task_accepted', 'Task Accepted! 🎉',
                   f'{helper_name} has accepted your task "{task["title"]}". Budget: ₹{task["price"]}',
                   'unread', action_data, accepted_at))
-            
-            # Create confirmation notification for helper
+
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (request.user_id, task_id, 'task_assigned',
-                  'Task Assigned! 📌',
+            ''', (request.user_id, task_id, 'task_assigned', 'Task Assigned! 📌',
                   f'You accepted "{task["title"]}". Budget: ₹{task["price"]}. Complete it before the poster cancels!',
                   'unread', action_data, accepted_at))
 
-        # Send email notification to poster
+        # ── 9. Email (non-critical, outside DB block) ─────────────────────────
         try:
             notify_task_accepted_email(poster_id, helper_name, task['title'])
         except Exception:
             pass
-        
+
+        # Push notification to poster
+        try:
+            send_push_to_user(
+                poster_id,
+                'Task Accepted! 🎉',
+                f'{helper_name} accepted "{task["title"]}". Budget: ₹{task["price"]}',
+                '/posted.html'
+            )
+        except Exception:
+            pass
+
+        # FCM push to poster (Android/iOS)
+        try:
+            send_fcm_to_user(
+                poster_id,
+                'Task Accepted! 🎉',
+                f'{helper_name} accepted your task "{task["title"]}". Budget: ₹{task["price"]}',
+                data={'type': 'task_accepted', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
+        # FCM push to helper confirming assignment
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                'Task Assigned! 📌',
+                f'You accepted "{task["title"]}". Complete it to earn ₹{task["price"]}.',
+                data={'type': 'task_assigned', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
         return jsonify({
             'success': True,
             'message': 'Task accepted successfully'
@@ -2298,6 +3054,18 @@ def abandon_task(task_id):
                     f'release-penalty-{task_id}', task_id, penalty_now
                 ))
                 print(f"\u26a0\ufe0f Helper {request.user_id} released task {task_id}. Penalty \u20b9{release_penalty:.2f} -> new balance \u20b9{helper_new_balance:.2f}")
+                
+                # Send FCM notification to helper about penalty deduction
+                try:
+                    send_fcm_to_user(
+                        request.user_id,
+                        '⚠️ Release Penalty Deducted',
+                        f'₹{release_penalty:.2f} penalty deducted from your wallet for releasing the task.',
+                        data={'type': 'penalty_deducted', 'amount': str(release_penalty), 'taskId': str(task_id)},
+                        channel='workmate4u_payment',
+                    )
+                except Exception as fcm_err:
+                    print(f"⚠️ Failed to send penalty FCM notification: {fcm_err}")
 
         # Ensure suspension columns exist before using them
         _ensure_suspension_columns()
@@ -2429,48 +3197,91 @@ def poster_cancel_accepted_task(task_id):
             helper_id = task['accepted_by']
             task_title = task['title']
 
-            # Notify helper BEFORE deletion (notification keeps task_id for reference,
-            # but task row itself will be removed). Use SAVEPOINT so a notif failure
-            # does not block the deletion.
+            # Permanently delete task and clean up FK references
+            # NOTE: helper + poster DB notifications are inserted AFTER this cleanup.
+            _safe_delete_tasks(cursor, task_id)
+
+            cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
+
+            # Store cancellation confirmation in DB for the poster
+            # Must be done AFTER the task_id cleanup so it isn't deleted.
+            # No task_id on this record so it persists permanently.
+            try:
+                cursor.execute('SAVEPOINT sp_poster_notif')
+                import json as _json_cancel
+                _now_cancel = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                _poster_db_msg = f'Your task "{task_title}" has been cancelled and removed.'
+                if reason:
+                    _poster_db_msg += f' Reason: {reason}'
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'task_cancelled_confirmation',
+                      'Task Cancelled ✅', _poster_db_msg,
+                      'unread', _json_cancel.dumps({'type': 'task_cancelled_confirmation'}), _now_cancel))
+                cursor.execute('RELEASE SAVEPOINT sp_poster_notif')
+            except Exception as _pn_err:
+                print(f"⚠️ Failed to create poster cancel DB notification: {_pn_err}")
+                try: cursor.execute('ROLLBACK TO SAVEPOINT sp_poster_notif')
+                except Exception: pass
+
+            # Store cancellation notification for the helper too.
+            # Done AFTER task deletion + cleanup, WITHOUT task_id, so it is never
+            # deleted by the "DELETE FROM notifications WHERE task_id=X" cleanup.
             if helper_id:
                 try:
-                    cursor.execute('SAVEPOINT sp_notify')
-                    import json as _json
-                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    msg = f'The poster has cancelled "{task_title}". The task has been removed.'
+                    cursor.execute('SAVEPOINT sp_helper_notif')
+                    import json as _json_helper
+                    _now_helper = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    _helper_msg = f'The poster has cancelled task "{task_title}" and removed it.'
                     if reason:
-                        msg += f' Reason: {reason}'
-                    notif_data = _json.dumps({'type': 'system'})
+                        _helper_msg += f' Reason: {reason}'
                     cursor.execute(f'''
                         INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
                         VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                     ''', (helper_id, 'task_cancelled_by_poster',
-                          'Task Cancelled by Poster ⚠️', msg,
-                          'unread', notif_data, now))
-                    cursor.execute('RELEASE SAVEPOINT sp_notify')
-                except Exception as notif_err:
-                    print(f"⚠️ Failed to create poster-cancel notification: {notif_err}")
-                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_notify')
+                          'Task Cancelled by Poster ⚠️', _helper_msg,
+                          'unread', _json_helper.dumps({'type': 'task_cancelled_by_poster'}), _now_helper))
+                    cursor.execute('RELEASE SAVEPOINT sp_helper_notif')
+                except Exception as _hn_err:
+                    print(f"⚠️ Failed to create helper cancel DB notification: {_hn_err}")
+                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_helper_notif')
                     except Exception: pass
-
-            # Permanently delete task and clean up FK references
-            for cleanup_sql in [
-                f'DELETE FROM notifications WHERE task_id = {PH}',
-                f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
-                f'DELETE FROM task_releases WHERE task_id = {PH}',
-                f'DELETE FROM reviews WHERE task_id = {PH}',
-            ]:
-                try:
-                    cursor.execute('SAVEPOINT sp_cleanup')
-                    cursor.execute(cleanup_sql, (task_id,))
-                    cursor.execute('RELEASE SAVEPOINT sp_cleanup')
-                except Exception:
-                    try: cursor.execute('ROLLBACK TO SAVEPOINT sp_cleanup')
-                    except Exception: pass
-
-            cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
         print(f"✅ Poster {request.user_id} cancelled & deleted task {task_id} (helper {helper_id})")
+
+        # FCM push — tell helper their task was cancelled
+        if helper_id:
+            try:
+                _cancel_msg = f'The poster cancelled task "{task_title}".'
+                if reason:
+                    _cancel_msg += f' Reason: {reason}'
+                send_fcm_to_user(
+                    helper_id,
+                    'Task Cancelled ⚠️',
+                    _cancel_msg,
+                    data={'type': 'task_cancelled_by_poster', 'task_id': str(task_id)},
+                    channel='workmate4u_main',
+                )
+            except Exception as _fcm_h_err:
+                print(f'[FCM] ❌ Helper cancel notify failed: {_fcm_h_err}')
+
+        # FCM push — confirm to poster that the cancellation was processed
+        try:
+            _poster_cancel_msg = f'Your task "{task_title}" has been cancelled and removed.'
+            if reason:
+                _poster_cancel_msg += f' Reason: {reason}'
+            print(f'[FCM] Sending task_cancelled_confirmation to poster {request.user_id}')
+            send_fcm_to_user(
+                request.user_id,
+                'Task Cancelled ✅',
+                _poster_cancel_msg,
+                data={'type': 'task_cancelled_confirmation', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception as _fcm_p_err:
+            print(f'[FCM] ❌ Poster cancel notify failed: {_fcm_p_err}')
+
         return jsonify({
             'success': True,
             'message': 'Task cancelled and removed.',
@@ -2481,6 +3292,91 @@ def poster_cancel_accepted_task(task_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error cancelling task: {str(e)}'}), 500
+
+
+@app.route('/api/tasks/<int:task_id>', methods=['GET'])
+@require_auth
+def get_task(task_id):
+    """Get a single task by ID — used when tapping a task_matched FCM notification."""
+    import datetime as _dt
+    _ensure_verify_columns()
+
+    def _iso(v):
+        if v is None:
+            return None
+        if hasattr(v, 'isoformat'):
+            if getattr(v, 'tzinfo', None) is None:
+                v = v.replace(tzinfo=_dt.timezone.utc)
+            return v.isoformat()
+        return str(v)
+
+    try:
+        with get_db() as (cursor, conn):
+            # Use t.* so we never fail on optional columns that may not exist
+            # yet (e.g. helper_final_completed_at, drop_location_*). We then
+            # access them via .get() which returns None for absent keys.
+            cursor.execute(f'''
+                SELECT t.*,
+                       COALESCE(u.name, 'Anonymous') AS poster_name,
+                       COALESCE(u.rating, 5.0)       AS poster_rating,
+                       u.phone                        AS poster_phone,
+                       h.name                         AS helper_name,
+                       h.phone                        AS helper_phone,
+                       COALESCE(h.rating, 5.0)        AS helper_rating
+                FROM tasks t
+                LEFT JOIN users u ON u.id = t.posted_by
+                LEFT JOIN users h ON h.id = t.accepted_by
+                WHERE t.id = {PH}
+                  AND t.status NOT IN ('removed', 'flagged', 'suspicious')
+            ''', (task_id,))
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Task not found'}), 404
+        task = dict_from_row(row)
+        show_poster_phone = (str(task.get('accepted_by') or '') == str(request.user_id))
+        show_helper_phone = (str(task.get('posted_by') or '') == str(request.user_id))
+        completed_at = task.get('completed_at') or task.get('helper_final_completed_at')
+        return jsonify({
+            'success': True,
+            'task': {
+                'id': task['id'],
+                'title': task.get('title', ''),
+                'description': task.get('description', ''),
+                'category': task.get('category', ''),
+                'location': {
+                    'lat': task.get('location_lat'),
+                    'lng': task.get('location_lng'),
+                    'address': task.get('location_address', '')
+                },
+                'drop_location': {
+                    'lat': task.get('drop_location_lat'),
+                    'lng': task.get('drop_location_lng'),
+                    'address': task.get('drop_location_address') or ''
+                } if task.get('drop_location_lat') else None,
+                'price': float(task.get('price') or 0),
+                'service_charge': float(task.get('service_charge') or 0),
+                'postedBy': {
+                    'id': task.get('posted_by'),
+                    'name': task.get('poster_name', 'Anonymous'),
+                    'rating': float(task.get('poster_rating') or 5.0),
+                    'tasksPosted': int(task.get('tasks_posted') or 0),
+                    'phone': task.get('poster_phone') or '' if show_poster_phone else ''
+                },
+                'poster_phone': task.get('poster_phone') or '' if show_poster_phone else '',
+                'helper_phone': task.get('helper_phone') or '' if show_helper_phone else '',
+                'accepted_by': task.get('accepted_by'),
+                'is_paid': task.get('is_paid', False),
+                'status': task.get('status', 'active'),
+                'postedAt': _iso(task.get('posted_at')),
+                'expiresAt': _iso(task.get('expires_at')),
+                'accepted_at': _iso(task.get('accepted_at')),
+                'completed_at': _iso(completed_at),
+            }
+        })
+    except Exception as e:
+        print(f"[GET /api/tasks/{task_id}] Error: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'message': 'Failed to load task.'}), 500
 
 
 @app.route('/api/tasks/<int:task_id>', methods=['PUT'])
@@ -2527,9 +3423,11 @@ def update_task(task_id):
                 return jsonify({'success': False, 'message': 'This task violates our content policy. ' + reason, 'policyViolation': True}), 422
 
             location = data.get('location', {})
-            location_lat = location.get('lat')
-            location_lng = location.get('lng')
-            location_address = location.get('address', '')
+            # Also accept flat latitude/longitude/address keys that the
+            # Flutter edit screen may send instead of the nested object.
+            location_lat = location.get('lat') or data.get('latitude') or data.get('location_lat')
+            location_lng = location.get('lng') or data.get('longitude') or data.get('location_lng')
+            location_address = location.get('address') or data.get('address') or data.get('location_address') or ''
 
             cursor.execute(f'''
                 UPDATE tasks
@@ -2557,7 +3455,7 @@ def delete_task(task_id):
     """Delete a task (only poster can delete)"""
     try:
         with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT posted_by, status FROM tasks WHERE id = {PH}', (task_id,))
+            cursor.execute(f'SELECT posted_by, status, title FROM tasks WHERE id = {PH}', (task_id,))
             task = cursor.fetchone()
 
             if not task:
@@ -2571,24 +3469,43 @@ def delete_task(task_id):
             if task['status'] in ('completed', 'paid'):
                 return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
 
-            # Clean up foreign key references using SAVEPOINTs
-            # (PostgreSQL aborts entire transaction if a statement fails without savepoint)
-            for cleanup_sql in [
-                f'DELETE FROM notifications WHERE task_id = {PH}',
-                f'UPDATE wallet_transactions SET task_id = NULL WHERE task_id = {PH}',
-                f'DELETE FROM task_releases WHERE task_id = {PH}',
-                f'DELETE FROM reviews WHERE task_id = {PH}',
-            ]:
-                try:
-                    cursor.execute('SAVEPOINT sp_cleanup')
-                    cursor.execute(cleanup_sql, (task_id,))
-                    cursor.execute('RELEASE SAVEPOINT sp_cleanup')
-                except Exception:
-                    cursor.execute('ROLLBACK TO SAVEPOINT sp_cleanup')
+            task_title = task.get('title', '')
 
+            # Clean up all FK references then delete the task
+            _safe_delete_tasks(cursor, task_id)
             cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (task_id,))
 
+            # Store cancellation confirmation in DB for the poster
+            try:
+                cursor.execute('SAVEPOINT sp_del_notif')
+                import json as _json_del
+                _now_del = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'task_cancelled_confirmation',
+                      'Task Cancelled \u2705',
+                      f'Your task "{task_title}" has been cancelled and removed.',
+                      'unread', _json_del.dumps({'type': 'task_cancelled_confirmation'}), _now_del))
+                cursor.execute('RELEASE SAVEPOINT sp_del_notif')
+            except Exception:
+                try: cursor.execute('ROLLBACK TO SAVEPOINT sp_del_notif')
+                except Exception: pass
+
         print(f"✅ Task {task_id} deleted by user {request.user_id}")
+
+        # FCM push — confirm to poster (same pattern as task_posted)
+        try:
+            send_fcm_to_user(
+                request.user_id,
+                'Task Cancelled \u2705',
+                f'Your task "{task_title}" has been cancelled and removed.',
+                data={'type': 'task_cancelled_confirmation', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception as _fcm_del_err:
+            print(f'[FCM] \u274c delete_task cancel notify failed: {_fcm_del_err}')
+
         return jsonify({'success': True, 'message': 'Task deleted successfully'})
     except Exception as e:
         print(f"❌ Error in delete_task: {e}")
@@ -2600,15 +3517,19 @@ def delete_task(task_id):
 @app.route('/api/tasks/<int:task_id>/details', methods=['GET'])
 @require_auth
 def get_task_details(task_id):
-    """Get task details with provider info for Task In Progress page"""
+    """Get task details with provider and helper info for Task In Progress page"""
     with get_db() as (cursor, conn):
-        # Get task with provider details
+        # Get task with poster and helper details
         cursor.execute(f'''
-            SELECT t.*, u.name as provider_name, u.phone as provider_phone, 
-                   u.rating as provider_rating, u.tasks_completed as provider_tasks
+            SELECT t.*, 
+                   poster.name as provider_name, poster.phone as provider_phone, 
+                   poster.rating as provider_rating, poster.tasks_completed as provider_tasks,
+                   helper.name as helper_name, helper.phone as helper_phone,
+                   helper.rating as helper_rating, helper.tasks_completed as helper_tasks_completed
             FROM tasks t
-            LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.id = {PH} AND t.status IN ('accepted', 'completed')
+            LEFT JOIN users poster ON t.posted_by = poster.id
+            LEFT JOIN users helper ON t.accepted_by = helper.id
+            WHERE t.id = {PH} AND t.status IN ('accepted', 'completed', 'done', 'verify_pending', 'payment_released', 'paid')
         ''', (task_id,))
         task = cursor.fetchone()
         
@@ -2616,7 +3537,19 @@ def get_task_details(task_id):
             return jsonify({'success': False, 'message': 'Task not found'}), 404
         
         task = dict_from_row(task)
-        
+
+        # Check who has already rated for this task
+        poster_has_rated_helper = False
+        helper_has_rated_poster = False
+        if task.get('posted_by') and task.get('accepted_by'):
+            cursor.execute(f'''
+                SELECT rater_id FROM helper_ratings WHERE task_id = {PH} AND rater_id IN ({PH}, {PH})
+            ''', (task_id, task['posted_by'], task['accepted_by']))
+            raters = {row[0] if isinstance(row, (list, tuple)) else dict_from_row(row).get('rater_id')
+                      for row in cursor.fetchall()}
+            poster_has_rated_helper = task['posted_by'] in raters
+            helper_has_rated_poster = task['accepted_by'] in raters
+
         return jsonify({
             'success': True,
             'task': {
@@ -2634,6 +3567,16 @@ def get_task_details(task_id):
                 },
                 'status': task['status'],
                 'postedAt': task['posted_at'],
+                'accepted_at': task.get('accepted_at'),
+                'completed_at': task.get('completed_at'),
+                'accepted_by': task.get('accepted_by'),
+                'helper_id': task.get('accepted_by'),
+                'helper_name': task.get('helper_name'),
+                'helper_phone': task.get('helper_phone'),
+                'helper_rating': float(task['helper_rating']) if task.get('helper_rating') else None,
+                'helper_tasks_completed': task.get('helper_tasks_completed'),
+                'poster_has_rated_helper': poster_has_rated_helper,
+                'helper_has_rated_poster': helper_has_rated_poster,
                 'provider': {
                     'id': task['posted_by'],
                     'name': task['provider_name'],
@@ -2679,15 +3622,18 @@ def complete_task(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
             # Calculate amounts for notification display
-            # Task Posting Fee = 5% of total task value. Applies to all categories.
-            poster_deduction = total_task_value * 0.05
-            total_poster_cost = total_task_value + poster_deduction
-            helper_total_deduction = total_task_value * 0.12
+            # Task Posting Fee removed — poster pays only the task value.
+            # poster_deduction = total_task_value * 0.05  # DISABLED
+            total_poster_cost = total_task_value  # No posting fee
+            _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
+            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
             
             print(f"\n💵 AMOUNTS (for notification):")
             print(f"   Total Task Value: ₹{total_task_value:.2f}")
-            print(f"   Poster will pay: ₹{total_poster_cost:.2f}")
+            print(f"   Poster will pay: ₹{total_poster_cost:.2f} (no posting fee)")
+            print(f"   Helper commission rate: {_commission_rate*100:.0f}%")
             print(f"   Helper will receive: ₹{helper_net_receives:.2f}")
             
             # ===== UPDATE TASK STATUS TO 'completed' =====
@@ -2745,7 +3691,31 @@ def complete_task(task_id):
 
             # Send email notification to poster
             try:
-                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, poster_deduction, total_poster_cost, task_id)
+                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, 0, total_poster_cost, task_id)
+            except Exception:
+                pass
+
+            # FCM push — tell poster to pay
+            try:
+                send_fcm_to_user(
+                    poster_id,
+                    'Task Completed! 💰 Pay Now',
+                    f'{helper_name} completed "{task["title"]}". Please pay ₹{total_poster_cost:.2f}.',
+                    data={'type': 'task_completed', 'task_id': str(task_id), 'amount': str(round(total_poster_cost, 2))},
+                    channel='workmate4u_payment',
+                )
+            except Exception:
+                pass
+
+            # FCM push — tell helper to wait for payment
+            try:
+                send_fcm_to_user(
+                    helper_id,
+                    'Task Done! ✅ Awaiting Payment',
+                    f'You completed "{task["title"]}". Waiting for poster to pay ₹{helper_net_receives:.2f}.',
+                    data={'type': 'task_completed_helper', 'task_id': str(task_id)},
+                    channel='workmate4u_main',
+                )
             except Exception:
                 pass
             
@@ -2793,9 +3763,11 @@ def verify_task(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             # Calculate amounts for notification
-            poster_deduction = total_task_value * 0.05
-            total_poster_cost = total_task_value + poster_deduction
-            helper_total_deduction = total_task_value * 0.12
+            # poster_deduction = total_task_value * 0.05  # DISABLED — posting fee removed
+            total_poster_cost = total_task_value  # No posting fee
+            _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
+            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
 
             # Update task status to verify_pending
@@ -2840,6 +3812,31 @@ def verify_task(task_id):
                   'unread', helper_action, now))
 
         print(f"✅ Task {task_id} verified by helper {helper_id}. Status: accepted → verify_pending")
+
+        # FCM push — tell poster to verify and pay
+        try:
+            send_fcm_to_user(
+                poster_id,
+                'Verify & Pay Now ✅',
+                f'{helper_name} verified "{task["title"]}" is done. Pay ₹{total_poster_cost:.2f} to release payment.',
+                data={'type': 'verify_and_pay', 'task_id': str(task_id), 'amount': str(round(total_poster_cost, 2))},
+                channel='workmate4u_payment',
+            )
+        except Exception:
+            pass
+
+        # FCM push — tell helper verification is sent
+        try:
+            send_fcm_to_user(
+                helper_id,
+                'Verification Sent! ⏳',
+                f'You marked "{task["title"]}" as done. Waiting for poster to pay ₹{helper_net_receives:.2f}.',
+                data={'type': 'task_verify_sent', 'task_id': str(task_id)},
+                channel='workmate4u_main',
+            )
+        except Exception:
+            pass
+
         return jsonify({
             'success': True,
             'message': 'Verification sent! Waiting for poster to pay.',
@@ -2869,24 +3866,32 @@ def mark_task_completed(task_id):
         _ensure_verify_columns()
         with get_db() as (cursor, conn):
             cursor.execute(f'''
-                SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
-            ''', (task_id, request.user_id, 'payment_released'))
+                SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status IN ({PH}, {PH})
+            ''', (task_id, request.user_id, 'payment_released', 'paid'))
             task = cursor.fetchone()
             if not task:
                 return jsonify({'success': False, 'message': 'Task not found or payment not yet released'}), 404
 
             task = dict_from_row(task)
             task_amount = float(task['price'])
-            service_charge = float(task.get('service_charge', 0))
+            # Only apply service_charge for delivery-type tasks (new pricing model: non-delivery sc=0)
+            _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
+            _category = task.get('category', 'other')
+            _raw_sc = float(task.get('service_charge', 0))
+            service_charge = _raw_sc if _category in _DELIVERY_CATS else 0.0
             total_task_value = task_amount + service_charge
-            helper_total_deduction = total_task_value * 0.12
+            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.17
+            helper_total_deduction = total_task_value * _commission_rate
             helper_earnings = total_task_value - helper_total_deduction
             helper_id = request.user_id
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Set final completed status with 48h expiry anchor
+            # Set final completed status with 48h expiry anchor.
+            # Use 'done' (not 'completed') so /user/tasks can return this in
+            # a separate completedTasks field and the mobile moves the task to
+            # the Completed tab — even after an app restart.
             cursor.execute(f'''
-                UPDATE tasks SET status = 'completed', helper_final_completed_at = {PH}
+                UPDATE tasks SET status = 'done', helper_final_completed_at = {PH}
                 WHERE id = {PH}
             ''', (now, task_id))
 
@@ -2898,7 +3903,7 @@ def mark_task_completed(task_id):
                 WHERE id = {PH}
             ''', (helper_earnings, helper_id))
 
-            # Final completion notification for helper
+            # Final completion notification for helper (DB)
             import json
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
@@ -2908,7 +3913,46 @@ def mark_task_completed(task_id):
                   f'You\'ve successfully completed "{task["title"]}" and earned ₹{helper_earnings:.2f}. Great work!',
                   'unread', json.dumps({'type': 'task', 'taskId': task_id}), now))
 
+            # Final completion notification for poster (DB)
+            poster_id = task.get('posted_by')
+            if poster_id:
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (poster_id, task_id, 'task_final_completed_poster',
+                      'All Done! ✅',
+                      f'Your task "{task["title"]}" has been fully completed.',
+                      'unread', json.dumps({'type': 'task', 'taskId': task_id}), now))
+
         print(f"✅ Task {task_id} final-completed by helper {helper_id}. Earned ₹{helper_earnings:.2f}")
+
+        # FCM push — tell helper they finished and earned
+        try:
+            send_fcm_to_user(
+                helper_id,
+                'Task Complete! 🏆',
+                f'You\'ve fully completed "{task["title"]}" and earned ₹{helper_earnings:.2f}. Awesome work!',
+                data={'type': 'task_final_completed', 'task_id': str(task_id),
+                      'earnings': str(round(helper_earnings, 2))},
+                channel='workmate4u_payment',
+            )
+        except Exception:
+            pass
+
+        # FCM push — tell poster the task is fully done
+        poster_id = task.get('posted_by')
+        if poster_id:
+            try:
+                send_fcm_to_user(
+                    poster_id,
+                    'All Done! ✅',
+                    f'Your task "{task["title"]}" has been fully completed by the helper.',
+                    data={'type': 'task_final_completed_poster', 'task_id': str(task_id)},
+                    channel='workmate4u_main',
+                )
+            except Exception:
+                pass
+
         return jsonify({
             'success': True,
             'message': 'Task completed! Great work!',
@@ -2928,14 +3972,16 @@ def mark_task_completed(task_id):
 @require_auth
 def rate_task_poster(task_id):
     """
-    NEW FLOW — Optional step after mark-completed: Helper rates the poster.
-    Body: {rating: int(1-5), review: string (optional)}
+    Bidirectional rating after task completion.
+    Helper rates poster, OR poster rates helper — determined by who calls it.
+    Body: {rating: int(1-5), review/comment: string (optional)}
     """
     try:
         _ensure_helper_ratings_review()
         data = request.get_json() or {}
         rating = data.get('rating')
-        review = (data.get('review') or '').strip()[:500]
+        # Accept both 'review' and 'comment' field names
+        review = (data.get('review') or data.get('comment') or '').strip()[:500]
 
         try:
             rating = int(rating)
@@ -2945,30 +3991,47 @@ def rate_task_poster(task_id):
             return jsonify({'success': False, 'message': 'Rating must be 1–5'}), 400
 
         with get_db() as (cursor, conn):
-            # Verify helper completed this task
+            # Fetch the task — caller must be poster or helper, task must be in a terminal status
             cursor.execute(f'''
-                SELECT id, posted_by, accepted_by, status FROM tasks
-                WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
-            ''', (task_id, request.user_id, 'completed'))
+                SELECT id, title, posted_by, accepted_by, status FROM tasks
+                WHERE id = {PH} AND status IN ({PH}, {PH}, {PH}, {PH}, {PH})
+                  AND (posted_by = {PH} OR accepted_by = {PH})
+            ''', (task_id, 'completed', 'done', 'payment_released', 'paid', 'verified',
+                  request.user_id, request.user_id))
             task = cursor.fetchone()
             if not task:
-                return jsonify({'success': False, 'message': 'Task not found or not yet completed by you'}), 404
+                return jsonify({'success': False, 'message': 'Task not found or not eligible for rating'}), 404
 
             task = dict_from_row(task)
-            rated_id = task['posted_by']
             rater_id = request.user_id
+            poster_id = task['posted_by']
+            helper_id = task['accepted_by']
+
+            # Determine who is rating whom
+            if rater_id == poster_id:
+                # Poster rates helper
+                rated_id = helper_id
+                if not rated_id:
+                    return jsonify({'success': False, 'message': 'No helper to rate'}), 400
+            elif rater_id == helper_id:
+                # Helper rates poster
+                rated_id = poster_id
+            else:
+                return jsonify({'success': False, 'message': 'You are not a participant of this task'}), 403
+
+            task_title = task.get('title', '')
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Check if already rated
+            # Check if already rated (one rating per rater per task)
             cursor.execute(f'SELECT id FROM helper_ratings WHERE task_id = {PH} AND rater_id = {PH}', (task_id, rater_id))
             if cursor.fetchone():
                 return jsonify({'success': False, 'message': 'You already rated this task'}), 400
 
-            # Insert rating
+            # Insert rating (store task_title to survive task deletion)
             cursor.execute(f'''
-                INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, created_at)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (task_id, rater_id, rated_id, rating, review, now))
+                INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, task_title, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (task_id, rater_id, rated_id, rating, review, task_title, now))
 
             # Update rated user's average rating
             cursor.execute(f'''
@@ -3062,10 +4125,10 @@ def pay_helper(task_id):
     Poster pays for verified task (NEW FLOW) or completed task (legacy flow).
     NEW FLOW: status verify_pending → payment_released (helper must then click Mark as Completed)
     LEGACY FLOW: status completed → paid (kept for backward compat)
-    - Deduct helper commission (12%) from helper wallet
-    - Deduct poster fee (5%) from poster wallet
-    - Credit helper with task amount
+    - Deduct helper commission (17% general / 15% delivery) from helper wallet
+    - Credit helper with task amount minus commission
     - Send platform income to Razorpay UPI
+    - Task Posting Fee: DISABLED (0%)
     """
     print(f"\n{'='*60}")
     print(f"💰 Payment Processing: Task {task_id}")
@@ -3102,32 +4165,34 @@ def pay_helper(task_id):
 
             helper_id = task['accepted_by']
             task_amount = float(task['price'])
-            service_charge = float(task.get('service_charge', 0))
-            total_task_value = task_amount + service_charge  # FULL AMOUNT including service charge
+            # Only apply service_charge for delivery-type tasks (new pricing model: non-delivery sc=0)
+            _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
+            _category = task.get('category', 'other')
+            _raw_sc = float(task.get('service_charge', 0))
+            service_charge = _raw_sc if _category in _DELIVERY_CATS else 0.0
+            total_task_value = task_amount + service_charge
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            
-            # Calculate deductions and credits using FULL AMOUNT
-            # Helper: 12% total (10% commission + 2% transaction fee)
-            helper_commission = total_task_value * 0.10
-            helper_fee = total_task_value * 0.02
-            helper_total_deduction = helper_commission + helper_fee
-            
-            # Poster: 5% Task Posting Fee (on full amount). Applies to all categories.
-            poster_deduction = total_task_value * 0.05
+
+            # Commission: 15% for delivery/pickup/transport/moving, 17% for all others.
+            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.17
+            helper_total_deduction = total_task_value * _commission_rate
+            # helper_commission = total_task_value * 0.10  # DISABLED
+            # helper_fee = total_task_value * 0.02  # DISABLED
+            # poster_deduction = total_task_value * 0.05  # DISABLED — posting fee removed
+            poster_deduction = 0  # No posting fee
             
             print(f"\n💵 PAYMENT BREAKDOWN:")
             print(f"   Base Task Price: ₹{task_amount:.2f}")
             print(f"   Service Charge ({task.get('category', 'other')}): ₹{service_charge:.2f}")
             print(f"   ✨ TOTAL TASK VALUE: ₹{total_task_value:.2f}")
-            print(f"   Helper Commission (10% of total): ₹{helper_commission:.2f}")
-            print(f"   Helper Transaction Fee (2% of total): ₹{helper_fee:.2f}")
+            print(f"   Commission Rate ({task.get('category','other')}): {_commission_rate*100:.0f}%")
             print(f"   Helper Total Deduction: ₹{helper_total_deduction:.2f}")
-            print(f"   Poster Fee (5% of total): ₹{poster_deduction:.2f}")
+            print(f"   Poster Fee: ₹0.00 (disabled)")
             
             # ===== CHECK POSTER BALANCE FIRST =====
             poster_wallet = get_or_create_wallet(request.user_id)
             poster_balance = float(poster_wallet.get('balance', 0))
-            total_poster_cost = total_task_value + poster_deduction
+            total_poster_cost = total_task_value  # No posting fee
             
             print(f"\n👤 Poster Balance Check:")
             print(f"   Current balance: ₹{poster_balance:.2f}")
@@ -3146,8 +4211,7 @@ def pay_helper(task_id):
             
             print(f"\n👤 Poster Wallet Operations:")
             print(f"   Deducting full task value: -₹{total_task_value:.2f}")
-            print(f"   Deducting poster fee (5%): -₹{poster_deduction:.2f}")
-            print(f"   Total deduction: -₹{total_poster_cost:.2f}")
+            print(f"   Total deduction: -₹{total_poster_cost:.2f} (no posting fee)")
             print(f"   Final balance: ₹{poster_new_balance:.2f}")
             
             cursor.execute(f'''
@@ -3168,19 +4232,7 @@ def pay_helper(task_id):
                 f'Task payment to helper (INCLUDING service charge): ₹{total_task_value:.2f}',
                 f'task-payment-{task_id}', task_id, now
             ))
-            
-            # Record poster fee transaction
-            cursor.execute(f'''
-                INSERT INTO wallet_transactions (
-                    wallet_id, user_id, type, amount, balance_after,
-                    description, reference_id, task_id, created_at
-                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (
-                poster_wallet.get('id'), request.user_id, 'debit',
-                poster_deduction, poster_new_balance,
-                f'Posting fee (5% of total): ₹{poster_deduction:.2f}',
-                f'task-fee-{task_id}', task_id, now
-            ))
+            # Posting fee transaction DISABLED — poster_deduction = 0
             
             # ===== HELPER WALLET OPERATIONS (credit after poster deducted) =====
             helper_wallet = get_or_create_wallet(helper_id)
@@ -3192,7 +4244,7 @@ def pay_helper(task_id):
             print(f"\n👥 Helper Wallet Operations:")
             print(f"   Current balance: ₹{helper_balance:.2f}")
             print(f"   Adding task earning: +₹{total_task_value:.2f}")
-            print(f"   Deducting commission (12%): -₹{helper_total_deduction:.2f}")
+            print(f"   Deducting commission ({_commission_rate*100:.0f}%): -₹{helper_total_deduction:.2f}")
             print(f"   Final balance: ₹{helper_new_balance:.2f}")
             print(f"   ✨ Helper Net Earning: ₹{(total_task_value - helper_total_deduction):.2f}")
             
@@ -3224,21 +4276,21 @@ def pay_helper(task_id):
             ''', (
                 helper_wallet.get('id'), helper_id, 'deduction',
                 -helper_total_deduction, helper_new_balance,
-                f'Commission (10%) + Transaction Fee (2%): ₹{helper_total_deduction:.2f}',
+                f'Platform commission ({_commission_rate*100:.0f}%): ₹{helper_total_deduction:.2f}',
                 f'task-commission-{task_id}', task_id, now
             ))
             
             # ===== COMPANY WALLET OPERATIONS =====
-            # Company receives: Helper commission (12%) + Poster fee (5%)
-            total_platform_income = helper_total_deduction + poster_deduction
+            # Company receives: Helper commission only (posting fee disabled)
+            total_platform_income = helper_total_deduction  # no poster_deduction
             
             company_wallet = get_or_create_wallet('1')
             company_balance = float(company_wallet.get('balance', 0))
             company_new_balance = company_balance + total_platform_income
             
             print(f"\n🏢 Company/Platform Income:")
-            print(f"   Helper Commission (12%): ₹{helper_total_deduction:.2f}")
-            print(f"   Poster Fee (5%): ₹{poster_deduction:.2f}")
+            print(f"   Helper Commission ({_commission_rate*100:.0f}%): ₹{helper_total_deduction:.2f}")
+            print(f"   Poster Fee: ₹0.00 (disabled)")
             print(f"   Total Platform Income: ₹{total_platform_income:.2f}")
             print(f"   Company balance: ₹{company_balance:.2f} → ₹{company_new_balance:.2f}")
             
@@ -3258,21 +4310,10 @@ def pay_helper(task_id):
             ''', (
                 company_wallet.get('id'), '1', 'commission',
                 helper_total_deduction, company_new_balance - poster_deduction,
-                f'Helper commission (12%) from task #{task_id}: ₹{helper_total_deduction:.2f}',
+                f'Helper commission ({_commission_rate*100:.0f}%) from task #{task_id}: ₹{helper_total_deduction:.2f}',
                 f'task-commission-{task_id}', task_id, now
             ))
-            
-            cursor.execute(f'''
-                INSERT INTO wallet_transactions (
-                    wallet_id, user_id, type, amount, balance_after,
-                    description, reference_id, task_id, created_at
-                ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (
-                company_wallet.get('id'), '1', 'platform_fee',
-                poster_deduction, company_new_balance,
-                f'Posting fee (5%) from task #{task_id}: ₹{poster_deduction:.2f}',
-                f'task-fee-{task_id}', task_id, now
-            ))
+            # Posting fee company transaction DISABLED
             
             # NOW: Send platform income to Razorpay UPI link (DISABLED FOR TESTING)
             print(f"\n🔄 Initiating UPI transfer to razorpay.me/@taskern...")
@@ -3328,12 +4369,24 @@ def pay_helper(task_id):
             ''', (task_id, request.user_id))
 
             import json
+            # Full breakdown payload — used by the frontend "Payment Received" popup.
+            _breakdown_base = {
+                'taskId': task_id,
+                'taskTitle': task['title'],
+                'taskAmount': round(task_amount, 2),
+                'serviceCharge': round(service_charge, 2),
+                'totalTaskValue': round(total_task_value, 2),
+                'helperEarnings': round(helper_earnings, 2),
+                'commission': round(helper_total_deduction, 2),
+                'commissionPct': round(_commission_rate * 100),
+                'helperNewBalance': round(helper_new_balance, 2),
+            }
             if is_new_flow:
                 # NEW FLOW: Tell helper to mark as completed
                 helper_notif_data = json.dumps({
+                    **_breakdown_base,
                     'type': 'mark_complete',
                     'label': '🎉 Mark as Completed',
-                    'taskId': task_id,
                     'amount': round(helper_earnings, 2)
                 })
                 cursor.execute(f'''
@@ -3344,14 +4397,19 @@ def pay_helper(task_id):
                       f'₹{helper_earnings:.2f} has been released to your wallet for "{task["title"]}". Tap to mark the task as completed.',
                       'unread', helper_notif_data, now))
             else:
-                # LEGACY FLOW: Simple payment received
+                # LEGACY FLOW: Payment received
                 cursor.execute(f'''
                     INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                     VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                 ''', (helper_id, task_id, 'payment_received',
                       'Payment Received! 💰',
                       f'You received ₹{helper_earnings:.2f} for completing "{task["title"]}".',
-                      'unread', json.dumps({'type': 'success', 'taskId': task_id, 'amount': helper_earnings}), now))
+                      'unread', json.dumps({
+                          **_breakdown_base,
+                          'type': 'payment_received',
+                          'label': '💰 View Breakdown',
+                          'amount': round(helper_earnings, 2)
+                      }), now))
 
             # Create "Payment Done" notification for poster
             cursor.execute(f'''
@@ -3359,7 +4417,7 @@ def pay_helper(task_id):
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (request.user_id, task_id, 'payment_done',
                   'Payment Done! ✅',
-                  f'You paid ₹{total_poster_cost:.2f} for "{task["title"]}". Helper received ₹{helper_earnings:.2f}.',
+                  f'You paid ₹{total_poster_cost:.2f} for "{task["title"]}". Payment released to helper.',
                   'unread', json.dumps({'type': 'success', 'taskId': task_id, 'amount': total_poster_cost}), now))
 
             conn.commit()
@@ -3377,6 +4435,39 @@ def pay_helper(task_id):
                 notify_payment_received_email(helper_id, task['title'], helper_earnings,
                     task_amount=task_amount, service_charge=service_charge,
                     commission=helper_total_deduction)
+            except Exception:
+                pass
+
+            # FCM push — tell helper payment released / received
+            try:
+                if is_new_flow:
+                    send_fcm_to_user(
+                        helper_id,
+                        'Payment Released! 🎉',
+                        f'₹{helper_earnings:.2f} released for "{task["title"]}". Tap to mark task as completed.',
+                        data={'type': 'payment_released', 'task_id': str(task_id), 'amount': str(round(helper_earnings, 2))},
+                        channel='workmate4u_payment',
+                    )
+                else:
+                    send_fcm_to_user(
+                        helper_id,
+                        'Payment Received! 💰',
+                        f'You received ₹{helper_earnings:.2f} for "{task["title"]}".',
+                        data={'type': 'payment_received', 'task_id': str(task_id), 'amount': str(round(helper_earnings, 2))},
+                        channel='workmate4u_payment',
+                    )
+            except Exception:
+                pass
+
+            # FCM push — confirm payment to poster
+            try:
+                send_fcm_to_user(
+                    request.user_id,
+                    'Payment Done! ✅',
+                    f'You paid ₹{total_poster_cost:.2f} for "{task["title"]}". Helper has been notified.',
+                    data={'type': 'payment_done', 'task_id': str(task_id), 'amount': str(round(total_poster_cost, 2))},
+                    channel='workmate4u_payment',
+                )
             except Exception:
                 pass
 
@@ -3411,85 +4502,86 @@ def pay_helper(task_id):
 @require_auth
 def get_user_tasks():
     """Get current user's tasks"""
+    # Throttle the 48h cleanup: run at most once every 5 minutes per process
+    global _last_user_tasks_cleanup
+    _run_48h_cleanup = False
+    try:
+        import datetime as _dt_utc
+        _now_utc = _dt_utc.datetime.now(_dt_utc.timezone.utc)
+        if _last_user_tasks_cleanup is None or (_now_utc - _last_user_tasks_cleanup).total_seconds() > 300:
+            _last_user_tasks_cleanup = _now_utc
+            _run_48h_cleanup = True
+    except Exception:
+        pass
+
     with get_db() as (cursor, conn):
-        # --- 48-hour cleanup: wipe paid tasks older than 48 hours ---
-        # Wrapped in try/except so cleanup errors never break this endpoint.
-        try:
-            if config.USE_POSTGRES:
-                cutoff_expr = "NOW() - INTERVAL '48 hours'"
-            else:
-                cutoff_expr = "datetime('now', '-48 hours')"
-            # Collect expired paid task IDs first
-            cursor.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
-            old_task_rows = cursor.fetchall()
-            old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_task_rows]
-            if old_ids:
-                ids_str = ','.join(old_ids)
-                # Delete from all FK-referencing tables before deleting the tasks
-                for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                   'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
-                    try:
-                        cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
-                    except Exception:
-                        pass  # table may not exist or already clean
-                cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
-                conn.commit()
-        except Exception as cleanup_err:
-            print(f'[/api/user/tasks] 48h cleanup skipped: {cleanup_err}')
-            try:
-                conn.rollback()
-            except Exception:
-                pass
+        if _run_48h_cleanup:
+            # Run cleanup in a background thread so it never delays the response.
+            def _bg_cleanup():
+                try:
+                    import datetime as _dt_c
+                    with get_db() as (_cc, _cn):
+                        if config.USE_POSTGRES:
+                            cutoff_expr = "NOW() - INTERVAL '48 hours'"
+                        else:
+                            cutoff_expr = "datetime('now', '-48 hours')"
+                        _cc.execute(f"SELECT id FROM tasks WHERE status = 'paid' AND paid_at < {cutoff_expr}")
+                        old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in _cc.fetchall()]
+                        if old_ids:
+                            _safe_delete_tasks(_cc, old_ids)
+                            _cc.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_ids)})")
+                        _cc.execute(f"SELECT id FROM tasks WHERE status = 'done' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
+                        done_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in _cc.fetchall()]
+                        if done_ids:
+                            _safe_delete_tasks(_cc, done_ids)
+                            _cc.execute(f"DELETE FROM tasks WHERE id IN ({','.join(done_ids)})")
+                except Exception as _ce:
+                    print(f'[cleanup] 48h cleanup error: {_ce}')
+            import threading as _th
+            _th.Thread(target=_bg_cleanup, daemon=True).start()
 
-        # --- 48-hour cleanup: also wipe completed tasks (new flow) older than 48 hours ---
-        try:
-            if config.USE_POSTGRES:
-                cutoff_expr = "NOW() - INTERVAL '48 hours'"
-            else:
-                cutoff_expr = "datetime('now', '-48 hours')"
-            cursor.execute(f"SELECT id FROM tasks WHERE status = 'completed' AND helper_final_completed_at IS NOT NULL AND helper_final_completed_at < {cutoff_expr}")
-            completed_old_rows = cursor.fetchall()
-            completed_old_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in completed_old_rows]
-            if completed_old_ids:
-                ids_str = ','.join(completed_old_ids)
-                for ref_table in ['helper_ratings', 'task_proofs', 'chat_messages',
-                                   'location_tracking', 'sos_alerts', 'wallet_transactions', 'payments']:
-                    try:
-                        cursor.execute(f'DELETE FROM {ref_table} WHERE task_id IN ({ids_str})')
-                    except Exception:
-                        pass
-                cursor.execute(f'DELETE FROM tasks WHERE id IN ({ids_str})')
-                conn.commit()
-        except Exception as cleanup_err2:
-            print(f'[/api/user/tasks] completed 48h cleanup skipped: {cleanup_err2}')
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-
-        # Posted tasks - ALL statuses, join helper info for accepted/completed/paid tasks
+        # Posted tasks — exclude tasks removed/flagged by admin/AI (those are deleted or hidden)
         cursor.execute(f'''
             SELECT t.*, u.name as helper_name, u.phone as helper_phone,
                    u.rating as helper_rating, u.tasks_completed as helper_tasks_completed
             FROM tasks t
             LEFT JOIN users u ON t.accepted_by = u.id
-            WHERE t.posted_by = {PH} ORDER BY t.posted_at DESC
+            WHERE t.posted_by = {PH} AND t.status NOT IN ('removed', 'flagged', 'suspicious')
+            ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
 
-        # Accepted tasks — include all active statuses + new flow statuses + legacy paid
-        # New flow: verify_pending, payment_released, completed
-        # Legacy flow: completed, paid
+        # Accepted tasks — include all active statuses + new flow statuses + legacy paid.
+        # Exclude tasks where helper_final_completed_at is set (legacy status='completed'
+        # tasks already fully finished) — those go into completedTasks instead.
         cursor.execute(f'''
             SELECT t.*, u.name as poster_name, u.phone as poster_phone,
                    u.email as poster_email, u.id as poster_user_id,
                    u.rating as poster_rating
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.accepted_by = {PH} AND t.status IN ('accepted', 'completed', 'paid', 'verify_pending', 'payment_released')
+            WHERE t.accepted_by = {PH}
+              AND t.status IN ('accepted', 'completed', 'paid', 'verify_pending', 'payment_released')
+              AND (t.helper_final_completed_at IS NULL OR t.status != 'completed')
             ORDER BY t.accepted_at DESC
         ''', (request.user_id,))
         accepted = [dict_from_row(t) for t in cursor.fetchall()]
+
+        # Completed tasks — helper clicked final "Mark as Completed".
+        # Includes new flow (status='done') AND legacy tasks that were already
+        # fully finished (status='completed' + helper_final_completed_at set).
+        cursor.execute(f'''
+            SELECT t.*, u.name as poster_name, u.phone as poster_phone,
+                   u.email as poster_email, u.id as poster_user_id,
+                   u.rating as poster_rating
+            FROM tasks t
+            LEFT JOIN users u ON t.posted_by = u.id
+            WHERE t.accepted_by = {PH}
+              AND (t.status = 'done'
+                   OR (t.status = 'completed' AND t.helper_final_completed_at IS NOT NULL))
+            ORDER BY t.helper_final_completed_at DESC NULLS LAST
+        ''', (request.user_id,))
+        completed = [dict_from_row(t) for t in cursor.fetchall()]
 
         # Task IDs the current user has already rated (to mark UI as "rated")
         cursor.execute(f'SELECT task_id FROM helper_ratings WHERE rater_id = {PH}', (request.user_id,))
@@ -3500,6 +4592,7 @@ def get_user_tasks():
         'success': True,
         'postedTasks': posted,
         'acceptedTasks': accepted,
+        'completedTasks': completed,
         'ratedTaskIds': rated_task_ids
     })
 
@@ -3559,6 +4652,38 @@ def get_user_active_tracking():
         'success': True,
         'tasks': tasks
     })
+
+
+@app.route('/api/user/active-task', methods=['GET'])
+@require_auth
+def get_user_active_task():
+    """Return the current user's active accepted task (as helper), if any.
+    Used by the browse page to enforce the one-task-at-a-time rule."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, title, price, category, accepted_at
+                FROM tasks WHERE accepted_by = {PH} AND status = {PH}
+                LIMIT 1
+            ''', (request.user_id, 'accepted'))
+            task = cursor.fetchone()
+            if task:
+                task = dict_from_row(task)
+                return jsonify({
+                    'success': True,
+                    'hasActiveTask': True,
+                    'task': {
+                        'id': task['id'],
+                        'title': task['title'],
+                        'price': float(task['price']),
+                        'category': task['category'],
+                        'acceptedAt': task['accepted_at']
+                    }
+                })
+            return jsonify({'success': True, 'hasActiveTask': False, 'task': None})
+    except Exception as e:
+        print(f'❌ Error in get_user_active_task: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ========================================
@@ -3679,9 +4804,9 @@ def get_tracking_info(task_id):
                 'lng': float(task['location_lng']) if task['location_lng'] else None
             },
             'destination': {
-                'address': task['location_address'] or 'Delivery Location',
-                'lat': float(task['location_lat']) if task['location_lat'] else None,
-                'lng': float(task['location_lng']) if task['location_lng'] else None
+                'address': task.get('drop_location_address') or task['location_address'] or 'Delivery Location',
+                'lat': float(task['drop_location_lat']) if task.get('drop_location_lat') else (float(task['location_lat']) if task['location_lat'] else None),
+                'lng': float(task['drop_location_lng']) if task.get('drop_location_lng') else (float(task['location_lng']) if task['location_lng'] else None)
             },
             'helper': {
                 'id': task['accepted_by'],
@@ -3971,7 +5096,6 @@ def get_or_create_wallet(user_id):
             wallet = cursor.fetchone()
         
         wallet_dict = dict_from_row(wallet)
-        print(f"[DEBUG] get_or_create_wallet for {user_id}: {wallet_dict}")
         return wallet_dict
 
 
@@ -4092,7 +5216,21 @@ def add_money_to_wallet():
                   'unread', json.dumps({'type': 'success', 'amount': amount, 'cashback': cashback}), now))
     except Exception as notif_err:
         print(f"⚠️ Failed to create topup notification: {notif_err}")
-    
+
+    # FCM push — notify user their wallet has been topped up
+    try:
+        cashback_msg_fcm = f' (includes ₹{cashback:.2f} cashback!)' if cashback > 0 else ''
+        print(f'[FCM] Sending wallet_topup to user {request.user_id}')
+        send_fcm_to_user(
+            request.user_id,
+            'Wallet Topped Up! 💰',
+            f'₹{amount:.2f} added to your wallet{cashback_msg_fcm}. New balance: ₹{new_balance:.2f}',
+            data={'type': 'wallet_topup', 'amount': str(amount), 'new_balance': str(new_balance)},
+            channel='workmate4u_payment',
+        )
+    except Exception as _fcm_wallet_err:
+        print(f'[FCM] ❌ wallet_topup FCM failed: {_fcm_wallet_err}')
+
     debt_cleared = new_balance >= 0
     return jsonify({
         'success': True,
@@ -4359,12 +5497,33 @@ def request_withdrawal():
                   'unread', json.dumps({'type': 'info', 'amount': amount, 'withdrawalId': withdrawal_id}), now))
     except Exception as notif_err:
         print(f"⚠️ Failed to create withdrawal notification: {notif_err}")
-    
+
+    # Push notification confirming withdrawal request
+    try:
+        send_push_to_user(
+            request.user_id,
+            'Withdrawal Requested 🏦',
+            f'₹{amount:.2f} will be transferred to your bank account within 24 hours.',
+            '/wallet.html'
+        )
+    except Exception:
+        pass
+    try:
+        send_fcm_to_user(
+            request.user_id,
+            'Withdrawal Requested 🏦',
+            f'₹{amount:.2f} withdrawal submitted. Transfer within 24 hours.',
+            data={'type': 'withdrawal_requested', 'amount': str(amount)},
+            channel='workmate4u_payment',
+        )
+    except Exception as _fcm_wdl_req_err:
+        print(f'[FCM] ❌ withdrawal_requested FCM failed: {_fcm_wdl_req_err}')
+
     print(f"   New balance: ₹{new_balance:.2f}")
     print(f"   Withdrawal ID: {withdrawal_id}")
     print(f"   Status: pending (admin will process)")
     print('='*60 + "\n")
-    
+
     return jsonify({
         'success': True,
         'message': f'₹{amount:.2f} withdrawal request submitted! Amount will be transferred to your bank account within 24 hours.',
@@ -4459,8 +5618,147 @@ def cancel_withdrawal(withdrawal_id):
 
 
 # ========================================
-# CHAT API
+# ADMIN: PROCESS WITHDRAWAL (approve / reject)
 # ========================================
+
+@app.route('/api/admin/withdrawals', methods=['GET'])
+@require_admin
+def admin_list_withdrawals():
+    """List withdrawal requests for admin panel."""
+    status_filter = request.args.get('status', '').strip().lower()
+    PH = get_placeholder()
+    try:
+        with get_db() as (cursor, conn):
+            if status_filter:
+                cursor.execute(
+                    f"""SELECT wr.id, wr.user_id, wr.amount, wr.account_number, wr.ifsc_code,
+                               wr.bank_name, wr.status, wr.created_at, wr.note,
+                               u.name AS user_name, u.email
+                        FROM withdrawal_requests wr
+                        LEFT JOIN users u ON u.id = wr.user_id
+                        WHERE wr.status = {PH}
+                        ORDER BY wr.created_at DESC LIMIT 100""",
+                    (status_filter,)
+                )
+            else:
+                cursor.execute(
+                    """SELECT wr.id, wr.user_id, wr.amount, wr.account_number, wr.ifsc_code,
+                               wr.bank_name, wr.status, wr.created_at, wr.note,
+                               u.name AS user_name, u.email
+                        FROM withdrawal_requests wr
+                        LEFT JOIN users u ON u.id = wr.user_id
+                        ORDER BY wr.created_at DESC LIMIT 100"""
+                )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+            withdrawals = [dict(zip(cols, r)) for r in rows]
+
+            cursor.execute("SELECT COUNT(*) FROM withdrawal_requests WHERE status='pending'")
+            pending_count = cursor.fetchone()[0]
+
+        return jsonify({'success': True, 'withdrawals': withdrawals, 'pending_count': pending_count})
+    except Exception as e:
+        logger.error(f'admin_list_withdrawals error: {e}')
+        return jsonify({'success': False, 'message': 'Failed to load withdrawals'}), 500
+
+
+@app.route('/api/admin/withdrawal/process', methods=['POST'])
+@require_admin
+def admin_process_withdrawal():
+    """Admin approves or rejects a user withdrawal request."""
+    data = request.get_json() or {}
+    withdrawal_id = data.get('withdrawal_id')
+    action = (data.get('action') or '').strip().lower()   # 'approve' or 'reject'
+    note = (data.get('note') or '').strip()
+
+    if not withdrawal_id or action not in ('approve', 'reject'):
+        return jsonify({'success': False, 'message': 'withdrawal_id and action (approve|reject) are required'}), 400
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    with get_db() as (cursor, conn):
+        cursor.execute(f'SELECT * FROM withdrawal_requests WHERE id = {PH}', (withdrawal_id,))
+        wr = dict_from_row(cursor.fetchone())
+        if not wr:
+            return jsonify({'success': False, 'message': 'Withdrawal not found'}), 404
+        if wr['status'] != 'pending':
+            return jsonify({'success': False, 'message': f'Cannot process — status is already {wr["status"]}'}), 400
+
+        user_id = str(wr['user_id'])
+        amount = float(wr['amount'])
+
+        if action == 'approve':
+            new_status = 'completed'
+            cursor.execute(f'''
+                UPDATE withdrawal_requests SET status = {PH}, updated_at = {PH}, admin_note = {PH}
+                WHERE id = {PH}
+            ''', (new_status, now, note or 'Approved by admin', withdrawal_id))
+
+            # Create notification
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'payment_received',
+                  '💰 Withdrawal Processed!',
+                  f'Your withdrawal of ₹{amount:.0f} has been processed. It will reach your bank in 1–3 business days.',
+                  'unread', now))
+
+        else:  # reject
+            new_status = 'rejected'
+            # Refund amount back to wallet
+            wallet = get_or_create_wallet(user_id)
+            new_bal = float(wallet['balance']) + amount
+            cursor.execute(f'UPDATE wallets SET balance = {PH}, updated_at = {PH} WHERE user_id = {PH}',
+                           (new_bal, now, user_id))
+            cursor.execute(f'''
+                INSERT INTO wallet_transactions
+                (wallet_id, user_id, type, amount, balance_after, description, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (wallet['id'], user_id, 'refund', amount, new_bal,
+                  f'Withdrawal rejected — refunded. {note}'.strip(), now))
+            cursor.execute(f'''
+                UPDATE withdrawal_requests SET status = {PH}, updated_at = {PH}, admin_note = {PH}
+                WHERE id = {PH}
+            ''', (new_status, now, note or 'Rejected by admin', withdrawal_id))
+
+            # Create notification
+            cursor.execute(f'''
+                INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            ''', (user_id, 'wallet_topup',
+                  '↩ Withdrawal Rejected',
+                  f'Your withdrawal of ₹{amount:.0f} was rejected and refunded to your wallet. {note}'.strip(),
+                  'unread', now))
+
+        log_admin_action(cursor, request.user_id, f'withdrawal_{action}', 'withdrawal_requests',
+                         withdrawal_id, f'{action.capitalize()} ₹{amount} withdrawal. {note}'.strip(),
+                         request.remote_addr)
+        conn.commit()
+
+    # Email + push notification (non-blocking)
+    try:
+        notify_withdrawal_processed_email(user_id, amount, new_status)
+    except Exception as e:
+        print(f'[withdrawal] email error: {e}')
+    try:
+        push_msg = (f'₹{amount:.0f} withdrawal processed — arriving in 1–3 days 🏦'
+                    if action == 'approve'
+                    else f'₹{amount:.0f} withdrawal rejected and refunded to wallet.')
+        send_push_to_user(user_id, '💰 Withdrawal Update', push_msg, '/wallet.html')
+    except Exception as e:
+        print(f'[withdrawal] push error: {e}')
+    try:
+        _wdl_type = 'withdrawal_approved' if action == 'approve' else 'withdrawal_rejected'
+        _wdl_title = '💰 Withdrawal Processed' if action == 'approve' else 'Withdrawal Rejected'
+        send_fcm_to_user(
+            user_id, _wdl_title, push_msg,
+            data={'type': _wdl_type, 'amount': str(amount)},
+            channel='workmate4u_payment',
+        )
+    except Exception as e:
+        print(f'[FCM] withdrawal push error: {e}')
+
+    return jsonify({'success': True, 'message': f'Withdrawal {action}d successfully', 'newStatus': new_status})
 
 @app.route('/api/chat/<int:task_id>/messages', methods=['GET'])
 @require_auth
@@ -4674,6 +5972,7 @@ def get_task_proofs(task_id):
 @require_auth
 def rate_user(task_id):
     """Rate a user after task completion"""
+    _ensure_helper_ratings_review()
     data = request.get_json()
     rating = int(data.get('rating', 5))
     review = data.get('review', '')
@@ -4711,12 +6010,13 @@ def rate_user(task_id):
             return jsonify({'success': False, 'message': 'Already rated'}), 400
         
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        task_title = task.get('title', '')
         
-        # Add rating
+        # Add rating (store task_title to survive task deletion)
         cursor.execute(f'''
-            INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, punctuality, communication, quality, created_at)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (task_id, request.user_id, rated_id, rating, review, punctuality, communication, quality, now))
+            INSERT INTO helper_ratings (task_id, rater_id, rated_id, rating, review, punctuality, communication, quality, task_title, created_at)
+            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+        ''', (task_id, request.user_id, rated_id, rating, review, punctuality, communication, quality, task_title, now))
         
         # Update user's average rating
         cursor.execute(f'''
@@ -4756,10 +6056,10 @@ def get_user_reviews(user_id):
     """Get reviews for a user"""
     with get_db() as (cursor, conn):
         cursor.execute(f'''
-            SELECT hr.*, u.name as rater_name, t.title as task_title
+            SELECT hr.*, u.name as rater_name, COALESCE(t.title, hr.task_title, 'Task') as task_title
             FROM helper_ratings hr
-            JOIN users u ON hr.rater_id = u.id
-            JOIN tasks t ON hr.task_id = t.id
+            LEFT JOIN users u ON hr.rater_id = u.id
+            LEFT JOIN tasks t ON hr.task_id = t.id
             WHERE hr.rated_id = {PH}
             ORDER BY hr.created_at DESC
             LIMIT 20
@@ -4944,13 +6244,33 @@ def create_sos_alert():
         cursor.execute(f'SELECT name, phone FROM users WHERE id = {PH}', (request.user_id,))
         user = dict_from_row(cursor.fetchone())
     
-    # TODO: Send SMS/Push notification to emergency contacts
-    # TODO: Notify admin dashboard
-    
+    alert_id = cursor.lastrowid
+
+    # Notify all admins via push + in-app notification
+    try:
+        with get_db() as (cursor2, conn2):
+            cursor2.execute(f"SELECT id FROM users WHERE is_admin = TRUE OR role = 'admin'")
+            admins = cursor2.fetchall()
+        admin_ids = [str(row[0]) for row in (admins or [])]
+        sos_body = f"🆘 SOS from {user.get('name', 'User')} (ID {request.user_id}). Immediate action required."
+        now_n = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        for admin_id in admin_ids:
+            send_push_to_user(admin_id, '🆘 Emergency SOS Alert', sos_body, '/admin.html')
+            try:
+                with get_db() as (cn, co):
+                    cn.execute(f'''
+                        INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (admin_id, 'sos_alert', '🆘 SOS Alert', sos_body, 'unread', now_n))
+            except Exception:
+                pass
+    except Exception as e:
+        print(f'[SOS] Could not notify admins: {e}')
+
     return jsonify({
         'success': True,
         'message': 'SOS alert sent! Emergency contacts have been notified.',
-        'alertId': cursor.lastrowid
+        'alertId': alert_id
     })
 
 
@@ -5544,21 +6864,20 @@ def create_wallet_topup_order():
             return jsonify({'success': False, 'message': 'Payment gateway not configured'}), 503
         
         data = request.get_json()
-        amount = int(data.get('amount', 0))  # Should be in paise
+        # Frontend sends amount in RUPEES. Convert to paise for Razorpay.
+        amount_rupees = int(data.get('amount', 0))
         
-        print(f"  Amount (raw): {amount}")
+        print(f'  Amount (raw rupees from frontend): {amount_rupees}')
         
-        # DEFENSIVE: Auto-detect if amount is in rupees vs paise
-        # Minimum is ₹10 = 1000 paise
-        # If amount < 1000 and >= 10, it's likely in rupees (from frontend not multiplying)
-        if amount < 1000 and amount >= 10:
-            print(f"⚠️  [WALLET] Amount appears to be in rupees, converting: {amount}₹ → {amount * 100} paise")
-            amount = amount * 100
+        if amount_rupees < 10:  # Minimum Rs.10
+            return jsonify({'success': False, 'message': 'Minimum top-up is Rs.10'}), 400
+        if amount_rupees > 100000:  # Maximum Rs.1,00,000 per transaction
+            return jsonify({'success': False, 'message': 'Maximum top-up is Rs.1,00,000'}), 400
         
-        print(f"  Amount (after conversion): {amount} paise (₹{amount/100})")
+        amount = amount_rupees * 100  # Convert to paise for Razorpay
         
-        if amount < 1000:  # Minimum ₹10
-            return jsonify({'success': False, 'message': 'Minimum top-up is ₹10'}), 400
+        print(f'  Amount (converted): {amount} paise (Rs.{amount_rupees})')
+        
         
         print(f"[WALLET] Creating Razorpay order for wallet top-up: {amount} paise (₹{amount/100})")
         
@@ -5620,22 +6939,14 @@ def verify_wallet_topup():
         payment_id = data.get('paymentId')
         order_id = data.get('orderId')
         signature = data.get('signature')
+        # Amount is in PAISE (sent from Flutter's _pendingTopUpAmountPaise)
         amount = float(data.get('amount', 0))
         
-        print(f"\n[WALLET] ===== WALLET TOP-UP VERIFICATION =====")
-        print(f"[WALLET] Order ID: {order_id}")
-        print(f"[WALLET] Payment ID: {payment_id}")
-        print(f"[WALLET] Amount (raw): {amount}")
-        
-        # DEFENSIVE: Auto-detect if amount is in rupees vs paise
-        # Minimum is ₹10 = 1000 paise
-        # If amount < 1000, it's likely in rupees (from old buggy code)
-        if amount < 1000 and amount >= 10:
-            print(f"⚠️  [WALLET] Amount appears to be in rupees, converting: {amount}₹ → {amount * 100} paise")
-            amount = amount * 100
-        
-        print(f"[WALLET] Amount (after conversion): {amount} paise = ₹{amount/100}")
-        print(f"[WALLET] User: {request.user_id}")
+        print('[WALLET] ===== WALLET TOP-UP VERIFICATION =====')
+        print(f'[WALLET] Order ID: {order_id}')
+        print(f'[WALLET] Payment ID: {payment_id}')
+        print(f'[WALLET] Amount: {amount} paise = Rs.{amount/100}')
+        print(f'[WALLET] User: {request.user_id}')
         
         if not all([payment_id, order_id, amount]) or amount <= 0:
             print(f"❌ [WALLET] Missing required fields")
@@ -5791,7 +7102,39 @@ def verify_wallet_topup():
         print(f"✅ [WALLET] Wallet credited successfully: ₹{credit_amount}")
         print(f"[WALLET] New balance: ₹{new_balance}")
         print(f"[WALLET] Transaction recorded with ID: {wallet_id}")
-        
+
+        # DB notification for the user
+        try:
+            import json as _vwt_json
+            _vwt_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            with get_db() as (_vwt_cur, _vwt_conn):
+                _vwt_cur.execute(f'''
+                    INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (request.user_id, 'wallet_topup',
+                      'Wallet Topped Up! 💰',
+                      f'₹{credit_amount:.2f} added to your wallet via Razorpay. New balance: ₹{new_balance:.2f}',
+                      'unread', _vwt_json.dumps({'type': 'wallet_topup', 'amount': credit_amount}), _vwt_now))
+        except Exception as _vwt_notif_err:
+            print(f'⚠️ [WALLET] verify DB notification failed: {_vwt_notif_err}')
+
+        # FCM push — notify user their wallet has been topped up
+        try:
+            print(f'[FCM] Sending wallet_topup (verify) to user {request.user_id}')
+            send_fcm_to_user(
+                request.user_id,
+                '💰 Wallet Topped Up!',
+                f'₹{credit_amount:.2f} added to your wallet. Balance: ₹{new_balance:.2f}',
+                data={
+                    'type': 'wallet_topup',
+                    'amount': str(credit_amount),
+                    'new_balance': str(new_balance),
+                },
+                channel='workmate4u_payment',
+            )
+        except Exception as _fcm_verify_err:
+            print(f'[FCM] ❌ verify_wallet_topup FCM failed: {_fcm_verify_err}')
+
         return jsonify({
             'success': True,
             'message': f'Wallet credited with ₹{credit_amount}',
@@ -6009,6 +7352,32 @@ def payment_webhook():
                         ))
                         
                         print(f"✅ [WEBHOOK] Wallet credited: ₹{amount} → new balance ₹{new_balance}")
+
+                        # DB notification for the user
+                        import json as _wh_json
+                        try:
+                            cursor.execute(f'''
+                                INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                            ''', (topup_user_id, 'wallet_topup',
+                                  'Wallet Topped Up! 💰',
+                                  f'₹{amount:.2f} added to your wallet via Razorpay. New balance: ₹{new_balance:.2f}',
+                                  'unread', _wh_json.dumps({'type': 'wallet_topup', 'amount': amount}), now))
+                        except Exception as _wh_notif_err:
+                            print(f'⚠️ [WEBHOOK] DB notification failed: {_wh_notif_err}')
+
+                        # FCM push
+                        try:
+                            print(f'[FCM] Sending wallet_topup (webhook) to user {topup_user_id}')
+                            send_fcm_to_user(
+                                topup_user_id,
+                                'Wallet Topped Up! 💰',
+                                f'₹{amount:.2f} added to your wallet. New balance: ₹{new_balance:.2f}',
+                                data={'type': 'wallet_topup', 'amount': str(amount), 'new_balance': str(new_balance)},
+                                channel='workmate4u_payment',
+                            )
+                        except Exception as _wh_fcm_err:
+                            print(f'[FCM] ❌ webhook wallet_topup FCM failed: {_wh_fcm_err}')
                 
                 conn.commit()
         
@@ -6047,19 +7416,32 @@ def payment_webhook():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
+    db_connected = False
+    db_error = None
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+            db_connected = True
+    except Exception as e:
+        db_error = str(e)
+
     return jsonify({
         'success': True,
-        'status': 'healthy',
+        'status': 'healthy' if db_connected else 'degraded',
+        'database': {
+            'connected': db_connected,
+            'engine': 'postgresql',
+            'error': db_error
+        },
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
     })
 
 
 @app.route('/api/diagnostic', methods=['GET'])
-@require_auth
+@require_admin
 def diagnostic():
     """Diagnostic endpoint - admin only"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     return jsonify({
         'success': True,
         'message': 'Flask API is running correctly',
@@ -6069,11 +7451,9 @@ def diagnostic():
 
 
 @app.route('/api/init-db', methods=['POST'])
-@require_auth
+@require_admin
 def init_database_endpoint():
     """Manually initialize database tables - admin only"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         init_db()
         return jsonify({
@@ -6094,7 +7474,7 @@ def init_database_endpoint():
 # ========================================
 
 def cleanup_old_tasks():
-    """Delete tasks that are completed or expired (older than 30 days), and notify posters of newly expired tasks"""
+    """Delete expired tasks immediately and delete old completed/paid tasks"""
     try:
         with get_db() as (cursor, conn):
             try:
@@ -6102,7 +7482,7 @@ def cleanup_old_tasks():
                 now = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 thirty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
                 
-                # Mark active tasks as expired and notify posters
+                # Find active tasks that have expired — notify posters then DELETE immediately
                 cursor.execute(f'''
                     SELECT id, title, posted_by, price FROM tasks
                     WHERE status = 'active' AND expires_at < {PH}
@@ -6110,28 +7490,41 @@ def cleanup_old_tasks():
                 expired_tasks = [dict_from_row(r) for r in cursor.fetchall()]
                 
                 for t in expired_tasks:
-                    cursor.execute(f"UPDATE tasks SET status = 'expired' WHERE id = {PH}", (t['id'],))
+                    # Notify poster — insert WITHOUT task_id so there is no FK
+                    # reference on a row that is about to be deleted.
                     notif_data = json.dumps({'type': 'task', 'taskId': t['id']})
-                    cursor.execute(f'''
-                        INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
-                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (t['posted_by'], t['id'], 'task_expired',
-                          'Task Expired ⏰',
-                          f'Your task "{t["title"]}" has expired without being accepted. You can post it again.',
-                          'unread', notif_data, now))
+                    try:
+                        cursor.execute(f'''
+                            INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (t['posted_by'], 'task_expired',
+                              'Task Expired ⏰',
+                              f'Your task "{t["title"]}" has expired without being accepted. You can post it again.',
+                              'unread', notif_data, now))
+                    except Exception:
+                        pass
+                    # Clean up all FK references then delete the task
+                    _safe_delete_tasks(cursor, t['id'])
+                    cursor.execute(f'DELETE FROM tasks WHERE id = {PH}', (t['id'],))
                 
                 if expired_tasks:
-                    print(f"✅ Marked {len(expired_tasks)} tasks as expired and notified posters")
+                    print(f"✅ Deleted {len(expired_tasks)} expired tasks and notified posters")
                 
-                # Delete completed tasks older than 30 days
+                # Delete completed/paid tasks older than 30 days.
+                # Must fetch IDs first and use _safe_delete_tasks to avoid FK violations.
                 cursor.execute(f'''
-                    DELETE FROM tasks 
+                    SELECT id FROM tasks
                     WHERE (status = 'completed' OR status = 'paid')
                     AND completed_at IS NOT NULL
                     AND completed_at < {PH}
                 ''', (thirty_days_ago,))
-                
-                deleted_count = cursor.rowcount
+                old_rows = cursor.fetchall()
+                old_task_ids = [str(r['id'] if isinstance(r, dict) else r[0]) for r in old_rows]
+                deleted_count = 0
+                if old_task_ids:
+                    _safe_delete_tasks(cursor, old_task_ids)
+                    cursor.execute(f"DELETE FROM tasks WHERE id IN ({','.join(old_task_ids)})")
+                    deleted_count = cursor.rowcount
                 
                 if deleted_count > 0:
                     print(f"✅ Cleaned up {deleted_count} old completed/paid tasks")
@@ -6221,12 +7614,10 @@ def submit_contact_message():
 
 
 @app.route('/api/admin/contact-messages', methods=['GET'])
-@require_auth
+@require_admin
 def get_contact_messages():
     """Get all contact messages (admin only)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         with get_db() as (cursor, conn):
             cursor.execute(f'SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 100')
             messages = [dict_from_row(row) for row in cursor.fetchall()]
@@ -6362,12 +7753,10 @@ def submit_feedback():
 
 
 @app.route('/api/admin/feedback', methods=['GET'])
-@require_auth
+@require_admin
 def get_feedback_list():
     """Admin: list all feedback submissions."""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         with get_db() as (cursor, conn):
             cursor.execute('SELECT * FROM feedback ORDER BY created_at DESC LIMIT 200')
             rows = [dict_from_row(r) for r in cursor.fetchall()]
@@ -6386,7 +7775,6 @@ def get_notifications():
     """Get notifications for current user"""
     try:
         with get_db() as (cursor, conn):
-            # Get unread notifications
             cursor.execute(f'''
                 SELECT n.*, t.title as task_title
                 FROM notifications n
@@ -6397,7 +7785,21 @@ def get_notifications():
             ''', (request.user_id,))
             
             rows = cursor.fetchall()
-            notifications = [dict_from_row(row) for row in rows]
+            notifications = []
+            for row in rows:
+                n = dict_from_row(row)
+                # Flask 3.0 serialises datetime as RFC 7231 ("Thu, 11 Jul 2024 10:35:42 GMT")
+                # which Dart's DateTime.tryParse cannot handle.  Convert to ISO 8601 explicitly.
+                for field in ('created_at', 'read_at'):
+                    val = n.get(field)
+                    if hasattr(val, 'isoformat'):
+                        # psycopg2 returns naive datetimes for TIMESTAMP columns;
+                        # the column stores UTC values, so attach the UTC marker.
+                        if getattr(val, 'tzinfo', None) is None:
+                            import datetime as _dt
+                            val = val.replace(tzinfo=_dt.timezone.utc)
+                        n[field] = val.isoformat()
+                notifications.append(n)
             
             return jsonify({
                 'success': True,
@@ -6500,13 +7902,11 @@ def clear_task_notifications(task_id):
 # ========================================
 
 @app.route('/api/admin/bank-details', methods=['POST'])
-@require_auth
+@require_admin
 def update_bank_details():
     """Update company bank details for settlements"""
     try:
         # Only admin can update bank details (user_id = 1)
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         data = request.get_json()
         account_number = data.get('account_number', '').strip()
@@ -6556,12 +7956,10 @@ def update_bank_details():
 
 
 @app.route('/api/admin/bank-details', methods=['GET'])
-@require_auth
+@require_admin
 def get_bank_details():
     """Get company bank details (masked)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
             cursor.execute('SELECT * FROM company_bank_details WHERE is_active = TRUE LIMIT 1')
@@ -6866,12 +8264,10 @@ def create_razorpay_payout(amount_in_paise, account_number, ifsc_code, account_h
 
 
 @app.route('/api/admin/process-settlement', methods=['POST'])
-@require_auth
+@require_admin
 def process_settlement():
     """Process platform settlement - transfer to bank account"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
             # Get bank details
@@ -7002,12 +8398,10 @@ def process_settlement():
 
 
 @app.route('/api/admin/settlements', methods=['GET'])
-@require_auth
+@require_admin
 def get_settlements():
     """Get settlement history"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         limit = request.args.get('limit', 30, type=int)
         offset = request.args.get('offset', 0, type=int)
@@ -7057,12 +8451,10 @@ def get_settlements():
 
 
 @app.route('/api/admin/settlement-stats', methods=['GET'])
-@require_auth
+@require_admin
 def get_settlement_stats():
     """Get settlement statistics"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
             # Get company wallet balance
@@ -7113,13 +8505,10 @@ def get_settlement_stats():
 
 
 @app.route('/api/admin/dashboard-stats', methods=['GET'])
-@require_auth
+@require_admin
 def get_admin_dashboard_stats():
     """Get comprehensive admin dashboard statistics with real data"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         # Mark stale active tasks as expired so admin sees correct status
         try:
             cleanup_old_tasks()
@@ -7332,12 +8721,10 @@ def log_admin_action(cursor, admin_id, action, resource_type, resource_id=None, 
 # ========================================
 
 @app.route('/api/admin/audit-log', methods=['GET'])
-@require_auth
+@require_admin
 def get_audit_log():
     """Get admin audit log entries"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         limit = min(int(request.args.get('limit', 50)), 200)
         offset = int(request.args.get('offset', 0))
@@ -7364,12 +8751,10 @@ def get_audit_log():
 # ========================================
 
 @app.route('/api/admin/refund', methods=['POST'])
-@require_auth
+@require_admin
 def admin_manual_refund():
     """Admin manually credits a user's wallet"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         data = request.get_json()
         target_user_id = data.get('user_id', '').strip()
@@ -7429,12 +8814,10 @@ def admin_manual_refund():
 # ========================================
 
 @app.route('/api/admin/tasks/<int:task_id>/hide', methods=['POST'])
-@require_auth
+@require_admin
 def admin_hide_task(task_id):
     """Admin hides/removes an inappropriate task"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         data = request.get_json() or {}
         reason = data.get('reason', 'Removed by admin').strip()
@@ -7460,12 +8843,10 @@ def admin_hide_task(task_id):
 
 
 @app.route('/api/admin/tasks/<int:task_id>/restore', methods=['POST'])
-@require_auth
+@require_admin
 def admin_restore_task(task_id):
     """Admin restores a hidden task back to active"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
         with get_db() as (cursor, conn):
             cursor.execute(f'SELECT id, status FROM tasks WHERE id = {PH}', (task_id,))
@@ -7488,13 +8869,10 @@ def admin_restore_task(task_id):
 # ========================================
 
 @app.route('/api/admin/analytics', methods=['GET'])
-@require_auth
+@require_admin
 def admin_analytics():
     """Get platform analytics for admin dashboard"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         # Mark stale active tasks as expired so analytics are accurate
         try:
             cleanup_old_tasks()
@@ -7576,13 +8954,10 @@ def admin_analytics():
 # ========================================
 
 @app.route('/api/admin/users/<user_id>/suspend', methods=['POST'])
-@require_auth
+@require_admin
 def admin_suspend_user(user_id):
     """Admin suspends a user (with optional duration)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         _ensure_suspension_columns()
         data = request.get_json() or {}
         reason = data.get('reason', 'Suspended by admin').strip()
@@ -7631,13 +9006,10 @@ def admin_suspend_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>/unsuspend', methods=['POST'])
-@require_auth
+@require_admin
 def admin_unsuspend_user(user_id):
     """Admin unsuspends a user"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         _ensure_suspension_columns()
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -7670,13 +9042,10 @@ def admin_unsuspend_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>/ban', methods=['POST'])
-@require_auth
+@require_admin
 def admin_ban_user(user_id):
     """Admin permanently bans a user (blocks login + all actions)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         _ensure_suspension_columns()
         data = request.get_json() or {}
         reason = data.get('reason', 'Banned by admin').strip()
@@ -7711,13 +9080,10 @@ def admin_ban_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>/unban', methods=['POST'])
-@require_auth
+@require_admin
 def admin_unban_user(user_id):
     """Admin lifts a permanent ban"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         _ensure_suspension_columns()
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -7750,13 +9116,10 @@ def admin_unban_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>', methods=['DELETE'])
-@require_auth
+@require_admin
 def admin_delete_user(user_id):
     """Admin permanently deletes a user and all their data"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         if user_id == '1':
             return jsonify({'success': False, 'message': 'Cannot delete admin user'}), 400
 
@@ -7785,13 +9148,10 @@ def admin_delete_user(user_id):
 
 
 @app.route('/api/admin/users/<user_id>/adjust-balance', methods=['POST'])
-@require_auth
+@require_admin
 def admin_adjust_balance(user_id):
     """Admin adjusts a user's wallet balance (add or deduct)"""
     try:
-        if request.user_id != '1':
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
         data = request.get_json() or {}
         amount = float(data.get('amount', 0))
         reason = data.get('reason', '').strip()
@@ -7846,38 +9206,65 @@ def delete_account():
     """Delete user account and all associated data (GDPR right to be forgotten)"""
     data = request.get_json() or {}
     password = data.get('password', '')
-    
-    if not password:
-        return jsonify({'success': False, 'message': 'Password required to confirm deletion'}), 400
-    
+
     try:
         with get_db() as (cursor, conn):
-            # Verify password
-            cursor.execute(f'SELECT password_hash FROM users WHERE id = {PH}', (request.user_id,))
-            user = dict_from_row(cursor.fetchone())
+            # Fetch user: need password_hash, auth_provider, email, google_id
+            cursor.execute(
+                f'SELECT password_hash, auth_provider, email, google_id FROM users WHERE id = {PH}',
+                (request.user_id,)
+            )
+            user = cursor.fetchone()
             if not user:
                 return jsonify({'success': False, 'message': 'User not found'}), 404
-            
-            from werkzeug.security import check_password_hash
-            if not check_password_hash(user['password_hash'], password):
-                return jsonify({'success': False, 'message': 'Incorrect password'}), 401
-            
+            user = dict_from_row(user)
+
+            auth_provider = user.get('auth_provider', 'email')
+            user_email = user.get('email')
+            google_id = user.get('google_id')
+
+            # Password check: email users must provide correct password;
+            # Google-only users are already authenticated via JWT — skip password check
+            if auth_provider != 'google':
+                if not password:
+                    return jsonify({'success': False, 'message': 'Password required to confirm deletion'}), 400
+                from werkzeug.security import check_password_hash
+                if not check_password_hash(user['password_hash'], password):
+                    return jsonify({'success': False, 'message': 'Incorrect password'}), 401
+
             # Check for active tasks
-            cursor.execute(f"SELECT COUNT(*) as cnt FROM tasks WHERE (posted_by = {PH} OR accepted_by = {PH}) AND status IN ('active', 'accepted')", 
-                          (request.user_id, request.user_id))
+            cursor.execute(
+                f"SELECT COUNT(*) as cnt FROM tasks WHERE (posted_by = {PH} OR accepted_by = {PH}) AND status IN ('active', 'accepted')",
+                (request.user_id, request.user_id)
+            )
             active = dict_from_row(cursor.fetchone())
             if active and active['cnt'] > 0:
                 return jsonify({'success': False, 'message': 'Cannot delete account with active tasks. Complete or cancel them first.'}), 400
-            
+
             # Check for pending withdrawals
-            cursor.execute(f"SELECT COUNT(*) as cnt FROM withdrawal_requests WHERE user_id = {PH} AND status = 'pending'", (request.user_id,))
+            cursor.execute(
+                f"SELECT COUNT(*) as cnt FROM withdrawal_requests WHERE user_id = {PH} AND status = 'pending'",
+                (request.user_id,)
+            )
             pending = dict_from_row(cursor.fetchone())
             if pending and pending['cnt'] > 0:
                 return jsonify({'success': False, 'message': 'Cannot delete account with pending withdrawals.'}), 400
-            
+
             uid = request.user_id
-            
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            # Block the email/google_id so this user cannot re-register via Google
+            if user_email:
+                try:
+                    cursor.execute(
+                        f"INSERT INTO deleted_accounts (email, google_id, deleted_at) VALUES ({PH}, {PH}, {PH}) ON CONFLICT (email) DO NOTHING",
+                        (user_email, google_id, now)
+                    )
+                except Exception as e:
+                    print(f"[DELETE ACCOUNT] Warning: could not write deleted_accounts: {e}")
+
             # Delete user data in order (foreign key safe)
+            cursor.execute(f'DELETE FROM phone_otps WHERE user_id = {PH}', (uid,))
             cursor.execute(f'DELETE FROM notifications WHERE user_id = {PH}', (uid,))
             cursor.execute(f'DELETE FROM chat_messages WHERE sender_id = {PH} OR receiver_id = {PH}', (uid, uid))
             cursor.execute(f'DELETE FROM helper_ratings WHERE helper_id = {PH} OR rater_id = {PH}', (uid, uid))
@@ -7890,23 +9277,263 @@ def delete_account():
             cursor.execute(f'DELETE FROM withdrawal_requests WHERE user_id = {PH}', (uid,))
             cursor.execute(f'DELETE FROM sos_alerts WHERE user_id = {PH}', (uid,))
             cursor.execute(f'DELETE FROM contact_messages WHERE user_id = {PH}', (uid,))
-            
+
             # Anonymize completed tasks (keep for records but remove PII)
             cursor.execute(f"UPDATE tasks SET posted_by = NULL WHERE posted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
             cursor.execute(f"UPDATE tasks SET accepted_by = NULL WHERE accepted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
-            
+
             # Delete the user
             cursor.execute(f'DELETE FROM users WHERE id = {PH}', (uid,))
-            
+
             conn.commit()
-            
-            print(f"🗑️ Account deleted: user {uid}")
-        
+
+            print(f"🗑️ Account deleted: user {uid} ({user_email})")
+
         return jsonify({'success': True, 'message': 'Account deleted successfully'}), 200
-        
+
     except Exception as e:
         print(f"❌ Error deleting account: {e}")
         return jsonify({'success': False, 'message': 'Failed to delete account'}), 500
+
+
+# ========================================
+# TASK NOTIFICATION BROADCAST ENDPOINTS
+# ========================================
+
+@app.route('/api/tasks/<int:task_id>/notify-skills', methods=['POST'])
+@require_auth
+def notify_task_skills(task_id):
+    """Push FCM notification (type: skill_matched) to every user whose profile
+    skills overlap with this task's category/title/description AND who is
+    within 10 km of the task location.
+    Only the task poster may call this endpoint."""
+    import json as _nsj
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(
+                f'SELECT id, posted_by, title, category, description, price, '
+                f'location_lat, location_lng FROM tasks WHERE id = {PH}',
+                (task_id,)
+            )
+            task = dict_from_row(cursor.fetchone()) if cursor.rowcount != 0 else None
+            if task is None:
+                cursor.execute(
+                    f'SELECT id, posted_by, title, category, description, price, '
+                    f'location_lat, location_lng FROM tasks WHERE id = {PH}',
+                    (task_id,)
+                )
+                row = cursor.fetchone()
+                task = dict_from_row(row) if row else None
+        if not task:
+            return jsonify({'success': False, 'message': 'Task not found'}), 404
+
+        poster_id = str(task.get('posted_by', ''))
+        if str(request.user_id) != poster_id:
+            return jsonify({'success': False, 'message': 'Not authorised'}), 403
+
+        _task_category = (task.get('category') or '').lower()
+        _task_title    = (task.get('title')    or '').lower()
+        _task_desc     = (task.get('description') or '').lower()
+        _task_price    = task.get('price', 0)
+        _task_title_display = task.get('title', '')
+        _task_cat_display   = task.get('category', 'General')
+
+        # Task location for 10 km proximity filter
+        _task_lat = task.get('location_lat')
+        _task_lng = task.get('location_lng')
+        _has_task_location = _task_lat is not None and _task_lng is not None
+        if not _has_task_location:
+            # Cannot enforce radius without task location — skip all notifications
+            return jsonify({'success': True, 'notified': 0,
+                            'reason': 'task has no location — radius filter skipped'})
+        _task_lat = float(_task_lat)
+        _task_lng = float(_task_lng)
+
+        _ensure_bio_skills_columns()
+        _ensure_fcm_token_column()
+        _ensure_user_location_columns()
+
+        with get_db() as (cursor, _):
+            cursor.execute(f'''
+                SELECT id, fcm_token, skills, last_lat, last_lng,
+                       last_location_updated_at FROM users
+                WHERE fcm_token IS NOT NULL
+                  AND id != {PH}
+                  AND skills IS NOT NULL
+                  AND skills NOT IN ({PH}, {PH}, {PH})
+                  AND last_lat IS NOT NULL
+                  AND last_lng IS NOT NULL
+            ''', (request.user_id, '[]', '', 'null'))
+            candidates = [dict_from_row(r) for r in cursor.fetchall()]
+
+        notified = 0
+        for user in candidates:
+            try:
+                # ── 10 km proximity check (task location guaranteed present) ──
+                u_lat = user.get('last_lat')
+                u_lng = user.get('last_lng')
+                if u_lat is None or u_lng is None:
+                    continue
+                if _haversine_km(_task_lat, _task_lng,
+                                 float(u_lat), float(u_lng)) > 10.0:
+                    continue  # outside 10 km radius
+                # ── Skill match check ──────────────────────────────────
+                raw_skills = user.get('skills', '[]')
+                user_skills = [s.lower() for s in (
+                    _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])
+                )]
+                matched = any(
+                    sk in _task_category or _task_category in sk or
+                    sk in _task_title    or sk in _task_desc
+                    for sk in user_skills
+                )
+                if not matched:
+                    continue
+                import datetime as _nsdt, json as _nsj2
+                _n_title = '\U0001f4bc Task Matching Your Skills!'
+                _n_body  = f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}'
+                _n_data  = _nsj2.dumps({'type': 'skill_matched', 'taskId': str(task_id),
+                                        'label': '\U0001f441\ufe0f View Task'})
+                _now = _nsdt.datetime.now(_nsdt.timezone.utc).isoformat()
+                # Insert in-app notification (bell icon)
+                try:
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (user['id'], task_id, 'skill_matched',
+                              _n_title, _n_body, 'unread', _n_data, _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
+                # FCM push
+                if user.get('fcm_token'):
+                    send_fcm_to_user(
+                        user['id'],
+                        _n_title,
+                        _n_body,
+                        data={'type': 'skill_matched', 'task_id': str(task_id)},
+                        channel='workmate4u_matched',
+                    )
+                notified += 1
+            except Exception:
+                pass
+
+        print(f'[FCM] notify-skills task={task_id}: notified {notified} user(s)')
+        return jsonify({'success': True, 'notified': notified})
+    except Exception as e:
+        print(f'[FCM] notify-skills error: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/tasks/<int:task_id>/notify-nearby', methods=['POST'])
+@require_auth
+def notify_task_nearby(task_id):
+    """Push FCM notification (type: nearby_task) to every user within 10 km of
+    the task's location, regardless of their skills or the task's category.
+    Only the task poster may call this endpoint."""
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(
+                f'SELECT id, posted_by, title, category, description, price, '
+                f'location_lat, location_lng FROM tasks WHERE id = {PH}',
+                (task_id,)
+            )
+            row = cursor.fetchone()
+            task = dict_from_row(row) if row else None
+        if not task:
+            return jsonify({'success': False, 'message': 'Task not found'}), 404
+
+        poster_id = str(task.get('posted_by', ''))
+        if str(request.user_id) != poster_id:
+            return jsonify({'success': False, 'message': 'Not authorised'}), 403
+
+        task_lat = task.get('location_lat')
+        task_lng = task.get('location_lng')
+        if task_lat is None or task_lng is None:
+            # No location — cannot do proximity filtering; skip silently
+            return jsonify({'success': True, 'notified': 0, 'reason': 'task has no location'})
+
+        task_lat = float(task_lat)
+        task_lng = float(task_lng)
+        _task_title_display = task.get('title', '')
+        _task_cat_display   = task.get('category', 'General')
+        _task_price         = task.get('price', 0)
+
+        _ensure_user_location_columns()
+        _ensure_fcm_token_column()
+
+        with get_db() as (cursor, _):
+            cursor.execute(f'''
+                SELECT id, fcm_token, last_lat, last_lng FROM users
+                WHERE fcm_token IS NOT NULL
+                  AND id != {PH}
+                  AND last_lat IS NOT NULL
+                  AND last_lng IS NOT NULL
+            ''', (request.user_id,))
+            candidates = [dict_from_row(r) for r in cursor.fetchall()]
+
+        # Pre-fetch users already notified via notify-skills for this task
+        # so we skip them here and avoid duplicate FCM pushes.
+        try:
+            with get_db() as (_dc, _):
+                _dc.execute(f'''
+                    SELECT DISTINCT user_id FROM notifications
+                    WHERE task_id = {PH}
+                      AND notification_type = 'skill_matched'
+                ''', (task_id,))
+                _already_skill_notified = {str(r[0]) for r in _dc.fetchall()}
+        except Exception:
+            _already_skill_notified = set()
+
+        notified = 0
+        for user in candidates:
+            try:
+                u_lat = user.get('last_lat')
+                u_lng = user.get('last_lng')
+                if u_lat is None or u_lng is None:
+                    continue
+                if _haversine_km(task_lat, task_lng, float(u_lat), float(u_lng)) > 10.0:
+                    continue
+                # Skip users who already received a skill_matched notification
+                # for this task — they don't need a second nearby_task push.
+                if str(user['id']) in _already_skill_notified:
+                    continue
+                # Store in-app notification so it shows in the bell icon
+                try:
+                    import json as _nj, datetime as _dt
+                    _ndata = _nj.dumps({'type': 'nearby_task', 'taskId': task_id,
+                                        'label': '\U0001f441\ufe0f View Task'})
+                    _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title, message, status, data, created_at)
+                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                        ''', (user['id'], task_id, 'nearby_task',
+                              '\U0001f4cd New Task Near You!',
+                              f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
+                              'unread', _ndata, _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
+                send_fcm_to_user(
+                    user['id'],
+                    '\U0001f4cd New Task Near You!',
+                    f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
+                    data={'type': 'nearby_task', 'task_id': str(task_id)},
+                    channel='workmate4u_matched',
+                )
+                notified += 1
+            except Exception:
+                pass
+
+        print(f'[FCM] notify-nearby task={task_id}: notified {notified} user(s)')
+        return jsonify({'success': True, 'notified': notified})
+    except Exception as e:
+        print(f'[FCM] notify-nearby error: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ========================================
@@ -7987,11 +9614,9 @@ def get_user_disputes():
 
 
 @app.route('/api/admin/disputes', methods=['GET'])
-@require_auth
+@require_admin
 def admin_get_disputes():
     """Admin: get all disputes"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
     try:
         with get_db() as (cursor, conn):
@@ -8011,11 +9636,9 @@ def admin_get_disputes():
 
 
 @app.route('/api/admin/disputes/<int:dispute_id>/resolve', methods=['POST'])
-@require_auth
+@require_admin
 def admin_resolve_dispute(dispute_id):
     """Admin: resolve a dispute"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
     data = request.get_json()
     decision = data.get('decision', '').strip()
@@ -8311,8 +9934,8 @@ def search_tasks():
     """Search tasks by keyword with server-side filtering"""
     keyword = request.args.get('q', '').strip()
     category = request.args.get('category', '').strip()
-    min_price = request.args.get('min_price', type=float)
-    max_price = request.args.get('max_price', type=float)
+    min_price = request.args.get('min_price', type=float) or request.args.get('min_budget', type=float)
+    max_price = request.args.get('max_price', type=float) or request.args.get('max_budget', type=float)
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 20, type=int)
     limit = min(max(limit, 1), 100)
@@ -8548,7 +10171,7 @@ def get_blocked_users():
 # ========================================
 
 @app.route('/api/admin/reports', methods=['GET'])
-@require_auth
+@require_admin
 def get_reports():
     """Get all user reports (admin)"""
     status = request.args.get('status', 'pending')
@@ -8573,7 +10196,7 @@ def get_reports():
 
 
 @app.route('/api/admin/reports/<int:report_id>/resolve', methods=['POST'])
-@require_auth
+@require_admin
 def resolve_report(report_id):
     """Resolve a user report (admin)"""
     data = request.get_json()
@@ -8645,7 +10268,7 @@ def get_categories():
 
 
 @app.route('/api/admin/categories', methods=['POST'])
-@require_auth
+@require_admin
 def create_category():
     """Create a new task category (admin)"""
     data = request.get_json()
@@ -8680,7 +10303,7 @@ def create_category():
 
 
 @app.route('/api/admin/categories/<int:category_id>', methods=['PUT'])
-@require_auth
+@require_admin
 def update_category(category_id):
     """Update a task category (admin)"""
     data = request.get_json()
@@ -8714,7 +10337,7 @@ def update_category(category_id):
 
 
 @app.route('/api/admin/categories/<int:category_id>', methods=['DELETE'])
-@require_auth
+@require_admin
 def delete_category(category_id):
     """Soft-delete a task category (admin)"""
     try:
@@ -8800,12 +10423,7 @@ def notify_task_completed_email(poster_id, helper_name, task_title, task_amount,
                     f'<td style="padding:8px 0;color:#6b7280;">Service Charge</td>'
                     f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{service_charge:.2f}</td></tr>'
                 )
-            if poster_fee > 0:
-                breakdown_html += (
-                    f'<tr style="border-bottom:1px solid #f3f4f6;">'
-                    f'<td style="padding:8px 0;color:#6b7280;">Task Posting Fee (5%)</td>'
-                    f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{poster_fee:.2f}</td></tr>'
-                )
+            # poster_fee row removed (posting fee disabled)
             breakdown_html += (
                 f'<tr>'
                 f'<td style="padding:10px 0;color:#111827;font-weight:700;font-size:16px;">Total to Pay</td>'
@@ -8851,7 +10469,7 @@ def notify_payment_received_email(helper_id, task_title, amount, task_amount=0, 
                 f'<td style="padding:8px 0;color:#6b7280;font-weight:700;">Task Value</td>'
                 f'<td style="padding:8px 0;text-align:right;font-weight:700;color:#111827;">₹{total_task_val:.2f}</td></tr>'
                 f'<tr style="border-bottom:1px solid #f3f4f6;">'
-                f'<td style="padding:8px 0;color:#6b7280;">Platform Commission (12%)</td>'
+                f'<td style="padding:8px 0;color:#6b7280;">Platform Commission</td>'
                 f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#dc2626;">-₹{commission:.2f}</td></tr>'
                 f'<tr>'
                 f'<td style="padding:10px 0;color:#059669;font-weight:700;font-size:16px;">Your Earnings</td>'
@@ -8904,18 +10522,54 @@ def notify_account_suspended_email(user_id, reason):
 @app.route('/api/user/kyc/submit', methods=['POST'])
 @require_auth
 def submit_kyc():
-    """Submit KYC document for verification (with anti-fraud checks)."""
-    data = request.get_json() or {}
-    doc_type = (data.get('documentType') or '').strip()
-    doc_number = (data.get('documentNumber') or '').strip()
-    # Accept new front/back fields; fall back to legacy documentImage field
-    doc_image_front = data.get('documentImageFront') or data.get('documentImage', '')
-    doc_image_back = data.get('documentImageBack') or ''
-    if doc_image_front:
-        doc_image_front = doc_image_front.strip()
-    if doc_image_back:
-        doc_image_back = doc_image_back.strip()
-    acknowledged = bool(data.get('acknowledged'))
+    """Submit KYC document for verification (with anti-fraud checks).
+    Accepts two request formats:
+      - multipart/form-data (mobile app): files in 'documentImageFront' / 'documentImageBack'
+      - application/json     (website):   base64 data URIs in JSON body
+    Images are always stored as 'data:<mime>;base64,<b64>' so the admin panel
+    can render them directly with <img src="..."> without triggering 414 errors.
+    """
+    import base64 as _b64
+
+    def _file_to_data_uri(field_name):
+        """Convert a multipart file field to a base64 data URI string."""
+        f = request.files.get(field_name)
+        if not f:
+            return ''
+        raw = f.read()
+        if not raw:
+            return ''
+        mime = (f.content_type or 'image/jpeg').split(';')[0].strip() or 'image/jpeg'
+        return f'data:{mime};base64,{_b64.b64encode(raw).decode()}'
+
+    content_type = request.content_type or ''
+    if 'multipart/form-data' in content_type:
+        # Mobile app sends binary files via multipart — convert to data URIs for DB storage
+        doc_type = (request.form.get('documentType') or '').strip()
+        doc_number = (request.form.get('documentNumber') or '').strip()
+        acknowledged = request.form.get('acknowledged', 'false').lower() in ('true', '1', 'yes')
+        doc_image_front = _file_to_data_uri('documentImageFront')
+        doc_image_back = _file_to_data_uri('documentImageBack')
+    else:
+        # Website sends JSON with base64 data URI strings
+        data = request.get_json() or {}
+        doc_type = (data.get('documentType') or '').strip()
+        doc_number = (data.get('documentNumber') or '').strip()
+        # Accept new front/back fields; fall back to legacy documentImage field
+        doc_image_front = data.get('documentImageFront') or data.get('documentImage', '')
+        doc_image_back = data.get('documentImageBack') or ''
+        if doc_image_front:
+            doc_image_front = doc_image_front.strip()
+        if doc_image_back:
+            doc_image_back = doc_image_back.strip()
+        # Ensure stored value always has the data URI prefix so <img src> renders inline
+        def _ensure_data_uri(s):
+            if s and not s.startswith('data:'):
+                return f'data:image/jpeg;base64,{s}'
+            return s
+        doc_image_front = _ensure_data_uri(doc_image_front)
+        doc_image_back = _ensure_data_uri(doc_image_back)
+        acknowledged = bool(data.get('acknowledged'))
 
     # Mandatory legal declaration (acts as legal evidence in case of fraud)
     if not acknowledged:
@@ -9078,16 +10732,22 @@ def submit_kyc():
 @require_auth
 def get_kyc_status():
     """Get KYC verification status"""
+    _ensure_kyc_columns()
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''
                 SELECT kyc_status, kyc_document_type, kyc_document_number, kyc_verified_at,
-                       phone_verified, email_verified, kyc_document_image
+                       phone_verified, email_verified, kyc_flag_reason,
+                       CASE WHEN kyc_document_image IS NOT NULL THEN TRUE ELSE FALSE END AS has_image
                 FROM users WHERE id = {PH}
             ''', (request.user_id,))
-            row = dict_from_row(cursor.fetchone())
+            row = cursor.fetchone()
 
-        has_image = bool(row.get('kyc_document_image'))
+        if not row:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+
+        row = dict_from_row(row)
+        has_image = bool(row.get('has_image'))
         return jsonify({
             'success': True,
             'kyc': {
@@ -9097,19 +10757,19 @@ def get_kyc_status():
                 'hasDocumentImage': has_image,
                 'verifiedAt': row.get('kyc_verified_at'),
                 'phoneVerified': bool(row.get('phone_verified')),
-                'emailVerified': bool(row.get('email_verified'))
+                'emailVerified': bool(row.get('email_verified')),
+                'flagReason': row.get('kyc_flag_reason')
             }
         })
     except Exception as e:
+        print(f"[KYC STATUS] Error: {e}")
         return jsonify({'success': False, 'message': 'Failed to get KYC status'}), 500
 
 
 @app.route('/api/admin/user/<user_id>/kyc', methods=['GET'])
-@require_auth
+@require_admin
 def admin_get_user_kyc(user_id):
     """Admin: get user KYC details including document image"""
-    if request.user_id != '1':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''
@@ -9140,7 +10800,7 @@ def admin_get_user_kyc(user_id):
 
 
 @app.route('/api/admin/kyc/<user_id>/verify', methods=['POST'])
-@require_auth
+@require_admin
 def admin_verify_kyc(user_id):
     """Admin: approve or reject KYC (admin)"""
     data = request.get_json()
@@ -9175,6 +10835,243 @@ def admin_verify_kyc(user_id):
         return jsonify({'success': True, 'message': f'KYC {action}d for user {user_id}'})
     except Exception as e:
         return jsonify({'success': False, 'message': 'Failed to process KYC'}), 500
+
+
+# ========================================
+# AI TEAM PANEL INTEGRATION ROUTES
+# ========================================
+
+_AI_TEAM_TOKEN = os.environ.get('WORKMATE_AI_TOKEN', 'workmate-ai-internal-2026')
+
+def _require_ai_token(f):
+    """Simple token auth for internal AI team calls (no JWT needed)."""
+    from functools import wraps
+    @wraps(f)
+    def _inner(*args, **kwargs):
+        token = request.headers.get('X-AI-Token', '')
+        if token != _AI_TEAM_TOKEN:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        return f(*args, **kwargs)
+    return _inner
+
+
+@app.route('/api/ai-team/actions', methods=['GET'])
+@require_admin
+def ai_team_actions_list():
+    """Admin: list all actions taken by the AI team (audit log entries from ai_team)."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f"""
+                SELECT id, action, resource_type, resource_id, details, created_at
+                FROM admin_audit_log
+                WHERE admin_id = 'ai_team'
+                ORDER BY created_at DESC
+                LIMIT 100
+            """)
+            rows = cursor.fetchall()
+            actions = []
+            for r in rows:
+                row = dict_from_row(r)
+                actions.append({
+                    'id':            row.get('id'),
+                    'action':        row.get('action'),
+                    'resource_type': row.get('resource_type'),
+                    'resource_id':   row.get('resource_id'),
+                    'details':       row.get('details'),
+                    'created_at':    str(row.get('created_at', ''))[:16],
+                })
+        return jsonify({'success': True, 'actions': actions})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/ai-team/flagged-tasks', methods=['GET'])
+@require_admin
+def ai_team_flagged_tasks():
+    """Admin: list all tasks currently flagged or suspicious by the AI fraud agent."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f"""
+                SELECT t.id, t.title, t.description, t.price, t.status, t.category,
+                       t.posted_at, u.name AS poster_name, u.email AS poster_email
+                FROM tasks t
+                JOIN users u ON t.posted_by = u.id
+                WHERE t.status IN ('flagged', 'suspicious', 'removed')
+                ORDER BY t.posted_at DESC
+                LIMIT 50
+            """)
+            rows = cursor.fetchall()
+            tasks = []
+            for r in rows:
+                row = dict_from_row(r)
+                tasks.append({
+                    'id':           row.get('id'),
+                    'title':        row.get('title'),
+                    'description':  str(row.get('description') or '')[:100],
+                    'price':        row.get('price'),
+                    'status':       row.get('status'),
+                    'category':     row.get('category'),
+                    'posted_at':    str(row.get('posted_at', ''))[:16],
+                    'poster_name':  row.get('poster_name'),
+                    'poster_email': row.get('poster_email'),
+                })
+        return jsonify({'success': True, 'tasks': tasks})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/ai-team/reports', methods=['GET'])
+@require_admin
+def ai_team_get_reports():
+    """Admin: get agent reports optionally filtered by agent_id."""
+    agent_id = request.args.get('agent_id', '').strip()
+    limit = min(int(request.args.get('limit', 50)), 200)
+    try:
+        with get_db() as (cursor, conn):
+            if agent_id:
+                cursor.execute(f"""
+                    SELECT id, action, resource_id, details, created_at
+                    FROM admin_audit_log
+                    WHERE admin_id = 'ai_team'
+                      AND resource_type = 'ai_agent'
+                      AND action LIKE 'agent_report:%'
+                      AND resource_id = {PH}
+                    ORDER BY created_at DESC
+                    LIMIT {PH}
+                """, (agent_id, limit))
+            else:
+                cursor.execute(f"""
+                    SELECT id, action, resource_id, details, created_at
+                    FROM admin_audit_log
+                    WHERE admin_id = 'ai_team'
+                      AND resource_type = 'ai_agent'
+                      AND action LIKE 'agent_report:%'
+                    ORDER BY created_at DESC
+                    LIMIT {PH}
+                """, (limit,))
+            rows = cursor.fetchall()
+            import json as _json
+            reports = []
+            for r in rows:
+                row = dict_from_row(r)
+                try:
+                    details = _json.loads(row.get('details', '{}') or '{}')
+                except Exception:
+                    details = {}
+                reports.append({
+                    'id':         row.get('id'),
+                    'agent_id':   row.get('resource_id'),
+                    'status':     (row.get('action', '') or '').split(':')[-1],
+                    'title':      details.get('title', ''),
+                    'summary':    details.get('summary', ''),
+                    'stats':      details.get('stats', {}),
+                    'created_at': str(row.get('created_at', ''))[:16],
+                })
+        return jsonify({'success': True, 'reports': reports})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/ai-team/fixes', methods=['GET'])
+@require_admin
+def ai_team_get_fixes():
+    """Admin: get actions/fixes taken by the AI team, optionally filtered by agent_id stored in details."""
+    agent_id = request.args.get('agent_id', '').strip()
+    limit = min(int(request.args.get('limit', 50)), 200)
+    try:
+        with get_db() as (cursor, conn):
+            if agent_id:
+                # Filter: action must NOT be an agent_report, and details must contain the agent_id
+                if config.USE_POSTGRES:
+                    cursor.execute(f"""
+                        SELECT id, action, resource_type, resource_id, details, created_at
+                        FROM admin_audit_log
+                        WHERE admin_id = 'ai_team'
+                          AND action NOT LIKE 'agent_report:%'
+                          AND details::text LIKE {PH}
+                        ORDER BY created_at DESC
+                        LIMIT {PH}
+                    """, (f'%{agent_id}%', limit))
+                else:
+                    cursor.execute(f"""
+                        SELECT id, action, resource_type, resource_id, details, created_at
+                        FROM admin_audit_log
+                        WHERE admin_id = 'ai_team'
+                          AND action NOT LIKE 'agent_report:%'
+                          AND details LIKE {PH}
+                        ORDER BY created_at DESC
+                        LIMIT {PH}
+                    """, (f'%{agent_id}%', limit))
+            else:
+                cursor.execute(f"""
+                    SELECT id, action, resource_type, resource_id, details, created_at
+                    FROM admin_audit_log
+                    WHERE admin_id = 'ai_team'
+                      AND action NOT LIKE 'agent_report:%'
+                    ORDER BY created_at DESC
+                    LIMIT {PH}
+                """, (limit,))
+            rows = cursor.fetchall()
+            import json as _json
+            fixes = []
+            for r in rows:
+                row = dict_from_row(r)
+                try:
+                    details = _json.loads(row.get('details', '{}') or '{}')
+                except Exception:
+                    details = {}
+                fixes.append({
+                    'id':            row.get('id'),
+                    'action':        row.get('action'),
+                    'resource_type': row.get('resource_type'),
+                    'resource_id':   row.get('resource_id'),
+                    'details':       details,
+                    'created_at':    str(row.get('created_at', ''))[:16],
+                })
+        return jsonify({'success': True, 'fixes': fixes})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/ai-team/report', methods=['POST'])
+def ai_team_receive_report():
+    """AI Team Panel posts its agent reports here so admin panel can display them.
+    Auth: X-AI-Token header. No JWT required (internal service-to-service)."""
+    token = request.headers.get('X-AI-Token', '')
+    if token != _AI_TEAM_TOKEN:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
+    report = data.get('report', {})
+    if not report or not report.get('agent_id'):
+        return jsonify({'success': False, 'message': 'Invalid report payload'}), 400
+
+    try:
+        with get_db() as (cursor, conn):
+            import json as _json
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            # Store in admin_audit_log as a JSON blob for now
+            cursor.execute(f"""
+                INSERT INTO admin_audit_log
+                    (admin_id, action, resource_type, resource_id, details, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            """, (
+                'ai_team',
+                f"agent_report:{report.get('status','info')}",
+                'ai_agent',
+                report.get('agent_id'),
+                _json.dumps({
+                    'title':   report.get('title', ''),
+                    'summary': report.get('summary', ''),
+                    'status':  report.get('status', 'info'),
+                    'stats':   report.get('stats', {}),
+                    'fixes':   report.get('fixes', []),
+                }, ensure_ascii=False)[:4000],
+                now,
+            ))
+        return jsonify({'success': True, 'message': 'Report stored'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ========================================
@@ -9223,19 +11120,78 @@ def get_google_client_id():
         return jsonify({'success': False, 'message': 'Google Sign-In not configured'}), 404
     return jsonify({'success': True, 'clientId': client_id})
 
+
+def _ensure_google_auth_schema():
+    """Ensure Google auth columns/tables exist before running login queries.
+
+    Retries once after calling init_db() if the users table does not exist yet
+    (race condition during cold start while background init_db thread is still
+    running).  Errors are re-raised so the caller can surface an HTTP 503.
+    """
+    global _google_auth_schema_ensured
+    if _google_auth_schema_ensured:
+        return
+
+    import time as _time_sch
+    for _attempt in range(2):
+        try:
+            with get_db() as (cursor, conn):
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE')
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'email'")
+                cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS deleted_accounts (
+                        email VARCHAR(255) PRIMARY KEY,
+                        google_id VARCHAR(255),
+                        deleted_at TIMESTAMP DEFAULT NOW()
+                    )
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id
+                    ON deleted_accounts (google_id) WHERE google_id IS NOT NULL
+                ''')
+            _google_auth_schema_ensured = True
+            return
+        except Exception as _sch_exc:
+            if _attempt == 0:
+                _sch_err = str(_sch_exc).lower()
+                if any(k in _sch_err for k in ['relation', 'does not exist', 'no such table', 'undefined table']):
+                    # Tables not created yet — background init_db may still be
+                    # running on cold start. Trigger a synchronous init and retry.
+                    print(f'[GOOGLE AUTH SCHEMA] users table missing, running init_db: {_sch_exc}')
+                    try:
+                        init_db()
+                    except Exception as _init_e:
+                        print(f'[GOOGLE AUTH SCHEMA] init_db failed: {_init_e}')
+                    _time_sch.sleep(0.5)
+                    continue
+            # Second attempt or unexpected error — propagate to caller
+            raise
+
 @app.route('/api/auth/google', methods=['POST'])
 @rate_limit('10 per minute')
 def google_login():
     """Login or register via Google ID token"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     id_token = data.get('credential', '')
+    invite_code = (data.get('invite_code') or '').strip().upper()
 
     if not id_token:
         return jsonify({'success': False, 'message': 'Google credential is required'}), 400
 
     try:
+        # Ensure Google auth schema is ready. Return 503 if the DB isn't up
+        # yet (background init_db may still be running on cold start); the
+        # Netlify proxy retries automatically on 5xx.
+        try:
+            _ensure_google_auth_schema()
+        except Exception as _sch_e:
+            print(f'[GOOGLE LOGIN] Schema ensure failed: {_sch_e}')
+            return jsonify({'success': False, 'message': 'Login service is starting up. Please try again in a few seconds.'}), 503
+
         # Verify Google ID token
         import urllib.request
+        import urllib.error
         import json as json_mod
         # Use Google's tokeninfo endpoint to verify
         token_url = f'https://oauth2.googleapis.com/tokeninfo?id_token={id_token}'
@@ -9257,52 +11213,116 @@ def google_login():
         if not google_id or not email:
             return jsonify({'success': False, 'message': 'Invalid Google token'}), 401
 
-        with get_db() as (cursor, conn):
-            # Check if user exists by google_id
-            cursor.execute(f'SELECT id FROM users WHERE google_id = {PH}', (google_id,))
-            existing = cursor.fetchone()
+        # Retry DB block for transient startup/connectivity failures.
+        user = None
+        for db_attempt in range(2):
+            try:
+                with get_db() as (cursor, conn):
+                    # Check if user exists by google_id
+                    cursor.execute(f'SELECT id FROM users WHERE google_id = {PH}', (google_id,))
+                    existing = cursor.fetchone()
 
-            if existing:
-                # Existing Google user — login
-                user_id = dict_from_row(existing)['id']
-                last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
-            else:
-                # Check if email already registered (link accounts)
-                cursor.execute(f'SELECT id FROM users WHERE email = {PH}', (email,))
-                email_user = cursor.fetchone()
+                    if existing:
+                        # Existing Google user — login (no invite code needed)
+                        user_id = dict_from_row(existing)['id']
+                        last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                        cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
+                    else:
+                        # Check if this email/google_id was previously deleted by admin
+                        cursor.execute(f'SELECT email FROM deleted_accounts WHERE email = {PH} OR google_id = {PH}', (email, google_id))
+                        if cursor.fetchone():
+                            return jsonify({'success': False, 'message': 'This account has been removed. Contact support if you believe this is a mistake.'}), 403
 
-                if email_user:
-                    user_id = dict_from_row(email_user)['id']
-                    cursor.execute(f'''
-                        UPDATE users SET google_id = {PH}, auth_provider = 'google'
-                        WHERE id = {PH}
-                    ''', (google_id, user_id))
-                else:
-                    # New user — register
-                    user_id = generate_user_id()
-                    joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    # Google users get a random password (they never use it)
-                    random_pw = generate_password_hash(secrets.token_hex(32), method='pbkdf2:sha256')
-                    cursor.execute(f'''
-                        INSERT INTO users (id, name, email, password_hash, google_id, auth_provider,
-                                          email_verified, profile_photo, joined_at)
-                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (user_id, name, email, random_pw, google_id, 'google',
-                          True, picture, joined_at))
+                        # Check if email already registered (link accounts — also no invite needed)
+                        cursor.execute(f'SELECT id FROM users WHERE email = {PH}', (email,))
+                        email_user = cursor.fetchone()
 
-                    # Create wallet
-                    cursor.execute(f'''
-                        INSERT INTO wallets (user_id, balance, created_at)
-                        VALUES ({PH}, 0, {PH})
-                    ''', (user_id, joined_at))
+                        if email_user:
+                            user_id = dict_from_row(email_user)['id']
+                            # Guard against linking a Google ID already attached to a different account.
+                            cursor.execute(f'SELECT id FROM users WHERE google_id = {PH}', (google_id,))
+                            existing_google_owner = cursor.fetchone()
+                            if existing_google_owner and dict_from_row(existing_google_owner)['id'] != user_id:
+                                return jsonify({
+                                    'success': False,
+                                    'message': 'This Google account is already linked to another user.'
+                                }), 409
+                            cursor.execute(f'''
+                                UPDATE users SET google_id = {PH}, auth_provider = 'google'
+                                WHERE id = {PH}
+                            ''', (google_id, user_id))
+                        else:
+                            # Brand-new user — apply trial checks before creating account
+                            if config.TRIAL_ACTIVE:
+                                import datetime as _dt
+                                # Validate invite code
+                                if invite_code != config.TRIAL_INVITE_CODE.upper():
+                                    return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.', 'needsInviteCode': True}), 403
+                                # Check trial end date
+                                try:
+                                    end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
+                                except ValueError:
+                                    end_date = _dt.date.today() + _dt.timedelta(days=30)
+                                if _dt.date.today() > end_date:
+                                    return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
+                                # Check user cap
+                                cursor.execute('SELECT COUNT(*) as cnt FROM users')
+                                row = dict_from_row(cursor.fetchone())
+                                if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
+                                    return jsonify({'success': False, 'message': "All trial spots are taken. We'll notify you when we launch publicly!"}), 403
 
-            user = get_user_by_id(user_id)
-            if user and user.get('is_banned'):
-                return jsonify({'success': False, 'message': 'Account is banned'}), 403
+                            # Register new Google user
+                            user_id = generate_user_id()
+                            joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            # Google users get a random password (they never use it)
+                            random_pw = generate_password_hash(secrets.token_hex(32), method='pbkdf2:sha256')
+                            cursor.execute(f'''
+                                INSERT INTO users (id, name, email, password_hash, google_id, auth_provider,
+                                                  email_verified, profile_photo, joined_at)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                            ''', (user_id, name, email, random_pw, google_id, 'google',
+                                  True, picture, joined_at))
+
+                            # Create wallet
+                            cursor.execute(f'''
+                                INSERT INTO wallets (user_id, balance, created_at)
+                                VALUES ({PH}, 0, {PH})
+                            ''', (user_id, joined_at))
+
+                    user = get_user_by_id(user_id)
+                    if user and user.get('is_banned'):
+                        return jsonify({'success': False, 'message': 'Account is banned'}), 403
+                break
+            except Exception as db_exc:
+                err = str(db_exc).lower()
+                if any(k in err for k in ['unique constraint', 'duplicate key value', 'already exists']):
+                    return jsonify({
+                        'success': False,
+                        'message': 'This Google account is already linked. Please sign in with the linked account.'
+                    }), 409
+                # If schema is not ready yet (cold deploy / partial migration),
+                # run init and retry once before failing the request.
+                schema_missing = any(k in err for k in [
+                    'relation', 'does not exist', 'undefined table', 'undefined column',
+                    'no such table', 'no such column'
+                ])
+                if schema_missing and db_attempt == 0:
+                    try:
+                        init_db()
+                    except Exception:
+                        pass
+                    import time as _time
+                    _time.sleep(0.6)
+                    continue
+                transient = any(k in err for k in ['could not connect', 'connection', 'timeout', 'server closed', 'operationalerror', 'database'])
+                if transient and db_attempt == 0:
+                    import time as _time
+                    _time.sleep(0.8)
+                    continue
+                raise
 
         token = generate_jwt_token(user_id, email)
-        user = get_user_by_id(user_id)
+        user = user or get_user_by_id(user_id)
 
         return jsonify({
             'success': True,
@@ -9317,15 +11337,69 @@ def google_login():
         print(f"[GOOGLE LOGIN] Error: {e}")
         import traceback
         traceback.print_exc()
+        err = str(e).lower()
+        if any(k in err for k in [
+            'could not connect', 'connection', 'timeout', 'server closed',
+            'operationalerror', 'database', 'relation', 'does not exist',
+            'no such table', 'undefined table',
+        ]):
+            return jsonify({'success': False, 'message': 'Login service is warming up. Please try again in a few seconds.'}), 503
         return jsonify({'success': False, 'message': 'Google login failed'}), 500
 
 
 # ========================================
-# PUSH NOTIFICATION SUBSCRIPTIONS (FEATURE REMOVED)
+# PUSH NOTIFICATION SUBSCRIPTIONS
 # ========================================
-# All push-related endpoints, helpers, and the geo-push notifier have been
-# removed. The push_subscriptions table is left in place harmlessly. To
-# fully drop it, run: DROP TABLE IF EXISTS push_subscriptions, app_config;
+
+@app.route('/api/push/vapid-key', methods=['GET'])
+def get_vapid_key():
+    """Return the VAPID public key so the frontend can subscribe."""
+    return jsonify({'success': True, 'publicKey': VAPID_PUBLIC_KEY})
+
+
+@app.route('/api/push/subscribe', methods=['POST'])
+@require_auth
+def push_subscribe():
+    """Save (or update) a push subscription for the authenticated user."""
+    data = request.get_json() or {}
+    subscription = data.get('subscription')
+    if not subscription:
+        return jsonify({'success': False, 'message': 'No subscription object provided'}), 400
+    lat = data.get('lat')
+    lng = data.get('lng')
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with get_db() as (cursor, conn):
+            # Upsert: update subscription if user already has one
+            cursor.execute(
+                f'''INSERT INTO push_subscriptions (user_id, subscription_json, created_at, lat, lng)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                    ON CONFLICT (user_id) DO UPDATE
+                        SET subscription_json = EXCLUDED.subscription_json,
+                            lat = EXCLUDED.lat,
+                            lng = EXCLUDED.lng''',
+                (str(request.user_id), json.dumps(subscription), now, lat, lng)
+            )
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[push] subscribe error: {e}')
+        return jsonify({'success': False, 'message': 'Could not save subscription'}), 500
+
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+@require_auth
+def push_unsubscribe():
+    """Remove the push subscription for the authenticated user."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'DELETE FROM push_subscriptions WHERE user_id = {PH}',
+                (str(request.user_id),)
+            )
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'[push] unsubscribe error: {e}')
+        return jsonify({'success': False, 'message': 'Error removing subscription'}), 500
 
 
 # ========================================
@@ -9363,7 +11437,7 @@ if __name__ == '__main__':
     print("=" * 50)
     print(f"📍 Running on: http://0.0.0.0:{port}")
     print(f"📚 API Docs: /api/health")
-    print(f"💾 Database: {'PostgreSQL' if config.USE_POSTGRES else 'SQLite'}")
+    print("💾 Database: PostgreSQL")
     print("=" * 50)
     
     # Run Flask server

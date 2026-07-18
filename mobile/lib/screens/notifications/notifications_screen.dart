@@ -26,7 +26,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     // Expired/cancelled notifications belong to deleted tasks.
     // Use go() not push() — /my-tasks lives inside the ShellRoute so push()
     // triggers '!keyReservation.contains(key)' when the tab is already mounted.
-    const noTaskTypes = {'task_expired', 'task_cancelled_confirmation'};
+    // task_expired: notification already marked read by caller — no navigation.
+    if (type == 'task_expired') return;
+    const noTaskTypes = {'task_cancelled_confirmation'};
     if (noTaskTypes.contains(type)) {
       // Defer until the current frame (markRead notifyListeners) is done.
       WidgetsBinding.instance.addPostFrameCallback((_) {

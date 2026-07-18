@@ -281,10 +281,24 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'admin_balance_adjusted',
     };
 
+    // task_expired: only mark as read — no navigation (task no longer exists).
+    if (type == 'task_expired') {
+      if (_authProvider?.status == AuthStatus.authenticated &&
+          taskId != null && taskId.isNotEmpty) {
+        try {
+          final ctx = _router.routerDelegate.navigatorKey.currentContext;
+          if (ctx != null) {
+            ctx.read<NotificationProvider>().markReadByTaskId(taskId);
+          }
+        } catch (_) {}
+      }
+      return;
+    }
+
     // Notification types whose task has been deleted — navigate to My Tasks
     // instead of trying to open a non-existent task detail.
     // Use go() for shell tab routes to avoid the navigator key assertion.
-    const deletedTaskTypes = {'task_expired', 'task_cancelled_confirmation'};
+    const deletedTaskTypes = {'task_cancelled_confirmation'};
     // Shell tab routes must use go() not push() — push() on an already-mounted
     // ShellRoute child throws '!keyReservation.contains(key)'.
     const shellTabRoutes = {'/my-tasks', '/home', '/browse', '/profile'};

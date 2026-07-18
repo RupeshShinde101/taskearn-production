@@ -97,7 +97,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onRefresh: _refresh,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom),
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -475,7 +475,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     color: AppColors.danger.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: Icon(Icons.logout_rounded,
+                                  child: const Icon(Icons.logout_rounded,
                                       color: AppColors.danger, size: 22),
                                 ),
                                 const SizedBox(width: 14),
@@ -623,6 +623,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -635,6 +636,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),

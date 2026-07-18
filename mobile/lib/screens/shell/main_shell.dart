@@ -11,7 +11,7 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
+class _MainShellState extends State<MainShell> with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _tabs = [
     '/home',
     '/browse',
@@ -21,17 +21,30 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
 
   static const _channel = MethodChannel('com.workmate4u/navigation');
   int _currentIdx = 0;
+  bool _keyboardVisible = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _channel.setMethodCallHandler(_onNativeBack);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _channel.setMethodCallHandler(null);
     super.dispose();
+  }
+
+  /// Fires whenever window metrics change (keyboard open/close, rotation, etc.).
+  @override
+  void didChangeMetrics() {
+    final bottom = WidgetsBinding.instance.platformDispatcher.views.first.viewInsets.bottom;
+    final visible = bottom > 0;
+    if (visible != _keyboardVisible) {
+      _keyboardVisible = visible;
+    }
   }
 
   /// Called from native Android when the back button / gesture is triggered.
@@ -39,6 +52,13 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
   /// Returns false → Android falls back to its default behaviour.
   Future<dynamic> _onNativeBack(MethodCall call) async {
     if (call.method != 'back_pressed' || !mounted) return false;
+
+    // If the keyboard is currently visible, dismiss it and stop here.
+    // The user's next back press will trigger navigation.
+    if (_keyboardVisible) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      return true;
+    }
 
     // If there is a pushed route on the stack (e.g. task detail, notifications,
     // post-task, chat) — pop it normally and do NOT apply tab-level logic.
@@ -244,6 +264,9 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
     final idx = _indexForPath(location);
     _currentIdx = idx;
 
+    // With extendBody:true, Flutter auto-adjusts MediaQuery.padding.bottom
+    // for the body to equal navbarHeight + safeAreaBottom, so every screen
+    // that reads MediaQuery.of(context).padding.bottom gets the right value.
     return Scaffold(
       extendBody: true,
       body: widget.child,
@@ -271,92 +294,52 @@ class _FloatingNavBar extends StatelessWidget {
 
   static const _tabs = [
     (Icons.home_rounded,       'Home'),
-    (Icons.search_rounded,     'Browse'),
-    (Icons.assignment_rounded, 'My Tasks'),
+    (Icons.explore_rounded,    'Search'),
+    (Icons.checklist_rounded,  'Tasks'),
     (Icons.person_rounded,     'Profile'),
   ];
 
+  // ── Geometry (dp) ──────────────────────────────────────────────────────────
+  static const _barH   = 70.0;
+  static const _fabD   = 44.0;          // inline center FAB diameter
+
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-        child: Container(
-          height: 66,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(36),
-            border: Border.all(
-              color: const Color(0xFFEEEEF5),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.14),
-                blurRadius: 28,
-                spreadRadius: -2,
-                offset: const Offset(0, 8),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.10),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(6),
-          child: Row(
-            children: [
-              // Tab 0 & 1
-              for (int i = 0; i < 2; i++)
-                Expanded(
-                  child: _PillNavItem(
-                    icon: _tabs[i].$1,
-                    label: _tabs[i].$2,
-                    selected: selectedIndex == i,
-                    onTap: () => onTabTap(i),
-                  ),
-                ),
-              // Centre "+" FAB
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: GestureDetector(
-                  onTap: onPostTap,
-                  child: Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: CustomPaint(
+            painter: const _NavBarPainter(),
+            child: SizedBox(
+              height: _barH,
+              child: Row(
+                children: [
+                  for (int i = 0; i < 2; i++)
+                    Expanded(
+                      child: _NavItem(
+                        icon: _tabs[i].$1,
+                        label: _tabs[i].$2,
+                        selected: selectedIndex == i,
+                        onTap: () => onTabTap(i),
                       ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF6366F1)
-                              .withValues(alpha: 0.50),
-                          blurRadius: 14,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
                     ),
-                    child: const Icon(Icons.add_rounded,
-                        color: Colors.white, size: 26),
+                  Expanded(
+                    child: _CenterFab(onTap: onPostTap, fabD: _fabD),
                   ),
-                ),
+                  for (int i = 2; i < 4; i++)
+                    Expanded(
+                      child: _NavItem(
+                        icon: _tabs[i].$1,
+                        label: _tabs[i].$2,
+                        selected: selectedIndex == i,
+                        onTap: () => onTabTap(i),
+                      ),
+                    ),
+                ],
               ),
-              // Tab 2 & 3
-              for (int i = 2; i < 4; i++)
-                Expanded(
-                  child: _PillNavItem(
-                    icon: _tabs[i].$1,
-                    label: _tabs[i].$2,
-                    selected: selectedIndex == i,
-                    onTap: () => onTabTap(i),
-                  ),
-                ),
-            ],
+            ),
           ),
         ),
       ),
@@ -364,13 +347,124 @@ class _FloatingNavBar extends StatelessWidget {
   }
 }
 
-class _PillNavItem extends StatefulWidget {
+// ── Notched pill CustomPainter ────────────────────────────────────────────────
+
+class _NavBarPainter extends CustomPainter {
+  const _NavBarPainter();
+
+  static const _border = Color(0xFF2563EB);
+  static const _fill   = Colors.white;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _buildPath(size);
+
+    // Soft outer blue glow
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFF2563EB).withValues(alpha: 0.14)
+        ..style = PaintingStyle.fill
+        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 10),
+    );
+
+    // White fill
+    canvas.drawPath(path, Paint()..color = _fill..style = PaintingStyle.fill);
+
+    // Uniform thick blue border
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = _border
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  Path _buildPath(Size size) {
+    return Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Radius.circular(size.height / 2),
+      ));
+  }
+
+  @override
+  bool shouldRepaint(covariant _NavBarPainter old) => false;
+}
+// ── Center inline FAB ───────────────────────────────────────────────────
+
+class _CenterFab extends StatefulWidget {
+  final VoidCallback onTap;
+  final double fabD;
+  const _CenterFab({required this.onTap, required this.fabD});
+  @override
+  State<_CenterFab> createState() => _CenterFabState();
+}
+
+class _CenterFabState extends State<_CenterFab> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _pressed ? 0.88 : 1.0,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOut,
+        child: Center(
+          child: Container(
+            width: widget.fabD + 8,
+            height: widget.fabD + 8,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFBFDBFE), width: 2.5),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF2563EB).withValues(alpha: 0.20),
+                  blurRadius: 12,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: Container(
+              width: widget.fabD,
+              height: widget.fabD,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.add_rounded, color: Colors.white, size: 24),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+// ── Tab item ──────────────────────────────────────────────────────────────────
+
+class _NavItem extends StatefulWidget {
   final IconData icon;
-  final String label;
-  final bool selected;
+  final String   label;
+  final bool     selected;
   final VoidCallback onTap;
 
-  const _PillNavItem({
+  const _NavItem({
     required this.icon,
     required this.label,
     required this.selected,
@@ -378,100 +472,98 @@ class _PillNavItem extends StatefulWidget {
   });
 
   @override
-  State<_PillNavItem> createState() => _PillNavItemState();
+  State<_NavItem> createState() => _NavItemState();
 }
 
-class _PillNavItemState extends State<_PillNavItem>
+class _NavItemState extends State<_NavItem>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _expand;
+  late final Animation<Color?>   _color;
+  bool _pressed = false;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 230),
       value: widget.selected ? 1.0 : 0.0,
     );
-    _expand = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+    _color = ColorTween(
+      begin: const Color(0xFF111827),  // bold near-black inactive
+      end:   const Color(0xFF2563EB),  // blue active
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
   }
 
   @override
-  void didUpdateWidget(_PillNavItem old) {
+  void didUpdateWidget(_NavItem old) {
     super.didUpdateWidget(old);
     if (widget.selected != old.selected) {
       widget.selected ? _ctrl.forward() : _ctrl.reverse();
+      if (_pressed) setState(() => _pressed = false);
     }
   }
 
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _ctrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
       behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
-        animation: _expand,
+        animation: _ctrl,
         builder: (_, __) {
-          final t = _expand.value;
+          final t = _ctrl.value;
           return Center(
-            child: Container(
-              height: 52,
-              padding: EdgeInsets.symmetric(horizontal: 8 + 4 * t),
-              decoration: BoxDecoration(
-                // Active: indigo gradient pill; Inactive: transparent
-                gradient: t > 0.01
-                    ? LinearGradient(
-                        colors: [
-                          Color.lerp(Colors.transparent,
-                              const Color(0xFF6366F1), t)!,
-                          Color.lerp(Colors.transparent,
-                              const Color(0xFF4338CA), t)!,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : null,
-                borderRadius: BorderRadius.circular(26),
-                boxShadow: t > 0.6
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFF6366F1)
-                              .withValues(alpha: 0.3 * t),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    widget.icon,
-                    size: 22,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon with tiny circle press highlight only
+                AnimatedScale(
+                  scale: _pressed ? 0.82 : 1.0,
+                  duration: const Duration(milliseconds: 90),
+                  curve: Curves.easeOut,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: _pressed
+                          ? const Color(0xFF2563EB).withValues(alpha: 0.10)
+                          : Colors.transparent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(widget.icon, size: 24,
+                        color: _color.value),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: _color.value,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                // Small active dot indicator
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: t > 0.1 ? 5.0 : 0.0,
+                  height: t > 0.1 ? 5.0 : 0.0,
+                  decoration: BoxDecoration(
                     color: Color.lerp(
-                      const Color(0xFF94A3B8),
-                      Colors.white,
-                      t,
-                    ),
+                        Colors.transparent, const Color(0xFF2563EB), t),
+                    shape: BoxShape.circle,
                   ),
-                  ClipRect(
-                    child: SizeTransition(
-                      sizeFactor: _expand,
-                      axis: Axis.horizontal,
-                      child: const SizedBox.shrink(),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },

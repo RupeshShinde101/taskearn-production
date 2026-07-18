@@ -178,6 +178,9 @@ class TaskProvider extends ChangeNotifier {
     double? radiusKm,
     double? minBudget,
     double? maxBudget,
+    String? excludePosterId,
+    String? sort,
+    bool expiringSoon = false,
     bool refresh = false,
   }) async {
     if (refresh) {
@@ -203,6 +206,10 @@ class TaskProvider extends ChangeNotifier {
         if (radiusKm != null) 'radius': '$radiusKm',
         if (minBudget != null) 'min_budget': '$minBudget',
         if (maxBudget != null) 'max_budget': '$maxBudget',
+        if (excludePosterId != null && excludePosterId.isNotEmpty)
+          'exclude_poster_id': excludePosterId,
+        if (sort != null && sort.isNotEmpty) 'sort': sort,
+        if (expiringSoon) 'expiring_soon': '1',
       };
 
       if (search != null && search.isNotEmpty) {
@@ -220,13 +227,10 @@ class TaskProvider extends ChangeNotifier {
 
       final data = await ApiService.get(endpoint, queryParams: params);
       final rawList = data['tasks'] as List? ?? [];
-      // Posted tasks expire after 24 h — filter client-side in case the backend
-      // doesn't clean them up immediately.
-      final expiryCutoff = DateTime.now().subtract(const Duration(hours: 24));
+      // Parse tasks — backend already excludes expired tasks (expires_at > now)
       var tasks = rawList.whereType<Map<String, dynamic>>().map((j) {
         try { return Task.fromJson(j); } catch (_) { return null; }
       }).whereType<Task>()
-          .where((t) => t.createdAt.isAfter(expiryCutoff))
           .toList();
 
       // Client-side radius filter as fallback (backend may not have location index)

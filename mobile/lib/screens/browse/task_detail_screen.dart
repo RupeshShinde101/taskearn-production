@@ -755,7 +755,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               const SizedBox(height: 8),
               // Delivery tasks: show pickup + drop separately
               if (const {'delivery', 'pickup', 'transport', 'moving'}
-                      .contains(task.category?.toLowerCase()) &&
+                      .contains(task.category.toLowerCase()) &&
                   (task.pickupAddress != null || task.dropAddress != null)) ...[
                 if (task.pickupAddress != null) ...[
                   Row(

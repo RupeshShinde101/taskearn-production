@@ -75,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchExpiringTasks([double? lat, double? lng]) async {
     try {
       final currentUserId =
-          context.read<AuthProvider>().user?.id?.toString();
+          context.read<AuthProvider>().user?.id.toString();
       final params = <String, String>{
         'limit': '8',
         'sort': 'expiry',
@@ -108,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchSuggestedTasks([double? lat, double? lng]) async {
     try {
       final currentUserId =
-          context.read<AuthProvider>().user?.id?.toString();
+          context.read<AuthProvider>().user?.id.toString();
       final params = <String, String>{
         'limit': '8',
         if (currentUserId != null && currentUserId.isNotEmpty)

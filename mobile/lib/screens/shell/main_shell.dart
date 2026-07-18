@@ -321,7 +321,7 @@ class _FloatingNavBar extends StatelessWidget {
           children: [
             // ── Notched pill bar ──────────────────────────────────────
             CustomPaint(
-              painter: _NavBarPainter(notchRadius: _notchR),
+              painter: const _NavBarPainter(notchRadius: _notchR),
               child: SizedBox(
                 height: _barH,
                 child: Row(
@@ -483,7 +483,7 @@ class _NavBarPainter extends CustomPainter {
     final cr  = h / 2;         // pill corner radius (fully rounded)
     final cx  = w / 2;
     final nr  = notchRadius;   // 42 — matches FAB halo radius
-    final t   = 12.0;          // horizontal transition before arc starts
+    const t   = 12.0;          // horizontal transition before arc starts
 
     final path = Path();
 

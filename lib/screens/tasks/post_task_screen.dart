@@ -41,7 +41,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
   bool _gettingLocation = false;
-  bool _showAllCategories = false;
+  final bool _showAllCategories = false;
   // Per-field lat/lng for delivery categories
   LatLng? _pickupLocation;
   LatLng? _dropLocation;

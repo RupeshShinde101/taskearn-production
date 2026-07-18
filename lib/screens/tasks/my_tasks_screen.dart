@@ -447,7 +447,7 @@ class _PostedTaskList extends StatelessWidget {
                       color: AppColors.danger.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(Icons.cancel_outlined,
+                    child: const Icon(Icons.cancel_outlined,
                         color: AppColors.danger, size: 22),
                   ),
                   const SizedBox(width: 14),

@@ -108,7 +108,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
           radiusKm: null,
           lat: _userLat,
           lng: _userLng,
-          excludePosterId: currentUserId,
+          excludePosterId: null,
           sort: useExpiry ? 'expiry' : null,
           expiringSoon: useExpiry,
           refresh: true,

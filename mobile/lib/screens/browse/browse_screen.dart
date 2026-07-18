@@ -28,6 +28,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _radiusKm = 10;
   Timer? _searchDebounce;
   bool _sortByExpiry = false;  // set when navigating from Expiring Soon
+  bool _radiusFilterActive = false; // true only after user taps Apply Filters
 
   // User's current GPS location for radius filtering
   double? _userLat;
@@ -102,7 +103,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
           maxBudget: _maxBudget < 5000 ? _maxBudget : null,
-          radiusKm: null,
+          radiusKm: _radiusFilterActive && _userLat != null ? _radiusKm : null,
           lat: _userLat,
           lng: _userLng,
           excludePosterId: null,
@@ -202,6 +203,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(ctx);
+                  setState(() => _radiusFilterActive = true);
                   _applyFilters();
                 },
                 child: const Text('Apply Filters'),
@@ -218,6 +220,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     setState(() {
       _selectedCategory = 'all';
       _maxBudget = 5000;
+      _radiusFilterActive = false;
       _searchCtrl.clear();
     });
     _applyFilters();

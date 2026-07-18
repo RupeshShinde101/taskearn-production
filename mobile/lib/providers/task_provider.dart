@@ -58,6 +58,21 @@ class TaskProvider extends ChangeNotifier {
   String? get error => _error;
   bool get hasMore => _hasMore;
 
+  /// True once tasks have been fetched at least once.
+  bool get hasMyTasksData =>
+      _myPostedTasks.isNotEmpty ||
+      _myAcceptedTasks.isNotEmpty ||
+      _myCompletedTasks.isNotEmpty;
+
+  /// Cache a list of tasks into [_browseTasks] so getTaskDetail can find them.
+  void cacheTasksForBrowse(List<Task> tasks) {
+    for (final t in tasks) {
+      if (!_browseTasks.any((b) => b.id == t.id)) {
+        _browseTasks.add(t);
+      }
+    }
+  }
+
   /// Returns true if the user currently has an accepted task that is not
   /// yet fully completed. Used to enforce one-task-at-a-time rule.
   bool get hasActiveAcceptedTask {

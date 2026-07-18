@@ -40,33 +40,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
 
-  static const Map<String, List<String>> _prompts = {
-    'delivery':    ['What to deliver?', 'Pickup point?', 'Drop point?', 'Item size/weight?', 'Urgent?'],
-    'pickup':      ['What to pick up?', 'From where?', 'Fragile?', 'Time constraint?'],
-    'transport':   ['How many people/items?', 'From → To?', 'Vehicle type needed?', 'Luggage?'],
-    'moving':      ['How many rooms?', 'Pickup floor?', 'Drop floor?', 'Need packing help?'],
-    'groceries':   ['Which items?', 'Which store/area?', 'Grocery budget?', 'Brand preference?'],
-    'cleaning':    ['How many rooms?', 'Type of cleaning?', 'Time slot?', 'Pets at home?'],
-    'cooking':     ['How many people?', 'What cuisine/dishes?', 'Dietary restrictions?', 'Time needed?'],
-    'laundry':     ['How many clothes?', 'Wash + fold or just fold?', 'Pick up from home?'],
-    'electrician': ['What electrical work?', 'Specific fault/issue?', 'Urgent?'],
-    'plumbing':    ['What plumbing issue?', 'Room affected?', 'Urgent?'],
-    'repair':      ['What to repair?', 'Brand/model?', 'How long broken?'],
-    'tutoring':    ['Which subject?', 'Grade/level?', 'Hours needed?', 'Online or in-person?'],
-    'carpentry':   ['What carpentry work?', 'Materials needed?', 'Approximate dimensions?'],
-    'painting':    ['What to paint?', 'Colour preference?', 'Area size?'],
-    'pet_care':    ['Type of pet?', 'Care needed?', 'Duration?', 'Vaccinated?'],
-    'child_care':  ['Age of child?', 'Duration?', 'Special needs?'],
-    'elder_care':  ['Type of care?', 'Duration?', 'Medical needs?'],
-    'photography': ['Type of shoot?', 'Duration?', 'Location?', 'Deliverables?'],
-    'data_entry':  ['Type of data?', 'Volume/pages?', 'Format needed?', 'Deadline?'],
-    'gardening':   ['Type of work?', 'Garden size?', 'Tools needed?'],
-    'errands':     ['What errand?', 'Location?', 'Time constraint?'],
-    'event_help':  ['Event type?', 'No. of guests?', 'Duration?', 'What help needed?'],
-    'tech_support':['Device type?', 'What issue?', 'OS/software?'],
-    'other':       ['Describe the task clearly?', 'Skills needed?', 'Expected duration?'],
-  };
-
   @override
   void initState() {
     super.initState();
@@ -104,14 +77,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _pickupAddrCtrl.dispose();
     _dropAddrCtrl.dispose();
     super.dispose();
-  }
-
-  void _appendPrompt(String text) {
-    final current = _descCtrl.text.trimRight();
-    _descCtrl.text = current.isEmpty ? '$text: ' : '$current\n$text: ';
-    _descCtrl.selection =
-        TextSelection.fromPosition(TextPosition(offset: _descCtrl.text.length));
-    setState(() {});
   }
 
   Future<void> _pickLocationFromMap() async {
@@ -359,32 +324,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                     ? 'Min 10 characters'
                     : null,
               ),
-              // Prompt chips
-              if ((_prompts[_selectedCategory] ?? []).isNotEmpty) ...[
-                const SizedBox(height: 4),
-                const Text('Add details:',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.gray,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: (_prompts[_selectedCategory]!).map((p) {
-                    return ActionChip(
-                      label: Text(p,
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.dark)),
-                      onPressed: () => _appendPrompt(p),
-                      backgroundColor: AppColors.light,
-                      side: const BorderSide(color: AppColors.border),
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      visualDensity: VisualDensity.compact,
-                    );
-                  }).toList(),
-                ),
-              ],
               const SizedBox(height: 14),
 
               // Budget

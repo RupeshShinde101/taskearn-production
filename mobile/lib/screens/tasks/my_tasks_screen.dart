@@ -314,9 +314,9 @@ class _PostedTaskList extends StatelessWidget {
                                 label: const Text('Edit'),
                                 onPressed: () async {
                                   final updated =
-                                      await Navigator.push<bool>(
-                                    context,
+                                      await Navigator.of(context, rootNavigator: true).push<bool>(
                                     MaterialPageRoute(
+                                      fullscreenDialog: true,
                                       builder: (_) =>
                                           EditTaskScreen(task: t),
                                     ),

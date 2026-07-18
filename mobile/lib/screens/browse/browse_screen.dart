@@ -2,12 +2,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
+import '../../services/location_service.dart';
 
 class BrowseScreen extends StatefulWidget {
+  /// Set by the home screen before calling context.go('/browse') so that the
+  /// browse screen can pre-select and filter by that category on arrival.
+  static String? jumpToCategory;
+  /// Set before navigating to show tasks sorted by soonest-expiring first.
+  static bool jumpToExpirySoon = false;
+
   const BrowseScreen({super.key});
 
   @override
@@ -20,33 +28,64 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _maxBudget = 5000;
   double _radiusKm = 10;
   Timer? _searchDebounce;
-  /// Ticks every minute so tasks that cross the 24-h expiry boundary are
-  /// removed from the visible list without needing a manual refresh.
-  Timer? _expiryTicker;
+  bool _sortByExpiry = false;  // set when navigating from Expiring Soon
+
+  // User's current GPS location for radius filtering
+  double? _userLat;
+  double? _userLng;
+  bool _locationDenied = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Consume the category signal set by the home screen before navigating.
+    final cat = BrowseScreen.jumpToCategory;
+    if (cat != null) {
+      BrowseScreen.jumpToCategory = null; // consume once
+      setState(() => _selectedCategory = cat);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    }
+    // Consume the expiry-sort signal.
+    if (BrowseScreen.jumpToExpirySoon) {
+      BrowseScreen.jumpToExpirySoon = false;
+      _sortByExpiry = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _searchCtrl.addListener(_onSearchChanged);
-    // Defer until after first build to avoid setState-during-build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      context.read<TaskProvider>().fetchBrowseTasks(
-            category: _selectedCategory,
-            radiusKm: _radiusKm,
-            refresh: true,
-          );
+      // Resolve GPS first so the 10 km radius filter is applied from the start.
+      await _fetchLocation();
+      if (!mounted) return;
+      _applyFilters();
     });
-    // Trigger a rebuild every minute so expired tasks are wiped from the list
-    // even if the user hasn't refreshed.
-    _expiryTicker = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
-    });
+  }
+
+  Future<void> _fetchLocation() async {
+    final pos = await LocationService.getCurrentLocation();
+    if (!mounted) return;
+    if (pos != null) {
+      setState(() {
+        _userLat = pos.latitude;
+        _userLng = pos.longitude;
+        _locationDenied = false;
+      });
+    } else {
+      setState(() => _locationDenied = true);
+    }
   }
 
   @override
   void dispose() {
-    _expiryTicker?.cancel();
     _searchDebounce?.cancel();
     _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
@@ -58,12 +97,20 @@ class _BrowseScreenState extends State<BrowseScreen> {
     _searchDebounce = Timer(const Duration(milliseconds: 500), _applyFilters);
   }
 
-  void _applyFilters() {
+  void _applyFilters({bool sortByExpiry = false}) {
+    final currentUserId =
+        context.read<AuthProvider>().user?.id.toString();
+    final useExpiry = sortByExpiry || _sortByExpiry;
     context.read<TaskProvider>().fetchBrowseTasks(
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
           maxBudget: _maxBudget < 5000 ? _maxBudget : null,
-          radiusKm: _radiusKm,
+          radiusKm: _userLat != null ? _radiusKm : null,
+          lat: _userLat,
+          lng: _userLng,
+          excludePosterId: currentUserId,
+          sort: useExpiry ? 'expiry' : null,
+          expiringSoon: useExpiry,
           refresh: true,
         );
   }
@@ -72,6 +119,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -137,18 +185,26 @@ class _BrowseScreenState extends State<BrowseScreen> {
                       style: const TextStyle(color: AppColors.primary)),
                 ],
               ),
+              if (_locationDenied)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '\u26a0\ufe0f Location permission denied — radius filter disabled',
+                    style: TextStyle(color: AppColors.danger, fontSize: 12),
+                  ),
+                ),
               Slider(
                 value: _radiusKm,
                 min: 1,
                 max: 50,
                 divisions: 49,
-                activeColor: AppColors.primary,
-                onChanged: (v) => setModal(() => _radiusKm = v),
+                activeColor: _locationDenied ? AppColors.grayLight : AppColors.primary,
+                onChanged: _locationDenied ? null : (v) => setModal(() => _radiusKm = v),
               ),
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context);
+                  Navigator.pop(ctx);
                   _applyFilters();
                 },
                 child: const Text('Apply Filters'),
@@ -160,6 +216,20 @@ class _BrowseScreenState extends State<BrowseScreen> {
       ),
     );
   }
+
+  void _clearFilters() {
+    setState(() {
+      _selectedCategory = 'all';
+      _maxBudget = 5000;
+      _searchCtrl.clear();
+    });
+    _applyFilters();
+  }
+
+  bool get _hasActiveFilters =>
+      _selectedCategory != 'all' ||
+      _maxBudget < 5000 ||
+      _searchCtrl.text.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -206,20 +276,73 @@ class _BrowseScreenState extends State<BrowseScreen> {
                 }
 
                 if (tasks.browseTasks.isEmpty) {
+                  final filtersActive = _hasActiveFilters;
                   return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.inbox_outlined,
-                            size: 64, color: AppColors.grayLight),
-                        const SizedBox(height: 12),
-                        const Text('No tasks available'),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: _applyFilters,
-                          child: const Text('Refresh'),
-                        ),
-                      ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: AppColors.grayLight.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              filtersActive
+                                  ? Icons.search_off_rounded
+                                  : Icons.inbox_outlined,
+                              size: 32,
+                              color: AppColors.gray,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            filtersActive
+                                ? 'No tasks match your filters'
+                                : 'No tasks available',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.dark,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            filtersActive
+                                ? 'Try adjusting or clearing your filters'
+                                : 'Check back later for new tasks',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.gray,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          if (filtersActive)
+                            OutlinedButton.icon(
+                              onPressed: _clearFilters,
+                              icon: const Icon(Icons.close_rounded, size: 16),
+                              label: const Text('Clear Filters'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(color: AppColors.primary),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24)),
+                              ),
+                            )
+                          else
+                            TextButton(
+                              onPressed: _applyFilters,
+                              child: const Text('Refresh'),
+                            ),
+                        ],
+                      ),
                     ),
                   );
                 }
@@ -227,6 +350,8 @@ class _BrowseScreenState extends State<BrowseScreen> {
                 return RefreshIndicator(
                   onRefresh: () async => _applyFilters(),
                   child: ListView.builder(
+                    padding: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).padding.bottom),
                     itemCount: tasks.browseTasks.length,
                     itemBuilder: (_, i) => TaskCard(
                       task: tasks.browseTasks[i],

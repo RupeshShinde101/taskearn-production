@@ -24,6 +24,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _descCtrl = TextEditingController();
   final _budgetCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
+  final _flatNameCtrl = TextEditingController();
+  final _areaCtrl    = TextEditingController();
+  String _addressType = 'home';
   // Delivery-specific: separate pickup & drop location fields
   final _pickupAddrCtrl = TextEditingController();
   final _dropAddrCtrl = TextEditingController();
@@ -32,11 +35,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   /// Stores the last template auto-filled into the description field so we can
   /// detect whether the user has modified it before replacing on category change.
   String _lastAutoFilledDesc = '';
+  final _categorySearchCtrl = TextEditingController();
+  String _categorySearch = '';
   LatLng? _location;
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
   bool _gettingLocation = false;
-  bool _showAllCategories = false;
+  final bool _showAllCategories = false;
   // Per-field lat/lng for delivery categories
   LatLng? _pickupLocation;
   LatLng? _dropLocation;
@@ -108,6 +113,188 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     setState(() {});
   }
 
+  /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
+  void _showSubCategorySheet(TaskCategoryGroup group) {
+    FocusScope.of(context).unfocus();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      transitionDuration: const Duration(milliseconds: 260),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved =
+            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (ctx, _, __) {
+        final maxH = MediaQuery.of(ctx).size.height - 48;
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              constraints: BoxConstraints(maxWidth: 420, maxHeight: maxH),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 40,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppColors.primary, AppColors.primaryDark],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(group.icon,
+                            style: const TextStyle(fontSize: 26)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(group.label,
+                                  style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white)),
+                              const Text('Select a specific category',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white70)),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.20),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close,
+                                color: Colors.white, size: 18),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: group.subCategories.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            mainAxisExtent: 90,
+                          ),
+                          itemBuilder: (_, i) {
+                            final c = group.subCategories[i];
+                            final sel = _selectedCategory == c.id;
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedCategory = c.id;
+                                  _autoFillDescription();
+                                });
+                                Navigator.pop(ctx);
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                decoration: BoxDecoration(
+                                  color: sel
+                                      ? AppColors.primary
+                                      : AppColors.light,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: sel
+                                        ? AppColors.primary
+                                        : AppColors.border,
+                                    width: sel ? 2 : 1,
+                                  ),
+                                  boxShadow: sel
+                                      ? [
+                                          BoxShadow(
+                                            color: AppColors.primary
+                                                .withValues(alpha: 0.25),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          )
+                                        ]
+                                      : null,
+                                ),
+                                child: Column(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  children: [
+                                    Text(c.icon,
+                                        style: const TextStyle(
+                                            fontSize: 22)),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      c.label,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: sel
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                        color: sel
+                                            ? Colors.white
+                                            : AppColors.dark,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   /// Auto-fill description with category-specific prompts/questions.
   /// Called when a category is selected to guide the user on what to describe.
   /// Replaces the description if it is still the previously auto-filled template
@@ -140,6 +327,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _descCtrl.dispose();
     _budgetCtrl.dispose();
     _addressCtrl.dispose();
+    _flatNameCtrl.dispose();
+    _areaCtrl.dispose();
     _pickupAddrCtrl.dispose();
     _dropAddrCtrl.dispose();
     super.dispose();
@@ -178,6 +367,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           if (!_isDelivery && _addressCtrl.text.isEmpty && addr != null) {
             _addressCtrl.text = addr;
           }
+          // Auto-fill Area field with subLocality + locality
+          if (_areaCtrl.text.isEmpty) {
+            final areaStr = [p.subLocality, p.locality, p.administrativeArea]
+                .where((s) => s != null && s.isNotEmpty)
+                .map((s) => s!)
+                .join(', ');
+            if (areaStr.isNotEmpty) _areaCtrl.text = areaStr;
+          }
         }
       }
     } catch (_) {}
@@ -198,6 +395,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _locationLabel = addr;
         if (!_isDelivery && addr != null) _addressCtrl.text = addr;
       });
+      // Auto-fill Area field when empty
+      if (_areaCtrl.text.isEmpty && addr != null) {
+        _areaCtrl.text = addr;
+      }
     }
   }
 
@@ -441,39 +642,181 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     // Confirm posting — payment is collected AFTER the helper completes the task
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Post Task'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Your task will be posted for helpers to accept.\n'
-              'You will only be charged when the helper completes the work and you verify it.',
-              style: TextStyle(color: AppColors.gray, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            _CostRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
-            if (charge > 0) _CostRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
-            const Divider(height: 20),
-            _CostRow('Total (due on verification)', '₹${total.toStringAsFixed(0)}',
-                bold: true),
-          ],
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+        child: SingleChildScrollView(
+          child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Icon + Title row
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.rocket_launch_rounded,
+                        color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Post Your Task',
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF1E293B),
+                              letterSpacing: -0.4)),
+                      Text('Review before posting',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF94A3B8))),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              // Info banner
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F4FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE0E7FF)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline_rounded,
+                        size: 16, color: Color(0xFF6366F1)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'You only pay after the helper finishes and you verify the work. No upfront charge.',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: const Color(0xFF6366F1).withValues(alpha: 0.85),
+                            height: 1.45),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Cost breakdown
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    _CostRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
+                    if (charge > 0) ...[
+                      const SizedBox(height: 8),
+                      _CostRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
+                    ],
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Total (due on verification)',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13.5,
+                                color: Color(0xFF1E293B))),
+                        Text('₹${total.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                                color: Color(0xFF4338CA))),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Action buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF64748B),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: const Text('Cancel',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 14)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF6366F1).withValues(alpha: 0.35),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        icon: const Icon(Icons.rocket_launch_rounded, size: 16),
+                        label: const Text('Post Task',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700, fontSize: 14)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          shadowColor: Colors.transparent,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Post Task'),
-          ),
-        ],
+        ),
       ),
     );
     if (confirm != true || !mounted) return;
@@ -489,8 +832,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           ? 'Pickup: $pickup\nDrop: $drop'
           : _locationLabel;
     } else {
-      final typed = _addressCtrl.text.trim();
-      combinedAddress = typed.isNotEmpty ? typed : _locationLabel;
+      final typed    = _addressCtrl.text.trim();
+      final flatName  = _flatNameCtrl.text.trim();
+      final area      = _areaCtrl.text.trim();
+      final addrParts = <String>[
+        if (flatName.isNotEmpty) flatName,
+        if (area.isNotEmpty) area,
+        if (typed.isNotEmpty) typed,
+      ];
+      combinedAddress = addrParts.isNotEmpty
+          ? addrParts.join(', ')
+          : _locationLabel;
     }
 
     final taskData = {
@@ -506,6 +858,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'lng': taskLocation.longitude,
         'address': combinedAddress ?? '',
       },
+      'address_type': _addressType,
       if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
         'pickup_address': _pickupAddrCtrl.text.trim(),
       if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty) ...{
@@ -564,122 +917,199 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ),
               const SizedBox(height: 14),
 
-              // ── Category grid ───────────────────────────────────────
+  // ── Category picker (hierarchical) ──────────────────────
               const Text('Category',
                   style: TextStyle(
                       fontWeight: FontWeight.w600, color: AppColors.dark)),
-              const SizedBox(height: 8),
-              LayoutBuilder(builder: (ctx, constraints) {
-                final cats = _showAllCategories
-                    ? TaskCategory.all
-                    : TaskCategory.all.take(12).toList();
-                const crossCount = 4;
-                return Column(
-                  children: [
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: cats.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossCount,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 70 / 70,
+              const SizedBox(height: 4),
+              // Selected category pill
+              if (_selectedCategory.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: AppColors.primary, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Selected: ${TaskCategory.all.firstWhere((c) => c.id == _selectedCategory, orElse: () => TaskCategory(id: '', label: _selectedCategory, icon: '')).label}',
+                        style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
                       ),
-                      itemBuilder: (ctx, i) {
-                        final c = cats[i];
-                        final sel = _selectedCategory == c.id;
-                        return GestureDetector(
-                          onTap: () => setState(() {
-                            _selectedCategory = c.id;
-                            _autoFillDescription();
+                    ],
+                  ),
+                ),
+              // Category search bar
+              TextField(
+                controller: _categorySearchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search category\u2026',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _categorySearch.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => setState(() {
+                            _categorySearchCtrl.clear();
+                            _categorySearch = '';
                           }),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            decoration: BoxDecoration(
-                              color: sel
-                                  ? AppColors.primary
-                                  : AppColors.light,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: sel
-                                    ? AppColors.primary
-                                    : AppColors.border,
-                                width: sel ? 2 : 1,
-                              ),
-                              boxShadow: sel
-                                  ? [
-                                      BoxShadow(
-                                        color: AppColors.primary
-                                            .withValues(alpha: 0.25),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
-                                      )
-                                    ]
-                                  : null,
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(c.icon,
-                                    style: const TextStyle(fontSize: 22)),
-                                const SizedBox(height: 4),
-                                Text(
-                                  c.label,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: sel
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: sel
-                                        ? Colors.white
-                                        : AppColors.dark,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
+                        )
+                      : null,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                onChanged: (v) => setState(() {
+                  _categorySearch = v.trim().toLowerCase();
+                  if (_categorySearch.isNotEmpty) {
+                    final match = TaskCategory.all.firstWhere(
+                      (c) => c.label.toLowerCase().contains(_categorySearch) ||
+                             c.id.contains(_categorySearch),
+                      orElse: () => TaskCategory.all.first,
+                    );
+                    _selectedCategory = match.id;
+                    _autoFillDescription();
+                  }
+                }),
+              ),
+              const SizedBox(height: 10),
+              // Show search results OR parent category groups
+              if (_categorySearch.isNotEmpty) ...[
+                // ── Flat search results ───────────────────────────────
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: TaskCategory.all
+                      .where((c) => c.label.toLowerCase().contains(_categorySearch) ||
+                                    c.id.contains(_categorySearch))
+                      .map((c) {
+                    final sel = _selectedCategory == c.id;
+                    return GestureDetector(
+                      onTap: () => setState(() {
+                        _selectedCategory = c.id;
+                        _categorySearchCtrl.clear();
+                        _categorySearch = '';
+                        _autoFillDescription();
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.primary,
+                            width: sel ? 2 : 1.5,
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 6),
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _showAllCategories = !_showAllCategories),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              _showAllCategories
-                                  ? 'Show fewer categories'
-                                  : 'Show all categories',
-                              style: const TextStyle(
-                                color: AppColors.primary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              _showAllCategories
-                                  ? Icons.keyboard_arrow_up
-                                  : Icons.keyboard_arrow_down,
-                              color: AppColors.primary,
-                              size: 16,
-                            ),
+                            Text(c.icon, style: const TextStyle(fontSize: 16)),
+                            const SizedBox(width: 6),
+                            Text(c.label,
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: sel ? Colors.white : AppColors.dark)),
                           ],
                         ),
                       ),
-                    ),
-                  ],
-                );
-              }),
+                    );
+                  }).toList(),
+                ),
+              ] else ...[
+                // ── Parent category grid ──────────────────────────────
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: TaskCategoryGroup.all.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.0,
+                  ),
+                  itemBuilder: (ctx, i) {
+                    final group = TaskCategoryGroup.all[i];
+                    // Check if current selection belongs to this group
+                    final groupActive = group.categoryIds.contains(_selectedCategory);
+                    return GestureDetector(
+                      onTap: () {
+                        FocusScope.of(context).unfocus();
+                        _showSubCategorySheet(group);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        decoration: BoxDecoration(
+                          color: groupActive ? AppColors.primary : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: groupActive ? AppColors.primary : AppColors.border,
+                            width: groupActive ? 2 : 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: groupActive
+                                  ? AppColors.primary.withValues(alpha: 0.2)
+                                  : Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(group.icon, style: const TextStyle(fontSize: 26)),
+                            const SizedBox(height: 6),
+                            Text(
+                              group.label,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: groupActive ? Colors.white : AppColors.dark,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (groupActive) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                TaskCategory.all.firstWhere(
+                                  (c) => c.id == _selectedCategory,
+                                  orElse: () => const TaskCategory(id: '', label: '', icon: ''),
+                                ).label,
+                                style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w500),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 14),
 
               // Description
@@ -688,7 +1118,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 maxLines: 4,
                 decoration: const InputDecoration(
                   labelText: 'Description',
-                  hintText: 'Describe what needs to be done…',
+                  hintText: 'Describe what needs to be done\u2026',
                   prefixIcon: Icon(Icons.description_outlined),
                   alignLabelWithHint: true,
                 ),
@@ -867,9 +1297,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ],
               ] else ...[
-                // Single address for non-delivery tasks
+                // ── Address / Landmark ──────────────────────────────────────
                 TextFormField(
                   controller: _addressCtrl,
+                  readOnly: true,
                   decoration: InputDecoration(
                     labelText: 'Address / Landmark (optional)',
                     prefixIcon: const Icon(Icons.location_on_outlined),
@@ -895,6 +1326,120 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           color: AppColors.success, fontSize: 11),
                     ),
                   ),
+
+                // ── Flat / House / Building name ───────────────────────
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _flatNameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Flat / House / Building name',
+                    hintText: 'e.g. Flat 2B, Sunrise Apartments',
+                    prefixIcon: Icon(Icons.home_outlined),
+                  ),
+                ),
+
+                // ── Area / Sector / Locality ───────────────────────────
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _areaCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Area / Sector / Locality',
+                    hintText: 'e.g. Baner, Pune',
+                    prefixIcon: Icon(Icons.map_outlined),
+                  ),
+                ),
+
+                // ── Home / Work selector ───────────────────────────────
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _addressType = 'home'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: BoxDecoration(
+                            color: _addressType == 'home'
+                                ? AppColors.primary
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _addressType == 'home'
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.home_rounded,
+                                  size: 18,
+                                  color: _addressType == 'home'
+                                      ? Colors.white
+                                      : AppColors.gray),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Home',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: _addressType == 'home'
+                                      ? Colors.white
+                                      : AppColors.gray,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _addressType = 'work'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: BoxDecoration(
+                            color: _addressType == 'work'
+                                ? AppColors.primary
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _addressType == 'work'
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.work_rounded,
+                                  size: 18,
+                                  color: _addressType == 'work'
+                                      ? Colors.white
+                                      : AppColors.gray),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Work',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: _addressType == 'work'
+                                      ? Colors.white
+                                      : AppColors.gray,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
 
               const SizedBox(height: 14),

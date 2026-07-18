@@ -19,6 +19,7 @@ class Task {
   final String? city;
   final double? distanceKm;
   final DateTime createdAt;
+  final DateTime? expiresAt;
   final DateTime? acceptedAt;
   final DateTime? completedAt;
   final double? helperRating;
@@ -66,6 +67,7 @@ class Task {
     this.city,
     this.distanceKm,
     required this.createdAt,
+    this.expiresAt,
     this.acceptedAt,
     this.completedAt,
     this.helperRating,
@@ -125,22 +127,20 @@ class Task {
 
   /// Parse any date/time value the server may send and return a local DateTime.
   static DateTime _parseDate(dynamic value) {
-    if (value == null) return DateTime.now();
+    if (value == null) return DateTime.now().toUtc();
     final s = value.toString().trim();
-    if (s.isEmpty) return DateTime.now();
+    if (s.isEmpty) return DateTime.now().toUtc();
     // Detect an explicit timezone marker: trailing 'Z' or an offset like +05:30
     final hasZone =
         s.endsWith('Z') || RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
     if (!hasZone) {
-      // No timezone marker → server sends UTC without 'Z'. Append Z before
-      // parsing so Dart treats it as UTC and then converts to local correctly.
       final utc = DateTime.tryParse('${s}Z');
-      if (utc != null) return utc.toLocal();
+      if (utc != null) return utc; // already UTC (isUtc=true)
     }
     final dt = DateTime.tryParse(s);
-    if (dt != null) return dt.isUtc ? dt.toLocal() : dt;
+    if (dt != null) return dt.isUtc ? dt : dt.toUtc();
     // Last resort: RFC-1123 / HTTP-date from Flask's default JSON encoder.
-    return _parseRfc1123(s) ?? DateTime.now();
+    return _parseRfc1123(s)?.toUtc() ?? DateTime.now().toUtc();
   }
 
   /// Like [_parseDate] but returns null for null/empty/unparseable values
@@ -154,11 +154,11 @@ class Task {
         s.endsWith('Z') || RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
     if (!hasZone) {
       final utc = DateTime.tryParse('${s}Z');
-      if (utc != null) return utc.toLocal();
+      if (utc != null) return utc;
     }
     final dt = DateTime.tryParse(s);
-    if (dt != null) return dt.isUtc ? dt.toLocal() : dt;
-    return _parseRfc1123(s);
+    if (dt != null) return dt.isUtc ? dt : dt.toUtc();
+    return _parseRfc1123(s)?.toUtc();
   }
 
   /// Returns the first non-empty string value found in [map] for any of [keys].
@@ -281,6 +281,7 @@ class Task {
       createdAt: _parseDate(
           json['created_at'] ?? json['postedAt'] ?? json['posted_at']
       ),
+      expiresAt: _parseDateOrNull(json['expiresAt'] ?? json['expires_at']),
       acceptedAt: _parseDateOrNull(json['accepted_at'] ?? json['acceptedAt']),
       completedAt: _parseDateOrNull(
           json['completed_at'] ?? json['completedAt'] ??
@@ -308,8 +309,7 @@ class Task {
           ?? json['pickup_address']?.toString()
           ?? json['pickupAddress']?.toString()
           ?? json['pickup_addr']?.toString()
-          ?? json['from_address']?.toString()
-          ?? locAddr?.toString(),  // location.address IS the pickup for delivery tasks
+          ?? json['from_address']?.toString(),
       dropAddress: (dropLoc is Map ? dropLoc['address'] : null)?.toString()
           ?? (destination is Map ? destination['address'] : null)?.toString()
           ?? json['drop_location_address']?.toString()
@@ -516,8 +516,8 @@ class TaskCategory {
 
   static const List<TaskCategory> all = [
     TaskCategory(id: 'delivery', label: 'Delivery', icon: '🚚'),
-    TaskCategory(id: 'pickup', label: 'Pickup', icon: '📦'),
-    TaskCategory(id: 'transport', label: 'Transport', icon: '🚗'),
+    // TaskCategory(id: 'pickup', label: 'Pickup', icon: '📦'),   // disabled
+    // TaskCategory(id: 'transport', label: 'Transport', icon: '🚗'), // disabled
     TaskCategory(id: 'moving', label: 'Moving', icon: '🏠'),
     TaskCategory(id: 'groceries', label: 'Groceries', icon: '🛒'),
     TaskCategory(id: 'cooking', label: 'Cooking', icon: '🍳'),
@@ -554,4 +554,62 @@ class TaskCategory {
       orElse: () => const TaskCategory(id: '', label: '', icon: '📋'),
     ).icon;
   }
+}
+
+/// A parent/group category for the hierarchical category picker in post task.
+class TaskCategoryGroup {
+  final String label;
+  final String icon;
+  final List<String> categoryIds;
+
+  const TaskCategoryGroup({
+    required this.label,
+    required this.icon,
+    required this.categoryIds,
+  });
+
+  List<TaskCategory> get subCategories => categoryIds
+      .map((id) => TaskCategory.all.firstWhere(
+            (c) => c.id == id,
+            orElse: () => TaskCategory(id: id, label: id, icon: '📋'),
+          ))
+      .toList();
+
+  static const List<TaskCategoryGroup> all = [
+    TaskCategoryGroup(
+      label: 'Engineering & Repair',
+      icon: '🔧',
+      categoryIds: ['electrician', 'plumbing', 'repair', 'carpentry', 'painting', 'vehicle', 'tech_support'],
+    ),
+    TaskCategoryGroup(
+      label: 'Home & Lifestyle',
+      icon: '🏠',
+      categoryIds: ['cleaning', 'laundry', 'cooking', 'household', 'gardening', 'beauty'],
+    ),
+    TaskCategoryGroup(
+      label: 'Delivery & Moving',
+      icon: '🚚',
+      categoryIds: ['delivery', 'moving'],
+    ),
+    TaskCategoryGroup(
+      label: 'Shopping & Errands',
+      icon: '🛒',
+      categoryIds: ['groceries', 'shopping', 'errands', 'event_help', 'queue_standing'],
+    ),
+    TaskCategoryGroup(
+      label: 'Professional',
+      icon: '💼',
+      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring'],
+    ),
+    TaskCategoryGroup(
+      label: 'Care Services',
+      icon: '❤️',
+      categoryIds: ['child_care', 'elder_care', 'pet_care'],
+    ),
+    TaskCategoryGroup(
+      label: 'Other',
+      icon: '📋',
+      categoryIds: ['other'],
+    ),
+  ];
 }

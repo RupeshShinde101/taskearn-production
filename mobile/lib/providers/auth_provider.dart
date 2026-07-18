@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -51,6 +49,9 @@ class AuthProvider extends ChangeNotifier {
     // No-op if already logged out (guard against multiple concurrent 401s).
     if (_status == AuthStatus.unauthenticated) return;
     debugPrint('[AUTH] Received 401 — token expired or invalid. Forcing logout.');
+    // Best-effort: delete Firebase token so the device stops receiving FCM
+    // messages even if the backend call below fails.
+    try { await NotificationService.clearFcmToken(); } catch (_) {}
     await StorageService.clearSession();
     _user = null;
     _status = AuthStatus.unauthenticated;
@@ -180,6 +181,7 @@ class AuthProvider extends ChangeNotifier {
     String? dob,
     String? inviteCode,
     String? referralCode,
+    String? termsAcceptedAt,
   }) async {
     _loading = true;
     _error = null;
@@ -207,6 +209,8 @@ class AuthProvider extends ChangeNotifier {
         'invite_code': inviteCode.trim().toUpperCase(),
       if (referralCode != null && referralCode.isNotEmpty)
         'referral_code': referralCode.trim(),
+      if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
+      'terms_version': '2026-05-22',
     };
 
     // ── Attempt registration (one auto-retry on transient network errors) ──
@@ -257,6 +261,10 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Delete the Firebase FCM token FIRST so this device immediately stops
+    // receiving push notifications, regardless of whether the backend call
+    // succeeds or fails.
+    try { await NotificationService.clearFcmToken(); } catch (_) {}
     try {
       await ApiService.post('/auth/logout');
     } catch (_) {}
@@ -344,7 +352,9 @@ class AuthProvider extends ChangeNotifier {
       if (skills != null) body['skills'] = skills;
       if (phone != null && phone.trim().isNotEmpty) body['phone'] = phone.trim();
       if (email != null && email.trim().isNotEmpty) body['email'] = email.trim();
-      if (avatarDataUri != null && avatarDataUri.isNotEmpty) body['avatar'] = avatarDataUri;
+      if (avatarDataUri != null && avatarDataUri.isNotEmpty) {
+        body['profile_photo'] = avatarDataUri;
+      }
 
       await ApiService.put('/user/profile', body: body);
       // Persist gender locally immediately so the home emoji updates even
@@ -369,39 +379,6 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } on ApiException catch (e) {
       _error = e.message;
-      _loading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// Upload a new profile photo.
-  /// Reads the picked image file, encodes it as a base64 data URI, and sends
-  /// it via the existing PUT /user/profile endpoint — no separate backend
-  /// endpoint required, and the app's avatarImage() already handles data: URIs.
-  Future<bool> updateAvatar(String filePath) async {
-    _loading = true;
-    _error = null;
-    notifyListeners();
-    try {
-      final bytes = await File(filePath).readAsBytes();
-      final ext = filePath.split('.').last.toLowerCase();
-      final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
-      final dataUri = 'data:$mime;base64,${base64Encode(bytes)}';
-
-      await ApiService.put('/user/profile', body: {'avatar': dataUri});
-      await refreshUser();
-      _loading = false;
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
-      _loading = false;
-      notifyListeners();
-      return false;
-    } catch (e) {
-      debugPrint('[AUTH] updateAvatar error: $e');
-      _error = 'Failed to update photo. Please try again.';
       _loading = false;
       notifyListeners();
       return false;

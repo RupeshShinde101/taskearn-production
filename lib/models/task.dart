@@ -19,6 +19,7 @@ class Task {
   final String? city;
   final double? distanceKm;
   final DateTime createdAt;
+  final DateTime? expiresAt;
   final DateTime? acceptedAt;
   final DateTime? completedAt;
   final double? helperRating;
@@ -66,6 +67,7 @@ class Task {
     this.city,
     this.distanceKm,
     required this.createdAt,
+    this.expiresAt,
     this.acceptedAt,
     this.completedAt,
     this.helperRating,
@@ -83,32 +85,44 @@ class Task {
   });
 
   // Parse a date string that may be ISO-8601 or RFC-2822.
-  // PostgreSQL returns UTC timestamps without 'Z' suffix; we treat naive
-  // timestamps (no timezone info) as UTC so the 48-h expiry filter is accurate.
+  // PostgreSQL returns UTC timestamps WITHOUT a 'Z' suffix (e.g. "2026-07-13 10:30:00").
+  // DateTime.tryParse() without a timezone treats the string as LOCAL time.
+  // Fix: if no timezone marker is present, append 'Z' so Dart treats it as UTC
+  // and converts to local for display.
+  static bool _hasTimezone(String s) =>
+      s.endsWith('Z') ||
+      s.endsWith('z') ||
+      RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
+
   static DateTime _parseDate(dynamic value) {
-    if (value == null) return DateTime.now();
+    if (value == null) return DateTime.now().toUtc();
     final s = value.toString().trim();
-    var iso = DateTime.tryParse(s);
-    iso ??= DateTime.tryParse('${s}Z');
-    if (iso != null) {
-      // If string had no timezone marker, the parsed value is already UTC
-      // (we appended Z above). Convert to local for consistent UI display.
-      return iso.isUtc ? iso.toLocal() : iso;
+    if (s.isEmpty) return DateTime.now().toUtc();
+    final DateTime? iso;
+    if (_hasTimezone(s)) {
+      iso = DateTime.tryParse(s);
+    } else {
+      // No timezone marker — server sends UTC; append 'Z' to parse correctly.
+      iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
     }
-    return DateTime.now();
+    // Always return UTC so microsecondsSinceEpoch gives the true epoch.
+    if (iso != null) return iso.isUtc ? iso : iso.toUtc();
+    return DateTime.now().toUtc();
   }
 
-  /// Like [_parseDate] but returns null for null/empty/unparseable values
-  /// instead of falling back to DateTime.now().  Used for optional timestamps
-  /// (completedAt, acceptedAt) so we never invent a fake timestamp.
+  /// Like [_parseDate] but returns null for null/empty/unparseable values.
   static DateTime? _parseDateOrNull(dynamic value) {
     if (value == null) return null;
     final s = value.toString().trim();
     if (s.isEmpty) return null;
-    var iso = DateTime.tryParse(s);
-    iso ??= DateTime.tryParse('${s}Z');
+    final DateTime? iso;
+    if (_hasTimezone(s)) {
+      iso = DateTime.tryParse(s);
+    } else {
+      iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
+    }
     if (iso == null) return null;
-    return iso.isUtc ? iso.toLocal() : iso;
+    return iso.isUtc ? iso : iso.toUtc();
   }
 
   /// Returns the first non-empty string value found in [map] for any of [keys].
@@ -231,6 +245,7 @@ class Task {
       createdAt: _parseDate(
           json['created_at'] ?? json['postedAt'] ?? json['posted_at']
       ),
+      expiresAt: _parseDateOrNull(json['expiresAt'] ?? json['expires_at']),
       acceptedAt: _parseDateOrNull(json['accepted_at'] ?? json['acceptedAt']),
       completedAt: _parseDateOrNull(
           json['completed_at'] ?? json['completedAt'] ??
@@ -258,8 +273,7 @@ class Task {
           ?? json['pickup_address']?.toString()
           ?? json['pickupAddress']?.toString()
           ?? json['pickup_addr']?.toString()
-          ?? json['from_address']?.toString()
-          ?? locAddr?.toString(),  // location.address IS the pickup for delivery tasks
+          ?? json['from_address']?.toString(),
       dropAddress: (dropLoc is Map ? dropLoc['address'] : null)?.toString()
           ?? (destination is Map ? destination['address'] : null)?.toString()
           ?? json['drop_location_address']?.toString()
@@ -466,8 +480,8 @@ class TaskCategory {
 
   static const List<TaskCategory> all = [
     TaskCategory(id: 'delivery', label: 'Delivery', icon: '🚚'),
-    TaskCategory(id: 'pickup', label: 'Pickup', icon: '📦'),
-    TaskCategory(id: 'transport', label: 'Transport', icon: '🚗'),
+    // TaskCategory(id: 'pickup', label: 'Pickup', icon: '📦'),   // disabled
+    // TaskCategory(id: 'transport', label: 'Transport', icon: '🚗'), // disabled
     TaskCategory(id: 'moving', label: 'Moving', icon: '🏠'),
     TaskCategory(id: 'groceries', label: 'Groceries', icon: '🛒'),
     TaskCategory(id: 'cooking', label: 'Cooking', icon: '🍳'),
@@ -504,4 +518,62 @@ class TaskCategory {
       orElse: () => const TaskCategory(id: '', label: '', icon: '📋'),
     ).icon;
   }
+}
+
+/// A parent/group category for the hierarchical category picker in post task.
+class TaskCategoryGroup {
+  final String label;
+  final String icon;
+  final List<String> categoryIds; // ids from TaskCategory.all
+
+  const TaskCategoryGroup({
+    required this.label,
+    required this.icon,
+    required this.categoryIds,
+  });
+
+  List<TaskCategory> get subCategories => categoryIds
+      .map((id) => TaskCategory.all.firstWhere(
+            (c) => c.id == id,
+            orElse: () => TaskCategory(id: id, label: id, icon: '📋'),
+          ))
+      .toList();
+
+  static const List<TaskCategoryGroup> all = [
+    TaskCategoryGroup(
+      label: 'Engineering & Repair',
+      icon: '🔧',
+      categoryIds: ['electrician', 'plumbing', 'repair', 'carpentry', 'painting', 'vehicle', 'tech_support'],
+    ),
+    TaskCategoryGroup(
+      label: 'Home & Lifestyle',
+      icon: '🏠',
+      categoryIds: ['cleaning', 'laundry', 'cooking', 'household', 'gardening', 'beauty'],
+    ),
+    TaskCategoryGroup(
+      label: 'Delivery & Moving',
+      icon: '🚚',
+      categoryIds: ['delivery', 'moving'],
+    ),
+    TaskCategoryGroup(
+      label: 'Shopping & Errands',
+      icon: '🛒',
+      categoryIds: ['groceries', 'shopping', 'errands', 'event_help', 'queue_standing'],
+    ),
+    TaskCategoryGroup(
+      label: 'Professional',
+      icon: '💼',
+      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring'],
+    ),
+    TaskCategoryGroup(
+      label: 'Care Services',
+      icon: '❤️',
+      categoryIds: ['child_care', 'elder_care', 'pet_care'],
+    ),
+    TaskCategoryGroup(
+      label: 'Other',
+      icon: '📋',
+      categoryIds: ['other'],
+    ),
+  ];
 }

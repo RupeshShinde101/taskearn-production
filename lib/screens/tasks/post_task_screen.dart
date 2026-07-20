@@ -352,13 +352,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _addressCtrl.text = addr;
           }
           // Auto-fill Area field with subLocality + locality
-          if (_areaCtrl.text.isEmpty) {
-            final areaStr = [p.subLocality, p.locality, p.administrativeArea]
-                .where((s) => s != null && s.isNotEmpty)
-                .map((s) => s!)
-                .join(', ');
-            if (areaStr.isNotEmpty) _areaCtrl.text = areaStr;
-          }
+          // (intentionally removed — area stays empty for user to fill)
         }
       }
     } catch (_) {}
@@ -379,10 +373,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _locationLabel = addr;
         if (!_isDelivery && addr != null) _addressCtrl.text = addr;
       });
-      // Auto-fill Area field when empty
-      if (_areaCtrl.text.isEmpty && addr != null) {
-        _areaCtrl.text = addr;
-      }
+      // Area field intentionally left empty for user to fill manually
     }
   }
 

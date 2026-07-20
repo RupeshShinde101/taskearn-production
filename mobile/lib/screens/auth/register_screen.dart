@@ -630,7 +630,6 @@ class _InputField extends StatelessWidget {
     this.textInputAction,
     this.obscureText = false,
     this.suffix,
-    this.onFieldSubmitted,
     this.validator,
   });
 
@@ -736,7 +735,7 @@ class _SocialBtn extends StatelessWidget {
 /// Google "G" logo
 class _GoogleLogo extends StatelessWidget {
   final double size;
-  const _GoogleLogo({this.size = 24});
+  const _GoogleLogo();
 
   @override
   Widget build(BuildContext context) {

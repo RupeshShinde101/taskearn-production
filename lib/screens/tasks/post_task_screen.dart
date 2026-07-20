@@ -35,7 +35,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _addressCtrl = TextEditingController();
   final _flatNameCtrl = TextEditingController();
   final _areaCtrl    = TextEditingController();
-  String _addressType = 'home';
   // Delivery-specific: separate pickup & drop location fields
   final _pickupAddrCtrl = TextEditingController();
   final _pickupFlatCtrl = TextEditingController();
@@ -1359,7 +1358,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'lng': taskLocation.longitude,
         'address': combinedAddress ?? '',
       },
-      'address_type': _addressType,
       if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
         'pickup_address': _pickupAddrCtrl.text.trim(),
       if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty) ...{
@@ -2132,96 +2130,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                   ),
                 ],
-
-                // ── Home / Work selector ───────────────────────────────
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _addressType = 'home'),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          decoration: BoxDecoration(
-                            color: _addressType == 'home'
-                                ? AppColors.primary
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _addressType == 'home'
-                                  ? AppColors.primary
-                                  : AppColors.border,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.home_rounded,
-                                  size: 18,
-                                  color: _addressType == 'home'
-                                      ? Colors.white
-                                      : AppColors.gray),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Home',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  color: _addressType == 'home'
-                                      ? Colors.white
-                                      : AppColors.gray,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _addressType = 'work'),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          decoration: BoxDecoration(
-                            color: _addressType == 'work'
-                                ? AppColors.primary
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _addressType == 'work'
-                                  ? AppColors.primary
-                                  : AppColors.border,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.work_rounded,
-                                  size: 18,
-                                  color: _addressType == 'work'
-                                      ? Colors.white
-                                      : AppColors.gray),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Work',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  color: _addressType == 'work'
-                                      ? Colors.white
-                                      : AppColors.gray,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ],
 
               const SizedBox(height: 14),

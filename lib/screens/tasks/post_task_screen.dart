@@ -31,7 +31,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   String _addressType = 'home';
   // Delivery-specific: separate pickup & drop location fields
   final _pickupAddrCtrl = TextEditingController();
-  final _dropAddrCtrl = TextEditingController();
+  final _pickupFlatCtrl = TextEditingController();
+  final _pickupAreaCtrl = TextEditingController();
+  final _dropAddrCtrl   = TextEditingController();
+  final _dropFlatCtrl   = TextEditingController();
+  final _dropAreaCtrl   = TextEditingController();
 
   String _selectedCategory = 'delivery';
   final _categorySearchCtrl = TextEditingController();
@@ -50,7 +54,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   // ─── Saved locations ────────────────────────────────────
   List<Map<String, dynamic>> _savedLocations = [];
-  bool _showSavePrompt = false;
+  bool _showSavePrompt       = false; // non-delivery
+  bool _showPickupSavePrompt = false; // pickup
+  bool _showDropSavePrompt   = false; // drop
 
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
@@ -321,7 +327,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _flatNameCtrl.dispose();
     _areaCtrl.dispose();
     _pickupAddrCtrl.dispose();
+    _pickupFlatCtrl.dispose();
+    _pickupAreaCtrl.dispose();
     _dropAddrCtrl.dispose();
+    _dropFlatCtrl.dispose();
+    _dropAreaCtrl.dispose();
     super.dispose();
   }
 
@@ -447,6 +457,131 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
+  // ─── Generic save helper used by pickup / drop ───────────────────────────
+  Future<void> _saveAddressEntry({
+    required String address,
+    required String flat,
+    required String area,
+    required double? lat,
+    required double? lng,
+    required VoidCallback onSaved,
+  }) async {
+    final nameCtrl = TextEditingController();
+    String selectedType = 'Home';
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Save Address',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Quick labels:',
+                  style: TextStyle(fontSize: 12, color: AppColors.gray)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: ['Home', 'Work', 'Other'].map((t) {
+                  final sel = selectedType == t;
+                  return GestureDetector(
+                    onTap: () => setDlg(() {
+                      selectedType = t;
+                      if (t != 'Other') nameCtrl.text = t;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: sel ? AppColors.primary : AppColors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.primary.withValues(alpha: sel ? 1.0 : 0.3)),
+                      ),
+                      child: Text(t,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: sel ? Colors.white : AppColors.primary)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Address name',
+                  hintText: 'e.g. Home, Office, Mom\'s place',
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    final label = nameCtrl.text.trim().isEmpty ? 'Saved' : nameCtrl.text.trim();
+    await StorageService.addSavedLocation({
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'label': label,
+      'address': address,
+      'flat': flat,
+      'area': area,
+      'lat': lat,
+      'lng': lng,
+    });
+    _loadSavedLocations();
+    onSaved();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('\u201c$label\u201d saved!'),
+          duration: const Duration(seconds: 2)));
+    }
+  }
+
+  void _fillPickupFromSaved(Map<String, dynamic> loc) {
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+    setState(() {
+      if (lat != null && lng != null) {
+        _pickupLocation = LatLng(lat, lng);
+        _location ??= _pickupLocation;
+      }
+      _pickupAddrCtrl.text = (loc['address'] as String?) ?? '';
+      _pickupFlatCtrl.text = (loc['flat'] as String?) ?? '';
+      _pickupAreaCtrl.text = (loc['area'] as String?) ?? '';
+      _showPickupSavePrompt = false;
+    });
+    _recalcDistance();
+  }
+
+  void _fillDropFromSaved(Map<String, dynamic> loc) {
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+    setState(() {
+      if (lat != null && lng != null) _dropLocation = LatLng(lat, lng);
+      _dropAddrCtrl.text = (loc['address'] as String?) ?? '';
+      _dropFlatCtrl.text = (loc['flat'] as String?) ?? '';
+      _dropAreaCtrl.text = (loc['area'] as String?) ?? '';
+      _showDropSavePrompt = false;
+    });
+    _recalcDistance();
+  }
+
   Future<void> _getLocation() async {
     setState(() => _gettingLocation = true);
     final loc = await LocationService.getCurrentLocation();
@@ -534,6 +669,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _pickupLocation = result['location'] as LatLng;
         _location ??= _pickupLocation;
         if (addr != null && addr.isNotEmpty) _pickupAddrCtrl.text = addr;
+        _showPickupSavePrompt = true;
       });
       _recalcDistance();
     }
@@ -553,6 +689,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       setState(() {
         _dropLocation = result['location'] as LatLng;
         if (addr != null && addr.isNotEmpty) _dropAddrCtrl.text = addr;
+        _showDropSavePrompt = true;
       });
       _recalcDistance();
     }
@@ -586,7 +723,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');
         if (mounted) {
-          setState(() => _gettingPickupGps = false);
+          setState(() { _gettingPickupGps = false; _showPickupSavePrompt = true; });
           if (addr != null) _pickupAddrCtrl.text = addr;
         }
       } else {
@@ -622,7 +759,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');
         if (mounted) {
-          setState(() => _gettingDropGps = false);
+          setState(() { _gettingDropGps = false; _showDropSavePrompt = true; });
           if (addr != null) _dropAddrCtrl.text = addr;
         }
       } else {
@@ -1290,6 +1427,59 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
               // ── Address fields (each with GPS + Map inline buttons) ──────
               if (_isDelivery) ...[
+                // ── Pickup ─────────────────────────────────────────────
+                // Saved chips for pickup
+                if (_savedLocations.isNotEmpty) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text('Saved:',
+                            style: TextStyle(fontSize: 12, color: AppColors.gray, fontWeight: FontWeight.w500)),
+                        const SizedBox(width: 8),
+                        ..._savedLocations.map((loc) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () => _fillPickupFromSaved(loc),
+                            onLongPress: () async {
+                              final del = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: Text('Remove "${loc['label']}"?'),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+                                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: AppColors.danger))),
+                                  ],
+                                ),
+                              );
+                              if (del == true && mounted) {
+                                await StorageService.deleteSavedLocation(loc['id'] as String);
+                                _loadSavedLocations();
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.09),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(_iconForLabel(loc['label'] as String), size: 14, color: AppColors.primary),
+                                  const SizedBox(width: 5),
+                                  Text(loc['label'] as String, style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 // Pickup Address
                 TextFormField(
                   controller: _pickupAddrCtrl,
@@ -1317,27 +1507,135 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     child: Text(
                       'Pinned: ${_pickupLocation!.latitude.toStringAsFixed(5)}, '
                       '${_pickupLocation!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                          color: AppColors.success, fontSize: 11),
+                      style: const TextStyle(color: AppColors.success, fontSize: 11),
                     ),
                   ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _pickupFlatCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Pickup: Flat / House / Building name',
+                    hintText: 'e.g. Flat 2B, Sunrise Apartments',
+                    prefixIcon: Icon(Icons.home_outlined, color: AppColors.primary),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _pickupAreaCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Pickup: Area / Sector / Locality',
+                    hintText: 'e.g. Baner, Pune',
+                    prefixIcon: Icon(Icons.map_outlined, color: AppColors.primary),
+                  ),
+                ),
+                // Save pickup prompt
+                if (_showPickupSavePrompt && _pickupLocation != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.bookmark_add_outlined, size: 18, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('Save pickup address for later?', style: TextStyle(fontSize: 12, color: AppColors.primary))),
+                        GestureDetector(
+                          onTap: () => _saveAddressEntry(
+                            address: _pickupAddrCtrl.text.trim(),
+                            flat: _pickupFlatCtrl.text.trim(),
+                            area: _pickupAreaCtrl.text.trim(),
+                            lat: _pickupLocation?.latitude,
+                            lng: _pickupLocation?.longitude,
+                            onSaved: () => setState(() => _showPickupSavePrompt = false),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
+                            child: const Text('SAVE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => setState(() => _showPickupSavePrompt = false),
+                          child: const Icon(Icons.close, size: 16, color: AppColors.gray),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                // ── Drop ───────────────────────────────────────────────
+                // Saved chips for drop
+                if (_savedLocations.isNotEmpty) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text('Saved:', style: TextStyle(fontSize: 12, color: AppColors.gray, fontWeight: FontWeight.w500)),
+                        const SizedBox(width: 8),
+                        ..._savedLocations.map((loc) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () => _fillDropFromSaved(loc),
+                            onLongPress: () async {
+                              final del = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: Text('Remove "${loc['label']}"?'),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+                                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: AppColors.danger))),
+                                  ],
+                                ),
+                              );
+                              if (del == true && mounted) {
+                                await StorageService.deleteSavedLocation(loc['id'] as String);
+                                _loadSavedLocations();
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: AppColors.danger.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(_iconForLabel(loc['label'] as String), size: 14, color: AppColors.danger),
+                                  const SizedBox(width: 5),
+                                  Text(loc['label'] as String, style: const TextStyle(fontSize: 12, color: AppColors.danger, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 // Drop Address
                 TextFormField(
                   controller: _dropAddrCtrl,
                   decoration: InputDecoration(
                     labelText: 'Drop / Delivery Address *',
                     hintText: 'Where to deliver / drop off',
-                    prefixIcon:
-                        const Icon(Icons.flag, color: AppColors.danger),
+                    prefixIcon: const Icon(Icons.flag, color: AppColors.danger),
                     suffixIcon: _AddressActionButtons(
                       isLoading: _gettingDropGps,
                       accentColor: AppColors.danger,
                       onGps: _getGpsForDrop,
                       onMap: _pickMapForDrop,
                     ),
-                    suffixIconConstraints:
-                        const BoxConstraints(maxHeight: 48),
+                    suffixIconConstraints: const BoxConstraints(maxHeight: 48),
                   ),
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Drop address is required'
@@ -1353,6 +1651,65 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           color: AppColors.danger, fontSize: 11),
                     ),
                   ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _dropFlatCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Drop: Flat / House / Building name',
+                    hintText: 'e.g. Flat 2B, Sunrise Apartments',
+                    prefixIcon: Icon(Icons.home_outlined, color: AppColors.danger),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _dropAreaCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Drop: Area / Sector / Locality',
+                    hintText: 'e.g. Baner, Pune',
+                    prefixIcon: Icon(Icons.map_outlined, color: AppColors.danger),
+                  ),
+                ),
+                // Save drop prompt
+                if (_showDropSavePrompt && _dropLocation != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.danger.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.bookmark_add_outlined, size: 18, color: AppColors.danger),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('Save drop address for later?', style: TextStyle(fontSize: 12, color: AppColors.danger))),
+                        GestureDetector(
+                          onTap: () => _saveAddressEntry(
+                            address: _dropAddrCtrl.text.trim(),
+                            flat: _dropFlatCtrl.text.trim(),
+                            area: _dropAreaCtrl.text.trim(),
+                            lat: _dropLocation?.latitude,
+                            lng: _dropLocation?.longitude,
+                            onSaved: () => setState(() => _showDropSavePrompt = false),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppColors.danger, borderRadius: BorderRadius.circular(8)),
+                            child: const Text('SAVE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => setState(() => _showDropSavePrompt = false),
+                          child: const Icon(Icons.close, size: 16, color: AppColors.gray),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 // ── Distance + minimum price card ────────────────────────
                 if (_calculatedDistanceKm != null) ...[

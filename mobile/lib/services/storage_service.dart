@@ -95,4 +95,32 @@ class StorageService {
   static Future<void> clearGender() async {
     await _prefs.remove('user_gender');
   }
+
+  // ─── Saved task locations ────────────────────────────────────────────────
+  static const _kSavedLocations = 'saved_task_locations';
+
+  static List<Map<String, dynamic>> getSavedLocations() {
+    final raw = _prefs.getString(_kSavedLocations);
+    if (raw == null) return [];
+    try {
+      return List<Map<String, dynamic>>.from(
+          (jsonDecode(raw) as List)
+              .map((e) => Map<String, dynamic>.from(e as Map)));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> addSavedLocation(Map<String, dynamic> loc) async {
+    final list = getSavedLocations();
+    list.removeWhere((e) => e['id'] == loc['id']);
+    list.add(loc);
+    await _prefs.setString(_kSavedLocations, jsonEncode(list));
+  }
+
+  static Future<void> deleteSavedLocation(String id) async {
+    final list = getSavedLocations();
+    list.removeWhere((e) => e['id'] == id);
+    await _prefs.setString(_kSavedLocations, jsonEncode(list));
+  }
 }

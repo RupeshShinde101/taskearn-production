@@ -650,6 +650,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final passwordCtrl = TextEditingController();
     bool obscure = true;
     bool deleting = false;
+    String? errorMsg;
 
     showGeneralDialog<void>(
       context: context,
@@ -783,6 +784,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ],
                         const SizedBox(height: 20),
+                        // Inline error message
+                        if (errorMsg != null) ...[  
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEE2E2),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFFCA5A5)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.error_outline,
+                                    color: AppColors.danger, size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(errorMsg!,
+                                      style: const TextStyle(
+                                          color: AppColors.danger,
+                                          fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         Row(
                           children: [
                             Expanded(
@@ -819,21 +846,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                                 child: ElevatedButton(
                                   onPressed: deleting ? null : () async {
-                                    setDialogState(() => deleting = true);
-                                    Navigator.of(dialogCtx).pop();
-                                    if (!context.mounted) return;
+                                    setDialogState(() {
+                                      deleting = true;
+                                      errorMsg = null;
+                                    });
                                     final result = await auth.deleteAccount(
                                         password: isGoogleUser
                                             ? null
                                             : passwordCtrl.text);
-                                    if (!context.mounted) return;
-                                    if (result['success'] != true) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                        content: Text(result['message'] ??
-                                            'Failed to delete account. Please contact support.'),
-                                        backgroundColor: AppColors.danger,
-                                      ));
+                                    if (result['success'] == true) {
+                                      if (dialogCtx.mounted) {
+                                        Navigator.of(dialogCtx).pop();
+                                      }
+                                      // GoRouter auto-redirects to /login
+                                    } else {
+                                      setDialogState(() {
+                                        deleting = false;
+                                        errorMsg = result['message'] ??
+                                            'Failed to delete account. Please try again.';
+                                      });
                                     }
                                   },
                                   style: ElevatedButton.styleFrom(

@@ -376,12 +376,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _showSaveDialog() async {
-    // Don't save if there is nothing meaningful to store
-    final hasAddress = _addressCtrl.text.trim().isNotEmpty;
-    final hasLocation = _location != null;
-    if (!hasAddress && !hasLocation) {
+    // Require at least one text field to have content
+    final hasText = _addressCtrl.text.trim().isNotEmpty ||
+        _flatNameCtrl.text.trim().isNotEmpty ||
+        _areaCtrl.text.trim().isNotEmpty;
+    if (!hasText) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Please enter an address or pin a location first.'),
+          content: Text(
+              'Please fill in at least the address or area before saving.'),
           duration: Duration(seconds: 2)));
       return;
     }
@@ -658,10 +660,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     required double? lng,
     required VoidCallback onSaved,
   }) async {
-    // Don't save if there is nothing meaningful to store
-    if (address.isEmpty && lat == null) {
+    // Require at least one text field to have content
+    if (address.isEmpty && flat.isEmpty && area.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Please enter an address or pin a location first.'),
+          content: Text(
+              'Please fill in at least the address or area before saving.'),
           duration: Duration(seconds: 2)));
       return;
     }

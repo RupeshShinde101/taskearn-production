@@ -458,6 +458,174 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   // ─── Generic save helper used by pickup / drop ───────────────────────────
+
+  // ─── Long-press options (Edit / Remove) for any saved address chip ────────
+  Future<void> _addressOptions(Map<String, dynamic> loc) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Row(children: [
+                const Icon(Icons.bookmark_rounded,
+                    size: 18, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(loc['label'] as String? ?? 'Saved',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Color(0xFF1E293B))),
+                ),
+              ]),
+            ),
+            if ((loc['address'] as String?)?.isNotEmpty == true)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(loc['address'] as String,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF64748B))),
+              ),
+            const Divider(height: 20),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined,
+                  color: AppColors.primary),
+              title: const Text('Edit address',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.pop(ctx, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded,
+                  color: AppColors.danger),
+              title: const Text('Remove',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.danger)),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'edit') {
+      await _editSavedLocation(loc);
+    } else if (action == 'delete') {
+      await StorageService.deleteSavedLocation(loc['id'] as String);
+      _loadSavedLocations();
+    }
+  }
+
+  Future<void> _editSavedLocation(Map<String, dynamic> loc) async {
+    final labelCtrl =
+        TextEditingController(text: loc['label'] as String? ?? '');
+    final addrCtrl =
+        TextEditingController(text: loc['address'] as String? ?? '');
+    final flatCtrl =
+        TextEditingController(text: loc['flat'] as String? ?? '');
+    final areaCtrl =
+        TextEditingController(text: loc['area'] as String? ?? '');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Edit Address',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: labelCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Label',
+                  hintText: 'e.g. Home, Office',
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: addrCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Address / Landmark',
+                  prefixIcon: Icon(Icons.location_on_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: flatCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Flat / House / Building',
+                  prefixIcon: Icon(Icons.home_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: areaCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Area / Sector / Locality',
+                  prefixIcon: Icon(Icons.map_outlined),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved != true || !mounted) return;
+    await StorageService.addSavedLocation({
+      'id': loc['id'],
+      'label': labelCtrl.text.trim().isEmpty
+          ? 'Saved'
+          : labelCtrl.text.trim(),
+      'address': addrCtrl.text.trim(),
+      'flat': flatCtrl.text.trim(),
+      'area': areaCtrl.text.trim(),
+      'lat': loc['lat'],
+      'lng': loc['lng'],
+    });
+    _loadSavedLocations();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Address updated!'),
+          duration: Duration(seconds: 2)));
+    }
+  }
+
+  // ─── Generic save helper used by pickup / drop ────────────────────────
   Future<void> _saveAddressEntry({
     required String address,
     required String flat,
@@ -1441,22 +1609,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           padding: const EdgeInsets.only(right: 8),
                           child: GestureDetector(
                             onTap: () => _fillPickupFromSaved(loc),
-                            onLongPress: () async {
-                              final del = await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: Text('Remove "${loc['label']}"?'),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
-                                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: AppColors.danger))),
-                                  ],
-                                ),
-                              );
-                              if (del == true && mounted) {
-                                await StorageService.deleteSavedLocation(loc['id'] as String);
-                                _loadSavedLocations();
-                              }
-                            },
+                            onLongPress: () => _addressOptions(loc),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                               decoration: BoxDecoration(
@@ -1583,22 +1736,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           padding: const EdgeInsets.only(right: 8),
                           child: GestureDetector(
                             onTap: () => _fillDropFromSaved(loc),
-                            onLongPress: () async {
-                              final del = await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: Text('Remove "${loc['label']}"?'),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
-                                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: AppColors.danger))),
-                                  ],
-                                ),
-                              );
-                              if (del == true && mounted) {
-                                await StorageService.deleteSavedLocation(loc['id'] as String);
-                                _loadSavedLocations();
-                              }
-                            },
+                            onLongPress: () => _addressOptions(loc),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                               decoration: BoxDecoration(
@@ -1770,33 +1908,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               padding: const EdgeInsets.only(right: 8),
                               child: GestureDetector(
                                 onTap: () => _fillFromSaved(loc),
-                                onLongPress: () async {
-                                  final del = await showDialog<bool>(
-                                    context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      title: Text(
-                                          'Remove "${loc['label']}"?'),
-                                      actions: [
-                                        TextButton(
-                                            onPressed: () => Navigator.pop(
-                                                ctx, false),
-                                            child: const Text('No')),
-                                        TextButton(
-                                            onPressed: () => Navigator.pop(
-                                                ctx, true),
-                                            child: const Text('Remove',
-                                                style: TextStyle(
-                                                    color:
-                                                        AppColors.danger))),
-                                      ],
-                                    ),
-                                  );
-                                  if (del == true && mounted) {
-                                    await StorageService.deleteSavedLocation(
-                                        loc['id'] as String);
-                                    _loadSavedLocations();
-                                  }
-                                },
+                                onLongPress: () => _addressOptions(loc),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 7),

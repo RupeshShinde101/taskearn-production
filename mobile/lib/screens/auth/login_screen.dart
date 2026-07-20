@@ -280,7 +280,7 @@ class _FeatureCard extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: Image.asset(
-        'assets/images/illustration.png',
+        'assets/images/signin_illustration.png',
         width: double.infinity,
         fit: BoxFit.fitWidth,
       ),

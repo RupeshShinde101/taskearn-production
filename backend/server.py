@@ -9253,36 +9253,53 @@ def delete_account():
             uid = request.user_id
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Block the email/google_id so this user cannot re-register via Google
-            if user_email:
+            def _safe_exec(sql, params=()):
+                """Run a single SQL statement inside its own SAVEPOINT so a
+                missing table or column never aborts the whole deletion."""
+                sp = f'sp_del_{abs(hash(sql)) % 100000}'
                 try:
-                    cursor.execute(
-                        f"INSERT INTO deleted_accounts (email, google_id, deleted_at) VALUES ({PH}, {PH}, {PH}) ON CONFLICT (email) DO NOTHING",
-                        (user_email, google_id, now)
-                    )
-                except Exception as e:
-                    print(f"[DELETE ACCOUNT] Warning: could not write deleted_accounts: {e}")
+                    cursor.execute(f'SAVEPOINT {sp}')
+                    cursor.execute(sql, params)
+                    cursor.execute(f'RELEASE SAVEPOINT {sp}')
+                except Exception as _se:
+                    print(f'[DELETE ACCOUNT] skipping: {_se}')
+                    try:
+                        cursor.execute(f'ROLLBACK TO SAVEPOINT {sp}')
+                    except Exception:
+                        pass
+
+            # Block the email/google_id so this user cannot re-register
+            if user_email:
+                _safe_exec(
+                    f"INSERT INTO deleted_accounts (email, google_id, deleted_at) VALUES ({PH}, {PH}, {PH}) ON CONFLICT (email) DO NOTHING",
+                    (user_email, google_id, now)
+                )
 
             # Delete user data in order (foreign key safe)
-            cursor.execute(f'DELETE FROM phone_otps WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM notifications WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM chat_messages WHERE sender_id = {PH} OR receiver_id = {PH}', (uid, uid))
-            cursor.execute(f'DELETE FROM helper_ratings WHERE helper_id = {PH} OR rater_id = {PH}', (uid, uid))
-            cursor.execute(f'DELETE FROM wallet_transactions WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM wallets WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM referrals WHERE referrer_id = {PH} OR referred_id = {PH}', (uid, uid))
-            cursor.execute(f'DELETE FROM location_tracking WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM task_proofs WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM password_resets WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM withdrawal_requests WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM sos_alerts WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM contact_messages WHERE user_id = {PH}', (uid,))
+            # chat_messages uses user_id (not sender_id/receiver_id)
+            _safe_exec(f'DELETE FROM push_subscriptions WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM phone_otps WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM notifications WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM chat_messages WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM helper_ratings WHERE helper_id = {PH} OR rater_id = {PH}', (uid, uid))
+            _safe_exec(f'DELETE FROM reviews WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM wallet_transactions WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM wallets WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM referrals WHERE referrer_id = {PH} OR referred_id = {PH}', (uid, uid))
+            _safe_exec(f'DELETE FROM location_tracking WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM task_proofs WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM password_resets WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM withdrawal_requests WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM sos_alerts WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM contact_messages WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM payments WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM kyc_documents WHERE user_id = {PH}', (uid,))
 
             # Anonymize completed tasks (keep for records but remove PII)
-            cursor.execute(f"UPDATE tasks SET posted_by = NULL WHERE posted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
-            cursor.execute(f"UPDATE tasks SET accepted_by = NULL WHERE accepted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
+            _safe_exec(f"UPDATE tasks SET posted_by = NULL WHERE posted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
+            _safe_exec(f"UPDATE tasks SET accepted_by = NULL WHERE accepted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
 
-            # Delete the user
+            # Delete the user (must be last)
             cursor.execute(f'DELETE FROM users WHERE id = {PH}', (uid,))
 
             conn.commit()

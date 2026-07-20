@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
@@ -324,9 +325,21 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (!mounted) return;
     if (loc == null) {
       setState(() => _gettingLocation = false);
+      if (!mounted) return;
+      // Distinguish: permission denied vs GPS signal unavailable
+      final perm = await Geolocator.checkPermission();
+      final msg = (perm == LocationPermission.denied || perm == LocationPermission.deniedForever)
+          ? 'Location permission denied. Please allow in Settings.'
+          : 'Unable to get GPS. Make sure location is ON and try again.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not get GPS. Enable location permission.'),
+        SnackBar(
+          content: Text(msg),
+          action: (perm == LocationPermission.deniedForever)
+              ? SnackBarAction(
+                  label: 'Settings',
+                  onPressed: Geolocator.openAppSettings,
+                )
+              : null,
         ),
       );
       return;

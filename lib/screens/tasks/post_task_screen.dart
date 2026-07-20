@@ -8,6 +8,7 @@ import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../services/location_service.dart';
+import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/map_location_picker.dart';
@@ -46,6 +47,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   bool _gettingPickupGps = false;
   bool _gettingDropGps = false;
   double? _calculatedDistanceKm;
+
+  // ─── Saved locations ────────────────────────────────────
+  List<Map<String, dynamic>> _savedLocations = [];
+  bool _showSavePrompt = false;
 
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
@@ -302,6 +307,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void initState() {
     super.initState();
     _getLocation();
+    _savedLocations = StorageService.getSavedLocations();
     // Auto-fill description with prompts for the default category on first open
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillDescription());
   }
@@ -317,6 +323,128 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _pickupAddrCtrl.dispose();
     _dropAddrCtrl.dispose();
     super.dispose();
+  }
+
+  // ─── Saved Locations helpers ──────────────────────────────────
+  void _loadSavedLocations() {
+    setState(() => _savedLocations = StorageService.getSavedLocations());
+  }
+
+  void _fillFromSaved(Map<String, dynamic> loc) {
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+    setState(() {
+      _location = (lat != null && lng != null) ? LatLng(lat, lng) : null;
+      _locationLabel = loc['address'] as String?;
+      _addressCtrl.text = (loc['address'] as String?) ?? '';
+      _flatNameCtrl.text = (loc['flat'] as String?) ?? '';
+      _areaCtrl.text = (loc['area'] as String?) ?? '';
+      _showSavePrompt = false;
+    });
+  }
+
+  IconData _iconForLabel(String label) {
+    final l = label.toLowerCase();
+    if (l.contains('home') || l.contains('house')) return Icons.home_rounded;
+    if (l.contains('work') || l.contains('office')) return Icons.work_rounded;
+    return Icons.location_on_rounded;
+  }
+
+  Future<void> _showSaveDialog() async {
+    final nameCtrl = TextEditingController();
+    String selectedType = 'Home';
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Save Address',
+              style:
+                  TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Quick labels:',
+                  style: TextStyle(fontSize: 12, color: AppColors.gray)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: ['Home', 'Work', 'Other'].map((t) {
+                  final sel = selectedType == t;
+                  return GestureDetector(
+                    onTap: () => setDlg(() {
+                      selectedType = t;
+                      if (t != 'Other') nameCtrl.text = t;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: sel
+                            ? AppColors.primary
+                            : AppColors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: AppColors.primary.withValues(
+                                alpha: sel ? 1.0 : 0.3)),
+                      ),
+                      child: Text(t,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: sel ? Colors.white : AppColors.primary)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Address name',
+                  hintText: 'e.g. Home, Office, Mom\'s place',
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10))),
+                child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    final label =
+        nameCtrl.text.trim().isEmpty ? 'Saved' : nameCtrl.text.trim();
+    await StorageService.addSavedLocation({
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'label': label,
+      'address': _addressCtrl.text.trim(),
+      'flat': _flatNameCtrl.text.trim(),
+      'area': _areaCtrl.text.trim(),
+      'lat': _location?.latitude,
+      'lng': _location?.longitude,
+    });
+    _loadSavedLocations();
+    setState(() => _showSavePrompt = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('\u201c$label\u201d saved!'),
+          duration: const Duration(seconds: 2)));
+    }
   }
 
   Future<void> _getLocation() async {
@@ -348,6 +476,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       _location = loc;
       _locationLabel = null;
       _gettingLocation = false;
+      _showSavePrompt = true; // offer to save
     });
     try {
       final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
@@ -385,8 +514,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _location = result['location'] as LatLng;
         _locationLabel = addr;
         if (!_isDelivery && addr != null) _addressCtrl.text = addr;
+        _showSavePrompt = true; // offer to save
       });
-      // Area field intentionally left empty for user to fill manually
     }
   }
 
@@ -1268,6 +1397,84 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ],
               ] else ...[
+                // ── Saved addresses chips ───────────────────────────────
+                if (_savedLocations.isNotEmpty) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text('Saved:',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.gray,
+                                fontWeight: FontWeight.w500)),
+                        const SizedBox(width: 8),
+                        ..._savedLocations.map((loc) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: GestureDetector(
+                                onTap: () => _fillFromSaved(loc),
+                                onLongPress: () async {
+                                  final del = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: Text(
+                                          'Remove "${loc['label']}"?'),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () => Navigator.pop(
+                                                ctx, false),
+                                            child: const Text('No')),
+                                        TextButton(
+                                            onPressed: () => Navigator.pop(
+                                                ctx, true),
+                                            child: const Text('Remove',
+                                                style: TextStyle(
+                                                    color:
+                                                        AppColors.danger))),
+                                      ],
+                                    ),
+                                  );
+                                  if (del == true && mounted) {
+                                    await StorageService.deleteSavedLocation(
+                                        loc['id'] as String);
+                                    _loadSavedLocations();
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.09),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                        color: AppColors.primary
+                                            .withValues(alpha: 0.35)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                          _iconForLabel(
+                                              loc['label'] as String),
+                                          size: 14,
+                                          color: AppColors.primary),
+                                      const SizedBox(width: 5),
+                                      Text(loc['label'] as String,
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.primary,
+                                              fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 // ── Address / Landmark ──────────────────────────────────────
                 TextFormField(
                   controller: _addressCtrl,
@@ -1321,6 +1528,56 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     prefixIcon: Icon(Icons.map_outlined),
                   ),
                 ),
+
+                // ── Save address prompt ────────────────────────────────
+                if (_showSavePrompt && _location != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.bookmark_add_outlined,
+                            size: 18, color: AppColors.success),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text('Save this address for future tasks?',
+                              style: TextStyle(
+                                  fontSize: 12, color: AppColors.success)),
+                        ),
+                        GestureDetector(
+                          onTap: _showSaveDialog,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.success,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text('SAVE',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () =>
+                              setState(() => _showSavePrompt = false),
+                          child: const Icon(Icons.close,
+                              size: 16, color: AppColors.gray),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 // ── Home / Work selector ───────────────────────────────
                 const SizedBox(height: 12),

@@ -25,6 +25,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _budgetCtrl = TextEditingController();
+
+  // FocusNodes so we can jump cursor to the first invalid field
+  final _titleFocus   = FocusNode();
+  final _descFocus    = FocusNode();
+  final _budgetFocus  = FocusNode();
+  final _pickupFocus  = FocusNode();
+  final _dropFocus    = FocusNode();
   final _addressCtrl = TextEditingController();
   final _flatNameCtrl = TextEditingController();
   final _areaCtrl    = TextEditingController();
@@ -325,6 +332,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _titleCtrl.dispose();
     _descCtrl.dispose();
     _budgetCtrl.dispose();
+    _titleFocus.dispose();
+    _descFocus.dispose();
+    _budgetFocus.dispose();
+    _pickupFocus.dispose();
+    _dropFocus.dispose();
     _addressCtrl.dispose();
     _flatNameCtrl.dispose();
     _areaCtrl.dispose();
@@ -999,18 +1011,38 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
-      // Scroll to top so the user sees which fields are highlighted red
+      // Scroll to top and jump cursor to the first invalid field
       _scrollCtrl.animateTo(0,
           duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-      // Build a specific message listing what's missing
       final missing = <String>[];
-      if (_titleCtrl.text.trim().length < 5) missing.add('Task Title');
-      if (_descCtrl.text.trim().length < 10) missing.add('Description');
+      FocusNode? firstInvalidFocus;
+      if (_titleCtrl.text.trim().length < 5) {
+        missing.add('Task Title');
+        firstInvalidFocus ??= _titleFocus;
+      }
+      if (_descCtrl.text.trim().length < 10) {
+        missing.add('Description');
+        firstInvalidFocus ??= _descFocus;
+      }
       final budget = double.tryParse(_budgetCtrl.text);
-      if (budget == null || budget <= 0) missing.add('Budget');
+      if (budget == null || budget <= 0) {
+        missing.add('Budget');
+        firstInvalidFocus ??= _budgetFocus;
+      }
       if (_isDelivery) {
-        if (_pickupAddrCtrl.text.trim().isEmpty) missing.add('Pickup Address');
-        if (_dropAddrCtrl.text.trim().isEmpty) missing.add('Drop Address');
+        if (_pickupAddrCtrl.text.trim().isEmpty) {
+          missing.add('Pickup Address');
+          firstInvalidFocus ??= _pickupFocus;
+        }
+        if (_dropAddrCtrl.text.trim().isEmpty) {
+          missing.add('Drop Address');
+          firstInvalidFocus ??= _dropFocus;
+        }
+      }
+      // Request focus on the first invalid field after next frame
+      if (firstInvalidFocus != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+            (_) => firstInvalidFocus!.requestFocus());
       }
       final msg = missing.isEmpty
           ? 'Please fix the highlighted fields before posting.'
@@ -1358,6 +1390,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               // Title
               TextFormField(
                 controller: _titleCtrl,
+                focusNode: _titleFocus,
                 decoration: const InputDecoration(
                   labelText: 'Task Title',
                   hintText: 'e.g. Pick up parcel from Bandra',
@@ -1566,6 +1599,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               // Description
               TextFormField(
                 controller: _descCtrl,
+                focusNode: _descFocus,
                 maxLines: 8,
                 decoration: InputDecoration(
                   labelText: 'Description',
@@ -1594,6 +1628,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               // Budget
               TextFormField(
                 controller: _budgetCtrl,
+                focusNode: _budgetFocus,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Budget (₹)',
@@ -1665,6 +1700,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 // Pickup Address
                 TextFormField(
                   controller: _pickupAddrCtrl,
+                  focusNode: _pickupFocus,
                   decoration: InputDecoration(
                     labelText: 'Pickup Address *',
                     hintText: 'Where to pick up from',
@@ -1792,6 +1828,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 // Drop Address
                 TextFormField(
                   controller: _dropAddrCtrl,
+                  focusNode: _dropFocus,
                   decoration: InputDecoration(
                     labelText: 'Drop / Delivery Address *',
                     hintText: 'Where to deliver / drop off',

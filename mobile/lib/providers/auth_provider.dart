@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -148,16 +149,21 @@ class AuthProvider extends ChangeNotifier {
 
       final token = data['token'] ?? data['access_token'];
       if (token != null) {
-        await StorageService.saveToken(token);
+        // Parallel storage writes — don't await each one sequentially
+        await Future.wait([
+          StorageService.saveToken(token),
+          StorageService.saveUserId(''),  // will be set below
+          StorageService.saveSessionExpiry(DateTime.now().add(_kSessionDuration)),
+        ]);
         _user = User.fromJson(data['user'] ?? data);
-        await StorageService.saveUserId(_user!.id);
-        await StorageService.saveUserJson(_user!.toJson());
-        await StorageService.saveSessionExpiry(
-            DateTime.now().add(_kSessionDuration));
+        await Future.wait([
+          StorageService.saveUserId(_user!.id),
+          StorageService.saveUserJson(_user!.toJson()),
+        ]);
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();
-        _registerFcmToken();
+        unawaited(_registerFcmToken());
         return true;
       }
 
@@ -261,22 +267,20 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    // Delete the Firebase FCM token FIRST so this device immediately stops
-    // receiving push notifications, regardless of whether the backend call
-    // succeeds or fails.
-    try { await NotificationService.clearFcmToken(); } catch (_) {}
-    try {
-      await ApiService.post('/auth/logout');
-    } catch (_) {}
-    try {
-      await _googleSignIn.signOut();
-    } catch (_) {}
-    await StorageService.clearSession();
-    await StorageService.setString('user_avatar_local', '');
+    // Clear local state IMMEDIATELY so GoRouter redirects to /login right away.
     _user = null;
     _localAvatarUri = null;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
+
+    // Network clean-up runs in the background — don't block the UI.
+    unawaited(() async {
+      try { await NotificationService.clearFcmToken(); } catch (_) {}
+      try { await ApiService.post('/auth/logout'); } catch (_) {}
+      try { await _googleSignIn.signOut(); } catch (_) {}
+      await StorageService.clearSession();
+      await StorageService.setString('user_avatar_local', '');
+    }());
   }
 
   /// Permanently delete the user's account and all data.
@@ -720,10 +724,11 @@ class AuthProvider extends ChangeNotifier {
       if (token != null) {
         await updateFcmToken(token);
         NotificationService.onTokenRefresh(updateFcmToken);
-        // Send current location so backend can apply 10km radius filter
+        // GPS location update: fire-and-forget, don't block FCM registration
         try {
-          final loc = await LocationService.getCurrentLocation();
-          if (loc != null) await updateUserLocation(loc.latitude, loc.longitude);
+          LocationService.getCurrentLocation().then((loc) {
+            if (loc != null) updateUserLocation(loc.latitude, loc.longitude);
+          });
         } catch (_) {}
       } else {
         debugPrint('[FCM] ⚠️ getToken() returned null');

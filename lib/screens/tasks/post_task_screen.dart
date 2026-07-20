@@ -376,6 +376,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _showSaveDialog() async {
+    // Don't save if there is nothing meaningful to store
+    final hasAddress = _addressCtrl.text.trim().isNotEmpty;
+    final hasLocation = _location != null;
+    if (!hasAddress && !hasLocation) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please enter an address or pin a location first.'),
+          duration: Duration(seconds: 2)));
+      return;
+    }
     final nameCtrl = TextEditingController();
     String selectedType = 'Home';
     final saved = await showDialog<bool>(
@@ -649,6 +658,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     required double? lng,
     required VoidCallback onSaved,
   }) async {
+    // Don't save if there is nothing meaningful to store
+    if (address.isEmpty && lat == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please enter an address or pin a location first.'),
+          duration: Duration(seconds: 2)));
+      return;
+    }
     final nameCtrl = TextEditingController();
     String selectedType = 'Home';
     final saved = await showDialog<bool>(

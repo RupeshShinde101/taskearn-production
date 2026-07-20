@@ -58,6 +58,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   bool _showPickupSavePrompt = false; // pickup
   bool _showDropSavePrompt   = false; // drop
 
+  final _scrollCtrl = ScrollController();
+
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
 
@@ -332,6 +334,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _dropAddrCtrl.dispose();
     _dropFlatCtrl.dispose();
     _dropAreaCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -995,7 +998,32 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      // Scroll to top so the user sees which fields are highlighted red
+      _scrollCtrl.animateTo(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      // Build a specific message listing what's missing
+      final missing = <String>[];
+      if (_titleCtrl.text.trim().length < 5) missing.add('Task Title');
+      if (_descCtrl.text.trim().length < 10) missing.add('Description');
+      final budget = double.tryParse(_budgetCtrl.text);
+      if (budget == null || budget <= 0) missing.add('Budget');
+      if (_isDelivery) {
+        if (_pickupAddrCtrl.text.trim().isEmpty) missing.add('Pickup Address');
+        if (_dropAddrCtrl.text.trim().isEmpty) missing.add('Drop Address');
+      }
+      final msg = missing.isEmpty
+          ? 'Please fix the highlighted fields before posting.'
+          : 'Required: ${missing.join(', ')}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.danger,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
 
     // ── Client-side banned keyword check ────────────────────────────────────
     final bannedResult = _checkBannedContent(_titleCtrl.text, _descCtrl.text);
@@ -1320,6 +1348,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Post a Task')),
       body: SingleChildScrollView(
+        controller: _scrollCtrl,
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,

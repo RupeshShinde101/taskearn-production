@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
@@ -15,6 +14,8 @@ class BrowseScreen extends StatefulWidget {
   static String? jumpToCategory;
   /// Set before navigating to show tasks sorted by soonest-expiring first.
   static bool jumpToExpirySoon = false;
+  /// Set by AI Suggested 'See all' to pre-populate the search field with a skill keyword.
+  static String? jumpToSearch;
 
   const BrowseScreen({super.key});
 
@@ -29,6 +30,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
   double _radiusKm = 10;
   Timer? _searchDebounce;
   bool _sortByExpiry = false;  // set when navigating from Expiring Soon
+  bool _radiusFilterActive = false; // true only after user taps Apply Filters
 
   // User's current GPS location for radius filtering
   double? _userLat;
@@ -51,6 +53,15 @@ class _BrowseScreenState extends State<BrowseScreen> {
     if (BrowseScreen.jumpToExpirySoon) {
       BrowseScreen.jumpToExpirySoon = false;
       _sortByExpiry = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    }
+    // Consume skill search signal from AI Suggested 'See all'.
+    final skillSearch = BrowseScreen.jumpToSearch;
+    if (skillSearch != null) {
+      BrowseScreen.jumpToSearch = null;
+      _searchCtrl.text = skillSearch;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _applyFilters();
       });
@@ -98,17 +109,15 @@ class _BrowseScreenState extends State<BrowseScreen> {
   }
 
   void _applyFilters({bool sortByExpiry = false}) {
-    final currentUserId =
-        context.read<AuthProvider>().user?.id.toString();
     final useExpiry = sortByExpiry || _sortByExpiry;
     context.read<TaskProvider>().fetchBrowseTasks(
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty ? _searchCtrl.text.trim() : null,
           maxBudget: _maxBudget < 5000 ? _maxBudget : null,
-          radiusKm: _userLat != null ? _radiusKm : null,
+          radiusKm: _radiusFilterActive && _userLat != null ? _radiusKm : null,
           lat: _userLat,
           lng: _userLng,
-          excludePosterId: currentUserId,
+          excludePosterId: null,
           sort: useExpiry ? 'expiry' : null,
           expiringSoon: useExpiry,
           refresh: true,
@@ -205,6 +214,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(ctx);
+                  setState(() => _radiusFilterActive = true);
                   _applyFilters();
                 },
                 child: const Text('Apply Filters'),
@@ -221,6 +231,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     setState(() {
       _selectedCategory = 'all';
       _maxBudget = 5000;
+      _radiusFilterActive = false;
       _searchCtrl.clear();
     });
     _applyFilters();

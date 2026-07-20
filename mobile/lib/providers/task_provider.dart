@@ -39,9 +39,15 @@ class TaskProvider extends ChangeNotifier {
       _savedPosterNames[taskId] ?? StorageService.getString('pn_$taskId');
   bool _loadingBrowse = false;
   bool _loadingMy = false;
+  bool _disposed = false;
   String? _error;
   int _currentPage = 1;
   bool _hasMore = true;
+  int _browseFetchVersion = 0;
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
 
   List<Task> get browseTasks => _browseTasks;
   List<Task> get myPostedTasks => _myPostedTasks;
@@ -51,6 +57,21 @@ class TaskProvider extends ChangeNotifier {
   bool get isLoadingMy => _loadingMy;
   String? get error => _error;
   bool get hasMore => _hasMore;
+
+  /// True once tasks have been fetched at least once.
+  bool get hasMyTasksData =>
+      _myPostedTasks.isNotEmpty ||
+      _myAcceptedTasks.isNotEmpty ||
+      _myCompletedTasks.isNotEmpty;
+
+  /// Cache a list of tasks into [_browseTasks] so getTaskDetail can find them.
+  void cacheTasksForBrowse(List<Task> tasks) {
+    for (final t in tasks) {
+      if (!_browseTasks.any((b) => b.id == t.id)) {
+        _browseTasks.add(t);
+      }
+    }
+  }
 
   /// Returns true if the user currently has an accepted task that is not
   /// yet fully completed. Used to enforce one-task-at-a-time rule.
@@ -83,9 +104,13 @@ class TaskProvider extends ChangeNotifier {
     double? radiusKm,
     double? minBudget,
     double? maxBudget,
+    String? excludePosterId,
+    String? sort,
+    bool expiringSoon = false,
     bool refresh = false,
   }) async {
     if (refresh) {
+      _browseFetchVersion++;
       _currentPage = 1;
       _hasMore = true;
       _browseTasks = [];
@@ -93,6 +118,8 @@ class TaskProvider extends ChangeNotifier {
 
     if (!_hasMore) return;
 
+    // Capture token before await so stale responses can be detected and dropped
+    final _myVersion = _browseFetchVersion;
     _loadingBrowse = true;
     _error = null;
     // Use microtask so notifyListeners doesn't fire synchronously during build
@@ -109,6 +136,10 @@ class TaskProvider extends ChangeNotifier {
         if (radiusKm != null) 'radius': '$radiusKm',
         if (minBudget != null) 'min_budget': '$minBudget',
         if (maxBudget != null) 'max_budget': '$maxBudget',
+        if (excludePosterId != null && excludePosterId.isNotEmpty)
+          'exclude_poster_id': excludePosterId,
+        if (sort != null && sort.isNotEmpty) 'sort': sort,
+        if (expiringSoon) 'expiring_soon': '1',
       };
 
       final data = await ApiService.get('/tasks', queryParams: params);
@@ -117,8 +148,24 @@ class TaskProvider extends ChangeNotifier {
         try { return Task.fromJson(j); } catch (_) { return null; }
       }).whereType<Task>().toList();
 
+      // Use backend pagination metadata when available, fall back to count heuristic
+      final pagination = data['pagination'] as Map?;
+      if (pagination != null) {
+        final page = (pagination['page'] as num?)?.toInt() ?? _currentPage;
+        final totalPages = (pagination['totalPages'] as num?)?.toInt() ?? 1;
+        _hasMore = page < totalPages;
+      } else {
+        _hasMore = tasks.length >= 20;
+      }
+
+      // Discard stale response — a newer refresh has reset the list
+      if (_myVersion != _browseFetchVersion) {
+        _loadingBrowse = false;
+        _notify();
+        return;
+      }
+
       _browseTasks.addAll(tasks);
-      _hasMore = tasks.length == 20;
       _currentPage++;
     } catch (e) {
       _error = e.toString();

@@ -11160,7 +11160,10 @@ def _ensure_google_auth_schema():
                 ''')
                 # Add deleted_by column if table already exists without it
                 try:
-                    cursor.execute("ALTER TABLE deleted_accounts ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(20) DEFAULT 'admin'")
+                    cursor.execute("ALTER TABLE deleted_accounts ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(20) DEFAULT 'self'")
+                    # All existing rows were written by users self-deleting — mark them 'self'
+                    # so they are NOT blocked from re-registering.
+                    cursor.execute("UPDATE deleted_accounts SET deleted_by = 'self' WHERE deleted_by IS NULL OR deleted_by = 'admin'")
                 except Exception:
                     pass
                 cursor.execute('''

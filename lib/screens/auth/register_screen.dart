@@ -52,8 +52,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final auth = context.read<AuthProvider>();
     // Block router redirect before Google picker opens so the popup can show
     auth.setProfileCompletionPending();
-    // Pass the default invite code automatically — users don’t need to type it
-    final ok = await auth.loginWithGoogle(inviteCode: 'WORKMATE100');
+    final code = _inviteCtrl.text.trim().isNotEmpty
+        ? _inviteCtrl.text.trim()
+        : 'WORKMATE100';
+    final ok = await auth.loginWithGoogle(inviteCode: code);
     if (!mounted) return;
 
     if (!ok) {
@@ -185,6 +187,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
+
+                    // ── Invite code (shared by Google + email flows) ───────
+                    _InputField(
+                      controller: _inviteCtrl,
+                      hint: 'Invite Code (e.g. WORKMATE100)',
+                      icon: Icons.card_giftcard_rounded,
+                      textInputAction: TextInputAction.done,
+                      validator: null,
+                    ),
+                    const SizedBox(height: 12),
 
                     // ── Google button (primary CTA) ───────────────────────
                     SizedBox(
@@ -406,21 +418,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             validator: (v) => (v == null || v.length < 6)
                                 ? 'Min 6 characters'
                                 : null,
-                          ),
-                          const SizedBox(height: 12),
-
-                          // ── Invite code ──────────────────────────────
-                          _TwoLineField(
-                            controller: _inviteCtrl,
-                            icon: Icons.vpn_key_outlined,
-                            title: 'Invite code (optional)',
-                            hint: 'Enter invite code',
-                            textCapitalization:
-                                TextCapitalization.characters,
-                            validator: (v) =>
-                                (v == null || v.trim().isEmpty)
-                                    ? 'Invite code is required'
-                                    : null,
                           ),
                           const SizedBox(height: 12),
 

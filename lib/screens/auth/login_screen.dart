@@ -42,7 +42,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _loginWithGoogle() async {
     final auth = context.read<AuthProvider>();
-    final ok = await auth.loginWithGoogle();
+    // Pass the default invite code so existing-user login works even when
+    // TRIAL_ACTIVE is true — the backend ignores it for already-registered users.
+    final ok = await auth.loginWithGoogle(inviteCode: 'WORKMATE100');
     if (!mounted) return;
 
     if (ok) {

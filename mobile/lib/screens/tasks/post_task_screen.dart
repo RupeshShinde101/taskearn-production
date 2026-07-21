@@ -1029,6 +1029,28 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       // High-urgency & manipulation
       'act immediately', 'account suspended', 'legal action',
       'arrest warrant', 'irs penalty', 'compromised ssn', 'secure vault',
+      // Cyber scams & hacking
+      'hack', 'hacking', 'hacker', 'ddos', 'ransomware', 'spyware',
+      'keylogger', 'trojan', 'botnet', 'dark web', 'darkweb',
+      'deepweb', 'deep web', 'tor browser', 'exploit kit',
+      'zero day', 'remote access tool', 'rat tool',
+      'sim swap', 'sim swapping', 'vishing', 'smishing',
+      'fake invoice', 'invoice scam', 'business email compromise',
+      'tech support scam', 'remote desktop scam',
+      // Network marketing & MLM
+      'network marketing', 'direct selling', 'downline', 'upline',
+      'referral income', 'passive income scheme', 'matrix plan',
+      'binary plan', 'chain letter', 'referral chain',
+      'join my team', 'work from home scheme', 'be your own boss scheme',
+      'unlimited earning', 'residual income scheme',
+      // Drugs & narcotics
+      'marijuana', 'cannabis', 'hash', 'hashish', 'ganja', 'charas',
+      'smack', 'brown sugar', 'opium', 'afeem', 'meth', 'methamphetamine',
+      'amphetamine', 'ecstasy', 'mdma', 'lsd', 'acid trip',
+      'coke', 'crack cocaine', 'crystal meth', 'ice drug',
+      'tramadol', 'ketamine', 'fentanyl', 'xanax dealer',
+      'weed dealer', 'drug dealer', 'narcotic', 'narcotics',
+      'substance abuse', 'buy weed', 'sell weed', 'buy drugs', 'sell drugs',
     ];
     for (final word in scamWords) {
       if (lower.contains(word)) {

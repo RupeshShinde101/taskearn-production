@@ -2183,10 +2183,12 @@ def update_profile():
     """Update user profile"""
     data = request.get_json()
     _ensure_bio_skills_columns()
+    _ensure_terms_columns()
     import json as _json_profile
 
     _ensure_gender_column()
-    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio', 'gender']
+    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio', 'gender',
+                      'terms_accepted_at', 'terms_version']
     updates = {k: v for k, v in data.items() if k in allowed_fields}
 
     # Skills: stored as JSON string in the DB
@@ -11175,6 +11177,13 @@ def google_login():
     data = request.get_json(silent=True) or {}
     id_token = data.get('credential', '')
     invite_code = (data.get('invite_code') or '').strip().upper()
+    # Optional registration fields (collected via Flutter onboarding)
+    reg_phone = (data.get('phone') or '').strip()
+    reg_dob = (data.get('dob') or None)
+    reg_referral = (data.get('referral_code') or '').strip()
+    reg_terms_at = data.get('terms_accepted_at') or None
+    reg_terms_ver = data.get('terms_version', '2026-05-22')
+    reg_name_override = (data.get('name') or '').strip()  # name confirmed in onboarding
 
     if not id_token:
         return jsonify({'success': False, 'message': 'Google credential is required'}), 400
@@ -11215,6 +11224,7 @@ def google_login():
 
         # Retry DB block for transient startup/connectivity failures.
         user = None
+        is_new_user = False
         for db_attempt in range(2):
             try:
                 with get_db() as (cursor, conn):
@@ -11272,22 +11282,68 @@ def google_login():
                                     return jsonify({'success': False, 'message': "All trial spots are taken. We'll notify you when we launch publicly!"}), 403
 
                             # Register new Google user
+                            is_new_user = True
                             user_id = generate_user_id()
                             joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
                             # Google users get a random password (they never use it)
                             random_pw = generate_password_hash(secrets.token_hex(32), method='pbkdf2:sha256')
+                            # Use onboarding-confirmed name if provided, else Google profile name
+                            final_name = reg_name_override if reg_name_override else name
+                            terms_at = reg_terms_at or joined_at
+                            # Validate DOB if provided (must be 16+)
+                            dob_value = None
+                            if reg_dob:
+                                try:
+                                    dob_date = datetime.datetime.strptime(reg_dob, '%Y-%m-%d')
+                                    age = (datetime.datetime.now() - dob_date).days // 365
+                                    if age >= 16:
+                                        dob_value = reg_dob
+                                except ValueError:
+                                    pass
+                            try:
+                                _ensure_terms_columns()
+                            except Exception:
+                                pass
                             cursor.execute(f'''
                                 INSERT INTO users (id, name, email, password_hash, google_id, auth_provider,
-                                                  email_verified, profile_photo, joined_at)
-                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                            ''', (user_id, name, email, random_pw, google_id, 'google',
-                                  True, picture, joined_at))
+                                                  email_verified, profile_photo, joined_at,
+                                                  phone, dob, terms_accepted_at, terms_version)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH},
+                                        {PH}, {PH}, {PH}, {PH})
+                            ''', (user_id, final_name, email, random_pw, google_id, 'google',
+                                  True, picture, joined_at,
+                                  reg_phone or None, dob_value, terms_at, reg_terms_ver))
 
                             # Create wallet
                             cursor.execute(f'''
                                 INSERT INTO wallets (user_id, balance, created_at)
                                 VALUES ({PH}, 0, {PH})
                             ''', (user_id, joined_at))
+
+                            # Apply referral code bonus if provided
+                            if reg_referral:
+                                try:
+                                    cursor.execute(f'SELECT id, name FROM users WHERE referral_code = {PH}', (reg_referral,))
+                                    referrer = cursor.fetchone()
+                                    if referrer:
+                                        referrer = dict_from_row(referrer)
+                                        referrer_id = referrer['id']
+                                        reward = 50  # ₹50 signup bonus
+                                        ref_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                                        cursor.execute(f'''
+                                            INSERT INTO referrals (referrer_id, referred_id, referral_code, reward_amount, created_at)
+                                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                                        ''', (referrer_id, user_id, reg_referral, reward, ref_now))
+                                        cursor.execute(f'UPDATE users SET referred_by = {PH} WHERE id = {PH}', (referrer_id, user_id))
+                                        # Give new user a wallet bonus
+                                        cursor.execute(f'UPDATE wallets SET balance = balance + {PH}, total_cashback = total_cashback + {PH} WHERE user_id = {PH}',
+                                                       (reward, reward, user_id))
+                                        cursor.execute(f'''
+                                            INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, created_at)
+                                            SELECT id, {PH}, 'referral_bonus', {PH}, balance, {PH}, {PH} FROM wallets WHERE user_id = {PH}
+                                        ''', (user_id, reward, f'Referral signup bonus from {referrer["name"]}', ref_now, user_id))
+                                except Exception as _ref_e:
+                                    print(f'[GOOGLE LOGIN] Referral apply error (non-fatal): {_ref_e}')
 
                     user = get_user_by_id(user_id)
                     if user and user.get('is_banned'):
@@ -11328,7 +11384,8 @@ def google_login():
             'success': True,
             'message': 'Google login successful',
             'token': token,
-            'user': user_to_response(user)
+            'user': user_to_response(user),
+            'isNewUser': is_new_user
         })
 
     except urllib.error.URLError:

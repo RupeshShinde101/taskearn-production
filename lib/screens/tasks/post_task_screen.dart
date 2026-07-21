@@ -972,6 +972,62 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   /// Returns a rejection reason string if content is flagged, or null if OK.
+  // ─── Task title validation: ban gibberish + bad/illegal words ──────────────
+  static String? _validateTaskTitle(String? value) {
+    if (value == null) return 'Min 5 characters';
+    final v = value.trim();
+    if (v.length < 5) return 'Min 5 characters';
+
+    final lower = v.toLowerCase();
+
+    // 1. Bad / illegal / offensive words
+    const badWords = [
+      'fuck', 'shit', 'bitch', 'bastard', 'asshole', 'dick', 'pussy',
+      'cunt', 'whore', 'slut', 'nigger', 'faggot', 'retard', 'sex',
+      'porn', 'nude', 'rape', 'kill', 'murder', 'bomb', 'drug',
+      'cocaine', 'heroin', 'weed', 'ganja', 'terrorist', 'jihad',
+      'chutiya', 'madarchod', 'bhenchod', 'bhosdike', 'randi',
+      'gaandu', 'harami', 'saala', 'kamina', 'kutte',
+    ];
+    for (final word in badWords) {
+      if (lower.contains(word)) {
+        return 'Task name contains inappropriate words. Please use a proper title.';
+      }
+    }
+
+    // 2. Keyboard gibberish patterns
+    const gibberishPatterns = [
+      'qwerty', 'asdf', 'zxcv', 'qwer', 'asdfgh', 'zxcvbn',
+      'qazwsx', 'aaaa', 'bbbb', 'cccc', 'dddd', 'eeee', 'ffff',
+      'gggg', 'hhhh', 'iiii', 'jjjj', 'kkkk', 'llll', 'mmmm',
+      'nnnn', 'oooo', 'pppp', 'rrrr', 'ssss', 'tttt', 'uuuu',
+      'vvvv', 'wwww', 'xxxx', 'yyyy', 'zzzz', 'abcd', 'abcde',
+      '1234', '12345', '123456',
+    ];
+    for (final p in gibberishPatterns) {
+      if (lower.contains(p)) {
+        return 'Task name looks like gibberish. Please enter a meaningful title.';
+      }
+    }
+
+    // 3. Excessive repeated single character (≥4 in a row)
+    if (RegExp(r'(.)\1{3,}').hasMatch(lower)) {
+      return 'Task name contains repeated characters. Please enter a meaningful title.';
+    }
+
+    // 4. Must contain at least one vowel (real words have vowels)
+    final lettersOnly = lower.replaceAll(RegExp(r'[^a-z]'), '');
+    if (lettersOnly.length >= 5) {
+      final vowelCount = lettersOnly.split('').where((c) => 'aeiou'.contains(c)).length;
+      final vowelRatio = vowelCount / lettersOnly.length;
+      if (vowelRatio < 0.10) {
+        return 'Task name does not look like a valid title. Please use real words.';
+      }
+    }
+
+    return null;
+  }
+
   static String? _checkBannedContent(String title, String description) {
     final text = '${title.toLowerCase()} ${description.toLowerCase()}';
     if (text.trim().isEmpty) return null;
@@ -1413,8 +1469,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   hintText: 'e.g. Pick up parcel from Bandra',
                   prefixIcon: Icon(Icons.title),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().length < 5) ? 'Min 5 characters' : null,
+                validator: _validateTaskTitle,
               ),
               const SizedBox(height: 14),
 

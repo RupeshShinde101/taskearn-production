@@ -997,21 +997,34 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     // 1b. Scam / fraud / crypto / loan keywords — not allowed as task titles
     const scamWords = [
-      // Cryptocurrency
+      // Cryptocurrency & Bitcoin scams
       'crypto', 'bitcoin', 'btc', 'usdt', 'ethereum', 'eth',
       'litecoin', 'dogecoin', 'doge', 'nft', 'binance', 'tether',
       'xrp', 'bnb', 'shiba', 'solana', 'altcoin', 'defi', 'web3',
       'blockchain invest', 'coin invest', 'token invest',
-      // Loans
-      'loan', 'earn','earning','loans', 'instant loan', 'quick loan', 'easy loan',
+      'rug pull', 'crypto doubler', 'recovery agent',
+      'airdrop claim', 'airdrop', 'pump and dump', 'pump dump',
+      'wallet validation', 'seed phrase', 'mining pool',
+      'crypto recovery', 'bitcoin recovery', 'wallet recovery',
+      // Loans & financial scams
+      'loan', 'earn', 'earning', 'loans', 'instant loan', 'quick loan', 'easy loan',
       'personal loan', 'business loan', 'money lend', 'lending money',
+      'no credit check', 'guaranteed approval', 'upfront deposit',
+      'payday relief', 'debt erasure', 'pre-approved offer',
+      'processing fee', 'pre approved',
       // Fraud / scam indicators
-      'fraud', 'scam', 'phishing', 'ponzi', 'pyramid scheme',
+      'fraud', 'scam', 'phishing', 'phishing link', 'ponzi', 'pyramid scheme',
       'mlm', 'cheat', 'cheating', 'black money', 'money double',
       'double money', 'invest now', 'guaranteed return', 'guaranteed profit',
-      'get rich quick', 'easy money', 'fast money', 'make money fast',
-      'earn money fast', 'money mule', 'money transfer fraud',
+      'guaranteed returns', 'get rich quick', 'easy money', 'fast money',
+      'make money fast', 'earn money fast', 'money mule', 'money transfer fraud',
       'advance fee', 'lottery win', 'prize money',
+      'spoofed website', 'identity theft', 'impersonation',
+      'social engineering', 'malware attachment', 'credential stuffing',
+      'account takeover', 'unauthorized charge',
+      // High-urgency & manipulation
+      'act immediately', 'account suspended', 'legal action',
+      'arrest warrant', 'irs penalty', 'compromised ssn', 'secure vault',
     ];
     for (final word in scamWords) {
       if (lower.contains(word)) {

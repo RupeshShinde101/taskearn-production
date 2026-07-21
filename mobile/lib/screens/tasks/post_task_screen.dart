@@ -305,16 +305,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   /// Auto-fill description with category-specific prompts/questions.
-  /// Called when a category is selected to guide the user on what to describe.
-  /// Replaces the description if it is still the previously auto-filled template
-  /// (i.e. the user hasn't typed any custom content), otherwise leaves it alone.
-  void _autoFillDescription() {
+  /// Only fills if description is empty or still contains the previous template.
+  void _autoFillDescription({bool force = false}) {
     final prompts = _prompts[_selectedCategory];
     if (prompts == null || prompts.isEmpty) return;
     final newTemplate = prompts.map((p) => 'Q: $p\nA: ').join('\n\n');
-    _descCtrl.text = newTemplate;
-    _descCtrl.selection =
-        TextSelection.fromPosition(const TextPosition(offset: 0));
+    final current = _descCtrl.text;
+    // Don't overwrite if user has typed their own content
+    final isEmpty = current.trim().isEmpty;
+    final isTemplate = current.contains('Q: ') && current.contains('\nA: ');
+    if (force || isEmpty || isTemplate) {
+      _descCtrl.text = newTemplate;
+      _descCtrl.selection =
+          TextSelection.fromPosition(const TextPosition(offset: 0));
+    }
   }
 
   @override
@@ -1584,15 +1588,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 ),
                 onChanged: (v) => setState(() {
                   _categorySearch = v.trim().toLowerCase();
-                  if (_categorySearch.isNotEmpty) {
-                    final match = TaskCategory.all.firstWhere(
-                      (c) => c.label.toLowerCase().contains(_categorySearch) ||
-                             c.id.contains(_categorySearch),
-                      orElse: () => TaskCategory.all.first,
-                    );
-                    _selectedCategory = match.id;
-                    _autoFillDescription();
-                  }
                 }),
               ),
               const SizedBox(height: 10),

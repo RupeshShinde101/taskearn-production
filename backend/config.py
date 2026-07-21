@@ -105,7 +105,7 @@ class Config:
     # ----------------------------------------------------------------
     TRIAL_ACTIVE = os.environ.get('TRIAL_ACTIVE', 'true').lower() == 'true'
     TRIAL_INVITE_CODE = os.environ.get('TRIAL_INVITE_CODE', 'WORKMATE100')  # Change in Railway env vars
-    TRIAL_END_DATE = os.environ.get('TRIAL_END_DATE', '2026-07-09')  # Extended +30 days (2026-06-09)
+    TRIAL_END_DATE = os.environ.get('TRIAL_END_DATE', '2026-07-22')  # Extended to 2026-07-22
     TRIAL_MAX_USERS = int(os.environ.get('TRIAL_MAX_USERS', 100))
     
     # Validate PostgreSQL URL scheme

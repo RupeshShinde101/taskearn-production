@@ -469,33 +469,32 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Simple Google sign-up/login: opens the account picker and creates or
+  /// logs in the account on the backend in one step.
   Future<bool> loginWithGoogle({
     String? inviteCode,
     String? referralCode,
     DateTime? dob,
     String? phone,
+    String? nameOverride,
+    String? termsAcceptedAt,
   }) async {
     _loading = true;
     _error = null;
     notifyListeners();
 
     try {
-      // Always sign out first to clear any stale session from a previous
-      // logout — prevents null idToken / PlatformException on re-sign-in.
       try {
         await _googleSignIn.signOut();
       } catch (_) {}
 
       final account = await _googleSignIn.signIn();
       if (account == null) {
-        // User cancelled the account picker
         _loading = false;
         notifyListeners();
         return false;
       }
 
-      // Fetch authentication tokens — wrap separately because this can throw
-      // a PlatformException independent of signIn() on some Android versions.
       String? idToken;
       try {
         final googleAuth = await account.authentication;
@@ -518,16 +517,19 @@ class AuthProvider extends ChangeNotifier {
       final data = await ApiService.post('/auth/google', body: {
         'credential': idToken,
         'email': account.email,
-        'name': account.displayName,
+        'name': nameOverride?.isNotEmpty == true
+            ? nameOverride
+            : account.displayName,
         'avatar': account.photoUrl,
         if (inviteCode != null && inviteCode.isNotEmpty)
           'invite_code': inviteCode,
         if (referralCode != null && referralCode.isNotEmpty)
           'referral_code': referralCode,
         if (dob != null)
-          'dob':
-              '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}',
+          'dob': '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}',
         if (phone != null && phone.isNotEmpty) 'phone': phone,
+        if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
+        'terms_version': '2026-05-22',
       });
 
       final token = data['token'] ?? data['access_token'];
@@ -541,7 +543,7 @@ class AuthProvider extends ChangeNotifier {
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();
-        _registerFcmToken(); // register FCM + sync location after Google login
+        _registerFcmToken();
         return true;
       }
 
@@ -556,7 +558,8 @@ class AuthProvider extends ChangeNotifier {
       return false;
     } on PlatformException catch (e) {
       debugPrint('[Google] PlatformException: code=${e.code} message=${e.message}');
-      if (e.message != null && (e.message!.contains(': 10') || e.message!.contains('DEVELOPER_ERROR'))) {
+      if (e.message != null &&
+          (e.message!.contains(': 10') || e.message!.contains('DEVELOPER_ERROR'))) {
         _error = 'Google sign-in is not configured for this app build. Please contact support.';
       } else if (e.code == 'network_error') {
         _error = 'Network error. Please check your connection and try again.';
@@ -570,6 +573,40 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('[Google] loginWithGoogle error: $e');
       _error = 'Google sign-in failed. Please try again.';
       _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Updates a Google-signed-in user's profile after the onboarding wizard
+  /// collects name, phone, DOB and terms acceptance.
+  Future<bool> updateGoogleProfile({
+    String? name,
+    String? phone,
+    DateTime? dob,
+    String? termsAcceptedAt,
+  }) async {
+    _error = null;
+    try {
+      final body = <String, dynamic>{'terms_version': '2026-05-22'};
+      if (name != null && name.isNotEmpty) body['name'] = name;
+      if (phone != null && phone.isNotEmpty) body['phone'] = phone;
+      if (dob != null) {
+        body['dob'] =
+            '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}';
+      }
+      if (termsAcceptedAt != null) body['terms_accepted_at'] = termsAcceptedAt;
+
+      final data = await ApiService.put('/user/profile', body: body);
+      if (data['user'] != null) {
+        _user = User.fromJson(data['user']);
+        await StorageService.saveUserJson(_user!.toJson());
+        notifyListeners();
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[updateGoogleProfile] error: $e');
+      _error = 'Failed to update profile. Please try again.';
       notifyListeners();
       return false;
     }

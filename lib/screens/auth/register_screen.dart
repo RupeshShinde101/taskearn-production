@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/gradient_button.dart';
+import 'google_profile_popup.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -23,6 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscure = true;
   bool _agreeTerms = false;
   DateTime? _dob;
+  bool _showEmailForm = false; // email form hidden until user taps toggle
 
   @override
   void dispose() {
@@ -45,64 +47,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return age;
   }
 
+  /// Google sign-up: picker opens → account created → profile popup → home.
   Future<void> _signUpWithGoogle() async {
-    if (_inviteCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Please enter your invite code above before signing up with Google')),
-      );
-      return;
-    }
-    final phoneDigits = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
-    if (phoneDigits.isEmpty || phoneDigits.length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Please enter a valid phone number before signing up with Google')),
-      );
-      return;
-    }
-    if (_dob == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Please select your date of birth above before signing up with Google')),
-      );
-      return;
-    }
-    if (_ageInYears(_dob!) < 16) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('You must be at least 16 years old to join WorkMate4U')),
-      );
-      return;
-    }
-    if (!_agreeTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please accept the terms & conditions')),
-      );
-      return;
-    }
-
     final auth = context.read<AuthProvider>();
-    final ok = await auth.loginWithGoogle(
-      inviteCode: _inviteCtrl.text.trim(),
-      referralCode:
-          _referralCtrl.text.trim().isEmpty ? null : _referralCtrl.text.trim(),
-      dob: _dob,
-      phone: _phoneCtrl.text.trim(),
-    );
+    // Block router redirect before Google picker opens so the popup can show
+    auth.setProfileCompletionPending();
+    // Pass the default invite code automatically — users don’t need to type it
+    final ok = await auth.loginWithGoogle(inviteCode: 'WORKMATE100');
     if (!mounted) return;
 
-    if (ok) {
-      context.go('/home');
-    } else if (auth.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error!)),
-      );
+    if (!ok) {
+      // Login failed — clear the flag so the router is unblocked
+      auth.clearProfileCompletion();
+      if (auth.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(auth.error!)),
+        );
+      }
+      return;
     }
+
+    // Account created — show the profile completion popup
+    await GoogleProfilePopup.show(
+      context,
+      googleName: auth.user?.name,
+      photoUrl: auth.user?.avatar,
+      email: auth.user?.email,
+    );
+
+    if (!mounted) return;
+    // Popup closed (completed or skipped) — allow navigation to home
+    auth.clearProfileCompletion();
+    context.go('/home');
   }
 
   Future<void> _register() async {
@@ -208,9 +184,70 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
-                    // ── Form ─────────────────────────────────────────────
+                    // ── Google button (primary CTA) ───────────────────────
+                    SizedBox(
+                      width: double.infinity,
+                      child: _SocialBtn(
+                        label: 'Continue with Google',
+                        icon: const _GoogleLogo(),
+                        onTap: auth.isLoading ? null : _signUpWithGoogle,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── OR divider ──────────────────────────────────────
+                    const Row(
+                      children: [
+                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            'or',
+                            style: TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Toggle email form ────────────────────────────────
+                    GestureDetector(
+                      onTap: () =>
+                          setState(() => _showEmailForm = !_showEmailForm),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _showEmailForm
+                                ? 'Hide email sign-up'
+                                : 'Register with email instead',
+                            style: const TextStyle(
+                              color: Color(0xFF6366F1),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            _showEmailForm
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            color: const Color(0xFF6366F1),
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // ── Email / password form (collapsed by default) ───────
+                    if (_showEmailForm) ...[  
+                    const SizedBox(height: 20),
                     Form(
                       key: _formKey,
                       child: Column(
@@ -464,36 +501,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 22),
-
-                    // ── OR divider ──────────────────────────────────────
-                    const Row(
-                      children: [
-                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'or sign up with',
-                            style: TextStyle(
-                                color: Color(0xFF94A3B8),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500),
-                          ),
-                        ),
-                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── Social row ──────────────────────────────────────
-                    SizedBox(
-                      width: double.infinity,
-                      child: _SocialBtn(
-                        label: 'Continue with Google',
-                        icon: const _GoogleLogo(),
-                        onTap: auth.isLoading ? null : _signUpWithGoogle,
-                      ),
-                    ),
+                    ], // end if (_showEmailForm)
                     const SizedBox(height: 24),
 
                     // ── Sign in link ────────────────────────────────────

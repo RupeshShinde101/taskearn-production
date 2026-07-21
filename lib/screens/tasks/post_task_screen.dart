@@ -305,16 +305,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   /// Auto-fill description with category-specific prompts/questions.
-  /// Called when a category is selected to guide the user on what to describe.
-  /// Replaces the description if it is still the previously auto-filled template
-  /// (i.e. the user hasn't typed any custom content), otherwise leaves it alone.
-  void _autoFillDescription() {
+  /// Only fills if description is empty or still contains the previous template.
+  void _autoFillDescription({bool force = false}) {
     final prompts = _prompts[_selectedCategory];
     if (prompts == null || prompts.isEmpty) return;
     final newTemplate = prompts.map((p) => 'Q: $p\nA: ').join('\n\n');
-    _descCtrl.text = newTemplate;
-    _descCtrl.selection =
-        TextSelection.fromPosition(const TextPosition(offset: 0));
+    final current = _descCtrl.text;
+    // Don't overwrite if user has typed their own content
+    final isEmpty = current.trim().isEmpty;
+    final isTemplate = current.contains('Q: ') && current.contains('\nA: ');
+    if (force || isEmpty || isTemplate) {
+      _descCtrl.text = newTemplate;
+      _descCtrl.selection =
+          TextSelection.fromPosition(const TextPosition(offset: 0));
+    }
   }
 
   @override
@@ -995,6 +999,65 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       }
     }
 
+    // 1b. Scam / fraud / crypto / loan keywords — not allowed as task titles
+    const scamWords = [
+      // Cryptocurrency & Bitcoin scams
+      'crypto', 'bitcoin', 'btc', 'usdt', 'ethereum', 'eth',
+      'litecoin', 'dogecoin', 'doge', 'nft', 'binance', 'tether',
+      'xrp', 'bnb', 'shiba', 'solana', 'altcoin', 'defi', 'web3',
+      'blockchain invest', 'coin invest', 'token invest',
+      'rug pull', 'crypto doubler', 'recovery agent',
+      'airdrop claim', 'airdrop', 'pump and dump', 'pump dump',
+      'wallet validation', 'seed phrase', 'mining pool',
+      'crypto recovery', 'bitcoin recovery', 'wallet recovery',
+      // Loans & financial scams
+      'loan', 'earn', 'earning', 'loans', 'instant loan', 'quick loan', 'easy loan',
+      'personal loan', 'business loan', 'money lend', 'lending money',
+      'no credit check', 'guaranteed approval', 'upfront deposit',
+      'payday relief', 'debt erasure', 'pre-approved offer',
+      'processing fee', 'pre approved',
+      // Fraud / scam indicators
+      'fraud', 'scam', 'phishing', 'phishing link', 'ponzi', 'pyramid scheme',
+      'mlm', 'cheat', 'cheating', 'black money', 'money double',
+      'double money', 'invest now', 'guaranteed return', 'guaranteed profit',
+      'guaranteed returns', 'get rich quick', 'easy money', 'fast money',
+      'make money fast', 'earn money fast', 'money mule', 'money transfer fraud',
+      'advance fee', 'lottery win', 'prize money',
+      'spoofed website', 'identity theft', 'impersonation',
+      'social engineering', 'malware attachment', 'credential stuffing',
+      'account takeover', 'unauthorized charge',
+      // High-urgency & manipulation
+      'act immediately', 'account suspended', 'legal action',
+      'arrest warrant', 'irs penalty', 'compromised ssn', 'secure vault',
+      // Cyber scams & hacking
+      'hack', 'hacking', 'hacker', 'ddos', 'ransomware', 'spyware',
+      'keylogger', 'trojan', 'botnet', 'dark web', 'darkweb',
+      'deepweb', 'deep web', 'tor browser', 'exploit kit',
+      'zero day', 'remote access tool', 'rat tool',
+      'sim swap', 'sim swapping', 'vishing', 'smishing',
+      'fake invoice', 'invoice scam', 'business email compromise',
+      'tech support scam', 'remote desktop scam',
+      // Network marketing & MLM
+      'network marketing', 'direct selling', 'downline', 'upline',
+      'referral income', 'passive income scheme', 'matrix plan',
+      'binary plan', 'chain letter', 'referral chain',
+      'join my team', 'work from home scheme', 'be your own boss scheme',
+      'unlimited earning', 'residual income scheme',
+      // Drugs & narcotics
+      'marijuana', 'cannabis', 'hash', 'hashish', 'ganja', 'charas',
+      'smack', 'brown sugar', 'opium', 'afeem', 'meth', 'methamphetamine',
+      'amphetamine', 'ecstasy', 'mdma', 'lsd', 'acid trip',
+      'coke', 'crack cocaine', 'crystal meth', 'ice drug',
+      'tramadol', 'ketamine', 'fentanyl', 'xanax dealer',
+      'weed dealer', 'drug dealer', 'narcotic', 'narcotics',
+      'substance abuse', 'buy weed', 'sell weed', 'buy drugs', 'sell drugs',
+    ];
+    for (final word in scamWords) {
+      if (lower.contains(word)) {
+        return 'Task titles related to crypto, loans, fraud, or financial scams are not allowed.';
+      }
+    }
+
     // 2. Keyboard gibberish patterns
     const gibberishPatterns = [
       'qwerty', 'asdf', 'zxcv', 'qwer', 'asdfgh', 'zxcvbn',
@@ -1547,15 +1610,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 ),
                 onChanged: (v) => setState(() {
                   _categorySearch = v.trim().toLowerCase();
-                  if (_categorySearch.isNotEmpty) {
-                    final match = TaskCategory.all.firstWhere(
-                      (c) => c.label.toLowerCase().contains(_categorySearch) ||
-                             c.id.contains(_categorySearch),
-                      orElse: () => TaskCategory.all.first,
-                    );
-                    _selectedCategory = match.id;
-                    _autoFillDescription();
-                  }
                 }),
               ),
               const SizedBox(height: 10),

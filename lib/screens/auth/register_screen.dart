@@ -119,7 +119,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
 
     if (ok) {
-      context.go('/home');
+      // Navigate to email OTP verification before allowing home access
+      context.go('/otp', extra: {
+        'email': _emailCtrl.text.trim(),
+        'mode': 'verify',
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error ?? 'Registration failed')),

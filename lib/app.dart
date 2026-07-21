@@ -67,6 +67,8 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         // to complete their profile in the popup on the register screen.
         if (status == AuthStatus.authenticated && (isAuthRoute || loc == '/splash')) {
           if (auth.needsProfileCompletion) return null;
+          // Let email-registered users stay on /otp until they verify
+          if (loc.startsWith('/otp') && auth.user?.isEmailVerified == false) return null;
           return '/home';
         }
         return null;

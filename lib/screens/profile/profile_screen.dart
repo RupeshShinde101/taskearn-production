@@ -43,6 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Map<String, dynamic>> _reviews = [];
   bool _reviewsLoading = false;
   bool _showReviews = false;
+  bool _showSkills  = true; // expanded by default
 
   @override
   void initState() {
@@ -271,40 +272,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
 
             // ── Skills section ────────────────────────────────────────────
-            Row(
-              children: [
-                const _SectionHeader('My Skills'),
-                const Spacer(),
-                if (user?.skills != null && user!.skills.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined,
-                        size: 18, color: AppColors.gray),
-                    onPressed: () => _showSkillsDialog(context, auth),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    splashRadius: 18,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (user?.skills == null || user!.skills.isEmpty)
-              _EmptySkillsHint(onAdd: () => _showSkillsDialog(context, auth))
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: user.skills
-                    .map((s) => Chip(
-                          label: Text(s),
-                          backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                          labelStyle: const TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w500),
-                          side: BorderSide(
-                              color: AppColors.primary.withValues(alpha: 0.3)),
-                        ))
-                    .toList(),
+            // ── Skills section
+            InkWell(
+              onTap: () => setState(() => _showSkills = !_showSkills),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Text('My Skills',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
+                    if (user?.skills != null && user!.skills.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('${user.skills.length}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    const Spacer(),
+                    if (user?.skills != null && user!.skills.isNotEmpty)
+                      GestureDetector(
+                        onTap: () => _showSkillsDialog(context, auth),
+                        child: const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: Icon(Icons.edit_outlined,
+                              size: 18, color: AppColors.gray),
+                        ),
+                      ),
+                    Icon(
+                      _showSkills
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      color: AppColors.gray,
+                    ),
+                  ],
+                ),
               ),
+            ),
+            if (_showSkills) ...[  
+              const SizedBox(height: 8),
+              if (user?.skills == null || user!.skills.isEmpty)
+                _EmptySkillsHint(
+                    onAdd: () => _showSkillsDialog(context, auth))
+              else
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.light,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: user.skills
+                        .map((s) => Chip(
+                              label: Text(s),
+                              backgroundColor: AppColors.primary
+                                  .withValues(alpha: 0.1),
+                              labelStyle: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w500),
+                              side: BorderSide(
+                                  color: AppColors.primary
+                                      .withValues(alpha: 0.3)),
+                            ))
+                        .toList(),
+                  ),
+                ),
+            ],
 
             const SizedBox(height: 20),
 

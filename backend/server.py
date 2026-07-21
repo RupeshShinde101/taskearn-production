@@ -9262,11 +9262,12 @@ def delete_account():
             uid = request.user_id
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Block the email/google_id so this user cannot re-register via Google
+            # Record self-deletion — does NOT block re-registration.
+            # Only admin-deleted entries (deleted_by='admin') block sign-up.
             if user_email:
                 try:
                     cursor.execute(
-                        f"INSERT INTO deleted_accounts (email, google_id, deleted_at) VALUES ({PH}, {PH}, {PH}) ON CONFLICT (email) DO NOTHING",
+                        f"INSERT INTO deleted_accounts (email, google_id, deleted_at, deleted_by) VALUES ({PH}, {PH}, {PH}, 'self') ON CONFLICT (email) DO UPDATE SET deleted_at = EXCLUDED.deleted_at, deleted_by = 'self'",
                         (user_email, google_id, now)
                     )
                 except Exception as e:
@@ -11152,9 +11153,15 @@ def _ensure_google_auth_schema():
                     CREATE TABLE IF NOT EXISTS deleted_accounts (
                         email VARCHAR(255) PRIMARY KEY,
                         google_id VARCHAR(255),
-                        deleted_at TIMESTAMP DEFAULT NOW()
+                        deleted_at TIMESTAMP DEFAULT NOW(),
+                        deleted_by VARCHAR(20) DEFAULT 'admin'
                     )
                 ''')
+                # Add deleted_by column if table already exists without it
+                try:
+                    cursor.execute("ALTER TABLE deleted_accounts ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(20) DEFAULT 'admin'")
+                except Exception:
+                    pass
                 cursor.execute('''
                     CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id
                     ON deleted_accounts (google_id) WHERE google_id IS NOT NULL
@@ -11245,8 +11252,12 @@ def google_login():
                         last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
                     else:
-                        # Check if this email/google_id was previously deleted by admin
-                        cursor.execute(f'SELECT email FROM deleted_accounts WHERE email = {PH} OR google_id = {PH}', (email, google_id))
+                        # Block re-registration only for admin-deleted/banned accounts.
+                        # Users who self-deleted (deleted_by='self') can freely re-register.
+                        cursor.execute(
+                            f"SELECT email, deleted_by FROM deleted_accounts WHERE (email = {PH} OR google_id = {PH}) AND deleted_by != 'self'",
+                            (email, google_id)
+                        )
                         if cursor.fetchone():
                             return jsonify({'success': False, 'message': 'This account has been removed. Contact support if you believe this is a mistake.'}), 403
 

@@ -1003,7 +1003,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'xrp', 'bnb', 'shiba', 'solana', 'altcoin', 'defi', 'web3',
       'blockchain invest', 'coin invest', 'token invest',
       // Loans
-      'loan', 'loans', 'instant loan', 'quick loan', 'easy loan',
+      'loan', 'earn','earning','loans', 'instant loan', 'quick loan', 'easy loan',
       'personal loan', 'business loan', 'money lend', 'lending money',
       // Fraud / scam indicators
       'fraud', 'scam', 'phishing', 'ponzi', 'pyramid scheme',

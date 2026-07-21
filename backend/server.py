@@ -1362,13 +1362,6 @@ def register():
         if get_user_by_email(email):
             return jsonify({'success': False, 'message': 'Email already registered'}), 400
 
-        # Check if phone number already in use (if provided)
-        if phone:
-            with get_db() as (cursor, _ph_reg):
-                cursor.execute(f'SELECT id FROM users WHERE phone = {PH}', (phone,))
-                if cursor.fetchone():
-                    return jsonify({'success': False, 'message': 'Phone number already registered. Please use a different number or log in to your existing account.'}), 400
-
         # Validate age (must be 16+)
         try:
             dob_date = datetime.datetime.strptime(dob, '%Y-%m-%d')
@@ -11326,7 +11319,8 @@ def google_login():
                             if reg_phone:
                                 cursor.execute(f'SELECT id FROM users WHERE phone = {PH}', (reg_phone,))
                                 if cursor.fetchone():
-                                    return jsonify({'success': False, 'message': 'Phone number already registered. Please use a different number.'}), 400
+                                    # Phone in use — register without phone; user can add it later via profile
+                                    reg_phone = None
                             try:
                                 _ensure_terms_columns()
                             except Exception:

@@ -1084,6 +1084,23 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _submit() async {
+    // Always re-check title on every submit click (not relying on form cache)
+    final titleErr = _validateTaskTitle(_titleCtrl.text);
+    if (titleErr != null) {
+      _scrollCtrl.animateTo(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _titleFocus.requestFocus());
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(titleErr),
+        backgroundColor: AppColors.danger,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       // Scroll to top and jump cursor to the first invalid field
       _scrollCtrl.animateTo(0,

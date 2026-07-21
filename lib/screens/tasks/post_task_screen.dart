@@ -995,6 +995,30 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       }
     }
 
+    // 1b. Scam / fraud / crypto / loan keywords — not allowed as task titles
+    const scamWords = [
+      // Cryptocurrency
+      'crypto', 'bitcoin', 'btc', 'usdt', 'ethereum', 'eth',
+      'litecoin', 'dogecoin', 'doge', 'nft', 'binance', 'tether',
+      'xrp', 'bnb', 'shiba', 'solana', 'altcoin', 'defi', 'web3',
+      'blockchain invest', 'coin invest', 'token invest',
+      // Loans
+      'loan', 'loans', 'instant loan', 'quick loan', 'easy loan',
+      'personal loan', 'business loan', 'money lend', 'lending money',
+      // Fraud / scam indicators
+      'fraud', 'scam', 'phishing', 'ponzi', 'pyramid scheme',
+      'mlm', 'cheat', 'cheating', 'black money', 'money double',
+      'double money', 'invest now', 'guaranteed return', 'guaranteed profit',
+      'get rich quick', 'easy money', 'fast money', 'make money fast',
+      'earn money fast', 'money mule', 'money transfer fraud',
+      'advance fee', 'lottery win', 'prize money',
+    ];
+    for (final word in scamWords) {
+      if (lower.contains(word)) {
+        return 'Task titles related to crypto, loans, fraud, or financial scams are not allowed.';
+      }
+    }
+
     // 2. Keyboard gibberish patterns
     const gibberishPatterns = [
       'qwerty', 'asdf', 'zxcv', 'qwer', 'asdfgh', 'zxcvbn',

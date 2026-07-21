@@ -26,11 +26,15 @@ class AuthProvider extends ChangeNotifier {
     scopes: ['email', 'profile'],
   );
 
+  bool _needsProfileCompletion = false;
+
   User? get user => _user;
   AuthStatus get status => _status;
   bool get isLoggedIn => _status == AuthStatus.authenticated;
   bool get isLoading => _loading;
   String? get error => _error;
+  /// True while a freshly Google-registered user still needs to fill the popup.
+  bool get needsProfileCompletion => _needsProfileCompletion;
 
   /// Client-side session duration: 30 days after last successful login.
   static const Duration _kSessionDuration = Duration(days: 30);
@@ -541,6 +545,8 @@ class AuthProvider extends ChangeNotifier {
             DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
         _loading = false;
+        // NOTE: _needsProfileCompletion is set by the register screen
+        // before calling this method, so we don't change it here.
         notifyListeners();
         _registerFcmToken(); // register FCM + sync location after Google login
         return true;
@@ -573,6 +579,59 @@ class AuthProvider extends ChangeNotifier {
       _loading = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Updates a Google-signed-in user's profile after the popup collects
+  /// name, phone, DOB and terms acceptance.
+  Future<bool> updateGoogleProfile({
+    String? name,
+    String? phone,
+    DateTime? dob,
+    String? termsAcceptedAt,
+  }) async {
+    _error = null;
+    try {
+      final body = <String, dynamic>{'terms_version': '2026-05-22'};
+      if (name != null && name.isNotEmpty) body['name'] = name;
+      if (phone != null && phone.isNotEmpty) body['phone'] = phone;
+      if (dob != null) {
+        body['dob'] =
+            '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}';
+      }
+      if (termsAcceptedAt != null) body['terms_accepted_at'] = termsAcceptedAt;
+
+      final data = await ApiService.put('/user/profile', body: body);
+      debugPrint('[updateGoogleProfile] response: $data');
+      if (data['user'] != null) {
+        _user = User.fromJson(data['user']);
+        await StorageService.saveUserJson(_user!.toJson());
+      }
+      _needsProfileCompletion = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      debugPrint('[updateGoogleProfile] API error ${e.statusCode}: ${e.message}');
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      debugPrint('[updateGoogleProfile] unexpected error: $e');
+      _error = 'Failed to update profile. Please try again.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void setProfileCompletionPending() {
+    _needsProfileCompletion = true;
+    notifyListeners();
+  }
+
+  void clearProfileCompletion() {
+    if (_needsProfileCompletion) {
+      _needsProfileCompletion = false;
+      notifyListeners();
     }
   }
 

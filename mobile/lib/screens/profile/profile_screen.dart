@@ -43,7 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Map<String, dynamic>> _reviews = [];
   bool _reviewsLoading = false;
   bool _showReviews = false;
-  bool _showSkills  = true; // expanded by default
+  bool _showSkills = false;
 
   @override
   void initState() {
@@ -272,53 +272,73 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
 
             // ── Skills section ────────────────────────────────────────────
-            // ── Skills section
-            InkWell(
-              onTap: () => setState(() => _showSkills = !_showSkills),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    const Text('My Skills',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600)),
-                    if (user?.skills != null && user!.skills.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text('${user.skills.length}',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold)),
-                        ),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _showSkills = !_showSkills),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          const Text('My Skills',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600)),
+                          if (user?.skills != null &&
+                              user!.skills.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius:
+                                      BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${user.skills.length}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                    const Spacer(),
-                    if (user?.skills != null && user!.skills.isNotEmpty)
-                      GestureDetector(
-                        onTap: () => _showSkillsDialog(context, auth),
-                        child: const Padding(
-                          padding: EdgeInsets.only(right: 8),
-                          child: Icon(Icons.edit_outlined,
-                              size: 18, color: AppColors.gray),
-                        ),
-                      ),
-                    Icon(
+                    ),
+                  ),
+                ),
+                if (user?.skills != null && user!.skills.isNotEmpty)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _showSkillsDialog(context, auth),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 8),
+                      child: Icon(Icons.edit_outlined,
+                          size: 20, color: AppColors.gray),
+                    ),
+                  ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () =>
+                      setState(() => _showSkills = !_showSkills),
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                        left: 4, top: 8, bottom: 8),
+                    child: Icon(
                       _showSkills
                           ? Icons.keyboard_arrow_up
                           : Icons.keyboard_arrow_down,
                       color: AppColors.gray,
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
             if (_showSkills) ...[  
               const SizedBox(height: 8),

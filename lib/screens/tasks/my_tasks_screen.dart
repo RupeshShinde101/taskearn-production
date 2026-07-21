@@ -492,7 +492,7 @@ class _PostedTaskList extends StatelessWidget {
                     Expanded(
                       child: Text(
                         hasHelper
-                            ? 'The helper will be notified and released. A refund will be credited to your wallet.'
+                            ? 'The helper will be notified and released.'
                             : 'Are you sure you want to cancel this task? It will be removed from the board.',
                         style: TextStyle(
                           fontSize: 13,

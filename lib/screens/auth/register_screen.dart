@@ -555,8 +555,6 @@ class _TwoLineField extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.hint,
-    this.textCapitalization = TextCapitalization.none,
-    this.validator,
   });
 
   @override

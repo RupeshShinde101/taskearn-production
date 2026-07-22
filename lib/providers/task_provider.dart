@@ -194,7 +194,7 @@ class TaskProvider extends ChangeNotifier {
     if (!_hasMore) return;
 
     // Capture token before await so stale responses can be detected and dropped
-    final _myVersion = _browseFetchVersion;
+    final myVersion = _browseFetchVersion;
     _loadingBrowse = true;
     _error = null;
     // Use microtask so notifyListeners doesn't fire synchronously during build
@@ -258,7 +258,7 @@ class TaskProvider extends ChangeNotifier {
       }
 
       // Discard stale response — a newer refresh has reset the list
-      if (_myVersion != _browseFetchVersion) {
+      if (myVersion != _browseFetchVersion) {
         _loadingBrowse = false;
         _notify();
         return;

@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/gradient_button.dart';
-import 'google_profile_popup.dart';
+import '../../widgets/google_profile_popup.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -66,7 +66,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     await GoogleProfilePopup.show(
       context,
       googleName: auth.user?.name,
-      photoUrl: auth.user?.profilePhoto,
+      photoUrl: auth.user?.avatar,
       email: auth.user?.email,
     );
 

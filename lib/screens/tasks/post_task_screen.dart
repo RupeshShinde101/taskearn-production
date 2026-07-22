@@ -803,7 +803,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         SnackBar(
           content: Text(msg),
           action: (perm == LocationPermission.deniedForever)
-              ? SnackBarAction(
+              ? const SnackBarAction(
                   label: 'Settings',
                   onPressed: Geolocator.openAppSettings,
                 )

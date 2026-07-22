@@ -1095,7 +1095,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Text('$matchPct%\nmatch',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                           color: AppColors.success,
@@ -1483,11 +1483,11 @@ class _KycReminderSheet extends StatelessWidget {
           const SizedBox(height: 20),
 
           // Benefits
-          _BenefitRow(icon: Icons.add_task_rounded,     text: 'Post tasks on the platform'),
+          const _BenefitRow(icon: Icons.add_task_rounded,     text: 'Post tasks on the platform'),
           const SizedBox(height: 8),
-          _BenefitRow(icon: Icons.handshake_outlined,   text: 'Accept tasks & earn money'),
+          const _BenefitRow(icon: Icons.handshake_outlined,   text: 'Accept tasks & earn money'),
           const SizedBox(height: 8),
-          _BenefitRow(icon: Icons.account_balance_outlined, text: 'Withdraw your earnings'),
+          const _BenefitRow(icon: Icons.account_balance_outlined, text: 'Withdraw your earnings'),
           const SizedBox(height: 24),
 
           // Complete KYC button

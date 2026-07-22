@@ -1076,7 +1076,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Text('$matchPct%\nmatch',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                           color: AppColors.success,

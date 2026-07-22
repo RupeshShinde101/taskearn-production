@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/gradient_button.dart';
+import 'package:flutter_svg/flutter_svg.dart' show SvgPicture;
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -273,21 +275,24 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // ── Feature card ─────────────────────────────────────────────────────
-
 class _FeatureCard extends StatelessWidget {
+  const _FeatureCard();
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: Image.asset(
-        'assets/images/signin_illustration.png',
+    return SizedBox(
+      width: double.infinity,
+      height: 190,
+      child: SvgPicture.asset(
+        'assets/images/h.svg',
         width: double.infinity,
-        fit: BoxFit.fitWidth,
+        height: 190,
+        fit: BoxFit.contain,
+        alignment: Alignment.center,
       ),
     );
   }
 }
-
 // ── Input field ─────────────────────────────────────────────────────────────
 
 class _InputField extends StatelessWidget {

@@ -63,7 +63,14 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
             loc.startsWith('/forgot-password');
 
         if (status == AuthStatus.unauthenticated && !isAuthRoute) return '/login';
-        if (status == AuthStatus.authenticated && (isAuthRoute || loc == '/splash')) return '/home';
+        // Don't redirect to home if a Google-registered user still needs
+        // to complete their profile in the popup on the register screen.
+        if (status == AuthStatus.authenticated && (isAuthRoute || loc == '/splash')) {
+          if (auth.needsProfileCompletion) return null;
+          // Let email-registered users stay on /otp until they verify
+          if (loc.startsWith('/otp') && auth.user?.isEmailVerified == false) return null;
+          return '/home';
+        }
         return null;
       },
       routes: [

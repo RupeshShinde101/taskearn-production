@@ -751,7 +751,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             GestureDetector(
-              onTap: () => context.go('/browse'),
+              //Added onTap to navigate to browse screen with expiring tasks filtered (by sakshi on 2026/07/22)
+              onTap: () {
+                BrowseScreen.jumpToExpirySoon = true;
+                context.go('/browse');
+              },
+              //onTap: () => context.go('/browse'),
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

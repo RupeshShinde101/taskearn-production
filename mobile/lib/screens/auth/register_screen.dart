@@ -19,7 +19,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _inviteCtrl = TextEditingController();
   final _referralCtrl = TextEditingController();
   bool _obscure = true;
   bool _agreeTerms = false;
@@ -32,7 +31,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _passwordCtrl.dispose();
-    _inviteCtrl.dispose();
     _referralCtrl.dispose();
     super.dispose();
   }
@@ -105,7 +103,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       password: _passwordCtrl.text,
       phone: _phoneCtrl.text.trim(),
       dob: _dob != null ? DateFormat('yyyy-MM-dd').format(_dob!) : null,
-      inviteCode: _inviteCtrl.text.isNotEmpty ? _inviteCtrl.text : null,
       referralCode: _referralCtrl.text.isNotEmpty ? _referralCtrl.text : null,
       // Record the exact UTC timestamp when the user ticked the checkbox
       termsAcceptedAt: DateTime.now().toUtc().toIso8601String(),
@@ -404,21 +401,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          // ── Invite code ──────────────────────────────
-                          _TwoLineField(
-                            controller: _inviteCtrl,
-                            icon: Icons.vpn_key_outlined,
-                            title: 'Invite code (optional)',
-                            hint: 'Enter invite code',
-                            textCapitalization:
-                                TextCapitalization.characters,
-                            validator: (v) =>
-                                (v == null || v.trim().isEmpty)
-                                    ? 'Invite code is required'
-                                    : null,
-                          ),
-                          const SizedBox(height: 12),
-
                           // ── Referral code ────────────────────────────
                           _TwoLineField(
                             controller: _referralCtrl,
@@ -541,16 +523,12 @@ class _TwoLineField extends StatelessWidget {
   final IconData icon;
   final String title;
   final String hint;
-  final TextCapitalization textCapitalization;
-  final String? Function(String?)? validator;
 
   const _TwoLineField({
     required this.controller,
     required this.icon,
     required this.title,
     required this.hint,
-    this.textCapitalization = TextCapitalization.none,
-    this.validator,
   });
 
   @override
@@ -584,8 +562,6 @@ class _TwoLineField extends StatelessWidget {
                 ),
                 TextFormField(
                   controller: controller,
-                  textCapitalization: textCapitalization,
-                  validator: validator,
                   style: const TextStyle(
                       fontSize: 13, color: Color(0xFF1E293B)),
                   decoration: InputDecoration(

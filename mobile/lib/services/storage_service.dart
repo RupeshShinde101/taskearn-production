@@ -45,8 +45,7 @@ class StorageService {
       return null;
     }
   }
-
-  // ─── Full session clear (token + user cache + expiry) ───────────────────────
+// ─── Full session clear (token + user cache + expiry) ───────────────────────
   static Future<void> clearSession() async {
     await _prefs.remove('auth_token');
     await _prefs.remove('cached_user_json');

@@ -54,6 +54,8 @@ class AuthProvider extends ChangeNotifier {
     // messages even if the backend call below fails.
     try { await NotificationService.clearFcmToken(); } catch (_) {}
     await StorageService.clearSession();
+    await StorageService.clearSession();
+    await StorageService.clearSession();
     _user = null;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
@@ -71,6 +73,8 @@ class AuthProvider extends ChangeNotifier {
     final expiry = StorageService.getSessionExpiry();
     if (expiry != null && DateTime.now().isAfter(expiry)) {
       debugPrint('[AUTH] Session expired at $expiry — clearing session.');
+      await StorageService.clearSession();
+      await StorageService.clearSession();
       await StorageService.clearSession();
       _status = AuthStatus.unauthenticated;
       notifyListeners();
@@ -125,6 +129,8 @@ class AuthProvider extends ChangeNotifier {
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403) {
         // Token explicitly rejected by server — full logout
+        await StorageService.clearSession();
+        await StorageService.clearSession();
         await StorageService.clearSession();
         _user = null;
         _status = AuthStatus.unauthenticated;
@@ -185,7 +191,6 @@ class AuthProvider extends ChangeNotifier {
     required String password,
     String? phone,
     String? dob,
-    String? inviteCode,
     String? referralCode,
     String? termsAcceptedAt,
   }) async {
@@ -211,8 +216,6 @@ class AuthProvider extends ChangeNotifier {
       'password': password,
       if (phone != null) 'phone': phone,
       if (dob != null && dob.isNotEmpty) 'dob': dob,
-      if (inviteCode != null && inviteCode.isNotEmpty)
-        'invite_code': inviteCode.trim().toUpperCase(),
       if (referralCode != null && referralCode.isNotEmpty)
         'referral_code': referralCode.trim(),
       if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
@@ -279,6 +282,8 @@ class AuthProvider extends ChangeNotifier {
       try { await ApiService.post('/auth/logout'); } catch (_) {}
       try { await _googleSignIn.signOut(); } catch (_) {}
       await StorageService.clearSession();
+      await StorageService.clearSession();
+      await StorageService.clearSession();
       await StorageService.setString('user_avatar_local', '');
     }());
   }
@@ -291,6 +296,8 @@ class AuthProvider extends ChangeNotifier {
       final res = await ApiService.post('/user/delete-account', body: body);
       if (res['success'] == true) {
         try { await _googleSignIn.signOut(); } catch (_) {}
+        await StorageService.clearSession();
+        await StorageService.clearSession();
         await StorageService.clearSession();
         _user = null;
         _status = AuthStatus.unauthenticated;
@@ -476,7 +483,6 @@ class AuthProvider extends ChangeNotifier {
   /// Simple Google sign-up/login: opens the account picker and creates or
   /// logs in the account on the backend in one step.
   Future<bool> loginWithGoogle({
-    String? inviteCode,
     String? referralCode,
     DateTime? dob,
     String? phone,
@@ -525,8 +531,6 @@ class AuthProvider extends ChangeNotifier {
             ? nameOverride
             : account.displayName,
         'avatar': account.photoUrl,
-        if (inviteCode != null && inviteCode.isNotEmpty)
-          'invite_code': inviteCode,
         if (referralCode != null && referralCode.isNotEmpty)
           'referral_code': referralCode,
         if (dob != null)

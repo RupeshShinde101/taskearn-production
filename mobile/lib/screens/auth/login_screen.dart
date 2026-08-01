@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../widgets/google_profile_popup.dart';
 import '../../widgets/gradient_button.dart';
 import 'package:flutter_svg/flutter_svg.dart' show SvgPicture;
 
@@ -29,47 +28,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-
     final auth = context.read<AuthProvider>();
     final ok = await auth.login(_emailCtrl.text, _passwordCtrl.text);
     if (!mounted) return;
-
-    if (ok) {
-      context.go('/home');
-    } else {
+    if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error ?? 'Login failed')),
       );
     }
+    // On success: redirect guard navigates to /home
   }
 
   Future<void> _loginWithGoogle() async {
     final auth = context.read<AuthProvider>();
-    final router = GoRouter.of(context);
     final ok = await auth.loginWithGoogle();
     if (!mounted) return;
-
-    if (ok) {
-      if (auth.requiresGoogleProfileCompletion) {
-        final completed = await GoogleProfilePopup.show(
-          context,
-          googleName: auth.user?.name,
-          photoUrl: auth.user?.avatar,
-          email: auth.user?.email,
-        );
-        if (!mounted) return;
-
-        if (completed == true) {
-          await auth.markGoogleProfileCompleted();
-        }
-      }
-
-      router.go('/auth-success');
-    } else if (auth.error != null) {
+    if (!ok && auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),
       );
     }
+    // On success: redirect guard navigates to /auth-success or /home
   }
 
   @override
@@ -252,6 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: _SocialBtn(
                   label: 'Continue with Google',
                   icon: const _GoogleLogo(),
+                  loading: auth.isLoading,
                   onTap: auth.isLoading ? null : _loginWithGoogle,
                 ),
               ),
@@ -267,8 +247,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: TextStyle(
                           color: Color(0xFF64748B), fontSize: 14),
                     ),
-                    GestureDetector(
-                      onTap: () => context.push('/register'),
+                    TextButton(
+                      onPressed: () => context.push('/register'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF6366F1),
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       child: const Text(
                         'Sign up',
                         style: TextStyle(
@@ -394,9 +380,10 @@ class _SocialBtn extends StatelessWidget {
   final String label;
   final Widget icon;
   final VoidCallback? onTap;
+  final bool loading;
 
   const _SocialBtn(
-      {required this.label, required this.icon, this.onTap});
+      {required this.label, required this.icon, this.onTap, this.loading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -409,24 +396,36 @@ class _SocialBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            icon,
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
+        child: loading
+            ? const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                  ),
                 ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  icon,
+                  const SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

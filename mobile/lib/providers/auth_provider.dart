@@ -18,6 +18,7 @@ class AuthProvider extends ChangeNotifier {
   String? _error;
   String? _kycSubmitMessage;
   bool _googleProfileCompletionRequired = false;
+  bool _pendingSuccessScreen = false;
   /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
   /// so it survives refreshUser() calls where the backend ignores the field.
   String? _localAvatarUri;
@@ -34,6 +35,7 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
   bool get requiresGoogleProfileCompletion =>
       _googleProfileCompletionRequired;
+  bool get pendingSuccessScreen => _pendingSuccessScreen;
 
   /// Client-side session duration: 30 days after last successful login.
   static const Duration _kSessionDuration = Duration(days: 30);
@@ -246,6 +248,7 @@ class AuthProvider extends ChangeNotifier {
           await StorageService.saveSessionExpiry(
               DateTime.now().add(_kSessionDuration));
           _status = AuthStatus.authenticated;
+          _pendingSuccessScreen = true;
         }
 
         _loading = false;
@@ -272,10 +275,17 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
 
+  void clearPendingSuccessScreen() {
+    _pendingSuccessScreen = false;
+    _googleProfileCompletionRequired = false;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
-    // Clear local state IMMEDIATELY so GoRouter redirects to /login right away.
     _user = null;
     _localAvatarUri = null;
+    _pendingSuccessScreen = false;
+    _googleProfileCompletionRequired = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
 
@@ -305,6 +315,7 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveThemeMode(themeMode);
         _user = null;
         _localAvatarUri = null;
+        _pendingSuccessScreen = false;
         _googleProfileCompletionRequired = false;
         _status = AuthStatus.unauthenticated;
         notifyListeners();
@@ -568,6 +579,7 @@ class AuthProvider extends ChangeNotifier {
             !profileAlreadyCompleted &&
             (profileLooksIncomplete ||
                 (storedCreatedAt != null && storedCreatedAt != currentCreatedAt));
+        _pendingSuccessScreen = _googleProfileCompletionRequired;
 
         _loading = false;
         notifyListeners();

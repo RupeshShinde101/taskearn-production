@@ -3,10 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/google_profile_popup.dart';
 
-/// Shown for 3 seconds after account creation (both Google and email) before
-/// navigating to home — gives the user a sense of progress instead of an
-/// instant jump.
+/// Bridge screen after any new account creation.
+/// Shows a loading animation, then the Google profile popup if required,
+/// then navigates to home.
 class AuthSuccessScreen extends StatefulWidget {
   const AuthSuccessScreen({super.key});
 
@@ -16,40 +17,59 @@ class AuthSuccessScreen extends StatefulWidget {
 
 class _AuthSuccessScreenState extends State<AuthSuccessScreen>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _fadeIn;
+  late final AnimationController _ctrl;
+  late final Animation<double> _fade;
 
   @override
   void initState() {
     super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _ctrl.forward();
+    _startFlow();
+  }
 
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _fadeIn = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _controller.forward();
+  Future<void> _startFlow() async {
+    // Brief loading pause so the animation is visible.
+    await Future.delayed(const Duration(milliseconds: 1400));
+    if (!mounted) return;
 
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) context.go('/home');
-    });
+    final auth = context.read<AuthProvider>();
+    if (auth.requiresGoogleProfileCompletion) {
+      final completed = await GoogleProfilePopup.show(
+        context,
+        googleName: auth.user?.name,
+        photoUrl: auth.user?.avatar,
+        email: auth.user?.email,
+      );
+      if (!mounted) return;
+      if (completed == true) await auth.markGoogleProfileCompleted();
+    } else {
+      // No popup: hold for a comfortable total of ~3 s.
+      await Future.delayed(const Duration(milliseconds: 1600));
+      if (!mounted) return;
+    }
+
+    auth.clearPendingSuccessScreen();
+    // ignore: use_build_context_synchronously
+    context.go('/home');
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ctrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final firstName = (auth.user?.name.trim().split(' ').first ?? '');
-
+    final firstName =
+        context.watch<AuthProvider>().user?.name.trim().split(' ').first ?? '';
     return Scaffold(
       backgroundColor: const Color(0xFFF0F5FF),
       body: FadeTransition(
-        opacity: _fadeIn,
+        opacity: _fade,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -57,9 +77,7 @@ class _AuthSuccessScreenState extends State<AuthSuccessScreen>
               Image.asset('assets/images/logo.png', height: 110),
               const SizedBox(height: 28),
               Text(
-                firstName.isNotEmpty
-                    ? 'Welcome, $firstName! 🎉'
-                    : 'Welcome! 🎉',
+                firstName.isNotEmpty ? 'Welcome, $firstName! 🎉' : 'Welcome! 🎉',
                 style: const TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w800,

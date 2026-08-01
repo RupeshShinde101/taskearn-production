@@ -74,9 +74,9 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         if (status == AuthStatus.unauthenticated && !isAuthRoute) return '/login';
 
         if (status == AuthStatus.authenticated) {
-          // Google profile popup needs to show — stay on the auth screen.
-          if (isAuthRoute && auth.requiresGoogleProfileCompletion) return null;
-          if (isAuthRoute || loc == '/splash') return '/home';
+          if (isAuthRoute || loc == '/splash') {
+            return auth.pendingSuccessScreen ? '/auth-success' : '/home';
+          }
         }
 
         return null;
@@ -225,7 +225,9 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       final navKey = _router.routerDelegate.navigatorKey;
       final ctx = navKey.currentContext;
       if (ctx == null) return;
+      // ignore: use_build_context_synchronously
       showDialog<void>(
+        // ignore: use_build_context_synchronously
         context: ctx,
         builder: (dialogCtx) => AlertDialog(
           title: const Row(

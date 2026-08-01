@@ -1310,32 +1310,6 @@ def register():
         return jsonify({'success': False, 'message': 'Request body required'}), 400
 
     try:
-        # ---- TRIAL MODE CHECKS ----
-        if config.TRIAL_ACTIVE:
-            import datetime as _dt
-            # Check invite code
-            invite_code = (data.get('invite_code') or '').strip().upper()
-            if invite_code != config.TRIAL_INVITE_CODE.upper():
-                return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.'}), 403
-            # Check trial end date
-            try:
-                end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
-            except ValueError:
-                end_date = _dt.date.today() + _dt.timedelta(days=30)
-            if _dt.date.today() > end_date:
-                return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
-            # Check user cap
-            try:
-                with get_db() as (cursor, conn):
-                    cursor.execute('SELECT COUNT(*) as cnt FROM users')
-                    row = dict_from_row(cursor.fetchone())
-                    if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
-                        return jsonify({'success': False, 'message': 'All 100 trial spots are taken. We\'ll notify you when we launch publicly!'}), 403
-            except Exception as _cnt_e:
-                _cnt_err = str(_cnt_e).lower()
-                if any(k in _cnt_err for k in ['connect', 'relation', 'does not exist']):
-                    return jsonify({'success': False, 'message': 'Service is starting up. Please try again in a few seconds.'}), 503
-                raise
 
         # Validate required fields
         required = ['name', 'email', 'password', 'dob']
@@ -1454,46 +1428,6 @@ def register():
         return jsonify({'success': False, 'message': 'Registration failed. Please try again.'}), 500
 
 
-# -----------------------------------------------------------------------
-# TRIAL STATUS ENDPOINT — public, no auth needed
-# Returns whether trial is active, slots remaining, and end date.
-# -----------------------------------------------------------------------
-@app.route('/api/trial/status', methods=['GET'])
-def trial_status():
-    """Return current trial status (public endpoint)"""
-    import datetime as _dt
-    if not config.TRIAL_ACTIVE:
-        return jsonify({'trial': False})
-
-    now_date = _dt.date.today()
-    try:
-        end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
-    except ValueError:
-        end_date = now_date + _dt.timedelta(days=30)
-
-    expired = now_date > end_date
-
-    try:
-        with get_db() as (cursor, conn):
-            cursor.execute('SELECT COUNT(*) as cnt FROM users')
-            row = dict_from_row(cursor.fetchone())
-            total_users = row['cnt'] or 0
-    except Exception:
-        total_users = 0
-
-    slots_remaining = max(0, config.TRIAL_MAX_USERS - total_users)
-    full = total_users >= config.TRIAL_MAX_USERS
-
-    return jsonify({
-        'trial': True,
-        'active': not expired and not full,
-        'expired': expired,
-        'full': full,
-        'slotsRemaining': slots_remaining,
-        'totalUsers': total_users,
-        'maxUsers': config.TRIAL_MAX_USERS,
-        'endDate': config.TRIAL_END_DATE,
-    })
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -11187,7 +11121,6 @@ def google_login():
     """Login or register via Google ID token"""
     data = request.get_json(silent=True) or {}
     id_token = data.get('credential', '')
-    invite_code = (data.get('invite_code') or '').strip().upper()
     # Optional registration fields (collected via Flutter onboarding)
     reg_phone = (data.get('phone') or '').strip()
     reg_dob = (data.get('dob') or None)
@@ -11277,25 +11210,6 @@ def google_login():
                                 WHERE id = {PH}
                             ''', (google_id, user_id))
                         else:
-                            # Brand-new user — apply trial checks before creating account
-                            if config.TRIAL_ACTIVE:
-                                import datetime as _dt
-                                # Validate invite code
-                                if invite_code != config.TRIAL_INVITE_CODE.upper():
-                                    return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.', 'needsInviteCode': True}), 403
-                                # Check trial end date
-                                try:
-                                    end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
-                                except ValueError:
-                                    end_date = _dt.date.today() + _dt.timedelta(days=30)
-                                if _dt.date.today() > end_date:
-                                    return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
-                                # Check user cap
-                                cursor.execute('SELECT COUNT(*) as cnt FROM users')
-                                row = dict_from_row(cursor.fetchone())
-                                if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
-                                    return jsonify({'success': False, 'message': "All trial spots are taken. We'll notify you when we launch publicly!"}), 403
-
                             # Register new Google user
                             is_new_user = True
                             user_id = generate_user_id()

@@ -17,6 +17,9 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   String? _kycSubmitMessage;
+  bool _googleProfileCompletionRequired = false;
+  bool _pendingSuccessScreen = false;
+  bool _googleAuthPending = false;
   /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
   /// so it survives refreshUser() calls where the backend ignores the field.
   String? _localAvatarUri;
@@ -31,6 +34,10 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _status == AuthStatus.authenticated;
   bool get isLoading => _loading;
   String? get error => _error;
+  bool get requiresGoogleProfileCompletion =>
+      _googleProfileCompletionRequired;
+  bool get pendingSuccessScreen => _pendingSuccessScreen;
+  bool get googleAuthPending => _googleAuthPending;
 
   /// Client-side session duration: 30 days after last successful login.
   static const Duration _kSessionDuration = Duration(days: 30);
@@ -243,6 +250,7 @@ class AuthProvider extends ChangeNotifier {
           await StorageService.saveSessionExpiry(
               DateTime.now().add(_kSessionDuration));
           _status = AuthStatus.authenticated;
+          _pendingSuccessScreen = true;
         }
 
         _loading = false;
@@ -269,10 +277,18 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
 
+  void clearPendingSuccessScreen() {
+    _pendingSuccessScreen = false;
+    _googleProfileCompletionRequired = false;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
-    // Clear local state IMMEDIATELY so GoRouter redirects to /login right away.
     _user = null;
     _localAvatarUri = null;
+    _pendingSuccessScreen = false;
+    _googleProfileCompletionRequired = false;
+    _googleAuthPending = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
 
@@ -296,10 +312,15 @@ class AuthProvider extends ChangeNotifier {
       final res = await ApiService.post('/user/delete-account', body: body);
       if (res['success'] == true) {
         try { await _googleSignIn.signOut(); } catch (_) {}
-        await StorageService.clearSession();
-        await StorageService.clearSession();
-        await StorageService.clearSession();
+        // Preserve display preference then wipe all other local data.
+        final themeMode = StorageService.getThemeMode();
+        await StorageService.clear();
+        await StorageService.saveThemeMode(themeMode);
         _user = null;
+        _localAvatarUri = null;
+        _pendingSuccessScreen = false;
+        _googleProfileCompletionRequired = false;
+        _googleAuthPending = false;
         _status = AuthStatus.unauthenticated;
         notifyListeners();
         return {'success': true};
@@ -491,13 +512,10 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     _loading = true;
     _error = null;
+    _googleProfileCompletionRequired = false;
     notifyListeners();
 
     try {
-      try {
-        await _googleSignIn.signOut();
-      } catch (_) {}
-
       final account = await _googleSignIn.signIn();
       if (account == null) {
         _loading = false;
@@ -524,6 +542,10 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
+      // ID token ready — show bridge screen now so the animation plays while the API runs.
+      _googleAuthPending = true;
+      notifyListeners();
+
       final data = await ApiService.post('/auth/google', body: {
         'credential': idToken,
         'email': account.email,
@@ -538,7 +560,7 @@ class AuthProvider extends ChangeNotifier {
         if (phone != null && phone.isNotEmpty) 'phone': phone,
         if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
         'terms_version': '2026-05-22',
-      });
+      }, timeout: const Duration(seconds: 60));
 
       final token = data['token'] ?? data['access_token'];
       if (token != null) {
@@ -549,6 +571,25 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveSessionExpiry(
             DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
+
+        final email = _user!.email.trim().toLowerCase();
+        final currentCreatedAt = _user!.createdAt.toUtc().toIso8601String();
+        final storedCreatedAt = StorageService.getGoogleProfileCreatedAt(email);
+        if (storedCreatedAt != null && storedCreatedAt != currentCreatedAt) {
+          await StorageService.clearGoogleProfileState(email);
+        }
+
+        final profileLooksIncomplete =
+            _user!.name.trim().isEmpty || (_user!.phone?.trim().isEmpty ?? true);
+        final profileAlreadyCompleted =
+            StorageService.getGoogleProfileCompleted(email);
+        _googleProfileCompletionRequired =
+            !profileAlreadyCompleted &&
+            (profileLooksIncomplete ||
+                (storedCreatedAt != null && storedCreatedAt != currentCreatedAt));
+        _pendingSuccessScreen = _googleProfileCompletionRequired;
+
+        _googleAuthPending = false;
         _loading = false;
         notifyListeners();
         _registerFcmToken();
@@ -556,11 +597,15 @@ class AuthProvider extends ChangeNotifier {
       }
 
       _error = data['message'] ?? 'Google sign-in failed';
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
     } on ApiException catch (e) {
-      _error = e.message;
+      _error = e.message.contains('timed out')
+          ? 'Google sign-in is taking too long. Please check your connection and try again.'
+          : e.message;
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
@@ -574,12 +619,14 @@ class AuthProvider extends ChangeNotifier {
       } else {
         _error = 'Google sign-in failed. Please try again.';
       }
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
     } catch (e) {
       debugPrint('[Google] loginWithGoogle error: $e');
       _error = 'Google sign-in failed. Please try again.';
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
@@ -623,6 +670,19 @@ class AuthProvider extends ChangeNotifier {
   void clearError() {
     _error = null;
     _kycSubmitMessage = null;
+    notifyListeners();
+  }
+
+  Future<void> markGoogleProfileCompleted() async {
+    final user = _user;
+    if (user == null || user.email.trim().isEmpty) return;
+
+    await StorageService.saveGoogleProfileState(
+      email: user.email,
+      completed: true,
+      createdAt: user.createdAt.toUtc().toIso8601String(),
+    );
+    _googleProfileCompletionRequired = false;
     notifyListeners();
   }
 

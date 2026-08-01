@@ -84,6 +84,38 @@ class StorageService {
 
   static String? getString(String key) => _prefs.getString(key);
 
+  static String _normalizeEmail(String email) => email.trim().toLowerCase();
+
+  static String _googleProfileCompletedKey(String email) =>
+      'google_profile_completed_${_normalizeEmail(email)}';
+
+  static String _googleProfileCreatedAtKey(String email) =>
+      'google_profile_created_at_${_normalizeEmail(email)}';
+
+  static Future<void> saveGoogleProfileState({
+    required String email,
+    required bool completed,
+    String? createdAt,
+  }) async {
+    final normalizedEmail = _normalizeEmail(email);
+    await _prefs.setBool(_googleProfileCompletedKey(normalizedEmail), completed);
+    if (createdAt != null && createdAt.isNotEmpty) {
+      await _prefs.setString(_googleProfileCreatedAtKey(normalizedEmail), createdAt);
+    }
+  }
+
+  static bool getGoogleProfileCompleted(String email) =>
+      _prefs.getBool(_googleProfileCompletedKey(email)) ?? false;
+
+  static String? getGoogleProfileCreatedAt(String email) =>
+      _prefs.getString(_googleProfileCreatedAtKey(email));
+
+  static Future<void> clearGoogleProfileState(String email) async {
+    final normalizedEmail = _normalizeEmail(email);
+    await _prefs.remove(_googleProfileCompletedKey(normalizedEmail));
+    await _prefs.remove(_googleProfileCreatedAtKey(normalizedEmail));
+  }
+
   // ─── Gender (persisted locally so emoji works even before server returns it) ─
   static Future<void> saveGender(String gender) async {
     await _prefs.setString('user_gender', gender);

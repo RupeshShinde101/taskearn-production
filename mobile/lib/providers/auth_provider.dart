@@ -17,6 +17,7 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   String? _kycSubmitMessage;
+  bool _googleProfileCompletionRequired = false;
   /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
   /// so it survives refreshUser() calls where the backend ignores the field.
   String? _localAvatarUri;
@@ -31,6 +32,8 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _status == AuthStatus.authenticated;
   bool get isLoading => _loading;
   String? get error => _error;
+  bool get requiresGoogleProfileCompletion =>
+      _googleProfileCompletionRequired;
 
   /// Client-side session duration: 30 days after last successful login.
   static const Duration _kSessionDuration = Duration(days: 30);
@@ -291,15 +294,20 @@ class AuthProvider extends ChangeNotifier {
   /// Permanently delete the user's account and all data.
   Future<Map<String, dynamic>> deleteAccount({String? password}) async {
     try {
+      final email = _user?.email.trim().toLowerCase();
       final body = <String, dynamic>{};
       if (password != null && password.isNotEmpty) body['password'] = password;
       final res = await ApiService.post('/user/delete-account', body: body);
       if (res['success'] == true) {
         try { await _googleSignIn.signOut(); } catch (_) {}
+        if (email != null && email.isNotEmpty) {
+          await StorageService.clearGoogleProfileState(email);
+        }
         await StorageService.clearSession();
         await StorageService.clearSession();
         await StorageService.clearSession();
         _user = null;
+        _googleProfileCompletionRequired = false;
         _status = AuthStatus.unauthenticated;
         notifyListeners();
         return {'success': true};
@@ -491,13 +499,10 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     _loading = true;
     _error = null;
+    _googleProfileCompletionRequired = false;
     notifyListeners();
 
     try {
-      try {
-        await _googleSignIn.signOut();
-      } catch (_) {}
-
       final account = await _googleSignIn.signIn();
       if (account == null) {
         _loading = false;
@@ -549,6 +554,23 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveSessionExpiry(
             DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
+
+        final email = _user!.email.trim().toLowerCase();
+        final currentCreatedAt = _user!.createdAt.toUtc().toIso8601String();
+        final storedCreatedAt = StorageService.getGoogleProfileCreatedAt(email);
+        if (storedCreatedAt != null && storedCreatedAt != currentCreatedAt) {
+          await StorageService.clearGoogleProfileState(email);
+        }
+
+        final profileLooksIncomplete =
+            _user!.name.trim().isEmpty || (_user!.phone?.trim().isEmpty ?? true);
+        final profileAlreadyCompleted =
+            StorageService.getGoogleProfileCompleted(email);
+        _googleProfileCompletionRequired =
+            !profileAlreadyCompleted &&
+            (profileLooksIncomplete ||
+                (storedCreatedAt != null && storedCreatedAt != currentCreatedAt));
+
         _loading = false;
         notifyListeners();
         _registerFcmToken();
@@ -623,6 +645,19 @@ class AuthProvider extends ChangeNotifier {
   void clearError() {
     _error = null;
     _kycSubmitMessage = null;
+    notifyListeners();
+  }
+
+  Future<void> markGoogleProfileCompleted() async {
+    final user = _user;
+    if (user == null || user.email.trim().isEmpty) return;
+
+    await StorageService.saveGoogleProfileState(
+      email: user.email,
+      completed: true,
+      createdAt: user.createdAt.toUtc().toIso8601String(),
+    );
+    _googleProfileCompletionRequired = false;
     notifyListeners();
   }
 

@@ -48,6 +48,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   /// Google sign-up: picker opens → account created → profile popup → home.
   Future<void> _signUpWithGoogle() async {
     final auth = context.read<AuthProvider>();
+    final router = GoRouter.of(context);
     final ok = await auth.loginWithGoogle();
     if (!mounted) return;
 
@@ -60,16 +61,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    // Account created — show the profile completion popup
-    await GoogleProfilePopup.show(
-      context,
-      googleName: auth.user?.name,
-      photoUrl: auth.user?.avatar,
-      email: auth.user?.email,
-    );
+    if (auth.requiresGoogleProfileCompletion) {
+      final completed = await GoogleProfilePopup.show(
+        context,
+        googleName: auth.user?.name,
+        photoUrl: auth.user?.avatar,
+        email: auth.user?.email,
+      );
+
+      if (!mounted) return;
+
+      if (completed == true) {
+        await auth.markGoogleProfileCompleted();
+      }
+    }
 
     if (!mounted) return;
-    context.go('/home');
+    router.go('/home');
   }
 
   Future<void> _register() async {

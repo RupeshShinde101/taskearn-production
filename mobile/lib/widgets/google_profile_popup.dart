@@ -21,13 +21,13 @@ class GoogleProfilePopup extends StatefulWidget {
     this.email,
   });
 
-  static Future<void> show(
+  static Future<bool?> show(
     BuildContext context, {
     String? googleName,
     String? photoUrl,
     String? email,
   }) {
-    return showModalBottomSheet<void>(
+    return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       isDismissible: false,
@@ -124,7 +124,7 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
       _msg(auth.error ?? 'Profile saved partially. You can update it later.');
     }
     // Always close the popup and proceed to home.
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) Navigator.of(context).pop(ok);
   }
 
   @override

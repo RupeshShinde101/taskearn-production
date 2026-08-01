@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/google_profile_popup.dart';
 import '../../widgets/gradient_button.dart';
 import 'package:flutter_svg/flutter_svg.dart' show SvgPicture;
 
@@ -44,11 +45,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _loginWithGoogle() async {
     final auth = context.read<AuthProvider>();
+    final router = GoRouter.of(context);
     final ok = await auth.loginWithGoogle();
     if (!mounted) return;
 
     if (ok) {
-      context.go('/home');
+      if (auth.requiresGoogleProfileCompletion) {
+        final completed = await GoogleProfilePopup.show(
+          context,
+          googleName: auth.user?.name,
+          photoUrl: auth.user?.avatar,
+          email: auth.user?.email,
+        );
+        if (!mounted) return;
+
+        if (completed == true) {
+          await auth.markGoogleProfileCompleted();
+        }
+      }
+
+      router.go('/home');
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),
@@ -136,7 +152,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 20),
 
               // ── Feature card ─────────────────────────────────────
-              _FeatureCard(),
+              const _FeatureCard(),
               const SizedBox(height: 24),
 
               // ── Form ──────────────────────────────────────────────────

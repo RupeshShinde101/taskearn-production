@@ -59,6 +59,11 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
           return loc == '/splash' ? null : '/splash';
         }
 
+        // Show bridge screen immediately after account selection while API runs.
+        if (auth.googleAuthPending) {
+          return loc == '/auth-success' ? null : '/auth-success';
+        }
+
         // Auth-success is a post-login bridge screen — authenticated only.
         if (loc == '/auth-success') {
           return status == AuthStatus.unauthenticated ? '/login' : null;

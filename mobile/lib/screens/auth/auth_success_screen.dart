@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -31,11 +32,41 @@ class _AuthSuccessScreenState extends State<AuthSuccessScreen>
   }
 
   Future<void> _startFlow() async {
-    // Brief loading pause so the animation is visible.
-    await Future.delayed(const Duration(milliseconds: 1400));
+    final auth = context.read<AuthProvider>();
+
+    // If navigated here via googleAuthPending, the API call is still in-flight.
+    // Wait for it to settle before proceeding.
+    if (auth.isLoading) {
+      final completer = Completer<void>();
+      void onChanged() {
+        if (!auth.isLoading && !completer.isCompleted) completer.complete();
+      }
+      auth.addListener(onChanged);
+      // Guard: may have already finished between the check and addListener.
+      if (!auth.isLoading && !completer.isCompleted) completer.complete();
+      try {
+        await completer.future.timeout(const Duration(seconds: 65));
+      } on TimeoutException catch (_) {}
+      auth.removeListener(onChanged);
+    }
+
     if (!mounted) return;
 
-    final auth = context.read<AuthProvider>();
+    // Auth failed — redirect guard navigates to /login; show error and bail.
+    if (auth.status != AuthStatus.authenticated) {
+      if (auth.error != null) {
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(auth.error!)),
+        );
+      }
+      return;
+    }
+
+    // Brief pause so the fade-in animation is visible.
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
     if (auth.requiresGoogleProfileCompletion) {
       final completed = await GoogleProfilePopup.show(
         context,
@@ -45,9 +76,6 @@ class _AuthSuccessScreenState extends State<AuthSuccessScreen>
       );
       if (!mounted) return;
       if (completed == true) await auth.markGoogleProfileCompleted();
-    } else {
-      // No popup: hold for a comfortable total of ~3 s.
-      await Future.delayed(const Duration(milliseconds: 1600));
       if (!mounted) return;
     }
 
@@ -64,8 +92,8 @@ class _AuthSuccessScreenState extends State<AuthSuccessScreen>
 
   @override
   Widget build(BuildContext context) {
-    final firstName =
-        context.watch<AuthProvider>().user?.name.trim().split(' ').first ?? '';
+    final auth = context.watch<AuthProvider>();
+    final firstName = auth.user?.name.trim().split(' ').first ?? '';
     return Scaffold(
       backgroundColor: const Color(0xFFF0F5FF),
       body: FadeTransition(
@@ -86,9 +114,12 @@ class _AuthSuccessScreenState extends State<AuthSuccessScreen>
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Setting up your account…',
-                style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+              Text(
+                auth.isLoading
+                    ? 'Connecting to your account…'
+                    : 'Setting up your account…',
+                style:
+                    const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
               ),
               const SizedBox(height: 32),
               const SizedBox(

@@ -19,6 +19,7 @@ class AuthProvider extends ChangeNotifier {
   String? _kycSubmitMessage;
   bool _googleProfileCompletionRequired = false;
   bool _pendingSuccessScreen = false;
+  bool _googleAuthPending = false;
   /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
   /// so it survives refreshUser() calls where the backend ignores the field.
   String? _localAvatarUri;
@@ -36,6 +37,7 @@ class AuthProvider extends ChangeNotifier {
   bool get requiresGoogleProfileCompletion =>
       _googleProfileCompletionRequired;
   bool get pendingSuccessScreen => _pendingSuccessScreen;
+  bool get googleAuthPending => _googleAuthPending;
 
   /// Client-side session duration: 30 days after last successful login.
   static const Duration _kSessionDuration = Duration(days: 30);
@@ -286,6 +288,7 @@ class AuthProvider extends ChangeNotifier {
     _localAvatarUri = null;
     _pendingSuccessScreen = false;
     _googleProfileCompletionRequired = false;
+    _googleAuthPending = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
 
@@ -317,6 +320,7 @@ class AuthProvider extends ChangeNotifier {
         _localAvatarUri = null;
         _pendingSuccessScreen = false;
         _googleProfileCompletionRequired = false;
+        _googleAuthPending = false;
         _status = AuthStatus.unauthenticated;
         notifyListeners();
         return {'success': true};
@@ -538,6 +542,10 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
+      // ID token ready — show bridge screen now so the animation plays while the API runs.
+      _googleAuthPending = true;
+      notifyListeners();
+
       final data = await ApiService.post('/auth/google', body: {
         'credential': idToken,
         'email': account.email,
@@ -552,7 +560,7 @@ class AuthProvider extends ChangeNotifier {
         if (phone != null && phone.isNotEmpty) 'phone': phone,
         if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
         'terms_version': '2026-05-22',
-      });
+      }, timeout: const Duration(seconds: 60));
 
       final token = data['token'] ?? data['access_token'];
       if (token != null) {
@@ -581,6 +589,7 @@ class AuthProvider extends ChangeNotifier {
                 (storedCreatedAt != null && storedCreatedAt != currentCreatedAt));
         _pendingSuccessScreen = _googleProfileCompletionRequired;
 
+        _googleAuthPending = false;
         _loading = false;
         notifyListeners();
         _registerFcmToken();
@@ -588,11 +597,15 @@ class AuthProvider extends ChangeNotifier {
       }
 
       _error = data['message'] ?? 'Google sign-in failed';
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
     } on ApiException catch (e) {
-      _error = e.message;
+      _error = e.message.contains('timed out')
+          ? 'Google sign-in is taking too long. Please check your connection and try again.'
+          : e.message;
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
@@ -606,12 +619,14 @@ class AuthProvider extends ChangeNotifier {
       } else {
         _error = 'Google sign-in failed. Please try again.';
       }
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
     } catch (e) {
       debugPrint('[Google] loginWithGoogle error: $e');
       _error = 'Google sign-in failed. Please try again.';
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;

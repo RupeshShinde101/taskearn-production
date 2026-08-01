@@ -77,7 +77,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (!mounted) return;
-    router.go('/home');
+    router.go('/auth-success');
   }
 
   Future<void> _register() async {
@@ -105,6 +105,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     final auth = context.read<AuthProvider>();
+    final router = GoRouter.of(context);
     final ok = await auth.register(
       name: _nameCtrl.text,
       email: _emailCtrl.text,
@@ -119,7 +120,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
 
     if (ok) {
-      context.go('/home');
+      router.go('/auth-success');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error ?? 'Registration failed')),

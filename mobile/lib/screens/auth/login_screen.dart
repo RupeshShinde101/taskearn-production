@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      router.go('/home');
+      router.go('/auth-success');
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),

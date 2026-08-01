@@ -294,19 +294,17 @@ class AuthProvider extends ChangeNotifier {
   /// Permanently delete the user's account and all data.
   Future<Map<String, dynamic>> deleteAccount({String? password}) async {
     try {
-      final email = _user?.email.trim().toLowerCase();
       final body = <String, dynamic>{};
       if (password != null && password.isNotEmpty) body['password'] = password;
       final res = await ApiService.post('/user/delete-account', body: body);
       if (res['success'] == true) {
         try { await _googleSignIn.signOut(); } catch (_) {}
-        if (email != null && email.isNotEmpty) {
-          await StorageService.clearGoogleProfileState(email);
-        }
-        await StorageService.clearSession();
-        await StorageService.clearSession();
-        await StorageService.clearSession();
+        // Preserve display preference then wipe all other local data.
+        final themeMode = StorageService.getThemeMode();
+        await StorageService.clear();
+        await StorageService.saveThemeMode(themeMode);
         _user = null;
+        _localAvatarUri = null;
         _googleProfileCompletionRequired = false;
         _status = AuthStatus.unauthenticated;
         notifyListeners();

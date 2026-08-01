@@ -27,6 +27,7 @@ import 'screens/shell/main_shell.dart';
 import 'screens/tutorial/tutorial_screen.dart';
 import 'screens/legal/terms_screen.dart';
 import 'screens/legal/privacy_screen.dart';
+import 'screens/auth/auth_success_screen.dart';
 
 class Workmate4uApp extends StatefulWidget {
   const Workmate4uApp({super.key});
@@ -54,9 +55,18 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         final status = auth.status;
         final loc = state.matchedLocation;
 
-        // While checking auth, stay on splash screen
         if (status == AuthStatus.unknown) {
           return loc == '/splash' ? null : '/splash';
+        }
+
+        // Show bridge screen immediately after account selection while API runs.
+        if (auth.googleAuthPending) {
+          return loc == '/auth-success' ? null : '/auth-success';
+        }
+
+        // Auth-success is a post-login bridge screen — authenticated only.
+        if (loc == '/auth-success') {
+          return status == AuthStatus.unauthenticated ? '/login' : null;
         }
 
         final isAuthRoute = loc.startsWith('/login') ||
@@ -67,19 +77,29 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
             loc.startsWith('/privacy');
 
         if (status == AuthStatus.unauthenticated && !isAuthRoute) return '/login';
-        if (status == AuthStatus.authenticated && (isAuthRoute || loc == '/splash')) return '/home';
+
+        if (status == AuthStatus.authenticated) {
+          if (isAuthRoute || loc == '/splash') {
+            return auth.pendingSuccessScreen ? '/auth-success' : '/home';
+          }
+        }
+
         return null;
       },
       routes: [
-        // Splash
         GoRoute(
           path: '/splash',
           builder: (_, __) => const SplashScreen(),
+        ),
+        GoRoute(
+          path: '/auth-success',
+          builder: (_, __) => const AuthSuccessScreen(),
         ),
 
         // Auth routes (no shell)
         GoRoute(
           path: '/login',
+
           builder: (_, __) => const LoginScreen(),
         ),
         GoRoute(
@@ -210,7 +230,9 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       final navKey = _router.routerDelegate.navigatorKey;
       final ctx = navKey.currentContext;
       if (ctx == null) return;
+      // ignore: use_build_context_synchronously
       showDialog<void>(
+        // ignore: use_build_context_synchronously
         context: ctx,
         builder: (dialogCtx) => AlertDialog(
           title: const Row(

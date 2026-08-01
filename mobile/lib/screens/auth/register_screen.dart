@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/gradient_button.dart';
-import '../../widgets/google_profile_popup.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -45,31 +44,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return age;
   }
 
-  /// Google sign-up: picker opens → account created → profile popup → home.
   Future<void> _signUpWithGoogle() async {
     final auth = context.read<AuthProvider>();
     final ok = await auth.loginWithGoogle();
     if (!mounted) return;
-
-    if (!ok) {
-      if (auth.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(auth.error!)),
-        );
-      }
-      return;
+    if (!ok && auth.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(auth.error!)),
+      );
     }
-
-    // Account created — show the profile completion popup
-    await GoogleProfilePopup.show(
-      context,
-      googleName: auth.user?.name,
-      photoUrl: auth.user?.avatar,
-      email: auth.user?.email,
-    );
-
-    if (!mounted) return;
-    context.go('/home');
+    // On success: redirect guard navigates to /auth-success
   }
 
   Future<void> _register() async {
@@ -104,19 +88,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       phone: _phoneCtrl.text.trim(),
       dob: _dob != null ? DateFormat('yyyy-MM-dd').format(_dob!) : null,
       referralCode: _referralCtrl.text.isNotEmpty ? _referralCtrl.text : null,
-      // Record the exact UTC timestamp when the user ticked the checkbox
       termsAcceptedAt: DateTime.now().toUtc().toIso8601String(),
     );
 
     if (!mounted) return;
 
-    if (ok) {
-      context.go('/home');
-    } else {
+    if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error ?? 'Registration failed')),
       );
     }
+    // On success: redirect guard navigates to /auth-success
   }
 
   @override
@@ -184,6 +166,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: _SocialBtn(
                         label: 'Continue with Google',
                         icon: const _GoogleLogo(),
+                        loading: auth.isLoading,
                         onTap: auth.isLoading ? null : _signUpWithGoogle,
                       ),
                     ),
@@ -670,9 +653,10 @@ class _SocialBtn extends StatelessWidget {
   final String label;
   final Widget icon;
   final VoidCallback? onTap;
+  final bool loading;
 
   const _SocialBtn(
-      {required this.label, required this.icon, this.onTap});
+      {required this.label, required this.icon, this.onTap, this.loading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -685,24 +669,36 @@ class _SocialBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            icon,
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
+        child: loading
+            ? const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                  ),
                 ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  icon,
+                  const SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -54,18 +54,20 @@ class AuthProvider extends ChangeNotifier {
   /// stored.  Clears the session and marks the user as unauthenticated so the
   /// go_router redirect guard navigates to /login automatically.
   void _handleUnauthorized() async {
-    // No-op if already logged out (guard against multiple concurrent 401s).
     if (_status == AuthStatus.unauthenticated) return;
     debugPrint('[AUTH] Received 401 — token expired or invalid. Forcing logout.');
-    // Best-effort: delete Firebase token so the device stops receiving FCM
-    // messages even if the backend call below fails.
-    try { await NotificationService.clearFcmToken(); } catch (_) {}
-    await StorageService.clearSession();
-    await StorageService.clearSession();
-    await StorageService.clearSession();
+    // Mark unauthenticated immediately so concurrent 401s are no-ops.
     _user = null;
     _status = AuthStatus.unauthenticated;
+    _pendingSuccessScreen = false;
+    _googleProfileCompletionRequired = false;
+    _googleAuthPending = false;
     notifyListeners();
+    // Background cleanup — best-effort, failures don't matter here.
+    unawaited(() async {
+      try { await NotificationService.clearFcmToken(); } catch (_) {}
+      await StorageService.clearSession();
+    }());
   }
 
   Future<void> _checkAuth() async {

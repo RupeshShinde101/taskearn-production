@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/gradient_button.dart';
-import 'google_profile_popup.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -19,12 +18,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _inviteCtrl = TextEditingController();
   final _referralCtrl = TextEditingController();
   bool _obscure = true;
   bool _agreeTerms = false;
   DateTime? _dob;
-  bool _showEmailForm = false; // email form hidden until user taps toggle
+  bool _showEmailForm = false; // email form hidden until user taps "Register with email"
 
   @override
   void dispose() {
@@ -32,7 +30,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _passwordCtrl.dispose();
-    _inviteCtrl.dispose();
     _referralCtrl.dispose();
     super.dispose();
   }
@@ -47,40 +44,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return age;
   }
 
-  /// Google sign-up: picker opens → account created → profile popup → home.
   Future<void> _signUpWithGoogle() async {
     final auth = context.read<AuthProvider>();
-    // Block router redirect before Google picker opens so the popup can show
-    auth.setProfileCompletionPending();
-    final code = _inviteCtrl.text.trim().isNotEmpty
-        ? _inviteCtrl.text.trim()
-        : 'WORKMATE100';
-    final ok = await auth.loginWithGoogle(inviteCode: code);
+    final ok = await auth.loginWithGoogle();
     if (!mounted) return;
-
-    if (!ok) {
-      // Login failed — clear the flag so the router is unblocked
-      auth.clearProfileCompletion();
-      if (auth.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(auth.error!)),
-        );
-      }
-      return;
+    if (!ok && auth.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(auth.error!)),
+      );
     }
-
-    // Account created — show the profile completion popup
-    await GoogleProfilePopup.show(
-      context,
-      googleName: auth.user?.name,
-      photoUrl: auth.user?.avatar,
-      email: auth.user?.email,
-    );
-
-    if (!mounted) return;
-    // Popup closed (completed or skipped) — allow navigation to home
-    auth.clearProfileCompletion();
-    context.go('/home');
+    // On success: redirect guard navigates to /auth-success
   }
 
   Future<void> _register() async {
@@ -114,23 +87,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       password: _passwordCtrl.text,
       phone: _phoneCtrl.text.trim(),
       dob: _dob != null ? DateFormat('yyyy-MM-dd').format(_dob!) : null,
-      inviteCode: _inviteCtrl.text.isNotEmpty ? _inviteCtrl.text : null,
       referralCode: _referralCtrl.text.isNotEmpty ? _referralCtrl.text : null,
+      termsAcceptedAt: DateTime.now().toUtc().toIso8601String(),
     );
 
     if (!mounted) return;
 
-    if (ok) {
-      // Navigate to email OTP verification before allowing home access
-      context.go('/otp', extra: {
-        'email': _emailCtrl.text.trim(),
-        'mode': 'verify',
-      });
-    } else {
+    if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error ?? 'Registration failed')),
       );
     }
+    // On success: redirect guard navigates to /auth-success
   }
 
   @override
@@ -192,22 +160,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // ── Invite code (shared by Google + email flows) ───────
-                    _InputField(
-                      controller: _inviteCtrl,
-                      hint: 'Invite Code (e.g. WORKMATE100)',
-                      icon: Icons.card_giftcard_rounded,
-                      textInputAction: TextInputAction.done,
-                      validator: null,
-                    ),
-                    const SizedBox(height: 12),
-
                     // ── Google button (primary CTA) ───────────────────────
                     SizedBox(
                       width: double.infinity,
                       child: _SocialBtn(
                         label: 'Continue with Google',
                         icon: const _GoogleLogo(),
+                        loading: auth.isLoading,
                         onTap: auth.isLoading ? null : _signUpWithGoogle,
                       ),
                     ),
@@ -262,9 +221,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
 
                     // ── Email / password form (collapsed by default) ───────
-                    if (_showEmailForm) ...[  
-                    const SizedBox(height: 20),
-                    Form(
+                    if (_showEmailForm) ...[
+                      const SizedBox(height: 20),
+                      Form(
                       key: _formKey,
                       child: Column(
                         children: [
@@ -474,7 +433,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             color: Color(0xFF64748B)),
                                       ),
                                       GestureDetector(
-                                        onTap: () {},
+                                        onTap: () => context.push('/terms'),
                                         child: const Text(
                                           'Terms & Conditions',
                                           style: TextStyle(
@@ -547,8 +506,6 @@ class _TwoLineField extends StatelessWidget {
   final IconData icon;
   final String title;
   final String hint;
-  final TextCapitalization textCapitalization;
-  final String? Function(String?)? validator;
 
   const _TwoLineField({
     required this.controller,
@@ -588,8 +545,6 @@ class _TwoLineField extends StatelessWidget {
                 ),
                 TextFormField(
                   controller: controller,
-                  textCapitalization: textCapitalization,
-                  validator: validator,
                   style: const TextStyle(
                       fontSize: 13, color: Color(0xFF1E293B)),
                   decoration: InputDecoration(
@@ -698,9 +653,10 @@ class _SocialBtn extends StatelessWidget {
   final String label;
   final Widget icon;
   final VoidCallback? onTap;
+  final bool loading;
 
   const _SocialBtn(
-      {required this.label, required this.icon, this.onTap});
+      {required this.label, required this.icon, this.onTap, this.loading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -713,24 +669,36 @@ class _SocialBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            icon,
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
+        child: loading
+            ? const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                  ),
                 ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  icon,
+                  const SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

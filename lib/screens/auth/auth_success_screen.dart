@@ -80,6 +80,7 @@ class _AuthSuccessScreenState extends State<AuthSuccessScreen>
     }
 
     auth.clearPendingSuccessScreen();
+    if (!mounted) return;
     // ignore: use_build_context_synchronously
     context.go('/home');
   }

@@ -977,6 +977,7 @@ class _DescriptionCard extends StatelessWidget {
         if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 6));
         i++; continue;
       }
+      // Q: pattern
       final qm = RegExp(r'^[Qq](uestion)?[:.] *(.+)').firstMatch(line);
       if (qm != null) {
         if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 14));
@@ -985,35 +986,50 @@ class _DescriptionCard extends StatelessWidget {
           final am = RegExp(r'^[Aa](nswer)?[:.] *(.+)').firstMatch(lines[i + 1].trim());
           if (am != null) {
             widgets.add(const SizedBox(height: 6));
-            widgets.add(Padding(padding: const EdgeInsets.only(left: 28), child: _DRow(badge: 'A', color: AppColors.success, text: am.group(2)!.trim(), bold: false)));
+            widgets.add(Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: _DRow(badge: 'A', color: AppColors.success, text: am.group(2)!.trim(), bold: false),
+            ));
             i += 2; continue;
           }
         }
         i++; continue;
       }
+      // A: standalone
       final am = RegExp(r'^[Aa](nswer)?[:.] *(.+)').firstMatch(line);
       if (am != null) {
         widgets.add(const SizedBox(height: 6));
-        widgets.add(Padding(padding: const EdgeInsets.only(left: 28), child: _DRow(badge: 'A', color: AppColors.success, text: am.group(2)!.trim(), bold: false)));
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(left: 28),
+          child: _DRow(badge: 'A', color: AppColors.success, text: am.group(2)!.trim(), bold: false),
+        ));
         i++; continue;
       }
+      // Bullet
       if (RegExp(r'^[-•*→] +').hasMatch(line)) {
         widgets.add(const SizedBox(height: 4));
-        widgets.add(Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(padding: const EdgeInsets.only(top: 5), child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle))),
-          const SizedBox(width: 8),
-          Expanded(child: Text(line.replaceFirst(RegExp(r'^[-•*→] +'), ''), style: const TextStyle(color: Color(0xFF374151), fontSize: 13.5, height: 1.6))),
-        ]));
+        widgets.add(Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(padding: const EdgeInsets.only(top: 5), child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle))),
+            const SizedBox(width: 8),
+            Expanded(child: Text(line.replaceFirst(RegExp(r'^[-•*→] +'), ''), style: const TextStyle(color: Color(0xFF374151), fontSize: 13.5, height: 1.6))),
+          ],
+        ));
         i++; continue;
       }
+      // Key: Value
       final kv = RegExp(r'^([A-Za-z][A-Za-z /]{0,28}): +(.+)$').firstMatch(line);
       if (kv != null) {
         if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 7));
-        widgets.add(Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${kv.group(1)!}:', style: const TextStyle(color: Color(0xFF111827), fontSize: 13, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 5),
-          Expanded(child: Text(kv.group(2)!, style: const TextStyle(color: Color(0xFF4B5563), fontSize: 13, height: 1.55))),
-        ]));
+        widgets.add(Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${kv.group(1)!}:', style: const TextStyle(color: Color(0xFF111827), fontSize: 13, fontWeight: FontWeight.w700)),
+            const SizedBox(width: 5),
+            Expanded(child: Text(kv.group(2)!, style: const TextStyle(color: Color(0xFF4B5563), fontSize: 13, height: 1.55))),
+          ],
+        ));
         i++; continue;
       }
       widgets.add(Text(line, style: const TextStyle(color: Color(0xFF374151), fontSize: 13.5, height: 1.65)));

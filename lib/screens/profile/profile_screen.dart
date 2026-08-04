@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 
@@ -40,9 +39,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  List<Map<String, dynamic>> _reviews = [];
-  bool _reviewsLoading = false;
-  bool _showReviews = false;
   bool _showSkills = false;
 
   @override
@@ -50,33 +46,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
-      _loadReviews();
     });
   }
 
   Future<void> _refresh() async {
-    await Future.wait([
-      context.read<AuthProvider>().refreshUser(),
-      _loadReviews(),
-    ]);
-  }
-
-  Future<void> _loadReviews() async {
-    final userId = context.read<AuthProvider>().user?.id;
-    if (userId == null || userId.isEmpty) return;
-    if (!mounted) return;
-    setState(() => _reviewsLoading = true);
-    try {
-      final data = await ApiService.get('/user/$userId/reviews');
-      if (!mounted) return;
-      final list = (data['reviews'] as List? ?? []);
-      setState(() {
-        _reviews = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        _reviewsLoading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _reviewsLoading = false);
-    }
+    await context.read<AuthProvider>().refreshUser();
   }
 
   @override
@@ -376,79 +350,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Reviews Received ──────────────────────────────────────────
-            InkWell(
-              onTap: () => setState(() => _showReviews = !_showReviews),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Reviews Received',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (_reviews.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${_reviews.length}',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    const Spacer(),
-                    Icon(
-                      _showReviews
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
-                      color: AppColors.gray,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_showReviews) ...[
-              const SizedBox(height: 8),
-              if (_reviewsLoading)
-                const Center(
-                    child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: CircularProgressIndicator()))
-              else if (_reviews.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.light,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Text('No reviews yet',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.gray)),
-                )
-              else
-                Column(
-                  children: _reviews.map((r) => _ReviewCard(review: r)).toList(),
-                ),
-            ],
-
-            const SizedBox(height: 20),
-
             // ── Menu items ────────────────────────────────────────────────
             Card(
               child: Column(
@@ -724,7 +625,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withOpacity(0.55),
+      barrierColor: Colors.black.withValues(alpha: 0.55),
       transitionDuration: const Duration(milliseconds: 260),
       transitionBuilder: (ctx, anim, _, child) {
         final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
@@ -747,7 +648,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.danger.withOpacity(0.18),
+                    color: AppColors.danger.withValues(alpha: 0.18),
                     blurRadius: 32,
                     offset: const Offset(0, 8),
                   ),
@@ -773,7 +674,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Container(
                           width: 60, height: 60,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.delete_forever_rounded,
@@ -906,7 +807,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: deleting ? [] : [
                                     BoxShadow(
-                                      color: AppColors.danger.withOpacity(0.35),
+                                      color: AppColors.danger.withValues(alpha: 0.35),
                                       blurRadius: 10,
                                       offset: const Offset(0, 4),
                                     )
@@ -1686,105 +1587,6 @@ class _MenuItem extends StatelessWidget {
               fontWeight: FontWeight.w500)),
       trailing: const Icon(Icons.chevron_right, color: AppColors.grayLight),
       onTap: onTap,
-    );
-  }
-}
-
-// ── Individual review card ────────────────────────────────────────────────────
-class _ReviewCard extends StatelessWidget {
-  final Map<String, dynamic> review;
-  const _ReviewCard({required this.review});
-
-  @override
-  Widget build(BuildContext context) {
-    final rating = (review['rating'] as num?)?.toDouble() ?? 0;
-    final raterName = review['rater_name'] as String? ?? 'Anonymous';
-    final taskTitle = review['task_title'] as String? ?? 'Task';
-    final comment = (review['review'] as String? ?? '').trim();
-    final createdAt = review['created_at'] as String?;
-    String? dateStr;
-    if (createdAt != null) {
-      try {
-        final dt = DateTime.parse(createdAt).toLocal();
-        dateStr = '${dt.day}/${dt.month}/${dt.year}';
-      } catch (_) {}
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                child: Text(
-                  raterName.isNotEmpty ? raterName[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(raterName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.dark,
-                            fontSize: 13)),
-                    Text(taskTitle,
-                        style: const TextStyle(
-                            color: AppColors.gray, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    children: List.generate(5, (i) => Icon(
-                      i < rating.round() ? Icons.star : Icons.star_border,
-                      color: AppColors.warning,
-                      size: 14,
-                    )),
-                  ),
-                  if (dateStr != null)
-                    Text(dateStr,
-                        style: const TextStyle(
-                            color: AppColors.grayLight, fontSize: 10)),
-                ],
-              ),
-            ],
-          ),
-          if (comment.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(comment,
-                style: const TextStyle(
-                    color: AppColors.dark, fontSize: 13, height: 1.4)),
-          ],
-        ],
-      ),
     );
   }
 }

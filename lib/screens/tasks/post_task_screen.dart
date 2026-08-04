@@ -796,6 +796,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (!mounted) return;
       // Distinguish: permission denied vs GPS signal unavailable
       final perm = await Geolocator.checkPermission();
+      if (!mounted) return;
       final msg = (perm == LocationPermission.denied || perm == LocationPermission.deniedForever)
           ? 'Location permission denied. Please allow in Settings.'
           : 'Unable to get GPS. Make sure location is ON and try again.';

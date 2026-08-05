@@ -753,6 +753,57 @@ def _hash_kyc_image(b64_image):
         return None
 
 
+def _ocr_extract_document_number(b64_image, doc_type):
+    """Extract document number from image via OCR. Returns (number|None, status).
+    status: 'matched'|'extracted'|'none'|'unavailable'
+    Tries pytesseract; on any failure returns (None, 'unavailable').
+    """
+    try:
+        import pytesseract
+        from PIL import Image, ImageEnhance, ImageFilter
+        import base64, io, re
+
+        s = b64_image or ''
+        if ',' in s:
+            s = s.split(',', 1)[1]
+        raw = base64.b64decode(s, validate=False)
+        img = Image.open(io.BytesIO(raw)).convert('RGB')
+
+        # Scale up small images for better OCR accuracy
+        w, h = img.size
+        if w < 1000:
+            scale = 1000 / w
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+        gray = img.convert('L')
+        gray = ImageEnhance.Contrast(gray).enhance(2.5)
+        gray = gray.filter(ImageFilter.SHARPEN)
+
+        # --psm 11: sparse text (works well for documents with mixed layout)
+        text = pytesseract.image_to_string(gray, config='--psm 11 --oem 3')
+        clean = text.upper().replace(' ', '').replace('\n', '').replace('-', '').replace('.', '')
+
+        if doc_type == 'pan':
+            matches = re.findall(r'[A-Z]{5}[0-9]{4}[A-Z]', clean)
+        elif doc_type == 'aadhaar':
+            # Aadhaar may appear as 4-4-4 groups; collapse all digits then find 12-digit run
+            digits_only = re.sub(r'[^0-9]', '', text)
+            matches = re.findall(r'\d{12}', digits_only)
+        elif doc_type == 'voter_id':
+            matches = re.findall(r'[A-Z]{2,3}[0-9]{7}', clean)
+        elif doc_type == 'driving_license':
+            matches = re.findall(r'[A-Z]{2}[0-9]{13}', clean)
+        else:
+            matches = []
+
+        return (matches[0], 'extracted') if matches else (None, 'none')
+    except ImportError:
+        return None, 'unavailable'
+    except Exception as e:
+        print(f'[KYC OCR] error: {e}')
+        return None, 'unavailable'
+
+
 def generate_user_id():
     """Generate unique user ID"""
     import time
@@ -10618,10 +10669,28 @@ def submit_kyc():
             'message': 'This document number is already registered with another account. If you believe this is wrong, contact support.',
         }), 409
 
-    # Always require manual admin review — system cannot verify that the typed
-    # document number matches the number visible in the uploaded image.
-    final_status = 'pending'
-    flag_reason_text = '; '.join(flags) if flags else 'Pending admin review: verify document number matches image'
+    # OCR: extract document number from front image and compare with entered number
+    ocr_number, ocr_status = _ocr_extract_document_number(doc_image_front, doc_type)
+
+    if ocr_status == 'unavailable':
+        # Tesseract not available on this deployment — fall back to manual review
+        final_status = 'pending'
+        ocr_flag = 'OCR unavailable; admin must verify number matches image'
+    elif ocr_number is None:
+        # OCR ran but couldn't find a recognisable number in the image
+        final_status = 'pending'
+        ocr_flag = 'OCR could not read document number from image; admin verification required'
+    elif ocr_number == doc_number_norm:
+        # Numbers match — auto-approve if image quality is also clean
+        final_status = 'pending' if flags else 'verified'
+        ocr_flag = None
+    else:
+        # Mismatch: the number typed doesn't match the number on the document
+        final_status = 'pending'
+        ocr_flag = f'Number mismatch: entered {doc_number_norm}, found in image {ocr_number}'
+
+    all_flags = flags + ([ocr_flag] if ocr_flag else [])
+    flag_reason_text = '; '.join(all_flags) if all_flags else None
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -10635,25 +10704,34 @@ def submit_kyc():
                 WHERE id = {PH}
             ''', (doc_type, doc_number_norm, doc_image_front, doc_image_back or None,
                   front_hash,
-                  final_status, None,
+                  final_status, (now if final_status == 'verified' else None),
                   flag_reason_text, now,
                   request.user_id))
 
             # Notify user
-            user_msg = '📝 KYC received. Our team will review your documents shortly (usually within 24 hours).'
+            if final_status == 'verified':
+                user_msg = '✅ Your KYC has been verified automatically. Your identity is confirmed!'
+            else:
+                user_msg = '📝 KYC received. Our team will review your documents shortly (usually within 24 hours).'
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (request.user_id, 'kyc_result', 'KYC Verification Update', user_msg, 'unread', now))
 
-            # Log for admin — always flag so admin verifies number matches image
-            quality_note = f'; quality flags: {flag_reason_text}' if flags else ''
-            admin_msg = f'User {request.user_id} submitted {doc_type} ({doc_number_norm}) — pending review (verify number matches image{quality_note})'
+            # Admin notification
+            if final_status == 'verified':
+                admin_title = '✅ KYC Auto-Verified'
+                admin_msg = f'User {request.user_id} submitted {doc_type} ({doc_number_norm}) — OCR matched, auto-approved.'
+            else:
+                admin_title = '⚠️ KYC Needs Review'
+                admin_msg = f'User {request.user_id} submitted {doc_type} ({doc_number_norm}) — {flag_reason_text}'
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', ('1', 'kyc_request', '⚠️ KYC Needs Review', admin_msg, 'unread', now))
+            ''', ('1', 'kyc_request', admin_title, admin_msg, 'unread', now))
 
+        if final_status == 'verified':
+            return jsonify({'success': True, 'message': 'KYC verified successfully! Your identity has been confirmed.', 'status': 'verified'})
         return jsonify({'success': True, 'message': 'KYC submitted. Our team will review and approve within 24 hours.', 'status': 'pending'})
     except Exception as e:
         print(f"[KYC SUBMIT] Error: {e}")

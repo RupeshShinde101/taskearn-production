@@ -31,6 +31,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   bool _completing = false;  // for final mark-as-completed
   bool _abandoning = false;
   String? _proofPath;
+  String? _submittedProofPath; // local path kept after submit for proof preview fallback
   Timer? _pollTimer;
   StreamSubscription<Position>? _locationSub;
   String? _prevStatus;          // tracks last-known status to detect transitions
@@ -44,13 +45,13 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   static const _verifyPendingStatuses = {
     'completed', 'verify_pending',
   };
-  // ── status after poster paid
+  // ── status after poster paid (both flows: new = payment_released, legacy = paid)
   static const _paymentReleasedStatuses = {
-    'payment_released',
+    'payment_released', 'paid',
   };
-  // ── truly finished
+  // ── truly finished (helper already clicked Mark as Completed)
   static const _doneStatuses = {
-    'verified', 'paid', 'done', 'finished',
+    'verified', 'done', 'finished',
   };
 
   bool get _isVerifyPending =>
@@ -401,6 +402,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     if (ok) {
       setState(() {
         _proofSubmitted = true; // lock Phase 1 immediately, before network refresh
+        _submittedProofPath = _proofPath; // keep local path for proof preview fallback
         _proofPath = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1038,6 +1040,18 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: _buildProofImage(task.completionProof!, height: 160),
+            ),
+            const SizedBox(height: 6),
+            const Text('Submitted proof photo',
+                style:
+                    TextStyle(color: AppColors.gray, fontSize: 11)),
+          ] else if (_submittedProofPath != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.file(File(_submittedProofPath!),
+                  height: 160, width: double.infinity, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _proofErrorWidget()),
             ),
             const SizedBox(height: 6),
             const Text('Submitted proof photo',

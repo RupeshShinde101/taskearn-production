@@ -216,7 +216,7 @@ class TaskProvider extends ChangeNotifier {
   /// Find a task by ID in all local caches (detail cache has highest priority)
   Task? _findCached(String id) {
     if (_detailCache.containsKey(id)) return _detailCache[id];
-    for (final list in [_browseTasks, _myPostedTasks, _myAcceptedTasks, _myCompletedTasks]) {
+    for (final list in [_myAcceptedTasks, _myPostedTasks, _myCompletedTasks, _browseTasks]) {
       for (final t in list) {
         if (t.id == id) return t;
       }
@@ -423,8 +423,25 @@ class TaskProvider extends ChangeNotifier {
       if (browseName != null) {
         _saveName(taskId, browseName);
       }
+      final browseTask = _browseTasks.where((t) => t.id == taskId).cast<Task?>().firstWhere(
+            (_) => true,
+            orElse: () => null,
+          );
 
       final response = await ApiService.post('/tasks/$taskId/accept');
+      _browseTasks.removeWhere((t) => t.id == taskId);
+
+      if (browseTask != null) {
+        final acceptedSnapshot = Task.fromJson({
+          ...browseTask.toJson(),
+          'status': 'accepted',
+          if (browsePhone != null) 'poster_phone': browsePhone,
+          if (browseName != null) 'poster_name': browseName,
+        });
+        _myAcceptedTasks.removeWhere((t) => t.id == taskId);
+        _myAcceptedTasks.insert(0, acceptedSnapshot);
+      }
+
       // Cache the full task returned by the accept endpoint – it may include
       // posterPhone and other details that the list endpoints omit.
       _cacheDetailFromResponse(response, taskId);

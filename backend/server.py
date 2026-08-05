@@ -3596,6 +3596,9 @@ def get_task_completion_proofs(task_id):
         return jsonify({'success': True, 'proofs': proofs})
     except Exception as e:
         return jsonify({'success': True, 'proofs': []})
+
+
+@app.route('/api/tasks/<int:task_id>/complete', methods=['POST'])
 @require_auth
 def complete_task(task_id):
     """

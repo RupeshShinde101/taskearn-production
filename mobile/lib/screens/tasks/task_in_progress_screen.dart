@@ -77,7 +77,17 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Future<void> _load() async {
     if (!mounted) return;
     if (_initialLoad) setState(() { _loading = true; });
-    final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
+    final provider = context.read<TaskProvider>();
+    var task = await provider.getTaskDetail(widget.taskId);
+
+    // If first open and phone is still null, refresh accepted list and retry once.
+    if (_initialLoad &&
+        task != null &&
+        (task.posterPhone == null || task.posterPhone!.trim().isEmpty)) {
+      await provider.fetchMyTasks().catchError((_) {});
+      if (mounted) task = await provider.getTaskDetail(widget.taskId) ?? task;
+    }
+
     if (!mounted) return;
 
     final oldStatus = _prevStatus;

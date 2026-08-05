@@ -519,6 +519,19 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final busy = _submitting || _completing || _abandoning;
 
     return Scaffold(
+      bottomNavigationBar: _isPaymentReleased
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: GradientButton(
+                  label: 'Mark as Completed',
+                  loading: _completing,
+                  icon: Icons.check_circle_outline,
+                  onPressed: _completing ? () {} : _finalMarkComplete,
+                ),
+              ),
+            )
+          : null,
       appBar: AppBar(
         title: const Text('Task In Progress'),
         leading: IconButton(

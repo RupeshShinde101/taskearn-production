@@ -633,51 +633,7 @@ class _PostedTaskList extends StatelessWidget {
                 }
                 final proofUrl = snap.data;
                 if (proofUrl != null && proofUrl.isNotEmpty) {
-                  if (proofUrl.startsWith('data:image')) {
-                    final commaIdx = proofUrl.indexOf(',');
-                    final b64 = commaIdx >= 0
-                        ? proofUrl.substring(commaIdx + 1)
-                        : proofUrl;
-                    try {
-                      return Image.memory(
-                        base64Decode(b64),
-                        height: 240,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      );
-                    } catch (_) {
-                      return const SizedBox.shrink();
-                    }
-                  }
-                  return Image.network(
-                    proofUrl,
-                    height: 240,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (_, child, progress) => progress == null
-                        ? child
-                        : const SizedBox(
-                            height: 240,
-                            child:
-                                Center(child: CircularProgressIndicator())),
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 100,
-                      color: AppColors.light,
-                      child: const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.broken_image_outlined,
-                                color: AppColors.gray, size: 36),
-                            SizedBox(height: 4),
-                            Text('Could not load image',
-                                style: TextStyle(
-                                    color: AppColors.gray, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
+                  return _buildProofImage(proofUrl, height: 240);
                 }
                 return Container(
                   height: 100,
@@ -738,6 +694,57 @@ class _PostedTaskList extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildProofImage(String proof, {double height = 240}) {
+    final trimmed = proof.trim();
+    if (trimmed.startsWith('data:')) {
+      final commaIdx = trimmed.indexOf(',');
+      if (commaIdx != -1) {
+        try {
+          return Image.memory(
+            base64Decode(trimmed.substring(commaIdx + 1)),
+            height: height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildProofError(),
+          );
+        } catch (_) {
+          return _buildProofError();
+        }
+      }
+      return _buildProofError();
+    }
+    return Image.network(
+      trimmed,
+      height: height,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      loadingBuilder: (_, child, progress) => progress == null
+          ? child
+          : SizedBox(
+              height: height,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+      errorBuilder: (_, __, ___) => _buildProofError(),
+    );
+  }
+
+  Widget _buildProofError() => Container(
+        height: 100,
+        color: AppColors.light,
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.broken_image_outlined,
+                  color: AppColors.gray, size: 36),
+              SizedBox(height: 4),
+              Text('Could not load image',
+                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
+            ],
+          ),
+        ),
+      );
 
   // ── Wallet check + price breakdown + payment ─────────────────────────────
   void _showPayNowDialog(BuildContext context, Task t) async {

@@ -4567,13 +4567,18 @@ def get_user_tasks():
             import threading as _th
             _th.Thread(target=_bg_cleanup, daemon=True).start()
 
-        # Posted tasks — exclude tasks removed/flagged by admin/AI (those are deleted or hidden)
+        # Posted tasks — active only; exclude admin-removed, completed and cancelled tasks.
         cursor.execute(f'''
             SELECT t.*, u.name as helper_name, u.phone as helper_phone,
                    u.rating as helper_rating, u.tasks_completed as helper_tasks_completed
             FROM tasks t
             LEFT JOIN users u ON t.accepted_by = u.id
-            WHERE t.posted_by = {PH} AND t.status NOT IN ('removed', 'flagged', 'suspicious')
+            WHERE t.posted_by = {PH}
+              AND t.status NOT IN (
+                'removed', 'flagged', 'suspicious',
+                'done', 'finished', 'paid', 'verified',
+                'cancelled', 'poster_cancelled', 'rejected', 'expired'
+              )
             ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]

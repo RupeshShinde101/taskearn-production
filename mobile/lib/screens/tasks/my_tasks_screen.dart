@@ -110,10 +110,18 @@ class _PostedTaskList extends StatelessWidget {
   const _PostedTaskList({required this.tasks});
 
   static const _cancellableStatuses = {'posted', 'accepted', 'in_progress'};
+  // Tasks in these states are finished/cancelled — hide from the Posted tab.
+  static const _terminalStatuses = {
+    'done', 'finished', 'paid', 'verified',
+    'cancelled', 'poster_cancelled', 'rejected', 'expired',
+  };
 
   @override
   Widget build(BuildContext context) {
-    if (tasks.isEmpty) {
+    final visibleTasks =
+        tasks.where((t) => !_terminalStatuses.contains(t.status)).toList();
+
+    if (visibleTasks.isEmpty) {
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -132,9 +140,9 @@ class _PostedTaskList extends StatelessWidget {
       child: ListView.builder(
         padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewPadding.bottom + 80),
-        itemCount: tasks.length,
+        itemCount: visibleTasks.length,
         itemBuilder: (_, i) {
-          final t = tasks[i];
+          final t = visibleTasks[i];
           final hasHelper = t.helperId != null && t.helperId!.isNotEmpty;
           final canCancel = _cancellableStatuses.contains(t.status);
           final needsVerify = t.status == 'completed' || t.status == 'verify_pending';
@@ -911,8 +919,10 @@ class _StatusBadge extends StatelessWidget {
       'accepted' || 'in_progress' => ('In Progress', AppColors.warning),
       'completed' || 'verify_pending' => ('Needs Verification', const Color(0xFFFF6B35)),
       'payment_released' => ('Payment Released', AppColors.success),
-      'verified' || 'paid' || 'done' => ('Completed', AppColors.success),
-      'cancelled' => ('Cancelled', AppColors.grayLight),
+      'verified' || 'paid' || 'done' || 'finished' => ('Completed', AppColors.success),
+      'cancelled' || 'poster_cancelled' => ('Cancelled', AppColors.grayLight),
+      'expired' => ('Expired', AppColors.danger),
+      'rejected' => ('Rejected', AppColors.danger),
       _ => (status, AppColors.gray),
     };
     return Container(

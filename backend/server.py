@@ -10712,7 +10712,8 @@ def admin_get_user_kyc(user_id):
         with get_db() as (cursor, conn):
             cursor.execute(f'''
                 SELECT name, email, kyc_status, kyc_document_type, kyc_document_number,
-                       kyc_document_image, kyc_document_image_back, kyc_verified_at
+                       kyc_document_image, kyc_document_image_back, kyc_verified_at,
+                       kyc_acknowledged_at, kyc_flag_reason
                 FROM users WHERE id = {PH}
             ''', (user_id,))
             row = cursor.fetchone()
@@ -10730,7 +10731,9 @@ def admin_get_user_kyc(user_id):
                 'documentNumber': user_data.get('kyc_document_number'),
                 'documentImageFront': user_data.get('kyc_document_image'),
                 'documentImageBack': user_data.get('kyc_document_image_back'),
-                'verifiedAt': user_data.get('kyc_verified_at')
+                'verifiedAt': user_data.get('kyc_verified_at'),
+                'acknowledgedAt': user_data.get('kyc_acknowledged_at'),
+                'flagReason': user_data.get('kyc_flag_reason'),
             }
         })
     except Exception as e:

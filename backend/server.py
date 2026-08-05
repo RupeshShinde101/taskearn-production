@@ -10618,9 +10618,10 @@ def submit_kyc():
             'message': 'This document number is already registered with another account. If you believe this is wrong, contact support.',
         }), 409
 
-    # Decide final status: pending if any quality flag, else verified
-    final_status = 'pending' if flags else 'verified'
-    flag_reason_text = '; '.join(flags) if flags else None
+    # Always require manual admin review — system cannot verify that the typed
+    # document number matches the number visible in the uploaded image.
+    final_status = 'pending'
+    flag_reason_text = '; '.join(flags) if flags else 'Pending admin review: verify document number matches image'
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -10634,32 +10635,25 @@ def submit_kyc():
                 WHERE id = {PH}
             ''', (doc_type, doc_number_norm, doc_image_front, doc_image_back or None,
                   front_hash,
-                  final_status, (now if final_status == 'verified' else None),
+                  final_status, None,
                   flag_reason_text, now,
                   request.user_id))
 
             # Notify user
-            if final_status == 'verified':
-                user_msg = '✅ Your KYC verification has been approved!'
-            else:
-                user_msg = '📝 KYC received. Our team will review your documents shortly (usually within 24 hours).'
+            user_msg = '📝 KYC received. Our team will review your documents shortly (usually within 24 hours).'
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (request.user_id, 'kyc_result', 'KYC Verification Update', user_msg, 'unread', now))
 
-            # Log for admin
-            admin_msg = f'User {request.user_id} submitted {doc_type} — '
-            admin_msg += 'auto-verified' if final_status == 'verified' else f'pending review ({flag_reason_text})'
+            # Log for admin — always flag so admin verifies number matches image
+            quality_note = f'; quality flags: {flag_reason_text}' if flags else ''
+            admin_msg = f'User {request.user_id} submitted {doc_type} ({doc_number_norm}) — pending review (verify number matches image{quality_note})'
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', ('1', 'kyc_request',
-                  '📋 KYC Submitted' if final_status == 'verified' else '⚠️ KYC Needs Review',
-                  admin_msg, 'unread', now))
+            ''', ('1', 'kyc_request', '⚠️ KYC Needs Review', admin_msg, 'unread', now))
 
-        if final_status == 'verified':
-            return jsonify({'success': True, 'message': 'KYC verified successfully! Your identity has been confirmed.', 'status': 'verified'})
         return jsonify({'success': True, 'message': 'KYC submitted. Our team will review and approve within 24 hours.', 'status': 'pending'})
     except Exception as e:
         print(f"[KYC SUBMIT] Error: {e}")

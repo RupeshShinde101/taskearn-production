@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -290,13 +291,17 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               _CheckRow(
                 value: _agreeTerms,
                 onTap: () => setState(() => _agreeTerms = !_agreeTerms),
-                label: 'I agree to the Terms & Conditions',
+                label: 'I agree to the ',
+                linkText: 'Terms & Conditions',
+                onLinkTap: () => context.push('/terms'),
               ),
               const SizedBox(height: 10),
               _CheckRow(
                 value: _agreePrivacy,
                 onTap: () => setState(() => _agreePrivacy = !_agreePrivacy),
-                label: 'I agree to the Privacy Policy',
+                label: 'I agree to the ',
+                linkText: 'Privacy Policy',
+                onLinkTap: () => context.push('/privacy'),
               ),
               const SizedBox(height: 24),
 
@@ -388,11 +393,15 @@ class _CheckRow extends StatelessWidget {
   final bool value;
   final VoidCallback onTap;
   final String label;
+  final String linkText;
+  final VoidCallback onLinkTap;
 
   const _CheckRow({
     required this.value,
     required this.onTap,
     required this.label,
+    required this.linkText,
+    required this.onLinkTap,
   });
 
   @override
@@ -422,10 +431,25 @@ class _CheckRow extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.dark, height: 1.4),
+            child: Wrap(
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.dark, height: 1.4)),
+                GestureDetector(
+                  onTap: onLinkTap,
+                  child: Text(
+                    linkText,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.primary,
+                      decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

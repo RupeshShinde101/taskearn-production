@@ -114,9 +114,11 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Future<void> _showPaymentReceivedDialog() async {
     if (!mounted || _task == null) return;
     final task = _task!;
-    final taskTotal = task.budget + (task.serviceCharge ?? 0);
-    final platformFee = task.serviceCharge ?? 0.0;
-    final helperEarning = task.budget;
+    final taskTotal = task.totalAmount;                          // budget + service_charge
+    final commissionRate = task.commissionRate;                  // 0.15 delivery, 0.17 others
+    final commissionAmt = taskTotal * commissionRate;
+    final helperEarning = task.netEarning;                       // taskTotal × (1 − rate)
+    final commissionPct = (commissionRate * 100).round();
 
     await showDialog<void>(
       context: context,
@@ -176,20 +178,16 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     child: Divider(height: 1),
                   ),
                   _BreakdownRow(
-                    label: 'Platform Service Fee',
-                    value: platformFee > 0
-                        ? '− ₹${platformFee.toStringAsFixed(0)}'
-                        : '₹0',
-                    valueColor: platformFee > 0
-                        ? AppColors.danger
-                        : AppColors.gray,
+                    label: 'Platform Commission ($commissionPct%)',
+                    value: '− ₹${commissionAmt.toStringAsFixed(0)}',
+                    valueColor: AppColors.danger,
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: Divider(height: 1),
                   ),
                   _BreakdownRow(
-                    label: 'Your Earning',
+                    label: 'You Receive',
                     value: '₹${helperEarning.toStringAsFixed(0)}',
                     bold: true,
                     valueColor: AppColors.success,
@@ -198,9 +196,9 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '₹ credited to your wallet after you mark the task as completed.',
-              style: TextStyle(
+            Text(
+              '₹${helperEarning.toStringAsFixed(0)} will be credited to your wallet after you mark the task as completed.',
+              style: const TextStyle(
                   color: AppColors.gray, fontSize: 11, height: 1.4),
             ),
             const SizedBox(height: 16),

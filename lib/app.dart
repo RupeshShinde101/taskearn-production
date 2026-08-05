@@ -69,17 +69,19 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
           return status == AuthStatus.unauthenticated ? '/login' : null;
         }
 
-        final isAuthRoute = loc.startsWith('/login') ||
+        final isAuthFlowRoute = loc.startsWith('/login') ||
             loc.startsWith('/register') ||
             loc.startsWith('/otp') ||
-            loc.startsWith('/forgot-password') ||
-            loc.startsWith('/terms') ||
+            loc.startsWith('/forgot-password');
+
+        // Public routes: no login required, but authenticated users can also view them
+        final isPublicRoute = loc.startsWith('/terms') ||
             loc.startsWith('/privacy');
 
-        if (status == AuthStatus.unauthenticated && !isAuthRoute) return '/login';
+        if (status == AuthStatus.unauthenticated && !isAuthFlowRoute && !isPublicRoute) return '/login';
 
         if (status == AuthStatus.authenticated) {
-          if (isAuthRoute || loc == '/splash') {
+          if (isAuthFlowRoute || loc == '/splash') {
             return auth.pendingSuccessScreen ? '/auth-success' : '/home';
           }
         }

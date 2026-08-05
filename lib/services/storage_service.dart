@@ -50,7 +50,6 @@ class StorageService {
     await _prefs.remove('auth_token');
     await _prefs.remove('cached_user_json');
     await _prefs.remove('session_expiry_ms');
-    await _prefs.remove('city_verified');
   }
 
   // ─── User ───────────────────────────────────────────────────────────────────

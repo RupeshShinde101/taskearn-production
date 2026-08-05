@@ -11,7 +11,6 @@ import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
-import '../auth/city_gate_screen.dart';
 import '../browse/browse_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -46,7 +45,6 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<WalletProvider>().fetchWallet();
       _fetchSuggestedTasks();
       _fetchExpiringTasks();
-      _checkCityGate();
     });
 
     // GPS runs in parallel — only needed for city name + backend location update.
@@ -57,23 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
           .updateUserLocation(location.latitude, location.longitude);
       _reverseGeocode(location.latitude, location.longitude);
     }
-  }
-
-  void _checkCityGate() {
-    CityGateScreen.showIfNeeded(
-      context,
-      onVerified: () {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('\u{1F4CD} You\'re in Pune! Welcome to Workmate4u.'),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 4),
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _reverseGeocode(double lat, double lng) async {

@@ -4160,7 +4160,7 @@ def pay_helper(task_id):
             print(f"   Accepted by: {task['accepted_by']}")
 
             # Accept verify_pending (new flow) OR completed (legacy flow)
-            is_new_flow = task['status'] == 'verify_pending'
+            is_new_flow = task['status'] in ('verify_pending', 'completed')
             if task['status'] not in ('verify_pending', 'completed'):
                 print(f"❌ Task status not payable (status: {task['status']})")
                 return jsonify({'success': False, 'message': 'Task must be verified or completed first'}), 400

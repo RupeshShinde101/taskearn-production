@@ -3354,6 +3354,7 @@ def get_task(task_id):
                 'accepted_by': task.get('accepted_by'),
                 'is_paid': task.get('is_paid', False),
                 'status': task.get('status', 'active'),
+                'completion_proof': task.get('completion_proof'),
                 'postedAt': _iso(task.get('posted_at')),
                 'expiresAt': _iso(task.get('expires_at')),
                 'accepted_at': _iso(task.get('accepted_at')),
@@ -3553,6 +3554,7 @@ def get_task_details(task_id):
                     'address': task['location_address']
                 },
                 'status': task['status'],
+                'completion_proof': task.get('completion_proof'),
                 'postedAt': task['posted_at'],
                 'accepted_at': task.get('accepted_at'),
                 'completed_at': task.get('completed_at'),

@@ -480,7 +480,7 @@ class TaskProvider extends ChangeNotifier {
       }
       // Invalidate detail cache so next load gets fresh status.
       _detailCache.remove(taskId);
-      await fetchMyTasks();
+      fetchMyTasks(); // fire-and-forget; screen's _load() handles UI refresh
       return true;
     } on ApiException catch (e) {
       _error = e.message;

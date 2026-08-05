@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -24,6 +25,7 @@ class TaskInProgressScreen extends StatefulWidget {
 class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Task? _task;
   bool _loading = true;
+  bool _initialLoad = true; // show spinner only on first load; polls are silent
   bool _submitting = false;  // for submit-for-verification
   bool _completing = false;  // for final mark-as-completed
   bool _abandoning = false;
@@ -72,7 +74,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; });
+    if (_initialLoad) setState(() { _loading = true; });
     final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
     if (!mounted) return;
 
@@ -80,6 +82,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     setState(() {
       _task = task;
       _loading = false;
+      _initialLoad = false;
       _prevStatus = task?.status;
     });
 
@@ -1022,17 +1025,11 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
             ],
           ),
           if (task.completionProof != null &&
-              task.completionProof!.isNotEmpty) ...[
+              task.completionProof!.isNotEmpty) ...[  // proof stored as base64 data URI or URL
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                task.completionProof!,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _proofErrorWidget(),
-              ),
+              child: _buildProofImage(task.completionProof!, height: 160),
             ),
             const SizedBox(height: 6),
             const Text('Submitted proof photo',
@@ -1090,6 +1087,29 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
         ],
       ),
     );
+  }
+
+  /// Renders a proof image from either an HTTPS URL or a base64 data URI.
+  Widget _buildProofImage(String proof, {double height = 160}) {
+    if (proof.startsWith('data:')) {
+      final comma = proof.indexOf(',');
+      if (comma != -1) {
+        try {
+          final bytes = base64Decode(proof.substring(comma + 1));
+          return Image.memory(bytes,
+              height: height,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _proofErrorWidget());
+        } catch (_) {}
+      }
+      return _proofErrorWidget();
+    }
+    return Image.network(proof,
+        height: height,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _proofErrorWidget());
   }
 
   Widget _proofErrorWidget() => Container(

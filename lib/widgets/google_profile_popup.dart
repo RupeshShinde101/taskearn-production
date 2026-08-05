@@ -105,7 +105,21 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
       return;
     }
     if (!_agreeTerms || !_agreePrivacy) {
-      _msg('Please accept both the Terms & Conditions and Privacy Policy.');
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Acceptance Required'),
+          content: const Text(
+            'You must accept both the Terms & Conditions and the Privacy Policy to create your account.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(_).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
       return;
     }
 
@@ -133,7 +147,30 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Padding(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (_, __) {
+        // Defer so the navigator is no longer locked when showDialog pushes a route.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('Details Required'),
+              content: const Text(
+                'Please fill in your details first — it is required to continue.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(_).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+      child: Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -316,27 +353,11 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
                 loading: _submitting,
                 onPressed: _submitting ? null : _submit,
               ),
-              const SizedBox(height: 10),
-
-              // ── Skip ──────────────────────────────────────────────────
-              Center(
-                child: TextButton(
-                  onPressed:
-                      _submitting ? null : () => Navigator.of(context).pop(),
-                  child: const Text(
-                    'Skip for now',
-                    style: TextStyle(
-                      color: AppColors.gray,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
       ),
+    ),
     );
   }
 }

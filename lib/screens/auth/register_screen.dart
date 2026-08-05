@@ -21,6 +21,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _referralCtrl = TextEditingController();
   bool _obscure = true;
   bool _agreeTerms = false;
+  bool _agreePrivacy = false;
   DateTime? _dob;
   bool _showEmailForm = false; // email form hidden until user taps "Register with email"
 
@@ -76,6 +77,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_agreeTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please accept the terms & conditions')),
+      );
+      return;
+    }
+    if (!_agreePrivacy) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please accept the Privacy Policy')),
       );
       return;
     }
@@ -436,6 +443,63 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         onTap: () => context.push('/terms'),
                                         child: const Text(
                                           'Terms & Conditions',
+                                          style: TextStyle(
+                                            color: Color(0xFF6366F1),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // ── Privacy Policy ───────────────────────────
+                          GestureDetector(
+                            onTap: () => setState(
+                                () => _agreePrivacy = !_agreePrivacy),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: _agreePrivacy
+                                        ? const Color(0xFF6366F1)
+                                        : Colors.transparent,
+                                    borderRadius:
+                                        BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: _agreePrivacy
+                                          ? const Color(0xFF6366F1)
+                                          : const Color(0xFFCBD5E1),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: _agreePrivacy
+                                      ? const Icon(
+                                          Icons.check_rounded,
+                                          color: Colors.white,
+                                          size: 13)
+                                      : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Wrap(
+                                    children: [
+                                      const Text(
+                                        'I agree to the ',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: Color(0xFF64748B)),
+                                      ),
+                                      GestureDetector(
+                                        onTap: () => context.push('/privacy'),
+                                        child: const Text(
+                                          'Privacy Policy',
                                           style: TextStyle(
                                             color: Color(0xFF6366F1),
                                             fontWeight: FontWeight.w700,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -36,6 +37,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   StreamSubscription<Position>? _locationSub;
   String? _prevStatus;          // tracks last-known status to detect transitions
   bool _paymentPopupShown = false; // ensure payment popup shown only once
+  String? _cachedProofValue;
+  Uint8List? _cachedProofBytes;
 
   // ── statuses treated as "cancelled" — helper should be redirected away
   static const _cancelledStatuses = {
@@ -90,6 +93,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
     if (!mounted) return;
 
+    _syncProofCache(task?.completionProof);
+
     final oldStatus = _prevStatus;
     setState(() {
       // During background polls keep the old task if the network returns null
@@ -117,6 +122,24 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showPaymentReceivedDialog();
       });
+    }
+  }
+
+  void _syncProofCache(String? rawProof) {
+    final proof = rawProof?.trim();
+    if (proof == _cachedProofValue) return;
+    _cachedProofValue = proof;
+    _cachedProofBytes = null;
+
+    if (proof != null && proof.startsWith('data:')) {
+      final comma = proof.indexOf(',');
+      if (comma != -1) {
+        try {
+          _cachedProofBytes = base64Decode(proof.substring(comma + 1));
+        } catch (_) {
+          _cachedProofBytes = null;
+        }
+      }
     }
   }
 
@@ -854,6 +877,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                             height: 200,
                             width: double.infinity,
                             fit: BoxFit.cover,
+                            gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           )
                         : Image.file(
@@ -861,6 +885,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                             height: 200,
                             width: double.infinity,
                             fit: BoxFit.cover,
+                            gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           ),
                   ),
@@ -1059,6 +1084,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               borderRadius: BorderRadius.circular(10),
               child: Image.file(File(_submittedProofPath!),
                   height: 160, width: double.infinity, fit: BoxFit.cover,
+                  gaplessPlayback: true,
                   errorBuilder: (_, __, ___) => _proofErrorWidget()),
             ),
             const SizedBox(height: 6),
@@ -1121,24 +1147,26 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
   /// Renders a proof image from either an HTTPS URL or a base64 data URI.
   Widget _buildProofImage(String proof, {double height = 160}) {
-    if (proof.startsWith('data:')) {
-      final comma = proof.indexOf(',');
-      if (comma != -1) {
-        try {
-          final bytes = base64Decode(proof.substring(comma + 1));
-          return Image.memory(bytes,
-              height: height,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _proofErrorWidget());
-        } catch (_) {}
+    final trimmed = proof.trim();
+    if (trimmed.startsWith('data:')) {
+      if (_cachedProofValue != trimmed) {
+        _syncProofCache(trimmed);
+      }
+      if (_cachedProofBytes != null) {
+        return Image.memory(_cachedProofBytes!,
+            height: height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => _proofErrorWidget());
       }
       return _proofErrorWidget();
     }
-    return Image.network(proof,
+    return Image.network(trimmed,
         height: height,
         width: double.infinity,
         fit: BoxFit.cover,
+        gaplessPlayback: true,
         errorBuilder: (_, __, ___) => _proofErrorWidget());
   }
 

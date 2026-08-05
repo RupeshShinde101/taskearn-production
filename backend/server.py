@@ -666,6 +666,30 @@ def _ensure_kyc_columns():
         print(f"⚠️ _ensure_kyc_columns error: {e}")
 
 
+_completion_proof_column_ensured = False
+
+def _ensure_completion_proof_column():
+    """Ensure completion_proof column exists in tasks table (idempotent)."""
+    global _completion_proof_column_ensured
+    if _completion_proof_column_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                # PostgreSQL
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_proof TEXT")
+            else:
+                # SQLite
+                cursor.execute("PRAGMA table_info(tasks)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'completion_proof' not in cols:
+                    cursor.execute("ALTER TABLE tasks ADD COLUMN completion_proof TEXT")
+        _completion_proof_column_ensured = True
+        print("✅ completion_proof column verified")
+    except Exception as e:
+        print(f"⚠️ _ensure_completion_proof_column error: {e}")
+
+
 # ==========================================================
 # KYC validation helpers (anti-fraud)
 # ==========================================================
@@ -3582,6 +3606,7 @@ def get_task_details(task_id):
 @require_auth
 def get_task_completion_proofs(task_id):
     """Return the helper's submitted completion proof for a task."""
+    _ensure_completion_proof_column()
     try:
         with get_db() as (cursor, conn):
             cursor.execute(
@@ -3607,6 +3632,7 @@ def complete_task(task_id):
     - Sets task status to 'completed'
     - Creates a 'Pay Now' notification for the poster
     """
+    _ensure_completion_proof_column()
     try:
         print(f"\n{'='*60}")
         print(f"📋 Marking Task {task_id} as Completed")
@@ -3628,12 +3654,6 @@ def complete_task(task_id):
             proof_data_uri = body.get('proofImage') or body.get('proof_image')
 
         with get_db() as (cursor, conn):
-            # Ensure completion_proof column exists (idempotent)
-            try:
-                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_proof TEXT")
-            except Exception:
-                pass
-
             # Check if task exists and is accepted by current user (the helper)
             cursor.execute(f'''
                 SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}

@@ -260,8 +260,13 @@ class TaskProvider extends ChangeNotifier {
           : null;
       if (json != null && json.isNotEmpty) {
         final task = Task.fromJson(json);
-        // Only cache if we got real poster info
-        if (task.posterName != 'Anonymous' || task.posterPhone != null) {
+        // Only cache if we got a real task (has both a non-empty id and title).
+        // This prevents the accept endpoint's bare {success:true} response from
+        // being stored as a bogus task with status='active', which would cause
+        // isActivePoster=true and a phone-less short-circuit in getTaskDetail().
+        if (task.id.isNotEmpty &&
+            task.title.isNotEmpty &&
+            (task.posterName != 'Anonymous' || task.posterPhone != null)) {
           _detailCache[taskId] = task;
         }
       }
@@ -402,6 +407,10 @@ class TaskProvider extends ChangeNotifier {
 
   Future<bool> acceptTask(String taskId) async {
     try {
+      // Clear any stale detail cache so a previous browse-list snapshot
+      // (which may lack posterPhone) cannot short-circuit getTaskDetail().
+      _detailCache.remove(taskId);
+
       // Snapshot the poster phone AND name from the browse list NOW, before
       // the task is removed from _browseTasks after fetchMyTasks(). This
       // ensures they are available when getTaskDetail() is called from the

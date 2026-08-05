@@ -10776,6 +10776,42 @@ def get_kyc_status():
         return jsonify({'success': False, 'message': 'Failed to get KYC status'}), 500
 
 
+@app.route('/api/admin/kyc/pending', methods=['GET'])
+@require_admin
+def admin_list_pending_kyc():
+    """Admin: list all KYC submissions awaiting review."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, name, phone, email, kyc_document_type, kyc_document_number,
+                       kyc_status, kyc_verified_at, kyc_acknowledged_at, kyc_flag_reason
+                FROM users
+                WHERE kyc_status IN ('pending', 'rejected')
+                ORDER BY kyc_acknowledged_at DESC NULLS LAST
+            ''')
+            rows = cursor.fetchall()
+        return jsonify({
+            'success': True,
+            'submissions': [
+                {
+                    'userId': dict_from_row(r).get('id'),
+                    'name': dict_from_row(r).get('name'),
+                    'phone': dict_from_row(r).get('phone'),
+                    'email': dict_from_row(r).get('email'),
+                    'documentType': dict_from_row(r).get('kyc_document_type'),
+                    'documentNumber': dict_from_row(r).get('kyc_document_number'),
+                    'status': dict_from_row(r).get('kyc_status'),
+                    'acknowledgedAt': dict_from_row(r).get('kyc_acknowledged_at'),
+                    'flagReason': dict_from_row(r).get('kyc_flag_reason'),
+                }
+                for r in rows
+            ]
+        })
+    except Exception as e:
+        print(f'[ADMIN KYC LIST] {e}')
+        return jsonify({'success': False, 'message': 'Failed to load KYC submissions'}), 500
+
+
 @app.route('/api/admin/user/<user_id>/kyc', methods=['GET'])
 @require_admin
 def admin_get_user_kyc(user_id):
@@ -10818,22 +10854,24 @@ def admin_verify_kyc(user_id):
     """Admin: approve or reject KYC (admin)"""
     data = request.get_json()
     action = data.get('action', 'approve')  # approve or reject
+    reject_reason = (data.get('reason') or '').strip()
 
     try:
         with get_db() as (cursor, conn):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             if action == 'approve':
                 cursor.execute(f'''
-                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}
+                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}, kyc_flag_reason = NULL
                     WHERE id = {PH}
                 ''', (now, user_id))
                 msg = '✅ Your KYC verification has been approved!'
             else:
+                flag = reject_reason or 'Rejected by admin'
                 cursor.execute(f'''
-                    UPDATE users SET kyc_status = 'rejected'
+                    UPDATE users SET kyc_status = 'rejected', kyc_flag_reason = {PH}
                     WHERE id = {PH}
-                ''', (user_id,))
-                msg = '❌ Your KYC verification was rejected. Please resubmit.'
+                ''', (flag, user_id))
+                msg = f'❌ Your KYC was rejected: {flag}. Please resubmit with correct documents.'
 
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)

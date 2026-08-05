@@ -305,7 +305,14 @@ class TaskProvider extends ChangeNotifier {
           bool needsReparse = false;
 
           if (task.posterPhone == null || task.posterPhone!.trim().isEmpty) {
-            final phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
+            var phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
+            if (phone == null && _myAcceptedTasks.isEmpty) {
+              // List not loaded yet (e.g. opened from notification) — fetch now.
+              try {
+                await fetchMyTasks();
+                phone = _findPhoneInAllLists(id);
+              } catch (_) {}
+            }
             if (phone != null) {
               enriched['poster_phone'] = phone;
               needsReparse = true;

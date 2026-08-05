@@ -578,8 +578,16 @@ class _PostedTaskList extends StatelessWidget {
 
   // ── Shows completion proof photo + Pay Now entry point ──────────────────
   void _showProofDialog(BuildContext context, Task t) {
-    // Use the proof stored on the task object — no extra API call needed.
-    final proofUrl = t.completionProof;
+    // If the task object already has the proof URL use it directly;
+    // otherwise fetch from the /proofs endpoint (avoids a stale list cache).
+    final taskProvider = context.read<TaskProvider>();
+    final Future<String?> proofFuture =
+        (t.completionProof != null && t.completionProof!.isNotEmpty)
+            ? Future.value(t.completionProof)
+            : taskProvider
+                .fetchTaskProofs(t.id)
+                .then((urls) => urls.isEmpty ? null : urls.first);
+
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -613,71 +621,83 @@ class _PostedTaskList extends StatelessWidget {
                 ],
               ),
             ),
-            // Proof image — supports both base64 data URIs and https URLs
-            if (proofUrl != null && proofUrl.isNotEmpty)
-              Builder(builder: (ctx) {
-                if (proofUrl.startsWith('data:image')) {
-                  // Strip the data:image/xxx;base64, prefix
-                  final commaIdx = proofUrl.indexOf(',');
-                  final b64 = commaIdx >= 0 ? proofUrl.substring(commaIdx + 1) : proofUrl;
-                  try {
-                    return Image.memory(
-                      base64Decode(b64),
-                      height: 240,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                    );
-                  } catch (_) {
-                    return const SizedBox.shrink();
-                  }
+            // Proof image — fetch from backend if not on the task object
+            FutureBuilder<String?>(
+              future: proofFuture,
+              builder: (_, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const SizedBox(
+                    height: 120,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
                 }
-                return Image.network(
-                  proofUrl,
-                  height: 240,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (_, child, progress) => progress == null
-                      ? child
-                      : const SizedBox(
-                          height: 240,
-                          child: Center(child: CircularProgressIndicator())),
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 100,
-                    color: AppColors.light,
-                    child: const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.broken_image_outlined,
-                              color: AppColors.gray, size: 36),
-                          SizedBox(height: 4),
-                          Text('Could not load image',
-                              style: TextStyle(
-                                  color: AppColors.gray, fontSize: 12)),
-                        ],
+                final proofUrl = snap.data;
+                if (proofUrl != null && proofUrl.isNotEmpty) {
+                  if (proofUrl.startsWith('data:image')) {
+                    final commaIdx = proofUrl.indexOf(',');
+                    final b64 = commaIdx >= 0
+                        ? proofUrl.substring(commaIdx + 1)
+                        : proofUrl;
+                    try {
+                      return Image.memory(
+                        base64Decode(b64),
+                        height: 240,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      );
+                    } catch (_) {
+                      return const SizedBox.shrink();
+                    }
+                  }
+                  return Image.network(
+                    proofUrl,
+                    height: 240,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (_, child, progress) => progress == null
+                        ? child
+                        : const SizedBox(
+                            height: 240,
+                            child:
+                                Center(child: CircularProgressIndicator())),
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 100,
+                      color: AppColors.light,
+                      child: const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.broken_image_outlined,
+                                color: AppColors.gray, size: 36),
+                            SizedBox(height: 4),
+                            Text('Could not load image',
+                                style: TextStyle(
+                                    color: AppColors.gray, fontSize: 12)),
+                          ],
+                        ),
                       ),
+                    ),
+                  );
+                }
+                return Container(
+                  height: 100,
+                  color: AppColors.light,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.image_not_supported_outlined,
+                            color: AppColors.gray, size: 36),
+                        SizedBox(height: 4),
+                        Text('No proof photo submitted yet.',
+                            style: TextStyle(
+                                color: AppColors.gray, fontSize: 12)),
+                      ],
                     ),
                   ),
                 );
-              })
-            else
-              Container(
-                height: 100,
-                color: AppColors.light,
-                child: const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.image_not_supported_outlined,
-                          color: AppColors.gray, size: 36),
-                      SizedBox(height: 4),
-                      Text('No proof photo submitted yet.',
-                          style: TextStyle(
-                              color: AppColors.gray, fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ),
+              },
+            ),
             // Task + helper info
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),

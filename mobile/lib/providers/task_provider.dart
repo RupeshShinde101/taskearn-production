@@ -466,10 +466,18 @@ class TaskProvider extends ChangeNotifier {
   }
 
   /// Helper submits proof for verification (Step 1 of completion flow).
-  /// POSTs complete to notify poster; proof upload is handled server-side.
   Future<bool> markCompleted(String taskId, {String? proofPath}) async {
     try {
-      await ApiService.post('/tasks/$taskId/complete');
+      if (proofPath != null && !proofPath.startsWith('http')) {
+        // Send proof image as multipart so backend can store it
+        await ApiService.uploadFile(
+          '/tasks/$taskId/complete',
+          proofPath,
+          'proofImage',
+        );
+      } else {
+        await ApiService.post('/tasks/$taskId/complete');
+      }
       // Invalidate detail cache so next load gets fresh status.
       _detailCache.remove(taskId);
       await fetchMyTasks();

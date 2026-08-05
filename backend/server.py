@@ -3589,8 +3589,28 @@ def complete_task(task_id):
         print(f"📋 Marking Task {task_id} as Completed")
         print(f"Helper: {request.user_id}")
         print('='*60)
-        
+
+        # Accept proof image via multipart or JSON base64
+        import base64 as _b64
+        proof_data_uri = None
+        content_type = request.content_type or ''
+        if 'multipart/form-data' in content_type:
+            f = request.files.get('proofImage')
+            if f:
+                raw = f.read()
+                mime = (f.content_type or 'image/jpeg').split(';')[0].strip()
+                proof_data_uri = f'data:{mime};base64,{_b64.b64encode(raw).decode()}'
+        else:
+            body = request.get_json(silent=True) or {}
+            proof_data_uri = body.get('proofImage') or body.get('proof_image')
+
         with get_db() as (cursor, conn):
+            # Ensure completion_proof column exists (idempotent)
+            try:
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_proof TEXT")
+            except Exception:
+                pass
+
             # Check if task exists and is accepted by current user (the helper)
             cursor.execute(f'''
                 SELECT * FROM tasks WHERE id = {PH} AND accepted_by = {PH} AND status = {PH}
@@ -3626,11 +3646,11 @@ def complete_task(task_id):
             # ===== UPDATE TASK STATUS TO 'completed' =====
             cursor.execute(f'''
                 UPDATE tasks
-                SET status = 'completed', completed_at = {PH}
+                SET status = 'completed', completed_at = {PH}, completion_proof = {PH}
                 WHERE id = {PH}
-            ''', (now, task_id))
+            ''', (now, proof_data_uri, task_id))
             
-            print(f"   ✅ Task status updated to 'completed'")
+            print(f"   ✅ Task status updated to 'completed' (proof={'yes' if proof_data_uri else 'none'})")
             
             # ===== CREATE NOTIFICATION FOR POSTER =====
             cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,))

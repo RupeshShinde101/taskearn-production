@@ -26,6 +26,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Task? _task;
   bool _loading = true;
   bool _initialLoad = true; // show spinner only on first load; polls are silent
+  bool _proofSubmitted = false; // lock Phase 1 after successful proof upload
   bool _submitting = false;  // for submit-for-verification
   bool _completing = false;  // for final mark-as-completed
   bool _abandoning = false;
@@ -80,10 +81,13 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
     final oldStatus = _prevStatus;
     setState(() {
-      _task = task;
+      // During background polls keep the old task if the network returns null
+      if (task != null) {
+        _task = task;
+        _prevStatus = task.status;
+      }
       _loading = false;
       _initialLoad = false;
-      _prevStatus = task?.status;
     });
 
     // If the poster cancelled (or task expired/rejected/not found), redirect.
@@ -395,6 +399,10 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     if (!mounted) return;
     setState(() => _submitting = false);
     if (ok) {
+      setState(() {
+        _proofSubmitted = true; // lock Phase 1 immediately, before network refresh
+        _proofPath = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -806,12 +814,12 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               ]
 
               // ── Phase 2: Waiting for poster to verify ─────────────────
-              else if (_isVerifyPending) ...[
+              else if (_isVerifyPending || _proofSubmitted) ...[
                 _buildWaitingBanner(task),
               ]
 
               // ── Phase 1: Actively working → Upload proof & submit ─────
-              else if (!_isDone) ...[
+              else if (!_isDone && !_proofSubmitted) ...[
                 // Proof upload section
                 const Text('Completion Proof',
                     style: TextStyle(

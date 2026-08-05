@@ -3555,6 +3555,7 @@ def get_task_details(task_id):
                 },
                 'status': task['status'],
                 'completion_proof': task.get('completion_proof'),
+                'poster_phone': task.get('provider_phone') or '',
                 'postedAt': task['posted_at'],
                 'accepted_at': task.get('accepted_at'),
                 'completed_at': task.get('completed_at'),
@@ -3577,7 +3578,24 @@ def get_task_details(task_id):
         })
 
 
-@app.route('/api/tasks/<int:task_id>/complete', methods=['POST'])
+@app.route('/api/tasks/<int:task_id>/proofs', methods=['GET'])
+@require_auth
+def get_task_completion_proofs(task_id):
+    """Return the helper's submitted completion proof for a task."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'SELECT completion_proof FROM tasks WHERE id = {PH}',
+                (task_id,)
+            )
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': True, 'proofs': []})
+        proof = row['completion_proof'] if isinstance(row, dict) else row[0]
+        proofs = [proof] if proof else []
+        return jsonify({'success': True, 'proofs': proofs})
+    except Exception as e:
+        return jsonify({'success': True, 'proofs': []})
 @require_auth
 def complete_task(task_id):
     """

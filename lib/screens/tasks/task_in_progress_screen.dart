@@ -902,6 +902,16 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Task In Progress'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () {
+            if (GoRouter.of(context).canPop()) {
+              context.pop();
+            } else {
+              context.go('/my-tasks');
+            }
+          },
+        ),
         actions: [
           if (_refreshing)
             const Center(

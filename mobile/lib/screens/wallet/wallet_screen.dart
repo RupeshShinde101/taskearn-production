@@ -634,31 +634,6 @@ class _StatItem extends StatelessWidget {
   }
 }
 
-class _StatCol extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _StatCol({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14)),
-          Text(label,
-              style:
-                  const TextStyle(color: Colors.white70, fontSize: 11)),
-        ],
-      ),
-    );
-  }
-}
-
 class _TransactionList extends StatelessWidget {
   final List<Transaction> transactions;
   const _TransactionList({required this.transactions});

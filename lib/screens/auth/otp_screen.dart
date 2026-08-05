@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pinput/pinput.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
@@ -34,12 +36,15 @@ class _OtpScreenState extends State<OtpScreen> {
         context.go('/login', extra: {'reset_otp': _otp, 'email': _email});
         return;
       }
-      await ApiService.post('/auth/verify-email', body: {
-        'email': _email,
-        'otp': _otp,
-      });
+      final auth = context.read<AuthProvider>();
+      final ok = await auth.verifyEmailOtp(_otp);
       if (!mounted) return;
-      context.go('/home');
+      if (ok) {
+        context.go('/home');
+      } else {
+        setState(() => _error = auth.error ?? 'Verification failed');
+      }
+      return;
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } finally {

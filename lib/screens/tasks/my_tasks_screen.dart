@@ -314,9 +314,9 @@ class _PostedTaskList extends StatelessWidget {
                                 label: const Text('Edit'),
                                 onPressed: () async {
                                   final updated =
-                                      await Navigator.push<bool>(
-                                    context,
+                                      await Navigator.of(context, rootNavigator: true).push<bool>(
                                     MaterialPageRoute(
+                                      fullscreenDialog: true,
                                       builder: (_) =>
                                           EditTaskScreen(task: t),
                                     ),
@@ -492,7 +492,7 @@ class _PostedTaskList extends StatelessWidget {
                     Expanded(
                       child: Text(
                         hasHelper
-                            ? 'The helper will be notified and released. A refund will be credited to your wallet.'
+                            ? 'The helper will be notified and released.'
                             : 'Are you sure you want to cancel this task? It will be removed from the board.',
                         style: TextStyle(
                           fontSize: 13,

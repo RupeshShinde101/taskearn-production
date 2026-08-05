@@ -23,7 +23,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _cityName = 'Your City';
   List<Task> _suggestedTasks = [];
+  Map<String, int> _taskMatchPct = {}; // taskId -> match percentage (60-100)
   List<Task> _expiringTasks  = [];
+  bool _kycReminderShown = false;
 
   @override
   void initState() {
@@ -37,14 +39,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadInitial() async {
-    // Fetch non-location data immediately (no GPS needed)
+    // All fetches start immediately on the first frame — nothing waits for GPS.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<NotificationProvider>().fetchNotifications();
       context.read<WalletProvider>().fetchWallet();
+      _fetchSuggestedTasks();
+      _fetchExpiringTasks();
+      _maybeShowKycReminder();
     });
 
-    // Get GPS first — tasks are location-dependent (10km radius)
+    // GPS runs in parallel — only needed for city name + backend location update.
     final location = await LocationService.getCurrentLocation();
     if (!mounted) return;
     if (location != null) {
@@ -52,10 +57,6 @@ class _HomeScreenState extends State<HomeScreen> {
           .updateUserLocation(location.latitude, location.longitude);
       _reverseGeocode(location.latitude, location.longitude);
     }
-
-    // Fetch tasks: with 10km radius if GPS available, without otherwise
-    _fetchSuggestedTasks(location?.latitude, location?.longitude);
-    _fetchExpiringTasks(location?.latitude, location?.longitude);
   }
 
   Future<void> _reverseGeocode(double lat, double lng) async {
@@ -72,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _fetchExpiringTasks([double? lat, double? lng]) async {
+  Future<void> _fetchExpiringTasks() async {
     try {
       final currentUserId =
           context.read<AuthProvider>().user?.id.toString();
@@ -81,11 +82,6 @@ class _HomeScreenState extends State<HomeScreen> {
         'sort': 'expiry',
         if (currentUserId != null && currentUserId.isNotEmpty)
           'exclude_poster_id': currentUserId,
-        if (lat != null && lng != null) ...{
-          'lat': lat.toString(),
-          'lng': lng.toString(),
-          'radius': '10',
-        },
       };
       final data = await ApiService.get('/tasks', queryParams: params);
       if (!mounted || data == null) return;
@@ -105,34 +101,95 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _fetchSuggestedTasks([double? lat, double? lng]) async {
+  void _maybeShowKycReminder() {
+    if (_kycReminderShown || !mounted) return;
+    final user = context.read<AuthProvider>().user;
+    if (user == null) return;
+    final kycStatus = user.kycStatus;
+    final isVerified = user.isKycVerified;
+    // Only show for users who have never started KYC
+    if (isVerified || (kycStatus != null && kycStatus != 'none' && kycStatus.isNotEmpty)) return;
+
+    _kycReminderShown = true;
+    // Small delay so the home screen renders first
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (!mounted) return;
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => const _KycReminderSheet(),
+      );
+    });
+  }
+
+  Future<void> _fetchSuggestedTasks() async {
     try {
-      final currentUserId =
-          context.read<AuthProvider>().user?.id.toString();
+      final auth = context.read<AuthProvider>();
+      final currentUserId = auth.user?.id.toString();
+      final userSkills = (auth.user?.skills ?? [])
+          .map((s) => s.toLowerCase().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+
+      // Fetch more tasks so we have enough to rank
       final params = <String, String>{
-        'limit': '8',
+        'limit': '20',
         if (currentUserId != null && currentUserId.isNotEmpty)
           'exclude_poster_id': currentUserId,
-        if (lat != null && lng != null) ...{
-          'lat': lat.toString(),
-          'lng': lng.toString(),
-          'radius': '10',
-        },
       };
       final data = await ApiService.get('/tasks', queryParams: params);
       if (!mounted || data == null) return;
       final list = data is List ? data : (data['tasks'] as List? ?? []);
-      final tasks = <Task>[];
+      final allTasks = <Task>[];
       for (final item in list) {
         try {
-          tasks.add(Task.fromJson(item as Map<String, dynamic>));
+          allTasks.add(Task.fromJson(item as Map<String, dynamic>));
         } catch (_) {}
       }
+
+      // Score each task by skill overlap
+      final scored = <MapEntry<Task, int>>[];
+      for (final task in allTasks) {
+        final text =
+            '${task.category} ${task.title}'.toLowerCase();
+        if (userSkills.isEmpty) {
+          // No skills set: show all with base score
+          scored.add(MapEntry(task, 0));
+        } else {
+          int hits = 0;
+          for (final skill in userSkills) {
+            if (text.contains(skill)) hits++;
+          }
+          // Only include tasks that match at least one skill
+          if (hits > 0) scored.add(MapEntry(task, hits));
+        }
+      }
+
+      // Sort by score descending, take top 8
+      scored.sort((a, b) => b.value.compareTo(a.value));
+      final top = scored.take(8).toList();
+
+      // Compute match percentages
+      final pctMap = <String, int>{};
+      for (final e in top) {
+        if (userSkills.isEmpty) {
+          pctMap[e.key.id] = 75; // generic suggestion
+        } else {
+          // Normalize to 60-100% range
+          final pct = (60 + (e.value / userSkills.length * 40))
+              .round()
+              .clamp(60, 100);
+          pctMap[e.key.id] = pct;
+        }
+      }
+
       if (mounted) {
-        setState(() => _suggestedTasks = tasks);
-        // Cache into TaskProvider so getTaskDetail can find them when
-        // the user taps Apply, avoiding a 'Task not found' error.
-        context.read<TaskProvider>().cacheTasksForBrowse(tasks);
+        setState(() {
+          _suggestedTasks = top.map((e) => e.key).toList();
+          _taskMatchPct = pctMap;
+        });
+        context.read<TaskProvider>().cacheTasksForBrowse(_suggestedTasks);
       }
     } catch (_) {}
   }
@@ -919,7 +976,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             GestureDetector(
-              onTap: () => context.go('/browse'),
+              onTap: () {
+                final skills = context.read<AuthProvider>().user?.skills ?? [];
+                if (skills.isNotEmpty) BrowseScreen.jumpToSearch = skills.first;
+                context.go('/browse');
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
@@ -945,7 +1006,10 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             itemCount: _suggestedTasks.length,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (ctx, i) => _buildSuggestedCard(_suggestedTasks[i]),
+            itemBuilder: (ctx, i) => _buildSuggestedCard(
+                _suggestedTasks[i],
+                _taskMatchPct[_suggestedTasks[i].id] ?? 75,
+              ),
           ),
         ),
       ),
@@ -967,7 +1031,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return '\u{1F6E0}';
   }
 
-  Widget _buildSuggestedCard(Task task) {
+  Widget _buildSuggestedCard(Task task, int matchPct) {
     return GestureDetector(
       onTap: () => context.push('/task/${task.id}'),
       child: Container(
@@ -1029,9 +1093,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text('85%\nmatch',
+                  child: Text('$matchPct%\nmatch',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                           color: AppColors.success,
@@ -1357,6 +1421,134 @@ class _QuoteIcon extends StatelessWidget {
       child: const Center(
           child: Text('\u275D',
               style: TextStyle(color: Colors.white, fontSize: 16))),
+    );
+  }
+}
+
+// ── KYC Reminder Bottom Sheet ─────────────────────────────────────────────────
+
+class _KycReminderSheet extends StatelessWidget {
+  const _KycReminderSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.all(Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Icon
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.verified_user_outlined,
+                size: 32, color: AppColors.primary),
+          ),
+          const SizedBox(height: 16),
+
+          const Text(
+            'Complete KYC Verification',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.dark,
+              letterSpacing: -0.3,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Verify your identity to post tasks, accept tasks, and withdraw your earnings.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: AppColors.gray, height: 1.5),
+          ),
+          const SizedBox(height: 20),
+
+          // Benefits
+          const _BenefitRow(icon: Icons.add_task_rounded,     text: 'Post tasks on the platform'),
+          const SizedBox(height: 8),
+          const _BenefitRow(icon: Icons.handshake_outlined,   text: 'Accept tasks & earn money'),
+          const SizedBox(height: 8),
+          const _BenefitRow(icon: Icons.account_balance_outlined, text: 'Withdraw your earnings'),
+          const SizedBox(height: 24),
+
+          // Complete KYC button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                context.push('/kyc');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: const Text('Complete KYC Now',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Skip
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Remind me later',
+                style: TextStyle(
+                    color: AppColors.gray,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BenefitRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _BenefitRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 16, color: AppColors.primary),
+        ),
+        const SizedBox(width: 12),
+        Text(text,
+            style: const TextStyle(
+                fontSize: 14, color: AppColors.dark, fontWeight: FontWeight.w500)),
+      ],
     );
   }
 }

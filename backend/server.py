@@ -753,6 +753,57 @@ def _hash_kyc_image(b64_image):
         return None
 
 
+def _ocr_extract_document_number(b64_image, doc_type):
+    """Extract document number from image via OCR. Returns (number|None, status).
+    status: 'matched'|'extracted'|'none'|'unavailable'
+    Tries pytesseract; on any failure returns (None, 'unavailable').
+    """
+    try:
+        import pytesseract
+        from PIL import Image, ImageEnhance, ImageFilter
+        import base64, io, re
+
+        s = b64_image or ''
+        if ',' in s:
+            s = s.split(',', 1)[1]
+        raw = base64.b64decode(s, validate=False)
+        img = Image.open(io.BytesIO(raw)).convert('RGB')
+
+        # Scale up small images for better OCR accuracy
+        w, h = img.size
+        if w < 1000:
+            scale = 1000 / w
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+        gray = img.convert('L')
+        gray = ImageEnhance.Contrast(gray).enhance(2.5)
+        gray = gray.filter(ImageFilter.SHARPEN)
+
+        # --psm 11: sparse text (works well for documents with mixed layout)
+        text = pytesseract.image_to_string(gray, config='--psm 11 --oem 3')
+        clean = text.upper().replace(' ', '').replace('\n', '').replace('-', '').replace('.', '')
+
+        if doc_type == 'pan':
+            matches = re.findall(r'[A-Z]{5}[0-9]{4}[A-Z]', clean)
+        elif doc_type == 'aadhaar':
+            # Aadhaar may appear as 4-4-4 groups; collapse all digits then find 12-digit run
+            digits_only = re.sub(r'[^0-9]', '', text)
+            matches = re.findall(r'\d{12}', digits_only)
+        elif doc_type == 'voter_id':
+            matches = re.findall(r'[A-Z]{2,3}[0-9]{7}', clean)
+        elif doc_type == 'driving_license':
+            matches = re.findall(r'[A-Z]{2}[0-9]{13}', clean)
+        else:
+            matches = []
+
+        return (matches[0], 'extracted') if matches else (None, 'none')
+    except ImportError:
+        return None, 'unavailable'
+    except Exception as e:
+        print(f'[KYC OCR] error: {e}')
+        return None, 'unavailable'
+
+
 def generate_user_id():
     """Generate unique user ID"""
     import time
@@ -1310,32 +1361,6 @@ def register():
         return jsonify({'success': False, 'message': 'Request body required'}), 400
 
     try:
-        # ---- TRIAL MODE CHECKS ----
-        if config.TRIAL_ACTIVE:
-            import datetime as _dt
-            # Check invite code
-            invite_code = (data.get('invite_code') or '').strip().upper()
-            if invite_code != config.TRIAL_INVITE_CODE.upper():
-                return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.'}), 403
-            # Check trial end date
-            try:
-                end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
-            except ValueError:
-                end_date = _dt.date.today() + _dt.timedelta(days=30)
-            if _dt.date.today() > end_date:
-                return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
-            # Check user cap
-            try:
-                with get_db() as (cursor, conn):
-                    cursor.execute('SELECT COUNT(*) as cnt FROM users')
-                    row = dict_from_row(cursor.fetchone())
-                    if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
-                        return jsonify({'success': False, 'message': 'All 100 trial spots are taken. We\'ll notify you when we launch publicly!'}), 403
-            except Exception as _cnt_e:
-                _cnt_err = str(_cnt_e).lower()
-                if any(k in _cnt_err for k in ['connect', 'relation', 'does not exist']):
-                    return jsonify({'success': False, 'message': 'Service is starting up. Please try again in a few seconds.'}), 503
-                raise
 
         # Validate required fields
         required = ['name', 'email', 'password', 'dob']
@@ -1454,46 +1479,6 @@ def register():
         return jsonify({'success': False, 'message': 'Registration failed. Please try again.'}), 500
 
 
-# -----------------------------------------------------------------------
-# TRIAL STATUS ENDPOINT — public, no auth needed
-# Returns whether trial is active, slots remaining, and end date.
-# -----------------------------------------------------------------------
-@app.route('/api/trial/status', methods=['GET'])
-def trial_status():
-    """Return current trial status (public endpoint)"""
-    import datetime as _dt
-    if not config.TRIAL_ACTIVE:
-        return jsonify({'trial': False})
-
-    now_date = _dt.date.today()
-    try:
-        end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
-    except ValueError:
-        end_date = now_date + _dt.timedelta(days=30)
-
-    expired = now_date > end_date
-
-    try:
-        with get_db() as (cursor, conn):
-            cursor.execute('SELECT COUNT(*) as cnt FROM users')
-            row = dict_from_row(cursor.fetchone())
-            total_users = row['cnt'] or 0
-    except Exception:
-        total_users = 0
-
-    slots_remaining = max(0, config.TRIAL_MAX_USERS - total_users)
-    full = total_users >= config.TRIAL_MAX_USERS
-
-    return jsonify({
-        'trial': True,
-        'active': not expired and not full,
-        'expired': expired,
-        'full': full,
-        'slotsRemaining': slots_remaining,
-        'totalUsers': total_users,
-        'maxUsers': config.TRIAL_MAX_USERS,
-        'endDate': config.TRIAL_END_DATE,
-    })
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -2183,10 +2168,12 @@ def update_profile():
     """Update user profile"""
     data = request.get_json()
     _ensure_bio_skills_columns()
+    _ensure_terms_columns()
     import json as _json_profile
 
     _ensure_gender_column()
-    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio', 'gender']
+    allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio', 'gender',
+                      'terms_accepted_at', 'terms_version']
     updates = {k: v for k, v in data.items() if k in allowed_fields}
 
     # Skills: stored as JSON string in the DB
@@ -9253,36 +9240,54 @@ def delete_account():
             uid = request.user_id
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Block the email/google_id so this user cannot re-register via Google
-            if user_email:
+            def _safe_exec(sql, params=()):
+                """Run a single SQL statement inside its own SAVEPOINT so a
+                missing table or column never aborts the whole deletion."""
+                sp = f'sp_del_{abs(hash(sql)) % 100000}'
                 try:
-                    cursor.execute(
-                        f"INSERT INTO deleted_accounts (email, google_id, deleted_at) VALUES ({PH}, {PH}, {PH}) ON CONFLICT (email) DO NOTHING",
-                        (user_email, google_id, now)
-                    )
-                except Exception as e:
-                    print(f"[DELETE ACCOUNT] Warning: could not write deleted_accounts: {e}")
+                    cursor.execute(f'SAVEPOINT {sp}')
+                    cursor.execute(sql, params)
+                    cursor.execute(f'RELEASE SAVEPOINT {sp}')
+                except Exception as _se:
+                    print(f'[DELETE ACCOUNT] skipping: {_se}')
+                    try:
+                        cursor.execute(f'ROLLBACK TO SAVEPOINT {sp}')
+                    except Exception:
+                        pass
+
+            # Record self-deletion — does NOT block re-registration.
+            # Only admin-deleted entries (deleted_by='admin') block sign-up.
+            if user_email:
+                _safe_exec(
+                    f"INSERT INTO deleted_accounts (email, google_id, deleted_at, deleted_by) VALUES ({PH}, {PH}, {PH}, 'self') ON CONFLICT (email) DO UPDATE SET deleted_at = EXCLUDED.deleted_at, deleted_by = 'self'",
+                    (user_email, google_id, now)
+                )
 
             # Delete user data in order (foreign key safe)
-            cursor.execute(f'DELETE FROM phone_otps WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM notifications WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM chat_messages WHERE sender_id = {PH} OR receiver_id = {PH}', (uid, uid))
-            cursor.execute(f'DELETE FROM helper_ratings WHERE helper_id = {PH} OR rater_id = {PH}', (uid, uid))
-            cursor.execute(f'DELETE FROM wallet_transactions WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM wallets WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM referrals WHERE referrer_id = {PH} OR referred_id = {PH}', (uid, uid))
-            cursor.execute(f'DELETE FROM location_tracking WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM task_proofs WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM password_resets WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM withdrawal_requests WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM sos_alerts WHERE user_id = {PH}', (uid,))
-            cursor.execute(f'DELETE FROM contact_messages WHERE user_id = {PH}', (uid,))
+            # chat_messages uses user_id (not sender_id/receiver_id)
+            _safe_exec(f'DELETE FROM push_subscriptions WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM phone_otps WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM notifications WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM chat_messages WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM helper_ratings WHERE helper_id = {PH} OR rater_id = {PH}', (uid, uid))
+            _safe_exec(f'DELETE FROM reviews WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM wallet_transactions WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM wallets WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM referrals WHERE referrer_id = {PH} OR referred_id = {PH}', (uid, uid))
+            _safe_exec(f'DELETE FROM location_tracking WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM task_proofs WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM password_resets WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM withdrawal_requests WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM sos_alerts WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM contact_messages WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM payments WHERE user_id = {PH}', (uid,))
+            _safe_exec(f'DELETE FROM kyc_documents WHERE user_id = {PH}', (uid,))
 
             # Anonymize completed tasks (keep for records but remove PII)
-            cursor.execute(f"UPDATE tasks SET posted_by = NULL WHERE posted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
-            cursor.execute(f"UPDATE tasks SET accepted_by = NULL WHERE accepted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
+            _safe_exec(f"UPDATE tasks SET posted_by = NULL WHERE posted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
+            _safe_exec(f"UPDATE tasks SET accepted_by = NULL WHERE accepted_by = {PH} AND status IN ('paid', 'expired', 'removed')", (uid,))
 
-            # Delete the user
+            # Delete the user (must be last)
             cursor.execute(f'DELETE FROM users WHERE id = {PH}', (uid,))
 
             conn.commit()
@@ -9338,16 +9343,11 @@ def notify_task_skills(task_id):
         _task_title_display = task.get('title', '')
         _task_cat_display   = task.get('category', 'General')
 
-        # Task location for 10 km proximity filter
+        # Task location — kept for display but NOT used to filter users
         _task_lat = task.get('location_lat')
         _task_lng = task.get('location_lng')
-        _has_task_location = _task_lat is not None and _task_lng is not None
-        if not _has_task_location:
-            # Cannot enforce radius without task location — skip all notifications
-            return jsonify({'success': True, 'notified': 0,
-                            'reason': 'task has no location — radius filter skipped'})
-        _task_lat = float(_task_lat)
-        _task_lng = float(_task_lng)
+        _task_lat = float(_task_lat) if _task_lat is not None else None
+        _task_lng = float(_task_lng) if _task_lng is not None else None
 
         _ensure_bio_skills_columns()
         _ensure_fcm_token_column()
@@ -9355,29 +9355,18 @@ def notify_task_skills(task_id):
 
         with get_db() as (cursor, _):
             cursor.execute(f'''
-                SELECT id, fcm_token, skills, last_lat, last_lng,
-                       last_location_updated_at FROM users
+                SELECT id, fcm_token, skills FROM users
                 WHERE fcm_token IS NOT NULL
                   AND id != {PH}
                   AND skills IS NOT NULL
                   AND skills NOT IN ({PH}, {PH}, {PH})
-                  AND last_lat IS NOT NULL
-                  AND last_lng IS NOT NULL
             ''', (request.user_id, '[]', '', 'null'))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 
         notified = 0
         for user in candidates:
             try:
-                # ── 10 km proximity check (task location guaranteed present) ──
-                u_lat = user.get('last_lat')
-                u_lng = user.get('last_lng')
-                if u_lat is None or u_lng is None:
-                    continue
-                if _haversine_km(_task_lat, _task_lng,
-                                 float(u_lat), float(u_lng)) > 10.0:
-                    continue  # outside 10 km radius
-                # ── Skill match check ──────────────────────────────────
+                # ── Skill match check (no location filter) ────────────────
                 raw_skills = user.get('skills', '[]')
                 user_skills = [s.lower() for s in (
                     _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])
@@ -10680,9 +10669,28 @@ def submit_kyc():
             'message': 'This document number is already registered with another account. If you believe this is wrong, contact support.',
         }), 409
 
-    # Decide final status: pending if any quality flag, else verified
-    final_status = 'pending' if flags else 'verified'
-    flag_reason_text = '; '.join(flags) if flags else None
+    # OCR: extract document number from front image and compare with entered number
+    ocr_number, ocr_status = _ocr_extract_document_number(doc_image_front, doc_type)
+
+    if ocr_status == 'unavailable':
+        # Tesseract not available on this deployment — fall back to manual review
+        final_status = 'pending'
+        ocr_flag = 'OCR unavailable; admin must verify number matches image'
+    elif ocr_number is None:
+        # OCR ran but couldn't find a recognisable number in the image
+        final_status = 'pending'
+        ocr_flag = 'OCR could not read document number from image; admin verification required'
+    elif ocr_number == doc_number_norm:
+        # Numbers match — auto-approve if image quality is also clean
+        final_status = 'pending' if flags else 'verified'
+        ocr_flag = None
+    else:
+        # Mismatch: the number typed doesn't match the number on the document
+        final_status = 'pending'
+        ocr_flag = f'Number mismatch: entered {doc_number_norm}, found in image {ocr_number}'
+
+    all_flags = flags + ([ocr_flag] if ocr_flag else [])
+    flag_reason_text = '; '.join(all_flags) if all_flags else None
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -10702,7 +10710,7 @@ def submit_kyc():
 
             # Notify user
             if final_status == 'verified':
-                user_msg = '✅ Your KYC verification has been approved!'
+                user_msg = '✅ Your KYC has been verified automatically. Your identity is confirmed!'
             else:
                 user_msg = '📝 KYC received. Our team will review your documents shortly (usually within 24 hours).'
             cursor.execute(f'''
@@ -10710,15 +10718,17 @@ def submit_kyc():
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (request.user_id, 'kyc_result', 'KYC Verification Update', user_msg, 'unread', now))
 
-            # Log for admin
-            admin_msg = f'User {request.user_id} submitted {doc_type} — '
-            admin_msg += 'auto-verified' if final_status == 'verified' else f'pending review ({flag_reason_text})'
+            # Admin notification
+            if final_status == 'verified':
+                admin_title = '✅ KYC Auto-Verified'
+                admin_msg = f'User {request.user_id} submitted {doc_type} ({doc_number_norm}) — OCR matched, auto-approved.'
+            else:
+                admin_title = '⚠️ KYC Needs Review'
+                admin_msg = f'User {request.user_id} submitted {doc_type} ({doc_number_norm}) — {flag_reason_text}'
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', ('1', 'kyc_request',
-                  '📋 KYC Submitted' if final_status == 'verified' else '⚠️ KYC Needs Review',
-                  admin_msg, 'unread', now))
+            ''', ('1', 'kyc_request', admin_title, admin_msg, 'unread', now))
 
         if final_status == 'verified':
             return jsonify({'success': True, 'message': 'KYC verified successfully! Your identity has been confirmed.', 'status': 'verified'})
@@ -10766,6 +10776,42 @@ def get_kyc_status():
         return jsonify({'success': False, 'message': 'Failed to get KYC status'}), 500
 
 
+@app.route('/api/admin/kyc/pending', methods=['GET'])
+@require_admin
+def admin_list_pending_kyc():
+    """Admin: list all KYC submissions awaiting review."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, name, phone, email, kyc_document_type, kyc_document_number,
+                       kyc_status, kyc_verified_at, kyc_acknowledged_at, kyc_flag_reason
+                FROM users
+                WHERE kyc_status IN ('pending', 'rejected')
+                ORDER BY kyc_acknowledged_at DESC NULLS LAST
+            ''')
+            rows = cursor.fetchall()
+        return jsonify({
+            'success': True,
+            'submissions': [
+                {
+                    'userId': dict_from_row(r).get('id'),
+                    'name': dict_from_row(r).get('name'),
+                    'phone': dict_from_row(r).get('phone'),
+                    'email': dict_from_row(r).get('email'),
+                    'documentType': dict_from_row(r).get('kyc_document_type'),
+                    'documentNumber': dict_from_row(r).get('kyc_document_number'),
+                    'status': dict_from_row(r).get('kyc_status'),
+                    'acknowledgedAt': dict_from_row(r).get('kyc_acknowledged_at'),
+                    'flagReason': dict_from_row(r).get('kyc_flag_reason'),
+                }
+                for r in rows
+            ]
+        })
+    except Exception as e:
+        print(f'[ADMIN KYC LIST] {e}')
+        return jsonify({'success': False, 'message': 'Failed to load KYC submissions'}), 500
+
+
 @app.route('/api/admin/user/<user_id>/kyc', methods=['GET'])
 @require_admin
 def admin_get_user_kyc(user_id):
@@ -10774,7 +10820,8 @@ def admin_get_user_kyc(user_id):
         with get_db() as (cursor, conn):
             cursor.execute(f'''
                 SELECT name, email, kyc_status, kyc_document_type, kyc_document_number,
-                       kyc_document_image, kyc_document_image_back, kyc_verified_at
+                       kyc_document_image, kyc_document_image_back, kyc_verified_at,
+                       kyc_acknowledged_at, kyc_flag_reason
                 FROM users WHERE id = {PH}
             ''', (user_id,))
             row = cursor.fetchone()
@@ -10792,7 +10839,9 @@ def admin_get_user_kyc(user_id):
                 'documentNumber': user_data.get('kyc_document_number'),
                 'documentImageFront': user_data.get('kyc_document_image'),
                 'documentImageBack': user_data.get('kyc_document_image_back'),
-                'verifiedAt': user_data.get('kyc_verified_at')
+                'verifiedAt': user_data.get('kyc_verified_at'),
+                'acknowledgedAt': user_data.get('kyc_acknowledged_at'),
+                'flagReason': user_data.get('kyc_flag_reason'),
             }
         })
     except Exception as e:
@@ -10805,22 +10854,24 @@ def admin_verify_kyc(user_id):
     """Admin: approve or reject KYC (admin)"""
     data = request.get_json()
     action = data.get('action', 'approve')  # approve or reject
+    reject_reason = (data.get('reason') or '').strip()
 
     try:
         with get_db() as (cursor, conn):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             if action == 'approve':
                 cursor.execute(f'''
-                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}
+                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}, kyc_flag_reason = NULL
                     WHERE id = {PH}
                 ''', (now, user_id))
                 msg = '✅ Your KYC verification has been approved!'
             else:
+                flag = reject_reason or 'Rejected by admin'
                 cursor.execute(f'''
-                    UPDATE users SET kyc_status = 'rejected'
+                    UPDATE users SET kyc_status = 'rejected', kyc_flag_reason = {PH}
                     WHERE id = {PH}
-                ''', (user_id,))
-                msg = '❌ Your KYC verification was rejected. Please resubmit.'
+                ''', (flag, user_id))
+                msg = f'❌ Your KYC was rejected: {flag}. Please resubmit with correct documents.'
 
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
@@ -11143,9 +11194,18 @@ def _ensure_google_auth_schema():
                     CREATE TABLE IF NOT EXISTS deleted_accounts (
                         email VARCHAR(255) PRIMARY KEY,
                         google_id VARCHAR(255),
-                        deleted_at TIMESTAMP DEFAULT NOW()
+                        deleted_at TIMESTAMP DEFAULT NOW(),
+                        deleted_by VARCHAR(20) DEFAULT 'admin'
                     )
                 ''')
+                # Add deleted_by column if table already exists without it
+                try:
+                    cursor.execute("ALTER TABLE deleted_accounts ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(20) DEFAULT 'self'")
+                    # All existing rows were written by users self-deleting — mark them 'self'
+                    # so they are NOT blocked from re-registering.
+                    cursor.execute("UPDATE deleted_accounts SET deleted_by = 'self' WHERE deleted_by IS NULL OR deleted_by = 'admin'")
+                except Exception:
+                    pass
                 cursor.execute('''
                     CREATE INDEX IF NOT EXISTS idx_deleted_accounts_google_id
                     ON deleted_accounts (google_id) WHERE google_id IS NOT NULL
@@ -11174,7 +11234,13 @@ def google_login():
     """Login or register via Google ID token"""
     data = request.get_json(silent=True) or {}
     id_token = data.get('credential', '')
-    invite_code = (data.get('invite_code') or '').strip().upper()
+    # Optional registration fields (collected via Flutter onboarding)
+    reg_phone = (data.get('phone') or '').strip()
+    reg_dob = (data.get('dob') or None)
+    reg_referral = (data.get('referral_code') or '').strip()
+    reg_terms_at = data.get('terms_accepted_at') or None
+    reg_terms_ver = data.get('terms_version', '2026-05-22')
+    reg_name_override = (data.get('name') or '').strip()  # name confirmed in onboarding
 
     if not id_token:
         return jsonify({'success': False, 'message': 'Google credential is required'}), 400
@@ -11215,6 +11281,7 @@ def google_login():
 
         # Retry DB block for transient startup/connectivity failures.
         user = None
+        is_new_user = False
         for db_attempt in range(2):
             try:
                 with get_db() as (cursor, conn):
@@ -11228,8 +11295,12 @@ def google_login():
                         last_login = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         cursor.execute(f'UPDATE users SET last_login = {PH} WHERE id = {PH}', (last_login, user_id))
                     else:
-                        # Check if this email/google_id was previously deleted by admin
-                        cursor.execute(f'SELECT email FROM deleted_accounts WHERE email = {PH} OR google_id = {PH}', (email, google_id))
+                        # Block re-registration only for admin-deleted/banned accounts.
+                        # Users who self-deleted (deleted_by='self') can freely re-register.
+                        cursor.execute(
+                            f"SELECT email, deleted_by FROM deleted_accounts WHERE (email = {PH} OR google_id = {PH}) AND deleted_by != 'self'",
+                            (email, google_id)
+                        )
                         if cursor.fetchone():
                             return jsonify({'success': False, 'message': 'This account has been removed. Contact support if you believe this is a mistake.'}), 403
 
@@ -11252,42 +11323,75 @@ def google_login():
                                 WHERE id = {PH}
                             ''', (google_id, user_id))
                         else:
-                            # Brand-new user — apply trial checks before creating account
-                            if config.TRIAL_ACTIVE:
-                                import datetime as _dt
-                                # Validate invite code
-                                if invite_code != config.TRIAL_INVITE_CODE.upper():
-                                    return jsonify({'success': False, 'message': 'Invalid invite code. This is a closed beta — you need an invite code to join.', 'needsInviteCode': True}), 403
-                                # Check trial end date
-                                try:
-                                    end_date = _dt.date.fromisoformat(config.TRIAL_END_DATE)
-                                except ValueError:
-                                    end_date = _dt.date.today() + _dt.timedelta(days=30)
-                                if _dt.date.today() > end_date:
-                                    return jsonify({'success': False, 'message': 'The trial period has ended. Stay tuned for the public launch!'}), 403
-                                # Check user cap
-                                cursor.execute('SELECT COUNT(*) as cnt FROM users')
-                                row = dict_from_row(cursor.fetchone())
-                                if (row['cnt'] or 0) >= config.TRIAL_MAX_USERS:
-                                    return jsonify({'success': False, 'message': "All trial spots are taken. We'll notify you when we launch publicly!"}), 403
-
                             # Register new Google user
+                            is_new_user = True
                             user_id = generate_user_id()
                             joined_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
                             # Google users get a random password (they never use it)
                             random_pw = generate_password_hash(secrets.token_hex(32), method='pbkdf2:sha256')
+                            # Use onboarding-confirmed name if provided, else Google profile name
+                            final_name = reg_name_override if reg_name_override else name
+                            terms_at = reg_terms_at or joined_at
+                            # Validate DOB if provided (must be 16+)
+                            dob_value = None
+                            if reg_dob:
+                                try:
+                                    dob_date = datetime.datetime.strptime(reg_dob, '%Y-%m-%d')
+                                    age = (datetime.datetime.now() - dob_date).days // 365
+                                    if age >= 16:
+                                        dob_value = reg_dob
+                                except ValueError:
+                                    pass
+                            # Check phone uniqueness if a phone number was provided
+                            if reg_phone:
+                                cursor.execute(f'SELECT id FROM users WHERE phone = {PH}', (reg_phone,))
+                                if cursor.fetchone():
+                                    # Phone in use — register without phone; user can add it later via profile
+                                    reg_phone = None
+                            try:
+                                _ensure_terms_columns()
+                            except Exception:
+                                pass
                             cursor.execute(f'''
                                 INSERT INTO users (id, name, email, password_hash, google_id, auth_provider,
-                                                  email_verified, profile_photo, joined_at)
-                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                            ''', (user_id, name, email, random_pw, google_id, 'google',
-                                  True, picture, joined_at))
+                                                  email_verified, profile_photo, joined_at,
+                                                  phone, dob, terms_accepted_at, terms_version)
+                                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH},
+                                        {PH}, {PH}, {PH}, {PH})
+                            ''', (user_id, final_name, email, random_pw, google_id, 'google',
+                                  True, picture, joined_at,
+                                  reg_phone or None, dob_value, terms_at, reg_terms_ver))
 
                             # Create wallet
                             cursor.execute(f'''
                                 INSERT INTO wallets (user_id, balance, created_at)
                                 VALUES ({PH}, 0, {PH})
                             ''', (user_id, joined_at))
+
+                            # Apply referral code bonus if provided
+                            if reg_referral:
+                                try:
+                                    cursor.execute(f'SELECT id, name FROM users WHERE referral_code = {PH}', (reg_referral,))
+                                    referrer = cursor.fetchone()
+                                    if referrer:
+                                        referrer = dict_from_row(referrer)
+                                        referrer_id = referrer['id']
+                                        reward = 50  # ₹50 signup bonus
+                                        ref_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                                        cursor.execute(f'''
+                                            INSERT INTO referrals (referrer_id, referred_id, referral_code, reward_amount, created_at)
+                                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                                        ''', (referrer_id, user_id, reg_referral, reward, ref_now))
+                                        cursor.execute(f'UPDATE users SET referred_by = {PH} WHERE id = {PH}', (referrer_id, user_id))
+                                        # Give new user a wallet bonus
+                                        cursor.execute(f'UPDATE wallets SET balance = balance + {PH}, total_cashback = total_cashback + {PH} WHERE user_id = {PH}',
+                                                       (reward, reward, user_id))
+                                        cursor.execute(f'''
+                                            INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, description, created_at)
+                                            SELECT id, {PH}, 'referral_bonus', {PH}, balance, {PH}, {PH} FROM wallets WHERE user_id = {PH}
+                                        ''', (user_id, reward, f'Referral signup bonus from {referrer["name"]}', ref_now, user_id))
+                                except Exception as _ref_e:
+                                    print(f'[GOOGLE LOGIN] Referral apply error (non-fatal): {_ref_e}')
 
                     user = get_user_by_id(user_id)
                     if user and user.get('is_banned'):
@@ -11328,7 +11432,8 @@ def google_login():
             'success': True,
             'message': 'Google login successful',
             'token': token,
-            'user': user_to_response(user)
+            'user': user_to_response(user),
+            'isNewUser': is_new_user
         })
 
     except urllib.error.URLError:

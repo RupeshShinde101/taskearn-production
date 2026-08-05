@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,11 +26,15 @@ class AuthProvider extends ChangeNotifier {
     scopes: ['email', 'profile'],
   );
 
+  bool _needsProfileCompletion = false;
+
   User? get user => _user;
   AuthStatus get status => _status;
   bool get isLoggedIn => _status == AuthStatus.authenticated;
   bool get isLoading => _loading;
   String? get error => _error;
+  /// True while a freshly Google-registered user still needs to fill the popup.
+  bool get needsProfileCompletion => _needsProfileCompletion;
 
   /// Client-side session duration: 30 days after last successful login.
   static const Duration _kSessionDuration = Duration(days: 30);
@@ -148,16 +153,21 @@ class AuthProvider extends ChangeNotifier {
 
       final token = data['token'] ?? data['access_token'];
       if (token != null) {
-        await StorageService.saveToken(token);
+        // Parallel storage writes — don't await each one sequentially
+        await Future.wait([
+          StorageService.saveToken(token),
+          StorageService.saveUserId(''),  // will be set below
+          StorageService.saveSessionExpiry(DateTime.now().add(_kSessionDuration)),
+        ]);
         _user = User.fromJson(data['user'] ?? data);
-        await StorageService.saveUserId(_user!.id);
-        await StorageService.saveUserJson(_user!.toJson());
-        await StorageService.saveSessionExpiry(
-            DateTime.now().add(_kSessionDuration));
+        await Future.wait([
+          StorageService.saveUserId(_user!.id),
+          StorageService.saveUserJson(_user!.toJson()),
+        ]);
         _status = AuthStatus.authenticated;
         _loading = false;
         notifyListeners();
-        _registerFcmToken();
+        unawaited(_registerFcmToken());
         return true;
       }
 
@@ -258,22 +268,20 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    // Delete the Firebase FCM token FIRST so this device immediately stops
-    // receiving push notifications, regardless of whether the backend call
-    // succeeds or fails.
-    try { await NotificationService.clearFcmToken(); } catch (_) {}
-    try {
-      await ApiService.post('/auth/logout');
-    } catch (_) {}
-    try {
-      await _googleSignIn.signOut();
-    } catch (_) {}
-    await StorageService.clearSession();
-    await StorageService.setString('user_avatar_local', '');
+    // Clear local state IMMEDIATELY so GoRouter redirects to /login right away.
     _user = null;
     _localAvatarUri = null;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
+
+    // Network clean-up runs in the background — don't block the UI.
+    unawaited(() async {
+      try { await NotificationService.clearFcmToken(); } catch (_) {}
+      try { await ApiService.post('/auth/logout'); } catch (_) {}
+      try { await _googleSignIn.signOut(); } catch (_) {}
+      await StorageService.clearSession();
+      await StorageService.setString('user_avatar_local', '');
+    }());
   }
 
   /// Permanently delete the user's account and all data.
@@ -537,6 +545,8 @@ class AuthProvider extends ChangeNotifier {
             DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
         _loading = false;
+        // NOTE: _needsProfileCompletion is set by the register screen
+        // before calling this method, so we don't change it here.
         notifyListeners();
         _registerFcmToken(); // register FCM + sync location after Google login
         return true;
@@ -569,6 +579,59 @@ class AuthProvider extends ChangeNotifier {
       _loading = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Updates a Google-signed-in user's profile after the popup collects
+  /// name, phone, DOB and terms acceptance.
+  Future<bool> updateGoogleProfile({
+    String? name,
+    String? phone,
+    DateTime? dob,
+    String? termsAcceptedAt,
+  }) async {
+    _error = null;
+    try {
+      final body = <String, dynamic>{'terms_version': '2026-05-22'};
+      if (name != null && name.isNotEmpty) body['name'] = name;
+      if (phone != null && phone.isNotEmpty) body['phone'] = phone;
+      if (dob != null) {
+        body['dob'] =
+            '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}';
+      }
+      if (termsAcceptedAt != null) body['terms_accepted_at'] = termsAcceptedAt;
+
+      final data = await ApiService.put('/user/profile', body: body);
+      debugPrint('[updateGoogleProfile] response: $data');
+      if (data['user'] != null) {
+        _user = User.fromJson(data['user']);
+        await StorageService.saveUserJson(_user!.toJson());
+      }
+      _needsProfileCompletion = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      debugPrint('[updateGoogleProfile] API error ${e.statusCode}: ${e.message}');
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      debugPrint('[updateGoogleProfile] unexpected error: $e');
+      _error = 'Failed to update profile. Please try again.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void setProfileCompletionPending() {
+    _needsProfileCompletion = true;
+    notifyListeners();
+  }
+
+  void clearProfileCompletion() {
+    if (_needsProfileCompletion) {
+      _needsProfileCompletion = false;
+      notifyListeners();
     }
   }
 
@@ -717,10 +780,11 @@ class AuthProvider extends ChangeNotifier {
       if (token != null) {
         await updateFcmToken(token);
         NotificationService.onTokenRefresh(updateFcmToken);
-        // Send current location so backend can apply 10km radius filter
+        // GPS location update: fire-and-forget, don't block FCM registration
         try {
-          final loc = await LocationService.getCurrentLocation();
-          if (loc != null) await updateUserLocation(loc.latitude, loc.longitude);
+          LocationService.getCurrentLocation().then((loc) {
+            if (loc != null) updateUserLocation(loc.latitude, loc.longitude);
+          });
         } catch (_) {}
       } else {
         debugPrint('[FCM] ⚠️ getToken() returned null');

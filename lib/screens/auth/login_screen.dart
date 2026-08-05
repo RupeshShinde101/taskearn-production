@@ -42,7 +42,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _loginWithGoogle() async {
     final auth = context.read<AuthProvider>();
-    final ok = await auth.loginWithGoogle();
+    // Pass the default invite code so existing-user login works even when
+    // TRIAL_ACTIVE is true — the backend ignores it for already-registered users.
+    final ok = await auth.loginWithGoogle(inviteCode: 'WORKMATE100');
     if (!mounted) return;
 
     if (ok) {
@@ -280,61 +282,10 @@ class _FeatureCard extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: Image.asset(
-        'assets/images/illustration.png',
+        'assets/images/signin_illustration.png',
         width: double.infinity,
         fit: BoxFit.fitWidth,
       ),
-    );
-  }
-}
-
-class _AvatarPerson extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final Color borderColor;
-
-  const _AvatarPerson({
-    required this.emoji,
-    required this.label,
-    required this.borderColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border:
-                Border.all(color: borderColor.withValues(alpha: 0.35), width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(emoji,
-                style: const TextStyle(fontSize: 26),
-                textAlign: TextAlign.center),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -464,14 +415,13 @@ class _SocialBtn extends StatelessWidget {
 
 /// Google "G" logo
 class _GoogleLogo extends StatelessWidget {
-  final double size;
-  const _GoogleLogo({this.size = 24});
+  const _GoogleLogo();
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size,
-      height: size,
+      width: 24,
+      height: 24,
       child: CustomPaint(painter: _GoogleLogoPainter()),
     );
   }

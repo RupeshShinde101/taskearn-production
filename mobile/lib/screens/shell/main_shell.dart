@@ -83,7 +83,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withOpacity(0.5),
+      barrierColor: Colors.black.withValues(alpha: 0.5),
       transitionDuration: const Duration(milliseconds: 280),
       transitionBuilder: (ctx, anim, _, child) {
         final curved = CurvedAnimation(
@@ -108,7 +108,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.18),
+                  color: AppColors.primary.withValues(alpha: 0.18),
                   blurRadius: 32,
                   offset: const Offset(0, 8),
                 ),
@@ -135,7 +135,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
                         width: 56,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
@@ -206,7 +206,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
                                 borderRadius: BorderRadius.circular(12),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.primary.withOpacity(0.35),
+                                    color: AppColors.primary.withValues(alpha: 0.35),
                                     blurRadius: 10,
                                     offset: const Offset(0, 4),
                                   ),

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../screens/legal/privacy_screen.dart';
+import '../../screens/legal/terms_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
 
@@ -290,18 +291,22 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               // ── Terms checkboxes ──────────────────────────────────────
               _CheckRow(
                 value: _agreeTerms,
-                onTap: () => setState(() => _agreeTerms = !_agreeTerms),
+                onToggle: () => setState(() => _agreeTerms = !_agreeTerms),
                 label: 'I agree to the ',
                 linkText: 'Terms & Conditions',
-                onLinkTap: () => context.push('/terms'),
+                onLinkTap: () => Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute(builder: (_) => const TermsScreen()),
+                ),
               ),
               const SizedBox(height: 10),
               _CheckRow(
                 value: _agreePrivacy,
-                onTap: () => setState(() => _agreePrivacy = !_agreePrivacy),
+                onToggle: () => setState(() => _agreePrivacy = !_agreePrivacy),
                 label: 'I agree to the ',
                 linkText: 'Privacy Policy',
-                onLinkTap: () => context.push('/privacy'),
+                onLinkTap: () => Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                ),
               ),
               const SizedBox(height: 24),
 
@@ -391,14 +396,14 @@ class _Field extends StatelessWidget {
 
 class _CheckRow extends StatelessWidget {
   final bool value;
-  final VoidCallback onTap;
+  final VoidCallback onToggle;
   final String label;
   final String linkText;
   final VoidCallback onLinkTap;
 
   const _CheckRow({
     required this.value,
-    required this.onTap,
+    required this.onToggle,
     required this.label,
     required this.linkText,
     required this.onLinkTap,
@@ -406,13 +411,13 @@ class _CheckRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AnimatedContainer(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Checkbox tap zone
+        GestureDetector(
+          onTap: onToggle,
+          child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             width: 22,
             height: 22,
@@ -429,8 +434,11 @@ class _CheckRow extends StatelessWidget {
                     size: 14, color: Colors.white)
                 : null,
           ),
-          const SizedBox(width: 10),
-          Expanded(
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: GestureDetector(
+            onTap: onToggle,
             child: Wrap(
               children: [
                 Text(label,
@@ -438,6 +446,7 @@ class _CheckRow extends StatelessWidget {
                         fontSize: 13, color: AppColors.dark, height: 1.4)),
                 GestureDetector(
                   onTap: onLinkTap,
+                  // Stop the parent toggle GestureDetector from also firing
                   child: Text(
                     linkText,
                     style: const TextStyle(
@@ -452,8 +461,8 @@ class _CheckRow extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

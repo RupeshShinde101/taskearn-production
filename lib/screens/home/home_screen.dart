@@ -441,7 +441,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () => context.push('/post-task'),
+                        onPressed: () {
+                          if (!context.read<AuthProvider>().cityVerified) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text('Verify your location first to post tasks.'),
+                              behavior: SnackBarBehavior.floating,
+                            ));
+                            return;
+                          }
+                          context.push('/post-task');
+                        },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFF6B6B),
                           foregroundColor: Colors.white,
@@ -1255,7 +1264,16 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // ── Post a Task card ────────────────────────────────────────
           GestureDetector(
-            onTap: () => context.push('/post-task'),
+            onTap: () {
+              if (!context.read<AuthProvider>().cityVerified) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Verify your location first to post tasks.'),
+                  behavior: SnackBarBehavior.floating,
+                ));
+                return;
+              }
+              context.push('/post-task');
+            },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),

@@ -331,7 +331,6 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
         children: [
           widget.child,
           _CityGateRestrictionView(
-            reason: auth.cityGateReason,
             onRetry: () {
               setState(() => _popupScheduled = false);
               context.read<AuthProvider>().resetCityGateForRetry();
@@ -347,7 +346,16 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
       bottomNavigationBar: _FloatingNavBar(
         selectedIndex: idx,
         onTabTap: _onTap,
-        onPostTap: () => context.push('/post-task'),
+        onPostTap: () {
+        if (!auth.cityVerified) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Verify your location first to post tasks.'),
+            behavior: SnackBarBehavior.floating,
+          ));
+          return;
+        }
+        context.push('/post-task');
+      },
       ),
     );
   }
@@ -652,9 +660,8 @@ class _NavItemState extends State<_NavItem>
 
 // ── Restriction view: covers tab content, navbar stays visible ──────────────
 class _CityGateRestrictionView extends StatelessWidget {
-  final String reason;
   final VoidCallback onRetry;
-  const _CityGateRestrictionView({required this.reason, required this.onRetry});
+  const _CityGateRestrictionView({required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -664,9 +671,7 @@ class _CityGateRestrictionView extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.fromLTRB(24, 40, 24, bottomPad),
         child: Center(
-          child: reason == 'blocked'
-              ? const _CgBlockedCard()
-              : _CgMismatchCard(onRetry: onRetry),
+          child: _CgBlockedCard(onRetry: onRetry),
         ),
       ),
     );
@@ -685,14 +690,10 @@ class _CityGatePopup extends StatefulWidget {
 
 class _CityGatePopupState extends State<_CityGatePopup>
     with WidgetsBindingObserver {
-  final _cityCtrl = TextEditingController();
   bool _loading = false;
   String? _errorMsg;
   bool _blocked = false;
-  bool _gpsMismatch = false;
   bool _verified = false;
-  bool _locationConflict = false;
-  String _enteredCity = '';
 
   static const double _puneLat = 18.5204;
   static const double _puneLng = 73.8567;
@@ -702,65 +703,21 @@ class _CityGatePopupState extends State<_CityGatePopup>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _verifyLocation());
   }
 
   @override
-  Future<bool> didPopRoute() async {
-    if (!_verified) {
-      if (!_blocked && !_locationConflict) {
-        setState(() => _errorMsg = 'Please enter your city first.');
-      }
-      return true;
-    }
-    return false;
-  }
+  Future<bool> didPopRoute() async => !_verified;
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _cityCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _verify() async {
-    final city = _cityCtrl.text.trim();
-    if (city.isEmpty) {
-      setState(() => _errorMsg = 'Please enter your city name.');
-      return;
-    }
-    final cityIsPune = city.toLowerCase() == 'pune';
-    setState(() {
-      _loading = true; _errorMsg = null;
-      _blocked = false; _gpsMismatch = false; _locationConflict = false;
-    });
-
-    if (!cityIsPune) {
-      // Non-Pune city: silently check GPS only if permission already granted —
-      // never pop a permission dialog just because the user typed a non-Pune city.
-      final perm = await Geolocator.checkPermission();
-      final hasPermission = perm != LocationPermission.denied &&
-          perm != LocationPermission.deniedForever;
-      if (hasPermission) {
-        try {
-          final pos = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.medium,
-            timeLimit: const Duration(seconds: 10),
-          );
-          final distM = Geolocator.distanceBetween(
-              pos.latitude, pos.longitude, _puneLat, _puneLng);
-          if (!mounted) return;
-          if (distM <= _puneRadiusM) {
-            setState(() { _loading = false; _locationConflict = true; _enteredCity = city; });
-            return;
-          }
-        } catch (_) {} // GPS failed silently — fall through to block
-      }
-      if (!mounted) return;
-      setState(() { _loading = false; _blocked = true; });
-      return;
-    }
-
-    // City is Pune — full GPS check, request permission if needed
+  Future<void> _verifyLocation() async {
+    if (!mounted) return;
+    setState(() { _loading = true; _errorMsg = null; _blocked = false; });
     try {
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
@@ -783,22 +740,18 @@ class _CityGatePopupState extends State<_CityGatePopup>
         setState(() { _loading = false; _verified = true; });
         Future.delayed(const Duration(seconds: 2), () { if (mounted) widget.onVerified(); });
       } else {
-        setState(() { _loading = false; _gpsMismatch = true; });
+        setState(() { _loading = false; _blocked = true; });
       }
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _errorMsg = 'Could not get your location. Make sure GPS is enabled and try again.';
+        _errorMsg = 'Could not get your location.\nMake sure GPS is enabled and try again.';
       });
     }
   }
 
-  void _onScrimTap() {
-    if (!_blocked && !_verified && !_locationConflict) {
-      setState(() => _errorMsg = 'Please enter your city first.');
-    }
-  }
+  void _onScrimTap() {}
 
   @override
   Widget build(BuildContext context) {
@@ -810,43 +763,15 @@ class _CityGatePopupState extends State<_CityGatePopup>
       curve: Curves.easeOut,
       padding: EdgeInsets.fromLTRB(24, 40, 24, 40 + bottomInset),
       child: Center(
-        child: _locationConflict
-            ? _CgLocationConflictCard(
-                enteredCity: _enteredCity,
-                onUsePune: () {
-                  setState(() { _locationConflict = false; _verified = true; });
-                  Future.delayed(const Duration(seconds: 2), () {
-                    if (mounted) widget.onVerified();
-                  });
-                },
-                onKeepCity: () => setState(() {
-                  _locationConflict = false;
-                  _blocked = true;
-                }),
-              )
+        child: _verified
+            ? const _CgVerifiedCard()
             : _blocked
-            ? _CgBlockedCard(
-                onAcknowledge: () => widget.onExit('blocked'),
-              )
-            : _gpsMismatch
-                ? _CgMismatchCard(
-                    onRetry: () => setState(() {
-                      _gpsMismatch = false;
-                      _errorMsg = null;
-                      _cityCtrl.clear();
-                    }),
-                    onContinue: () => widget.onExit('mismatch'),
-                  )
-                : _verified
-                    ? const _CgVerifiedCard()
-                    : _CgInputCard(
-                        ctrl: _cityCtrl,
-                        loading: _loading,
-                        onVerify: () {
-                          if (_errorMsg != null) setState(() => _errorMsg = null);
-                          _verify();
-                        },
-                      ),
+                ? _CgBlockedCard(onAcknowledge: () => widget.onExit('blocked'))
+                : _CgCheckingCard(
+                    loading: _loading,
+                    errorMsg: _errorMsg,
+                    onRetry: _verifyLocation,
+                  ),
       ),
     );
 
@@ -892,14 +817,15 @@ class _CityGatePopupState extends State<_CityGatePopup>
 }
 
 // ── Input card ───────────────────────────────────────────────────────────────
-class _CgInputCard extends StatelessWidget {
-  final TextEditingController ctrl;
+class _CgCheckingCard extends StatelessWidget {
   final bool loading;
-  final VoidCallback onVerify;
-  const _CgInputCard({required this.ctrl, required this.loading, required this.onVerify});
+  final String? errorMsg;
+  final VoidCallback onRetry;
+  const _CgCheckingCard({required this.loading, this.errorMsg, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
+    final hasError = errorMsg != null;
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       elevation: 4,
@@ -910,107 +836,49 @@ class _CgInputCard extends StatelessWidget {
           children: [
             Container(
               width: 76, height: 76,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: AppColors.gradient),
+              decoration: BoxDecoration(
+                gradient: hasError ? null
+                    : const LinearGradient(colors: AppColors.gradient),
+                color: hasError
+                    ? AppColors.danger.withValues(alpha: 0.10) : null,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.location_city_rounded, color: Colors.white, size: 38),
-            ),
-            const SizedBox(height: 22),
-            const Text('Where are you located?',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.dark),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            const Text("Enter your city to verify you're in our service area.",
-                style: TextStyle(color: AppColors.gray, fontSize: 14, height: 1.5),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 26),
-            TextField(
-              controller: ctrl,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: 'City', hintText: 'e.g. Pune',
-                prefixIcon: const Icon(Icons.location_on_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onSubmitted: (_) => onVerify(),
-            ),
-            const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity, height: 50,
-              child: ElevatedButton(
-                onPressed: loading ? null : onVerify,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary, foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: loading
-                    ? const SizedBox(width: 22, height: 22,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                    : const Text('Verify Location',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              child: Icon(
+                hasError ? Icons.location_off_rounded : Icons.my_location_rounded,
+                color: hasError ? AppColors.danger : Colors.white,
+                size: 38,
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── GPS mismatch card ────────────────────────────────────────────────────────
-class _CgMismatchCard extends StatelessWidget {
-  final VoidCallback onRetry;
-  final VoidCallback? onContinue; // null in restriction view
-  const _CgMismatchCard({required this.onRetry, this.onContinue});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 84, height: 84,
-              decoration: BoxDecoration(
-                color: AppColors.danger.withValues(alpha: 0.10), shape: BoxShape.circle),
-              child: const Icon(Icons.wrong_location_rounded, color: AppColors.danger, size: 42),
-            ),
             const SizedBox(height: 22),
-            const Text('Location Mismatch',
-                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: AppColors.dark),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 14),
-            const Text(
-              "You entered Pune, but your GPS shows you're outside Pune.\n\nMake sure you're physically in Pune and try again.",
-              style: TextStyle(fontSize: 14, color: AppColors.gray, height: 1.6),
+            Text(
+              hasError ? 'Location Check Failed' : 'Checking Your Location',
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.dark),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              errorMsg ?? 'Please wait while we verify your location…',
+              style: const TextStyle(color: AppColors.gray, fontSize: 14, height: 1.5),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 26),
-            SizedBox(
-              width: double.infinity, height: 48,
-              child: ElevatedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded, size: 20),
-                label: const Text('Try Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary, foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            if (loading)
+              const CircularProgressIndicator()
+            else if (hasError)
+              SizedBox(
+                width: double.infinity, height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  label: const Text('Try Again',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
               ),
-            ),
-            if (onContinue != null) ...[
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: onContinue,
-                child: const Text('Continue with restrictions',
-                    style: TextStyle(color: AppColors.gray, fontSize: 13)),
-              ),
-            ],
           ],
         ),
       ),
@@ -1020,8 +888,9 @@ class _CgMismatchCard extends StatelessWidget {
 
 // ── Blocked card (city ≠ Pune) ───────────────────────────────────────────────
 class _CgBlockedCard extends StatelessWidget {
-  final VoidCallback? onAcknowledge; // null in restriction view (permanent block)
-  const _CgBlockedCard({this.onAcknowledge});
+  final VoidCallback? onAcknowledge;
+  final VoidCallback? onRetry;
+  const _CgBlockedCard({this.onAcknowledge, this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -1076,6 +945,22 @@ class _CgBlockedCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity, height: 46,
+                child: ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Check Again',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1113,104 +998,6 @@ class _CgVerifiedCard extends StatelessWidget {
                 textAlign: TextAlign.center),
             const SizedBox(height: 20),
             const CircularProgressIndicator(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Location conflict card (non-Pune city typed but GPS shows Pune) ──────────
-class _CgLocationConflictCard extends StatelessWidget {
-  final String enteredCity;
-  final VoidCallback onUsePune;
-  final VoidCallback onKeepCity;
-  const _CgLocationConflictCard({
-    required this.enteredCity,
-    required this.onUsePune,
-    required this.onKeepCity,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 84, height: 84,
-              decoration: BoxDecoration(
-                color: AppColors.warning.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.location_searching_rounded,
-                  color: AppColors.warning, size: 42),
-            ),
-            const SizedBox(height: 22),
-            const Text('Location Conflict',
-                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800,
-                    color: AppColors.dark),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 14),
-            RichText(
-              textAlign: TextAlign.center,
-              text: TextSpan(
-                style: const TextStyle(fontSize: 14, color: AppColors.gray,
-                    height: 1.6),
-                children: [
-                  const TextSpan(
-                      text: 'Your GPS shows you are currently in '),
-                  const TextSpan(
-                      text: 'Pune',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary)),
-                  const TextSpan(text: ', but you entered '),
-                  TextSpan(
-                      text: enteredCity,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.dark)),
-                  const TextSpan(
-                      text: '.\n\nWhich city would you like to use?'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 26),
-            SizedBox(
-              width: double.infinity, height: 50,
-              child: ElevatedButton.icon(
-                onPressed: onUsePune,
-                icon: const Icon(Icons.my_location_rounded, size: 20),
-                label: const Text('Use Current Location (Pune)',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity, height: 46,
-              child: OutlinedButton(
-                onPressed: onKeepCity,
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.border),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text('Continue with $enteredCity',
-                    style: const TextStyle(color: AppColors.gray,
-                        fontWeight: FontWeight.w600, fontSize: 14)),
-              ),
-            ),
           ],
         ),
       ),

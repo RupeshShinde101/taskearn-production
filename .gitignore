@@ -1,132 +1,51 @@
-.env
-.env.local
-.env.production
-.env.staging
-backend/.env
-backend/.env.*
-!backend/.env.example
-__pycache__/
-*.pyc
-*.db
-*.sqlite
-*.sqlite3
-.vscode/
-.idea/
-venv/
-ENV/
-env/
-*.egg-info/
-dist/
-build/
-.DS_Store
-Thumbs.db
+﻿# Miscellaneous
+*.class
 *.log
-logs/
-.venv
-node_modules/
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
 
-# Debug/test Python scripts
-check_*.py
-debug_*.py
-fix_*.py
-test_*.py
-analyze_*.py
-verify_*.py
-validate_*.py
-reset_*.py
-migrate_*.py
-cleanup_*.py
-clean_*.py
-create_test_*.py
-find_user.py
-init_railway_db.py
-deploy_to_railway.py
-run_database_migration.py
-post_fix_analysis.py
-pre_fix_analysis.py
-update_task_expiry.py
-FINAL_FIXES_VERIFICATION.py
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
 
-# Deployment scripts
-complete-deployment.*
-Deploy-to-Production.*
-deploy-to-production.*
-deploy-netlify.ps1
-PREPARE_PRODUCTION.bat
-QUICK_FIX.bat
-QUICK_START.bat
-START_APP_FIXED.bat
-START_SERVER.bat
-START_TASKEARN.bat
-APIFix.ps1
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
 
-# Internal documentation
-API_BACKEND_ENFORCEMENT.md
-API_FIX_COMPLETE.md
-AUTOMATED_FIX_DEPLOYED.md
-CODE_CHANGES_REFERENCE.md
-COMMISSION_FIXES_COMPLETE.md
-DATABASE_INITIALIZATION_FIXED.md
-DATABASE_MIGRATION_COMPLETE.md
-DEPLOYMENT_*.md
-FINAL_OUTPUT.md
-FINAL_PRODUCTION_SUMMARY.md
-FIX_*.md
-ISSUES_RESOLVED.md
-LOCAL_TESTING_GUIDE.md
-MOBILE_FIX_COMPLETE.md
-MOBILE_PROXY_FIX_FINAL.md
-NETLIFY_*.md
-PAYMENT_*.md
-PAY_NOW_FEATURE_COMPLETE.md
-PRODUCTION_*.md
-PROJECT_COMPLETION_SUMMARY.md
-QUICK_START.md
-RAILWAY_*.md
-RAZORPAY_*.md
-README_PRODUCTION.md
-READY_TO_DEPLOY.md
-SERVICE_CHARGE_FIX_ROOT_CAUSE.md
-SETUP_*.md
-TASK_*.md
-TEST_PAYMENT_SYSTEM.md
-TRACKING_SETUP.md
-WALLET_*.md
-00_RAZORPAY_DOCS_INDEX.md
-00_START_HERE.txt
-FINAL_SETUP.txt
-FIXES_COMPLETE_CHECKLIST.txt
-STATUS.txt
-START_HERE_DEPLOYMENT.txt
-
-# SQL scripts
-CLEANUP_VIRTUAL_TRANSACTIONS.sql
-
-# Misc
-api_connectivity_log.txt
-test_output.txt
-taskearn-backend.zip
-api_diagnostic_tool.py
-
-# Flutter / Dart
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
 .dart_tool/
-.flutter-plugins
 .flutter-plugins-dependencies
-.metadata
-.packages
-flutter/
+.pub-cache/
+.pub/
+/build/
+/coverage/
 
-# Flutter build outputs (in addition to build/ above)
-build/
-*.apk
-*.aab
-*.ipa
+# Symbolication related
+app.*.symbols
 
-# Keystore files (sensitive — never commit these)
-*.jks
-*.keystore
-android/app/keystore/
+# Obfuscation related
+app.*.map.json
 
-# Flutter generated files
-lib/generated/
-android/app/src/main/GeneratedPluginRegistrant.java
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Release signing - never commit these
+android/key.properties
+android/app/keystore/*
+# Allow shared debug keystore so all team members use the same SHA-1 for Google Sign-In
+!android/app/keystore/debug-keystore.jks

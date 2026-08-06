@@ -9377,10 +9377,67 @@ def delete_account():
 @require_auth
 def notify_task_skills(task_id):
     """Push FCM notification (type: skill_matched) to every user whose profile
-    skills overlap with this task's category/title/description AND who is
-    within 10 km of the task location.
+    skills overlap with this task's category/title/description.
+    No location radius is applied here.
     Only the task poster may call this endpoint."""
     import json as _nsj
+
+    def _norm_skill_text(value):
+        return ' '.join(
+            str(value or '')
+            .lower()
+            .replace('_', ' ')
+            .replace('&', ' and ')
+            .replace('/', ' ')
+            .split()
+        )
+
+    _skill_aliases = {
+        'delivery': {'delivery', 'deliver'},
+        'moving': {'moving', 'moving packing', 'packing'},
+        'groceries': {'groceries', 'grocery', 'shopping', 'errands'},
+        'cooking': {'cooking', 'cook'},
+        'cleaning': {'cleaning', 'clean'},
+        'laundry': {'laundry'},
+        'household': {'household', 'errands'},
+        'shopping': {'shopping', 'errands'},
+        'electrician': {'electrician', 'electrical'},
+        'plumbing': {'plumbing', 'plumber'},
+        'carpentry': {'carpentry', 'carpenter'},
+        'painting': {'painting', 'painter'},
+        'repair': {'repair', 'tech support'},
+        'vehicle': {'vehicle', 'driving'},
+        'tutoring': {'tutoring', 'teaching'},
+        'freelancer': {
+            'freelancer', 'graphic design', 'video editing',
+            'web development', 'translation', 'data entry'
+        },
+        'data_entry': {'data entry'},
+        'photography': {'photography'},
+        'gardening': {'gardening'},
+        'beauty': {'beauty'},
+        'pet_care': {'pet care'},
+        'child_care': {'child care', 'babysitting'},
+        'elder_care': {'elder care'},
+        'errands': {'errands', 'shopping'},
+        'queue_standing': {'errands'},
+        'event_help': {'event help'},
+        'tech_support': {'tech support', 'technical support', 'electrical'},
+    }
+
+    def _skill_terms(value):
+        normalized = _norm_skill_text(value)
+        if not normalized:
+            return set()
+        terms = {normalized}
+        if normalized in _skill_aliases:
+            terms.update(_skill_aliases[normalized])
+        for key, aliases in _skill_aliases.items():
+            if normalized in aliases:
+                terms.add(key)
+                terms.update(aliases)
+        return {_norm_skill_text(term) for term in terms if _norm_skill_text(term)}
+
     try:
         with get_db() as (cursor, _):
             cursor.execute(
@@ -9410,6 +9467,16 @@ def notify_task_skills(task_id):
         _task_price    = task.get('price', 0)
         _task_title_display = task.get('title', '')
         _task_cat_display   = task.get('category', 'General')
+        _task_search_text = ' '.join(
+            part for part in [
+                _norm_skill_text(_task_category),
+                _norm_skill_text(_task_title),
+                _norm_skill_text(_task_desc),
+                _norm_skill_text(_task_cat_display),
+                ' '.join(sorted(_skill_terms(_task_category))),
+            ]
+            if part
+        )
 
         # Task location — kept for display but NOT used to filter users
         _task_lat = task.get('location_lat')
@@ -9440,9 +9507,8 @@ def notify_task_skills(task_id):
                     _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])
                 )]
                 matched = any(
-                    sk in _task_category or _task_category in sk or
-                    sk in _task_title    or sk in _task_desc
-                    for sk in user_skills
+                    any(term and term in _task_search_text for term in _skill_terms(skill))
+                    for skill in user_skills
                 )
                 if not matched:
                     continue

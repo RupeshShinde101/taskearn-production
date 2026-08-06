@@ -342,8 +342,11 @@ class _WalletScreenState extends State<WalletScreen>
           final illW   = sw * 0.40;
           final illH   = sw * 0.40;
 
-          return Column(
-            children: [
+          return NestedScrollView(
+            headerSliverBuilder: (context, _) => [
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
               // ── Dark gradient header ──────────────────────────────────
               Container(
                 decoration: const BoxDecoration(
@@ -509,45 +512,55 @@ class _WalletScreenState extends State<WalletScreen>
                       label: 'Spent',
                       value: '₹${b.totalSpent.toStringAsFixed(0)}',
                     ),
-                    Container(width: 1, height: 34,
-                        color: Colors.white.withValues(alpha: 0.3)),
-                    _StatItem(
-                      icon: Icons.card_giftcard_rounded,
-                      label: 'Cashback',
-                      value: '₹${b.totalCashback.toStringAsFixed(0)}',
-                    ),
-                  ],
-                ),
-              ),
-
-              // ── Tabs ─────────────────────────────────────────────────
-              const SizedBox(height: 10),
-              TabBar(
-                controller: _tabs,
-                labelColor: AppColors.primary,
-                unselectedLabelColor: AppColors.gray,
-                indicatorColor: AppColors.primary,
-                tabs: const [
-                  Tab(text: 'Transactions'),
-                  Tab(text: 'Withdrawals'),
-                ],
-              ),
-
-              Expanded(
-                child: TabBarView(
-                  controller: _tabs,
-                  children: [
-                    _TransactionList(transactions: wallet.transactions),
-                    _WithdrawalList(withdrawals: wallet.withdrawals),
                   ],
                 ),
               ),
             ],
-          );
+          ),
+        ),
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _SliverTabBarDelegate(
+            TabBar(
+              controller: _tabs,
+              labelColor: AppColors.primary,
+              unselectedLabelColor: AppColors.gray,
+              indicatorColor: AppColors.primary,
+              tabs: const [
+                Tab(text: 'Transactions'),
+                Tab(text: 'Withdrawals'),
+              ],
+            ),
+          ),
+        ),
+      ],
+      body: TabBarView(
+        controller: _tabs,
+        children: [
+          _TransactionList(transactions: wallet.transactions),
+          _WithdrawalList(withdrawals: wallet.withdrawals),
+        ],
+      ),
+    );
         },
       ),
     );
   }
+}
+
+class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar tabBar;
+  const _SliverTabBarDelegate(this.tabBar);
+
+  @override double get minExtent => tabBar.preferredSize.height;
+  @override double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) =>
+      Container(color: Colors.white, child: tabBar);
+
+  @override
+  bool shouldRebuild(_SliverTabBarDelegate old) => tabBar != old.tabBar;
 }
 
 class _ActionBtn extends StatelessWidget {
@@ -628,31 +641,6 @@ class _StatItem extends StatelessWidget {
           Text(label,
               style: const TextStyle(
                   color: Colors.white70, fontSize: 11)),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatCol extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _StatCol({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14)),
-          Text(label,
-              style:
-                  const TextStyle(color: Colors.white70, fontSize: 11)),
         ],
       ),
     );

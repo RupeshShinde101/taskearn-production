@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/gradient_button.dart';
+import 'package:flutter_svg/flutter_svg.dart' show SvgPicture;
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,32 +28,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-
     final auth = context.read<AuthProvider>();
     final ok = await auth.login(_emailCtrl.text, _passwordCtrl.text);
     if (!mounted) return;
-
-    if (ok) {
-      context.go('/home');
-    } else {
+    if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error ?? 'Login failed')),
       );
     }
+    // On success: redirect guard navigates to /home
   }
 
   Future<void> _loginWithGoogle() async {
     final auth = context.read<AuthProvider>();
     final ok = await auth.loginWithGoogle();
     if (!mounted) return;
-
-    if (ok) {
-      context.go('/home');
-    } else if (auth.error != null) {
+    if (!ok && auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),
       );
     }
+    // On success: redirect guard navigates to /auth-success or /home
   }
 
   @override
@@ -134,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 20),
 
               // ── Feature card ─────────────────────────────────────
-              _FeatureCard(),
+              const _FeatureCard(),
               const SizedBox(height: 24),
 
               // ── Form ──────────────────────────────────────────────────
@@ -234,6 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: _SocialBtn(
                   label: 'Continue with Google',
                   icon: const _GoogleLogo(),
+                  loading: auth.isLoading,
                   onTap: auth.isLoading ? null : _loginWithGoogle,
                 ),
               ),
@@ -249,8 +247,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: TextStyle(
                           color: Color(0xFF64748B), fontSize: 14),
                     ),
-                    GestureDetector(
-                      onTap: () => context.push('/register'),
+                    TextButton(
+                      onPressed: () => context.push('/register'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF6366F1),
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       child: const Text(
                         'Sign up',
                         style: TextStyle(
@@ -273,72 +277,24 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // ── Feature card ─────────────────────────────────────────────────────
-
 class _FeatureCard extends StatelessWidget {
+  const _FeatureCard();
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: Image.asset(
-        'assets/images/illustration.png',
+    return SizedBox(
+      width: double.infinity,
+      height: 190,
+      child: SvgPicture.asset(
+        'assets/images/h.svg',
         width: double.infinity,
-        fit: BoxFit.fitWidth,
+        height: 190,
+        fit: BoxFit.contain,
+        alignment: Alignment.center,
       ),
     );
   }
 }
-
-class _AvatarPerson extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final Color borderColor;
-
-  const _AvatarPerson({
-    required this.emoji,
-    required this.label,
-    required this.borderColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border:
-                Border.all(color: borderColor.withValues(alpha: 0.35), width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(emoji,
-                style: const TextStyle(fontSize: 26),
-                textAlign: TextAlign.center),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 // ── Input field ─────────────────────────────────────────────────────────────
 
 class _InputField extends StatelessWidget {
@@ -424,9 +380,10 @@ class _SocialBtn extends StatelessWidget {
   final String label;
   final Widget icon;
   final VoidCallback? onTap;
+  final bool loading;
 
   const _SocialBtn(
-      {required this.label, required this.icon, this.onTap});
+      {required this.label, required this.icon, this.onTap, this.loading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -439,24 +396,36 @@ class _SocialBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            icon,
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
+        child: loading
+            ? const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                  ),
                 ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  icon,
+                  const SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -464,14 +433,13 @@ class _SocialBtn extends StatelessWidget {
 
 /// Google "G" logo
 class _GoogleLogo extends StatelessWidget {
-  final double size;
-  const _GoogleLogo({this.size = 24});
+  const _GoogleLogo();
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size,
-      height: size,
+      width: 24,
+      height: 24,
       child: CustomPaint(painter: _GoogleLogoPainter()),
     );
   }

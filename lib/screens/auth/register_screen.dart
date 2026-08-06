@@ -18,11 +18,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _inviteCtrl = TextEditingController();
   final _referralCtrl = TextEditingController();
   bool _obscure = true;
   bool _agreeTerms = false;
+  bool _agreePrivacy = false;
   DateTime? _dob;
+  bool _showEmailForm = false; // email form hidden until user taps "Register with email"
 
   @override
   void dispose() {
@@ -30,7 +31,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _passwordCtrl.dispose();
-    _inviteCtrl.dispose();
     _referralCtrl.dispose();
     super.dispose();
   }
@@ -46,63 +46,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _signUpWithGoogle() async {
-    if (_inviteCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Please enter your invite code above before signing up with Google')),
-      );
-      return;
-    }
-    final phoneDigits = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
-    if (phoneDigits.isEmpty || phoneDigits.length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Please enter a valid phone number before signing up with Google')),
-      );
-      return;
-    }
-    if (_dob == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Please select your date of birth above before signing up with Google')),
-      );
-      return;
-    }
-    if (_ageInYears(_dob!) < 16) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('You must be at least 16 years old to join WorkMate4U')),
-      );
-      return;
-    }
-    if (!_agreeTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please accept the terms & conditions')),
-      );
-      return;
-    }
-
     final auth = context.read<AuthProvider>();
-    final ok = await auth.loginWithGoogle(
-      inviteCode: _inviteCtrl.text.trim(),
-      referralCode:
-          _referralCtrl.text.trim().isEmpty ? null : _referralCtrl.text.trim(),
-      dob: _dob,
-      phone: _phoneCtrl.text.trim(),
-    );
+    final ok = await auth.loginWithGoogle();
     if (!mounted) return;
-
-    if (ok) {
-      context.go('/home');
-    } else if (auth.error != null) {
+    if (!ok && auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),
       );
     }
+    // On success: redirect guard navigates to /auth-success
   }
 
   Future<void> _register() async {
@@ -128,6 +80,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
+    if (!_agreePrivacy) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please accept the Privacy Policy')),
+      );
+      return;
+    }
 
     final auth = context.read<AuthProvider>();
     final ok = await auth.register(
@@ -136,19 +94,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       password: _passwordCtrl.text,
       phone: _phoneCtrl.text.trim(),
       dob: _dob != null ? DateFormat('yyyy-MM-dd').format(_dob!) : null,
-      inviteCode: _inviteCtrl.text.isNotEmpty ? _inviteCtrl.text : null,
       referralCode: _referralCtrl.text.isNotEmpty ? _referralCtrl.text : null,
+      termsAcceptedAt: DateTime.now().toUtc().toIso8601String(),
     );
 
     if (!mounted) return;
 
-    if (ok) {
-      context.go('/home');
-    } else {
+    if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error ?? 'Registration failed')),
       );
     }
+    // On success: redirect guard navigates to /auth-success
   }
 
   @override
@@ -208,10 +165,72 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
-                    // ── Form ─────────────────────────────────────────────
-                    Form(
+                    // ── Google button (primary CTA) ───────────────────────
+                    SizedBox(
+                      width: double.infinity,
+                      child: _SocialBtn(
+                        label: 'Continue with Google',
+                        icon: const _GoogleLogo(),
+                        loading: auth.isLoading,
+                        onTap: auth.isLoading ? null : _signUpWithGoogle,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── OR divider ──────────────────────────────────────
+                    const Row(
+                      children: [
+                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            'or',
+                            style: TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Toggle email form ────────────────────────────────
+                    GestureDetector(
+                      onTap: () =>
+                          setState(() => _showEmailForm = !_showEmailForm),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _showEmailForm
+                                ? 'Hide email sign-up'
+                                : 'Register with email instead',
+                            style: const TextStyle(
+                              color: Color(0xFF6366F1),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            _showEmailForm
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            color: const Color(0xFF6366F1),
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // ── Email / password form (collapsed by default) ───────
+                    if (_showEmailForm) ...[
+                      const SizedBox(height: 20),
+                      Form(
                       key: _formKey,
                       child: Column(
                         children: [
@@ -372,21 +391,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          // ── Invite code ──────────────────────────────
-                          _TwoLineField(
-                            controller: _inviteCtrl,
-                            icon: Icons.vpn_key_outlined,
-                            title: 'Invite code (optional)',
-                            hint: 'Enter invite code',
-                            textCapitalization:
-                                TextCapitalization.characters,
-                            validator: (v) =>
-                                (v == null || v.trim().isEmpty)
-                                    ? 'Invite code is required'
-                                    : null,
-                          ),
-                          const SizedBox(height: 12),
-
                           // ── Referral code ────────────────────────────
                           _TwoLineField(
                             controller: _referralCtrl,
@@ -436,9 +440,66 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             color: Color(0xFF64748B)),
                                       ),
                                       GestureDetector(
-                                        onTap: () {},
+                                        onTap: () => context.push('/terms'),
                                         child: const Text(
                                           'Terms & Conditions',
+                                          style: TextStyle(
+                                            color: Color(0xFF6366F1),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // ── Privacy Policy ───────────────────────────
+                          GestureDetector(
+                            onTap: () => setState(
+                                () => _agreePrivacy = !_agreePrivacy),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: _agreePrivacy
+                                        ? const Color(0xFF6366F1)
+                                        : Colors.transparent,
+                                    borderRadius:
+                                        BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: _agreePrivacy
+                                          ? const Color(0xFF6366F1)
+                                          : const Color(0xFFCBD5E1),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: _agreePrivacy
+                                      ? const Icon(
+                                          Icons.check_rounded,
+                                          color: Colors.white,
+                                          size: 13)
+                                      : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Wrap(
+                                    children: [
+                                      const Text(
+                                        'I agree to the ',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: Color(0xFF64748B)),
+                                      ),
+                                      GestureDetector(
+                                        onTap: () => context.push('/privacy'),
+                                        child: const Text(
+                                          'Privacy Policy',
                                           style: TextStyle(
                                             color: Color(0xFF6366F1),
                                             fontWeight: FontWeight.w700,
@@ -464,36 +525,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 22),
-
-                    // ── OR divider ──────────────────────────────────────
-                    const Row(
-                      children: [
-                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'or sign up with',
-                            style: TextStyle(
-                                color: Color(0xFF94A3B8),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500),
-                          ),
-                        ),
-                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── Social row ──────────────────────────────────────
-                    SizedBox(
-                      width: double.infinity,
-                      child: _SocialBtn(
-                        label: 'Continue with Google',
-                        icon: const _GoogleLogo(),
-                        onTap: auth.isLoading ? null : _signUpWithGoogle,
-                      ),
-                    ),
+                    ], // end if (_showEmailForm)
                     const SizedBox(height: 24),
 
                     // ── Sign in link ────────────────────────────────────
@@ -538,16 +570,12 @@ class _TwoLineField extends StatelessWidget {
   final IconData icon;
   final String title;
   final String hint;
-  final TextCapitalization textCapitalization;
-  final String? Function(String?)? validator;
 
   const _TwoLineField({
     required this.controller,
     required this.icon,
     required this.title,
     required this.hint,
-    this.textCapitalization = TextCapitalization.none,
-    this.validator,
   });
 
   @override
@@ -581,8 +609,6 @@ class _TwoLineField extends StatelessWidget {
                 ),
                 TextFormField(
                   controller: controller,
-                  textCapitalization: textCapitalization,
-                  validator: validator,
                   style: const TextStyle(
                       fontSize: 13, color: Color(0xFF1E293B)),
                   decoration: InputDecoration(
@@ -617,7 +643,6 @@ class _InputField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final bool obscureText;
   final Widget? suffix;
-  final void Function(String)? onFieldSubmitted;
   final String? Function(String?)? validator;
 
   const _InputField({
@@ -628,7 +653,6 @@ class _InputField extends StatelessWidget {
     this.textInputAction,
     this.obscureText = false,
     this.suffix,
-    this.onFieldSubmitted,
     this.validator,
   });
 
@@ -639,7 +663,7 @@ class _InputField extends StatelessWidget {
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       obscureText: obscureText,
-      onFieldSubmitted: onFieldSubmitted,
+      onFieldSubmitted: null,
       validator: validator,
       style: const TextStyle(
         fontSize: 15,
@@ -693,9 +717,10 @@ class _SocialBtn extends StatelessWidget {
   final String label;
   final Widget icon;
   final VoidCallback? onTap;
+  final bool loading;
 
   const _SocialBtn(
-      {required this.label, required this.icon, this.onTap});
+      {required this.label, required this.icon, this.onTap, this.loading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -708,24 +733,36 @@ class _SocialBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            icon,
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
+        child: loading
+            ? const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                  ),
                 ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  icon,
+                  const SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -733,14 +770,13 @@ class _SocialBtn extends StatelessWidget {
 
 /// Google "G" logo
 class _GoogleLogo extends StatelessWidget {
-  final double size;
-  const _GoogleLogo({this.size = 24});
+  const _GoogleLogo();
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size,
-      height: size,
+      width: 24,
+      height: 24,
       child: CustomPaint(painter: _GoogleLogoPainter()),
     );
   }

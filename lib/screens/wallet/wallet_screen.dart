@@ -220,10 +220,6 @@ class _WalletScreenState extends State<WalletScreen> {
   void _showWithdraw() async {
     final auth = context.read<AuthProvider>();
     final wallet = context.read<WalletProvider>();
-    await auth.refreshUser();
-    await wallet.fetchWallet();
-    if (!mounted) return;
-
     final user = auth.user;
     final suspendedUntil = user?.suspendedUntil;
     if ((user?.isSuspended ?? false) &&
@@ -295,14 +291,44 @@ class _WalletScreenState extends State<WalletScreen> {
           final availableBalance = wallet.balance.balance;
 
           Future<void> submit() async {
+            await auth.refreshUser();
+            await wallet.fetchWallet();
+            if (!mounted) return;
+
+            final latestUser = auth.user;
+            final latestSuspendedUntil = latestUser?.suspendedUntil;
+            if ((latestUser?.isSuspended ?? false) &&
+                latestSuspendedUntil != null &&
+                latestSuspendedUntil.isAfter(DateTime.now())) {
+              final endTime =
+                  '${latestSuspendedUntil.day}/${latestSuspendedUntil.month}/${latestSuspendedUntil.year} ${TimeOfDay.fromDateTime(latestSuspendedUntil).format(context)}';
+              setSheetState(() {
+                errorText =
+                    'Your account is suspended until $endTime. You cannot withdraw during suspension.';
+              });
+              return;
+            }
+
+            final latestKycStatus = (latestUser?.kycStatus ?? 'none').toLowerCase();
+            if (!(latestUser?.isKycVerified ?? false)) {
+              setSheetState(() {
+                errorText = latestKycStatus == 'pending'
+                    ? 'Your KYC is under review. You can withdraw once it is approved.'
+                    : latestKycStatus == 'rejected'
+                        ? 'Your previous KYC was rejected. Please re-submit valid documents.'
+                        : 'Complete KYC verification before withdrawing.';
+              });
+              return;
+            }
+
             final amt = double.tryParse(amtCtrl.text.trim());
             if (amt == null || amt < 100) {
               setSheetState(() => errorText = 'Minimum withdrawal amount is ₹100');
               return;
             }
-            if (availableBalance < amt) {
+            if (wallet.balance.balance < amt) {
               setSheetState(() => errorText =
-                  'Insufficient balance. Available: ₹${availableBalance.toStringAsFixed(2)}');
+                  'Insufficient balance. Available: ₹${wallet.balance.balance.toStringAsFixed(2)}');
               return;
             }
 

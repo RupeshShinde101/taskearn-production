@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 
@@ -40,42 +39,18 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  List<Map<String, dynamic>> _reviews = [];
-  bool _reviewsLoading = false;
-  bool _showReviews = false;
+  bool _showSkills = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
-      _loadReviews();
     });
   }
 
   Future<void> _refresh() async {
-    await Future.wait([
-      context.read<AuthProvider>().refreshUser(),
-      _loadReviews(),
-    ]);
-  }
-
-  Future<void> _loadReviews() async {
-    final userId = context.read<AuthProvider>().user?.id;
-    if (userId == null || userId.isEmpty) return;
-    if (!mounted) return;
-    setState(() => _reviewsLoading = true);
-    try {
-      final data = await ApiService.get('/user/$userId/reviews');
-      if (!mounted) return;
-      final list = (data['reviews'] as List? ?? []);
-      setState(() {
-        _reviews = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        _reviewsLoading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _reviewsLoading = false);
-    }
+    await context.read<AuthProvider>().refreshUser();
   }
 
   @override
@@ -273,109 +248,103 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // ── Skills section ────────────────────────────────────────────
             Row(
               children: [
-                const _SectionHeader('My Skills'),
-                const Spacer(),
-                if (user?.skills != null && user!.skills.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined,
-                        size: 18, color: AppColors.gray),
-                    onPressed: () => _showSkillsDialog(context, auth),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    splashRadius: 18,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (user?.skills == null || user!.skills.isEmpty)
-              _EmptySkillsHint(onAdd: () => _showSkillsDialog(context, auth))
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: user.skills
-                    .map((s) => Chip(
-                          label: Text(s),
-                          backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                          labelStyle: const TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w500),
-                          side: BorderSide(
-                              color: AppColors.primary.withValues(alpha: 0.3)),
-                        ))
-                    .toList(),
-              ),
-
-            const SizedBox(height: 20),
-
-            // ── Reviews Received ──────────────────────────────────────────
-            InkWell(
-              onTap: () => setState(() => _showReviews = !_showReviews),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Reviews Received',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _showSkills = !_showSkills),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          const Text('My Skills',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600)),
+                          if (user?.skills != null &&
+                              user!.skills.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius:
+                                      BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${user.skills.length}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    if (_reviews.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${_reviews.length}',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    const Spacer(),
-                    Icon(
-                      _showReviews
+                  ),
+                ),
+                if (user?.skills != null && user!.skills.isNotEmpty)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _showSkillsDialog(context, auth),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 8),
+                      child: Icon(Icons.edit_outlined,
+                          size: 20, color: AppColors.gray),
+                    ),
+                  ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () =>
+                      setState(() => _showSkills = !_showSkills),
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                        left: 4, top: 8, bottom: 8),
+                    child: Icon(
+                      _showSkills
                           ? Icons.keyboard_arrow_up
                           : Icons.keyboard_arrow_down,
                       color: AppColors.gray,
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-            if (_showReviews) ...[
+            if (_showSkills) ...[  
               const SizedBox(height: 8),
-              if (_reviewsLoading)
-                const Center(
-                    child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: CircularProgressIndicator()))
-              else if (_reviews.isEmpty)
+              if (user?.skills == null || user!.skills.isEmpty)
+                _EmptySkillsHint(
+                    onAdd: () => _showSkillsDialog(context, auth))
+              else
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppColors.light,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppColors.border),
                   ),
-                  child: const Text('No reviews yet',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.gray)),
-                )
-              else
-                Column(
-                  children: _reviews.map((r) => _ReviewCard(review: r)).toList(),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: user.skills
+                        .map((s) => Chip(
+                              label: Text(s),
+                              backgroundColor: AppColors.primary
+                                  .withValues(alpha: 0.1),
+                              labelStyle: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w500),
+                              side: BorderSide(
+                                  color: AppColors.primary
+                                      .withValues(alpha: 0.3)),
+                            ))
+                        .toList(),
+                  ),
                 ),
             ],
 
@@ -430,13 +399,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _MenuItem(
                     icon: Icons.privacy_tip_outlined,
                     title: 'Privacy Policy',
-                    onTap: () => _launch('https://workmate4u.com/privacy'),
+                    onTap: () => context.push('/privacy'),
                   ),
                   const Divider(height: 1),
                   _MenuItem(
                     icon: Icons.description_outlined,
                     title: 'Terms of Service',
-                    onTap: () => _launch('https://workmate4u.com/terms'),
+                    onTap: () => context.push('/terms'),
                   ),
                 ],
               ),
@@ -649,67 +618,253 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isGoogleUser = auth.user?.authProvider == 'google';
     final passwordCtrl = TextEditingController();
     bool obscure = true;
+    bool deleting = false;
+    String? errorMsg;
 
-    showDialog<void>(
+    showGeneralDialog<void>(
       context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Delete Account'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'This will permanently delete your account and all your data. '
-                  'This action cannot be undone.',
-                ),
-                if (!isGoogleUser) ...[
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: passwordCtrl,
-                    obscureText: obscure,
-                    decoration: InputDecoration(
-                      labelText: 'Confirm Password',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        icon: Icon(obscure
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined),
-                        onPressed: () =>
-                            setDialogState(() => obscure = !obscure),
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      transitionDuration: const Duration(milliseconds: 260),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (dialogCtx, _, __) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.danger.withValues(alpha: 0.18),
+                    blurRadius: 32,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Red header
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFDC2626), Color(0xFFEF4444)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 60, height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.delete_forever_rounded,
+                              color: Colors.white, size: 30),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text('Delete Account',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 18,
+                                fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 4),
+                        const Text('This action is permanent',
+                            style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  // Body
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('The following will be permanently removed:',
+                            style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600,
+                                color: Color(0xFF1E293B))),
+                        const SizedBox(height: 12),
+                        ...[
+                          '\ud83d\udccb Your profile & personal details',
+                          '\ud83d\udcb0 Wallet balance & transaction history',
+                          '\ud83d\udccc Posted & accepted tasks',
+                          '\u2b50 Ratings & reviews',
+                        ].map((item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(item, style: const TextStyle(
+                              fontSize: 13, color: Color(0xFF475569))),
+                        )),
+                        if (!isGoogleUser) ...[
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          const SizedBox(height: 10),
+                          const Text('Enter your password to confirm:',
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1E293B))),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: passwordCtrl,
+                            obscureText: obscure,
+                            decoration: InputDecoration(
+                              hintText: 'Your password',
+                              prefixIcon: const Icon(Icons.lock_outline,
+                                  color: AppColors.danger),
+                              suffixIcon: IconButton(
+                                icon: Icon(obscure
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                    color: AppColors.gray),
+                                onPressed: () =>
+                                    setDialogState(() => obscure = !obscure),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: Color(0xFFFCA5A5)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                    color: AppColors.danger, width: 1.5),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFFFFF5F5),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 14),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        // Inline error message
+                        if (errorMsg != null) ...[  
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEE2E2),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFFCA5A5)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.error_outline,
+                                    color: AppColors.danger, size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(errorMsg!,
+                                      style: const TextStyle(
+                                          color: AppColors.danger,
+                                          fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.of(dialogCtx).pop(),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF475569),
+                                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                  padding: const EdgeInsets.symmetric(vertical: 13),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                ),
+                                child: const Text('Keep Account',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w600, fontSize: 13)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: deleting ? null
+                                      : const LinearGradient(colors: [
+                                          Color(0xFFDC2626), Color(0xFFEF4444)]),
+                                  color: deleting ? const Color(0xFFD1D5DB) : null,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: deleting ? [] : [
+                                    BoxShadow(
+                                      color: AppColors.danger.withValues(alpha: 0.35),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    )
+                                  ],
+                                ),
+                                child: ElevatedButton(
+                                  onPressed: deleting ? null : () async {
+                                    setDialogState(() {
+                                      deleting = true;
+                                      errorMsg = null;
+                                    });
+                                    final result = await auth.deleteAccount(
+                                        password: isGoogleUser
+                                            ? null
+                                            : passwordCtrl.text);
+                                    if (result['success'] == true) {
+                                      if (dialogCtx.mounted) {
+                                        Navigator.of(dialogCtx).pop();
+                                      }
+                                      // GoRouter auto-redirects to /login
+                                    } else {
+                                      setDialogState(() {
+                                        deleting = false;
+                                        errorMsg = result['message'] ??
+                                            'Failed to delete account. Please try again.';
+                                      });
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.transparent,
+                                    shadowColor: Colors.transparent,
+                                    padding: const EdgeInsets.symmetric(vertical: 13),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: deleting
+                                      ? const SizedBox(
+                                          width: 18, height: 18,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2, color: Colors.white))
+                                      : const Text('Delete',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(dialogCtx).pop(),
-                child: const Text('Cancel')),
-            TextButton(
-                onPressed: () async {
-                  Navigator.of(dialogCtx).pop();
-                  if (!context.mounted) return;
-                  final result = await auth.deleteAccount(
-                      password:
-                          isGoogleUser ? null : passwordCtrl.text);
-                  if (!context.mounted) return;
-                  if (result['success'] != true) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(result['message'] ??
-                            'Failed to delete account. Please contact support.'),
-                        backgroundColor: AppColors.danger,
-                      ),
-                    );
-                  }
-                },
-                child: const Text('Delete',
-                    style: TextStyle(color: AppColors.danger))),
-          ],
         ),
       ),
     );
@@ -1432,105 +1587,6 @@ class _MenuItem extends StatelessWidget {
               fontWeight: FontWeight.w500)),
       trailing: const Icon(Icons.chevron_right, color: AppColors.grayLight),
       onTap: onTap,
-    );
-  }
-}
-
-// ── Individual review card ────────────────────────────────────────────────────
-class _ReviewCard extends StatelessWidget {
-  final Map<String, dynamic> review;
-  const _ReviewCard({required this.review});
-
-  @override
-  Widget build(BuildContext context) {
-    final rating = (review['rating'] as num?)?.toDouble() ?? 0;
-    final raterName = review['rater_name'] as String? ?? 'Anonymous';
-    final taskTitle = review['task_title'] as String? ?? 'Task';
-    final comment = (review['review'] as String? ?? '').trim();
-    final createdAt = review['created_at'] as String?;
-    String? dateStr;
-    if (createdAt != null) {
-      try {
-        final dt = DateTime.parse(createdAt).toLocal();
-        dateStr = '${dt.day}/${dt.month}/${dt.year}';
-      } catch (_) {}
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                child: Text(
-                  raterName.isNotEmpty ? raterName[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(raterName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.dark,
-                            fontSize: 13)),
-                    Text(taskTitle,
-                        style: const TextStyle(
-                            color: AppColors.gray, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    children: List.generate(5, (i) => Icon(
-                      i < rating.round() ? Icons.star : Icons.star_border,
-                      color: AppColors.warning,
-                      size: 14,
-                    )),
-                  ),
-                  if (dateStr != null)
-                    Text(dateStr,
-                        style: const TextStyle(
-                            color: AppColors.grayLight, fontSize: 10)),
-                ],
-              ),
-            ],
-          ),
-          if (comment.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(comment,
-                style: const TextStyle(
-                    color: AppColors.dark, fontSize: 13, height: 1.4)),
-          ],
-        ],
-      ),
     );
   }
 }

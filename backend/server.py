@@ -9473,16 +9473,21 @@ def _do_notify_skill_matched(task_id, poster_user_id):
             ''', (poster_user_id, '[]', '', 'null'))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 
+        print(f'[FCM] notify-skills task={task_id} cat={cat!r} '
+              f'search={search_text[:80]!r} candidates={len(candidates)}')
+
         notified = 0
         for user in candidates:
             try:
                 raw = user.get('skills', '[]')
                 user_skills = [s.lower() for s in (
                     _nsj.loads(raw) if isinstance(raw, str) else (raw or []))]
-                if not any(
+                matched = any(
                     any(t and t in search_text for t in _terms(sk))
                     for sk in user_skills
-                ):
+                )
+                print(f'[FCM]   user={user["id"]} skills={user_skills} matched={matched}')
+                if not matched:
                     continue
                 n_title = '\U0001f4bc Task Matching Your Skills!'
                 n_body  = f'"{title_raw}" \u2014 \u20b9{price} \u2014 {cat_disp}'

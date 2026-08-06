@@ -17,24 +17,35 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   String? _kycSubmitMessage;
+  bool _googleProfileCompletionRequired = false;
+  bool _pendingSuccessScreen = false;
+  bool _googleAuthPending = false;
   /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
   /// so it survives refreshUser() calls where the backend ignores the field.
   String? _localAvatarUri;
+
+  // City gate — persisted across sessions (cleared only on full account wipe)
+  bool _cityVerified = false;
+  String _cityGateReason = '';
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: '874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com',
     scopes: ['email', 'profile'],
   );
 
-  bool _needsProfileCompletion = false;
-
   User? get user => _user;
   AuthStatus get status => _status;
   bool get isLoggedIn => _status == AuthStatus.authenticated;
   bool get isLoading => _loading;
   String? get error => _error;
-  /// True while a freshly Google-registered user still needs to fill the popup.
-  bool get needsProfileCompletion => _needsProfileCompletion;
+  bool get requiresGoogleProfileCompletion =>
+      _googleProfileCompletionRequired;
+  bool get pendingSuccessScreen => _pendingSuccessScreen;
+  bool get googleAuthPending => _googleAuthPending;
+  bool get cityVerified => _cityVerified;
+  // restricted = authenticated but city not verified and a reason is recorded
+  bool get cityRestricted => !_cityVerified && _cityGateReason.isNotEmpty;
+  String get cityGateReason => _cityGateReason;
 
   /// Client-side session duration: 30 days after last successful login.
   static const Duration _kSessionDuration = Duration(days: 30);
@@ -44,6 +55,8 @@ class AuthProvider extends ChangeNotifier {
     // "Invalid or expired token" response automatically clears the session
     // and redirects the user to login — regardless of where in the app it fires.
     ApiService.onUnauthorized = _handleUnauthorized;
+    _cityVerified = StorageService.getBool('city_verified');
+    _cityGateReason = StorageService.getString('city_gate_reason') ?? '';
     _checkAuth();
   }
 
@@ -51,16 +64,20 @@ class AuthProvider extends ChangeNotifier {
   /// stored.  Clears the session and marks the user as unauthenticated so the
   /// go_router redirect guard navigates to /login automatically.
   void _handleUnauthorized() async {
-    // No-op if already logged out (guard against multiple concurrent 401s).
     if (_status == AuthStatus.unauthenticated) return;
     debugPrint('[AUTH] Received 401 — token expired or invalid. Forcing logout.');
-    // Best-effort: delete Firebase token so the device stops receiving FCM
-    // messages even if the backend call below fails.
-    try { await NotificationService.clearFcmToken(); } catch (_) {}
-    await StorageService.clearSession();
+    // Mark unauthenticated immediately so concurrent 401s are no-ops.
     _user = null;
     _status = AuthStatus.unauthenticated;
+    _pendingSuccessScreen = false;
+    _googleProfileCompletionRequired = false;
+    _googleAuthPending = false;
     notifyListeners();
+    // Background cleanup — best-effort, failures don't matter here.
+    unawaited(() async {
+      try { await NotificationService.clearFcmToken(); } catch (_) {}
+      await StorageService.clearSession();
+    }());
   }
 
   Future<void> _checkAuth() async {
@@ -75,6 +92,8 @@ class AuthProvider extends ChangeNotifier {
     final expiry = StorageService.getSessionExpiry();
     if (expiry != null && DateTime.now().isAfter(expiry)) {
       debugPrint('[AUTH] Session expired at $expiry — clearing session.');
+      await StorageService.clearSession();
+      await StorageService.clearSession();
       await StorageService.clearSession();
       _status = AuthStatus.unauthenticated;
       notifyListeners();
@@ -129,6 +148,8 @@ class AuthProvider extends ChangeNotifier {
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403) {
         // Token explicitly rejected by server — full logout
+        await StorageService.clearSession();
+        await StorageService.clearSession();
         await StorageService.clearSession();
         _user = null;
         _status = AuthStatus.unauthenticated;
@@ -189,8 +210,8 @@ class AuthProvider extends ChangeNotifier {
     required String password,
     String? phone,
     String? dob,
-    String? inviteCode,
     String? referralCode,
+    String? termsAcceptedAt,
   }) async {
     _loading = true;
     _error = null;
@@ -214,10 +235,10 @@ class AuthProvider extends ChangeNotifier {
       'password': password,
       if (phone != null) 'phone': phone,
       if (dob != null && dob.isNotEmpty) 'dob': dob,
-      if (inviteCode != null && inviteCode.isNotEmpty)
-        'invite_code': inviteCode.trim().toUpperCase(),
       if (referralCode != null && referralCode.isNotEmpty)
         'referral_code': referralCode.trim(),
+      if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
+      'terms_version': '2026-05-22',
     };
 
     // ── Attempt registration (one auto-retry on transient network errors) ──
@@ -241,6 +262,7 @@ class AuthProvider extends ChangeNotifier {
           await StorageService.saveSessionExpiry(
               DateTime.now().add(_kSessionDuration));
           _status = AuthStatus.authenticated;
+          _pendingSuccessScreen = true;
         }
 
         _loading = false;
@@ -267,10 +289,45 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
 
+  void clearPendingSuccessScreen() {
+    _pendingSuccessScreen = false;
+    _googleProfileCompletionRequired = false;
+    notifyListeners();
+  }
+
+  void setCityVerified() {
+    _cityVerified = true;
+    _cityGateReason = '';
+    unawaited(StorageService.setBool('city_verified', true));
+    unawaited(StorageService.setString('city_gate_reason', ''));
+    notifyListeners();
+  }
+
+  void setCityBlocked() {
+    _cityGateReason = 'blocked';
+    unawaited(StorageService.setString('city_gate_reason', 'blocked'));
+    notifyListeners();
+  }
+
+  void setCityMismatch() {
+    _cityGateReason = 'mismatch';
+    unawaited(StorageService.setString('city_gate_reason', 'mismatch'));
+    notifyListeners();
+  }
+
+  // Clears the gate reason so the popup re-shows for a retry attempt
+  void resetCityGateForRetry() {
+    _cityGateReason = '';
+    unawaited(StorageService.setString('city_gate_reason', ''));
+    notifyListeners();
+  }
+
   Future<void> logout() async {
-    // Clear local state IMMEDIATELY so GoRouter redirects to /login right away.
     _user = null;
     _localAvatarUri = null;
+    _pendingSuccessScreen = false;
+    _googleProfileCompletionRequired = false;
+    _googleAuthPending = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
 
@@ -279,6 +336,8 @@ class AuthProvider extends ChangeNotifier {
       try { await NotificationService.clearFcmToken(); } catch (_) {}
       try { await ApiService.post('/auth/logout'); } catch (_) {}
       try { await _googleSignIn.signOut(); } catch (_) {}
+      await StorageService.clearSession();
+      await StorageService.clearSession();
       await StorageService.clearSession();
       await StorageService.setString('user_avatar_local', '');
     }());
@@ -292,8 +351,15 @@ class AuthProvider extends ChangeNotifier {
       final res = await ApiService.post('/user/delete-account', body: body);
       if (res['success'] == true) {
         try { await _googleSignIn.signOut(); } catch (_) {}
-        await StorageService.clearSession();
+        // Preserve display preference then wipe all other local data.
+        final themeMode = StorageService.getThemeMode();
+        await StorageService.clear();
+        await StorageService.saveThemeMode(themeMode);
         _user = null;
+        _localAvatarUri = null;
+        _pendingSuccessScreen = false;
+        _googleProfileCompletionRequired = false;
+        _googleAuthPending = false;
         _status = AuthStatus.unauthenticated;
         notifyListeners();
         return {'success': true};
@@ -474,33 +540,28 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Simple Google sign-up/login: opens the account picker and creates or
+  /// logs in the account on the backend in one step.
   Future<bool> loginWithGoogle({
-    String? inviteCode,
     String? referralCode,
     DateTime? dob,
     String? phone,
+    String? nameOverride,
+    String? termsAcceptedAt,
   }) async {
     _loading = true;
     _error = null;
+    _googleProfileCompletionRequired = false;
     notifyListeners();
 
     try {
-      // Always sign out first to clear any stale session from a previous
-      // logout — prevents null idToken / PlatformException on re-sign-in.
-      try {
-        await _googleSignIn.signOut();
-      } catch (_) {}
-
       final account = await _googleSignIn.signIn();
       if (account == null) {
-        // User cancelled the account picker
         _loading = false;
         notifyListeners();
         return false;
       }
 
-      // Fetch authentication tokens — wrap separately because this can throw
-      // a PlatformException independent of signIn() on some Android versions.
       String? idToken;
       try {
         final googleAuth = await account.authentication;
@@ -520,20 +581,25 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
+      // ID token ready — show bridge screen now so the animation plays while the API runs.
+      _googleAuthPending = true;
+      notifyListeners();
+
       final data = await ApiService.post('/auth/google', body: {
         'credential': idToken,
         'email': account.email,
-        'name': account.displayName,
+        'name': nameOverride?.isNotEmpty == true
+            ? nameOverride
+            : account.displayName,
         'avatar': account.photoUrl,
-        if (inviteCode != null && inviteCode.isNotEmpty)
-          'invite_code': inviteCode,
         if (referralCode != null && referralCode.isNotEmpty)
           'referral_code': referralCode,
         if (dob != null)
-          'dob':
-              '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}',
+          'dob': '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}',
         if (phone != null && phone.isNotEmpty) 'phone': phone,
-      });
+        if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
+        'terms_version': '2026-05-22',
+      }, timeout: const Duration(seconds: 60));
 
       final token = data['token'] ?? data['access_token'];
       if (token != null) {
@@ -544,46 +610,70 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveSessionExpiry(
             DateTime.now().add(_kSessionDuration));
         _status = AuthStatus.authenticated;
+
+        final email = _user!.email.trim().toLowerCase();
+        final currentCreatedAt = _user!.createdAt.toUtc().toIso8601String();
+        final storedCreatedAt = StorageService.getGoogleProfileCreatedAt(email);
+        if (storedCreatedAt != null && storedCreatedAt != currentCreatedAt) {
+          await StorageService.clearGoogleProfileState(email);
+        }
+
+        final profileLooksIncomplete =
+            _user!.name.trim().isEmpty || (_user!.phone?.trim().isEmpty ?? true);
+        final profileAlreadyCompleted =
+            StorageService.getGoogleProfileCompleted(email);
+        _googleProfileCompletionRequired =
+            !profileAlreadyCompleted &&
+            (profileLooksIncomplete ||
+                (storedCreatedAt != null && storedCreatedAt != currentCreatedAt));
+        _pendingSuccessScreen = _googleProfileCompletionRequired;
+
+        _googleAuthPending = false;
         _loading = false;
-        // NOTE: _needsProfileCompletion is set by the register screen
-        // before calling this method, so we don't change it here.
         notifyListeners();
-        _registerFcmToken(); // register FCM + sync location after Google login
+        _registerFcmToken();
         return true;
       }
 
       _error = data['message'] ?? 'Google sign-in failed';
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
     } on ApiException catch (e) {
-      _error = e.message;
+      _error = e.message.contains('timed out')
+          ? 'Google sign-in is taking too long. Please check your connection and try again.'
+          : e.message;
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
     } on PlatformException catch (e) {
       debugPrint('[Google] PlatformException: code=${e.code} message=${e.message}');
-      if (e.message != null && (e.message!.contains(': 10') || e.message!.contains('DEVELOPER_ERROR'))) {
+      if (e.message != null &&
+          (e.message!.contains(': 10') || e.message!.contains('DEVELOPER_ERROR'))) {
         _error = 'Google sign-in is not configured for this app build. Please contact support.';
       } else if (e.code == 'network_error') {
         _error = 'Network error. Please check your connection and try again.';
       } else {
         _error = 'Google sign-in failed. Please try again.';
       }
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
     } catch (e) {
       debugPrint('[Google] loginWithGoogle error: $e');
       _error = 'Google sign-in failed. Please try again.';
+      _googleAuthPending = false;
       _loading = false;
       notifyListeners();
       return false;
     }
   }
 
-  /// Updates a Google-signed-in user's profile after the popup collects
-  /// name, phone, DOB and terms acceptance.
+  /// Updates a Google-signed-in user's profile after the onboarding wizard
+  /// collects name, phone, DOB and terms acceptance.
   Future<bool> updateGoogleProfile({
     String? name,
     String? phone,
@@ -602,42 +692,36 @@ class AuthProvider extends ChangeNotifier {
       if (termsAcceptedAt != null) body['terms_accepted_at'] = termsAcceptedAt;
 
       final data = await ApiService.put('/user/profile', body: body);
-      debugPrint('[updateGoogleProfile] response: $data');
       if (data['user'] != null) {
         _user = User.fromJson(data['user']);
         await StorageService.saveUserJson(_user!.toJson());
+        notifyListeners();
       }
-      _needsProfileCompletion = false;
-      notifyListeners();
       return true;
-    } on ApiException catch (e) {
-      debugPrint('[updateGoogleProfile] API error ${e.statusCode}: ${e.message}');
-      _error = e.message;
-      notifyListeners();
-      return false;
     } catch (e) {
-      debugPrint('[updateGoogleProfile] unexpected error: $e');
+      debugPrint('[updateGoogleProfile] error: $e');
       _error = 'Failed to update profile. Please try again.';
       notifyListeners();
       return false;
     }
   }
 
-  void setProfileCompletionPending() {
-    _needsProfileCompletion = true;
-    notifyListeners();
-  }
-
-  void clearProfileCompletion() {
-    if (_needsProfileCompletion) {
-      _needsProfileCompletion = false;
-      notifyListeners();
-    }
-  }
-
   void clearError() {
     _error = null;
     _kycSubmitMessage = null;
+    notifyListeners();
+  }
+
+  Future<void> markGoogleProfileCompleted() async {
+    final user = _user;
+    if (user == null || user.email.trim().isEmpty) return;
+
+    await StorageService.saveGoogleProfileState(
+      email: user.email,
+      completed: true,
+      createdAt: user.createdAt.toUtc().toIso8601String(),
+    );
+    _googleProfileCompletionRequired = false;
     notifyListeners();
   }
 

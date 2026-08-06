@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -24,14 +26,19 @@ class TaskInProgressScreen extends StatefulWidget {
 class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Task? _task;
   bool _loading = true;
+  bool _initialLoad = true; // show spinner only on first load; polls are silent
+  bool _proofSubmitted = false; // lock Phase 1 after successful proof upload
   bool _submitting = false;  // for submit-for-verification
   bool _completing = false;  // for final mark-as-completed
   bool _abandoning = false;
   String? _proofPath;
+  String? _submittedProofPath; // local path kept after submit for proof preview fallback
   Timer? _pollTimer;
   StreamSubscription<Position>? _locationSub;
   String? _prevStatus;          // tracks last-known status to detect transitions
   bool _paymentPopupShown = false; // ensure payment popup shown only once
+  String? _cachedProofValue;
+  Uint8List? _cachedProofBytes;
 
   // ── statuses treated as "cancelled" — helper should be redirected away
   static const _cancelledStatuses = {
@@ -41,13 +48,13 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   static const _verifyPendingStatuses = {
     'completed', 'verify_pending',
   };
-  // ── status after poster paid
+  // ── status after poster paid (both flows: new = payment_released, legacy = paid)
   static const _paymentReleasedStatuses = {
-    'payment_released',
+    'payment_released', 'paid',
   };
-  // ── truly finished
+  // ── truly finished (helper already clicked Mark as Completed)
   static const _doneStatuses = {
-    'verified', 'paid', 'done', 'finished',
+    'verified', 'done', 'finished',
   };
 
   bool get _isVerifyPending =>
@@ -72,15 +79,31 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; });
-    final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
+    if (_initialLoad) setState(() { _loading = true; });
+    final provider = context.read<TaskProvider>();
+    var task = await provider.getTaskDetail(widget.taskId);
+
+    // If first open and phone is still null, refresh accepted list and retry once.
+    if (_initialLoad &&
+        task != null &&
+        (task.posterPhone == null || task.posterPhone!.trim().isEmpty)) {
+      await provider.fetchMyTasks().catchError((_) {});
+      if (mounted) task = await provider.getTaskDetail(widget.taskId) ?? task;
+    }
+
     if (!mounted) return;
+
+    _syncProofCache(task?.completionProof);
 
     final oldStatus = _prevStatus;
     setState(() {
-      _task = task;
+      // During background polls keep the old task if the network returns null
+      if (task != null) {
+        _task = task;
+        _prevStatus = task.status;
+      }
       _loading = false;
-      _prevStatus = task?.status;
+      _initialLoad = false;
     });
 
     // If the poster cancelled (or task expired/rejected/not found), redirect.
@@ -102,13 +125,33 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     }
   }
 
+  void _syncProofCache(String? rawProof) {
+    final proof = rawProof?.trim();
+    if (proof == _cachedProofValue) return;
+    _cachedProofValue = proof;
+    _cachedProofBytes = null;
+
+    if (proof != null && proof.startsWith('data:')) {
+      final comma = proof.indexOf(',');
+      if (comma != -1) {
+        try {
+          _cachedProofBytes = base64Decode(proof.substring(comma + 1));
+        } catch (_) {
+          _cachedProofBytes = null;
+        }
+      }
+    }
+  }
+
   // ── Payment received popup with earnings breakdown ────────────────────────
   Future<void> _showPaymentReceivedDialog() async {
     if (!mounted || _task == null) return;
     final task = _task!;
-    final taskTotal = task.budget + (task.serviceCharge ?? 0);
-    final platformFee = task.serviceCharge ?? 0.0;
-    final helperEarning = task.budget;
+    final taskTotal = task.totalAmount;                          // budget + service_charge
+    final commissionRate = task.commissionRate;                  // 0.15 delivery, 0.17 others
+    final commissionAmt = taskTotal * commissionRate;
+    final helperEarning = task.netEarning;                       // taskTotal × (1 − rate)
+    final commissionPct = (commissionRate * 100).round();
 
     await showDialog<void>(
       context: context,
@@ -168,20 +211,16 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     child: Divider(height: 1),
                   ),
                   _BreakdownRow(
-                    label: 'Platform Service Fee',
-                    value: platformFee > 0
-                        ? '− ₹${platformFee.toStringAsFixed(0)}'
-                        : '₹0',
-                    valueColor: platformFee > 0
-                        ? AppColors.danger
-                        : AppColors.gray,
+                    label: 'Platform Commission ($commissionPct%)',
+                    value: '− ₹${commissionAmt.toStringAsFixed(0)}',
+                    valueColor: AppColors.danger,
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: Divider(height: 1),
                   ),
                   _BreakdownRow(
-                    label: 'Your Earning',
+                    label: 'You Receive',
                     value: '₹${helperEarning.toStringAsFixed(0)}',
                     bold: true,
                     valueColor: AppColors.success,
@@ -190,9 +229,9 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '₹ credited to your wallet after you mark the task as completed.',
-              style: TextStyle(
+            Text(
+              '₹${helperEarning.toStringAsFixed(0)} will be credited to your wallet after you mark the task as completed.',
+              style: const TextStyle(
                   color: AppColors.gray, fontSize: 11, height: 1.4),
             ),
             const SizedBox(height: 16),
@@ -392,6 +431,11 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     if (!mounted) return;
     setState(() => _submitting = false);
     if (ok) {
+      setState(() {
+        _proofSubmitted = true; // lock Phase 1 immediately, before network refresh
+        _submittedProofPath = _proofPath; // keep local path for proof preview fallback
+        _proofPath = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -519,6 +563,19 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final busy = _submitting || _completing || _abandoning;
 
     return Scaffold(
+      bottomNavigationBar: _isPaymentReleased
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: GradientButton(
+                  label: 'Mark as Completed',
+                  loading: _completing,
+                  icon: Icons.check_circle_outline,
+                  onPressed: _completing ? () {} : _finalMarkComplete,
+                ),
+              ),
+            )
+          : null,
       appBar: AppBar(
         title: const Text('Task In Progress'),
         leading: IconButton(
@@ -790,12 +847,12 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               ]
 
               // ── Phase 2: Waiting for poster to verify ─────────────────
-              else if (_isVerifyPending) ...[
+              else if (_isVerifyPending || _proofSubmitted) ...[
                 _buildWaitingBanner(task),
               ]
 
               // ── Phase 1: Actively working → Upload proof & submit ─────
-              else if (!_isDone) ...[
+              else if (!_isDone && !_proofSubmitted) ...[
                 // Proof upload section
                 const Text('Completion Proof',
                     style: TextStyle(
@@ -820,6 +877,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                             height: 200,
                             width: double.infinity,
                             fit: BoxFit.cover,
+                            gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           )
                         : Image.file(
@@ -827,6 +885,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                             height: 200,
                             width: double.infinity,
                             fit: BoxFit.cover,
+                            gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           ),
                   ),
@@ -1009,17 +1068,24 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
             ],
           ),
           if (task.completionProof != null &&
-              task.completionProof!.isNotEmpty) ...[
+              task.completionProof!.isNotEmpty) ...[  // proof stored as base64 data URI or URL
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                task.completionProof!,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _proofErrorWidget(),
-              ),
+              child: _buildProofImage(task.completionProof!, height: 160),
+            ),
+            const SizedBox(height: 6),
+            const Text('Submitted proof photo',
+                style:
+                    TextStyle(color: AppColors.gray, fontSize: 11)),
+          ] else if (_submittedProofPath != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.file(File(_submittedProofPath!),
+                  height: 160, width: double.infinity, fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) => _proofErrorWidget()),
             ),
             const SizedBox(height: 6),
             const Text('Submitted proof photo',
@@ -1077,6 +1143,31 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
         ],
       ),
     );
+  }
+
+  /// Renders a proof image from either an HTTPS URL or a base64 data URI.
+  Widget _buildProofImage(String proof, {double height = 160}) {
+    final trimmed = proof.trim();
+    if (trimmed.startsWith('data:')) {
+      if (_cachedProofValue != trimmed) {
+        _syncProofCache(trimmed);
+      }
+      if (_cachedProofBytes != null) {
+        return Image.memory(_cachedProofBytes!,
+            height: height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => _proofErrorWidget());
+      }
+      return _proofErrorWidget();
+    }
+    return Image.network(trimmed,
+        height: height,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => _proofErrorWidget());
   }
 
   Widget _proofErrorWidget() => Container(

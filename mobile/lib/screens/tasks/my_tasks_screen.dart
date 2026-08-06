@@ -110,10 +110,18 @@ class _PostedTaskList extends StatelessWidget {
   const _PostedTaskList({required this.tasks});
 
   static const _cancellableStatuses = {'posted', 'accepted', 'in_progress'};
+  // Tasks in these states are finished/cancelled — hide from the Posted tab.
+  static const _terminalStatuses = {
+    'done', 'finished', 'paid', 'verified',
+    'cancelled', 'poster_cancelled', 'rejected', 'expired',
+  };
 
   @override
   Widget build(BuildContext context) {
-    if (tasks.isEmpty) {
+    final visibleTasks =
+        tasks.where((t) => !_terminalStatuses.contains(t.status)).toList();
+
+    if (visibleTasks.isEmpty) {
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -132,9 +140,9 @@ class _PostedTaskList extends StatelessWidget {
       child: ListView.builder(
         padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewPadding.bottom + 80),
-        itemCount: tasks.length,
+        itemCount: visibleTasks.length,
         itemBuilder: (_, i) {
-          final t = tasks[i];
+          final t = visibleTasks[i];
           final hasHelper = t.helperId != null && t.helperId!.isNotEmpty;
           final canCancel = _cancellableStatuses.contains(t.status);
           final needsVerify = t.status == 'completed' || t.status == 'verify_pending';
@@ -569,34 +577,17 @@ class _PostedTaskList extends StatelessWidget {
   }
 
   // ── Shows completion proof photo + Pay Now entry point ──────────────────
-  void _showProofDialog(BuildContext context, Task t) async {
-    // Show a non-dismissible loading dialog while fetching the proof image URL
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: SizedBox(
-          height: 80,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 14),
-                Text('Loading proof image…',
-                    style: TextStyle(fontSize: 13)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    // Fetch proof images the helper uploaded for this task
-    final proofs = await context.read<TaskProvider>().fetchTaskProofs(t.id);
-    if (!context.mounted) return;
-    // Dismiss the loading dialog before showing the proof dialog
-    Navigator.of(context, rootNavigator: true).pop();
-    final proofUrl = proofs.isNotEmpty ? proofs.first : null;
+  void _showProofDialog(BuildContext context, Task t) {
+    // If the task object already has the proof URL use it directly;
+    // otherwise fetch from the /proofs endpoint (avoids a stale list cache).
+    final taskProvider = context.read<TaskProvider>();
+    final Future<String?> proofFuture =
+        (t.completionProof != null && t.completionProof!.isNotEmpty)
+            ? Future.value(t.completionProof)
+            : taskProvider
+                .fetchTaskProofs(t.id)
+                .then((urls) => urls.isEmpty ? null : urls.first);
+
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -630,71 +621,39 @@ class _PostedTaskList extends StatelessWidget {
                 ],
               ),
             ),
-            // Proof image — supports both base64 data URIs and https URLs
-            if (proofUrl != null && proofUrl.isNotEmpty)
-              Builder(builder: (ctx) {
-                if (proofUrl.startsWith('data:image')) {
-                  // Strip the data:image/xxx;base64, prefix
-                  final commaIdx = proofUrl.indexOf(',');
-                  final b64 = commaIdx >= 0 ? proofUrl.substring(commaIdx + 1) : proofUrl;
-                  try {
-                    return Image.memory(
-                      base64Decode(b64),
-                      height: 240,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                    );
-                  } catch (_) {
-                    return const SizedBox.shrink();
-                  }
+            // Proof image — fetch from backend if not on the task object
+            FutureBuilder<String?>(
+              future: proofFuture,
+              builder: (_, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const SizedBox(
+                    height: 120,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
                 }
-                return Image.network(
-                  proofUrl,
-                  height: 240,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (_, child, progress) => progress == null
-                      ? child
-                      : const SizedBox(
-                          height: 240,
-                          child: Center(child: CircularProgressIndicator())),
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 100,
-                    color: AppColors.light,
-                    child: const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.broken_image_outlined,
-                              color: AppColors.gray, size: 36),
-                          SizedBox(height: 4),
-                          Text('Could not load image',
-                              style: TextStyle(
-                                  color: AppColors.gray, fontSize: 12)),
-                        ],
-                      ),
+                final proofUrl = snap.data;
+                if (proofUrl != null && proofUrl.isNotEmpty) {
+                  return _buildProofImage(proofUrl, height: 240);
+                }
+                return Container(
+                  height: 100,
+                  color: AppColors.light,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.image_not_supported_outlined,
+                            color: AppColors.gray, size: 36),
+                        SizedBox(height: 4),
+                        Text('No proof photo submitted yet.',
+                            style: TextStyle(
+                                color: AppColors.gray, fontSize: 12)),
+                      ],
                     ),
                   ),
                 );
-              })
-            else
-              Container(
-                height: 100,
-                color: AppColors.light,
-                child: const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.image_not_supported_outlined,
-                          color: AppColors.gray, size: 36),
-                      SizedBox(height: 4),
-                      Text('No proof photo submitted yet.',
-                          style: TextStyle(
-                              color: AppColors.gray, fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ),
+              },
+            ),
             // Task + helper info
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -735,6 +694,57 @@ class _PostedTaskList extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildProofImage(String proof, {double height = 240}) {
+    final trimmed = proof.trim();
+    if (trimmed.startsWith('data:')) {
+      final commaIdx = trimmed.indexOf(',');
+      if (commaIdx != -1) {
+        try {
+          return Image.memory(
+            base64Decode(trimmed.substring(commaIdx + 1)),
+            height: height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildProofError(),
+          );
+        } catch (_) {
+          return _buildProofError();
+        }
+      }
+      return _buildProofError();
+    }
+    return Image.network(
+      trimmed,
+      height: height,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      loadingBuilder: (_, child, progress) => progress == null
+          ? child
+          : SizedBox(
+              height: height,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+      errorBuilder: (_, __, ___) => _buildProofError(),
+    );
+  }
+
+  Widget _buildProofError() => Container(
+        height: 100,
+        color: AppColors.light,
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.broken_image_outlined,
+                  color: AppColors.gray, size: 36),
+              SizedBox(height: 4),
+              Text('Could not load image',
+                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
+            ],
+          ),
+        ),
+      );
 
   // ── Wallet check + price breakdown + payment ─────────────────────────────
   void _showPayNowDialog(BuildContext context, Task t) async {
@@ -936,8 +946,10 @@ class _StatusBadge extends StatelessWidget {
       'accepted' || 'in_progress' => ('In Progress', AppColors.warning),
       'completed' || 'verify_pending' => ('Needs Verification', const Color(0xFFFF6B35)),
       'payment_released' => ('Payment Released', AppColors.success),
-      'verified' || 'paid' || 'done' => ('Completed', AppColors.success),
-      'cancelled' => ('Cancelled', AppColors.grayLight),
+      'verified' || 'paid' || 'done' || 'finished' => ('Completed', AppColors.success),
+      'cancelled' || 'poster_cancelled' => ('Cancelled', AppColors.grayLight),
+      'expired' => ('Expired', AppColors.danger),
+      'rejected' => ('Rejected', AppColors.danger),
       _ => (status, AppColors.gray),
     };
     return Container(

@@ -249,6 +249,8 @@ class ApiService {
       throw ApiException('Network error. Please try again.', statusCode: null);
     } on TimeoutException {
       throw ApiException('Request timed out. Please try again.', statusCode: null);
+    } on ApiException {
+      rethrow;
     } catch (e) {
       debugPrint('[API] uploadFile unexpected error: ${e.runtimeType}: $e');
       throw ApiException('Connection error. Please try again.', statusCode: null);

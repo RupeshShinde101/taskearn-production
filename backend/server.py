@@ -666,6 +666,30 @@ def _ensure_kyc_columns():
         print(f"⚠️ _ensure_kyc_columns error: {e}")
 
 
+_completion_proof_column_ensured = False
+
+def _ensure_completion_proof_column():
+    """Ensure completion_proof column exists in tasks table (idempotent)."""
+    global _completion_proof_column_ensured
+    if _completion_proof_column_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                # PostgreSQL
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_proof TEXT")
+            else:
+                # SQLite
+                cursor.execute("PRAGMA table_info(tasks)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'completion_proof' not in cols:
+                    cursor.execute("ALTER TABLE tasks ADD COLUMN completion_proof TEXT")
+        _completion_proof_column_ensured = True
+        print("✅ completion_proof column verified")
+    except Exception as e:
+        print(f"⚠️ _ensure_completion_proof_column error: {e}")
+
+
 # ==========================================================
 # KYC validation helpers (anti-fraud)
 # ==========================================================
@@ -3354,6 +3378,7 @@ def get_task(task_id):
                 'accepted_by': task.get('accepted_by'),
                 'is_paid': task.get('is_paid', False),
                 'status': task.get('status', 'active'),
+                'completion_proof': task.get('completion_proof'),
                 'postedAt': _iso(task.get('posted_at')),
                 'expiresAt': _iso(task.get('expires_at')),
                 'accepted_at': _iso(task.get('accepted_at')),
@@ -3553,6 +3578,8 @@ def get_task_details(task_id):
                     'address': task['location_address']
                 },
                 'status': task['status'],
+                'completion_proof': task.get('completion_proof'),
+                'poster_phone': task.get('provider_phone') or '',
                 'postedAt': task['posted_at'],
                 'accepted_at': task.get('accepted_at'),
                 'completed_at': task.get('completed_at'),
@@ -3575,6 +3602,27 @@ def get_task_details(task_id):
         })
 
 
+@app.route('/api/tasks/<int:task_id>/proofs', methods=['GET'])
+@require_auth
+def get_task_completion_proofs(task_id):
+    """Return the helper's submitted completion proof for a task."""
+    _ensure_completion_proof_column()
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'SELECT completion_proof FROM tasks WHERE id = {PH}',
+                (task_id,)
+            )
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': True, 'proofs': []})
+        proof = row['completion_proof'] if isinstance(row, dict) else row[0]
+        proofs = [proof] if proof else []
+        return jsonify({'success': True, 'proofs': proofs})
+    except Exception as e:
+        return jsonify({'success': True, 'proofs': []})
+
+
 @app.route('/api/tasks/<int:task_id>/complete', methods=['POST'])
 @require_auth
 def complete_task(task_id):
@@ -3584,12 +3632,27 @@ def complete_task(task_id):
     - Sets task status to 'completed'
     - Creates a 'Pay Now' notification for the poster
     """
+    _ensure_completion_proof_column()
     try:
         print(f"\n{'='*60}")
         print(f"📋 Marking Task {task_id} as Completed")
         print(f"Helper: {request.user_id}")
         print('='*60)
-        
+
+        # Accept proof image via multipart or JSON base64
+        import base64 as _b64
+        proof_data_uri = None
+        content_type = request.content_type or ''
+        if 'multipart/form-data' in content_type:
+            f = request.files.get('proofImage')
+            if f:
+                raw = f.read()
+                mime = (f.content_type or 'image/jpeg').split(';')[0].strip()
+                proof_data_uri = f'data:{mime};base64,{_b64.b64encode(raw).decode()}'
+        else:
+            body = request.get_json(silent=True) or {}
+            proof_data_uri = body.get('proofImage') or body.get('proof_image')
+
         with get_db() as (cursor, conn):
             # Check if task exists and is accepted by current user (the helper)
             cursor.execute(f'''
@@ -3626,11 +3689,11 @@ def complete_task(task_id):
             # ===== UPDATE TASK STATUS TO 'completed' =====
             cursor.execute(f'''
                 UPDATE tasks
-                SET status = 'completed', completed_at = {PH}
+                SET status = 'completed', completed_at = {PH}, completion_proof = {PH}
                 WHERE id = {PH}
-            ''', (now, task_id))
+            ''', (now, proof_data_uri, task_id))
             
-            print(f"   ✅ Task status updated to 'completed'")
+            print(f"   ✅ Task status updated to 'completed' (proof={'yes' if proof_data_uri else 'none'})")
             
             # ===== CREATE NOTIFICATION FOR POSTER =====
             cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,))
@@ -4140,7 +4203,7 @@ def pay_helper(task_id):
             print(f"   Accepted by: {task['accepted_by']}")
 
             # Accept verify_pending (new flow) OR completed (legacy flow)
-            is_new_flow = task['status'] == 'verify_pending'
+            is_new_flow = task['status'] in ('verify_pending', 'completed')
             if task['status'] not in ('verify_pending', 'completed'):
                 print(f"❌ Task status not payable (status: {task['status']})")
                 return jsonify({'success': False, 'message': 'Task must be verified or completed first'}), 400
@@ -4527,13 +4590,18 @@ def get_user_tasks():
             import threading as _th
             _th.Thread(target=_bg_cleanup, daemon=True).start()
 
-        # Posted tasks — exclude tasks removed/flagged by admin/AI (those are deleted or hidden)
+        # Posted tasks — active only; exclude admin-removed, completed and cancelled tasks.
         cursor.execute(f'''
             SELECT t.*, u.name as helper_name, u.phone as helper_phone,
                    u.rating as helper_rating, u.tasks_completed as helper_tasks_completed
             FROM tasks t
             LEFT JOIN users u ON t.accepted_by = u.id
-            WHERE t.posted_by = {PH} AND t.status NOT IN ('removed', 'flagged', 'suspicious')
+            WHERE t.posted_by = {PH}
+              AND t.status NOT IN (
+                'removed', 'flagged', 'suspicious',
+                'done', 'finished', 'paid', 'verified',
+                'cancelled', 'poster_cancelled', 'rejected', 'expired'
+              )
             ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]

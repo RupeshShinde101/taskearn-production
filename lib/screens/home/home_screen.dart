@@ -25,7 +25,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Task> _suggestedTasks = [];
   Map<String, int> _taskMatchPct = {}; // taskId -> match percentage (60-100)
   List<Task> _expiringTasks  = [];
-  bool _kycReminderShown = false;
 
   @override
   void initState() {
@@ -39,14 +38,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadInitial() async {
-    // All fetches start immediately on the first frame — nothing waits for GPS.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      // Data starts loading while popup may still be visible
       context.read<NotificationProvider>().fetchNotifications();
       context.read<WalletProvider>().fetchWallet();
       _fetchSuggestedTasks();
       _fetchExpiringTasks();
-      _maybeShowKycReminder();
     });
 
     // GPS runs in parallel — only needed for city name + backend location update.
@@ -99,28 +97,6 @@ class _HomeScreenState extends State<HomeScreen> {
           .toList();
       if (mounted) setState(() => _expiringTasks = expiring);
     } catch (_) {}
-  }
-
-  void _maybeShowKycReminder() {
-    if (_kycReminderShown || !mounted) return;
-    final user = context.read<AuthProvider>().user;
-    if (user == null) return;
-    final kycStatus = user.kycStatus;
-    final isVerified = user.isKycVerified;
-    // Only show for users who have never started KYC
-    if (isVerified || (kycStatus != null && kycStatus != 'none' && kycStatus.isNotEmpty)) return;
-
-    _kycReminderShown = true;
-    // Small delay so the home screen renders first
-    Future.delayed(const Duration(milliseconds: 800), () {
-      if (!mounted) return;
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => const _KycReminderSheet(),
-      );
-    });
   }
 
   Future<void> _fetchSuggestedTasks() async {
@@ -465,7 +441,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () => context.push('/post-task'),
+                        onPressed: () {
+                          if (!context.read<AuthProvider>().cityVerified) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text('Verify your location first to post tasks.'),
+                              behavior: SnackBarBehavior.floating,
+                            ));
+                            return;
+                          }
+                          context.push('/post-task');
+                        },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFF6B6B),
                           foregroundColor: Colors.white,
@@ -775,7 +760,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             GestureDetector(
-              onTap: () => context.go('/browse'),
+              //Added onTap to navigate to browse screen with expiring tasks filtered (by sakshi on 2026/07/22)
+              onTap: () {
+                BrowseScreen.jumpToExpirySoon = true;
+                context.go('/browse');
+              },
+              //onTap: () => context.go('/browse'),
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1274,7 +1264,16 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // ── Post a Task card ────────────────────────────────────────
           GestureDetector(
-            onTap: () => context.push('/post-task'),
+            onTap: () {
+              if (!context.read<AuthProvider>().cityVerified) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Verify your location first to post tasks.'),
+                  behavior: SnackBarBehavior.floating,
+                ));
+                return;
+              }
+              context.push('/post-task');
+            },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -1421,134 +1420,6 @@ class _QuoteIcon extends StatelessWidget {
       child: const Center(
           child: Text('\u275D',
               style: TextStyle(color: Colors.white, fontSize: 16))),
-    );
-  }
-}
-
-// ── KYC Reminder Bottom Sheet ─────────────────────────────────────────────────
-
-class _KycReminderSheet extends StatelessWidget {
-  const _KycReminderSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.all(Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle bar
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Icon
-          Container(
-            width: 64, height: 64,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.verified_user_outlined,
-                size: 32, color: AppColors.primary),
-          ),
-          const SizedBox(height: 16),
-
-          const Text(
-            'Complete KYC Verification',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: AppColors.dark,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Verify your identity to post tasks, accept tasks, and withdraw your earnings.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: AppColors.gray, height: 1.5),
-          ),
-          const SizedBox(height: 20),
-
-          // Benefits
-          const _BenefitRow(icon: Icons.add_task_rounded,     text: 'Post tasks on the platform'),
-          const SizedBox(height: 8),
-          const _BenefitRow(icon: Icons.handshake_outlined,   text: 'Accept tasks & earn money'),
-          const SizedBox(height: 8),
-          const _BenefitRow(icon: Icons.account_balance_outlined, text: 'Withdraw your earnings'),
-          const SizedBox(height: 24),
-
-          // Complete KYC button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                context.push('/kyc');
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-                elevation: 0,
-              ),
-              child: const Text('Complete KYC Now',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Skip
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Remind me later',
-                style: TextStyle(
-                    color: AppColors.gray,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BenefitRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _BenefitRow({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 32, height: 32,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, size: 16, color: AppColors.primary),
-        ),
-        const SizedBox(width: 12),
-        Text(text,
-            style: const TextStyle(
-                fontSize: 14, color: AppColors.dark, fontWeight: FontWeight.w500)),
-      ],
     );
   }
 }

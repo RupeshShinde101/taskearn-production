@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../screens/legal/privacy_screen.dart';
+import '../../screens/legal/terms_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
 
@@ -21,13 +23,13 @@ class GoogleProfilePopup extends StatefulWidget {
     this.email,
   });
 
-  static Future<void> show(
+  static Future<bool?> show(
     BuildContext context, {
     String? googleName,
     String? photoUrl,
     String? email,
   }) {
-    return showModalBottomSheet<void>(
+    return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       isDismissible: false,
@@ -103,7 +105,21 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
       return;
     }
     if (!_agreeTerms || !_agreePrivacy) {
-      _msg('Please accept both the Terms & Conditions and Privacy Policy.');
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Acceptance Required'),
+          content: const Text(
+            'You must accept both the Terms & Conditions and the Privacy Policy to create your account.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(_).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
       return;
     }
 
@@ -124,14 +140,37 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
       _msg(auth.error ?? 'Profile saved partially. You can update it later.');
     }
     // Always close the popup and proceed to home.
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) Navigator.of(context).pop(ok);
   }
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Padding(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (_, __) {
+        // Defer so the navigator is no longer locked when showDialog pushes a route.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('Details Required'),
+              content: const Text(
+                'Please fill in your details first — it is required to continue.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(_).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+      child: Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -289,14 +328,22 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               // ── Terms checkboxes ──────────────────────────────────────
               _CheckRow(
                 value: _agreeTerms,
-                onTap: () => setState(() => _agreeTerms = !_agreeTerms),
-                label: 'I agree to the Terms & Conditions',
+                onToggle: () => setState(() => _agreeTerms = !_agreeTerms),
+                label: 'I agree to the ',
+                linkText: 'Terms & Conditions',
+                onLinkTap: () => Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute(builder: (_) => const TermsScreen()),
+                ),
               ),
               const SizedBox(height: 10),
               _CheckRow(
                 value: _agreePrivacy,
-                onTap: () => setState(() => _agreePrivacy = !_agreePrivacy),
-                label: 'I agree to the Privacy Policy',
+                onToggle: () => setState(() => _agreePrivacy = !_agreePrivacy),
+                label: 'I agree to the ',
+                linkText: 'Privacy Policy',
+                onLinkTap: () => Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                ),
               ),
               const SizedBox(height: 24),
 
@@ -306,27 +353,11 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
                 loading: _submitting,
                 onPressed: _submitting ? null : _submit,
               ),
-              const SizedBox(height: 10),
-
-              // ── Skip ──────────────────────────────────────────────────
-              Center(
-                child: TextButton(
-                  onPressed:
-                      _submitting ? null : () => Navigator.of(context).pop(),
-                  child: const Text(
-                    'Skip for now',
-                    style: TextStyle(
-                      color: AppColors.gray,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -386,24 +417,28 @@ class _Field extends StatelessWidget {
 
 class _CheckRow extends StatelessWidget {
   final bool value;
-  final VoidCallback onTap;
+  final VoidCallback onToggle;
   final String label;
+  final String linkText;
+  final VoidCallback onLinkTap;
 
   const _CheckRow({
     required this.value,
-    required this.onTap,
+    required this.onToggle,
     required this.label,
+    required this.linkText,
+    required this.onLinkTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AnimatedContainer(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Checkbox tap zone
+        GestureDetector(
+          onTap: onToggle,
+          child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             width: 22,
             height: 22,
@@ -420,16 +455,35 @@ class _CheckRow extends StatelessWidget {
                     size: 14, color: Colors.white)
                 : null,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.dark, height: 1.4),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: GestureDetector(
+            onTap: onToggle,
+            child: Wrap(
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.dark, height: 1.4)),
+                GestureDetector(
+                  onTap: onLinkTap,
+                  // Stop the parent toggle GestureDetector from also firing
+                  child: Text(
+                    linkText,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.primary,
+                      decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

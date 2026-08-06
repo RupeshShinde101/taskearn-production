@@ -216,7 +216,7 @@ class TaskProvider extends ChangeNotifier {
   /// Find a task by ID in all local caches (detail cache has highest priority)
   Task? _findCached(String id) {
     if (_detailCache.containsKey(id)) return _detailCache[id];
-    for (final list in [_browseTasks, _myPostedTasks, _myAcceptedTasks, _myCompletedTasks]) {
+    for (final list in [_myAcceptedTasks, _myPostedTasks, _myCompletedTasks, _browseTasks]) {
       for (final t in list) {
         if (t.id == id) return t;
       }
@@ -260,8 +260,13 @@ class TaskProvider extends ChangeNotifier {
           : null;
       if (json != null && json.isNotEmpty) {
         final task = Task.fromJson(json);
-        // Only cache if we got real poster info
-        if (task.posterName != 'Anonymous' || task.posterPhone != null) {
+        // Only cache if we got a real task (has both a non-empty id and title).
+        // This prevents the accept endpoint's bare {success:true} response from
+        // being stored as a bogus task with status='active', which would cause
+        // isActivePoster=true and a phone-less short-circuit in getTaskDetail().
+        if (task.id.isNotEmpty &&
+            task.title.isNotEmpty &&
+            (task.posterName != 'Anonymous' || task.posterPhone != null)) {
           _detailCache[taskId] = task;
         }
       }
@@ -305,7 +310,14 @@ class TaskProvider extends ChangeNotifier {
           bool needsReparse = false;
 
           if (task.posterPhone == null || task.posterPhone!.trim().isEmpty) {
-            final phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
+            var phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
+            if (phone == null && _myAcceptedTasks.isEmpty) {
+              // List not loaded yet (e.g. opened from notification) — fetch now.
+              try {
+                await fetchMyTasks();
+                phone = _findPhoneInAllLists(id);
+              } catch (_) {}
+            }
             if (phone != null) {
               enriched['poster_phone'] = phone;
               needsReparse = true;
@@ -395,6 +407,10 @@ class TaskProvider extends ChangeNotifier {
 
   Future<bool> acceptTask(String taskId) async {
     try {
+      // Clear any stale detail cache so a previous browse-list snapshot
+      // (which may lack posterPhone) cannot short-circuit getTaskDetail().
+      _detailCache.remove(taskId);
+
       // Snapshot the poster phone AND name from the browse list NOW, before
       // the task is removed from _browseTasks after fetchMyTasks(). This
       // ensures they are available when getTaskDetail() is called from the
@@ -407,8 +423,25 @@ class TaskProvider extends ChangeNotifier {
       if (browseName != null) {
         _saveName(taskId, browseName);
       }
+      final browseTask = _browseTasks.where((t) => t.id == taskId).cast<Task?>().firstWhere(
+            (_) => true,
+            orElse: () => null,
+          );
 
       final response = await ApiService.post('/tasks/$taskId/accept');
+      _browseTasks.removeWhere((t) => t.id == taskId);
+
+      if (browseTask != null) {
+        final acceptedSnapshot = Task.fromJson({
+          ...browseTask.toJson(),
+          'status': 'accepted',
+          if (browsePhone != null) 'poster_phone': browsePhone,
+          if (browseName != null) 'poster_name': browseName,
+        });
+        _myAcceptedTasks.removeWhere((t) => t.id == taskId);
+        _myAcceptedTasks.insert(0, acceptedSnapshot);
+      }
+
       // Cache the full task returned by the accept endpoint – it may include
       // posterPhone and other details that the list endpoints omit.
       _cacheDetailFromResponse(response, taskId);
@@ -466,13 +499,21 @@ class TaskProvider extends ChangeNotifier {
   }
 
   /// Helper submits proof for verification (Step 1 of completion flow).
-  /// POSTs complete to notify poster; proof upload is handled server-side.
   Future<bool> markCompleted(String taskId, {String? proofPath}) async {
     try {
-      await ApiService.post('/tasks/$taskId/complete');
+      if (proofPath != null && !proofPath.startsWith('http')) {
+        // Send proof image as multipart so backend can store it
+        await ApiService.uploadFile(
+          '/tasks/$taskId/complete',
+          proofPath,
+          'proofImage',
+        );
+      } else {
+        await ApiService.post('/tasks/$taskId/complete');
+      }
       // Invalidate detail cache so next load gets fresh status.
       _detailCache.remove(taskId);
-      await fetchMyTasks();
+      fetchMyTasks(); // fire-and-forget; screen's _load() handles UI refresh
       return true;
     } on ApiException catch (e) {
       _error = e.message;

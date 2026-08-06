@@ -1,18 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
-import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
 
 class TaskInProgressScreen extends StatefulWidget {
@@ -26,18 +26,19 @@ class TaskInProgressScreen extends StatefulWidget {
 class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Task? _task;
   bool _loading = true;
+  bool _initialLoad = true; // show spinner only on first load; polls are silent
+  bool _proofSubmitted = false; // lock Phase 1 after successful proof upload
   bool _submitting = false;  // for submit-for-verification
   bool _completing = false;  // for final mark-as-completed
   bool _abandoning = false;
   String? _proofPath;
+  String? _submittedProofPath; // local path kept after submit for proof preview fallback
   Timer? _pollTimer;
-  Timer? _phoneRetryTimer; // short follow-up if poster phone is missing on first load
   StreamSubscription<Position>? _locationSub;
+  String? _prevStatus;          // tracks last-known status to detect transitions
   bool _paymentPopupShown = false; // ensure payment popup shown only once
-  bool _loaded = false;            // true after first data load; polls are silent
-  bool _refreshing = false;        // true while a manual refresh is in flight
-  int _phoneRetryCount = 0;        // automatic phone-fetch retry counter
-  static const _maxPhoneRetries = 5; // maximum automatic retries for poster phone
+  String? _cachedProofValue;
+  Uint8List? _cachedProofBytes;
 
   // ── statuses treated as "cancelled" — helper should be redirected away
   static const _cancelledStatuses = {
@@ -47,45 +48,25 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   static const _verifyPendingStatuses = {
     'completed', 'verify_pending',
   };
-  // ── status after poster verified / payment released — helper must confirm
-  // 'paid' = poster has paid but helper has NOT yet clicked Mark as Completed
+  // ── status after poster paid (both flows: new = payment_released, legacy = paid)
   static const _paymentReleasedStatuses = {
-    'payment_released', 'verified', 'paid',
+    'payment_released', 'paid',
   };
   // ── truly finished (helper already clicked Mark as Completed)
   static const _doneStatuses = {
-    'done', 'finished',
+    'verified', 'done', 'finished',
   };
 
+  bool get _isVerifyPending =>
+      _task != null && _verifyPendingStatuses.contains(_task!.status);
+  bool get _isPaymentReleased =>
+      _task != null && _paymentReleasedStatuses.contains(_task!.status);
   bool get _isDone =>
       _task != null && _doneStatuses.contains(_task!.status);
-
-  // Payment released = explicit status OR isPaid flag set (backend may keep
-  // old status like 'completed'/'accepted' when releasing payment).
-  bool get _isPaymentReleased =>
-      _task != null &&
-      !_isDone &&
-      (_paymentReleasedStatuses.contains(_task!.status) || _task!.isPaid);
-
-  // Only "verify pending" when payment has NOT yet been released.
-  bool get _isVerifyPending =>
-      _task != null &&
-      !_isPaymentReleased &&
-      _verifyPendingStatuses.contains(_task!.status);
 
   @override
   void initState() {
     super.initState();
-    // Pre-populate from provider cache immediately so the task info (title,
-    // poster name, etc.) is visible before the first async _load() completes.
-    // This avoids a blank spinner screen when navigating here right after accept.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final cached = context.read<TaskProvider>().getCachedTask(widget.taskId);
-      if (cached != null && _task == null) {
-        setState(() { _task = cached; });
-      }
-    });
     _load();
     _startLocationUpdates();
     // Poll for status changes every 30 s so the helper is redirected
@@ -96,111 +77,81 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     );
   }
 
-  bool _taskIsPaymentReleased(Task? t) =>
-      t != null &&
-      !_doneStatuses.contains(t.status) &&
-      (_paymentReleasedStatuses.contains(t.status) || t.isPaid);
-
   Future<void> _load() async {
     if (!mounted) return;
-    // Only show full-screen spinner on the very first load. Subsequent polls
-    // update _task silently so the user never sees a spinner flash every 15 s.
-    if (!_loaded) setState(() { _loading = true; });
-    final prevTask = _task;
-    try {
-      final task = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
-      if (!mounted) return;
+    if (_initialLoad) setState(() { _loading = true; });
+    final provider = context.read<TaskProvider>();
+    var task = await provider.getTaskDetail(widget.taskId);
 
-      // If posterPhone is missing on first load, refresh user tasks (which may
-      // include the phone in its list response) and try the detail again once.
-      // This handles the server propagation delay right after accepting a task.
-      if (!_loaded && task != null &&
-          (task.posterPhone == null || task.posterPhone!.trim().isEmpty)) {
-        await context.read<TaskProvider>().fetchMyTasks();
-        if (!mounted) return;
-        final retried = await context.read<TaskProvider>().getTaskDetail(widget.taskId);
-        if (!mounted) return;
-        setState(() {
-          _task = retried ?? task;
-          _loading = false;
-          _loaded = true;
-        });
-      } else {
-        setState(() {
-          _task = task;
-          _loading = false;
-          _loaded = true;
-        });
-      }
+    // If first open and phone is still null, refresh accepted list and retry once.
+    if (_initialLoad &&
+        task != null &&
+        (task.posterPhone == null || task.posterPhone!.trim().isEmpty)) {
+      await provider.fetchMyTasks().catchError((_) {});
+      if (mounted) task = await provider.getTaskDetail(widget.taskId) ?? task;
+    }
 
-      // If task data cannot be found at all (deleted/404), release and exit.
-      final status = _task?.status ?? '';
-      if (_task == null) {
-        _pollTimer?.cancel();
-        _showTaskGoneDialog();
-        return;
-      }
+    if (!mounted) return;
 
-      // If the poster cancelled, redirect.
-      if (_cancelledStatuses.contains(status)) {
-        _pollTimer?.cancel();
-        _showCancelledDialog();
-        return;
-      }
+    _syncProofCache(task?.completionProof);
 
-      // Detect transition to payment-released state using both status AND isPaid.
-      final wasPaymentReleased = _taskIsPaymentReleased(prevTask);
-      final nowPaymentReleased = _taskIsPaymentReleased(_task);
-      if (nowPaymentReleased && !wasPaymentReleased && !_paymentPopupShown) {
-        _paymentPopupShown = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _showPaymentReceivedDialog();
-        });
+    final oldStatus = _prevStatus;
+    setState(() {
+      // During background polls keep the old task if the network returns null
+      if (task != null) {
+        _task = task;
+        _prevStatus = task.status;
       }
+      _loading = false;
+      _initialLoad = false;
+    });
 
-      // Auto-retry fetching poster contact if still missing (server propagation
-      // delay after accept). Backoff: 4 s, 8 s, 12 s … up to _maxPhoneRetries.
-      // Never cancels an already-pending timer (so the 15-second poll does not
-      // push retries further out).
-      if (_task != null &&
-          (_task!.posterPhone == null || _task!.posterPhone!.trim().isEmpty) &&
-          _phoneRetryCount < _maxPhoneRetries &&
-          !(_phoneRetryTimer?.isActive ?? false)) {
-        _phoneRetryCount++;
-        _phoneRetryTimer = Timer(Duration(seconds: 4 * _phoneRetryCount), () {
-          if (mounted) _load();
-        });
-      }
-    } catch (e) {
-      debugPrint('[TaskInProgress] _load error: $e');
-      // Ensure the screen never stays stuck on the loading spinner.
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _loaded = true;
-        });
-      }
+    // If the poster cancelled (or task expired/rejected/not found), redirect.
+    final status = _task?.status ?? '';
+    if (_task == null || _cancelledStatuses.contains(status)) {
+      _pollTimer?.cancel();
+      _showCancelledDialog();
+      return;
+    }
+
+    // When status first transitions to payment_released, show earnings popup.
+    if (_paymentReleasedStatuses.contains(status) &&
+        !_paymentReleasedStatuses.contains(oldStatus) &&
+        !_paymentPopupShown) {
+      _paymentPopupShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showPaymentReceivedDialog();
+      });
     }
   }
 
-  /// Manual refresh triggered by the AppBar button, pull-to-refresh, or the
-  /// inline contact-section Refresh button. Shows visual feedback and resets
-  /// the phone auto-retry counter so retries restart from the beginning.
-  Future<void> _manualRefresh() async {
-    if (_refreshing) return;
-    setState(() => _refreshing = true);
-    _phoneRetryCount = 0; // reset so auto-retries fire again
-    await _load();
-    if (mounted) setState(() => _refreshing = false);
+  void _syncProofCache(String? rawProof) {
+    final proof = rawProof?.trim();
+    if (proof == _cachedProofValue) return;
+    _cachedProofValue = proof;
+    _cachedProofBytes = null;
+
+    if (proof != null && proof.startsWith('data:')) {
+      final comma = proof.indexOf(',');
+      if (comma != -1) {
+        try {
+          _cachedProofBytes = base64Decode(proof.substring(comma + 1));
+        } catch (_) {
+          _cachedProofBytes = null;
+        }
+      }
+    }
   }
 
   // ── Payment received popup with earnings breakdown ────────────────────────
   Future<void> _showPaymentReceivedDialog() async {
     if (!mounted || _task == null) return;
     final task = _task!;
-    final commission = task.totalAmount * task.commissionRate;
-    final helperEarning = task.netEarning;
-    final commissionPct = (task.commissionRate * 100).toStringAsFixed(0);
+    final taskTotal = task.totalAmount;                          // budget + service_charge
+    final commissionRate = task.commissionRate;                  // 0.15 delivery, 0.17 others
+    final commissionAmt = taskTotal * commissionRate;
+    final helperEarning = task.netEarning;                       // taskTotal × (1 − rate)
+    final commissionPct = (commissionRate * 100).round();
 
     await showDialog<void>(
       context: context,
@@ -253,7 +204,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                 children: [
                   _BreakdownRow(
                     label: 'Task Total',
-                    value: '₹${task.totalAmount.toStringAsFixed(0)}',
+                    value: '₹${taskTotal.toStringAsFixed(0)}',
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
@@ -261,7 +212,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                   ),
                   _BreakdownRow(
                     label: 'Platform Commission ($commissionPct%)',
-                    value: '− ₹${commission.toStringAsFixed(0)}',
+                    value: '− ₹${commissionAmt.toStringAsFixed(0)}',
                     valueColor: AppColors.danger,
                   ),
                   const Padding(
@@ -269,7 +220,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     child: Divider(height: 1),
                   ),
                   _BreakdownRow(
-                    label: 'Your Earning',
+                    label: 'You Receive',
                     value: '₹${helperEarning.toStringAsFixed(0)}',
                     bold: true,
                     valueColor: AppColors.success,
@@ -278,9 +229,9 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '₹ credited to your wallet after you mark the task as completed.',
-              style: TextStyle(
+            Text(
+              '₹${helperEarning.toStringAsFixed(0)} will be credited to your wallet after you mark the task as completed.',
+              style: const TextStyle(
                   color: AppColors.gray, fontSize: 11, height: 1.4),
             ),
             const SizedBox(height: 16),
@@ -313,36 +264,6 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     );
   }
 
-  /// Called when the task data returns null (task deleted or 404 on backend).
-  /// Silently releases the stale server-side binding then navigates away.
-  Future<void> _showTaskGoneDialog() async {
-    if (!mounted) return;
-    // Silently try to release the stale task binding (handles 404 gracefully).
-    await context.read<TaskProvider>().abandonTask(widget.taskId);
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Task Unavailable'),
-        content: const Text(
-          'This task is no longer available and you have been released.',
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    if (mounted) context.go('/my-tasks');
-  }
-
   Future<void> _showCancelledDialog() async {
     if (!mounted) return;
     await showDialog<void>(
@@ -371,7 +292,6 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
-    _phoneRetryTimer?.cancel();
     _locationSub?.cancel();
     super.dispose();
   }
@@ -410,117 +330,44 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     }
   }
 
-  Future<void> _openDropNavigation() async {
-    if (_task == null) return;
-    final dropLat = _task!.dropLatitude;
-    final dropLng = _task!.dropLongitude;
-    final dropAddr = _task!.dropAddress;
-
-    Uri uri;
-    if (dropLat != null && dropLng != null) {
-      // Prefer precise coordinates
-      uri = Uri.parse(
-          'https://www.google.com/maps/dir/?api=1'
-          '&destination=$dropLat,$dropLng'
-          '&travelmode=driving');
-    } else if (dropAddr != null && dropAddr.trim().isNotEmpty) {
-      // Fall back to address text search
-      uri = Uri.parse(
-          'https://www.google.com/maps/dir/?api=1'
-          '&destination=${Uri.encodeComponent(dropAddr.trim())}'
-          '&travelmode=driving');
-    } else {
+  Future<void> _callPoster() async {
+    final phone = _task?.posterPhone;
+    if (phone == null || phone.trim().isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Drop location not available')),
+          const SnackBar(content: Text('Phone number not available for this poster.')),
         );
       }
       return;
     }
-
+    final uri = Uri.parse('tel:${phone.trim()}');
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await launchUrl(uri);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Google Maps')),
+        const SnackBar(content: Text('Could not open dialler.')),
       );
     }
   }
 
-  Future<void> _callPoster() async {
-    var phone = _task?.posterPhone?.trim();
-    if (phone == null || phone.isEmpty) {
-      // Auto-refresh once then retry the call
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(
-            content: Text('Fetching contact info, please wait…'),
-            duration: Duration(seconds: 3),
-          ));
-      }
-      await _manualRefresh();
-      phone = _task?.posterPhone?.trim();
-      if (phone == null || phone.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(const SnackBar(
-              content: Text(
-                  'Contact number not available yet. Try again in a moment.'),
-            ));
-        }
-        return;
-      }
-    }
-    final uri = Uri.parse('tel:$phone');
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
+  Future<void> _whatsappPoster() async {
+    final raw = _task?.posterPhone?.replaceAll(RegExp(r'[^0-9]'), '');
+    if (raw == null || raw.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open dialler.')),
+          const SnackBar(content: Text('Phone number not available for this poster.')),
         );
       }
-    }
-  }
-
-  Future<void> _whatsappPoster() async {
-    var raw = _task?.posterPhone?.replaceAll(RegExp(r'[^0-9]'), '');
-    if (raw == null || raw.isEmpty) {
-      // Auto-refresh once then retry WhatsApp
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(
-            content: Text('Fetching contact info, please wait…'),
-            duration: Duration(seconds: 3),
-          ));
-      }
-      await _manualRefresh();
-      raw = _task?.posterPhone?.replaceAll(RegExp(r'[^0-9]'), '');
-      if (raw == null || raw.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(const SnackBar(
-              content: Text(
-                  'Contact number not available yet. Try again in a moment.'),
-            ));
-        }
-        return;
-      }
+      return;
     }
     final full = raw.startsWith('91') ? raw : '91$raw';
     final uri = Uri.parse('https://wa.me/$full');
-    try {
+    if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open WhatsApp.')),
-        );
-      }
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open WhatsApp.')),
+      );
     }
   }
 
@@ -584,6 +431,11 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     if (!mounted) return;
     setState(() => _submitting = false);
     if (ok) {
+      setState(() {
+        _proofSubmitted = true; // lock Phase 1 immediately, before network refresh
+        _submittedProofPath = _proofPath; // keep local path for proof preview fallback
+        _proofPath = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -614,9 +466,6 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     if (!mounted) return;
     setState(() => _completing = false);
     if (ok) {
-      // Show rating dialog so helper can rate the poster before leaving
-      await _showRatePosterDialog();
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Task completed! You can now accept a new task.'),
@@ -627,9 +476,6 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       // Navigate to Browse so the helper can immediately find a new task.
       context.go('/browse');
     } else {
-      // Refresh — backend error likely means our cached status was stale
-      // (e.g. payment not yet released on server despite local flag showing paid).
-      _load();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -640,170 +486,14 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     }
   }
 
-  /// Show a rating dialog so the helper can rate the task poster.
-  /// Called after successful mark-complete. Safe to skip (barrierDismissible=false
-  /// but has a Skip button).
-  Future<void> _showRatePosterDialog() async {
-    if (!mounted) return;
-    double selectedRating = 5.0;
-    final commentCtrl = TextEditingController();
-    bool submitted = false;
-    final posterName = _task?.posterName ?? 'the poster';
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialog) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('Rate the Task Poster',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.w700)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'How was your experience with $posterName?',
-                style: const TextStyle(color: AppColors.gray, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  5,
-                  (i) => GestureDetector(
-                    onTap: () =>
-                        setDialog(() => selectedRating = (i + 1).toDouble()),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Icon(
-                        i < selectedRating ? Icons.star : Icons.star_border,
-                        color: AppColors.warning,
-                        size: 36,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: commentCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Comment (optional)',
-                  hintText: 'Leave a review...',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Skip'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                submitted = true;
-                Navigator.pop(ctx);
-              },
-              child: const Text('Submit Rating'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    final comment = commentCtrl.text.trim();
-    commentCtrl.dispose();
-    if (submitted && mounted) {
-      final ok = await context.read<TaskProvider>().rateTask(
-            widget.taskId,
-            selectedRating,
-            comment.isNotEmpty ? comment : null,
-          );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(ok
-              ? 'Rated successfully!'
-              : (context.read<TaskProvider>().error ?? 'Failed to submit rating')),
-          backgroundColor: ok ? AppColors.success : AppColors.danger,
-        ));
-        if (ok) context.read<AuthProvider>().refreshUser();
-      }
-    }
-  }
-
   Future<void> _releaseTask() async {
-    final task = _task;
-    if (task == null) return;
-
-    // Calculate penalty locally: 10% of total task value (matches backend logic)
-    final penalty = task.totalAmount * 0.10;
-    // Daily release count comes from the user profile (not the task object)
-    final releasesUsed = context.read<AuthProvider>().user?.dailyReleaseCount ?? 0;
-    final remaining = (Task.maxDailyReleases - releasesUsed).clamp(0, Task.maxDailyReleases);
-
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Release Task'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                  'Releasing a task without completing it will result in a penalty.'),
-              const SizedBox(height: 12),
-              if (penalty > 0)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.danger.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.warning_amber_rounded,
-                          color: AppColors.danger, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '₹${penalty.toStringAsFixed(0)} penalty will be deducted',
-                          style: const TextStyle(
-                            color: AppColors.danger,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 12),
-              Text(
-                'Releases today: $releasesUsed/${Task.maxDailyReleases}',
-                style: const TextStyle(fontSize: 12, color: AppColors.gray),
-              ),
-              if (remaining <= 1) ...[
-                const SizedBox(height: 4),
-                Text(
-                  remaining == 0
-                      ? '⚠️ No releases left today. Next release will trigger 48h suspension.'
-                      : '⚠️ $remaining release left. After that, 48h suspension activates.',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.danger,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+        content: const Text(
+            'Releasing a task without completing it may result in a penalty.\n\n'
+            'More than 3 releases may trigger a 48-hour account suspension.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -820,34 +510,11 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     if (confirm != true || !mounted) return;
 
     setState(() => _abandoning = true);
-    final result = await context.read<TaskProvider>().abandonTask(widget.taskId);
+    final ok = await context.read<TaskProvider>().abandonTask(widget.taskId);
     if (!mounted) return;
     setState(() => _abandoning = false);
-
-    if (result['success'] == true) {
-      // Refresh user profile so dailyReleaseCount is up to date
-      context.read<AuthProvider>().refreshUser();
-
-      final releasePenalty = result['releasePenalty'] as double? ?? 0.0;
-      final dailyCount = result['dailyReleaseCount'] as int? ?? 0;
-      final isSuspended = result['suspended'] == true;
-
-      // Show penalty/release summary before navigating away
-      if (mounted) {
-        final msg = releasePenalty > 0
-            ? '₹${releasePenalty.toStringAsFixed(0)} penalty deducted. Releases today: $dailyCount/${Task.maxDailyReleases}'
-                '${isSuspended ? ' — Account suspended 48h' : ''}'
-            : 'Task released. Releases today: $dailyCount/${Task.maxDailyReleases}';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: releasePenalty > 0 || isSuspended ? AppColors.danger : AppColors.gray,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-        await Future.delayed(const Duration(milliseconds: 600));
-      }
-      if (mounted) context.go('/my-tasks');
+    if (ok) {
+      context.go('/my-tasks');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -894,37 +561,43 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final task = _task!;
     final hasPhone = task.posterPhone != null && task.posterPhone!.trim().isNotEmpty;
     final busy = _submitting || _completing || _abandoning;
-    final netEarning = task.netEarning;
-    // Computed once to avoid calling avatarImage() twice — required because
-    // Flutter asserts backgroundImage != null when onBackgroundImageError is set.
-    final posterAvatarImg = avatarImage(task.posterAvatar);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Task In Progress'),
-        actions: [
-          if (_refreshing)
-            const Center(
+      bottomNavigationBar: _isPaymentReleased
+          ? SafeArea(
               child: Padding(
-                padding: EdgeInsets.only(right: 16),
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: GradientButton(
+                  label: 'Mark as Completed',
+                  loading: _completing,
+                  icon: Icons.check_circle_outline,
+                  onPressed: _completing ? () {} : _finalMarkComplete,
                 ),
               ),
             )
-          else
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Refresh',
-              onPressed: _manualRefresh,
-            ),
+          : null,
+      appBar: AppBar(
+        title: const Text('Task In Progress'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () {
+            if (GoRouter.of(context).canPop()) {
+              context.pop();
+            } else {
+              context.go('/my-tasks');
+            }
+          },
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: _load,
+          ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _manualRefresh,
+        onRefresh: _load,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
@@ -944,131 +617,31 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Delivery task (delivery / transport / pickup / moving):
-                      // show pickup and drop addresses with navigation buttons.
-                      if (task.isDeliveryType) ...[
-                        if (task.pickupAddress != null) ...[
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Icon(Icons.radio_button_checked,
-                                  color: AppColors.primary, size: 16),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('Pickup',
-                                        style: TextStyle(
-                                            color: AppColors.gray,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600)),
-                                    Text(task.pickupAddress!,
-                                        style: const TextStyle(
-                                            color: AppColors.dark,
-                                            fontSize: 13,
-                                            height: 1.3)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        // Drop address row (always shown for delivery tasks;
-                        // shows placeholder when poster hasn't set drop yet)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.location_on,
-                                color: AppColors.danger, size: 16),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Drop',
-                                      style: TextStyle(
-                                          color: AppColors.gray,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600)),
-                                  Text(
-                                    task.dropAddress ?? 'Drop location not set by poster',
-                                    style: TextStyle(
-                                        color: task.dropAddress != null
-                                            ? AppColors.dark
-                                            : AppColors.grayLight,
-                                        fontSize: 13,
-                                        height: 1.3),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        // Navigate to pickup location
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _openNavigation,
-                            icon: const Icon(Icons.navigation_rounded, size: 18),
-                            label: const Text('Navigate to Pickup'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
+                      if (task.address != null && task.address!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            task.address!,
+                            style: const TextStyle(
+                                color: AppColors.gray,
+                                fontSize: 13,
+                                height: 1.4),
                           ),
                         ),
-                        if (task.dropAddress != null || task.dropLatitude != null) ...[
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: task.dropAddress != null || task.dropLatitude != null
-                                  ? _openDropNavigation
-                                  : null,
-                              icon: const Icon(Icons.flag_outlined, size: 18),
-                              label: const Text('Navigate to Drop Location'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.danger,
-                                side: const BorderSide(color: AppColors.danger),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ] else ...[
-                        // Non-delivery task: single location
-                        if (task.address != null && task.address!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Text(
-                              task.address!,
-                              style: const TextStyle(
-                                  color: AppColors.gray,
-                                  fontSize: 13,
-                                  height: 1.4),
-                            ),
-                          ),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _openNavigation,
-                            icon: const Icon(Icons.navigation_rounded, size: 18),
-                            label: const Text('Navigate to Task Location'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _openNavigation,
+                          icon: const Icon(Icons.navigation_rounded, size: 18),
+                          label: const Text('Navigate to Task Location'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
@@ -1089,12 +662,17 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                           radius: 24,
                           backgroundColor:
                               AppColors.primary.withValues(alpha: 0.12),
-                          backgroundImage: posterAvatarImg,
-                          // onBackgroundImageError must be null when
-                          // backgroundImage is null (Flutter assertion).
+                          backgroundImage: (task.posterAvatar != null &&
+                                  task.posterAvatar!.isNotEmpty)
+                              ? NetworkImage(task.posterAvatar!)
+                              : null,
                           onBackgroundImageError:
-                              posterAvatarImg != null ? (_, __) {} : null,
-                          child: posterAvatarImg == null
+                              (task.posterAvatar != null &&
+                                      task.posterAvatar!.isNotEmpty)
+                                  ? (_, __) {}
+                                  : null,
+                          child: (task.posterAvatar == null ||
+                                  task.posterAvatar!.isEmpty)
                               ? Text(
                                   (task.posterName.isNotEmpty &&
                                           task.posterName != 'Anonymous')
@@ -1207,38 +785,12 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     ),
 
                     if (!hasPhone)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Contact info not yet available.',
-                                style: TextStyle(
-                                    color: AppColors.grayLight, fontSize: 11),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed:
-                                  _refreshing ? null : _manualRefresh,
-                              icon: _refreshing
-                                  ? const SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 1.5),
-                                    )
-                                  : const Icon(Icons.refresh, size: 14),
-                              label: Text(
-                                  _refreshing ? 'Refreshing…' : 'Refresh'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                visualDensity: VisualDensity.compact,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8),
-                              ),
-                            ),
-                          ],
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Contact number was not provided by the poster.',
+                          style:
+                              TextStyle(color: AppColors.grayLight, fontSize: 11),
                         ),
                       ),
                   ],
@@ -1257,7 +809,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     _DetailRow('Category', task.category),
                     const Divider(height: 14),
                     _DetailRow(
-                        'Net Earning', '₹${netEarning.toStringAsFixed(0)}'),
+                        'Earning', '₹${task.budget.toStringAsFixed(0)}'),
                     const Divider(height: 14),
                     _DetailRow('Status', task.statusLabel),
                     const Divider(height: 14),
@@ -1295,12 +847,12 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               ]
 
               // ── Phase 2: Waiting for poster to verify ─────────────────
-              else if (_isVerifyPending) ...[
+              else if (_isVerifyPending || _proofSubmitted) ...[
                 _buildWaitingBanner(task),
               ]
 
               // ── Phase 1: Actively working → Upload proof & submit ─────
-              else if (!_isDone) ...[
+              else if (!_isDone && !_proofSubmitted) ...[
                 // Proof upload section
                 const Text('Completion Proof',
                     style: TextStyle(
@@ -1325,6 +877,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                             height: 200,
                             width: double.infinity,
                             fit: BoxFit.cover,
+                            gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           )
                         : Image.file(
@@ -1332,6 +885,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                             height: 200,
                             width: double.infinity,
                             fit: BoxFit.cover,
+                            gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           ),
                   ),
@@ -1452,19 +1006,12 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               ],
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const Text('Net Earning',
-                  style: TextStyle(color: Colors.white70, fontSize: 10)),
-              Text(
-                '₹${task.netEarning.toStringAsFixed(0)}',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800),
-              ),
-            ],
+          Text(
+            '₹${task.budget.toStringAsFixed(0)}',
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -1521,17 +1068,24 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
             ],
           ),
           if (task.completionProof != null &&
-              task.completionProof!.isNotEmpty) ...[
+              task.completionProof!.isNotEmpty) ...[  // proof stored as base64 data URI or URL
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                task.completionProof!,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _proofErrorWidget(),
-              ),
+              child: _buildProofImage(task.completionProof!, height: 160),
+            ),
+            const SizedBox(height: 6),
+            const Text('Submitted proof photo',
+                style:
+                    TextStyle(color: AppColors.gray, fontSize: 11)),
+          ] else if (_submittedProofPath != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.file(File(_submittedProofPath!),
+                  height: 160, width: double.infinity, fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) => _proofErrorWidget()),
             ),
             const SizedBox(height: 6),
             const Text('Submitted proof photo',
@@ -1589,6 +1143,31 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
         ],
       ),
     );
+  }
+
+  /// Renders a proof image from either an HTTPS URL or a base64 data URI.
+  Widget _buildProofImage(String proof, {double height = 160}) {
+    final trimmed = proof.trim();
+    if (trimmed.startsWith('data:')) {
+      if (_cachedProofValue != trimmed) {
+        _syncProofCache(trimmed);
+      }
+      if (_cachedProofBytes != null) {
+        return Image.memory(_cachedProofBytes!,
+            height: height,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => _proofErrorWidget());
+      }
+      return _proofErrorWidget();
+    }
+    return Image.network(trimmed,
+        height: height,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => _proofErrorWidget());
   }
 
   Widget _proofErrorWidget() => Container(

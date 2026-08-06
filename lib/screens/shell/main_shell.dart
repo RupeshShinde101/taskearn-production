@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
 
 class MainShell extends StatefulWidget {
@@ -22,18 +25,28 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
   static const _channel = MethodChannel('com.workmate4u/navigation');
   int _currentIdx = 0;
   bool _keyboardVisible = false;
+  AuthProvider? _authListener;
+  bool _popupScheduled = false;
+  bool _popupActive = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _channel.setMethodCallHandler(_onNativeBack);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _authListener = context.read<AuthProvider>()
+        ..addListener(_onAuthStateChanged);
+      _onAuthStateChanged();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _channel.setMethodCallHandler(null);
+    _authListener?.removeListener(_onAuthStateChanged);
     super.dispose();
   }
 
@@ -78,12 +91,59 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
     return true;
   }
 
+  void _onAuthStateChanged() {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.isLoggedIn && !auth.cityVerified && !auth.cityRestricted && !_popupScheduled && !_popupActive) {
+      _popupScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _popupScheduled = false;
+        if (!mounted) return;
+        final a = context.read<AuthProvider>();
+        if (a.isLoggedIn && !a.cityVerified && !a.cityRestricted && !_popupActive) _showCityGatePopup();
+      });
+    }
+  }
+
+  void _showCityGatePopup() {
+    _popupActive = true;
+    final auth = context.read<AuthProvider>();
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => Positioned.fill(
+        child: _CityGatePopup(
+          onVerified: () {
+            _popupActive = false;
+            entry.remove();
+            auth.setCityVerified();
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('\u{1F4CD} You\'re in Pune! Welcome to Workmate4u.'),
+                backgroundColor: AppColors.success,
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          },
+          onExit: (reason) {
+            _popupActive = false;
+            entry.remove();
+            if (reason == 'blocked') { auth.setCityBlocked(); }
+            else { auth.setCityMismatch(); }
+          },
+        ),
+      ),
+    );
+    Overlay.of(context, rootOverlay: true).insert(entry);
+  }
+
   Future<bool?> _showExitDialog() {
     return showGeneralDialog<bool>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withOpacity(0.5),
+      barrierColor: Colors.black.withValues(alpha: 0.5),
       transitionDuration: const Duration(milliseconds: 280),
       transitionBuilder: (ctx, anim, _, child) {
         final curved = CurvedAnimation(
@@ -108,7 +168,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.18),
+                  color: AppColors.primary.withValues(alpha: 0.18),
                   blurRadius: 32,
                   offset: const Offset(0, 8),
                 ),
@@ -135,7 +195,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
                         width: 56,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
@@ -206,7 +266,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
                                 borderRadius: BorderRadius.circular(12),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.primary.withOpacity(0.35),
+                                    color: AppColors.primary.withValues(alpha: 0.35),
                                     blurRadius: 10,
                                     offset: const Offset(0, 4),
                                   ),
@@ -260,20 +320,42 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
     final location = GoRouterState.of(context).matchedLocation;
     final idx = _indexForPath(location);
     _currentIdx = idx;
 
-    // With extendBody:true, Flutter auto-adjusts MediaQuery.padding.bottom
-    // for the body to equal navbarHeight + safeAreaBottom, so every screen
-    // that reads MediaQuery.of(context).padding.bottom gets the right value.
+    Widget body = widget.child;
+    if (auth.isLoggedIn && auth.cityRestricted) {
+      body = Stack(
+        children: [
+          widget.child,
+          _CityGateRestrictionView(
+            onRetry: () {
+              setState(() => _popupScheduled = false);
+              context.read<AuthProvider>().resetCityGateForRetry();
+            },
+          ),
+        ],
+      );
+    }
+
     return Scaffold(
       extendBody: true,
-      body: widget.child,
+      body: body,
       bottomNavigationBar: _FloatingNavBar(
         selectedIndex: idx,
         onTabTap: _onTap,
-        onPostTap: () => context.push('/post-task'),
+        onPostTap: () {
+        if (!auth.cityVerified) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Verify your location first to post tasks.'),
+            behavior: SnackBarBehavior.floating,
+          ));
+          return;
+        }
+        context.push('/post-task');
+      },
       ),
     );
   }
@@ -394,8 +476,7 @@ class _NavBarPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _NavBarPainter old) => false;
 }
-
-// ── Center inline FAB ─────────────────────────────────────────────────────────
+// ── Center inline FAB ───────────────────────────────────────────────────
 
 class _CenterFab extends StatefulWidget {
   final VoidCallback onTap;
@@ -457,7 +538,6 @@ class _CenterFabState extends State<_CenterFab> {
     );
   }
 }
-
 // ── Tab item ──────────────────────────────────────────────────────────────────
 
 class _NavItem extends StatefulWidget {
@@ -569,6 +649,357 @@ class _NavItemState extends State<_NavItem>
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// City gate — popup (new user) + restriction view (blocked / mismatch)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Restriction view: covers tab content, navbar stays visible ──────────────
+class _CityGateRestrictionView extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _CityGateRestrictionView({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom + 88;
+    return Container(
+      color: Colors.white,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(24, 40, 24, bottomPad),
+        child: Center(
+          child: _CgBlockedCard(onRetry: onRetry),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Full-screen popup overlay (non-dismissible) ─────────────────────────────
+class _CityGatePopup extends StatefulWidget {
+  final VoidCallback onVerified;
+  final void Function(String reason) onExit;
+  const _CityGatePopup({required this.onVerified, required this.onExit});
+
+  @override
+  State<_CityGatePopup> createState() => _CityGatePopupState();
+}
+
+class _CityGatePopupState extends State<_CityGatePopup>
+    with WidgetsBindingObserver {
+  bool _loading = false;
+  String? _errorMsg;
+  bool _blocked = false;
+  bool _verified = false;
+
+  static const double _puneLat = 18.5204;
+  static const double _puneLng = 73.8567;
+  static const double _puneRadiusM = 50000.0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _verifyLocation());
+  }
+
+  @override
+  Future<bool> didPopRoute() async => !_verified;
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _verifyLocation() async {
+    if (!mounted) return;
+    setState(() { _loading = true; _errorMsg = null; _blocked = false; });
+    try {
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.deniedForever || perm == LocationPermission.denied) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _errorMsg = 'Location permission required.\nPlease enable it in Settings and try again.';
+        });
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 15),
+      );
+      final distM = Geolocator.distanceBetween(
+          pos.latitude, pos.longitude, _puneLat, _puneLng);
+      if (!mounted) return;
+      if (distM <= _puneRadiusM) {
+        setState(() { _loading = false; _verified = true; });
+        Future.delayed(const Duration(seconds: 2), () { if (mounted) widget.onVerified(); });
+      } else {
+        setState(() { _loading = false; _blocked = true; });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _errorMsg = 'Could not get your location.\nMake sure GPS is enabled and try again.';
+      });
+    }
+  }
+
+  void _onScrimTap() {}
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final topPad = MediaQuery.of(context).padding.top;
+
+    final card = AnimatedPadding(
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.fromLTRB(24, 40, 24, 40 + bottomInset),
+      child: Center(
+        child: _verified
+            ? const _CgVerifiedCard()
+            : _blocked
+                ? _CgBlockedCard(onAcknowledge: () => widget.onExit('blocked'))
+                : _CgCheckingCard(
+                    loading: _loading,
+                    errorMsg: _errorMsg,
+                    onRetry: _verifyLocation,
+                  ),
+      ),
+    );
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _onScrimTap,
+            child: Container(color: Colors.black.withValues(alpha: 0.65)),
+          ),
+        ),
+        card,
+        if (_errorMsg != null)
+          Positioned(
+            top: topPad + 16, left: 24, right: 24,
+            child: IgnorePointer(
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(_errorMsg!,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ── Input card ───────────────────────────────────────────────────────────────
+class _CgCheckingCard extends StatelessWidget {
+  final bool loading;
+  final String? errorMsg;
+  final VoidCallback onRetry;
+  const _CgCheckingCard({required this.loading, this.errorMsg, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = errorMsg != null;
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 76, height: 76,
+              decoration: BoxDecoration(
+                gradient: hasError ? null
+                    : const LinearGradient(colors: AppColors.gradient),
+                color: hasError
+                    ? AppColors.danger.withValues(alpha: 0.10) : null,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                hasError ? Icons.location_off_rounded : Icons.my_location_rounded,
+                color: hasError ? AppColors.danger : Colors.white,
+                size: 38,
+              ),
+            ),
+            const SizedBox(height: 22),
+            Text(
+              hasError ? 'Location Check Failed' : 'Checking Your Location',
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.dark),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              errorMsg ?? 'Please wait while we verify your location…',
+              style: const TextStyle(color: AppColors.gray, fontSize: 14, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 26),
+            if (loading)
+              const CircularProgressIndicator()
+            else if (hasError)
+              SizedBox(
+                width: double.infinity, height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  label: const Text('Try Again',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Blocked card (city ≠ Pune) ───────────────────────────────────────────────
+class _CgBlockedCard extends StatelessWidget {
+  final VoidCallback? onAcknowledge;
+  final VoidCallback? onRetry;
+  const _CgBlockedCard({this.onAcknowledge, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 84, height: 84,
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.12), shape: BoxShape.circle),
+              child: const Icon(Icons.location_off_rounded, color: AppColors.warning, size: 42),
+            ),
+            const SizedBox(height: 22),
+            const Text('Not Available Yet',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.dark),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 14),
+            const Text(
+              "We're not available in your city yet.\nWe'll be there soon! \u{1F680}",
+              style: TextStyle(fontSize: 15, color: AppColors.gray, height: 1.65),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 26),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.light, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Text('\u{1F4CD}  Currently serving: Pune only',
+                  style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.primary, fontSize: 13),
+                  textAlign: TextAlign.center),
+            ),
+            if (onAcknowledge != null) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity, height: 46,
+                child: OutlinedButton(
+                  onPressed: onAcknowledge,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Understood',
+                      style: TextStyle(color: AppColors.gray, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity, height: 46,
+                child: ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Check Again',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Verified / welcome card ──────────────────────────────────────────────────
+class _CgVerifiedCard extends StatelessWidget {
+  const _CgVerifiedCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 84, height: 84,
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.12), shape: BoxShape.circle),
+              child: const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 50),
+            ),
+            const SizedBox(height: 22),
+            const Text('Welcome to Workmate4u! \u{1F389}',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: AppColors.dark),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            const Text("Great news \u2014 you're in Pune!\nTaking you to the app\u2026",
+                style: TextStyle(fontSize: 15, color: AppColors.gray, height: 1.6),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            const CircularProgressIndicator(),
+          ],
+        ),
       ),
     );
   }

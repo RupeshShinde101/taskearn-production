@@ -61,4 +61,3 @@ class MainActivity : FlutterActivity() {
         super.onBackPressed()
     }
 }
-

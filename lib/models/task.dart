@@ -84,45 +84,81 @@ class Task {
     this.dailyReleasesUsed = 0,
   });
 
-  // Parse a date string that may be ISO-8601 or RFC-2822.
-  // PostgreSQL returns UTC timestamps WITHOUT a 'Z' suffix (e.g. "2026-07-13 10:30:00").
-  // DateTime.tryParse() without a timezone treats the string as LOCAL time.
-  // Fix: if no timezone marker is present, append 'Z' so Dart treats it as UTC
-  // and converts to local for display.
-  static bool _hasTimezone(String s) =>
-      s.endsWith('Z') ||
-      s.endsWith('z') ||
-      RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
+  // ── Timestamp parsing ────────────────────────────────────────────────────
+  // Handles three server formats:
+  //  1. ISO-8601 with timezone  "2026-07-12T10:30:00+00:00" / "...Z"
+  //  2. ISO-8601 naive (UTC)    "2026-07-12T10:30:00.123"   (no Z / offset)
+  //  3. RFC-1123 / HTTP-date    "Thu, 12 Jul 2026 10:30:00 GMT"  ← Flask 3 default
+  //
+  // Format 3 caused every task to show DateTime.now() on reopen because
+  // Dart's DateTime.tryParse does not understand HTTP-date strings.
 
+  /// Parse RFC-1123 / HTTP-date strings (Flask 3's default datetime format).
+  /// Returns a local DateTime, or null if the string doesn't match.
+  static DateTime? _parseRfc1123(String s) {
+    const months = <String, int>{
+      'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+      'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+    };
+    // Split on commas + whitespace, drop empties.
+    final parts = s.split(RegExp(r'[,\s]+')).where((p) => p.isNotEmpty).toList();
+    // With weekday:    ['Thu', '12', 'Jul', '2026', '10:30:00', 'GMT']
+    // Without weekday: ['12',  'Jul', '2026', '10:30:00', 'GMT']
+    final int dayIdx, monthIdx, yearIdx, timeIdx;
+    if (parts.length >= 6 && int.tryParse(parts[0]) == null) {
+      dayIdx = 1; monthIdx = 2; yearIdx = 3; timeIdx = 4;
+    } else if (parts.length >= 5) {
+      dayIdx = 0; monthIdx = 1; yearIdx = 2; timeIdx = 3;
+    } else {
+      return null;
+    }
+    final day   = int.tryParse(parts[dayIdx]);
+    final month = months[parts[monthIdx].toLowerCase()];
+    final year  = int.tryParse(parts[yearIdx]);
+    final tp    = parts[timeIdx].split(':');
+    if (day == null || month == null || year == null || tp.isEmpty) return null;
+    final hour   = int.tryParse(tp[0]);
+    final minute = tp.length > 1 ? int.tryParse(tp[1]) : 0;
+    final second = tp.length > 2 ? (int.tryParse(tp[2]) ?? 0) : 0;
+    if (hour == null || minute == null) return null;
+    // HTTP-date is always UTC; convert to device-local for display.
+    return DateTime.utc(year, month, day, hour, minute, second).toLocal();
+  }
+
+  /// Parse any date/time value the server may send and return a local DateTime.
   static DateTime _parseDate(dynamic value) {
     if (value == null) return DateTime.now().toUtc();
     final s = value.toString().trim();
     if (s.isEmpty) return DateTime.now().toUtc();
-    final DateTime? iso;
-    if (_hasTimezone(s)) {
-      iso = DateTime.tryParse(s);
-    } else {
-      // No timezone marker — server sends UTC; append 'Z' to parse correctly.
-      iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
+    // Detect an explicit timezone marker: trailing 'Z' or an offset like +05:30
+    final hasZone =
+        s.endsWith('Z') || RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
+    if (!hasZone) {
+      final utc = DateTime.tryParse('${s}Z');
+      if (utc != null) return utc; // already UTC (isUtc=true)
     }
-    // Always return UTC so microsecondsSinceEpoch gives the true epoch.
-    if (iso != null) return iso.isUtc ? iso : iso.toUtc();
-    return DateTime.now().toUtc();
+    final dt = DateTime.tryParse(s);
+    if (dt != null) return dt.isUtc ? dt : dt.toUtc();
+    // Last resort: RFC-1123 / HTTP-date from Flask's default JSON encoder.
+    return _parseRfc1123(s)?.toUtc() ?? DateTime.now().toUtc();
   }
 
-  /// Like [_parseDate] but returns null for null/empty/unparseable values.
+  /// Like [_parseDate] but returns null for null/empty/unparseable values
+  /// instead of falling back to DateTime.now().  Used for optional timestamps
+  /// (completedAt, acceptedAt) so we never invent a fake timestamp.
   static DateTime? _parseDateOrNull(dynamic value) {
     if (value == null) return null;
     final s = value.toString().trim();
     if (s.isEmpty) return null;
-    final DateTime? iso;
-    if (_hasTimezone(s)) {
-      iso = DateTime.tryParse(s);
-    } else {
-      iso = DateTime.tryParse('${s}Z') ?? DateTime.tryParse(s);
+    final hasZone =
+        s.endsWith('Z') || RegExp(r'[+\-]\d{2}:?\d{2}$').hasMatch(s);
+    if (!hasZone) {
+      final utc = DateTime.tryParse('${s}Z');
+      if (utc != null) return utc;
     }
-    if (iso == null) return null;
-    return iso.isUtc ? iso : iso.toUtc();
+    final dt = DateTime.tryParse(s);
+    if (dt != null) return dt.isUtc ? dt : dt.toUtc();
+    return _parseRfc1123(s)?.toUtc();
   }
 
   /// Returns the first non-empty string value found in [map] for any of [keys].
@@ -524,7 +560,7 @@ class TaskCategory {
 class TaskCategoryGroup {
   final String label;
   final String icon;
-  final List<String> categoryIds; // ids from TaskCategory.all
+  final List<String> categoryIds;
 
   const TaskCategoryGroup({
     required this.label,

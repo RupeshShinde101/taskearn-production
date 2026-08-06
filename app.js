@@ -2109,54 +2109,6 @@ async function refreshWalletBalance() {
 
 document.addEventListener('DOMContentLoaded', async function() {
     try {
-        // Check trial status — show closed overlay if trial is full or expired
-        (async function checkTrialStatus() {
-            try {
-                var apiBase = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ||
-                    (typeof window.TASKEARN_API_URL !== 'undefined' && window.TASKEARN_API_URL) ||
-                    'https://taskearn-production-production.up.railway.app/api';
-                var resp = await fetch(apiBase + '/trial/status');
-                if (!resp.ok) return; // trial endpoint missing → trial not active
-                var data = await resp.json();
-                if (!data.trial) return; // trial mode disabled by admin
-
-                // Show centred popup card with slots remaining — dismissible
-                if (data.active && !document.getElementById('trial-slots-banner') && !sessionStorage.getItem('trial-banner-dismissed')) {
-                    var overlay = document.createElement('div');
-                    overlay.id = 'trial-slots-banner';
-                    overlay.style.cssText = 'position:fixed;inset:0;z-index:89999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);';
-                    overlay.innerHTML = '<div style="position:relative;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:18px;padding:28px 32px 24px;max-width:320px;width:90%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.35);">' +
-                        '<button onclick="sessionStorage.setItem(\'trial-banner-dismissed\',\'1\');document.getElementById(\'trial-slots-banner\').remove()" style="position:absolute;top:12px;right:14px;background:rgba(255,255,255,0.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;" aria-label="Dismiss">&times;</button>' +
-                        '<div style="font-size:38px;margin-bottom:10px;">🚀</div>' +
-                        '<div style="font-size:17px;font-weight:700;margin-bottom:6px;">Closed Beta Trial</div>' +
-                        '<div style="font-size:28px;font-weight:800;margin:8px 0;"><strong>' + data.slotsRemaining + '</strong> <span style="font-size:15px;font-weight:500;">of ' + data.maxUsers + ' spots left</span></div>' +
-                        '<div style="font-size:13px;opacity:0.85;margin-bottom:18px;">Closes on <strong>' + data.endDate + '</strong></div>' +
-                        '<button onclick="sessionStorage.setItem(\'trial-banner-dismissed\',\'1\');document.getElementById(\'trial-slots-banner\').remove()" style="background:#fff;color:#6366f1;border:none;padding:10px 28px;border-radius:999px;font-weight:700;font-size:14px;cursor:pointer;">Got it!</button>' +
-                    '</div>';
-                    overlay.addEventListener('click', function(e) {
-                        if (e.target === overlay) { sessionStorage.setItem('trial-banner-dismissed','1'); overlay.remove(); }
-                    });
-                    document.body.appendChild(overlay);
-                }
-
-                // Full or expired — block new signups with overlay
-                if (!data.active) {
-                    var msg = data.expired
-                        ? 'The 30-day beta trial has ended.'
-                        : 'All 100 beta spots have been taken.';
-                    // Disable all signup buttons & forms instead of a hard block overlay
-                    document.querySelectorAll('#signupModal, [onclick*="signupModal"], [data-modal="signupModal"]').forEach(function(el) {
-                        el.style.pointerEvents = 'none'; el.style.opacity = '0.5';
-                    });
-                    // Show closed banner at bottom
-                    var closedBar = document.createElement('div');
-                    closedBar.id = 'trial-closed-banner';
-                    closedBar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:89999;background:#dc2626;color:#fff;text-align:center;font-size:13px;font-weight:600;padding:8px 16px;box-shadow:0 -2px 10px rgba(0,0,0,0.18);';
-                    closedBar.innerHTML = '🔒 Trial Closed &mdash; ' + msg + ' Public launch coming soon!';
-                    document.body.appendChild(closedBar);
-                }
-            } catch (e) { /* silently ignore — trial status fetch is non-critical */ }
-        })();
 
         console.log('🚀 Workmate4u Starting...');
         
@@ -5715,7 +5667,6 @@ async function handleSignup(event) {
 
     const firstName = document.getElementById('signupFirstName').value.trim();
     const lastName = document.getElementById('signupLastName').value.trim();
-    const inviteCode = (document.getElementById('signupInviteCode')?.value || '').trim().toUpperCase();
     const email = document.getElementById('signupEmail').value.trim();
     const password = document.getElementById('signupPassword').value;
     const phone = document.getElementById('signupPhone')?.value || '';
@@ -5758,7 +5709,6 @@ async function handleSignup(event) {
                 password: password,
                 phone: phone,
                 dob: dob,
-                invite_code: inviteCode
             });
             
             if (result.success) {
@@ -8457,35 +8407,12 @@ async function handleGoogleCredentialResponse(response) {
         return;
     }
 
-    // If the Google button is in the signup modal, grab the invite code
-    const signupModal = document.getElementById('signupModal');
-    const inviteField = document.getElementById('signupInviteCode');
-    const isSignupContext = signupModal && signupModal.classList.contains('active');
-    let inviteCode = '';
-
-    if (isSignupContext && inviteField) {
-        inviteCode = inviteField.value.trim().toUpperCase();
-        if (!inviteCode) {
-            // Scroll to and highlight the invite code field
-            inviteField.focus();
-            inviteField.style.borderColor = '#ef4444';
-            inviteField.style.boxShadow = '0 0 0 3px rgba(239,68,68,0.2)';
-            setTimeout(() => {
-                inviteField.style.borderColor = '';
-                inviteField.style.boxShadow = '';
-            }, 3000);
-            showToast('❌ Please enter your invite code first', 'error');
-            return;
-        }
-    }
-
     try {
         // Send the ID token (and invite code if present) to our backend
         const result = await apiRequest('/auth/google', {
             method: 'POST',
             body: JSON.stringify({
-                credential: response.credential,
-                invite_code: inviteCode
+                credential: response.credential
             })
         });
 

@@ -37,5 +37,6 @@ firebase-admin==6.5.0
 # Email Service
 sendgrid==6.11.0
 
-# Image processing for KYC quality checks (best-effort; backend works without it)
+# Image processing for KYC quality checks and OCR document number verification
 Pillow==10.4.0
+pytesseract==0.3.13

@@ -12,3 +12,5 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+# Allow the shared debug keystore so all team members use the same SHA-1
+!app/keystore/debug-keystore.jks

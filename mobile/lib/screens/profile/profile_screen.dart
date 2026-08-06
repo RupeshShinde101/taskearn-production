@@ -724,7 +724,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withOpacity(0.55),
+      barrierColor: Colors.black.withValues(alpha: 0.55),
       transitionDuration: const Duration(milliseconds: 260),
       transitionBuilder: (ctx, anim, _, child) {
         final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
@@ -747,7 +747,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.danger.withOpacity(0.18),
+                    color: AppColors.danger.withValues(alpha: 0.18),
                     blurRadius: 32,
                     offset: const Offset(0, 8),
                   ),
@@ -773,7 +773,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Container(
                           width: 60, height: 60,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.delete_forever_rounded,
@@ -906,7 +906,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: deleting ? [] : [
                                     BoxShadow(
-                                      color: AppColors.danger.withOpacity(0.35),
+                                      color: AppColors.danger.withValues(alpha: 0.35),
                                       blurRadius: 10,
                                       offset: const Offset(0, 4),
                                     )

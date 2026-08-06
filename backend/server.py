@@ -666,6 +666,30 @@ def _ensure_kyc_columns():
         print(f"⚠️ _ensure_kyc_columns error: {e}")
 
 
+_completion_proof_column_ensured = False
+
+def _ensure_completion_proof_column():
+    """Ensure completion_proof column exists in tasks table (idempotent)."""
+    global _completion_proof_column_ensured
+    if _completion_proof_column_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            if PH == '%s':
+                # PostgreSQL
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_proof TEXT")
+            else:
+                # SQLite
+                cursor.execute("PRAGMA table_info(tasks)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'completion_proof' not in cols:
+                    cursor.execute("ALTER TABLE tasks ADD COLUMN completion_proof TEXT")
+        _completion_proof_column_ensured = True
+        print("✅ completion_proof column verified")
+    except Exception as e:
+        print(f"⚠️ _ensure_completion_proof_column error: {e}")
+
+
 # ==========================================================
 # KYC validation helpers (anti-fraud)
 # ==========================================================
@@ -751,6 +775,57 @@ def _hash_kyc_image(b64_image):
         return hashlib.sha256(raw).hexdigest()
     except Exception:
         return None
+
+
+def _ocr_extract_document_number(b64_image, doc_type):
+    """Extract document number from image via OCR. Returns (number|None, status).
+    status: 'matched'|'extracted'|'none'|'unavailable'
+    Tries pytesseract; on any failure returns (None, 'unavailable').
+    """
+    try:
+        import pytesseract
+        from PIL import Image, ImageEnhance, ImageFilter
+        import base64, io, re
+
+        s = b64_image or ''
+        if ',' in s:
+            s = s.split(',', 1)[1]
+        raw = base64.b64decode(s, validate=False)
+        img = Image.open(io.BytesIO(raw)).convert('RGB')
+
+        # Scale up small images for better OCR accuracy
+        w, h = img.size
+        if w < 1000:
+            scale = 1000 / w
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+        gray = img.convert('L')
+        gray = ImageEnhance.Contrast(gray).enhance(2.5)
+        gray = gray.filter(ImageFilter.SHARPEN)
+
+        # --psm 11: sparse text (works well for documents with mixed layout)
+        text = pytesseract.image_to_string(gray, config='--psm 11 --oem 3')
+        clean = text.upper().replace(' ', '').replace('\n', '').replace('-', '').replace('.', '')
+
+        if doc_type == 'pan':
+            matches = re.findall(r'[A-Z]{5}[0-9]{4}[A-Z]', clean)
+        elif doc_type == 'aadhaar':
+            # Aadhaar may appear as 4-4-4 groups; collapse all digits then find 12-digit run
+            digits_only = re.sub(r'[^0-9]', '', text)
+            matches = re.findall(r'\d{12}', digits_only)
+        elif doc_type == 'voter_id':
+            matches = re.findall(r'[A-Z]{2,3}[0-9]{7}', clean)
+        elif doc_type == 'driving_license':
+            matches = re.findall(r'[A-Z]{2}[0-9]{13}', clean)
+        else:
+            matches = []
+
+        return (matches[0], 'extracted') if matches else (None, 'none')
+    except ImportError:
+        return None, 'unavailable'
+    except Exception as e:
+        print(f'[KYC OCR] error: {e}')
+        return None, 'unavailable'
 
 
 def generate_user_id():
@@ -3303,6 +3378,7 @@ def get_task(task_id):
                 'accepted_by': task.get('accepted_by'),
                 'is_paid': task.get('is_paid', False),
                 'status': task.get('status', 'active'),
+                'completion_proof': task.get('completion_proof'),
                 'postedAt': _iso(task.get('posted_at')),
                 'expiresAt': _iso(task.get('expires_at')),
                 'accepted_at': _iso(task.get('accepted_at')),
@@ -3502,6 +3578,8 @@ def get_task_details(task_id):
                     'address': task['location_address']
                 },
                 'status': task['status'],
+                'completion_proof': task.get('completion_proof'),
+                'poster_phone': task.get('provider_phone') or '',
                 'postedAt': task['posted_at'],
                 'accepted_at': task.get('accepted_at'),
                 'completed_at': task.get('completed_at'),
@@ -3524,6 +3602,27 @@ def get_task_details(task_id):
         })
 
 
+@app.route('/api/tasks/<int:task_id>/proofs', methods=['GET'])
+@require_auth
+def get_task_completion_proofs(task_id):
+    """Return the helper's submitted completion proof for a task."""
+    _ensure_completion_proof_column()
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(
+                f'SELECT completion_proof FROM tasks WHERE id = {PH}',
+                (task_id,)
+            )
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': True, 'proofs': []})
+        proof = row['completion_proof'] if isinstance(row, dict) else row[0]
+        proofs = [proof] if proof else []
+        return jsonify({'success': True, 'proofs': proofs})
+    except Exception as e:
+        return jsonify({'success': True, 'proofs': []})
+
+
 @app.route('/api/tasks/<int:task_id>/complete', methods=['POST'])
 @require_auth
 def complete_task(task_id):
@@ -3533,12 +3632,27 @@ def complete_task(task_id):
     - Sets task status to 'completed'
     - Creates a 'Pay Now' notification for the poster
     """
+    _ensure_completion_proof_column()
     try:
         print(f"\n{'='*60}")
         print(f"📋 Marking Task {task_id} as Completed")
         print(f"Helper: {request.user_id}")
         print('='*60)
-        
+
+        # Accept proof image via multipart or JSON base64
+        import base64 as _b64
+        proof_data_uri = None
+        content_type = request.content_type or ''
+        if 'multipart/form-data' in content_type:
+            f = request.files.get('proofImage')
+            if f:
+                raw = f.read()
+                mime = (f.content_type or 'image/jpeg').split(';')[0].strip()
+                proof_data_uri = f'data:{mime};base64,{_b64.b64encode(raw).decode()}'
+        else:
+            body = request.get_json(silent=True) or {}
+            proof_data_uri = body.get('proofImage') or body.get('proof_image')
+
         with get_db() as (cursor, conn):
             # Check if task exists and is accepted by current user (the helper)
             cursor.execute(f'''
@@ -3575,11 +3689,11 @@ def complete_task(task_id):
             # ===== UPDATE TASK STATUS TO 'completed' =====
             cursor.execute(f'''
                 UPDATE tasks
-                SET status = 'completed', completed_at = {PH}
+                SET status = 'completed', completed_at = {PH}, completion_proof = {PH}
                 WHERE id = {PH}
-            ''', (now, task_id))
+            ''', (now, proof_data_uri, task_id))
             
-            print(f"   ✅ Task status updated to 'completed'")
+            print(f"   ✅ Task status updated to 'completed' (proof={'yes' if proof_data_uri else 'none'})")
             
             # ===== CREATE NOTIFICATION FOR POSTER =====
             cursor.execute(f'SELECT name FROM users WHERE id = {PH}', (helper_id,))
@@ -4089,7 +4203,7 @@ def pay_helper(task_id):
             print(f"   Accepted by: {task['accepted_by']}")
 
             # Accept verify_pending (new flow) OR completed (legacy flow)
-            is_new_flow = task['status'] == 'verify_pending'
+            is_new_flow = task['status'] in ('verify_pending', 'completed')
             if task['status'] not in ('verify_pending', 'completed'):
                 print(f"❌ Task status not payable (status: {task['status']})")
                 return jsonify({'success': False, 'message': 'Task must be verified or completed first'}), 400
@@ -4476,13 +4590,18 @@ def get_user_tasks():
             import threading as _th
             _th.Thread(target=_bg_cleanup, daemon=True).start()
 
-        # Posted tasks — exclude tasks removed/flagged by admin/AI (those are deleted or hidden)
+        # Posted tasks — active only; exclude admin-removed, completed and cancelled tasks.
         cursor.execute(f'''
             SELECT t.*, u.name as helper_name, u.phone as helper_phone,
                    u.rating as helper_rating, u.tasks_completed as helper_tasks_completed
             FROM tasks t
             LEFT JOIN users u ON t.accepted_by = u.id
-            WHERE t.posted_by = {PH} AND t.status NOT IN ('removed', 'flagged', 'suspicious')
+            WHERE t.posted_by = {PH}
+              AND t.status NOT IN (
+                'removed', 'flagged', 'suspicious',
+                'done', 'finished', 'paid', 'verified',
+                'cancelled', 'poster_cancelled', 'rejected', 'expired'
+              )
             ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
@@ -10618,9 +10737,28 @@ def submit_kyc():
             'message': 'This document number is already registered with another account. If you believe this is wrong, contact support.',
         }), 409
 
-    # Decide final status: pending if any quality flag, else verified
-    final_status = 'pending' if flags else 'verified'
-    flag_reason_text = '; '.join(flags) if flags else None
+    # OCR: extract document number from front image and compare with entered number
+    ocr_number, ocr_status = _ocr_extract_document_number(doc_image_front, doc_type)
+
+    if ocr_status == 'unavailable':
+        # Tesseract not available on this deployment — fall back to manual review
+        final_status = 'pending'
+        ocr_flag = 'OCR unavailable; admin must verify number matches image'
+    elif ocr_number is None:
+        # OCR ran but couldn't find a recognisable number in the image
+        final_status = 'pending'
+        ocr_flag = 'OCR could not read document number from image; admin verification required'
+    elif ocr_number == doc_number_norm:
+        # Numbers match — auto-approve if image quality is also clean
+        final_status = 'pending' if flags else 'verified'
+        ocr_flag = None
+    else:
+        # Mismatch: the number typed doesn't match the number on the document
+        final_status = 'pending'
+        ocr_flag = f'Number mismatch: entered {doc_number_norm}, found in image {ocr_number}'
+
+    all_flags = flags + ([ocr_flag] if ocr_flag else [])
+    flag_reason_text = '; '.join(all_flags) if all_flags else None
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -10640,7 +10778,7 @@ def submit_kyc():
 
             # Notify user
             if final_status == 'verified':
-                user_msg = '✅ Your KYC verification has been approved!'
+                user_msg = '✅ Your KYC has been verified automatically. Your identity is confirmed!'
             else:
                 user_msg = '📝 KYC received. Our team will review your documents shortly (usually within 24 hours).'
             cursor.execute(f'''
@@ -10648,15 +10786,17 @@ def submit_kyc():
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (request.user_id, 'kyc_result', 'KYC Verification Update', user_msg, 'unread', now))
 
-            # Log for admin
-            admin_msg = f'User {request.user_id} submitted {doc_type} — '
-            admin_msg += 'auto-verified' if final_status == 'verified' else f'pending review ({flag_reason_text})'
+            # Admin notification
+            if final_status == 'verified':
+                admin_title = '✅ KYC Auto-Verified'
+                admin_msg = f'User {request.user_id} submitted {doc_type} ({doc_number_norm}) — OCR matched, auto-approved.'
+            else:
+                admin_title = '⚠️ KYC Needs Review'
+                admin_msg = f'User {request.user_id} submitted {doc_type} ({doc_number_norm}) — {flag_reason_text}'
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', ('1', 'kyc_request',
-                  '📋 KYC Submitted' if final_status == 'verified' else '⚠️ KYC Needs Review',
-                  admin_msg, 'unread', now))
+            ''', ('1', 'kyc_request', admin_title, admin_msg, 'unread', now))
 
         if final_status == 'verified':
             return jsonify({'success': True, 'message': 'KYC verified successfully! Your identity has been confirmed.', 'status': 'verified'})
@@ -10704,6 +10844,42 @@ def get_kyc_status():
         return jsonify({'success': False, 'message': 'Failed to get KYC status'}), 500
 
 
+@app.route('/api/admin/kyc/pending', methods=['GET'])
+@require_admin
+def admin_list_pending_kyc():
+    """Admin: list all KYC submissions awaiting review."""
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, name, phone, email, kyc_document_type, kyc_document_number,
+                       kyc_status, kyc_verified_at, kyc_acknowledged_at, kyc_flag_reason
+                FROM users
+                WHERE kyc_status IN ('pending', 'rejected')
+                ORDER BY kyc_acknowledged_at DESC NULLS LAST
+            ''')
+            rows = cursor.fetchall()
+        return jsonify({
+            'success': True,
+            'submissions': [
+                {
+                    'userId': dict_from_row(r).get('id'),
+                    'name': dict_from_row(r).get('name'),
+                    'phone': dict_from_row(r).get('phone'),
+                    'email': dict_from_row(r).get('email'),
+                    'documentType': dict_from_row(r).get('kyc_document_type'),
+                    'documentNumber': dict_from_row(r).get('kyc_document_number'),
+                    'status': dict_from_row(r).get('kyc_status'),
+                    'acknowledgedAt': dict_from_row(r).get('kyc_acknowledged_at'),
+                    'flagReason': dict_from_row(r).get('kyc_flag_reason'),
+                }
+                for r in rows
+            ]
+        })
+    except Exception as e:
+        print(f'[ADMIN KYC LIST] {e}')
+        return jsonify({'success': False, 'message': 'Failed to load KYC submissions'}), 500
+
+
 @app.route('/api/admin/user/<user_id>/kyc', methods=['GET'])
 @require_admin
 def admin_get_user_kyc(user_id):
@@ -10712,7 +10888,8 @@ def admin_get_user_kyc(user_id):
         with get_db() as (cursor, conn):
             cursor.execute(f'''
                 SELECT name, email, kyc_status, kyc_document_type, kyc_document_number,
-                       kyc_document_image, kyc_document_image_back, kyc_verified_at
+                       kyc_document_image, kyc_document_image_back, kyc_verified_at,
+                       kyc_acknowledged_at, kyc_flag_reason
                 FROM users WHERE id = {PH}
             ''', (user_id,))
             row = cursor.fetchone()
@@ -10730,7 +10907,9 @@ def admin_get_user_kyc(user_id):
                 'documentNumber': user_data.get('kyc_document_number'),
                 'documentImageFront': user_data.get('kyc_document_image'),
                 'documentImageBack': user_data.get('kyc_document_image_back'),
-                'verifiedAt': user_data.get('kyc_verified_at')
+                'verifiedAt': user_data.get('kyc_verified_at'),
+                'acknowledgedAt': user_data.get('kyc_acknowledged_at'),
+                'flagReason': user_data.get('kyc_flag_reason'),
             }
         })
     except Exception as e:
@@ -10743,22 +10922,24 @@ def admin_verify_kyc(user_id):
     """Admin: approve or reject KYC (admin)"""
     data = request.get_json()
     action = data.get('action', 'approve')  # approve or reject
+    reject_reason = (data.get('reason') or '').strip()
 
     try:
         with get_db() as (cursor, conn):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             if action == 'approve':
                 cursor.execute(f'''
-                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}
+                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}, kyc_flag_reason = NULL
                     WHERE id = {PH}
                 ''', (now, user_id))
                 msg = '✅ Your KYC verification has been approved!'
             else:
+                flag = reject_reason or 'Rejected by admin'
                 cursor.execute(f'''
-                    UPDATE users SET kyc_status = 'rejected'
+                    UPDATE users SET kyc_status = 'rejected', kyc_flag_reason = {PH}
                     WHERE id = {PH}
-                ''', (user_id,))
-                msg = '❌ Your KYC verification was rejected. Please resubmit.'
+                ''', (flag, user_id))
+                msg = f'❌ Your KYC was rejected: {flag}. Please resubmit with correct documents.'
 
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)

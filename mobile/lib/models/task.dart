@@ -194,8 +194,9 @@ class Task {
     // The API may return the poster as any of: postedBy, poster, posted_by
     // (populated nested object) OR as flat poster_id / poster_name fields.
     // MongoDB uses _id; SQL APIs use id. Handle all variants.
+    // Also check 'provider' which /tasks/<id>/details uses for the poster object.
     final dynamic postedByRaw =
-        json['postedBy'] ?? json['poster'] ?? json['posted_by'];
+        json['postedBy'] ?? json['poster'] ?? json['posted_by'] ?? json['provider'];
     final Map<String, dynamic>? postedBy =
         postedByRaw is Map<String, dynamic> ? postedByRaw : null;
 

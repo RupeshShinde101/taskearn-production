@@ -6,7 +6,9 @@ import 'package:latlong2/latlong.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../services/location_service.dart';
+import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/map_location_picker.dart';
@@ -23,31 +25,46 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _budgetCtrl = TextEditingController();
+
+  // FocusNodes so we can jump cursor to the first invalid field
+  final _titleFocus   = FocusNode();
+  final _descFocus    = FocusNode();
+  final _budgetFocus  = FocusNode();
+  final _pickupFocus  = FocusNode();
+  final _dropFocus    = FocusNode();
   final _addressCtrl = TextEditingController();
   final _flatNameCtrl = TextEditingController();
   final _areaCtrl    = TextEditingController();
-  String _addressType = 'home';
   // Delivery-specific: separate pickup & drop location fields
   final _pickupAddrCtrl = TextEditingController();
-  final _dropAddrCtrl = TextEditingController();
+  final _pickupFlatCtrl = TextEditingController();
+  final _pickupAreaCtrl = TextEditingController();
+  final _dropAddrCtrl   = TextEditingController();
+  final _dropFlatCtrl   = TextEditingController();
+  final _dropAreaCtrl   = TextEditingController();
 
   String _selectedCategory = 'delivery';
-  /// Stores the last template auto-filled into the description field so we can
-  /// detect whether the user has modified it before replacing on category change.
-  String _lastAutoFilledDesc = '';
   final _categorySearchCtrl = TextEditingController();
   String _categorySearch = '';
   LatLng? _location;
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
   bool _gettingLocation = false;
-  final bool _showAllCategories = false;
+  // _showAllCategories removed (unused)
   // Per-field lat/lng for delivery categories
   LatLng? _pickupLocation;
   LatLng? _dropLocation;
   bool _gettingPickupGps = false;
   bool _gettingDropGps = false;
   double? _calculatedDistanceKm;
+
+  // ─── Saved locations ────────────────────────────────────
+  List<Map<String, dynamic>> _savedLocations = [];
+  bool _showSavePrompt       = false; // non-delivery
+  bool _showPickupSavePrompt = false; // pickup
+  bool _showDropSavePrompt   = false; // drop
+
+  final _scrollCtrl = ScrollController();
 
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
@@ -103,14 +120,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     } else {
       setState(() => _calculatedDistanceKm = null);
     }
-  }
-
-  void _appendPrompt(String text) {
-    final current = _descCtrl.text.trimRight();
-    _descCtrl.text = current.isEmpty ? '$text: ' : '$current\n$text: ';
-    _descCtrl.selection =
-        TextSelection.fromPosition(TextPosition(offset: _descCtrl.text.length));
-    setState(() {});
   }
 
   /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
@@ -296,18 +305,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   /// Auto-fill description with category-specific prompts/questions.
-  /// Called when a category is selected to guide the user on what to describe.
-  /// Replaces the description if it is still the previously auto-filled template
-  /// (i.e. the user hasn't typed any custom content), otherwise leaves it alone.
-  void _autoFillDescription() {
+  /// Only fills if description is empty or still contains the previous template.
+  void _autoFillDescription({bool force = false}) {
     final prompts = _prompts[_selectedCategory];
     if (prompts == null || prompts.isEmpty) return;
-    final newTemplate = prompts.join('\n');
+    final newTemplate = prompts.map((p) => 'Q: $p\nA: ').join('\n\n');
     final current = _descCtrl.text;
-    // Replace when: field is empty OR it still contains the last auto-filled template
-    if (current.trim().isEmpty || current == _lastAutoFilledDesc) {
+    // Don't overwrite if user has typed their own content
+    final isEmpty = current.trim().isEmpty;
+    final isTemplate = current.contains('Q: ') && current.contains('\nA: ');
+    if (force || isEmpty || isTemplate) {
       _descCtrl.text = newTemplate;
-      _lastAutoFilledDesc = newTemplate;
       _descCtrl.selection =
           TextSelection.fromPosition(const TextPosition(offset: 0));
     }
@@ -317,6 +325,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void initState() {
     super.initState();
     _getLocation();
+    _savedLocations = StorageService.getSavedLocations();
     // Auto-fill description with prompts for the default category on first open
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillDescription());
   }
@@ -326,12 +335,456 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _titleCtrl.dispose();
     _descCtrl.dispose();
     _budgetCtrl.dispose();
+    _titleFocus.dispose();
+    _descFocus.dispose();
+    _budgetFocus.dispose();
+    _pickupFocus.dispose();
+    _dropFocus.dispose();
     _addressCtrl.dispose();
     _flatNameCtrl.dispose();
     _areaCtrl.dispose();
     _pickupAddrCtrl.dispose();
+    _pickupFlatCtrl.dispose();
+    _pickupAreaCtrl.dispose();
     _dropAddrCtrl.dispose();
+    _dropFlatCtrl.dispose();
+    _dropAreaCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  // ─── Saved Locations helpers ──────────────────────────────────
+  void _loadSavedLocations() {
+    setState(() => _savedLocations = StorageService.getSavedLocations());
+  }
+
+  void _fillFromSaved(Map<String, dynamic> loc) {
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+    setState(() {
+      _location = (lat != null && lng != null) ? LatLng(lat, lng) : null;
+      _locationLabel = loc['address'] as String?;
+      _addressCtrl.text = (loc['address'] as String?) ?? '';
+      _flatNameCtrl.text = (loc['flat'] as String?) ?? '';
+      _areaCtrl.text = (loc['area'] as String?) ?? '';
+      _showSavePrompt = false;
+    });
+  }
+
+  IconData _iconForLabel(String label) {
+    final l = label.toLowerCase();
+    if (l.contains('home') || l.contains('house')) return Icons.home_rounded;
+    if (l.contains('work') || l.contains('office')) return Icons.work_rounded;
+    return Icons.location_on_rounded;
+  }
+
+  Future<void> _showSaveDialog() async {
+    // Require at least one text field to have content
+    final hasText = _addressCtrl.text.trim().isNotEmpty ||
+        _flatNameCtrl.text.trim().isNotEmpty ||
+        _areaCtrl.text.trim().isNotEmpty;
+    if (!hasText) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Please fill in at least the address or area before saving.'),
+          duration: Duration(seconds: 2)));
+      return;
+    }
+    final nameCtrl = TextEditingController();
+    String selectedType = 'Home';
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Save Address',
+              style:
+                  TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Quick labels:',
+                  style: TextStyle(fontSize: 12, color: AppColors.gray)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: ['Home', 'Work', 'Other'].map((t) {
+                  final sel = selectedType == t;
+                  return GestureDetector(
+                    onTap: () => setDlg(() {
+                      selectedType = t;
+                      if (t != 'Other') nameCtrl.text = t;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: sel
+                            ? AppColors.primary
+                            : AppColors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: AppColors.primary.withValues(
+                                alpha: sel ? 1.0 : 0.3)),
+                      ),
+                      child: Text(t,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: sel ? Colors.white : AppColors.primary)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Address name',
+                  hintText: 'e.g. Home, Office, Mom\'s place',
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10))),
+                child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    final label =
+        nameCtrl.text.trim().isEmpty ? 'Saved' : nameCtrl.text.trim();
+    await StorageService.addSavedLocation({
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'label': label,
+      'address': _addressCtrl.text.trim(),
+      'flat': _flatNameCtrl.text.trim(),
+      'area': _areaCtrl.text.trim(),
+      'lat': _location?.latitude,
+      'lng': _location?.longitude,
+    });
+    _loadSavedLocations();
+    setState(() => _showSavePrompt = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('\u201c$label\u201d saved!'),
+          duration: const Duration(seconds: 2)));
+    }
+  }
+
+  // ─── Generic save helper used by pickup / drop ───────────────────────────
+
+  // ─── Long-press options (Edit / Remove) for any saved address chip ────────
+  Future<void> _addressOptions(Map<String, dynamic> loc) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Row(children: [
+                const Icon(Icons.bookmark_rounded,
+                    size: 18, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(loc['label'] as String? ?? 'Saved',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Color(0xFF1E293B))),
+                ),
+              ]),
+            ),
+            if ((loc['address'] as String?)?.isNotEmpty == true)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(loc['address'] as String,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF64748B))),
+              ),
+            const Divider(height: 20),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined,
+                  color: AppColors.primary),
+              title: const Text('Edit address',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.pop(ctx, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded,
+                  color: AppColors.danger),
+              title: const Text('Remove',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.danger)),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'edit') {
+      await _editSavedLocation(loc);
+    } else if (action == 'delete') {
+      await StorageService.deleteSavedLocation(loc['id'] as String);
+      _loadSavedLocations();
+    }
+  }
+
+  Future<void> _editSavedLocation(Map<String, dynamic> loc) async {
+    final labelCtrl =
+        TextEditingController(text: loc['label'] as String? ?? '');
+    final addrCtrl =
+        TextEditingController(text: loc['address'] as String? ?? '');
+    final flatCtrl =
+        TextEditingController(text: loc['flat'] as String? ?? '');
+    final areaCtrl =
+        TextEditingController(text: loc['area'] as String? ?? '');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Edit Address',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: labelCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Label',
+                  hintText: 'e.g. Home, Office',
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: addrCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Address / Landmark',
+                  prefixIcon: Icon(Icons.location_on_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: flatCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Flat / House / Building',
+                  prefixIcon: Icon(Icons.home_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: areaCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Area / Sector / Locality',
+                  prefixIcon: Icon(Icons.map_outlined),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved != true || !mounted) return;
+    await StorageService.addSavedLocation({
+      'id': loc['id'],
+      'label': labelCtrl.text.trim().isEmpty
+          ? 'Saved'
+          : labelCtrl.text.trim(),
+      'address': addrCtrl.text.trim(),
+      'flat': flatCtrl.text.trim(),
+      'area': areaCtrl.text.trim(),
+      'lat': loc['lat'],
+      'lng': loc['lng'],
+    });
+    _loadSavedLocations();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Address updated!'),
+          duration: Duration(seconds: 2)));
+    }
+  }
+
+  // ─── Generic save helper used by pickup / drop ────────────────────────
+  Future<void> _saveAddressEntry({
+    required String address,
+    required String flat,
+    required String area,
+    required double? lat,
+    required double? lng,
+    required VoidCallback onSaved,
+  }) async {
+    // Require at least one text field to have content
+    if (address.isEmpty && flat.isEmpty && area.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Please fill in at least the address or area before saving.'),
+          duration: Duration(seconds: 2)));
+      return;
+    }
+    final nameCtrl = TextEditingController();
+    String selectedType = 'Home';
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Save Address',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Quick labels:',
+                  style: TextStyle(fontSize: 12, color: AppColors.gray)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: ['Home', 'Work', 'Other'].map((t) {
+                  final sel = selectedType == t;
+                  return GestureDetector(
+                    onTap: () => setDlg(() {
+                      selectedType = t;
+                      if (t != 'Other') nameCtrl.text = t;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: sel ? AppColors.primary : AppColors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.primary.withValues(alpha: sel ? 1.0 : 0.3)),
+                      ),
+                      child: Text(t,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: sel ? Colors.white : AppColors.primary)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Address name',
+                  hintText: 'e.g. Home, Office, Mom\'s place',
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    final label = nameCtrl.text.trim().isEmpty ? 'Saved' : nameCtrl.text.trim();
+    await StorageService.addSavedLocation({
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'label': label,
+      'address': address,
+      'flat': flat,
+      'area': area,
+      'lat': lat,
+      'lng': lng,
+    });
+    _loadSavedLocations();
+    onSaved();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('\u201c$label\u201d saved!'),
+          duration: const Duration(seconds: 2)));
+    }
+  }
+
+  void _fillPickupFromSaved(Map<String, dynamic> loc) {
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+    setState(() {
+      if (lat != null && lng != null) {
+        _pickupLocation = LatLng(lat, lng);
+        _location ??= _pickupLocation;
+      }
+      _pickupAddrCtrl.text = (loc['address'] as String?) ?? '';
+      _pickupFlatCtrl.text = (loc['flat'] as String?) ?? '';
+      _pickupAreaCtrl.text = (loc['area'] as String?) ?? '';
+      _showPickupSavePrompt = false;
+    });
+    _recalcDistance();
+  }
+
+  void _fillDropFromSaved(Map<String, dynamic> loc) {
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+    setState(() {
+      if (lat != null && lng != null) _dropLocation = LatLng(lat, lng);
+      _dropAddrCtrl.text = (loc['address'] as String?) ?? '';
+      _dropFlatCtrl.text = (loc['flat'] as String?) ?? '';
+      _dropAreaCtrl.text = (loc['area'] as String?) ?? '';
+      _showDropSavePrompt = false;
+    });
+    _recalcDistance();
   }
 
   Future<void> _getLocation() async {
@@ -340,9 +793,22 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (!mounted) return;
     if (loc == null) {
       setState(() => _gettingLocation = false);
+      if (!mounted) return;
+      // Distinguish: permission denied vs GPS signal unavailable
+      final perm = await Geolocator.checkPermission();
+      if (!mounted) return;
+      final msg = (perm == LocationPermission.denied || perm == LocationPermission.deniedForever)
+          ? 'Location permission denied. Please allow in Settings.'
+          : 'Unable to get GPS. Make sure location is ON and try again.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not get GPS. Enable location permission.'),
+        SnackBar(
+          content: Text(msg),
+          action: (perm == LocationPermission.deniedForever)
+              ? const SnackBarAction(
+                  label: 'Settings',
+                  onPressed: Geolocator.openAppSettings,
+                )
+              : null,
         ),
       );
       return;
@@ -351,6 +817,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       _location = loc;
       _locationLabel = null;
       _gettingLocation = false;
+      _showSavePrompt = true; // offer to save
     });
     try {
       final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
@@ -368,13 +835,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _addressCtrl.text = addr;
           }
           // Auto-fill Area field with subLocality + locality
-          if (_areaCtrl.text.isEmpty) {
-            final areaStr = [p.subLocality, p.locality, p.administrativeArea]
-                .where((s) => s != null && s.isNotEmpty)
-                .map((s) => s!)
-                .join(', ');
-            if (areaStr.isNotEmpty) _areaCtrl.text = areaStr;
-          }
+          // (intentionally removed — area stays empty for user to fill)
         }
       }
     } catch (_) {}
@@ -394,11 +855,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _location = result['location'] as LatLng;
         _locationLabel = addr;
         if (!_isDelivery && addr != null) _addressCtrl.text = addr;
+        _showSavePrompt = true; // offer to save
       });
-      // Auto-fill Area field when empty
-      if (_areaCtrl.text.isEmpty && addr != null) {
-        _areaCtrl.text = addr;
-      }
     }
   }
 
@@ -417,6 +875,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _pickupLocation = result['location'] as LatLng;
         _location ??= _pickupLocation;
         if (addr != null && addr.isNotEmpty) _pickupAddrCtrl.text = addr;
+        _showPickupSavePrompt = true;
       });
       _recalcDistance();
     }
@@ -436,6 +895,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       setState(() {
         _dropLocation = result['location'] as LatLng;
         if (addr != null && addr.isNotEmpty) _dropAddrCtrl.text = addr;
+        _showDropSavePrompt = true;
       });
       _recalcDistance();
     }
@@ -469,7 +929,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');
         if (mounted) {
-          setState(() => _gettingPickupGps = false);
+          setState(() { _gettingPickupGps = false; _showPickupSavePrompt = true; });
           if (addr != null) _pickupAddrCtrl.text = addr;
         }
       } else {
@@ -505,7 +965,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             .toList();
         final addr = parts.isEmpty ? null : parts.join(', ');
         if (mounted) {
-          setState(() => _gettingDropGps = false);
+          setState(() { _gettingDropGps = false; _showDropSavePrompt = true; });
           if (addr != null) _dropAddrCtrl.text = addr;
         }
       } else {
@@ -517,6 +977,121 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   /// Returns a rejection reason string if content is flagged, or null if OK.
+  // ─── Task title validation: ban gibberish + bad/illegal words ──────────────
+  static String? _validateTaskTitle(String? value) {
+    if (value == null) return 'Min 5 characters';
+    final v = value.trim();
+    if (v.length < 5) return 'Min 5 characters';
+
+    final lower = v.toLowerCase();
+
+    // 1. Bad / illegal / offensive words
+    const badWords = [
+      'fuck', 'shit', 'bitch', 'bastard', 'asshole', 'dick', 'pussy',
+      'cunt', 'whore', 'slut', 'nigger', 'faggot', 'retard', 'sex',
+      'porn', 'nude', 'rape', 'kill', 'murder', 'bomb', 'drug',
+      'cocaine', 'heroin', 'weed', 'ganja', 'terrorist', 'jihad',
+      'chutiya', 'madarchod', 'bhenchod', 'bhosdike', 'randi',
+      'gaandu', 'harami', 'saala', 'kamina', 'kutte',
+    ];
+    for (final word in badWords) {
+      if (lower.contains(word)) {
+        return 'Task name contains inappropriate words. Please use a proper title.';
+      }
+    }
+
+    // 1b. Scam / fraud / crypto / loan keywords — not allowed as task titles
+    const scamWords = [
+      // Cryptocurrency & Bitcoin scams
+      'crypto', 'bitcoin', 'btc', 'usdt', 'ethereum', 'eth',
+      'litecoin', 'dogecoin', 'doge', 'nft', 'binance', 'tether',
+      'xrp', 'bnb', 'shiba', 'solana', 'altcoin', 'defi', 'web3',
+      'blockchain invest', 'coin invest', 'token invest',
+      'rug pull', 'crypto doubler', 'recovery agent',
+      'airdrop claim', 'airdrop', 'pump and dump', 'pump dump',
+      'wallet validation', 'seed phrase', 'mining pool',
+      'crypto recovery', 'bitcoin recovery', 'wallet recovery',
+      // Loans & financial scams
+      'loan', 'earn', 'earning', 'loans', 'instant loan', 'quick loan', 'easy loan',
+      'personal loan', 'business loan', 'money lend', 'lending money',
+      'no credit check', 'guaranteed approval', 'upfront deposit',
+      'payday relief', 'debt erasure', 'pre-approved offer',
+      'processing fee', 'pre approved',
+      // Fraud / scam indicators
+      'fraud', 'scam', 'phishing', 'phishing link', 'ponzi', 'pyramid scheme',
+      'mlm', 'cheat', 'cheating', 'black money', 'money double',
+      'double money', 'invest now', 'guaranteed return', 'guaranteed profit',
+      'guaranteed returns', 'get rich quick', 'easy money', 'fast money',
+      'make money fast', 'earn money fast', 'money mule', 'money transfer fraud',
+      'advance fee', 'lottery win', 'prize money',
+      'spoofed website', 'identity theft', 'impersonation',
+      'social engineering', 'malware attachment', 'credential stuffing',
+      'account takeover', 'unauthorized charge',
+      // High-urgency & manipulation
+      'act immediately', 'account suspended', 'legal action',
+      'arrest warrant', 'irs penalty', 'compromised ssn', 'secure vault',
+      // Cyber scams & hacking
+      'hack', 'hacking', 'hacker', 'ddos', 'ransomware', 'spyware',
+      'keylogger', 'trojan', 'botnet', 'dark web', 'darkweb',
+      'deepweb', 'deep web', 'tor browser', 'exploit kit',
+      'zero day', 'remote access tool', 'rat tool',
+      'sim swap', 'sim swapping', 'vishing', 'smishing',
+      'fake invoice', 'invoice scam', 'business email compromise',
+      'tech support scam', 'remote desktop scam',
+      // Network marketing & MLM
+      'network marketing', 'direct selling', 'downline', 'upline',
+      'referral income', 'passive income scheme', 'matrix plan',
+      'binary plan', 'chain letter', 'referral chain',
+      'join my team', 'work from home scheme', 'be your own boss scheme',
+      'unlimited earning', 'residual income scheme',
+      // Drugs & narcotics
+      'marijuana', 'cannabis', 'hash', 'hashish', 'ganja', 'charas',
+      'smack', 'brown sugar', 'opium', 'afeem', 'meth', 'methamphetamine',
+      'amphetamine', 'ecstasy', 'mdma', 'lsd', 'acid trip',
+      'coke', 'crack cocaine', 'crystal meth', 'ice drug',
+      'tramadol', 'ketamine', 'fentanyl', 'xanax dealer',
+      'weed dealer', 'drug dealer', 'narcotic', 'narcotics',
+      'substance abuse', 'buy weed', 'sell weed', 'buy drugs', 'sell drugs',
+    ];
+    for (final word in scamWords) {
+      if (lower.contains(word)) {
+        return 'Task titles related to crypto, loans, fraud, or financial scams are not allowed.';
+      }
+    }
+
+    // 2. Keyboard gibberish patterns
+    const gibberishPatterns = [
+      'qwerty', 'asdf', 'zxcv', 'qwer', 'asdfgh', 'zxcvbn',
+      'qazwsx', 'aaaa', 'bbbb', 'cccc', 'dddd', 'eeee', 'ffff',
+      'gggg', 'hhhh', 'iiii', 'jjjj', 'kkkk', 'llll', 'mmmm',
+      'nnnn', 'oooo', 'pppp', 'rrrr', 'ssss', 'tttt', 'uuuu',
+      'vvvv', 'wwww', 'xxxx', 'yyyy', 'zzzz', 'abcd', 'abcde',
+      '1234', '12345', '123456',
+    ];
+    for (final p in gibberishPatterns) {
+      if (lower.contains(p)) {
+        return 'Task name looks like gibberish. Please enter a meaningful title.';
+      }
+    }
+
+    // 3. Excessive repeated single character (≥4 in a row)
+    if (RegExp(r'(.)\1{3,}').hasMatch(lower)) {
+      return 'Task name contains repeated characters. Please enter a meaningful title.';
+    }
+
+    // 4. Must contain at least one vowel (real words have vowels)
+    final lettersOnly = lower.replaceAll(RegExp(r'[^a-z]'), '');
+    if (lettersOnly.length >= 5) {
+      final vowelCount = lettersOnly.split('').where((c) => 'aeiou'.contains(c)).length;
+      final vowelRatio = vowelCount / lettersOnly.length;
+      if (vowelRatio < 0.10) {
+        return 'Task name does not look like a valid title. Please use real words.';
+      }
+    }
+
+    return null;
+  }
+
   static String? _checkBannedContent(String title, String description) {
     final text = '${title.toLowerCase()} ${description.toLowerCase()}';
     if (text.trim().isEmpty) return null;
@@ -573,7 +1148,69 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    // Always re-check title on every submit click (not relying on form cache)
+    final titleErr = _validateTaskTitle(_titleCtrl.text);
+    if (titleErr != null) {
+      _scrollCtrl.animateTo(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _titleFocus.requestFocus());
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(titleErr),
+        backgroundColor: AppColors.danger,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
+
+    if (!_formKey.currentState!.validate()) {
+      // Scroll to top and jump cursor to the first invalid field
+      _scrollCtrl.animateTo(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      final missing = <String>[];
+      FocusNode? firstInvalidFocus;
+      if (_titleCtrl.text.trim().length < 5) {
+        missing.add('Task Title');
+        firstInvalidFocus ??= _titleFocus;
+      }
+      if (_descCtrl.text.trim().length < 10) {
+        missing.add('Description');
+        firstInvalidFocus ??= _descFocus;
+      }
+      final budget = double.tryParse(_budgetCtrl.text);
+      if (budget == null || budget <= 0) {
+        missing.add('Budget');
+        firstInvalidFocus ??= _budgetFocus;
+      }
+      if (_isDelivery) {
+        if (_pickupAddrCtrl.text.trim().isEmpty) {
+          missing.add('Pickup Address');
+          firstInvalidFocus ??= _pickupFocus;
+        }
+        if (_dropAddrCtrl.text.trim().isEmpty) {
+          missing.add('Drop Address');
+          firstInvalidFocus ??= _dropFocus;
+        }
+      }
+      // Request focus on the first invalid field after next frame
+      if (firstInvalidFocus != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+            (_) => firstInvalidFocus!.requestFocus());
+      }
+      final msg = missing.isEmpty
+          ? 'Please fix the highlighted fields before posting.'
+          : 'Required: ${missing.join(', ')}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.danger,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
 
     // ── Client-side banned keyword check ────────────────────────────────────
     final bannedResult = _checkBannedContent(_titleCtrl.text, _descCtrl.text);
@@ -858,7 +1495,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'lng': taskLocation.longitude,
         'address': combinedAddress ?? '',
       },
-      'address_type': _addressType,
       if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
         'pickup_address': _pickupAddrCtrl.text.trim(),
       if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty) ...{
@@ -898,6 +1534,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Post a Task')),
       body: SingleChildScrollView(
+        controller: _scrollCtrl,
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
@@ -907,13 +1544,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               // Title
               TextFormField(
                 controller: _titleCtrl,
+                focusNode: _titleFocus,
                 decoration: const InputDecoration(
                   labelText: 'Task Title',
                   hintText: 'e.g. Pick up parcel from Bandra',
                   prefixIcon: Icon(Icons.title),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().length < 5) ? 'Min 5 characters' : null,
+                validator: _validateTaskTitle,
               ),
               const SizedBox(height: 14),
 
@@ -974,15 +1611,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 ),
                 onChanged: (v) => setState(() {
                   _categorySearch = v.trim().toLowerCase();
-                  if (_categorySearch.isNotEmpty) {
-                    final match = TaskCategory.all.firstWhere(
-                      (c) => c.label.toLowerCase().contains(_categorySearch) ||
-                             c.id.contains(_categorySearch),
-                      orElse: () => TaskCategory.all.first,
-                    );
-                    _selectedCategory = match.id;
-                    _autoFillDescription();
-                  }
                 }),
               ),
               const SizedBox(height: 10),
@@ -1115,51 +1743,36 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               // Description
               TextFormField(
                 controller: _descCtrl,
-                maxLines: 4,
-                decoration: const InputDecoration(
+                focusNode: _descFocus,
+                maxLines: 8,
+                decoration: InputDecoration(
                   labelText: 'Description',
-                  hintText: 'Describe what needs to be done\u2026',
-                  prefixIcon: Icon(Icons.description_outlined),
+                  prefixIcon: const Icon(Icons.description_outlined),
                   alignLabelWithHint: true,
+                  contentPadding: const EdgeInsets.all(14),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().length < 10)
                         ? 'Min 10 characters'
                         : null,
               ),
-              // Per-category prompt chips
-              if ((_prompts[_selectedCategory] ?? []).isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text('Add details:',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.gray,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: (_prompts[_selectedCategory]!).map((p) {
-                    return ActionChip(
-                      label: Text(p,
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.dark)),
-                      onPressed: () => _appendPrompt(p),
-                      backgroundColor: AppColors.light,
-                      side:
-                          const BorderSide(color: AppColors.border),
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 4),
-                      visualDensity: VisualDensity.compact,
-                    );
-                  }).toList(),
-                ),
-              ],
               const SizedBox(height: 14),
 
               // Budget
               TextFormField(
                 controller: _budgetCtrl,
+                focusNode: _budgetFocus,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Budget (₹)',
@@ -1190,9 +1803,48 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
               // ── Address fields (each with GPS + Map inline buttons) ──────
               if (_isDelivery) ...[
+                // ── Pickup ─────────────────────────────────────────────
+                // Saved chips for pickup
+                if (_savedLocations.isNotEmpty) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text('Saved:',
+                            style: TextStyle(fontSize: 12, color: AppColors.gray, fontWeight: FontWeight.w500)),
+                        const SizedBox(width: 8),
+                        ..._savedLocations.map((loc) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () => _fillPickupFromSaved(loc),
+                            onLongPress: () => _addressOptions(loc),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.09),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(_iconForLabel(loc['label'] as String), size: 14, color: AppColors.primary),
+                                  const SizedBox(width: 5),
+                                  Text(loc['label'] as String, style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 // Pickup Address
                 TextFormField(
                   controller: _pickupAddrCtrl,
+                  focusNode: _pickupFocus,
                   decoration: InputDecoration(
                     labelText: 'Pickup Address *',
                     hintText: 'Where to pick up from',
@@ -1217,27 +1869,121 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     child: Text(
                       'Pinned: ${_pickupLocation!.latitude.toStringAsFixed(5)}, '
                       '${_pickupLocation!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                          color: AppColors.success, fontSize: 11),
+                      style: const TextStyle(color: AppColors.success, fontSize: 11),
                     ),
                   ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _pickupFlatCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Pickup: Flat / House / Building name',
+                    hintText: 'e.g. Flat 2B, Sunrise Apartments',
+                    prefixIcon: Icon(Icons.home_outlined, color: AppColors.primary),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _pickupAreaCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Pickup: Area / Sector / Locality',
+                    hintText: 'e.g. Baner, Pune',
+                    prefixIcon: Icon(Icons.map_outlined, color: AppColors.primary),
+                  ),
+                ),
+                // Save pickup prompt
+                if (_showPickupSavePrompt && _pickupLocation != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.bookmark_add_outlined, size: 18, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('Save pickup address for later?', style: TextStyle(fontSize: 12, color: AppColors.primary))),
+                        GestureDetector(
+                          onTap: () => _saveAddressEntry(
+                            address: _pickupAddrCtrl.text.trim(),
+                            flat: _pickupFlatCtrl.text.trim(),
+                            area: _pickupAreaCtrl.text.trim(),
+                            lat: _pickupLocation?.latitude,
+                            lng: _pickupLocation?.longitude,
+                            onSaved: () => setState(() => _showPickupSavePrompt = false),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
+                            child: const Text('SAVE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => setState(() => _showPickupSavePrompt = false),
+                          child: const Icon(Icons.close, size: 16, color: AppColors.gray),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                // ── Drop ───────────────────────────────────────────────
+                // Saved chips for drop
+                if (_savedLocations.isNotEmpty) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text('Saved:', style: TextStyle(fontSize: 12, color: AppColors.gray, fontWeight: FontWeight.w500)),
+                        const SizedBox(width: 8),
+                        ..._savedLocations.map((loc) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () => _fillDropFromSaved(loc),
+                            onLongPress: () => _addressOptions(loc),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: AppColors.danger.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(_iconForLabel(loc['label'] as String), size: 14, color: AppColors.danger),
+                                  const SizedBox(width: 5),
+                                  Text(loc['label'] as String, style: const TextStyle(fontSize: 12, color: AppColors.danger, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 // Drop Address
                 TextFormField(
                   controller: _dropAddrCtrl,
+                  focusNode: _dropFocus,
                   decoration: InputDecoration(
                     labelText: 'Drop / Delivery Address *',
                     hintText: 'Where to deliver / drop off',
-                    prefixIcon:
-                        const Icon(Icons.flag, color: AppColors.danger),
+                    prefixIcon: const Icon(Icons.flag, color: AppColors.danger),
                     suffixIcon: _AddressActionButtons(
                       isLoading: _gettingDropGps,
                       accentColor: AppColors.danger,
                       onGps: _getGpsForDrop,
                       onMap: _pickMapForDrop,
                     ),
-                    suffixIconConstraints:
-                        const BoxConstraints(maxHeight: 48),
+                    suffixIconConstraints: const BoxConstraints(maxHeight: 48),
                   ),
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Drop address is required'
@@ -1253,6 +1999,65 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           color: AppColors.danger, fontSize: 11),
                     ),
                   ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _dropFlatCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Drop: Flat / House / Building name',
+                    hintText: 'e.g. Flat 2B, Sunrise Apartments',
+                    prefixIcon: Icon(Icons.home_outlined, color: AppColors.danger),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _dropAreaCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Drop: Area / Sector / Locality',
+                    hintText: 'e.g. Baner, Pune',
+                    prefixIcon: Icon(Icons.map_outlined, color: AppColors.danger),
+                  ),
+                ),
+                // Save drop prompt
+                if (_showDropSavePrompt && _dropLocation != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.danger.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.bookmark_add_outlined, size: 18, color: AppColors.danger),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('Save drop address for later?', style: TextStyle(fontSize: 12, color: AppColors.danger))),
+                        GestureDetector(
+                          onTap: () => _saveAddressEntry(
+                            address: _dropAddrCtrl.text.trim(),
+                            flat: _dropFlatCtrl.text.trim(),
+                            area: _dropAreaCtrl.text.trim(),
+                            lat: _dropLocation?.latitude,
+                            lng: _dropLocation?.longitude,
+                            onSaved: () => setState(() => _showDropSavePrompt = false),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppColors.danger, borderRadius: BorderRadius.circular(8)),
+                            child: const Text('SAVE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => setState(() => _showDropSavePrompt = false),
+                          child: const Icon(Icons.close, size: 16, color: AppColors.gray),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 // ── Distance + minimum price card ────────────────────────
                 if (_calculatedDistanceKm != null) ...[
@@ -1297,6 +2102,58 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ],
               ] else ...[
+                // ── Saved addresses chips ───────────────────────────────
+                if (_savedLocations.isNotEmpty) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text('Saved:',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.gray,
+                                fontWeight: FontWeight.w500)),
+                        const SizedBox(width: 8),
+                        ..._savedLocations.map((loc) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: GestureDetector(
+                                onTap: () => _fillFromSaved(loc),
+                                onLongPress: () => _addressOptions(loc),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.09),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                        color: AppColors.primary
+                                            .withValues(alpha: 0.35)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                          _iconForLabel(
+                                              loc['label'] as String),
+                                          size: 14,
+                                          color: AppColors.primary),
+                                      const SizedBox(width: 5),
+                                      Text(loc['label'] as String,
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.primary,
+                                              fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 // ── Address / Landmark ──────────────────────────────────────
                 TextFormField(
                   controller: _addressCtrl,
@@ -1351,95 +2208,55 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ),
 
-                // ── Home / Work selector ───────────────────────────────
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _addressType = 'home'),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          decoration: BoxDecoration(
-                            color: _addressType == 'home'
-                                ? AppColors.primary
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _addressType == 'home'
-                                  ? AppColors.primary
-                                  : AppColors.border,
+                // ── Save address prompt ────────────────────────────────
+                if (_showSavePrompt && _location != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.bookmark_add_outlined,
+                            size: 18, color: AppColors.success),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text('Save this address for future tasks?',
+                              style: TextStyle(
+                                  fontSize: 12, color: AppColors.success)),
+                        ),
+                        GestureDetector(
+                          onTap: _showSaveDialog,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.success,
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.home_rounded,
-                                  size: 18,
-                                  color: _addressType == 'home'
-                                      ? Colors.white
-                                      : AppColors.gray),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Home',
+                            child: const Text('SAVE',
                                 style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  color: _addressType == 'home'
-                                      ? Colors.white
-                                      : AppColors.gray,
-                                ),
-                              ),
-                            ],
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white)),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _addressType = 'work'),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          decoration: BoxDecoration(
-                            color: _addressType == 'work'
-                                ? AppColors.primary
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _addressType == 'work'
-                                  ? AppColors.primary
-                                  : AppColors.border,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.work_rounded,
-                                  size: 18,
-                                  color: _addressType == 'work'
-                                      ? Colors.white
-                                      : AppColors.gray),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Work',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  color: _addressType == 'work'
-                                      ? Colors.white
-                                      : AppColors.gray,
-                                ),
-                              ),
-                            ],
-                          ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () =>
+                              setState(() => _showSavePrompt = false),
+                          child: const Icon(Icons.close,
+                              size: 16, color: AppColors.gray),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ],
 
               const SizedBox(height: 14),

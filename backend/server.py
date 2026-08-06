@@ -2797,10 +2797,6 @@ def create_task():
         except Exception:
             pass
 
-        # Skill-match and nearby notifications are triggered by the Flutter client
-        # via /api/tasks/<id>/notify-skills and /api/tasks/<id>/notify-nearby after
-        # task creation. Do NOT send them inline here to avoid duplicates.
-
         response = {
             'success': True,
             'message': 'Task created successfully',
@@ -2808,6 +2804,20 @@ def create_task():
         }
         print(f'   Returning response: {response}')
         print('='*60)
+
+        # Auto-trigger notifications in a daemon thread so the API response
+        # is not delayed and works even on older app versions.
+        import threading as _notify_thread
+        _auto_task_id   = task_id
+        _auto_poster_id = request.user_id
+        _notify_thread.Thread(
+            target=lambda: (
+                _do_notify_skill_matched(_auto_task_id, _auto_poster_id),
+                _do_notify_nearby(_auto_task_id, _auto_poster_id),
+            ),
+            daemon=True,
+        ).start()
+
         return jsonify(response), 201
     
     except Exception as e:
@@ -9373,6 +9383,231 @@ def delete_account():
 # TASK NOTIFICATION BROADCAST ENDPOINTS
 # ========================================
 
+def _do_notify_skill_matched(task_id, poster_user_id):
+    """Send FCM skill_matched notifications for task_id to all users with matching
+    skills.  Runs in a daemon thread after task creation so notifications fire
+    regardless of client app version.  Returns count of users notified."""
+    import json as _nsj, datetime as _nsdt
+
+    def _norm(v):
+        return ' '.join(str(v or '').lower()
+            .replace('_', ' ').replace('&', ' and ').replace('/', ' ').split())
+
+    _aliases = {
+        'delivery':       {'delivery', 'deliver'},
+        'moving':         {'moving', 'moving packing', 'moving and packing', 'packing'},
+        'groceries':      {'groceries', 'grocery', 'shopping', 'errands'},
+        'cooking':        {'cooking', 'cook'},
+        'cleaning':       {'cleaning', 'clean'},
+        'laundry':        {'laundry'},
+        'household':      {'household', 'errands'},
+        'shopping':       {'shopping', 'errands'},
+        'electrician':    {'electrician', 'electrical'},
+        'plumbing':       {'plumbing', 'plumber'},
+        'carpentry':      {'carpentry', 'carpenter'},
+        'painting':       {'painting', 'painter'},
+        'repair':         {'repair', 'tech support'},
+        'vehicle':        {'vehicle', 'driving'},
+        'tutoring':       {'tutoring', 'teaching'},
+        'freelancer':     {'freelancer', 'graphic design', 'video editing',
+                           'web development', 'translation', 'data entry'},
+        'data_entry':     {'data entry'},
+        'photography':    {'photography'},
+        'gardening':      {'gardening'},
+        'beauty':         {'beauty'},
+        'pet_care':       {'pet care'},
+        'child_care':     {'child care', 'babysitting'},
+        'elder_care':     {'elder care'},
+        'errands':        {'errands', 'shopping'},
+        'queue_standing': {'errands'},
+        'event_help':     {'event help'},
+        'tech_support':   {'tech support', 'technical support', 'electrical'},
+        'assembly':       {'assembly'},
+        'security':       {'security'},
+    }
+
+    def _terms(v):
+        n = _norm(v)
+        if not n:
+            return set()
+        t = {n}
+        if n in _aliases:
+            t.update(_aliases[n])
+        for key, vals in _aliases.items():
+            if n in vals:
+                t.add(key)
+                t.update(vals)
+        return {_norm(x) for x in t if _norm(x)}
+
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(
+                f'SELECT id, posted_by, title, category, description, price '
+                f'FROM tasks WHERE id = {PH}', (task_id,))
+            row = cursor.fetchone()
+            task = dict_from_row(row) if row else None
+        if not task:
+            print(f'[FCM] notify-skills: task {task_id} not found')
+            return 0
+
+        cat       = (task.get('category') or '').lower()
+        cat_disp  = task.get('category', 'General')
+        price     = task.get('price', 0)
+        title_raw = task.get('title', '')
+        search_text = ' '.join(filter(None, [
+            _norm(cat), _norm(title_raw),
+            _norm(task.get('description') or ''),
+            _norm(cat_disp),
+            ' '.join(sorted(_terms(cat))),
+        ]))
+
+        _ensure_bio_skills_columns()
+        _ensure_fcm_token_column()
+        with get_db() as (cursor, _):
+            cursor.execute(f'''
+                SELECT id, fcm_token, skills FROM users
+                WHERE fcm_token IS NOT NULL
+                  AND id != {PH}
+                  AND skills IS NOT NULL
+                  AND skills NOT IN ({PH}, {PH}, {PH})
+            ''', (poster_user_id, '[]', '', 'null'))
+            candidates = [dict_from_row(r) for r in cursor.fetchall()]
+
+        notified = 0
+        for user in candidates:
+            try:
+                raw = user.get('skills', '[]')
+                user_skills = [s.lower() for s in (
+                    _nsj.loads(raw) if isinstance(raw, str) else (raw or []))]
+                if not any(
+                    any(t and t in search_text for t in _terms(sk))
+                    for sk in user_skills
+                ):
+                    continue
+                n_title = '\U0001f4bc Task Matching Your Skills!'
+                n_body  = f'"{title_raw}" \u2014 \u20b9{price} \u2014 {cat_disp}'
+                _now = _nsdt.datetime.now(_nsdt.timezone.utc).isoformat()
+                try:
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title,
+                                 message, status, data, created_at)
+                            VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})
+                        ''', (user['id'], task_id, 'skill_matched', n_title, n_body,
+                              'unread',
+                              _nsj.dumps({'type': 'skill_matched', 'taskId': str(task_id),
+                                          'label': '\U0001f441\ufe0f View Task'}),
+                              _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
+                if user.get('fcm_token'):
+                    send_fcm_to_user(user['id'], n_title, n_body,
+                                     data={'type': 'skill_matched',
+                                           'task_id': str(task_id)},
+                                     channel='workmate4u_matched')
+                notified += 1
+            except Exception:
+                pass
+        print(f'[FCM] notify-skills task={task_id}: notified {notified} user(s)')
+        return notified
+    except Exception as e:
+        print(f'[FCM] notify-skills error: {e}')
+        return 0
+
+
+def _do_notify_nearby(task_id, poster_user_id):
+    """Send FCM nearby_task notifications for task_id to users within 10 km.
+    Skips users who already received a skill_matched push for the same task.
+    Returns count of users notified."""
+    import json as _nj, datetime as _dt
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(
+                f'SELECT id, posted_by, title, category, price, '
+                f'location_lat, location_lng FROM tasks WHERE id = {PH}', (task_id,))
+            row = cursor.fetchone()
+            task = dict_from_row(row) if row else None
+        if not task:
+            print(f'[FCM] notify-nearby: task {task_id} not found')
+            return 0
+
+        t_lat = task.get('location_lat')
+        t_lng = task.get('location_lng')
+        if t_lat is None or t_lng is None:
+            print(f'[FCM] notify-nearby task={task_id}: no location, skipping')
+            return 0
+        t_lat, t_lng = float(t_lat), float(t_lng)
+
+        title_raw = task.get('title', '')
+        cat_disp  = task.get('category', 'General')
+        price     = task.get('price', 0)
+
+        _ensure_user_location_columns()
+        _ensure_fcm_token_column()
+        with get_db() as (cursor, _):
+            cursor.execute(f'''
+                SELECT id, fcm_token, last_lat, last_lng FROM users
+                WHERE fcm_token IS NOT NULL
+                  AND id != {PH}
+                  AND last_lat IS NOT NULL
+                  AND last_lng IS NOT NULL
+            ''', (poster_user_id,))
+            candidates = [dict_from_row(r) for r in cursor.fetchall()]
+
+        try:
+            with get_db() as (_dc, _):
+                _dc.execute(f'''
+                    SELECT DISTINCT user_id FROM notifications
+                    WHERE task_id = {PH} AND notification_type = 'skill_matched'
+                ''', (task_id,))
+                _already = {str(r[0]) for r in _dc.fetchall()}
+        except Exception:
+            _already = set()
+
+        notified = 0
+        for user in candidates:
+            try:
+                u_lat = user.get('last_lat')
+                u_lng = user.get('last_lng')
+                if u_lat is None or u_lng is None:
+                    continue
+                if _haversine_km(t_lat, t_lng, float(u_lat), float(u_lng)) > 10.0:
+                    continue
+                if str(user['id']) in _already:
+                    continue
+                n_title = '\U0001f4cd New Task Near You!'
+                n_body  = f'"{title_raw}" \u2014 \u20b9{price} \u2014 {cat_disp}'
+                _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                try:
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title,
+                                 message, status, data, created_at)
+                            VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})
+                        ''', (user['id'], task_id, 'nearby_task', n_title, n_body,
+                              'unread',
+                              _nj.dumps({'type': 'nearby_task', 'taskId': task_id,
+                                         'label': '\U0001f441\ufe0f View Task'}),
+                              _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
+                send_fcm_to_user(user['id'], n_title, n_body,
+                                 data={'type': 'nearby_task', 'task_id': str(task_id)},
+                                 channel='workmate4u_matched')
+                notified += 1
+            except Exception:
+                pass
+        print(f'[FCM] notify-nearby task={task_id}: notified {notified} user(s)')
+        return notified
+    except Exception as e:
+        print(f'[FCM] notify-nearby error: {e}')
+        return 0
+
+
 @app.route('/api/tasks/<int:task_id>/notify-skills', methods=['POST'])
 @require_auth
 def notify_task_skills(task_id):
@@ -9394,7 +9629,7 @@ def notify_task_skills(task_id):
 
     _skill_aliases = {
         'delivery': {'delivery', 'deliver'},
-        'moving': {'moving', 'moving packing', 'packing'},
+        'moving': {'moving', 'moving packing', 'moving and packing', 'packing'},
         'groceries': {'groceries', 'grocery', 'shopping', 'errands'},
         'cooking': {'cooking', 'cook'},
         'cleaning': {'cleaning', 'clean'},

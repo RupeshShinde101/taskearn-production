@@ -47,7 +47,7 @@ class AuthProvider extends ChangeNotifier {
   bool get cityRestricted => !_cityVerified && _cityGateReason.isNotEmpty;
   String get cityGateReason => _cityGateReason;
 
-  /// Client-side session duration: 30 days after last successful login.
+  /// Client-side auto logout threshold: 30 days since last app use.
   static const Duration _kSessionDuration = Duration(days: 30);
 
   AuthProvider() {
@@ -88,17 +88,27 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
 
-    // ── Client-side session expiry ─────────────────────────────────────────
-    final expiry = StorageService.getSessionExpiry();
-    if (expiry != null && DateTime.now().isAfter(expiry)) {
-      debugPrint('[AUTH] Session expired at $expiry — clearing session.');
-      await StorageService.clearSession();
-      await StorageService.clearSession();
+    // ── Client-side inactivity logout ──────────────────────────────────────
+    final now = DateTime.now();
+    var lastActive = StorageService.getSessionLastActive();
+    if (lastActive == null) {
+      final legacyExpiry = StorageService.getSessionExpiry();
+      lastActive = legacyExpiry != null && legacyExpiry.isAfter(now)
+          ? legacyExpiry.subtract(_kSessionDuration)
+          : now;
+      await StorageService.saveSessionLastActive(lastActive);
+      await StorageService.clearLegacySessionExpiry();
+    }
+
+    if (now.difference(lastActive) >= _kSessionDuration) {
+      debugPrint('[AUTH] Session inactive since $lastActive — clearing session.');
       await StorageService.clearSession();
       _status = AuthStatus.unauthenticated;
       notifyListeners();
       return;
     }
+
+    await StorageService.touchSessionActivity();
 
     // ── Restore user instantly from local cache (no network wait) ──────────
     final cachedJson = StorageService.getUserJson();
@@ -149,8 +159,6 @@ class AuthProvider extends ChangeNotifier {
       if (e.statusCode == 401 || e.statusCode == 403) {
         // Token explicitly rejected by server — full logout
         await StorageService.clearSession();
-        await StorageService.clearSession();
-        await StorageService.clearSession();
         _user = null;
         _status = AuthStatus.unauthenticated;
       }
@@ -178,7 +186,7 @@ class AuthProvider extends ChangeNotifier {
         await Future.wait([
           StorageService.saveToken(token),
           StorageService.saveUserId(''),  // will be set below
-          StorageService.saveSessionExpiry(DateTime.now().add(_kSessionDuration)),
+            StorageService.touchSessionActivity(),
         ]);
         _user = User.fromJson(data['user'] ?? data);
         await Future.wait([
@@ -259,8 +267,7 @@ class AuthProvider extends ChangeNotifier {
           _user = User.fromJson(data['user'] ?? data);
           await StorageService.saveUserId(_user!.id);
           await StorageService.saveUserJson(_user!.toJson());
-          await StorageService.saveSessionExpiry(
-              DateTime.now().add(_kSessionDuration));
+            await StorageService.touchSessionActivity();
           _status = AuthStatus.authenticated;
           _pendingSuccessScreen = true;
         }
@@ -336,8 +343,6 @@ class AuthProvider extends ChangeNotifier {
       try { await NotificationService.clearFcmToken(); } catch (_) {}
       try { await ApiService.post('/auth/logout'); } catch (_) {}
       try { await _googleSignIn.signOut(); } catch (_) {}
-      await StorageService.clearSession();
-      await StorageService.clearSession();
       await StorageService.clearSession();
       await StorageService.setString('user_avatar_local', '');
     }());
@@ -607,8 +612,7 @@ class AuthProvider extends ChangeNotifier {
         _user = User.fromJson(data['user'] ?? data);
         await StorageService.saveUserId(_user!.id);
         await StorageService.saveUserJson(_user!.toJson());
-        await StorageService.saveSessionExpiry(
-            DateTime.now().add(_kSessionDuration));
+        await StorageService.touchSessionActivity();
         _status = AuthStatus.authenticated;
 
         final email = _user!.email.trim().toLowerCase();

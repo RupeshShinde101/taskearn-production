@@ -1,4 +1,4 @@
-import 'dart:async' show TimeoutException;
+import 'dart:async' show TimeoutException, unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -309,6 +309,7 @@ class ApiService {
   static dynamic _handleResponse(http.Response response) {
     final body = utf8.decode(response.bodyBytes);
     dynamic data;
+    final hasStoredToken = StorageService.getToken() != null;
 
     try {
       data = jsonDecode(body);
@@ -317,6 +318,9 @@ class ApiService {
     }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (hasStoredToken) {
+        unawaited(StorageService.touchSessionActivity());
+      }
       return data;
     }
 
@@ -331,7 +335,7 @@ class ApiService {
     // When the server rejects our token, clear the local session and signal
     // the AuthProvider to redirect to login. Only fires when a token is
     // present — wrong-password 401 on /auth/login has no token stored yet.
-    if (response.statusCode == 401 && StorageService.getToken() != null) {
+    if (response.statusCode == 401 && hasStoredToken) {
       onUnauthorized?.call();
     }
 

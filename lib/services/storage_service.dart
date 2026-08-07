@@ -19,16 +19,33 @@ class StorageService {
     await _prefs.remove('auth_token');
   }
 
-  // ─── Session expiry ──────────────────────────────────────────────────────────
-  /// Persists the absolute expiry time as epoch milliseconds.
+  // ─── Legacy session expiry (kept only for one-time migration) ─────────────
   static Future<void> saveSessionExpiry(DateTime expiry) async {
     await _prefs.setInt('session_expiry_ms', expiry.millisecondsSinceEpoch);
   }
 
-  /// Returns the stored expiry time, or null if never set.
   static DateTime? getSessionExpiry() {
     final ms = _prefs.getInt('session_expiry_ms');
     return ms != null ? DateTime.fromMillisecondsSinceEpoch(ms) : null;
+  }
+
+  static Future<void> clearLegacySessionExpiry() async {
+    await _prefs.remove('session_expiry_ms');
+  }
+
+  // ─── Session activity ──────────────────────────────────────────────────────
+  static Future<void> saveSessionLastActive(DateTime lastActive) async {
+    await _prefs.setInt(
+        'session_last_active_ms', lastActive.millisecondsSinceEpoch);
+  }
+
+  static DateTime? getSessionLastActive() {
+    final ms = _prefs.getInt('session_last_active_ms');
+    return ms != null ? DateTime.fromMillisecondsSinceEpoch(ms) : null;
+  }
+
+  static Future<void> touchSessionActivity() async {
+    await saveSessionLastActive(DateTime.now());
   }
 
   // ─── Cached user JSON (for instant offline restoration) ─────────────────────
@@ -50,6 +67,7 @@ class StorageService {
     await _prefs.remove('auth_token');
     await _prefs.remove('cached_user_json');
     await _prefs.remove('session_expiry_ms');
+    await _prefs.remove('session_last_active_ms');
   }
 
   // ─── User ───────────────────────────────────────────────────────────────────

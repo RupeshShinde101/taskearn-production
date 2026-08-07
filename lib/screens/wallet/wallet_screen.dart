@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +20,7 @@ class WalletScreen extends StatefulWidget {
 class _WalletScreenState extends State<WalletScreen> {
   static const String _savedPaymentDetailsKey = 'taskearn_payment_details';
   late Razorpay _razorpay;
+  bool _initialLoadComplete = false;
 
   void _openWalletPage(Widget page) {
     Navigator.push(
@@ -33,9 +35,14 @@ class _WalletScreenState extends State<WalletScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final w = context.read<WalletProvider>();
-      w.fetchWallet();
-      w.fetchTransactions();
-      w.fetchWithdrawals();
+      Future.wait([
+        w.fetchWallet(),
+        w.fetchTransactions(),
+        w.fetchWithdrawals(),
+      ]).whenComplete(() {
+        if (!mounted) return;
+        setState(() => _initialLoadComplete = true);
+      });
     });
 
     _razorpay = Razorpay();
@@ -372,6 +379,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   bankAccount: accountNumber,
                   ifscCode: ifscCode,
                   accountHolder: accountHolder,
+                  refreshAfter: false,
                 );
             if (!mounted) return;
 
@@ -390,6 +398,10 @@ class _WalletScreenState extends State<WalletScreen> {
             ));
             if (!mounted || !ctx.mounted) return;
             Navigator.of(ctx).pop();
+            unawaited(Future.wait([
+              wallet.fetchWallet(),
+              wallet.fetchWithdrawals(),
+            ]));
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
@@ -617,7 +629,7 @@ class _WalletScreenState extends State<WalletScreen> {
       backgroundColor: const Color(0xFFF1F5F9),
       body: Consumer<WalletProvider>(
         builder: (_, wallet, __) {
-          if (wallet.isLoading) {
+          if (!_initialLoadComplete) {
             return const Center(child: CircularProgressIndicator());
           }
           final b = wallet.balance;
@@ -643,227 +655,237 @@ class _WalletScreenState extends State<WalletScreen> {
               SliverToBoxAdapter(
                 child: Column(
                   children: [
-              // ── Dark gradient header ──────────────────────────────────
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF0B1630), Color(0xFF1A3870)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: SafeArea(
-                  bottom: false,
-                  child: Stack(
-                    children: [
-                      // Right: 3D wallet illustration (behind content)
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Image.asset(
-                          'assets/images/wallet_illustration.png',
-                          width: illW,
-                          height: illH,
-                          fit: BoxFit.contain,
+                    // ── Dark gradient header ──────────────────────────────────
+                    Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF0B1630), Color(0xFF1A3870)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
                       ),
-                      // Foreground: logo + balance (full width — no overflow risk)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                      child: SafeArea(
+                        bottom: false,
+                        child: Stack(
                           children: [
-                            // Logo + Secure badge row
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // W4U Logo
-                                SizedBox(
-                                  width: logoW,
-                                  height: logoH,
-                                  child: Image.asset(
-                                    'assets/images/logo_light.png',
-                                    fit: BoxFit.contain,
-                                    alignment: Alignment.centerLeft,
-                                  ),
-                                ),
-                                // Secure Wallet badge
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF059669),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Image.asset(
+                                'assets/images/wallet_illustration.png',
+                                width: illW,
+                                height: illH,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    crossAxisAlignment: CrossAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.verified_rounded,
-                                          color: Colors.white, size: 13),
-                                      SizedBox(width: 4),
-                                      Text('Secure Wallet',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600)),
+                                      SizedBox(
+                                        width: logoW,
+                                        height: logoH,
+                                        child: Image.asset(
+                                          'assets/images/logo_light.png',
+                                          fit: BoxFit.contain,
+                                          alignment: Alignment.centerLeft,
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF059669),
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.verified_rounded,
+                                                color: Colors.white, size: 13),
+                                            SizedBox(width: 4),
+                                            Text('Secure Wallet',
+                                                style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600)),
+                                          ],
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            const Text('Available Balance',
-                                style: TextStyle(
-                                    color: Colors.white70, fontSize: 13)),
-                            const SizedBox(height: 4),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                '₹${b.balance.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: balFS,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: -1),
+                                  const SizedBox(height: 14),
+                                  const Text('Available Balance',
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 13)),
+                                  const SizedBox(height: 4),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      '₹${b.balance.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: balFS,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -1),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // ── White action buttons card ─────────────────────
+                              Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.08),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 18, horizontal: 8),
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final itemWidth = (constraints.maxWidth - 16) / 3;
 
-              // ── White action buttons card ─────────────────────────────
-              Container(
-                margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                transform: Matrix4.translationValues(0, -1, 0),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
+                                    return Wrap(
+                                      alignment: WrapAlignment.center,
+                                      runAlignment: WrapAlignment.center,
+                                      spacing: 8,
+                                      runSpacing: 16,
+                                      children: [
+                                        SizedBox(
+                                          width: itemWidth,
+                                          child: _ActionBtn(
+                                            icon: Icons.add_rounded,
+                                            label: 'Add Money',
+                                            color: const Color(0xFF3B82F6),
+                                            onTap: _showAddMoney,
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: itemWidth,
+                                          child: _ActionBtn(
+                                            icon: Icons.arrow_upward_rounded,
+                                            label: 'Withdraw',
+                                            color: const Color(0xFF7C3AED),
+                                            onTap: _showWithdraw,
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: itemWidth,
+                                          child: _ActionBtn(
+                                            icon: Icons.receipt_long_rounded,
+                                            label: 'History',
+                                            color: const Color(0xFF0EA5E9),
+                                            onTap: () => _openWalletPage(const _HistoryPage()),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: itemWidth,
+                                          child: _ActionBtn(
+                                            icon: Icons.swap_horiz_rounded,
+                                            label: 'Transactions',
+                                            color: const Color(0xFF059669),
+                                            onTap: () => _openWalletPage(const _TransactionsPage()),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: itemWidth,
+                                          child: _ActionBtn(
+                                            icon: Icons.account_balance_wallet_rounded,
+                                            label: 'Withdrawals',
+                                            color: const Color(0xFFF59E0B),
+                                            onTap: () => _openWalletPage(const _WithdrawalsPage()),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: itemWidth,
+                                          child: _ActionBtn(
+                                            icon: Icons.trending_up_rounded,
+                                            label: 'Earnings',
+                                            color: const Color(0xFF10B981),
+                                            onTap: () => _openWalletPage(const _EarningsPage()),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: itemWidth,
+                                          child: _ActionBtn(
+                                            icon: Icons.trending_down_rounded,
+                                            label: 'Spent',
+                                            color: const Color(0xFFEF4444),
+                                            onTap: () => _openWalletPage(const _SpentPage()),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              // ── Blue stats bar ────────────────────────────────
+                              Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1D4ED8),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 14, horizontal: 8),
+                                child: Row(
+                                  children: [
+                                    _StatItem(
+                                      icon: Icons.account_balance_wallet_outlined,
+                                      label: 'Earned',
+                                      value: '₹${totalEarned.toStringAsFixed(0)}',
+                                    ),
+                                    Container(
+                                      width: 1,
+                                      height: 34,
+                                      color: Colors.white.withValues(alpha: 0.3),
+                                    ),
+                                    _StatItem(
+                                      icon: Icons.trending_up_rounded,
+                                      label: 'Spent',
+                                      value: '₹${totalSpent.toStringAsFixed(0)}',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.symmetric(
-                    vertical: 18, horizontal: 8),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final itemWidth = (constraints.maxWidth - 16) / 3;
-
-                    return Wrap(
-                      spacing: 8,
-                      runSpacing: 16,
-                      children: [
-                        SizedBox(
-                          width: itemWidth,
-                          child: _ActionBtn(
-                            icon: Icons.add_rounded,
-                            label: 'Add Money',
-                            color: const Color(0xFF3B82F6),
-                            onTap: _showAddMoney,
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _ActionBtn(
-                            icon: Icons.arrow_upward_rounded,
-                            label: 'Withdraw',
-                            color: const Color(0xFF7C3AED),
-                            onTap: _showWithdraw,
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _ActionBtn(
-                            icon: Icons.receipt_long_rounded,
-                            label: 'History',
-                            color: const Color(0xFF0EA5E9),
-                            onTap: () => _openWalletPage(const _HistoryPage()),
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _ActionBtn(
-                            icon: Icons.swap_horiz_rounded,
-                            label: 'Transactions',
-                            color: const Color(0xFF059669),
-                            onTap: () => _openWalletPage(const _TransactionsPage()),
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _ActionBtn(
-                            icon: Icons.account_balance_wallet_rounded,
-                            label: 'Withdrawals',
-                            color: const Color(0xFFF59E0B),
-                            onTap: () => _openWalletPage(const _WithdrawalsPage()),
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _ActionBtn(
-                            icon: Icons.trending_up_rounded,
-                            label: 'Earnings',
-                            color: const Color(0xFF10B981),
-                            onTap: () => _openWalletPage(const _EarningsPage()),
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _ActionBtn(
-                            icon: Icons.trending_down_rounded,
-                            label: 'Spent',
-                            color: const Color(0xFFEF4444),
-                            onTap: () => _openWalletPage(const _SpentPage()),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
               ),
-
-              // ── Blue stats bar ────────────────────────────────────────
-              Container(
-                margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1D4ED8),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                padding: const EdgeInsets.symmetric(
-                    vertical: 14, horizontal: 8),
-                child: Row(
-                  children: [
-                    _StatItem(
-                      icon: Icons.account_balance_wallet_outlined,
-                      label: 'Earned',
-                      value: '₹${totalEarned.toStringAsFixed(0)}',
-                    ),
-                    Container(width: 1, height: 34,
-                        color: Colors.white.withValues(alpha: 0.3)),
-                    _StatItem(
-                      icon: Icons.trending_up_rounded,
-                      label: 'Spent',
-                      value: '₹${totalSpent.toStringAsFixed(0)}',
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
             ],
-          ),
-        ),
-      ],
-    );
+          );
         },
       ),
     );

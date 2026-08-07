@@ -7,11 +7,10 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 
-// ── Rank colour helper ──────────────────────────────────────────────────────
+// â”€â”€ Rank colour helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Color _rankColor(String rank) {
   switch (rank) {
     case 'Elite':    return const Color(0xFF7C3AED);
@@ -23,7 +22,7 @@ Color _rankColor(String rank) {
   }
 }
 
-// ── All available skills the user can select ──────────────────────────────────
+// â”€â”€ All available skills the user can select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _kAllSkills = [
   'Cleaning', 'Delivery', 'Driving', 'Cooking', 'Plumbing', 'Electrical',
   'Carpentry', 'Painting', 'Gardening', 'Moving & Packing', 'Shopping',
@@ -40,9 +39,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  List<Map<String, dynamic>> _reviews = [];
-  bool _reviewsLoading = false;
-  bool _showReviews = false;
   bool _showSkills = false;
 
   @override
@@ -50,33 +46,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
-      _loadReviews();
     });
   }
 
   Future<void> _refresh() async {
-    await Future.wait([
-      context.read<AuthProvider>().refreshUser(),
-      _loadReviews(),
-    ]);
-  }
-
-  Future<void> _loadReviews() async {
-    final userId = context.read<AuthProvider>().user?.id;
-    if (userId == null || userId.isEmpty) return;
-    if (!mounted) return;
-    setState(() => _reviewsLoading = true);
-    try {
-      final data = await ApiService.get('/user/$userId/reviews');
-      if (!mounted) return;
-      final list = (data['reviews'] as List? ?? []);
-      setState(() {
-        _reviews = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        _reviewsLoading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _reviewsLoading = false);
-    }
+    await context.read<AuthProvider>().refreshUser();
   }
 
   @override
@@ -102,7 +76,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Avatar, name, email, rating ──────────────────────────────
+            // â”€â”€ Avatar, name, email, rating â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Center(
               child: Column(
                 children: [
@@ -193,7 +167,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Stats grid (2×2: Completed | Posted / Rating | Rank) ─────────
+            // â”€â”€ Stats grid (2Ã—2: Completed | Posted / Rating | Rank) â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Card(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
@@ -221,8 +195,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _StatCell(
                             label: 'Rating',
                             value: user != null && user.rating > 0
-                                ? '${user.rating.toStringAsFixed(1)} ★'
-                                : '— ★',
+                                ? '${user.rating.toStringAsFixed(1)} â˜…'
+                                : 'â€” â˜…',
                             valueColor: user != null && user.rating > 0
                                 ? AppColors.warning
                                 : AppColors.gray,
@@ -243,7 +217,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── KYC card ──────────────────────────────────────────────────
+            // â”€â”€ KYC card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             _KycCard(
               isVerified: user?.isKycVerified ?? false,
               kycStatus: user?.kycStatus,
@@ -252,7 +226,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── Bio section ───────────────────────────────────────────────
+            // â”€â”€ Bio section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (user?.bio != null && user!.bio!.isNotEmpty) ...[
               const _SectionHeader('About Me'),
               const SizedBox(height: 8),
@@ -271,7 +245,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
             ],
 
-            // ── Skills section ────────────────────────────────────────────
+            // â”€â”€ Skills section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Row(
               children: [
                 Expanded(
@@ -376,80 +350,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Reviews Received ──────────────────────────────────────────
-            InkWell(
-              onTap: () => setState(() => _showReviews = !_showReviews),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Reviews Received',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (_reviews.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${_reviews.length}',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    const Spacer(),
-                    Icon(
-                      _showReviews
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
-                      color: AppColors.gray,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_showReviews) ...[
-              const SizedBox(height: 8),
-              if (_reviewsLoading)
-                const Center(
-                    child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: CircularProgressIndicator()))
-              else if (_reviews.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.light,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Text('No reviews yet',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.gray)),
-                )
-              else
-                Column(
-                  children: _reviews.map((r) => _ReviewCard(review: r)).toList(),
-                ),
-            ],
-
-            const SizedBox(height: 20),
-
-            // ── Menu items ────────────────────────────────────────────────
+            // â”€â”€ Menu items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Card(
               child: Column(
                 children: [
@@ -512,7 +413,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── Sign out ──────────────────────────────────────────────────────
+            // â”€â”€ Sign out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Card(
               child: _MenuItem(
                 icon: Icons.logout,
@@ -659,7 +560,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 12),
 
-            // ── Delete account ────────────────────────────────────────────────
+            // â”€â”€ Delete account â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Card(
               child: _MenuItem(
                 icon: Icons.delete_forever_outlined,
@@ -678,7 +579,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Launch URL in external browser ────────────────────────────────────────
+  // â”€â”€ Launch URL in external browser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   static Future<void> _launch(String url) async {
     final uri = Uri.parse(url);
     try {
@@ -686,7 +587,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {}
   }
 
-  // ── Edit personal details bottom sheet (pencil icon / avatar) ──────────────
+  // â”€â”€ Edit personal details bottom sheet (pencil icon / avatar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showEditDialog(BuildContext context, AuthProvider auth) {
     showModalBottomSheet(
       context: context,
@@ -699,7 +600,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Edit skills bottom sheet ──────────────────────────────────────────────
+  // â”€â”€ Edit skills bottom sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showSkillsDialog(BuildContext context, AuthProvider auth) {
     showModalBottomSheet(
       context: context,
@@ -712,7 +613,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Delete Account dialog ─────────────────────────────────────────────────
+  // â”€â”€ Delete Account dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showDeleteAccountDialog(BuildContext context, AuthProvider auth) {
     final isGoogleUser = auth.user?.authProvider == 'google';
     final passwordCtrl = TextEditingController();
@@ -969,7 +870,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Change Password dialog ────────────────────────────────────────────────
+  // â”€â”€ Change Password dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showChangePasswordDialog(BuildContext context, AuthProvider auth) {    final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
@@ -1084,7 +985,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-// ── Edit profile sheet (stateful so it manages skill selection + feedback) ───
+// â”€â”€ Edit profile sheet (stateful so it manages skill selection + feedback) â”€â”€â”€
 class _EditProfileSheet extends StatefulWidget {
   final AuthProvider auth;
   const _EditProfileSheet({required this.auth});
@@ -1115,7 +1016,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     super.dispose();
   }
 
-  // ── Image picking ────────────────────────────────────────────────────────
+  // â”€â”€ Image picking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _pickImage(ImageSource source) async {
     if (source == ImageSource.camera) {
       final status = await Permission.camera.request();
@@ -1186,7 +1087,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     );
   }
 
-  // ── Save ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1260,7 +1161,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 16),
 
-            // ── Avatar picker ────────────────────────────────────────────
+            // â”€â”€ Avatar picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Center(
               child: GestureDetector(
                 onTap: _saving ? null : _showImageSourceSheet,
@@ -1323,7 +1224,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 16),
 
-            // ── Gender selection ─────────────────────────────────────
+            // â”€â”€ Gender selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const Text('Gender',
                 style: TextStyle(
                     fontSize: 14,
@@ -1334,7 +1235,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               children: [
                 Expanded(
                   child: _GenderOption(
-                    label: 'Male', emoji: '👦',
+                    label: 'Male', emoji: 'ðŸ‘¦',
                     selected: _gender == 'male',
                     onTap: () => setState(() => _gender = 'male'),
                   ),
@@ -1342,7 +1243,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _GenderOption(
-                    label: 'Female', emoji: '👧',
+                    label: 'Female', emoji: 'ðŸ‘§',
                     selected: _gender == 'female',
                     onTap: () => setState(() => _gender = 'female'),
                   ),
@@ -1370,7 +1271,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   }
 }
 
-// ── Gender option tile ────────────────────────────────────────────────────────
+// â”€â”€ Gender option tile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _GenderOption extends StatelessWidget {
   final String label;
   final String emoji;
@@ -1420,7 +1321,7 @@ class _GenderOption extends StatelessWidget {
   }
 }
 
-// ── Edit skills sheet ─────────────────────────────────────────────────────────
+// â”€â”€ Edit skills sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _EditSkillsSheet extends StatefulWidget {
   final AuthProvider auth;
   const _EditSkillsSheet({required this.auth});
@@ -1531,7 +1432,7 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
   }
 }
 
-// ── KYC card ─────────────────────────────────────────────────────────────────
+// â”€â”€ KYC card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _KycCard extends StatelessWidget {
   final bool isVerified;
   final String? kycStatus;
@@ -1590,7 +1491,7 @@ class _KycCard extends StatelessWidget {
   }
 }
 
-// ── Section header ────────────────────────────────────────────────────────────
+// â”€â”€ Section header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _SectionHeader extends StatelessWidget {
   final String text;
   const _SectionHeader(this.text);
@@ -1602,7 +1503,7 @@ class _SectionHeader extends StatelessWidget {
           color: AppColors.dark));
 }
 
-// ── Empty skills hint ─────────────────────────────────────────────────────────
+// â”€â”€ Empty skills hint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _EmptySkillsHint extends StatelessWidget {
   final VoidCallback onAdd;
   const _EmptySkillsHint({required this.onAdd});
@@ -1633,7 +1534,7 @@ class _EmptySkillsHint extends StatelessWidget {
   }
 }
 
-// ── Shared widgets ────────────────────────────────────────────────────────────
+// â”€â”€ Shared widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _StatCell extends StatelessWidget {
   final String label;
   final String value;
@@ -1686,105 +1587,6 @@ class _MenuItem extends StatelessWidget {
               fontWeight: FontWeight.w500)),
       trailing: const Icon(Icons.chevron_right, color: AppColors.grayLight),
       onTap: onTap,
-    );
-  }
-}
-
-// ── Individual review card ────────────────────────────────────────────────────
-class _ReviewCard extends StatelessWidget {
-  final Map<String, dynamic> review;
-  const _ReviewCard({required this.review});
-
-  @override
-  Widget build(BuildContext context) {
-    final rating = (review['rating'] as num?)?.toDouble() ?? 0;
-    final raterName = review['rater_name'] as String? ?? 'Anonymous';
-    final taskTitle = review['task_title'] as String? ?? 'Task';
-    final comment = (review['review'] as String? ?? '').trim();
-    final createdAt = review['created_at'] as String?;
-    String? dateStr;
-    if (createdAt != null) {
-      try {
-        final dt = DateTime.parse(createdAt).toLocal();
-        dateStr = '${dt.day}/${dt.month}/${dt.year}';
-      } catch (_) {}
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                child: Text(
-                  raterName.isNotEmpty ? raterName[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(raterName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.dark,
-                            fontSize: 13)),
-                    Text(taskTitle,
-                        style: const TextStyle(
-                            color: AppColors.gray, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    children: List.generate(5, (i) => Icon(
-                      i < rating.round() ? Icons.star : Icons.star_border,
-                      color: AppColors.warning,
-                      size: 14,
-                    )),
-                  ),
-                  if (dateStr != null)
-                    Text(dateStr,
-                        style: const TextStyle(
-                            color: AppColors.grayLight, fontSize: 10)),
-                ],
-              ),
-            ],
-          ),
-          if (comment.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(comment,
-                style: const TextStyle(
-                    color: AppColors.dark, fontSize: 13, height: 1.4)),
-          ],
-        ],
-      ),
     );
   }
 }

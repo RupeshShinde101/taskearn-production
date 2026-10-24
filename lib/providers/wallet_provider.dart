@@ -125,6 +125,7 @@ class WalletProvider extends ChangeNotifier {
     required String bankAccount,
     required String ifscCode,
     required String accountHolder,
+    bool refreshAfter = true,
   }) async {
     try {
       await ApiService.post('/wallet/withdraw', body: {
@@ -134,8 +135,10 @@ class WalletProvider extends ChangeNotifier {
         'ifscCode': ifscCode,
         'accountHolder': accountHolder,
       });
-      await fetchWallet();
-      await fetchWithdrawals();
+      if (refreshAfter) {
+        await fetchWallet();
+        await fetchWithdrawals();
+      }
       return true;
     } on ApiException catch (e) {
       _error = e.message;

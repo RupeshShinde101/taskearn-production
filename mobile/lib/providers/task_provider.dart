@@ -395,14 +395,42 @@ class TaskProvider extends ChangeNotifier {
 
   Future<bool> postTask(Map<String, dynamic> taskData) async {
     try {
-      await ApiService.post('/tasks', body: taskData);
+      final response = await ApiService.post('/tasks', body: taskData);
+      final newTaskId = _extractNewTaskId(response);
       await fetchMyTasks();
+      if (newTaskId != null && newTaskId.isNotEmpty) {
+        _triggerNewTaskNotifications(newTaskId);
+      }
       return true;
     } on ApiException catch (e) {
       _error = e.message;
       notifyListeners();
       return false;
     }
+  }
+
+  String? _extractNewTaskId(dynamic response) {
+    try {
+      if (response is! Map) return null;
+      final raw = response['task'] ?? response['data'] ?? response['result'] ?? response;
+      if (raw is Map) {
+        return (raw['id'] ?? raw['_id'] ?? raw['taskId'])?.toString();
+      }
+      return response['taskId']?.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _triggerNewTaskNotifications(String taskId) {
+    Future.microtask(() async {
+      try {
+        await ApiService.post('/tasks/$taskId/notify-skills');
+      } catch (_) {}
+      try {
+        await ApiService.post('/tasks/$taskId/notify-nearby');
+      } catch (_) {}
+    });
   }
 
   Future<bool> acceptTask(String taskId) async {

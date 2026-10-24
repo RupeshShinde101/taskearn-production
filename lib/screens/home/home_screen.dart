@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -351,7 +351,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── HERO ─────────────────────────────────────────────────────────────────
   Widget _buildHero(String firstName, String? gender) {
-    final heroEmoji = gender == 'male' ? '👦' : gender == 'female' ? '👧' : '🧑';
+    final heroEmoji = gender == 'male' ? '\u{1F466}' : gender == 'female' ? '\u{1F467}' : '\u{1F9D1}';
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       decoration: BoxDecoration(

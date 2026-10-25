@@ -195,8 +195,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _StatCell(
                             label: 'Rating',
                             value: user != null && user.rating > 0
-                                ? '${user.rating.toStringAsFixed(1)} ★'
-                                : '— ★',
+                                ? '${user.rating.toStringAsFixed(1)} \u2605'
+                                : '\u2014 \u2605',
                             valueColor: user != null && user.rating > 0
                                 ? AppColors.warning
                                 : AppColors.gray,

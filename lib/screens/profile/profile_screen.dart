@@ -195,8 +195,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _StatCell(
                             label: 'Rating',
                             value: user != null && user.rating > 0
-                                ? '${user.rating.toStringAsFixed(1)} ★'
-                                : '— ★',
+                                ? '${user.rating.toStringAsFixed(1)} \u2605'
+                                : '\u2014 \u2605',
                             valueColor: user != null && user.rating > 0
                                 ? AppColors.warning
                                 : AppColors.gray,
@@ -1235,7 +1235,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               children: [
                 Expanded(
                   child: _GenderOption(
-                    label: 'Male', emoji: '👦',
+                    label: 'Male', emoji: '\u{1F466}',
                     selected: _gender == 'male',
                     onTap: () => setState(() => _gender = 'male'),
                   ),
@@ -1243,7 +1243,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _GenderOption(
-                    label: 'Female', emoji: '👧',
+                    label: 'Female', emoji: '\u{1F467}',
                     selected: _gender == 'female',
                     onTap: () => setState(() => _gender = 'female'),
                   ),

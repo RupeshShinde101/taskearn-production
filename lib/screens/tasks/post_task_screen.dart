@@ -329,9 +329,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   /// Auto-fill description with category-specific prompts/questions.
   /// Only fills if description is empty or still contains the previous template.
   void _autoFillDescription() {
-    if (_useFormDescription) {
-      _compileDescriptionFromForm();
-    }
+    _compileDescriptionFromForm();
   }
 
   @override
@@ -1179,9 +1177,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _submit() async {
-    if (_useFormDescription) {
-      _compileDescriptionFromForm();
-    }
+    _compileDescriptionFromForm();
 
     // Always re-check title on every submit click (not relying on form cache)
     final titleErr = _validateTaskTitle(_titleCtrl.text);
@@ -1211,18 +1207,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         firstInvalidFocus ??= _titleFocus;
       }
       if (_descCtrl.text.trim().length < 10) {
-        missing.add(_useFormDescription ? 'Task Details Form (min 10 characters)' : 'Description');
-        if (_useFormDescription) {
-          final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
-          for (final p in prompts) {
-            final ctrl = _descFormControllers[p];
-            if (ctrl == null || ctrl.text.trim().isEmpty) {
-              firstInvalidFocus ??= _getDescQuestionFocus(p);
-              break;
-            }
+        missing.add('Task Details Form (min 10 characters)');
+        final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
+        for (final p in prompts) {
+          final ctrl = _descFormControllers[p];
+          if (ctrl == null || ctrl.text.trim().isEmpty) {
+            firstInvalidFocus ??= _getDescQuestionFocus(p);
+            break;
           }
-        } else {
-          firstInvalidFocus ??= _descFocus;
         }
       }
       final budget = double.tryParse(_budgetCtrl.text);
@@ -1588,10 +1580,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
-    /// Whether the user is using the structured description form (default true) or freeform text.
-  bool _useFormDescription = true;
-
-  /// Controllers for each question in the description form.
+    /// Controllers for each question in the description form.
   final Map<String, TextEditingController> _descFormControllers = {};
 
   /// Focus nodes for each question in the description form.
@@ -1645,7 +1634,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _compileDescriptionFromForm() {
-    if (!_useFormDescription) return;
     final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
     final lines = <String>[];
     for (final p in prompts) {
@@ -1712,278 +1700,226 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     children: [
                       Row(
                         children: [
-                          const Text(
-                            'Task Details Form',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                              color: AppColors.dark,
+                          const Flexible(
+                            child: Text(
+                              'Task Details Form',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: AppColors.dark,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              categoryLabel,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                categoryLabel,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        _useFormDescription
-                            ? 'Answer these questions so helpers understand your task'
-                            : 'Enter your custom description below',
-                        style: const TextStyle(fontSize: 11, color: AppColors.gray),
+                      const Text(
+                        'Answer these questions so helpers understand your task',
+                        style: TextStyle(fontSize: 11, color: AppColors.gray),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  ),
-                ),
-                // Mode Toggle Button
-                TextButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      if (_useFormDescription) {
-                        _compileDescriptionFromForm();
-                        _useFormDescription = false;
-                      } else {
-                        _useFormDescription = true;
-                        _compileDescriptionFromForm();
-                      }
-                    });
-                  },
-                  icon: Icon(
-                    _useFormDescription ? Icons.edit_note : Icons.ballot_outlined,
-                    size: 16,
-                  ),
-                  label: Text(
-                    _useFormDescription ? 'Free Text' : 'Form Mode',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    visualDensity: VisualDensity.compact,
                   ),
                 ),
               ],
             ),
           ),
 
-          // Body
+          // Form Body (Form only)
           Padding(
             padding: const EdgeInsets.all(14),
-            child: _useFormDescription
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Render each question field
-                      ...prompts.asMap().entries.map((entry) {
-                        final idx = entry.key;
-                        final q = entry.value;
-                        final ctrl = _getDescQuestionCtrl(q);
-                        final fn = _getDescQuestionFocus(q);
-                        final chips = _getChipsForQuestion(q);
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Render each question field
+                ...prompts.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final q = entry.value;
+                  final ctrl = _getDescQuestionCtrl(q);
+                  final fn = _getDescQuestionFocus(q);
+                  final chips = _getChipsForQuestion(q);
 
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Question Label with index badge
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 18,
-                                    height: 18,
-                                    alignment: Alignment.center,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFFE2E8F0),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text(
-                                      '${idx + 1}',
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.dark,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      q,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13,
-                                        color: AppColors.dark,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Question Label with index badge
+                        Row(
+                          children: [
+                            Container(
+                              width: 18,
+                              height: 18,
+                              alignment: Alignment.center,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFE2E8F0),
+                                shape: BoxShape.circle,
                               ),
-                              const SizedBox(height: 6),
-                              // Question Input
-                              TextFormField(
-                                controller: ctrl,
-                                focusNode: fn,
-                                decoration: InputDecoration(
-                                  hintText: _getHintForQuestion(q),
-                                  hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                  filled: true,
-                                  fillColor: const Color(0xFFF8FAFC),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                                  ),
-                                ),
-                              ),
-                              // Quick suggestion chips if available
-                              if (chips.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  children: chips.map((chipText) {
-                                    final isSelected = ctrl.text == chipText;
-                                    return InkWell(
-                                      onTap: () {
-                                        setState(() {
-                                          if (ctrl.text == chipText) {
-                                            ctrl.clear();
-                                          } else {
-                                            ctrl.text = chipText;
-                                          }
-                                          _compileDescriptionFromForm();
-                                        });
-                                      },
-                                      borderRadius: BorderRadius.circular(14),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: isSelected
-                                              ? AppColors.primary
-                                              : const Color(0xFFF1F5F9),
-                                          borderRadius: BorderRadius.circular(14),
-                                          border: Border.all(
-                                            color: isSelected
-                                                ? AppColors.primary
-                                                : const Color(0xFFE2E8F0),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          chipText,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                            color: isSelected ? Colors.white : const Color(0xFF475569),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              ],
-                            ],
-                          ),
-                        );
-                      }),
-
-                      // Additional notes / special instructions
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
-                            children: [
-                              Icon(Icons.notes_rounded, size: 16, color: AppColors.gray),
-                              SizedBox(width: 6),
-                              Text(
-                                'Special Instructions / Other Notes (Optional)',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
+                              child: Text(
+                                '${idx + 1}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
                                   color: AppColors.dark,
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _additionalNotesCtrl,
-                            focusNode: _additionalNotesFocus,
-                            maxLines: 3,
-                            decoration: InputDecoration(
-                              hintText: 'Any specific instructions, parking info, access codes, etc.',
-                              hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
-                              contentPadding: const EdgeInsets.all(12),
-                              filled: true,
-                              fillColor: const Color(0xFFF8FAFC),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                q,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  color: AppColors.dark,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        controller: _descCtrl,
-                        focusNode: _descFocus,
-                        maxLines: 6,
-                        decoration: InputDecoration(
-                          hintText: 'Describe your task in detail (what needs to be done, requirements, etc.)',
-                          contentPadding: const EdgeInsets.all(12),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        // Question Input
+                        TextFormField(
+                          controller: ctrl,
+                          focusNode: fn,
+                          decoration: InputDecoration(
+                            hintText: _getHintForQuestion(q),
+                            hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                            ),
                           ),
                         ),
-                        validator: (v) =>
-                            (v == null || v.trim().length < 10) ? 'Min 10 characters' : null,
+                        // Quick suggestion chips if available
+                        if (chips.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: chips.map((chipText) {
+                              final isSelected = ctrl.text == chipText;
+                              return InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    if (ctrl.text == chipText) {
+                                      ctrl.clear();
+                                    } else {
+                                      ctrl.text = chipText;
+                                    }
+                                    _compileDescriptionFromForm();
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(14),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    chipText,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                      color: isSelected ? Colors.white : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }),
+
+                // Additional notes / special instructions
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.notes_rounded, size: 16, color: AppColors.gray),
+                        SizedBox(width: 6),
+                        Text(
+                          'Special Instructions / Other Notes (Optional)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            color: AppColors.dark,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _additionalNotesCtrl,
+                      focusNode: _additionalNotesFocus,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Any specific instructions, parking info, access codes, etc.',
+                        hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
+                        contentPadding: const EdgeInsets.all(12),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -2035,17 +1971,22 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 child: Text(
                   'Suggested in ${suggestion.localityName}',
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E293B)),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE0E7FF),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  suggestion.localityTier,
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E7FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    suggestion.localityTier,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],
@@ -2072,9 +2013,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          '(Typical: ₹${suggestion.minBudget.toInt()}–₹${suggestion.maxBudget.toInt()})',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                        Flexible(
+                          child: Text(
+                            '(Typical: ₹${suggestion.minBudget.toInt()}–₹${suggestion.maxBudget.toInt()})',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),

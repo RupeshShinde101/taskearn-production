@@ -11,6 +11,7 @@ import 'dart:async';
 import '../../services/location_search_service.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/location_suggestions_dropdown.dart';
+import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/map_location_picker.dart';
 
 class EditTaskScreen extends StatefulWidget {
@@ -1072,7 +1073,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
               ],
               const SizedBox(height: 14),
 
-              // Cost breakdown (real-time via ValueListenableBuilder)
+              // Price breakdown (real-time via ValueListenableBuilder)
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _budgetCtrl,
                 builder: (_, value, __) {
@@ -1081,60 +1082,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                   final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
                   final posterFee = budget * 0.20;
                   final total = budget + charge + posterFee;
-                  return Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.25)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.info_outline,
-                                size: 16, color: AppColors.primary),
-                            SizedBox(width: 6),
-                            Text(
-                              'Payment due on verification',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        _CostRow('Task Budget',
-                            '₹${budget.toStringAsFixed(0)}'),
-                        if (charge > 0) ...[
-                          const SizedBox(height: 4),
-                          _CostRow('Service Charge',
-                              '₹${charge.toStringAsFixed(0)}'),
-                        ],
-                        if (posterFee > 0) ...[
-                          const SizedBox(height: 4),
-                          _CostRow('Platform Fee & GST (20%)',
-                              '₹${posterFee.toStringAsFixed(0)}'),
-                        ],
-                        const Divider(height: 14),
-                        _CostRow(
-                            'Total (pay after completion)',
-                            '₹${total.toStringAsFixed(0)}',
-                            bold: true),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'No payment needed now. You pay when the helper finishes and you verify the work.',
-                          style: TextStyle(
-                              color: AppColors.gray,
-                              fontSize: 11,
-                              height: 1.4),
-                        ),
-                      ],
-                    ),
+                  return TaskPriceBreakdownCard(
+                    budget: budget,
+                    serviceCharge: charge,
+                    posterFee: posterFee,
+                    totalCost: total,
                   );
                 },
               ),
@@ -1219,27 +1171,6 @@ class _CategoryGrid extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-// ── Cost row helper ───────────────────────────────────────────────────────────
-class _CostRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool bold;
-  const _CostRow(this.label, this.value, {this.bold = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-      color: bold ? AppColors.dark : AppColors.gray,
-      fontSize: bold ? 14 : 13,
-    );
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [Text(label, style: style), Text(value, style: style)],
     );
   }
 }

@@ -8,6 +8,7 @@ import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
+import '../../widgets/confirm_payment_dialog.dart';
 import '../../services/notification_service.dart';
 import 'edit_task_screen.dart';
 
@@ -757,184 +758,42 @@ class _PostedTaskList extends StatelessWidget {
     final posterFee = t.posterFee;
     final total = t.totalPosterCost;
 
-    // Insufficient balance check
+    // Insufficient balance check with polished modal
     if (wallet.balance.balance < total) {
-      final shortfall = total - wallet.balance.balance;
-      final go = await showDialog<bool>(
+      await ConfirmPaymentDialog.showInsufficientBalance(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Insufficient Wallet Balance'),
-          content: Text(
-            'You need ₹${total.toStringAsFixed(0)} to pay for this task '
-            '(budget ₹${budget.toStringAsFixed(0)}'
-            '${charge > 0 ? ' + service charge ₹${charge.toStringAsFixed(0)}' : ''}'
-            '${posterFee > 0 ? ' + platform fee & GST ₹${posterFee.toStringAsFixed(0)}' : ''}).\n\n'
-            'Current balance: ₹${wallet.balance.balance.toStringAsFixed(0)}\n'
-            'Add at least ₹${shortfall.ceil()} to continue.',
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white),
-              child: const Text('Add Money'),
-            ),
-          ],
-        ),
+        totalCost: total,
+        currentBalance: wallet.balance.balance,
+        budget: budget,
+        serviceCharge: charge,
+        posterFee: posterFee,
       );
-      if (go == true && context.mounted) context.push('/wallet');
       return;
     }
     if (!context.mounted) return;
 
-    // Commission calculation (20% across all categories)
-    final helperReceives = t.netEarning;
-
-    bool paying = false;
-    await showDialog(
+    // Show modernized Confirm Payment dialog (Helper receives is removed)
+    final ok = await ConfirmPaymentDialog.show(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setStateInner) => AlertDialog(
-          title: const Text('Confirm Payment'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'This will be deducted from your wallet:',
-                style: TextStyle(
-                    color: AppColors.gray, fontSize: 13, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              _AmountRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
-              if (charge > 0)
-                _AmountRow(
-                    'Service Charge', '₹${charge.toStringAsFixed(0)}'),
-              if (posterFee > 0)
-                _AmountRow(
-                    'Platform Fee & GST (20%)', '₹${posterFee.toStringAsFixed(0)}'),
-              const Divider(height: 20),
-              _AmountRow('Total Payment', '₹${total.toStringAsFixed(0)}',
-                  bold: true),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Helper receives',
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.success)),
-                    Text('₹${helperReceives.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.success,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Wallet after: ₹${(wallet.balance.balance - total).toStringAsFixed(0)}',
-                style: const TextStyle(color: AppColors.gray, fontSize: 12),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: paying ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: paying
-                  ? null
-                  : () async {
-                      setStateInner(() => paying = true);
-                      bool ok = false;
-                      try {
-                        ok = await context
-                            .read<TaskProvider>()
-                            .payHelper(t.id);
-                      } catch (_) {
-                        // payHelper catches all exceptions internally.
-                      } finally {
-                        // Always close using the dialog's own context (ctx)
-                        // — the outer `context` may become unmounted when
-                        // fetchMyTasks() triggers a rebuild of the screen.
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      }
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(ok
-                                ? 'Payment released to helper!'
-                                : (context
-                                        .read<TaskProvider>()
-                                        .error ??
-                                    'Payment failed. Try again.')),
-                            backgroundColor:
-                                ok ? AppColors.success : AppColors.danger,
-                          ),
-                        );
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: paying
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('Pay'),
-            ),
-          ],
+      budget: budget,
+      serviceCharge: charge,
+      posterFee: posterFee,
+      totalCost: total,
+      currentWalletBalance: wallet.balance.balance,
+      onConfirm: () => context.read<TaskProvider>().payHelper(t.id),
+    );
+
+    if (ok != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Payment released to helper successfully!'
+              : (context.read<TaskProvider>().error ??
+                  'Payment failed. Try again.')),
+          backgroundColor: ok ? AppColors.success : AppColors.danger,
         ),
-      ),
-    );
-  }
-}
-
-class _AmountRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool bold;
-  const _AmountRow(this.label, this.value, {this.bold = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label,
-              style: TextStyle(
-                  fontSize: 13,
-                  color: bold ? AppColors.dark : AppColors.gray,
-                  fontWeight:
-                      bold ? FontWeight.w700 : FontWeight.normal)),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-                  color: AppColors.dark)),
-        ],
-      ),
-    );
+      );
+    }
   }
 }
 

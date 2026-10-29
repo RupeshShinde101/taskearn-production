@@ -9,6 +9,7 @@ import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/confirm_payment_dialog.dart';
 import '../tasks/edit_task_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
@@ -168,90 +169,32 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     if (!mounted) return;
 
     if (wallet.balance.balance < total) {
-      final shortfall = total - wallet.balance.balance;
-      final go = await showDialog<bool>(
+      await ConfirmPaymentDialog.showInsufficientBalance(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Insufficient Wallet Balance'),
-          content: Text(
-            'You need ₹${total.toStringAsFixed(0)} to pay for this task '
-            '(budget ₹${budget.toStringAsFixed(0)}'
-            '${charge > 0 ? ' + service charge ₹${charge.toStringAsFixed(0)}' : ''}'
-            '${posterFee > 0 ? ' + platform fee & GST ₹${posterFee.toStringAsFixed(0)}' : ''}).\n\n'
-            'Current balance: ₹${wallet.balance.balance.toStringAsFixed(0)}\n'
-            'Add at least ₹${shortfall.ceil()} to continue.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Add Money'),
-            ),
-          ],
-        ),
+        totalCost: total,
+        currentBalance: wallet.balance.balance,
+        budget: budget,
+        serviceCharge: charge,
+        posterFee: posterFee,
       );
-      if (go == true && mounted) context.push('/wallet');
       return;
     }
-
-    // Step 2: Confirm payment amount
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'The following will be deducted from your wallet to pay the helper:',
-              style: TextStyle(color: AppColors.gray, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            _DetailRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
-            if (charge > 0) _DetailRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
-            if (posterFee > 0) _DetailRow('Platform Fee & GST (20%)', '₹${posterFee.toStringAsFixed(0)}'),
-            const Divider(height: 20),
-            _DetailRow('Total Payment', '₹${total.toStringAsFixed(0)}', bold: true),
-            const SizedBox(height: 6),
-            Text(
-              'Wallet after payment: ₹${(wallet.balance.balance - total).toStringAsFixed(0)}',
-              style: const TextStyle(color: AppColors.gray, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Pay Now'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    // Step 3: Call pay-helper (no OTP required)
-    setState(() => _verifying = true);
-    final ok = await context.read<TaskProvider>().payHelper(widget.taskId);
     if (!mounted) return;
-    setState(() => _verifying = false);
 
-    if (ok) {
+    // Step 2: Confirm payment amount (Helper receives removed, modern price breakdown)
+    setState(() => _verifying = true);
+    final ok = await ConfirmPaymentDialog.show(
+      context: context,
+      budget: budget,
+      serviceCharge: charge,
+      posterFee: posterFee,
+      totalCost: total,
+      currentWalletBalance: wallet.balance.balance,
+      onConfirm: () => context.read<TaskProvider>().payHelper(widget.taskId),
+    );
+
+    if (mounted) setState(() => _verifying = false);
+    if (ok == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Payment released to helper successfully!'),
@@ -260,7 +203,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       );
       await _loadTask();
       if (mounted) _showRatingDialog(rateHelper: true);
-    } else {
+    } else if (ok == false && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(context.read<TaskProvider>().error ?? 'Payment failed. Please try again.'),
@@ -1273,26 +1216,3 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-/// Simple two-column label + value row used in payment dialogs.
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool bold;
-  const _DetailRow(this.label, this.value, {this.bold = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-      color: bold ? AppColors.dark : AppColors.gray,
-      fontSize: bold ? 14 : 13,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [Text(label, style: style), Text(value, style: style)],
-      ),
-    );
-  }
-}

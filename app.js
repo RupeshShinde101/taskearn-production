@@ -63,7 +63,66 @@ let taskMarkers = [];
 let routeLayer = null;
 let currentUser = null;
 let selectedBudget = 100; // Default budget
-const MIN_TASK_PRICE = 100; // Minimum ₹100 per task
+const MIN_TASK_PRICE = 100; // Default minimum
+
+const CATEGORY_MIN_PRICES = {
+    // Engineering & Skilled Trades
+    'electrician': 150,
+    'plumbing': 150,
+    'carpentry': 200,
+    'repair': 250,
+    'tech_support': 250,
+    'tech-support': 250,
+    'painting': 500,
+    'vehicle': 200,
+
+    // Home & Household
+    'laundry': 100,
+    'household': 150,
+    'cooking': 250,
+    'gardening': 250,
+    'cleaning': 300,
+
+    // Shopping, Errands & On-Demand
+    'groceries': 100,
+    'shopping': 150,
+    'errands': 200,
+    'errand': 200,
+    'queue_standing': 200,
+    'queue-standing': 200,
+    'event_help': 400,
+    'event-help': 400,
+
+    // Professional, Creative & Digital
+    'data_entry': 150,
+    'data-entry': 150,
+    'tutoring': 250,
+    'beauty': 250,
+    'freelancer': 300,
+    'photography': 1500,
+
+    // Care Services
+    'pet_care': 150,
+    'petcare': 150,
+    'child_care': 200,
+    'babysitting': 200,
+    'elder_care': 500,
+    'eldercare': 500,
+
+    // Delivery & Moving
+    'delivery': 100,
+    'pickup': 100,
+    'transport': 100,
+    'moving': 500,
+
+    'other': 100,
+};
+
+function getMinTaskPrice(category) {
+    if (!category) return 100;
+    return CATEGORY_MIN_PRICES[category.toLowerCase()] || 100;
+}
+window.getMinTaskPrice = getMinTaskPrice;
 let selectedTask = null;
 let gpsWatchId = null;
 let isGPSActive = false;
@@ -80,7 +139,7 @@ let _autoRefreshIntervalId = null;
 let _taskTimersStarted = false; // Guard: prevent startTaskTimers() from registering duplicate intervals.
 
 // Categories that carry a distance-based service charge (Delivery / Pick&Drop).
-// All other categories have NO service charge. Commission: 15% delivery/pickup, 17% others.
+// All categories: 20% helper commission, 20% poster platform fee & GST (delivery categories also include distance service charge).
 const DELIVERY_CATEGORIES = new Set(['delivery', 'pickup', 'transport', 'moving']);
 
 // Service Charge based on task category (importance & time)
@@ -185,30 +244,27 @@ function syncRatedTaskIds(ids) {
     } catch(e) {}
 }
 
-// Task Posting Fee: DISABLED. Previously 5% platform fee — commented out for future use.
-// function getTaskPlatformFee(task) {
-//     if (!task) return 0;
-//     const price = parseFloat(task.price || task.amount || 0) || 0;
-//     const sc = getTaskServiceCharge(task);
-//     return Math.round((price + sc) * 0.05 * 100) / 100;
-// }
-function getTaskPlatformFee(task) { return 0; } // DISABLED — no posting fee
+// Poster Platform Fee & GST: 20% across all categories (including delivery/pickup/transport/moving).
+function getTaskPlatformFee(task) {
+    if (!task) return 0;
+    const price = parseFloat(task.price || task.amount || 0) || 0;
+    return Math.round(price * 0.20 * 100) / 100;
+}
 
-// Returns the final task value the poster pays = price + service charge (no posting fee).
+// Returns the final task value the poster pays = price + service charge + poster platform fee & GST.
 function getTaskFinalValue(task) {
     if (!task) return 0;
     const price = parseFloat(task.price || task.amount || 0) || 0;
-    return price + getTaskServiceCharge(task);
+    return price + getTaskServiceCharge(task) + getTaskPlatformFee(task);
 }
 
-// Commission rates: Delivery/Pickup/Transport/Moving = 15%, all others = 17%.
-const DELIVERY_COMMISSION_CATS = new Set(['delivery', 'pickup', 'transport', 'moving']);
+// Commission rate: 20% across all categories (including delivery/pickup/transport/moving).
 function getCommissionRate(category) {
-    return DELIVERY_COMMISSION_CATS.has(category) ? 0.15 : 0.17;
+    return 0.20;
 }
 
 // Returns what the helper actually receives after platform commission.
-// Commission: 15% for delivery/pickup/transport/moving, 17% for all others.
+// Commission: 20% for all categories.
 // Always uses getTaskServiceCharge() so non-delivery tasks get sc=0 (ignores any legacy stored value).
 function getHelperEarnings(task) {
     if (!task) return 0;
@@ -5343,10 +5399,10 @@ async function handleTaskSubmit(event) {
     let baseBudget = customBudgetValue > 0 ? customBudgetValue : selectedBudget;
     
     const category = document.getElementById('modalTaskCategory').value;
-    // No minimum for delivery/pickup/transport — price auto-calculated from distance
-    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < MIN_TASK_PRICE) {
-        baseBudget = MIN_TASK_PRICE;
-        showToast('⚠️ Minimum task budget is ₹' + MIN_TASK_PRICE);
+    const catMin = getMinTaskPrice(category);
+    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < catMin) {
+        baseBudget = catMin;
+        showToast('⚠️ Minimum task budget for this category is ₹' + catMin);
     }
     
     const totalPrice = baseBudget + currentBonus;
@@ -7639,8 +7695,9 @@ function updateTotalBudgetDisplay() {
     
     // ₹100 minimum only for non-distance categories; delivery/pickup use km-based price
     const category = document.getElementById('modalTaskCategory')?.value || 'other';
-    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < MIN_TASK_PRICE) {
-        baseBudget = MIN_TASK_PRICE;
+    const catMin = getMinTaskPrice(category);
+    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < catMin) {
+        baseBudget = catMin;
     }
     
     const total = baseBudget + currentBonus;
@@ -7652,12 +7709,11 @@ function updateTotalBudgetDisplay() {
     const serviceCharge = getServiceCharge(category, distanceKm, vehicleKeyForCharge); // 0 for non-delivery
     const chargeInfo = getServiceChargeInfo(category);
 
-    // Task Posting Fee: DISABLED (was 5%). No fee added to poster's total.
-    // const platformFee = Math.round((total + serviceCharge) * 0.05 * 100) / 100;
-    const platformFee = 0; // DISABLED
-    const totalPayable = total + serviceCharge; // What poster pays (no posting fee)
+    // 20% platform fee & GST from task provider for all categories.
+    const platformFee = Math.round(total * 0.20);
+    const totalPayable = total + serviceCharge + platformFee; // What poster pays
     const taskValueForHelper = total + serviceCharge;
-    const commissionRate = getCommissionRate(category); // 15% delivery, 17% others
+    const commissionRate = getCommissionRate(category); // 20% across all categories
     const helperCommission = Math.round(taskValueForHelper * commissionRate * 100) / 100;
     const workerEarns = taskValueForHelper - helperCommission;
     
@@ -7695,7 +7751,7 @@ function updateTotalBudgetDisplay() {
         serviceChargeTime.textContent = chargeInfo.time;
     }
     if (platformFeeDisplay) {
-        platformFeeDisplay.textContent = '₹0';
+        platformFeeDisplay.textContent = '₹' + platformFee;
     }
 
     // Hide the platform-fee row (posting fee disabled).
@@ -9566,9 +9622,9 @@ function updateCalc() {
     // ~4.33 weeks per month
     const tasksPerMonth = Math.round(tasksPerDay * daysPerWeek * 4.33);
     const gross = tasksPerMonth * ratePerTask;
-    // Platform deducts commission from helper: 17% general, 15% delivery categories
-    // Using 17% as a conservative default for the earnings calculator
-    const platformCut = Math.round(gross * 0.17);
+    // Platform deducts 20% commission from helper across all categories
+    // Using 20% as standard default for the earnings calculator
+    const platformCut = Math.round(gross * 0.20);
     const net = gross - platformCut;
     const weekly = Math.round(net / 4.33);
 
@@ -9579,7 +9635,7 @@ function updateCalc() {
 
     if (el)   el.textContent  = '₹' + net.toLocaleString('en-IN');
     if (elW)  elW.textContent = '₹' + weekly.toLocaleString('en-IN') + '/week';
-    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (17%)';
+    if (elP)  elP.textContent = '₹' + platformCut.toLocaleString('en-IN') + ' (20%)';
     if (elTM) elTM.textContent = tasksPerMonth + ' tasks/month';
 }
 window.updateCalc = updateCalc;

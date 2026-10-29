@@ -754,7 +754,8 @@ class _PostedTaskList extends StatelessWidget {
 
     final budget = t.budget;
     final charge = t.serviceCharge ?? 0;
-    final total = budget + charge;
+    final posterFee = t.posterFee;
+    final total = t.totalPosterCost;
 
     // Insufficient balance check
     if (wallet.balance.balance < total) {
@@ -764,7 +765,10 @@ class _PostedTaskList extends StatelessWidget {
         builder: (ctx) => AlertDialog(
           title: const Text('Insufficient Wallet Balance'),
           content: Text(
-            'You need ₹${total.toStringAsFixed(0)} to pay for this task.\n\n'
+            'You need ₹${total.toStringAsFixed(0)} to pay for this task '
+            '(budget ₹${budget.toStringAsFixed(0)}'
+            '${charge > 0 ? ' + service charge ₹${charge.toStringAsFixed(0)}' : ''}'
+            '${posterFee > 0 ? ' + platform fee & GST ₹${posterFee.toStringAsFixed(0)}' : ''}).\n\n'
             'Current balance: ₹${wallet.balance.balance.toStringAsFixed(0)}\n'
             'Add at least ₹${shortfall.ceil()} to continue.',
           ),
@@ -787,11 +791,8 @@ class _PostedTaskList extends StatelessWidget {
     }
     if (!context.mounted) return;
 
-    // Commission calculation (same rates as backend)
-    const deliveryCategories = {'delivery', 'pickup', 'transport', 'moving'};
-    final commissionRate =
-        deliveryCategories.contains(t.category) ? 0.15 : 0.17;
-    final helperReceives = total * (1 - commissionRate);
+    // Commission calculation (20% across all categories)
+    final helperReceives = t.netEarning;
 
     bool paying = false;
     await showDialog(
@@ -814,6 +815,9 @@ class _PostedTaskList extends StatelessWidget {
               if (charge > 0)
                 _AmountRow(
                     'Service Charge', '₹${charge.toStringAsFixed(0)}'),
+              if (posterFee > 0)
+                _AmountRow(
+                    'Platform Fee & GST (20%)', '₹${posterFee.toStringAsFixed(0)}'),
               const Divider(height: 20),
               _AmountRow('Total Payment', '₹${total.toStringAsFixed(0)}',
                   bold: true),

@@ -147,8 +147,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Future<void> _showPaymentReceivedDialog() async {
     if (!mounted || _task == null) return;
     final task = _task!;
-    final taskTotal = task.totalAmount;                          // budget + service_charge
-    final commissionRate = task.commissionRate;                  // 0.15 delivery, 0.17 others
+    final taskTotal = task.totalTaskValue;                       // budget + service_charge
+    final commissionRate = task.commissionRate;                  // 20% across all categories
     final commissionAmt = taskTotal * commissionRate;
     final helperEarning = task.netEarning;                       // taskTotal × (1 − rate)
     final commissionPct = (commissionRate * 100).round();

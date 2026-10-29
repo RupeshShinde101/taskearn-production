@@ -1,21 +1,12 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import '../services/location_search_service.dart';
 import '../services/location_service.dart';
 import '../theme/app_theme.dart';
-
-// ── Nominatim result model ────────────────────────────────────────────────────
-class _NominatimResult {
-  final String displayName;
-  final double lat;
-  final double lon;
-  const _NominatimResult(
-      {required this.displayName, required this.lat, required this.lon});
-}
 
 /// Full-screen map picker.
 /// Supports: tap-on-map · GPS · **search by name** (Nominatim/OSM).
@@ -35,17 +26,18 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   bool _gettingGps = false;
   bool _mapReady = false; // shows loading overlay until first tile renders
 
-  // Search
+  // Search & Typeahead autocomplete
   final TextEditingController _searchCtrl = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-  List<_NominatimResult> _searchResults = [];
+  Timer? _debounceTimer;
+  List<LocationSearchResult> _searchResults = [];
   bool _searching = false;
   bool _showResults = false;
 
   late final MapController _mapController;
 
-  // Default centre: Mumbai
-  static const _defaultCenter = LatLng(19.0760, 72.8777);
+  // Default centre: Pune (Maharashtra)
+  static const _defaultCenter = LatLng(18.5204, 73.8567);
 
   @override
   void initState() {
@@ -59,6 +51,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -89,62 +82,59 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
     }
   }
 
-  // ── Forward search via Nominatim ──────────────────────────────────────────
-  Future<void> _searchLocation(String query) async {
+  // ── Real-time Search-as-you-type Autocomplete ─────────────────────────────
+  void _onSearchChanged(String query) {
+    _debounceTimer?.cancel();
     final q = query.trim();
     if (q.isEmpty) {
       setState(() {
         _searchResults = [];
         _showResults = false;
+        _searching = false;
       });
       return;
     }
+
     setState(() {
       _searching = true;
       _showResults = true;
     });
-    try {
-      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
-        'q': q,
-        'format': 'json',
-        'limit': '6',
-        'addressdetails': '1',
-      });
-      final resp = await http.get(uri, headers: {
-        'User-Agent': 'Workmate4u/1.0 (com.workmate4u.workmate4u)',
-        'Accept-Language': 'en',
-      }).timeout(const Duration(seconds: 10));
-      if (!mounted) return;
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as List<dynamic>;
-        _searchResults = data.map((e) {
-          final map = e as Map<String, dynamic>;
-          return _NominatimResult(
-            displayName: map['display_name'] as String,
-            lat: double.parse(map['lat'] as String),
-            lon: double.parse(map['lon'] as String),
-          );
-        }).toList();
-      }
-    } catch (_) {
-      // silently ignore network errors
-    }
-    if (mounted) setState(() => _searching = false);
+
+    _debounceTimer = Timer(const Duration(milliseconds: 280), () {
+      _executeSearch(q);
+    });
   }
 
-  void _selectResult(_NominatimResult result) {
-    final point = LatLng(result.lat, result.lon);
-    // Take first 3 comma-separated parts for a cleaner display address
-    final shortAddr =
-        result.displayName.split(',').take(3).join(',').trim();
-    _mapController.move(point, 15);
+  Future<void> _executeSearch(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    setState(() => _searching = true);
+    try {
+      final results = await LocationSearchService.search(
+        q,
+        userLocation: _picked ?? _defaultCenter,
+      );
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _searching = false;
+        _showResults = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  void _selectResult(LocationSearchResult result) {
+    final point = result.toLatLng();
+    _mapController.move(point, 16);
     setState(() {
       _picked = point;
-      _address = shortAddr;
+      _address = result.fullAddress;
       _searchResults = [];
       _showResults = false;
     });
-    _searchCtrl.text = shortAddr;
+    _searchCtrl.text = result.title;
     _searchFocus.unfocus();
   }
 
@@ -326,16 +316,11 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                           borderSide: BorderSide.none,
                         ),
                       ),
-                      onChanged: (v) {
-                        setState(() {}); // update clear icon
-                        if (v.trim().isEmpty) {
-                          setState(() {
-                            _searchResults = [];
-                            _showResults = false;
-                          });
-                        }
+                      onChanged: _onSearchChanged,
+                      onSubmitted: (q) {
+                        _debounceTimer?.cancel();
+                        _executeSearch(q);
                       },
-                      onSubmitted: _searchLocation,
                     ),
                   ),
 
@@ -363,16 +348,6 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                 const Divider(height: 1),
                             itemBuilder: (_, i) {
                               final r = _searchResults[i];
-                              // Split display_name into primary / secondary
-                              final parts = r.displayName.split(',');
-                              final primary = parts.first.trim();
-                              final secondary = parts.length > 1
-                                  ? parts
-                                      .skip(1)
-                                      .take(3)
-                                      .map((s) => s.trim())
-                                      .join(', ')
-                                  : '';
                               return InkWell(
                                 onTap: () => _selectResult(r),
                                 child: Padding(
@@ -380,17 +355,23 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                       horizontal: 14, vertical: 10),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.place_outlined,
-                                          color: AppColors.primary,
-                                          size: 20),
-                                      const SizedBox(width: 10),
+                                      Container(
+                                        padding: const EdgeInsets.all(7),
+                                        decoration: BoxDecoration(
+                                          color: r.iconColor.withValues(alpha: 0.12),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(r.icon,
+                                            color: r.iconColor, size: 18),
+                                      ),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              primary,
+                                              r.title,
                                               style: const TextStyle(
                                                   fontWeight:
                                                       FontWeight.w600,
@@ -399,9 +380,10 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                               overflow:
                                                   TextOverflow.ellipsis,
                                             ),
-                                            if (secondary.isNotEmpty)
+                                            if (r.subtitle.isNotEmpty) ...[
+                                              const SizedBox(height: 2),
                                               Text(
-                                                secondary,
+                                                r.subtitle,
                                                 style: const TextStyle(
                                                     color: AppColors.gray,
                                                     fontSize: 12),
@@ -409,9 +391,27 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                                 overflow:
                                                     TextOverflow.ellipsis,
                                               ),
+                                            ],
                                           ],
                                         ),
                                       ),
+                                      if (r.type != 'general')
+                                        Container(
+                                          margin: const EdgeInsets.only(left: 6),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: r.iconColor.withValues(alpha: 0.09),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            r.type.toUpperCase(),
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              color: r.iconColor,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),

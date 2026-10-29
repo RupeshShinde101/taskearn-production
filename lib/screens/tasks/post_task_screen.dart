@@ -10,7 +10,10 @@ import 'package:geolocator/geolocator.dart';
 import '../../services/location_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
+import 'dart:async';
+import '../../services/location_search_service.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/location_suggestions_dropdown.dart';
 import '../../widgets/map_location_picker.dart';
 
 class PostTaskScreen extends StatefulWidget {
@@ -32,7 +35,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _budgetFocus  = FocusNode();
   final _pickupFocus  = FocusNode();
   final _dropFocus    = FocusNode();
+  final _addressFocus = FocusNode();
   final _addressCtrl = TextEditingController();
+
+  // Search autocomplete state
+  Timer? _pickupDebounce;
+  Timer? _dropDebounce;
+  Timer? _addressDebounce;
+  List<LocationSearchResult> _pickupSuggestions = [];
+  List<LocationSearchResult> _dropSuggestions = [];
+  List<LocationSearchResult> _addressSuggestions = [];
+  bool _searchingPickup = false;
+  bool _searchingDrop = false;
+  bool _searchingAddress = false;
   final _flatNameCtrl = TextEditingController();
   final _areaCtrl    = TextEditingController();
   // Delivery-specific: separate pickup & drop location fields
@@ -167,6 +182,128 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'dhayari': LatLng(18.4480, 73.8180),
     'sinhagad': LatLng(18.4480, 73.8180),
   };
+
+  // ── Location Autocomplete Handlers ──────────────────────────────────────
+  void _onPickupAddrChanged(String text) {
+    _pickupDebounce?.cancel();
+    final q = text.trim();
+    if (q.length < 2) {
+      if (_pickupSuggestions.isNotEmpty || _searchingPickup) {
+        setState(() {
+          _pickupSuggestions = [];
+          _searchingPickup = false;
+        });
+      }
+      return;
+    }
+    setState(() => _searchingPickup = true);
+    _pickupDebounce = Timer(const Duration(milliseconds: 280), () async {
+      try {
+        final results = await LocationSearchService.search(
+          q,
+          userLocation: _pickupLocation ?? _location,
+        );
+        if (!mounted) return;
+        setState(() {
+          _pickupSuggestions = results;
+          _searchingPickup = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _searchingPickup = false);
+      }
+    });
+  }
+
+  void _selectPickupSuggestion(LocationSearchResult s) {
+    _pickupAddrCtrl.text = s.fullAddress;
+    _pickupLocation = s.toLatLng();
+    _location ??= _pickupLocation;
+    _pickupSuggestions = [];
+    _searchingPickup = false;
+    _pickupFocus.unfocus();
+    _recalcDistance();
+    setState(() {});
+  }
+
+  void _onDropAddrChanged(String text) {
+    _dropDebounce?.cancel();
+    final q = text.trim();
+    if (q.length < 2) {
+      if (_dropSuggestions.isNotEmpty || _searchingDrop) {
+        setState(() {
+          _dropSuggestions = [];
+          _searchingDrop = false;
+        });
+      }
+      return;
+    }
+    setState(() => _searchingDrop = true);
+    _dropDebounce = Timer(const Duration(milliseconds: 280), () async {
+      try {
+        final results = await LocationSearchService.search(
+          q,
+          userLocation: _dropLocation ?? _location,
+        );
+        if (!mounted) return;
+        setState(() {
+          _dropSuggestions = results;
+          _searchingDrop = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _searchingDrop = false);
+      }
+    });
+  }
+
+  void _selectDropSuggestion(LocationSearchResult s) {
+    _dropAddrCtrl.text = s.fullAddress;
+    _dropLocation = s.toLatLng();
+    _dropSuggestions = [];
+    _searchingDrop = false;
+    _dropFocus.unfocus();
+    _recalcDistance();
+    setState(() {});
+  }
+
+  void _onAddressChanged(String text) {
+    _addressDebounce?.cancel();
+    final q = text.trim();
+    if (q.length < 2) {
+      if (_addressSuggestions.isNotEmpty || _searchingAddress) {
+        setState(() {
+          _addressSuggestions = [];
+          _searchingAddress = false;
+        });
+      }
+      return;
+    }
+    setState(() => _searchingAddress = true);
+    _addressDebounce = Timer(const Duration(milliseconds: 280), () async {
+      try {
+        final results = await LocationSearchService.search(
+          q,
+          userLocation: _location,
+        );
+        if (!mounted) return;
+        setState(() {
+          _addressSuggestions = results;
+          _searchingAddress = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _searchingAddress = false);
+      }
+    });
+  }
+
+  void _selectAddressSuggestion(LocationSearchResult s) {
+    _addressCtrl.text = s.fullAddress;
+    _location = s.toLatLng();
+    _locationLabel = s.title;
+    _addressSuggestions = [];
+    _searchingAddress = false;
+    _addressFocus.unfocus();
+    setState(() {});
+  }
 
   LatLng? _lookupKnownLocality(String text) {
     final lower = text.toLowerCase().trim();
@@ -471,8 +608,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _titleFocus.dispose();
     _descFocus.dispose();
     _budgetFocus.dispose();
+    _pickupDebounce?.cancel();
+    _dropDebounce?.cancel();
+    _addressDebounce?.cancel();
     _pickupFocus.dispose();
     _dropFocus.dispose();
+    _addressFocus.dispose();
     _addressCtrl.dispose();
     _flatNameCtrl.dispose();
     _areaCtrl.dispose();
@@ -2655,6 +2796,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 TextFormField(
                   controller: _pickupAddrCtrl,
                   focusNode: _pickupFocus,
+                  onChanged: _onPickupAddrChanged,
                   decoration: InputDecoration(
                     labelText: 'Pickup Address *',
                     hintText: 'Where to pick up from',
@@ -2672,6 +2814,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Pickup address is required'
                       : null,
+                ),
+                LocationSuggestionsDropdown(
+                  suggestions: _pickupSuggestions,
+                  isLoading: _searchingPickup,
+                  accentColor: AppColors.primary,
+                  onSelect: _selectPickupSuggestion,
+                  onDismiss: () => setState(() => _pickupSuggestions = []),
                 ),
                 if (_pickupLocation != null)
                   Padding(
@@ -2783,6 +2932,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 TextFormField(
                   controller: _dropAddrCtrl,
                   focusNode: _dropFocus,
+                  onChanged: _onDropAddrChanged,
                   decoration: InputDecoration(
                     labelText: 'Drop / Delivery Address *',
                     hintText: 'Where to deliver / drop off',
@@ -2798,6 +2948,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Drop address is required'
                       : null,
+                ),
+                LocationSuggestionsDropdown(
+                  suggestions: _dropSuggestions,
+                  isLoading: _searchingDrop,
+                  accentColor: AppColors.danger,
+                  onSelect: _selectDropSuggestion,
+                  onDismiss: () => setState(() => _dropSuggestions = []),
                 ),
                 if (_dropLocation != null)
                   Padding(
@@ -2967,9 +3124,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 // ── Address / Landmark ──────────────────────────────────────
                 TextFormField(
                   controller: _addressCtrl,
-                  readOnly: true,
+                  focusNode: _addressFocus,
+                  readOnly: false,
+                  onChanged: _onAddressChanged,
                   decoration: InputDecoration(
                     labelText: 'Address / Landmark (optional)',
+                    hintText: 'Type locality, landmark or address',
                     prefixIcon: const Icon(Icons.location_on_outlined),
                     suffixIcon: _AddressActionButtons(
                       isLoading: _gettingLocation,
@@ -2980,6 +3140,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     suffixIconConstraints:
                         const BoxConstraints(maxHeight: 48),
                   ),
+                ),
+                LocationSuggestionsDropdown(
+                  suggestions: _addressSuggestions,
+                  isLoading: _searchingAddress,
+                  accentColor: AppColors.primary,
+                  onSelect: _selectAddressSuggestion,
+                  onDismiss: () => setState(() => _addressSuggestions = []),
                 ),
                 if (_location != null)
                   Padding(

@@ -321,20 +321,32 @@ class Task {
       isHidden: json['is_hidden'] == true,
       posterHasRatedHelper: json['poster_has_rated_helper'] == true,
       helperHasRatedPoster: json['helper_has_rated_poster'] == true,
-      pickupAddress: (pickup is Map ? pickup['address'] : null)?.toString()
-          ?? json['pickup_address']?.toString()
-          ?? json['pickupAddress']?.toString()
-          ?? json['pickup_addr']?.toString()
-          ?? json['from_address']?.toString(),
-      dropAddress: (dropLoc is Map ? dropLoc['address'] : null)?.toString()
-          ?? (destination is Map ? destination['address'] : null)?.toString()
-          ?? json['drop_location_address']?.toString()
-          ?? json['delivery_address']?.toString()
-          ?? json['drop_address']?.toString()
-          ?? json['dropAddress']?.toString()
-          ?? json['deliveryAddress']?.toString()
-          ?? json['to_address']?.toString()
-          ?? json['destination_address']?.toString(),
+      pickupAddress: (() {
+        final direct = (pickup is Map ? pickup['address'] : null)?.toString()
+            ?? json['pickup_address']?.toString()
+            ?? json['pickupAddress']?.toString()
+            ?? json['pickup_addr']?.toString()
+            ?? json['from_address']?.toString();
+        if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+        final rawAddr = locAddr?.toString() ?? json['address']?.toString() ?? json['location_address']?.toString() ?? '';
+        final m = RegExp(r'Pickup:\s*(.+?)(?:\n|$)', caseSensitive: false).firstMatch(rawAddr);
+        return m?.group(1)?.trim();
+      })(),
+      dropAddress: (() {
+        final direct = (dropLoc is Map ? dropLoc['address'] : null)?.toString()
+            ?? (destination is Map ? destination['address'] : null)?.toString()
+            ?? json['drop_location_address']?.toString()
+            ?? json['delivery_address']?.toString()
+            ?? json['drop_address']?.toString()
+            ?? json['dropAddress']?.toString()
+            ?? json['deliveryAddress']?.toString()
+            ?? json['to_address']?.toString()
+            ?? json['destination_address']?.toString();
+        if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+        final rawAddr = locAddr?.toString() ?? json['address']?.toString() ?? json['location_address']?.toString() ?? '';
+        final m = RegExp(r'Drop:\s*(.+?)(?:\n|$)', caseSensitive: false).firstMatch(rawAddr);
+        return m?.group(1)?.trim();
+      })(),
       dropLatitude: (() {
         // Primary: drop_location nested object (browse/user-tasks API)
         if (dropLoc is Map && dropLoc['lat'] != null) {
@@ -369,7 +381,40 @@ class Task {
 
   /// True for task categories that involve a pickup-to-drop delivery route.
   bool get isDeliveryType =>
-      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category);
+      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category.toLowerCase());
+
+  /// Whether this task belongs to delivery / pickup / transport / moving categories.
+  bool get isDeliveryCategory =>
+      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category.toLowerCase());
+
+  /// The effective pickup address (or standard task address).
+  String get effectivePickupAddress {
+    if (pickupAddress != null && pickupAddress!.trim().isNotEmpty) {
+      return pickupAddress!.trim();
+    }
+    if (address != null && address!.trim().isNotEmpty) {
+      final m = RegExp(r'Pickup:\s*(.+?)(?:\n|$)', caseSensitive: false).firstMatch(address!);
+      if (m != null && m.group(1)!.trim().isNotEmpty) {
+        return m.group(1)!.trim();
+      }
+      return address!.trim();
+    }
+    return '';
+  }
+
+  /// The effective drop address.
+  String? get effectiveDropAddress {
+    if (dropAddress != null && dropAddress!.trim().isNotEmpty) {
+      return dropAddress!.trim();
+    }
+    if (address != null && address!.trim().isNotEmpty) {
+      final m = RegExp(r'Drop:\s*(.+?)(?:\n|$)', caseSensitive: false).firstMatch(address!);
+      if (m != null && m.group(1)!.trim().isNotEmpty) {
+        return m.group(1)!.trim();
+      }
+    }
+    return null;
+  }
 
   /// Platform commission rate (20% inclusive of GST & platform fee).
   static const double platformCommission = 0.20;

@@ -2564,7 +2564,9 @@ def get_tasks():
                         'lat': task['drop_location_lat'],
                         'lng': task['drop_location_lng'],
                         'address': task.get('drop_location_address') or ''
-                    } if task.get('drop_location_lat') else None,
+                    } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                    'drop_address': task.get('drop_location_address') or '',
+                    'drop_location_address': task.get('drop_location_address') or '',
                     'price': float(task['price']),
                     'service_charge': float(task.get('service_charge') or 0),
                     'postedBy': {
@@ -2754,6 +2756,19 @@ def create_task():
             
             location = data.get('location', {})
             drop_location = data.get('dropLocation') or data.get('drop_location') or {}
+            if not isinstance(drop_location, dict):
+                drop_location = {}
+            drop_addr_val = (
+                drop_location.get('address') or
+                data.get('drop_location_address') or
+                data.get('delivery_address') or
+                data.get('drop_address') or
+                data.get('to_address')
+            )
+            if not drop_addr_val and location.get('address'):
+                m_drop_extracted = re.search(r'Drop:\s*(.+?)(?:\n|$)', str(location.get('address')), re.IGNORECASE)
+                if m_drop_extracted:
+                    drop_addr_val = m_drop_extracted.group(1).strip()
             
             print(f"   Posted at: {posted_at}")
             print(f"   Expires at: {expires_at}")
@@ -2785,7 +2800,7 @@ def create_task():
                     html_escape(location.get('address', '') or ''),
                     drop_location.get('lat') if drop_location else None,
                     drop_location.get('lng') if drop_location else None,
-                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    html_escape(drop_addr_val or '') if drop_addr_val else None,
                     data['price'],
                     service_charge,
                     request.user_id,
@@ -2810,7 +2825,7 @@ def create_task():
                     html_escape(location.get('address', '') or ''),
                     drop_location.get('lat') if drop_location else None,
                     drop_location.get('lng') if drop_location else None,
-                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    html_escape(drop_addr_val or '') if drop_addr_val else None,
                     data['price'],
                     service_charge,
                     request.user_id,
@@ -3436,7 +3451,9 @@ def get_task(task_id):
                     'lat': task.get('drop_location_lat'),
                     'lng': task.get('drop_location_lng'),
                     'address': task.get('drop_location_address') or ''
-                } if task.get('drop_location_lat') else None,
+                } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                'drop_address': task.get('drop_location_address') or '',
+                'drop_location_address': task.get('drop_location_address') or '',
                 'price': float(task.get('price') or 0),
                 'service_charge': float(task.get('service_charge') or 0),
                 'postedBy': {

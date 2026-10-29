@@ -740,58 +740,98 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               const Text('Location',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 8),
-              // Delivery tasks: show pickup + drop separately
-              if (const {'delivery', 'pickup', 'transport', 'moving'}
-                      .contains(task.category.toLowerCase()) &&
-                  (task.pickupAddress != null || task.dropAddress != null)) ...[
-                if (task.pickupAddress != null) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              // Delivery tasks: show pickup + drop clearly separated with dedicated cards
+              if (task.isDeliveryCategory) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
                     children: [
-                      const Icon(Icons.radio_button_checked,
-                          color: AppColors.primary, size: 18),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Pickup',
-                                style: TextStyle(
-                                    color: AppColors.gray,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600)),
-                            Text(task.pickupAddress!,
-                                style: const TextStyle(color: AppColors.gray)),
-                          ],
-                        ),
+                      // Pickup Location
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.radio_button_checked,
+                                color: AppColors.primary, size: 16),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Pickup Location',
+                                    style: TextStyle(
+                                        color: AppColors.gray,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  task.effectivePickupAddress.isNotEmpty
+                                      ? task.effectivePickupAddress
+                                      : (task.address ?? 'Pickup location specified by poster'),
+                                  style: const TextStyle(
+                                      color: AppColors.dark,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Divider(height: 1),
+                      ),
+                      // Drop / Destination Location
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: AppColors.danger.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.location_on,
+                                color: AppColors.danger, size: 16),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Drop / Destination Location',
+                                    style: TextStyle(
+                                        color: AppColors.danger,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  task.effectiveDropAddress ?? 'Drop location specified by poster',
+                                  style: const TextStyle(
+                                      color: AppColors.dark,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                ],
-                if (task.dropAddress != null) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.location_on, color: AppColors.danger, size: 18),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Drop / Destination',
-                                style: TextStyle(
-                                    color: AppColors.gray,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600)),
-                            Text(task.dropAddress!,
-                                style: const TextStyle(color: AppColors.gray)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ] else
                 Row(
                   children: [

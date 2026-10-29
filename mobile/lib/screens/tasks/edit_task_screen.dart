@@ -258,10 +258,25 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         'lng': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.longitude,
         'address': combinedAddress ?? '',
       },
-      if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
-        'pickup_address': _pickupAddrCtrl.text.trim(),
-      if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty)
-        'delivery_address': _dropAddrCtrl.text.trim(),
+      if (_isDelivery) ...{
+        if (_pickupAddrCtrl.text.trim().isNotEmpty)
+          'pickup_address': _pickupAddrCtrl.text.trim(),
+        if (_dropAddrCtrl.text.trim().isNotEmpty) ...{
+          'delivery_address': _dropAddrCtrl.text.trim(),
+          'drop_location_address': _dropAddrCtrl.text.trim(),
+          'drop_address': _dropAddrCtrl.text.trim(),
+        },
+        'drop_location': {
+          'lat': _dropLocation?.latitude,
+          'lng': _dropLocation?.longitude,
+          'address': _dropAddrCtrl.text.trim(),
+        },
+        'dropLocation': {
+          'lat': _dropLocation?.latitude,
+          'lng': _dropLocation?.longitude,
+          'address': _dropAddrCtrl.text.trim(),
+        },
+      },
     };
 
     setState(() => _loading = true);

@@ -124,23 +124,96 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   };
 
 
-  /// Recalculates the straight-line distance (km) between pickup and drop,
-  /// then auto-fills the budget with the ₹10/km minimum if it is unset or lower.
+  static const Map<String, LatLng> _knownLocalityCoords = {
+    'hinjewadi': LatLng(18.5913, 73.7389),
+    'baner': LatLng(18.5590, 73.7868),
+    'wakad': LatLng(18.5987, 73.7660),
+    'balewadi': LatLng(18.5750, 73.7712),
+    'aundh': LatLng(18.5602, 73.8031),
+    'bavdhan': LatLng(18.5143, 73.7684),
+    'pashan': LatLng(18.5385, 73.7929),
+    'kothrud': LatLng(18.5074, 73.8077),
+    'shivajinagar': LatLng(18.5314, 73.8446),
+    'shivaji nagar': LatLng(18.5314, 73.8446),
+    'deccan': LatLng(18.5167, 73.8417),
+    'swargate': LatLng(18.5018, 73.8636),
+    'camp': LatLng(18.5140, 73.8780),
+    'koregaon': LatLng(18.5362, 73.8940),
+    'koregaon park': LatLng(18.5362, 73.8940),
+    'kalyani': LatLng(18.5477, 73.9034),
+    'kalyani nagar': LatLng(18.5477, 73.9034),
+    'viman': LatLng(18.5679, 73.9143),
+    'viman nagar': LatLng(18.5679, 73.9143),
+    'kharadi': LatLng(18.5516, 73.9349),
+    'magarpatta': LatLng(18.5089, 73.9260),
+    'hadapsar': LatLng(18.5089, 73.9260),
+    'pimpri': LatLng(18.6279, 73.8009),
+    'chinchwad': LatLng(18.6298, 73.7997),
+    'bhosari': LatLng(18.6247, 73.8468),
+    'wagholi': LatLng(18.5808, 73.9804),
+    'nigdi': LatLng(18.6548, 73.7684),
+    'akurdi': LatLng(18.6493, 73.7707),
+    'moshi': LatLng(18.6750, 73.8436),
+    'ambegaon': LatLng(18.4575, 73.8508),
+    'katraj': LatLng(18.4575, 73.8508),
+    'warje': LatLng(18.4816, 73.7963),
+    'ravet': LatLng(18.6310, 73.7350),
+    'punawale': LatLng(18.6250, 73.7380),
+    'tathawade': LatLng(18.6180, 73.7480),
+    'kondhwa': LatLng(18.4746, 73.8860),
+    'bibvewadi': LatLng(18.4770, 73.8640),
+    'dhayari': LatLng(18.4480, 73.8180),
+    'sinhagad': LatLng(18.4480, 73.8180),
+  };
+
+  LatLng? _lookupKnownLocality(String text) {
+    final lower = text.toLowerCase().trim();
+    if (lower.isEmpty) return null;
+    for (final entry in _knownLocalityCoords.entries) {
+      if (lower.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  void _checkAndEstimateDistance() {
+    if (!_isDelivery) return;
+    if (_pickupLocation == null) {
+      final pText = '${_pickupAddrCtrl.text} ${_pickupAreaCtrl.text}'.trim();
+      final pLoc = _lookupKnownLocality(pText);
+      if (pLoc != null) {
+        _pickupLocation = pLoc;
+        _location ??= pLoc;
+      }
+    }
+    if (_dropLocation == null) {
+      final dText = '${_dropAddrCtrl.text} ${_dropAreaCtrl.text}'.trim();
+      final dLoc = _lookupKnownLocality(dText);
+      if (dLoc != null) {
+        _dropLocation = dLoc;
+      }
+    }
+    _recalcDistance();
+  }
+
+  /// Recalculates exact distance (km) between pickup and drop,
+  /// then auto-fills budget with category-specific distance fare if unset or lower.
   void _recalcDistance() {
     if (_pickupLocation != null && _dropLocation != null) {
-      final km = const Distance().as(
-        LengthUnit.Kilometer,
+      final meters = const Distance().distance(
         _pickupLocation!,
         _dropLocation!,
       );
-      final minPrice = (km * 10).ceil().toDouble();
+      final km = meters / 1000.0;
+      final minPrice = Task.calculateDistancePrice(km, _selectedCategory);
       final current = double.tryParse(_budgetCtrl.text) ?? 0;
       if (current < minPrice) {
         _budgetCtrl.text = minPrice.toStringAsFixed(0);
       }
-      setState(() => _calculatedDistanceKm = km);
+      if (mounted) setState(() => _calculatedDistanceKm = km);
     } else {
-      setState(() => _calculatedDistanceKm = null);
+      if (mounted) setState(() => _calculatedDistanceKm = null);
     }
   }
 
@@ -259,6 +332,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   _selectedCategory = c.id;
                                   _autoFillDescription();
                                 });
+                                _recalcDistance();
                                 Navigator.pop(ctx);
                               },
                               child: AnimatedContainer(
@@ -338,6 +412,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _getLocation();
     _savedLocations = StorageService.getSavedLocations();
     _areaCtrl.addListener(_onLocationAreaChanged);
+    _pickupAreaCtrl.addListener(_onLocationAreaChanged);
     _dropAreaCtrl.addListener(_onLocationAreaChanged);
     _addressCtrl.addListener(_onLocationAreaChanged);
     _pickupAddrCtrl.addListener(_onLocationAreaChanged);
@@ -349,6 +424,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   @override
   void dispose() {
     _areaCtrl.removeListener(_onLocationAreaChanged);
+    _pickupAreaCtrl.removeListener(_onLocationAreaChanged);
     _dropAreaCtrl.removeListener(_onLocationAreaChanged);
     _addressCtrl.removeListener(_onLocationAreaChanged);
     _pickupAddrCtrl.removeListener(_onLocationAreaChanged);
@@ -1311,12 +1387,32 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
 
     final budget = double.tryParse(_budgetCtrl.text) ?? 0;
-    final catMin = Task.minBudgetForCategory(_selectedCategory);
-    if (budget < catMin) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
-      );
-      return;
+    if (_isDelivery) {
+      if (_calculatedDistanceKm != null) {
+        final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory);
+        if (budget < distMin) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Minimum budget for ${_calculatedDistanceKm!.toStringAsFixed(1)} km is ₹${distMin.toInt()}')),
+          );
+          return;
+        }
+      } else if (_selectedCategory != 'delivery') {
+        final catMin = Task.minBudgetForCategory(_selectedCategory);
+        if (catMin > 0 && budget < catMin) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+          );
+          return;
+        }
+      }
+    } else {
+      final catMin = Task.minBudgetForCategory(_selectedCategory);
+      if (budget < catMin) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+        );
+        return;
+      }
     }
     final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
     final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
@@ -1933,6 +2029,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _onLocationAreaChanged() {
+    if (_isDelivery) {
+      _checkAndEstimateDistance();
+    }
     if (mounted) setState(() {});
   }
 
@@ -2156,12 +2255,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       .map((c) {
                     final sel = _selectedCategory == c.id;
                     return GestureDetector(
-                      onTap: () => setState(() {
-                        _selectedCategory = c.id;
-                        _categorySearchCtrl.clear();
-                        _categorySearch = '';
-                        _autoFillDescription();
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _selectedCategory = c.id;
+                          _categorySearchCtrl.clear();
+                          _categorySearch = '';
+                          _autoFillDescription();
+                        });
+                        _recalcDistance();
+                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -2286,27 +2388,39 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   labelText: 'Budget (₹)',
                   hintText: _isDelivery
                       ? (_calculatedDistanceKm != null
-                          ? 'Min ₹${(_calculatedDistanceKm! * 10).ceil()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km × ₹10/km)'
-                          : 'Set locations to auto-calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory).toInt()})')
+                          ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory)})'
+                          : (_selectedCategory == 'delivery'
+                              ? 'Enter budget (distance rate: ₹10/km)'
+                              : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory).toInt()})'))
                       : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
-                  helperText: 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
+                  helperText: _isDelivery
+                      ? (_selectedCategory == 'delivery'
+                          ? (_calculatedDistanceKm != null
+                              ? 'Distance price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km × ₹10/km, no ₹100 minimum)'
+                              : 'Dynamic distance pricing (₹10/km, no ₹100 minimum)')
+                          : (_calculatedDistanceKm != null
+                              ? 'Distance price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory)})'
+                              : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory)}'))
+                      : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
                   prefixIcon: const Icon(Icons.currency_rupee),
                 ),
                 validator: (v) {
                   final n = double.tryParse(v ?? '');
                   if (n == null || n <= 0) return 'Please enter a budget';
-                  final catMin = Task.minBudgetForCategory(_selectedCategory);
                   if (_isDelivery) {
                     if (_calculatedDistanceKm != null) {
-                      final distMin = (_calculatedDistanceKm! * 10).ceil().toDouble();
-                      final effectiveMin = distMin > catMin ? distMin : catMin;
-                      if (n < effectiveMin) {
-                        return 'Minimum ₹${effectiveMin.toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km × ₹10/km)';
+                      final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory);
+                      if (n < distMin) {
+                        return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory)})';
                       }
-                    } else if (n < catMin) {
-                      return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+                    } else if (_selectedCategory != 'delivery') {
+                      final catMin = Task.minBudgetForCategory(_selectedCategory);
+                      if (catMin > 0 && n < catMin) {
+                        return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+                      }
                     }
                   } else {
+                    final catMin = Task.minBudgetForCategory(_selectedCategory);
                     if (n < catMin) {
                       return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
                     }
@@ -2605,7 +2719,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Minimum price: ₹${(_calculatedDistanceKm! * 10).ceil()} (₹10 per km)',
+                                'Calculated price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory)})',
                                 style: const TextStyle(
                                     fontSize: 12, color: AppColors.gray),
                               ),

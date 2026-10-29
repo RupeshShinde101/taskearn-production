@@ -502,17 +502,79 @@ class Task {
       case 'eldercare':
         return 500.0;
 
-      // Delivery & Moving
+      // Delivery & Moving - dynamic distance-based pricing (no static ₹100 floor)
       case 'delivery':
+        return 0.0; // No minimum budget for delivery; calculated from distance
       case 'pickup':
+        return 30.0; // Auto pick & drop base min
       case 'transport':
-        return 100.0;
+        return 50.0; // Vehicle transport base min
       case 'moving':
-        return 500.0;
+        return 400.0; // Moving & packing base min
 
       case 'other':
       default:
         return 100.0;
+    }
+  }
+
+  /// Returns the per-km rate (in ₹) for a delivery-related category.
+  static double ratePerKmForCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'delivery':
+        return 10.0; // Bike delivery: ₹10/km
+      case 'pickup':
+        return 15.0; // Auto/Pick & Drop: ₹15/km
+      case 'transport':
+        return 18.0; // Cab/Vehicle Transport: ₹18/km
+      case 'moving':
+        return 35.0; // Moving & Tempo: ₹35/km
+      default:
+        return 10.0;
+    }
+  }
+
+  /// Calculates the price (in ₹) based on distance and category.
+  static double calculateDistancePrice(double distanceKm, String category) {
+    if (distanceKm <= 0) return 0.0;
+    final cat = category.toLowerCase();
+    switch (cat) {
+      case 'delivery':
+        // Bike delivery: ₹10/km, base min ₹20 (no static ₹100 minimum)
+        final raw = distanceKm * 10.0;
+        return (raw < 20.0 ? 20.0 : raw).roundToDouble();
+      case 'pickup':
+        // Auto pick & drop: ₹15/km, base min ₹30
+        final raw = distanceKm * 15.0;
+        return (raw < 30.0 ? 30.0 : raw).roundToDouble();
+      case 'transport':
+        // Cab/Vehicle transport: ₹18/km, base min ₹50
+        final raw = distanceKm * 18.0;
+        return (raw < 50.0 ? 50.0 : raw).roundToDouble();
+      case 'moving':
+        // Moving & Packing: Base ₹400 (loading/unloading) + ₹35/km
+        final fare = 400.0 + (distanceKm > 2 ? (distanceKm - 2) * 35.0 : 0.0);
+        return (fare < 400.0 ? 400.0 : fare).roundToDouble();
+      default:
+        final raw = distanceKm * 10.0;
+        return (raw < 20.0 ? 20.0 : raw).roundToDouble();
+    }
+  }
+
+  /// Returns user-facing rate and pricing description.
+  static String distancePriceDescription(double distanceKm, String category) {
+    final cat = category.toLowerCase();
+    switch (cat) {
+      case 'delivery':
+        return '₹10 per km (min ₹20)';
+      case 'pickup':
+        return '₹15 per km (min ₹30)';
+      case 'transport':
+        return '₹18 per km (min ₹50)';
+      case 'moving':
+        return '₹400 base + ₹35 per km';
+      default:
+        return '₹10 per km';
     }
   }
 
@@ -688,19 +750,24 @@ class Task {
         baseMax = 1300.0;
         break;
       case 'moving':
-        baseSuggested = 900.0;
-        baseMax = 2500.0;
+        if (distanceKm != null && distanceKm > 0) {
+          baseSuggested = calculateDistancePrice(distanceKm, 'moving');
+          baseMax = (baseSuggested * 1.35).roundToDouble();
+        } else {
+          baseSuggested = 600.0;
+          baseMax = 1500.0;
+        }
         break;
       case 'delivery':
       case 'pickup':
       case 'transport':
         if (distanceKm != null && distanceKm > 0) {
-          final distRate = (distanceKm * 12).roundToDouble();
-          baseSuggested = distRate < 120 ? 120 : distRate;
-          baseMax = baseSuggested * 1.5;
+          final distPrice = calculateDistancePrice(distanceKm, cat);
+          baseSuggested = distPrice;
+          baseMax = (distPrice * 1.35).roundToDouble();
         } else {
-          baseSuggested = 150.0;
-          baseMax = 300.0;
+          baseSuggested = cat == 'delivery' ? 40.0 : (cat == 'pickup' ? 70.0 : 100.0);
+          baseMax = baseSuggested * 1.6;
         }
         break;
       case 'other':
@@ -711,10 +778,10 @@ class Task {
     }
 
     final minB = minBudgetForCategory(cat);
-    double suggested = ((baseSuggested * multiplier) / 10).round() * 10.0;
-    if (suggested < minB) suggested = minB;
-    double maxB = ((baseMax * multiplier) / 10).round() * 10.0;
-    if (maxB <= suggested) maxB = suggested + 150.0;
+    double suggested = ((baseSuggested * multiplier) / 5).round() * 5.0;
+    if (minB > 0 && suggested < minB) suggested = minB;
+    double maxB = ((baseMax * multiplier) / 5).round() * 5.0;
+    if (maxB <= suggested) maxB = suggested + 30.0;
 
     return CategoryBudgetSuggestion(
       minBudget: minB,

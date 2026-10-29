@@ -1107,11 +1107,11 @@ CATEGORY_MIN_PRICES = {
     'elder_care': 500.0,
     'eldercare': 500.0,
 
-    # Delivery & Moving
-    'delivery': 100.0,
-    'pickup': 100.0,
-    'transport': 100.0,
-    'moving': 500.0,
+    # Delivery & Moving (dynamic distance pricing; removed ₹100 static floor for delivery)
+    'delivery': 1.0,
+    'pickup': 20.0,
+    'transport': 30.0,
+    'moving': 200.0,
 
     'other': 100.0,
 }
@@ -1120,7 +1120,14 @@ CATEGORY_MIN_PRICES = {
 def get_min_price_for_category(category):
     if not category:
         return 100.0
-    return CATEGORY_MIN_PRICES.get(str(category).lower(), 100.0)
+    cat_lower = str(category).lower()
+    if cat_lower == 'delivery':
+        return 1.0  # Dynamic distance-based; no static ₹100 minimum floor
+    if cat_lower in {'pickup', 'transport'}:
+        return 20.0
+    if cat_lower == 'moving':
+        return 200.0
+    return CATEGORY_MIN_PRICES.get(cat_lower, 100.0)
 
 
 def get_user_by_email(email):

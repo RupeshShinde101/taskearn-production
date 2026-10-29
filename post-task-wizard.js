@@ -120,7 +120,7 @@
         } else if (step === 3) {
             const v = parseFloat(($('customBudget') || {}).value);
             const cat3 = ($('modalTaskCategory') || {}).value || '';
-            const noMin = cat3 === 'delivery' || cat3 === 'transport';
+            const noMin = cat3 === 'delivery' || cat3 === 'transport' || cat3 === 'pickup' || cat3 === 'moving';
             const catMin = (typeof window.getMinTaskPrice === 'function') ? window.getMinTaskPrice(cat3) : 100;
             if (!v || (!noMin && v < catMin)) return noMin ? 'Please enter a budget.' : 'Minimum task budget for this category is ₹' + catMin + '.';
         }

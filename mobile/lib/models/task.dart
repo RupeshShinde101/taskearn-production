@@ -518,34 +518,40 @@ class Task {
     }
   }
 
-  /// Returns the per-km rate (in ₹) for a delivery-related category.
-  static double ratePerKmForCategory(String category) {
+  /// Returns the per-km rate (in ₹) for a delivery-related category and vehicle.
+  static double ratePerKmForCategory(String category, {String vehicle = 'bike'}) {
     switch (category.toLowerCase()) {
       case 'delivery':
-        return 10.0; // Bike delivery: ₹10/km
+        return vehicle.toLowerCase() == 'rikshaw' ? 18.0 : 12.0;
       case 'pickup':
-        return 15.0; // Auto/Pick & Drop: ₹15/km
+        return 18.0; // Rikshaw / Auto rate
       case 'transport':
-        return 18.0; // Cab/Vehicle Transport: ₹18/km
+        return 18.0; // Cab / Transport rate
       case 'moving':
         return 35.0; // Moving & Tempo: ₹35/km
       default:
-        return 10.0;
+        return 12.0;
     }
   }
 
-  /// Calculates the price (in ₹) based on distance and category.
-  static double calculateDistancePrice(double distanceKm, String category) {
+  /// Calculates the price (in ₹) based on distance, category, and vehicle.
+  static double calculateDistancePrice(double distanceKm, String category, {String vehicle = 'bike'}) {
     if (distanceKm <= 0) return 0.0;
     final cat = category.toLowerCase();
     switch (cat) {
       case 'delivery':
-        // Bike delivery: ₹10/km, base min ₹20 (no static ₹100 minimum)
-        final raw = distanceKm * 10.0;
-        return (raw < 20.0 ? 20.0 : raw).roundToDouble();
+        if (vehicle.toLowerCase() == 'rikshaw') {
+          // Rikshaw delivery: ₹18/km, base min ₹30
+          final raw = distanceKm * 18.0;
+          return (raw < 30.0 ? 30.0 : raw).roundToDouble();
+        } else {
+          // Bike delivery: ₹12/km, base min ₹24
+          final raw = distanceKm * 12.0;
+          return (raw < 24.0 ? 24.0 : raw).roundToDouble();
+        }
       case 'pickup':
-        // Auto pick & drop: ₹15/km, base min ₹30
-        final raw = distanceKm * 15.0;
+        // Auto pick & drop: ₹18/km, base min ₹30
+        final raw = distanceKm * 18.0;
         return (raw < 30.0 ? 30.0 : raw).roundToDouble();
       case 'transport':
         // Cab/Vehicle transport: ₹18/km, base min ₹50
@@ -556,25 +562,27 @@ class Task {
         final fare = 400.0 + (distanceKm > 2 ? (distanceKm - 2) * 35.0 : 0.0);
         return (fare < 400.0 ? 400.0 : fare).roundToDouble();
       default:
-        final raw = distanceKm * 10.0;
-        return (raw < 20.0 ? 20.0 : raw).roundToDouble();
+        final raw = distanceKm * 12.0;
+        return (raw < 24.0 ? 24.0 : raw).roundToDouble();
     }
   }
 
   /// Returns user-facing rate and pricing description.
-  static String distancePriceDescription(double distanceKm, String category) {
+  static String distancePriceDescription(double distanceKm, String category, {String vehicle = 'bike'}) {
     final cat = category.toLowerCase();
     switch (cat) {
       case 'delivery':
-        return '₹10 per km (min ₹20)';
+        return vehicle.toLowerCase() == 'rikshaw'
+            ? '₹18 per km (Rikshaw)'
+            : '₹12 per km (Bike)';
       case 'pickup':
-        return '₹15 per km (min ₹30)';
+        return '₹18 per km (Rikshaw)';
       case 'transport':
-        return '₹18 per km (min ₹50)';
+        return '₹18 per km';
       case 'moving':
         return '₹400 base + ₹35 per km';
       default:
-        return '₹10 per km';
+        return '₹12 per km';
     }
   }
 
@@ -583,6 +591,7 @@ class Task {
     String category, {
     String? areaText,
     double? distanceKm,
+    String vehicle = 'bike',
   }) {
     final cat = category.toLowerCase();
     final areaLower = (areaText ?? '').toLowerCase();
@@ -762,12 +771,14 @@ class Task {
       case 'pickup':
       case 'transport':
         if (distanceKm != null && distanceKm > 0) {
-          final distPrice = calculateDistancePrice(distanceKm, cat);
+          final distPrice = calculateDistancePrice(distanceKm, cat, vehicle: vehicle);
           baseSuggested = distPrice;
-          baseMax = (distPrice * 1.35).roundToDouble();
+          baseMax = (distPrice * 1.30).roundToDouble();
         } else {
-          baseSuggested = cat == 'delivery' ? 40.0 : (cat == 'pickup' ? 70.0 : 100.0);
-          baseMax = baseSuggested * 1.6;
+          baseSuggested = cat == 'delivery'
+              ? (vehicle == 'rikshaw' ? 60.0 : 40.0)
+              : (cat == 'pickup' ? 70.0 : 100.0);
+          baseMax = baseSuggested * 1.5;
         }
         break;
       case 'other':

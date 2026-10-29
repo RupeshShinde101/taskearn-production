@@ -44,6 +44,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _dropAreaCtrl   = TextEditingController();
 
   String _selectedCategory = 'delivery';
+  String _deliveryVehicle = 'bike'; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
+  int _distCalcSeq = 0;
   final _categorySearchCtrl = TextEditingController();
   String _categorySearch = '';
   LatLng? _location;
@@ -197,21 +199,47 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _recalcDistance();
   }
 
-  /// Recalculates exact distance (km) between pickup and drop,
-  /// then auto-fills budget with category-specific distance fare if unset or lower.
-  void _recalcDistance() {
+  /// Recalculates exact road distance (km) between pickup and drop matching Google Maps,
+  /// then auto-fills budget with category- and vehicle-specific distance fare.
+  Future<void> _recalcDistance() async {
     if (_pickupLocation != null && _dropLocation != null) {
+      final seq = ++_distCalcSeq;
+      // 1. Instant road estimate (aerial * 1.25 road factor) for zero UI lag
       final meters = const Distance().distance(
         _pickupLocation!,
         _dropLocation!,
       );
-      final km = meters / 1000.0;
-      final minPrice = Task.calculateDistancePrice(km, _selectedCategory);
+      final immediateKm = (meters / 1000.0) * 1.25;
+      final immediatePrice = Task.calculateDistancePrice(
+        immediateKm,
+        _selectedCategory,
+        vehicle: _deliveryVehicle,
+      );
       final current = double.tryParse(_budgetCtrl.text) ?? 0;
-      if (current < minPrice) {
-        _budgetCtrl.text = minPrice.toStringAsFixed(0);
+      if (current < immediatePrice) {
+        _budgetCtrl.text = immediatePrice.toStringAsFixed(0);
       }
-      if (mounted) setState(() => _calculatedDistanceKm = km);
+      if (mounted) setState(() => _calculatedDistanceKm = immediateKm);
+
+      // 2. Fetch exact road driving route via OSRM (Google Maps parity)
+      try {
+        final roadKm = await LocationService.calculateRoadDistance(
+          _pickupLocation!,
+          _dropLocation!,
+        );
+        if (seq == _distCalcSeq && mounted) {
+          final exactPrice = Task.calculateDistancePrice(
+            roadKm,
+            _selectedCategory,
+            vehicle: _deliveryVehicle,
+          );
+          final currVal = double.tryParse(_budgetCtrl.text) ?? 0;
+          if (currVal < exactPrice) {
+            _budgetCtrl.text = exactPrice.toStringAsFixed(0);
+          }
+          setState(() => _calculatedDistanceKm = roadKm);
+        }
+      } catch (_) {}
     } else {
       if (mounted) setState(() => _calculatedDistanceKm = null);
     }
@@ -1389,7 +1417,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     final budget = double.tryParse(_budgetCtrl.text) ?? 0;
     if (_isDelivery) {
       if (_calculatedDistanceKm != null) {
-        final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory);
+        final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
         if (budget < distMin) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Minimum budget for ${_calculatedDistanceKm!.toStringAsFixed(1)} km is ₹${distMin.toInt()}')),
@@ -1643,6 +1671,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'address': combinedAddress ?? '',
       },
       if (_isDelivery) ...{
+        'vehicle': _selectedCategory == 'delivery' ? _deliveryVehicle : 'auto',
         if (_pickupAddrCtrl.text.trim().isNotEmpty)
           'pickup_address': _pickupAddrCtrl.text.trim(),
         if (_dropAddrCtrl.text.trim().isNotEmpty) ...{
@@ -2035,6 +2064,151 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (mounted) setState(() {});
   }
 
+  Widget _buildDeliveryVehicleSelector() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.delivery_dining, size: 18, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Text(
+                'Delivery Vehicle Option',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: AppColors.dark,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildVehicleTile(
+                  title: 'Bike',
+                  rate: '₹12 / km',
+                  desc: 'Small items / docs',
+                  icon: Icons.two_wheeler_rounded,
+                  isSelected: _deliveryVehicle == 'bike',
+                  onTap: () {
+                    if (_deliveryVehicle != 'bike') {
+                      setState(() => _deliveryVehicle = 'bike');
+                      _recalcDistance();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildVehicleTile(
+                  title: 'Rikshaw',
+                  rate: '₹18 / km',
+                  desc: 'Auto / medium items',
+                  icon: Icons.electric_rickshaw_rounded,
+                  isSelected: _deliveryVehicle == 'rikshaw',
+                  onTap: () {
+                    if (_deliveryVehicle != 'rikshaw') {
+                      setState(() => _deliveryVehicle = 'rikshaw');
+                      _recalcDistance();
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVehicleTile({
+    required String title,
+    required String rate,
+    required String desc,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : AppColors.light,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.border,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 22, color: isSelected ? AppColors.primary : AppColors.gray),
+                const Spacer(),
+                if (isSelected)
+                  const Icon(Icons.check_circle, size: 16, color: AppColors.primary),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: isSelected ? AppColors.primary : AppColors.dark,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              rate,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: isSelected ? AppColors.primary : AppColors.dark,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              desc,
+              style: const TextStyle(fontSize: 11, color: AppColors.gray),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSuggestedBudgetCard() {
     final areaCandidate = _isDelivery
         ? (_dropAreaCtrl.text.trim().isNotEmpty
@@ -2048,6 +2222,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       _selectedCategory,
       areaText: areaCandidate,
       distanceKm: _calculatedDistanceKm,
+      vehicle: _deliveryVehicle,
     );
 
     return Container(
@@ -2372,6 +2547,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ],
               const SizedBox(height: 14),
 
+              // ── Delivery Vehicle Selector (Bike vs Rikshaw) ──
+              if (_selectedCategory == 'delivery') ...[
+                _buildDeliveryVehicleSelector(),
+                const SizedBox(height: 14),
+              ],
+
               // Description Form (replaces single raw textarea)
               _buildDescriptionFormSection(),
               const SizedBox(height: 14),
@@ -2388,19 +2569,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   labelText: 'Budget (₹)',
                   hintText: _isDelivery
                       ? (_calculatedDistanceKm != null
-                          ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory)})'
+                          ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})'
                           : (_selectedCategory == 'delivery'
-                              ? 'Enter budget (distance rate: ₹10/km)'
+                              ? 'Enter budget (${_deliveryVehicle == 'bike' ? '₹12/km' : '₹18/km'})'
                               : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory).toInt()})'))
                       : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
                   helperText: _isDelivery
                       ? (_selectedCategory == 'delivery'
                           ? (_calculatedDistanceKm != null
-                              ? 'Distance price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km × ₹10/km, no ₹100 minimum)'
-                              : 'Dynamic distance pricing (₹10/km, no ₹100 minimum)')
+                              ? 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
+                              : 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'}')
                           : (_calculatedDistanceKm != null
-                              ? 'Distance price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory)})'
-                              : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory)}'))
+                              ? 'Rate: ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
+                              : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory, vehicle: _deliveryVehicle)}'))
                       : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
                   prefixIcon: const Icon(Icons.currency_rupee),
                 ),
@@ -2409,9 +2590,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   if (n == null || n <= 0) return 'Please enter a budget';
                   if (_isDelivery) {
                     if (_calculatedDistanceKm != null) {
-                      final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory);
+                      final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
                       if (n < distMin) {
-                        return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory)})';
+                        return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
                       }
                     } else if (_selectedCategory != 'delivery') {
                       final catMin = Task.minBudgetForCategory(_selectedCategory);
@@ -2719,7 +2900,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Calculated price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory)})',
+                                'Calculated price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})',
                                 style: const TextStyle(
                                     fontSize: 12, color: AppColors.gray),
                               ),

@@ -102,6 +102,28 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'other':       ['Describe the task clearly?', 'Skills needed?', 'Expected duration?'],
   };
 
+  /// Quick-tap suggestion chips for common question patterns.
+  static const Map<String, List<String>> _quickChips = {
+    'urgent': ['Yes, urgent', 'Within 2 hours', 'Flexible today'],
+    'time constraint': ['Urgent', 'Morning', 'Evening', 'Flexible'],
+    'time slot': ['Morning (9am-12pm)', 'Afternoon (12pm-4pm)', 'Evening (4pm-8pm)', 'Flexible'],
+    'time needed': ['Morning', 'Lunch time', 'Evening / Dinner', 'Flexible'],
+    'fragile': ['Yes, fragile', 'No, not fragile'],
+    'need packing help': ['Yes, need packing', 'No, already packed'],
+    'pets at home': ['No pets', 'Dog', 'Cat', 'Other pet'],
+    'dietary restrictions': ['Pure Veg', 'Non-Veg', 'Jain', 'No restrictions'],
+    'wash + fold': ['Wash + Fold', 'Wash + Iron', 'Only Fold'],
+    'pick up from home': ['Yes, pick up from home', 'I will drop off'],
+    'at-home or garage': ['At my home', 'Take to garage / workshop'],
+    'online or in-person': ['In-person', 'Online', 'Either'],
+    'remote or in-person': ['Remote / Online', 'In-person'],
+    'vaccinated': ['Yes, vaccinated', 'Not vaccinated'],
+    'supplies provided': ['Supplies provided', 'Helper bring supplies'],
+    'tools needed': ['Have own tools', 'Helper bring tools'],
+    'gender preference': ['No preference', 'Female helper', 'Male helper'],
+  };
+
+
   /// Recalculates the straight-line distance (km) between pickup and drop,
   /// then auto-fills the budget with the ₹10/km minimum if it is unset or lower.
   void _recalcDistance() {
@@ -306,18 +328,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Auto-fill description with category-specific prompts/questions.
   /// Only fills if description is empty or still contains the previous template.
-  void _autoFillDescription({bool force = false}) {
-    final prompts = _prompts[_selectedCategory];
-    if (prompts == null || prompts.isEmpty) return;
-    final newTemplate = prompts.map((p) => 'Q: $p\nA: ').join('\n\n');
-    final current = _descCtrl.text;
-    // Don't overwrite if user has typed their own content
-    final isEmpty = current.trim().isEmpty;
-    final isTemplate = current.contains('Q: ') && current.contains('\nA: ');
-    if (force || isEmpty || isTemplate) {
-      _descCtrl.text = newTemplate;
-      _descCtrl.selection =
-          TextSelection.fromPosition(const TextPosition(offset: 0));
+  void _autoFillDescription() {
+    if (_useFormDescription) {
+      _compileDescriptionFromForm();
     }
   }
 
@@ -342,6 +355,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _addressCtrl.removeListener(_onLocationAreaChanged);
     _pickupAddrCtrl.removeListener(_onLocationAreaChanged);
     _dropAddrCtrl.removeListener(_onLocationAreaChanged);
+    for (final ctrl in _descFormControllers.values) {
+      ctrl.dispose();
+    }
+    for (final fn in _descFormFocusNodes.values) {
+      fn.dispose();
+    }
+    _additionalNotesCtrl.dispose();
+    _additionalNotesFocus.dispose();
     _titleCtrl.dispose();
     _descCtrl.dispose();
     _budgetCtrl.dispose();
@@ -1158,6 +1179,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _submit() async {
+    if (_useFormDescription) {
+      _compileDescriptionFromForm();
+    }
+
     // Always re-check title on every submit click (not relying on form cache)
     final titleErr = _validateTaskTitle(_titleCtrl.text);
     if (titleErr != null) {
@@ -1186,8 +1211,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         firstInvalidFocus ??= _titleFocus;
       }
       if (_descCtrl.text.trim().length < 10) {
-        missing.add('Description');
-        firstInvalidFocus ??= _descFocus;
+        missing.add(_useFormDescription ? 'Task Details Form (min 10 characters)' : 'Description');
+        if (_useFormDescription) {
+          final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
+          for (final p in prompts) {
+            final ctrl = _descFormControllers[p];
+            if (ctrl == null || ctrl.text.trim().isEmpty) {
+              firstInvalidFocus ??= _getDescQuestionFocus(p);
+              break;
+            }
+          }
+        } else {
+          firstInvalidFocus ??= _descFocus;
+        }
       }
       final budget = double.tryParse(_budgetCtrl.text);
       if (budget == null || budget <= 0) {
@@ -1552,7 +1588,409 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
-    void _onLocationAreaChanged() {
+    /// Whether the user is using the structured description form (default true) or freeform text.
+  bool _useFormDescription = true;
+
+  /// Controllers for each question in the description form.
+  final Map<String, TextEditingController> _descFormControllers = {};
+
+  /// Focus nodes for each question in the description form.
+  final Map<String, FocusNode> _descFormFocusNodes = {};
+
+  /// Controller for optional special instructions / additional notes.
+  final _additionalNotesCtrl = TextEditingController();
+  final _additionalNotesFocus = FocusNode();
+
+  TextEditingController _getDescQuestionCtrl(String question) {
+    return _descFormControllers.putIfAbsent(
+      question,
+      () => TextEditingController()..addListener(_compileDescriptionFromForm),
+    );
+  }
+
+  FocusNode _getDescQuestionFocus(String question) {
+    return _descFormFocusNodes.putIfAbsent(question, () => FocusNode());
+  }
+
+  List<String> _getChipsForQuestion(String q) {
+    final cleanQ = q.toLowerCase().replaceAll('?', '').trim();
+    for (final entry in _quickChips.entries) {
+      if (cleanQ.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+    return const [];
+  }
+
+  String _getHintForQuestion(String q) {
+    final lower = q.toLowerCase();
+    if (lower.contains('what') && lower.contains('deliver')) return 'e.g. Documents, food tiffin, small parcel';
+    if (lower.contains('pickup point')) return 'e.g. 3rd floor, Flat 301, near elevator';
+    if (lower.contains('drop point')) return 'e.g. Office reception, security desk';
+    if (lower.contains('item size') || lower.contains('weight')) return 'e.g. Fits in backpack, ~2 kg';
+    if (lower.contains('urgent')) return 'e.g. Yes within 1 hour / flexible';
+    if (lower.contains('electrical')) return 'e.g. Ceiling fan installation, switchboard sparking';
+    if (lower.contains('plumbing')) return 'e.g. Kitchen tap leaking, bathroom drain blocked';
+    if (lower.contains('repair')) return 'e.g. Washing machine not draining, AC cooling low';
+    if (lower.contains('how many rooms')) return 'e.g. 2 BHK, 1 kitchen, 2 bathrooms';
+    if (lower.contains('cuisine') || lower.contains('dishes')) return 'e.g. North Indian: 4 Rotis, Dal, Sabzi';
+    if (lower.contains('how many people')) return 'e.g. 2 adults, 1 child';
+    if (lower.contains('how many clothes')) return 'e.g. Around 15-20 clothes (daily wear)';
+    if (lower.contains('subject')) return 'e.g. Mathematics, Class 10 CBSE';
+    if (lower.contains('service do you need')) return 'e.g. WordPress website customization, logo design';
+    if (lower.contains('materials needed')) return 'e.g. Plywood provided / helper to bring screws';
+    if (lower.contains('colour')) return 'e.g. Off-white emulsion, 1 bedroom wall';
+    if (lower.contains('garden')) return 'e.g. Lawn mowing, trimming bushes, watering';
+    return 'Type your answer here...';
+  }
+
+  void _compileDescriptionFromForm() {
+    if (!_useFormDescription) return;
+    final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
+    final lines = <String>[];
+    for (final p in prompts) {
+      final ctrl = _descFormControllers[p];
+      final val = ctrl?.text.trim() ?? '';
+      if (val.isNotEmpty) {
+        lines.add('• $p $val');
+      }
+    }
+    final notes = _additionalNotesCtrl.text.trim();
+    if (notes.isNotEmpty) {
+      lines.add('Special Instructions: $notes');
+    }
+    _descCtrl.text = lines.join('\n');
+  }
+
+  Widget _buildDescriptionFormSection() {
+    final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
+    final categoryLabel = TaskCategory.all
+        .firstWhere((c) => c.id == _selectedCategory,
+            orElse: () => TaskCategory(id: _selectedCategory, label: _selectedCategory, icon: '📋'))
+        .label;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.assignment_outlined,
+                      size: 18, color: AppColors.primary),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Task Details Form',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: AppColors.dark,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              categoryLabel,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _useFormDescription
+                            ? 'Answer these questions so helpers understand your task'
+                            : 'Enter your custom description below',
+                        style: const TextStyle(fontSize: 11, color: AppColors.gray),
+                      ),
+                    ],
+                  ),
+                ),
+                // Mode Toggle Button
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      if (_useFormDescription) {
+                        _compileDescriptionFromForm();
+                        _useFormDescription = false;
+                      } else {
+                        _useFormDescription = true;
+                        _compileDescriptionFromForm();
+                      }
+                    });
+                  },
+                  icon: Icon(
+                    _useFormDescription ? Icons.edit_note : Icons.ballot_outlined,
+                    size: 16,
+                  ),
+                  label: Text(
+                    _useFormDescription ? 'Free Text' : 'Form Mode',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Body
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: _useFormDescription
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Render each question field
+                      ...prompts.asMap().entries.map((entry) {
+                        final idx = entry.key;
+                        final q = entry.value;
+                        final ctrl = _getDescQuestionCtrl(q);
+                        final fn = _getDescQuestionFocus(q);
+                        final chips = _getChipsForQuestion(q);
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Question Label with index badge
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 18,
+                                    height: 18,
+                                    alignment: Alignment.center,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFE2E8F0),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      '${idx + 1}',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.dark,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      q,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                        color: AppColors.dark,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              // Question Input
+                              TextFormField(
+                                controller: ctrl,
+                                focusNode: fn,
+                                decoration: InputDecoration(
+                                  hintText: _getHintForQuestion(q),
+                                  hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  filled: true,
+                                  fillColor: const Color(0xFFF8FAFC),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                                  ),
+                                ),
+                              ),
+                              // Quick suggestion chips if available
+                              if (chips.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: chips.map((chipText) {
+                                    final isSelected = ctrl.text == chipText;
+                                    return InkWell(
+                                      onTap: () {
+                                        setState(() {
+                                          if (ctrl.text == chipText) {
+                                            ctrl.clear();
+                                          } else {
+                                            ctrl.text = chipText;
+                                          }
+                                          _compileDescriptionFromForm();
+                                        });
+                                      },
+                                      borderRadius: BorderRadius.circular(14),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? AppColors.primary
+                                              : const Color(0xFFF1F5F9),
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? AppColors.primary
+                                                : const Color(0xFFE2E8F0),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          chipText,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                            color: isSelected ? Colors.white : const Color(0xFF475569),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      }),
+
+                      // Additional notes / special instructions
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.notes_rounded, size: 16, color: AppColors.gray),
+                              SizedBox(width: 6),
+                              Text(
+                                'Special Instructions / Other Notes (Optional)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  color: AppColors.dark,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _additionalNotesCtrl,
+                            focusNode: _additionalNotesFocus,
+                            maxLines: 3,
+                            decoration: InputDecoration(
+                              hintText: 'Any specific instructions, parking info, access codes, etc.',
+                              hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
+                              contentPadding: const EdgeInsets.all(12),
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: _descCtrl,
+                        focusNode: _descFocus,
+                        maxLines: 6,
+                        decoration: InputDecoration(
+                          hintText: 'Describe your task in detail (what needs to be done, requirements, etc.)',
+                          contentPadding: const EdgeInsets.all(12),
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                          ),
+                        ),
+                        validator: (v) =>
+                            (v == null || v.trim().length < 10) ? 'Min 10 characters' : null,
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onLocationAreaChanged() {
     if (mounted) setState(() {});
   }
 
@@ -1882,33 +2320,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ],
               const SizedBox(height: 14),
 
-              // Description
-              TextFormField(
-                controller: _descCtrl,
-                focusNode: _descFocus,
-                maxLines: 8,
-                decoration: InputDecoration(
-                  labelText: 'Description',
-                  prefixIcon: const Icon(Icons.description_outlined),
-                  alignLabelWithHint: true,
-                  contentPadding: const EdgeInsets.all(14),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                  ),
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().length < 10)
-                        ? 'Min 10 characters'
-                        : null,
-              ),
+              // Description Form (replaces single raw textarea)
+              _buildDescriptionFormSection(),
               const SizedBox(height: 14),
 
               // Suggested budget card based on category + selected area

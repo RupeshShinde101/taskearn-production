@@ -1254,10 +1254,8 @@
             const sc = (trackingOrData && (trackingOrData.service_charge || trackingOrData.serviceCharge)) || currentTask.service_charge || 0;
             const total = taskAmount + sc;
 
-            // Commission: 15% for delivery/transport, 17% for others
-            const cat = (currentTask.category || '').toLowerCase();
-            const isDelivery = (cat === 'delivery' || cat === 'transport' || cat === 'moving' || cat === 'pickup');
-            const commPct = isDelivery ? 15 : 17;
+            // Commission: 20% for all categories
+            const commPct = 20;
             const commission = Math.round(total * commPct / 100);
             const earned = total - commission;
 

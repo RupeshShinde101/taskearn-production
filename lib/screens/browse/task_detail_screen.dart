@@ -159,7 +159,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final task = _task!;
     final budget = task.budget;
     final charge = task.serviceCharge ?? 0;
-    final total  = budget + charge;
+    final posterFee = task.posterFee;
+    final total  = task.totalPosterCost;
 
     // Step 1: Check wallet balance
     final wallet = context.read<WalletProvider>();
@@ -175,7 +176,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           content: Text(
             'You need ₹${total.toStringAsFixed(0)} to pay for this task '
             '(budget ₹${budget.toStringAsFixed(0)}'
-            '${charge > 0 ? ' + service charge ₹${charge.toStringAsFixed(0)}' : ''}).\n\n'
+            '${charge > 0 ? ' + service charge ₹${charge.toStringAsFixed(0)}' : ''}'
+            '${posterFee > 0 ? ' + platform fee & GST ₹${posterFee.toStringAsFixed(0)}' : ''}).\n\n'
             'Current balance: ₹${wallet.balance.balance.toStringAsFixed(0)}\n'
             'Add at least ₹${shortfall.ceil()} to continue.',
           ),
@@ -215,6 +217,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             const SizedBox(height: 12),
             _DetailRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
             if (charge > 0) _DetailRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
+            if (posterFee > 0) _DetailRow('Platform Fee & GST (20%)', '₹${posterFee.toStringAsFixed(0)}'),
             const Divider(height: 20),
             _DetailRow('Total Payment', '₹${total.toStringAsFixed(0)}', bold: true),
             const SizedBox(height: 6),
@@ -434,7 +437,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: GradientButton(
-            label: 'Accept Task \u2013 Earn \u20b9${task.netEarning.toStringAsFixed(0)}',
+            label: 'Accept Task – ₹${task.budget.toStringAsFixed(0)}',
             loading: _accepting,
             onPressed: _accepting ? () {} : _accept,
             icon: Icons.check_circle_outline,
@@ -709,30 +712,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       const Text(
                         'Task Budget',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 12,
                           color: AppColors.gray,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      const SizedBox(height: 2),
                       Text('₹${task.budget.toStringAsFixed(0)}',
                           style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.dark)),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Net Earning',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.gray,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      Text('₹${task.netEarning.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                              fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.success)),
-                      const Text(
-                        '− 15% platform fee',
-                        style: TextStyle(color: AppColors.gray, fontSize: 11),
-                      ),
+                              fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.primary)),
                     ],
                   ),
                 ],

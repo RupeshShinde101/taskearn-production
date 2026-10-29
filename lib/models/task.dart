@@ -1,3 +1,19 @@
+class CategoryBudgetSuggestion {
+  final double minBudget;
+  final double suggestedBudget;
+  final double maxBudget;
+  final String localityName;
+  final String localityTier;
+
+  const CategoryBudgetSuggestion({
+    required this.minBudget,
+    required this.suggestedBudget,
+    required this.maxBudget,
+    required this.localityName,
+    required this.localityTier,
+  });
+}
+
 class Task {
   final String id;
   final String title;
@@ -351,16 +367,317 @@ class Task {
     );
   }
 
-  double get totalAmount => budget + (serviceCharge ?? 0);
+  /// True for task categories that involve a pickup-to-drop delivery route.
+  bool get isDeliveryType =>
+      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category);
 
-  /// Platform commission rate:
-  /// 15% for delivery/pickup/transport/moving; 17% for all other categories.
-  static const double platformCommission = 0.15;
+  /// Platform commission rate (20% inclusive of GST & platform fee).
+  static const double platformCommission = 0.20;
 
-  /// Per-task commission rate based on category.
-  double get commissionRate {
-    const deliveryTypes = {'delivery', 'pickup', 'transport', 'moving'};
-    return deliveryTypes.contains(category) ? 0.15 : 0.17;
+  /// Per-task helper commission rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
+  double get commissionRate => 0.20;
+
+  /// Per-task poster commission / platform fee rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
+  double get posterCommissionRate => 0.20;
+
+  /// Poster platform fee & GST amount: 20% of budget.
+  double get posterFee => budget * posterCommissionRate;
+
+  /// Total base task value before helper commission: budget + service charge.
+  double get totalTaskValue => budget + (serviceCharge ?? 0);
+
+  /// Total amount the poster pays: budget + distance service charge + 20% platform fee.
+  double get totalPosterCost => totalTaskValue + posterFee;
+
+  /// Legacy alias for total poster payment amount.
+  double get totalAmount => totalPosterCost;
+
+  /// Minimum budget required for a given task category based on current market rates.
+  static double minBudgetForCategory(String category) {
+    switch (category.toLowerCase()) {
+      // 1. Engineering & Skilled Trades
+      case 'electrician':
+      case 'plumbing':
+        return 150.0;
+      case 'carpentry':
+      case 'vehicle':
+        return 200.0;
+      case 'repair':
+      case 'tech_support':
+      case 'tech-support':
+        return 250.0;
+      case 'painting':
+        return 500.0;
+
+      // 2. Home & Household
+      case 'laundry':
+        return 100.0;
+      case 'household':
+        return 150.0;
+      case 'cooking':
+      case 'gardening':
+        return 250.0;
+      case 'cleaning':
+        return 300.0;
+
+      // 3. Shopping, Errands & On-Demand
+      case 'groceries':
+        return 100.0;
+      case 'shopping':
+        return 150.0;
+      case 'errands':
+      case 'errand':
+      case 'queue_standing':
+      case 'queue-standing':
+        return 200.0;
+      case 'event_help':
+      case 'event-help':
+        return 400.0;
+
+      // 4. Professional, Creative & Digital
+      case 'data_entry':
+      case 'data-entry':
+        return 150.0;
+      case 'tutoring':
+      case 'beauty':
+        return 250.0;
+      case 'freelancer':
+        return 300.0;
+      case 'photography':
+        return 1500.0;
+
+      // 5. Care Services
+      case 'pet_care':
+      case 'petcare':
+        return 150.0;
+      case 'child_care':
+      case 'babysitting':
+        return 200.0;
+      case 'elder_care':
+      case 'eldercare':
+        return 500.0;
+
+      // Delivery & Moving
+      case 'delivery':
+      case 'pickup':
+      case 'transport':
+        return 100.0;
+      case 'moving':
+        return 500.0;
+
+      case 'other':
+      default:
+        return 100.0;
+    }
+  }
+
+  /// Returns market-based suggested budget range based on category and selected area.
+  static CategoryBudgetSuggestion getBudgetSuggestion(
+    String category, {
+    String? areaText,
+    double? distanceKm,
+  }) {
+    final cat = category.toLowerCase();
+    final areaLower = (areaText ?? '').toLowerCase();
+
+    double multiplier = 1.0;
+    String tier = 'Standard Area';
+    String detectedName = 'Your Area';
+
+    // Premium & IT hubs (Pune)
+    const premiumAreas = [
+      'hinjewadi', 'baner', 'wakad', 'balewadi', 'koregaon', 'kalyani',
+      'viman', 'kharadi', 'magarpatta', 'aundh', 'bavdhan', 'pashan',
+      'sb road', 'senapati bapat', 'prabhat', 'model colony', 'boat club'
+    ];
+    // Central & Established
+    const centralAreas = [
+      'kothrud', 'shivaji nagar', 'shivajinagar', 'deccan', 'camp',
+      'erandwane', 'sadashiv', 'swargate', 'bibvewadi', 'sahakar',
+      'karve', 'wanowrie', 'nibm', 'kondhwa', 'peth'
+    ];
+    // Suburban / Developing
+    const suburbanAreas = [
+      'pimpri', 'chinchwad', 'bhosari', 'hadapsar', 'wagholi', 'nigdi',
+      'akurdi', 'moshi', 'ambegaon', 'warje', 'ravet', 'punawale', 'tathawade'
+    ];
+
+    for (final a in premiumAreas) {
+      if (areaLower.contains(a)) {
+        multiplier = 1.25;
+        tier = 'IT & High-Demand Hub';
+        detectedName = a[0].toUpperCase() + a.substring(1);
+        break;
+      }
+    }
+    if (multiplier == 1.0) {
+      for (final a in centralAreas) {
+        if (areaLower.contains(a)) {
+          multiplier = 1.10;
+          tier = 'Central Pune';
+          detectedName = a[0].toUpperCase() + a.substring(1);
+          break;
+        }
+      }
+    }
+    if (multiplier == 1.0) {
+      for (final a in suburbanAreas) {
+        if (areaLower.contains(a)) {
+          multiplier = 1.0;
+          tier = 'Suburban Hub';
+          detectedName = a[0].toUpperCase() + a.substring(1);
+          break;
+        }
+      }
+    }
+
+    if (detectedName == 'Your Area' && areaText != null && areaText.trim().isNotEmpty) {
+      final parts = areaText.split(RegExp(r'[, -]')).where((s) => s.trim().isNotEmpty).toList();
+      if (parts.isNotEmpty) {
+        final raw = parts.first.trim();
+        detectedName = raw.length > 1 ? raw[0].toUpperCase() + raw.substring(1) : raw;
+      }
+    }
+
+    double baseSuggested;
+    double baseMax;
+
+    switch (cat) {
+      case 'electrician':
+      case 'plumbing':
+        baseSuggested = 200.0;
+        baseMax = 400.0;
+        break;
+      case 'carpentry':
+        baseSuggested = 250.0;
+        baseMax = 500.0;
+        break;
+      case 'repair':
+      case 'tech_support':
+      case 'tech-support':
+        baseSuggested = 350.0;
+        baseMax = 650.0;
+        break;
+      case 'painting':
+        baseSuggested = 700.0;
+        baseMax = 1400.0;
+        break;
+      case 'vehicle':
+        baseSuggested = 350.0;
+        baseMax = 750.0;
+        break;
+      case 'cleaning':
+        baseSuggested = 400.0;
+        baseMax = 900.0;
+        break;
+      case 'cooking':
+        baseSuggested = 350.0;
+        baseMax = 650.0;
+        break;
+      case 'laundry':
+        baseSuggested = 150.0;
+        baseMax = 250.0;
+        break;
+      case 'household':
+        baseSuggested = 200.0;
+        baseMax = 400.0;
+        break;
+      case 'gardening':
+        baseSuggested = 350.0;
+        baseMax = 700.0;
+        break;
+      case 'groceries':
+        baseSuggested = 150.0;
+        baseMax = 250.0;
+        break;
+      case 'shopping':
+        baseSuggested = 200.0;
+        baseMax = 400.0;
+        break;
+      case 'errands':
+      case 'errand':
+      case 'queue_standing':
+      case 'queue-standing':
+        baseSuggested = 250.0;
+        baseMax = 450.0;
+        break;
+      case 'event_help':
+      case 'event-help':
+        baseSuggested = 550.0;
+        baseMax = 1000.0;
+        break;
+      case 'data_entry':
+      case 'data-entry':
+        baseSuggested = 250.0;
+        baseMax = 450.0;
+        break;
+      case 'tutoring':
+        baseSuggested = 350.0;
+        baseMax = 700.0;
+        break;
+      case 'beauty':
+        baseSuggested = 400.0;
+        baseMax = 900.0;
+        break;
+      case 'freelancer':
+        baseSuggested = 500.0;
+        baseMax = 1500.0;
+        break;
+      case 'photography':
+        baseSuggested = 2500.0;
+        baseMax = 5500.0;
+        break;
+      case 'pet_care':
+      case 'petcare':
+        baseSuggested = 200.0;
+        baseMax = 400.0;
+        break;
+      case 'child_care':
+      case 'babysitting':
+        baseSuggested = 300.0;
+        baseMax = 600.0;
+        break;
+      case 'elder_care':
+      case 'eldercare':
+        baseSuggested = 700.0;
+        baseMax = 1300.0;
+        break;
+      case 'moving':
+        baseSuggested = 900.0;
+        baseMax = 2500.0;
+        break;
+      case 'delivery':
+      case 'pickup':
+      case 'transport':
+        if (distanceKm != null && distanceKm > 0) {
+          final distRate = (distanceKm * 12).roundToDouble();
+          baseSuggested = distRate < 120 ? 120 : distRate;
+          baseMax = baseSuggested * 1.5;
+        } else {
+          baseSuggested = 150.0;
+          baseMax = 300.0;
+        }
+        break;
+      case 'other':
+      default:
+        baseSuggested = 200.0;
+        baseMax = 450.0;
+        break;
+    }
+
+    final minB = minBudgetForCategory(cat);
+    double suggested = ((baseSuggested * multiplier) / 10).round() * 10.0;
+    if (suggested < minB) suggested = minB;
+    double maxB = ((baseMax * multiplier) / 10).round() * 10.0;
+    if (maxB <= suggested) maxB = suggested + 150.0;
+
+    return CategoryBudgetSuggestion(
+      minBudget: minB,
+      suggestedBudget: suggested,
+      maxBudget: maxB,
+      localityName: detectedName,
+      localityTier: tier,
+    );
   }
 
   /// Returns the platform service charge estimate (in ₹) for a task category.
@@ -379,19 +696,15 @@ class Task {
     }
   }
 
-  /// Net amount the helper earns after [platformCommission] is deducted
+  /// Net amount the helper earns after helper commission is deducted
   /// from the total task value (budget + service charge).
-  double get netEarning => totalAmount * (1 - commissionRate);
+  double get netEarning => totalTaskValue * (1 - commissionRate);
 
   /// Max daily releases allowed before 48h suspension.
   static const int maxDailyReleases = 3;
 
   /// Remaining releases allowed today (0 to maxDailyReleases).
   int get remainingReleases => (maxDailyReleases - dailyReleasesUsed).clamp(0, maxDailyReleases);
-
-  /// True for task categories that involve a pickup-to-drop delivery route.
-  bool get isDeliveryType =>
-      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category);
 
   /// Returns a copy of this task with the given fields replaced.
   Task copyWith({

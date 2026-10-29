@@ -71,34 +71,18 @@ class TaskCard extends StatelessWidget {
                     ),
                   ),
 
-                  // Total & Net Earning
+                  // Task Budget
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       const Text(
                         'Task Budget',
-                        style: TextStyle(fontSize: 9, color: AppColors.gray, fontWeight: FontWeight.w500),
-                      ),
-                      Text(
-                        '\u20b9${task.budget.toStringAsFixed(0)}',
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.dark),
+                        style: TextStyle(fontSize: 10, color: AppColors.gray, fontWeight: FontWeight.w500),
                       ),
                       const SizedBox(height: 2),
-                      const Text(
-                        'Net Earning',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: AppColors.gray,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
                       Text(
-                        '₹${task.netEarning.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          color: AppColors.success,
-                        ),
+                        '\u20b9${task.budget.toStringAsFixed(0)}',
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppColors.primary),
                       ),
                       if (task.distanceKm != null)
                         Text(

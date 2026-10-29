@@ -21,11 +21,15 @@
     // Categories that are distance-priced (and thus need pickup + drop)
     const DISTANCE_CATS = new Set(['transport', 'pickup', 'delivery', 'moving']);
 
-    // Dynamically show/hide the "Min ₹100" label based on selected category
+    // Dynamically update the "Min ₹..." label based on selected category
     function updateBudgetMinLabel() {
         const cat = document.getElementById('modalTaskCategory')?.value || '';
         const lbl = document.getElementById('wmBudgetMinLabel');
-        if (lbl) lbl.style.display = DISTANCE_CATS.has(cat) ? 'none' : '';
+        const minVal = (typeof window.getMinTaskPrice === 'function') ? window.getMinTaskPrice(cat) : 100;
+        if (lbl) {
+            lbl.style.display = DISTANCE_CATS.has(cat) ? 'none' : '';
+            lbl.textContent = 'Min ₹' + minVal;
+        }
     }
 
     let currentStep = 1;
@@ -117,7 +121,8 @@
             const v = parseFloat(($('customBudget') || {}).value);
             const cat3 = ($('modalTaskCategory') || {}).value || '';
             const noMin = cat3 === 'delivery' || cat3 === 'transport';
-            if (!v || (!noMin && v < 100)) return noMin ? 'Please enter a budget.' : 'Minimum task budget is ₹100.';
+            const catMin = (typeof window.getMinTaskPrice === 'function') ? window.getMinTaskPrice(cat3) : 100;
+            if (!v || (!noMin && v < catMin)) return noMin ? 'Please enter a budget.' : 'Minimum task budget for this category is ₹' + catMin + '.';
         }
         return null;
     }

@@ -61,7 +61,7 @@ class TermsScreen extends StatelessWidget {
             _section('5. Posting & Accepting Tasks', null, subsections: [
               const _SubSection('5.1 Task Posting Rules', null, bullets: [
                 'Tasks must be lawful and clearly described.',
-                'Minimum task budget is ₹100; maximum is ₹40,000 (subject to change with notice).',
+                'Minimum task budget is category-based (ranging from ₹100 for errands/laundry up to ₹1,500 for photography based on market rates); maximum is ₹40,000.',
                 'Posters must have sufficient wallet balance to cover the task price plus the applicable service charge before posting.',
                 'Posters must not request anything that discriminates based on caste, religion, gender, sexual orientation, disability or any other protected characteristic.',
               ]),
@@ -84,7 +84,7 @@ class TermsScreen extends StatelessWidget {
                   const _SubSection('6.1 Workmate4u Wallet',
                       'Each user has an internal wallet ledger. Posters top up the wallet via Razorpay (UPI, cards, net-banking, wallets) before posting a task. The full task budget plus any applicable service charge is debited from the Poster\'s wallet at task creation and held by Workmate4u until task completion or cancellation.'),
                   const _SubSection('6.2 Service Charges & Platform Commission',
-                      'A service charge applies only for Delivery & Pick/Drop tasks (₹10–₹35 by distance; up to ₹40 for large items). All other categories have ₹0 service charge.\n\nPlatform commission on task completion:\n• Delivery, Pickup, Transport, Moving — 15% commission\n• All other categories — 17% commission\n\nThe Tasker sees their net estimated earnings before accepting any task.'),
+                      'Pricing and commission structure across all categories (including Delivery, Pickup, Transport, Moving, Cleaning, Repairs, Cooking, Tutoring, etc.):\n\n• Poster (Task Provider): 20% platform fee (inclusive of GST) added to the task budget. For Delivery & Moving categories, the distance-based service charge (₹10–₹35 based on distance; up to ₹40 for large items) also applies.\n• Helper (Tasker): 20% platform commission (inclusive of GST) deducted from the total task payout.\n\nBoth the Poster and Tasker see their transparent price breakdown before posting or accepting any task.'),
                   const _SubSection('6.3 Payouts to Taskers',
                       'On task completion confirmed by the Poster (or after the dispute window), the task earnings net of commission are credited to the Tasker\'s wallet. Payouts are processed via Razorpay subject to KYC verification.'),
                   const _SubSection('6.4 Cancellations & Refunds', null, bullets: [

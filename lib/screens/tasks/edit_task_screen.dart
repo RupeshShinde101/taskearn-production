@@ -66,6 +66,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
     _location = LatLng(t.latitude, t.longitude);
     _locationLabel = t.address;
+    _addressCtrl.addListener(_onLocationAreaChanged);
+    _pickupAddrCtrl.addListener(_onLocationAreaChanged);
+    _dropAddrCtrl.addListener(_onLocationAreaChanged);
   }
 
   @override
@@ -73,6 +76,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _titleCtrl.dispose();
     _descCtrl.dispose();
     _budgetCtrl.dispose();
+    _addressCtrl.removeListener(_onLocationAreaChanged);
+    _pickupAddrCtrl.removeListener(_onLocationAreaChanged);
+    _dropAddrCtrl.removeListener(_onLocationAreaChanged);
     _addressCtrl.dispose();
     _pickupAddrCtrl.dispose();
     _dropAddrCtrl.dispose();
@@ -217,6 +223,13 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     }
 
     final budget = double.tryParse(_budgetCtrl.text) ?? 0;
+    final catMin = Task.minBudgetForCategory(_selectedCategory);
+    if (budget < catMin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+      );
+      return;
+    }
     final charge = Task.serviceChargeForCategory(_selectedCategory).toDouble();
 
     final String? combinedAddress;
@@ -275,6 +288,125 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     }
   }
 
+    void _onLocationAreaChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildSuggestedBudgetCard() {
+    final areaCandidate = _isDelivery
+        ? (_dropAddrCtrl.text.trim().isNotEmpty
+            ? _dropAddrCtrl.text.trim()
+            : (_locationLabel ?? _pickupAddrCtrl.text.trim()))
+        : (_addressCtrl.text.trim().isNotEmpty
+            ? _addressCtrl.text.trim()
+            : (_locationLabel ?? ''));
+
+    final suggestion = Task.getBudgetSuggestion(
+      _selectedCategory,
+      areaText: areaCandidate,
+      distanceKm: null,
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFC7D2FE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.auto_awesome, size: 14, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Suggested in ${suggestion.localityName}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E293B)),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E7FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  suggestion.localityTier,
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          '₹${suggestion.suggestedBudget.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF4338CA),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '(Typical: ₹${suggestion.minBudget.toInt()}–₹${suggestion.maxBudget.toInt()})',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Average value users in this area pay for ${_selectedCategory.replaceAll('_', ' ')}',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  _budgetCtrl.text = suggestion.suggestedBudget.toInt().toString();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                child: const Text('Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -326,18 +458,25 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
               ),
               const SizedBox(height: 14),
 
+              // Suggested budget card based on category + selected area
+              _buildSuggestedBudgetCard(),
+
               // Budget
               TextFormField(
                 controller: _budgetCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Budget (₹)',
-                  hintText: 'Minimum ₹100',
-                  prefixIcon: Icon(Icons.currency_rupee),
+                  hintText: 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
+                  helperText: 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
+                  prefixIcon: const Icon(Icons.currency_rupee),
                 ),
                 validator: (v) {
                   final n = double.tryParse(v ?? '');
-                  if (n == null || n < 100) return 'Minimum budget is ₹100';
+                  final catMin = Task.minBudgetForCategory(_selectedCategory);
+                  if (n == null || n < catMin) {
+                    return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+                  }
                   return null;
                 },
               ),
@@ -453,9 +592,10 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                 valueListenable: _budgetCtrl,
                 builder: (_, value, __) {
                   final budget = double.tryParse(value.text) ?? 0;
-                  final charge =
-                      Task.serviceChargeForCategory(_selectedCategory).toDouble();
-                  final total = budget + charge;
+                  final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
+                  final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
+                  final posterFee = budget * 0.20;
+                  final total = budget + charge + posterFee;
                   return Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -489,6 +629,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                           const SizedBox(height: 4),
                           _CostRow('Service Charge',
                               '₹${charge.toStringAsFixed(0)}'),
+                        ],
+                        if (posterFee > 0) ...[
+                          const SizedBox(height: 4),
+                          _CostRow('Platform Fee & GST (20%)',
+                              '₹${posterFee.toStringAsFixed(0)}'),
                         ],
                         const Divider(height: 14),
                         _CostRow(

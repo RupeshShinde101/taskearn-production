@@ -392,14 +392,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
       barrierColor: Colors.black.withValues(alpha: 0.55),
-      transitionDuration: const Duration(milliseconds: 260),
+      transitionDuration: const Duration(milliseconds: 240),
       transitionBuilder: (ctx, anim, _, child) {
         final curved =
             CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
         return FadeTransition(
           opacity: curved,
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            scale: Tween<double>(begin: 0.90, end: 1.0).animate(curved),
             child: child,
           ),
         );
@@ -410,8 +410,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           child: Material(
             color: Colors.transparent,
             child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              constraints: BoxConstraints(maxWidth: 420, maxHeight: maxH),
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              constraints: BoxConstraints(maxWidth: 440, maxHeight: maxH),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
@@ -428,13 +428,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
+                    padding: const EdgeInsets.fromLTRB(18, 16, 16, 14),
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [AppColors.primary, AppColors.primaryDark],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      color: AppColors.primary,
                       borderRadius:
                           BorderRadius.vertical(top: Radius.circular(20)),
                     ),
@@ -478,17 +474,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     child: SingleChildScrollView(
                       child: Padding(
                         padding:
-                            const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                            const EdgeInsets.fromLTRB(14, 14, 14, 14),
                         child: GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           itemCount: group.subCategories.length,
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
+                            crossAxisCount: 2,
                             mainAxisSpacing: 10,
                             crossAxisSpacing: 10,
-                            mainAxisExtent: 90,
+                            mainAxisExtent: 72,
                           ),
                           itemBuilder: (_, i) {
                             final c = group.subCategories[i];
@@ -504,51 +500,74 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: sel
-                                      ? AppColors.primary
-                                      : AppColors.light,
-                                  borderRadius: BorderRadius.circular(12),
+                                      ? const Color(0xFFEEF2FF)
+                                      : Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
                                     color: sel
                                         ? AppColors.primary
-                                        : AppColors.border,
+                                        : const Color(0xFFE2E8F0),
                                     width: sel ? 2 : 1,
                                   ),
-                                  boxShadow: sel
-                                      ? [
-                                          BoxShadow(
-                                            color: AppColors.primary
-                                                .withValues(alpha: 0.25),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
-                                          )
-                                        ]
-                                      : null,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black
+                                          .withValues(alpha: 0.04),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
                                 ),
-                                child: Column(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
+                                child: Row(
                                   children: [
-                                    Text(c.icon,
-                                        style: const TextStyle(
-                                            fontSize: 22)),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      c.label,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: sel
-                                            ? FontWeight.w700
-                                            : FontWeight.w500,
+                                    Container(
+                                      width: 42,
+                                      height: 42,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
                                         color: sel
                                             ? Colors.white
-                                            : AppColors.dark,
+                                            : const Color(0xFFF8FAFC),
+                                        borderRadius:
+                                            BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: sel
+                                              ? AppColors.primary
+                                                  .withValues(alpha: 0.25)
+                                              : const Color(0xFFE2E8F0),
+                                        ),
                                       ),
-                                      textAlign: TextAlign.center,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
+                                      child: Text(c.icon,
+                                          style: const TextStyle(
+                                              fontSize: 22)),
                                     ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        c.label,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: sel
+                                              ? FontWeight.w700
+                                              : FontWeight.w600,
+                                          color: sel
+                                              ? AppColors.primaryDark
+                                              : AppColors.dark,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (sel)
+                                      const Icon(
+                                        Icons.check_circle_rounded,
+                                        size: 18,
+                                        color: AppColors.primary,
+                                      ),
                                   ],
                                 ),
                               ),

@@ -22,6 +22,7 @@ class User {
   /// Number of task releases made today (resets daily). Max 3 before suspension.
   final int dailyReleaseCount;
   final String? authProvider; // 'email' | 'google' | null
+  final String profileMode; // 'poster' | 'helper'
 
   User({
     required this.id,
@@ -46,6 +47,7 @@ class User {
     required this.createdAt,
     this.dailyReleaseCount = 0,
     this.authProvider,
+    this.profileMode = 'poster',
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -89,6 +91,7 @@ class User {
       dailyReleaseCount: int.tryParse(
               (json['dailyReleaseCount'] ?? json['daily_release_count'] ?? 0).toString()) ?? 0,
       authProvider: json['auth_provider']?.toString(),
+      profileMode: json['profile_mode']?.toString() ?? json['profileMode']?.toString() ?? 'poster',
     );
   }
 
@@ -111,7 +114,59 @@ class User {
         'referral_code': referralCode,
         'created_at': createdAt.toIso8601String(),
         'dailyReleaseCount': dailyReleaseCount,
+        'profile_mode': profileMode,
       };
+
+  User copyWith({
+    String? id,
+    String? name,
+    String? email,
+    String? phone,
+    String? avatar,
+    String? bio,
+    String? gender,
+    List<String>? skills,
+    double? rating,
+    int? tasksCompleted,
+    int? tasksPosted,
+    int? reviewsCount,
+    String? rank,
+    bool? isKycVerified,
+    String? kycStatus,
+    bool? isEmailVerified,
+    bool? isSuspended,
+    DateTime? suspendedUntil,
+    String? referralCode,
+    DateTime? createdAt,
+    int? dailyReleaseCount,
+    String? authProvider,
+    String? profileMode,
+  }) =>
+      User(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        email: email ?? this.email,
+        phone: phone ?? this.phone,
+        avatar: avatar ?? this.avatar,
+        bio: bio ?? this.bio,
+        gender: gender ?? this.gender,
+        skills: skills ?? this.skills,
+        rating: rating ?? this.rating,
+        tasksCompleted: tasksCompleted ?? this.tasksCompleted,
+        tasksPosted: tasksPosted ?? this.tasksPosted,
+        reviewsCount: reviewsCount ?? this.reviewsCount,
+        rank: rank ?? this.rank,
+        isKycVerified: isKycVerified ?? this.isKycVerified,
+        kycStatus: kycStatus ?? this.kycStatus,
+        isEmailVerified: isEmailVerified ?? this.isEmailVerified,
+        isSuspended: isSuspended ?? this.isSuspended,
+        suspendedUntil: suspendedUntil ?? this.suspendedUntil,
+        referralCode: referralCode ?? this.referralCode,
+        createdAt: createdAt ?? this.createdAt,
+        dailyReleaseCount: dailyReleaseCount ?? this.dailyReleaseCount,
+        authProvider: authProvider ?? this.authProvider,
+        profileMode: profileMode ?? this.profileMode,
+      );
 
   /// Returns a copy of this User with only the avatar replaced.
   /// Preserves ALL fields (unlike toJson→fromJson which loses rank etc.).
@@ -138,5 +193,6 @@ class User {
         createdAt: createdAt,
         dailyReleaseCount: dailyReleaseCount,
         authProvider: authProvider,
+        profileMode: profileMode,
       );
 }

@@ -16,6 +16,7 @@ import '../../widgets/gradient_button.dart';
 import '../../widgets/location_suggestions_dropdown.dart';
 import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../widgets/profile_mode_switch_dialog.dart';
 
 class PostTaskScreen extends StatefulWidget {
   const PostTaskScreen({super.key});
@@ -584,7 +585,25 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _pickupAddrCtrl.addListener(_onLocationAreaChanged);
     _dropAddrCtrl.addListener(_onLocationAreaChanged);
     // Auto-fill description with prompts for the default category on first open
-    WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillDescription());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _autoFillDescription();
+      if (!mounted) return;
+      // auth reference
+      final auth = context.read<AuthProvider>();
+    if (!auth.isPosterMode) {
+        final switched = await showProfileModeSwitchDialog(
+          context,
+          targetMode: 'poster',
+          title: 'Switch to Poster Profile',
+          message:
+              'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+          actionLabel: 'Switch to Poster & Continue',
+        );
+        if (switched != true && mounted) {
+          Navigator.of(context).pop();
+        }
+      }
+    });
   }
 
   @override
@@ -1524,8 +1543,22 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       return;
     }
 
-    // KYC must be verified to post a task
+    // auth reference
     final auth = context.read<AuthProvider>();
+    if (!auth.isPosterMode) {
+      final switched = await showProfileModeSwitchDialog(
+        context,
+        targetMode: 'poster',
+        title: 'Switch to Poster Profile',
+        message:
+            'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+        actionLabel: 'Switch to Poster & Continue',
+      );
+      if (switched != true) return;
+    }
+
+    // KYC must be verified to post a task
+    // auth reference
     if (!(auth.user?.isKycVerified ?? false)) {
       showDialog(
         context: context,

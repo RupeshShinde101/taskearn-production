@@ -23,6 +23,7 @@ class AuthProvider extends ChangeNotifier {
   /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
   /// so it survives refreshUser() calls where the backend ignores the field.
   String? _localAvatarUri;
+  String _profileMode = 'poster';
 
   // City gate — persisted across sessions (cleared only on full account wipe)
   bool _cityVerified = false;
@@ -46,6 +47,9 @@ class AuthProvider extends ChangeNotifier {
   // restricted = authenticated but city not verified and a reason is recorded
   bool get cityRestricted => !_cityVerified && _cityGateReason.isNotEmpty;
   String get cityGateReason => _cityGateReason;
+  String get profileMode => _profileMode;
+  bool get isPosterMode => _profileMode == 'poster';
+  bool get isHelperMode => _profileMode == 'helper';
 
   /// Client-side auto logout threshold: 30 days since last app use.
   static const Duration _kSessionDuration = Duration(days: 30);
@@ -57,6 +61,7 @@ class AuthProvider extends ChangeNotifier {
     ApiService.onUnauthorized = _handleUnauthorized;
     _cityVerified = StorageService.getBool('city_verified');
     _cityGateReason = StorageService.getString('city_gate_reason') ?? '';
+    _profileMode = StorageService.getString('profile_mode') ?? 'poster';
     _checkAuth();
   }
 
@@ -120,6 +125,12 @@ class AuthProvider extends ChangeNotifier {
         if (localGender != null) cachedJson['gender'] = localGender;
       }
       _user = User.fromJson(cachedJson);
+      final cachedMode = StorageService.getString('profile_mode');
+      if (cachedMode != null && cachedMode.isNotEmpty) {
+        _profileMode = cachedMode;
+      } else if (_user!.profileMode.isNotEmpty) {
+        _profileMode = _user!.profileMode;
+      }
       // Load and apply locally-uploaded avatar override
       _localAvatarUri = StorageService.getString('user_avatar_local');
       if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
@@ -148,6 +159,13 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      final activeMode = StorageService.getString('profile_mode');
+      if (activeMode != null && activeMode.isNotEmpty) {
+        _profileMode = activeMode;
+      } else if (_user!.profileMode.isNotEmpty) {
+        _profileMode = _user!.profileMode;
+        await StorageService.setString('profile_mode', _profileMode);
+      }
       // Re-apply locally-uploaded avatar if server doesn't return one
       if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
         _user = _user!.copyWithAvatar(_localAvatarUri);
@@ -396,6 +414,13 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      final activeMode = StorageService.getString('profile_mode');
+      if (activeMode != null && activeMode.isNotEmpty) {
+        _profileMode = activeMode;
+      } else if (_user!.profileMode.isNotEmpty) {
+        _profileMode = _user!.profileMode;
+        await StorageService.setString('profile_mode', _profileMode);
+      }
       // Always re-apply locally-uploaded avatar — backend ignores the avatar
       // field on PUT /user/profile so /auth/me won't return our new photo.
       if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
@@ -461,12 +486,29 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> setProfileMode(String mode) async {
+    if (mode != 'poster' && mode != 'helper') return;
+    _profileMode = mode;
+    await StorageService.setString('profile_mode', mode);
+    if (_user != null) {
+      _user = _user!.copyWith(profileMode: mode);
+      await StorageService.saveUserJson(_user!.toJson());
+    }
+    notifyListeners();
+    // Re-register FCM device token with new profile_mode so backend filters match alerts
+    unawaited(_registerFcmToken());
+    try {
+      await ApiService.put('/user/profile', body: {'profile_mode': mode});
+    } catch (_) {}
+  }
+
   /// Register a device FCM token with the backend for push notifications.
   Future<void> updateFcmToken(String token) async {
     try {
       final res = await ApiService.post('/user/device-token', body: {
         'token': token,
         'platform': 'android',
+        'profile_mode': _profileMode,
       });
       debugPrint('[FCM] device-token saved: $res');
     } catch (e) {

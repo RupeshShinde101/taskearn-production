@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,6 +10,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/confirm_payment_dialog.dart';
+import '../../widgets/profile_mode_switch_dialog.dart';
 import '../tasks/edit_task_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
@@ -68,6 +69,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Future<void> _accept() async {
     // KYC must be verified to accept a task
     final auth = context.read<AuthProvider>();
+    if (!auth.isHelperMode) {
+      final switched = await showProfileModeSwitchDialog(
+        context,
+        targetMode: 'helper',
+        title: 'Switch to Helper Profile',
+        message:
+            'Accepting tasks requires switching to your Helper profile. Would you like to switch to Helper mode now to accept this task?',
+        actionLabel: 'Switch to Helper & Accept',
+      );
+      if (switched != true) return;
+    }
     if (!(auth.user?.isKycVerified ?? false)) {
       showDialog(
         context: context,

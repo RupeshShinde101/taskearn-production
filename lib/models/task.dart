@@ -1017,8 +1017,8 @@ class TaskCategoryGroup {
 
   static const List<TaskCategoryGroup> all = [
     TaskCategoryGroup(
-      id: 'engineering_repair',
-      label: 'Engineering & Repair',
+      id: 'repair',
+      label: 'Repair',
       icon: '🔧',
       categoryIds: ['electrician', 'plumbing', 'repair', 'carpentry', 'painting', 'vehicle', 'tech_support'],
     ),

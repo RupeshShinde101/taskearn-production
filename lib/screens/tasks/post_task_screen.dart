@@ -393,14 +393,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
       barrierColor: Colors.black.withValues(alpha: 0.55),
-      transitionDuration: const Duration(milliseconds: 260),
+      transitionDuration: const Duration(milliseconds: 240),
       transitionBuilder: (ctx, anim, _, child) {
         final curved =
             CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
         return FadeTransition(
           opacity: curved,
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
             child: child,
           ),
         );
@@ -411,16 +411,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           child: Material(
             color: Colors.transparent,
             child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-              constraints: BoxConstraints(maxWidth: 420, maxHeight: maxH),
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              constraints: BoxConstraints(maxWidth: 440, maxHeight: maxH),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 40,
-                    offset: const Offset(0, 12),
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 36,
+                    offset: const Offset(0, 10),
                   ),
                 ],
               ),
@@ -428,41 +428,47 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Clean Solid Header (No gradients)
                   Container(
                     padding: const EdgeInsets.fromLTRB(18, 16, 16, 14),
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFF312E81), Color(0xFF4F46E5)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      color: AppColors.dark,
                       borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(22)),
+                          BorderRadius.vertical(top: Radius.circular(20)),
                     ),
                     child: Row(
                       children: [
                         Container(
+                          width: 40,
+                          height: 40,
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          child: CategoryDoodleIcon(categoryId: group.id, size: 32),
+                          child: CategoryDoodleIcon(categoryId: group.id, size: 26),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(group.label,
-                                  style: const TextStyle(
-                                      fontSize: 16.5,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white)),
-                              const Text('Select a specific category',
-                                  style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.white70)),
+                              Text(
+                                group.label,
+                                style: const TextStyle(
+                                  fontSize: 16.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 1),
+                              const Text(
+                                'Select specific service',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF94A3B8),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -471,7 +477,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           child: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.20),
+                              color: Colors.white.withValues(alpha: 0.12),
                               shape: BoxShape.circle,
                             ),
                             child: const Icon(Icons.close,
@@ -481,20 +487,21 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       ],
                     ),
                   ),
+                  // Child boxes: 2 categories in one row with increased sizing
                   Flexible(
                     child: SingleChildScrollView(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
                         child: GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           itemCount: group.subCategories.length,
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                            mainAxisExtent: 84,
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            mainAxisExtent: 74,
                           ),
                           itemBuilder: (_, i) {
                             final c = group.subCategories[i];
@@ -509,12 +516,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                 Navigator.pop(ctx);
                               },
                               child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                                duration: const Duration(milliseconds: 160),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: sel
                                       ? const Color(0xFFEEF2FF)
-                                      : const Color(0xFFF8FAFC),
+                                      : Colors.white,
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
                                     color: sel
@@ -522,38 +529,59 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                         : const Color(0xFFE2E8F0),
                                     width: sel ? 2 : 1,
                                   ),
-                                  boxShadow: sel
-                                      ? [
-                                          BoxShadow(
-                                            color: AppColors.primary
-                                                .withValues(alpha: 0.2),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
-                                          )
-                                        ]
-                                      : null,
-                                ),
-                                child: Column(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
-                                  children: [
-                                    CategoryDoodleIcon(categoryId: c.id, size: 28),
-                                    const SizedBox(height: 5),
-                                    Text(
-                                      c.label,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: sel
-                                            ? FontWeight.w800
-                                            : FontWeight.w600,
-                                        color: sel
-                                            ? AppColors.primary
-                                            : AppColors.dark,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.03),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
                                     ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 42,
+                                      height: 42,
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: sel
+                                            ? Colors.white
+                                            : const Color(0xFFF8FAFC),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: sel
+                                              ? AppColors.primary.withValues(alpha: 0.25)
+                                              : const Color(0xFFE2E8F0),
+                                        ),
+                                      ),
+                                      child: CategoryDoodleIcon(categoryId: c.id, size: 26),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        c.label,
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: sel
+                                              ? FontWeight.w800
+                                              : FontWeight.w600,
+                                          color: sel
+                                              ? AppColors.primary
+                                              : AppColors.dark,
+                                          height: 1.2,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (sel) ...[
+                                      const SizedBox(width: 4),
+                                      const Icon(
+                                        Icons.check_circle_rounded,
+                                        color: AppColors.primary,
+                                        size: 17,
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),

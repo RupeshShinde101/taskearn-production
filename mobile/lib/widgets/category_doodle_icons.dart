@@ -27,12 +27,14 @@ class CategoryDoodleIcon extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
+        filterQuality: FilterQuality.high,
         errorBuilder: (context, error, stackTrace) {
           return Image.asset(
             'assets/images/categories/$key.jpg',
             width: size,
             height: size,
             fit: BoxFit.cover,
+            filterQuality: FilterQuality.high,
             errorBuilder: (_, __, ___) {
               return Container(
                 width: size,

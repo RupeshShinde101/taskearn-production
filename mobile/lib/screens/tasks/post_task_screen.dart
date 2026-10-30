@@ -439,14 +439,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     child: Row(
                       children: [
                         Container(
-                          width: 44,
-                          height: 44,
-                          padding: const EdgeInsets.all(4),
+                          width: 50,
+                          height: 50,
+                          padding: const EdgeInsets.all(3),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child: CategoryDoodleIcon(categoryId: group.id, size: 36, borderRadius: 8),
+                          child: CategoryDoodleIcon(categoryId: group.id, size: 44, borderRadius: 10),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -501,7 +501,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             crossAxisCount: 2,
                             mainAxisSpacing: 10,
                             crossAxisSpacing: 10,
-                            mainAxisExtent: 78,
+                            mainAxisExtent: 88,
                           ),
                           itemBuilder: (_, i) {
                             final c = group.subCategories[i];
@@ -517,7 +517,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 160),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                                 decoration: BoxDecoration(
                                   color: sel
                                       ? const Color(0xFFEEF2FF)
@@ -540,28 +540,28 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                 child: Row(
                                   children: [
                                     Container(
-                                      width: 46,
-                                      height: 46,
+                                      width: 54,
+                                      height: 54,
                                       padding: const EdgeInsets.all(3),
                                       decoration: BoxDecoration(
                                         color: sel
                                             ? Colors.white
                                             : const Color(0xFFF8FAFC),
-                                        borderRadius: BorderRadius.circular(10),
+                                        borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
                                           color: sel
                                               ? AppColors.primary.withValues(alpha: 0.25)
                                               : const Color(0xFFE2E8F0),
                                         ),
                                       ),
-                                      child: CategoryDoodleIcon(categoryId: c.id, size: 40, borderRadius: 7),
+                                      child: CategoryDoodleIcon(categoryId: c.id, size: 48, borderRadius: 9),
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
                                         c.label,
                                         style: TextStyle(
-                                          fontSize: 12.5,
+                                          fontSize: 13.0,
                                           fontWeight: sel
                                               ? FontWeight.w800
                                               : FontWeight.w600,
@@ -1994,7 +1994,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: CategoryDoodleIcon(categoryId: _selectedCategory, size: 28, borderRadius: 6),
+                  child: CategoryDoodleIcon(categoryId: _selectedCategory, size: 36, borderRadius: 8),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2557,7 +2557,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CategoryDoodleIcon(categoryId: _selectedCategory, size: 18, borderRadius: 4),
+                          CategoryDoodleIcon(categoryId: _selectedCategory, size: 22, borderRadius: 5),
                           const SizedBox(width: 6),
                           Text(
                             TaskCategory.all
@@ -2668,7 +2668,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            CategoryDoodleIcon(categoryId: c.id, size: 22, borderRadius: 5),
+                            CategoryDoodleIcon(categoryId: c.id, size: 26, borderRadius: 6),
                             const SizedBox(width: 6),
                             Text(
                               c.label,
@@ -2694,7 +2694,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     crossAxisCount: 4,
                     mainAxisSpacing: 8,
                     crossAxisSpacing: 8,
-                    childAspectRatio: 0.84,
+                    childAspectRatio: 0.76,
                   ),
                   itemBuilder: (ctx, i) {
                     final group = TaskCategoryGroup.all[i];
@@ -2733,12 +2733,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  CategoryDoodleIcon(categoryId: group.id, size: 34, borderRadius: 8),
+                                  CategoryDoodleIcon(categoryId: group.id, size: 42, borderRadius: 10),
                                   const SizedBox(height: 5),
                                   Text(
                                     group.label,
                                     style: TextStyle(
-                                      fontSize: 10,
+                                      fontSize: 10.5,
                                       fontWeight: groupActive ? FontWeight.w800 : FontWeight.w600,
                                       color: groupActive ? AppColors.primary : AppColors.dark,
                                       height: 1.15,

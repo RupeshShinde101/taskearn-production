@@ -1,228 +1,293 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../../services/api_service.dart';
+import 'package:go_router/go_router.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/gradient_button.dart';
 
-class ReferralScreen extends StatefulWidget {
+class ReferralScreen extends StatelessWidget {
   const ReferralScreen({super.key});
-
-  @override
-  State<ReferralScreen> createState() => _ReferralScreenState();
-}
-
-class _ReferralScreenState extends State<ReferralScreen> {
-  String? _code;
-  Map<String, dynamic>? _stats;
-  bool _loading = true;
-  bool _applying = false;
-  final _applyCtrl = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _applyCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    try {
-      final codeData = await ApiService.get('/referral/code');
-      final statsData = await ApiService.get('/referral/stats');
-      if (mounted) {
-        setState(() {
-          _code = codeData['code'] ?? codeData['referral_code'];
-          _stats = statsData;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _applyCode() async {
-    if (_applyCtrl.text.trim().isEmpty) return;
-    setState(() => _applying = true);
-
-    try {
-      await ApiService.post('/referral/apply',
-          body: {'referral_code': _applyCtrl.text.trim()});
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Referral code applied! Cashback added.')),
-      );
-      _applyCtrl.clear();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
-    }
-
-    setState(() => _applying = false);
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Referral & Rewards')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+      appBar: AppBar(
+        title: const Text('Referral & Rewards'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        child: Column(
+          children: [
+            // ── Main Hero Card ───────────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.28),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
               child: Column(
                 children: [
-                  // Your code card
-                  GradientContainer(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
+                  // Icon
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        width: 2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.card_giftcard_rounded,
+                      color: Colors.white,
+                      size: 42,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Coming Soon Badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.card_giftcard,
-                            color: Colors.white, size: 40),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Your Referral Code',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
-                        const SizedBox(height: 8),
+                        Icon(Icons.auto_awesome, color: Color(0xFFFDE047), size: 15),
+                        SizedBox(width: 6),
                         Text(
-                          _code ?? 'Loading…',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 4,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Share your code. Earn ₹50 cashback for each friend who joins!',
-                          textAlign: TextAlign.center,
+                          'COMING SOON',
                           style: TextStyle(
-                              color: Colors.white70, fontSize: 12),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  if (_code != null) {
-                                    Clipboard.setData(
-                                        ClipboardData(text: _code!));
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(const SnackBar(
-                                            content:
-                                                Text('Code copied!')));
-                                  }
-                                },
-                                icon: const Icon(Icons.copy, size: 16),
-                                label: const Text('Copy'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: AppColors.primary,
-                                  minimumSize: const Size(0, 40),
-                                ),
-                              ),
-                            ),
-                          ],
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
 
-                  const SizedBox(height: 20),
-
-                  // Stats
-                  if (_stats != null)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            _StatTile(
-                                label: 'Referrals',
-                                value:
-                                    '${_stats!['total_referrals'] ?? 0}'),
-                            _StatTile(
-                                label: 'Earned',
-                                value:
-                                    '₹${_stats!['total_earned'] ?? 0}'),
-                            _StatTile(
-                                label: 'Pending',
-                                value:
-                                    '₹${_stats!['pending'] ?? 0}'),
-                          ],
-                        ),
-                      ),
+                  // Title
+                  const Text(
+                    'Referral & Rewards',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
                     ),
+                  ),
+                  const SizedBox(height: 10),
 
-                  const SizedBox(height: 20),
+                  // Description
+                  Text(
+                    'We are currently revamping our referral program to bring you bigger cashbacks, exciting rewards, and exclusive perks. Stay tuned!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.88),
+                      fontSize: 13.5,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
-                  // Apply code
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Have a referral code?',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 15)),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _applyCtrl,
-                            textCapitalization:
-                                TextCapitalization.characters,
-                            decoration: const InputDecoration(
-                              hintText: 'Enter code',
-                              prefixIcon:
-                                  Icon(Icons.confirmation_number_outlined),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          GradientButton(
-                            label: 'Apply Code',
-                            loading: _applying,
-                            onPressed: _applyCode,
-                          ),
-                        ],
+            const SizedBox(height: 28),
+
+            // ── Feature Teasers Section ──────────────────────────────
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'What to Expect',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.dark,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            const _TeaserCard(
+              icon: Icons.group_add_rounded,
+              iconColor: Color(0xFF2563EB),
+              title: 'Invite Friends & Helpers',
+              subtitle:
+                  'Share your personal referral link via WhatsApp, SMS, or social apps in just one tap.',
+            ),
+            const SizedBox(height: 10),
+
+            const _TeaserCard(
+              icon: Icons.account_balance_wallet_rounded,
+              iconColor: Color(0xFF10B981),
+              title: 'Earn Wallet Cashback',
+              subtitle:
+                  'Get real cash credited instantly to your in-app wallet every time your friend completes a task.',
+            ),
+            const SizedBox(height: 10),
+
+            const _TeaserCard(
+              icon: Icons.emoji_events_rounded,
+              iconColor: Color(0xFFF59E0B),
+              title: 'Milestone Rewards & Bonuses',
+              subtitle:
+                  'Unlock special bonuses, badges, and VIP helper perks as your referral network grows.',
+            ),
+
+            const SizedBox(height: 24),
+
+            // ── Info banner ──────────────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 18, color: Color(0xFF64748B)),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'This feature is not currently available. You will be notified as soon as rewards launch!',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF64748B),
+                        height: 1.45,
                       ),
                     ),
                   ),
                 ],
               ),
             ),
+
+            const SizedBox(height: 24),
+
+            // ── Action Button ────────────────────────────────────────
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  } else {
+                    context.go('/profile');
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'Back to Profile',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class _StatTile extends StatelessWidget {
-  final String label;
-  final String value;
-  const _StatTile({required this.label, required this.value});
+class _TeaserCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+
+  const _TeaserCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                  color: AppColors.primary)),
-          const SizedBox(height: 2),
-          Text(label,
-              style: const TextStyle(
-                  color: AppColors.gray, fontSize: 11)),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: iconColor, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: AppColors.dark,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: AppColors.gray,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

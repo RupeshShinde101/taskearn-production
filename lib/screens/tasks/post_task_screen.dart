@@ -17,6 +17,7 @@ import '../../widgets/location_suggestions_dropdown.dart';
 import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
+import '../../widgets/category_doodle_icons.dart';
 
 class PostTaskScreen extends StatefulWidget {
   const PostTaskScreen({super.key});
@@ -410,11 +411,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           child: Material(
             color: Colors.transparent,
             child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
               constraints: BoxConstraints(maxWidth: 420, maxHeight: maxH),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(22),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.18),
@@ -428,33 +429,39 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
+                    padding: const EdgeInsets.fromLTRB(18, 16, 16, 14),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [AppColors.primary, AppColors.primaryDark],
+                        colors: [Color(0xFF312E81), Color(0xFF4F46E5)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(20)),
+                          BorderRadius.vertical(top: Radius.circular(22)),
                     ),
                     child: Row(
                       children: [
-                        Text(group.icon,
-                            style: const TextStyle(fontSize: 26)),
-                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: CategoryDoodleIcon(categoryId: group.id, size: 32),
+                        ),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(group.label,
                                   style: const TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16.5,
+                                      fontWeight: FontWeight.w800,
                                       color: Colors.white)),
                               const Text('Select a specific category',
                                   style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 11.5,
                                       color: Colors.white70)),
                             ],
                           ),
@@ -477,18 +484,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   Flexible(
                     child: SingleChildScrollView(
                       child: Padding(
-                        padding:
-                            const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
                         child: GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           itemCount: group.subCategories.length,
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            mainAxisExtent: 90,
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            mainAxisExtent: 84,
                           ),
                           itemBuilder: (_, i) {
                             final c = group.subCategories[i];
@@ -504,22 +510,23 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: sel
-                                      ? AppColors.primary
-                                      : AppColors.light,
-                                  borderRadius: BorderRadius.circular(12),
+                                      ? const Color(0xFFEEF2FF)
+                                      : const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
                                     color: sel
                                         ? AppColors.primary
-                                        : AppColors.border,
+                                        : const Color(0xFFE2E8F0),
                                     width: sel ? 2 : 1,
                                   ),
                                   boxShadow: sel
                                       ? [
                                           BoxShadow(
                                             color: AppColors.primary
-                                                .withValues(alpha: 0.25),
+                                                .withValues(alpha: 0.2),
                                             blurRadius: 6,
                                             offset: const Offset(0, 2),
                                           )
@@ -530,19 +537,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   mainAxisAlignment:
                                       MainAxisAlignment.center,
                                   children: [
-                                    Text(c.icon,
-                                        style: const TextStyle(
-                                            fontSize: 22)),
-                                    const SizedBox(height: 4),
+                                    CategoryDoodleIcon(categoryId: c.id, size: 28),
+                                    const SizedBox(height: 5),
                                     Text(
                                       c.label,
                                       style: TextStyle(
-                                        fontSize: 10,
+                                        fontSize: 11,
                                         fontWeight: sel
-                                            ? FontWeight.w700
-                                            : FontWeight.w500,
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
                                         color: sel
-                                            ? Colors.white
+                                            ? AppColors.primary
                                             : AppColors.dark,
                                       ),
                                       textAlign: TextAlign.center,
@@ -1555,6 +1560,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         actionLabel: 'Switch to Poster & Continue',
       );
       if (switched != true) return;
+      if (!mounted) return;
     }
 
     // KYC must be verified to post a task
@@ -1955,13 +1961,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(7),
+                  padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.assignment_outlined,
-                      size: 18, color: AppColors.primary),
+                  child: CategoryDoodleIcon(categoryId: _selectedCategory, size: 24),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2497,66 +2502,99 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ),
               const SizedBox(height: 14),
 
-  // ── Category picker (hierarchical) ──────────────────────
-              const Text('Category',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600, color: AppColors.dark)),
-              const SizedBox(height: 4),
-              // Selected category pill
-              if (_selectedCategory.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_circle, color: AppColors.primary, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Selected: ${TaskCategory.all.firstWhere((c) => c.id == _selectedCategory, orElse: () => TaskCategory(id: '', label: _selectedCategory, icon: '')).label}',
-                        style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600),
+  // ── Category picker (hierarchical & compact) ─────────────
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Category',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark,
+                    ),
+                  ),
+                  if (_selectedCategory.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.35),
+                          width: 1,
+                        ),
                       ),
-                    ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CategoryDoodleIcon(categoryId: _selectedCategory, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            TaskCategory.all
+                                .firstWhere(
+                                  (c) => c.id == _selectedCategory,
+                                  orElse: () => TaskCategory(id: '', label: _selectedCategory, icon: ''),
+                                )
+                                .label,
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Category search bar - compact & neat
+              SizedBox(
+                height: 40,
+                child: TextField(
+                  controller: _categorySearchCtrl,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Search 28+ task categories…',
+                    hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                    prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                    suffixIcon: _categorySearch.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16, color: Color(0xFF64748B)),
+                            padding: EdgeInsets.zero,
+                            onPressed: () => setState(() {
+                              _categorySearchCtrl.clear();
+                              _categorySearch = '';
+                            }),
+                          )
+                        : null,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
                   ),
+                  onChanged: (v) => setState(() {
+                    _categorySearch = v.trim().toLowerCase();
+                  }),
                 ),
-              // Category search bar
-              TextField(
-                controller: _categorySearchCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Search category\u2026',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: _categorySearch.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () => setState(() {
-                            _categorySearchCtrl.clear();
-                            _categorySearch = '';
-                          }),
-                        )
-                      : null,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                onChanged: (v) => setState(() {
-                  _categorySearch = v.trim().toLowerCase();
-                }),
               ),
               const SizedBox(height: 10),
+
               // Show search results OR parent category groups
               if (_categorySearch.isNotEmpty) ...[
                 // ── Flat search results ───────────────────────────────
@@ -2564,8 +2602,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: TaskCategory.all
-                      .where((c) => c.label.toLowerCase().contains(_categorySearch) ||
-                                    c.id.contains(_categorySearch))
+                      .where((c) =>
+                          c.label.toLowerCase().contains(_categorySearch) ||
+                          c.id.contains(_categorySearch))
                       .map((c) {
                     final sel = _selectedCategory == c.id;
                     return GestureDetector(
@@ -2580,25 +2619,37 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : Colors.white,
-                          borderRadius: BorderRadius.circular(20),
+                          color: sel ? const Color(0xFFEEF2FF) : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: AppColors.primary,
-                            width: sel ? 2 : 1.5,
+                            color: sel ? AppColors.primary : const Color(0xFFE2E8F0),
+                            width: sel ? 1.8 : 1.0,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: sel
+                                  ? AppColors.primary.withValues(alpha: 0.15)
+                                  : Colors.black.withValues(alpha: 0.02),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(c.icon, style: const TextStyle(fontSize: 16)),
+                            CategoryDoodleIcon(categoryId: c.id, size: 20),
                             const SizedBox(width: 6),
-                            Text(c.label,
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: sel ? Colors.white : AppColors.dark)),
+                            Text(
+                              c.label,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: sel ? FontWeight.w700 : FontWeight.w600,
+                                color: sel ? AppColors.primary : AppColors.dark,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -2606,20 +2657,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   }).toList(),
                 ),
               ] else ...[
-                // ── Parent category grid ──────────────────────────────
+                // ── Compact Parent Category Grid (4 Columns) ───────────
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: TaskCategoryGroup.all.length,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 1.0,
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 0.86,
                   ),
                   itemBuilder: (ctx, i) {
                     final group = TaskCategoryGroup.all[i];
-                    // Check if current selection belongs to this group
                     final groupActive = group.categoryIds.contains(_selectedCategory);
                     return GestureDetector(
                       onTap: () {
@@ -2628,55 +2678,63 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                         decoration: BoxDecoration(
-                          color: groupActive ? AppColors.primary : Colors.white,
+                          color: groupActive ? const Color(0xFFF5F3FF) : Colors.white,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: groupActive ? AppColors.primary : AppColors.border,
-                            width: groupActive ? 2 : 1,
+                            color: groupActive ? AppColors.primary : const Color(0xFFE2E8F0),
+                            width: groupActive ? 1.8 : 1.0,
                           ),
                           boxShadow: [
                             BoxShadow(
                               color: groupActive
-                                  ? AppColors.primary.withValues(alpha: 0.2)
-                                  : Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 8,
+                                  ? AppColors.primary.withValues(alpha: 0.15)
+                                  : Colors.black.withValues(alpha: 0.03),
+                              blurRadius: groupActive ? 8 : 4,
                               offset: const Offset(0, 2),
                             ),
                           ],
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        child: Stack(
                           children: [
-                            Text(group.icon, style: const TextStyle(fontSize: 26)),
-                            const SizedBox(height: 6),
-                            Text(
-                              group.label,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: groupActive ? Colors.white : AppColors.dark,
+                            Align(
+                              alignment: Alignment.center,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  CategoryDoodleIcon(categoryId: group.id, size: 30),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    group.label,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: groupActive ? FontWeight.w800 : FontWeight.w600,
+                                      color: groupActive ? AppColors.primary : AppColors.dark,
+                                      height: 1.15,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
                               ),
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                            if (groupActive) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                TaskCategory.all.firstWhere(
-                                  (c) => c.id == _selectedCategory,
-                                  orElse: () => const TaskCategory(id: '', label: '', icon: ''),
-                                ).label,
-                                style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.white70,
-                                    fontWeight: FontWeight.w500),
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            if (groupActive)
+                              Positioned(
+                                top: 0,
+                                right: 0,
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
                               ),
-                            ],
                           ],
                         ),
                       ),

@@ -439,14 +439,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     child: Row(
                       children: [
                         Container(
-                          width: 40,
-                          height: 40,
-                          padding: const EdgeInsets.all(6),
+                          width: 44,
+                          height: 44,
+                          padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: CategoryDoodleIcon(categoryId: group.id, size: 26),
+                          child: CategoryDoodleIcon(categoryId: group.id, size: 36, borderRadius: 8),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -501,7 +501,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             crossAxisCount: 2,
                             mainAxisSpacing: 10,
                             crossAxisSpacing: 10,
-                            mainAxisExtent: 74,
+                            mainAxisExtent: 78,
                           ),
                           itemBuilder: (_, i) {
                             final c = group.subCategories[i];
@@ -540,9 +540,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                 child: Row(
                                   children: [
                                     Container(
-                                      width: 42,
-                                      height: 42,
-                                      padding: const EdgeInsets.all(6),
+                                      width: 46,
+                                      height: 46,
+                                      padding: const EdgeInsets.all(3),
                                       decoration: BoxDecoration(
                                         color: sel
                                             ? Colors.white
@@ -554,7 +554,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                               : const Color(0xFFE2E8F0),
                                         ),
                                       ),
-                                      child: CategoryDoodleIcon(categoryId: c.id, size: 26),
+                                      child: CategoryDoodleIcon(categoryId: c.id, size: 40, borderRadius: 7),
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
@@ -1989,12 +1989,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(5),
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: CategoryDoodleIcon(categoryId: _selectedCategory, size: 24),
+                  child: CategoryDoodleIcon(categoryId: _selectedCategory, size: 28, borderRadius: 6),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2557,7 +2557,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CategoryDoodleIcon(categoryId: _selectedCategory, size: 16),
+                          CategoryDoodleIcon(categoryId: _selectedCategory, size: 18, borderRadius: 4),
                           const SizedBox(width: 6),
                           Text(
                             TaskCategory.all
@@ -2668,7 +2668,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            CategoryDoodleIcon(categoryId: c.id, size: 20),
+                            CategoryDoodleIcon(categoryId: c.id, size: 22, borderRadius: 5),
                             const SizedBox(width: 6),
                             Text(
                               c.label,
@@ -2694,7 +2694,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     crossAxisCount: 4,
                     mainAxisSpacing: 8,
                     crossAxisSpacing: 8,
-                    childAspectRatio: 0.86,
+                    childAspectRatio: 0.84,
                   ),
                   itemBuilder: (ctx, i) {
                     final group = TaskCategoryGroup.all[i];
@@ -2733,7 +2733,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  CategoryDoodleIcon(categoryId: group.id, size: 30),
+                                  CategoryDoodleIcon(categoryId: group.id, size: 34, borderRadius: 8),
                                   const SizedBox(height: 5),
                                   Text(
                                     group.label,

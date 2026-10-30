@@ -410,7 +410,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           child: Material(
             color: Colors.transparent,
             child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
               constraints: BoxConstraints(maxWidth: 440, maxHeight: maxH),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -474,7 +474,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     child: SingleChildScrollView(
                       child: Padding(
                         padding:
-                            const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                            const EdgeInsets.fromLTRB(12, 12, 12, 12),
                         child: GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
@@ -482,9 +482,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 2,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            mainAxisExtent: 72,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            mainAxisExtent: 68,
                           ),
                           itemBuilder: (_, i) {
                             final c = group.subCategories[i];
@@ -501,7 +501,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
+                                    horizontal: 8, vertical: 6),
                                 decoration: BoxDecoration(
                                   color: sel
                                       ? const Color(0xFFEEF2FF)
@@ -525,8 +525,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                 child: Row(
                                   children: [
                                     Container(
-                                      width: 42,
-                                      height: 42,
+                                      width: 38,
+                                      height: 38,
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
                                         color: sel
@@ -543,31 +543,37 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                       ),
                                       child: Text(c.icon,
                                           style: const TextStyle(
-                                              fontSize: 22)),
+                                              fontSize: 20)),
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
-                                      child: Text(
-                                        c.label,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: sel
-                                              ? FontWeight.w700
-                                              : FontWeight.w600,
-                                          color: sel
-                                              ? AppColors.primaryDark
-                                              : AppColors.dark,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          c.label,
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight: sel
+                                                ? FontWeight.w700
+                                                : FontWeight.w600,
+                                            color: sel
+                                                ? AppColors.primaryDark
+                                                : AppColors.dark,
+                                            letterSpacing: -0.2,
+                                          ),
+                                          maxLines: 1,
                                         ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    if (sel)
+                                    if (sel) ...[
+                                      const SizedBox(width: 4),
                                       const Icon(
                                         Icons.check_circle_rounded,
-                                        size: 18,
+                                        size: 16,
                                         color: AppColors.primary,
                                       ),
+                                    ],
                                   ],
                                 ),
                               ),

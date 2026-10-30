@@ -934,16 +934,16 @@
     //   Mini cab: ₹12/km | Sedan: ₹15/km | SUV: ₹18/km
     // total = base + perKm × distance, rounded to nearest ₹10.
     const DISTANCE_PRICING = {
-        transport: { base: 30,  perKm: 17, label: 'Pick & Drop' },  // auto/rickshaw default
-        pickup:    { base: 30,  perKm: 17, label: 'Pick & Drop' },  // same as transport
-        delivery:  { base: 20,  perKm: 10, label: 'Delivery' },     // bike delivery
+        transport: { base: 30,  perKm: 18, label: 'Pick & Drop' },  // auto/rickshaw default
+        pickup:    { base: 30,  perKm: 18, label: 'Pick & Drop' },  // same as transport
+        delivery:  { base: 24,  perKm: 12, label: 'Delivery' },     // bike delivery
         moving:    { base: 500, perKm: 40, label: 'Moving & Packing' },
     };
 
     // Vehicle classes with per-km fare matching real Indian city rates.
     const VEHICLES = {
-        bike:  { key: 'bike',  label: 'Bike',     icon: '🏍️', base: 20,  perKm: 10, speed: 28, note: 'Small parcels & documents' },
-        auto:  { key: 'auto',  label: 'Auto',     icon: '🛺', base: 30,  perKm: 17, speed: 22, note: '₹17/km — city meter rate' },
+        bike:  { key: 'bike',  label: 'Bike',     icon: '🏍️', base: 24,  perKm: 12, speed: 28, note: '₹12/km — Bike Delivery' },
+        auto:  { key: 'auto',  label: 'Rikshaw',  icon: '🛺', base: 30,  perKm: 18, speed: 22, note: '₹18/km — Rikshaw / Auto' },
         mini:  { key: 'mini',  label: 'Mini Cab', icon: '🚗', base: 60,  perKm: 20, speed: 30, note: 'Compact hatchback' },
         sedan: { key: 'sedan', label: 'Sedan',    icon: '🚙', base: 80,  perKm: 25, speed: 32, note: 'Comfortable sedan' },
         suv:   { key: 'suv',   label: 'SUV',      icon: '🚐', base: 120, perKm: 30, speed: 28, note: 'Large vehicle / 6-seater' },

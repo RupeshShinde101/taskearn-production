@@ -10,8 +10,13 @@ import 'package:geolocator/geolocator.dart';
 import '../../services/location_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
+import 'dart:async';
+import '../../services/location_search_service.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/location_suggestions_dropdown.dart';
+import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../widgets/profile_mode_switch_dialog.dart';
 
 class PostTaskScreen extends StatefulWidget {
   const PostTaskScreen({super.key});
@@ -32,7 +37,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _budgetFocus  = FocusNode();
   final _pickupFocus  = FocusNode();
   final _dropFocus    = FocusNode();
+  final _addressFocus = FocusNode();
   final _addressCtrl = TextEditingController();
+
+  // Search autocomplete state
+  Timer? _pickupDebounce;
+  Timer? _dropDebounce;
+  Timer? _addressDebounce;
+  List<LocationSearchResult> _pickupSuggestions = [];
+  List<LocationSearchResult> _dropSuggestions = [];
+  List<LocationSearchResult> _addressSuggestions = [];
+  bool _searchingPickup = false;
+  bool _searchingDrop = false;
+  bool _searchingAddress = false;
   final _flatNameCtrl = TextEditingController();
   final _areaCtrl    = TextEditingController();
   // Delivery-specific: separate pickup & drop location fields
@@ -44,6 +61,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _dropAreaCtrl   = TextEditingController();
 
   String _selectedCategory = 'delivery';
+  String _deliveryVehicle = 'bike'; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
+  int _distCalcSeq = 0;
   final _categorySearchCtrl = TextEditingController();
   String _categorySearch = '';
   LatLng? _location;
@@ -102,23 +121,266 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'other':       ['Describe the task clearly?', 'Skills needed?', 'Expected duration?'],
   };
 
-  /// Recalculates the straight-line distance (km) between pickup and drop,
-  /// then auto-fills the budget with the ₹10/km minimum if it is unset or lower.
-  void _recalcDistance() {
+  /// Quick-tap suggestion chips for common question patterns.
+  static const Map<String, List<String>> _quickChips = {
+    'urgent': ['Yes, urgent', 'Within 2 hours', 'Flexible today'],
+    'time constraint': ['Urgent', 'Morning', 'Evening', 'Flexible'],
+    'time slot': ['Morning (9am-12pm)', 'Afternoon (12pm-4pm)', 'Evening (4pm-8pm)', 'Flexible'],
+    'time needed': ['Morning', 'Lunch time', 'Evening / Dinner', 'Flexible'],
+    'fragile': ['Yes, fragile', 'No, not fragile'],
+    'need packing help': ['Yes, need packing', 'No, already packed'],
+    'pets at home': ['No pets', 'Dog', 'Cat', 'Other pet'],
+    'dietary restrictions': ['Pure Veg', 'Non-Veg', 'Jain', 'No restrictions'],
+    'wash + fold': ['Wash + Fold', 'Wash + Iron', 'Only Fold'],
+    'pick up from home': ['Yes, pick up from home', 'I will drop off'],
+    'at-home or garage': ['At my home', 'Take to garage / workshop'],
+    'online or in-person': ['In-person', 'Online', 'Either'],
+    'remote or in-person': ['Remote / Online', 'In-person'],
+    'vaccinated': ['Yes, vaccinated', 'Not vaccinated'],
+    'supplies provided': ['Supplies provided', 'Helper bring supplies'],
+    'tools needed': ['Have own tools', 'Helper bring tools'],
+    'gender preference': ['No preference', 'Female helper', 'Male helper'],
+  };
+
+
+  static const Map<String, LatLng> _knownLocalityCoords = {
+    'hinjewadi': LatLng(18.5913, 73.7389),
+    'baner': LatLng(18.5590, 73.7868),
+    'wakad': LatLng(18.5987, 73.7660),
+    'balewadi': LatLng(18.5750, 73.7712),
+    'aundh': LatLng(18.5602, 73.8031),
+    'bavdhan': LatLng(18.5143, 73.7684),
+    'pashan': LatLng(18.5385, 73.7929),
+    'kothrud': LatLng(18.5074, 73.8077),
+    'shivajinagar': LatLng(18.5314, 73.8446),
+    'shivaji nagar': LatLng(18.5314, 73.8446),
+    'deccan': LatLng(18.5167, 73.8417),
+    'swargate': LatLng(18.5018, 73.8636),
+    'camp': LatLng(18.5140, 73.8780),
+    'koregaon': LatLng(18.5362, 73.8940),
+    'koregaon park': LatLng(18.5362, 73.8940),
+    'kalyani': LatLng(18.5477, 73.9034),
+    'kalyani nagar': LatLng(18.5477, 73.9034),
+    'viman': LatLng(18.5679, 73.9143),
+    'viman nagar': LatLng(18.5679, 73.9143),
+    'kharadi': LatLng(18.5516, 73.9349),
+    'magarpatta': LatLng(18.5089, 73.9260),
+    'hadapsar': LatLng(18.5089, 73.9260),
+    'pimpri': LatLng(18.6279, 73.8009),
+    'chinchwad': LatLng(18.6298, 73.7997),
+    'bhosari': LatLng(18.6247, 73.8468),
+    'wagholi': LatLng(18.5808, 73.9804),
+    'nigdi': LatLng(18.6548, 73.7684),
+    'akurdi': LatLng(18.6493, 73.7707),
+    'moshi': LatLng(18.6750, 73.8436),
+    'ambegaon': LatLng(18.4575, 73.8508),
+    'katraj': LatLng(18.4575, 73.8508),
+    'warje': LatLng(18.4816, 73.7963),
+    'ravet': LatLng(18.6310, 73.7350),
+    'punawale': LatLng(18.6250, 73.7380),
+    'tathawade': LatLng(18.6180, 73.7480),
+    'kondhwa': LatLng(18.4746, 73.8860),
+    'bibvewadi': LatLng(18.4770, 73.8640),
+    'dhayari': LatLng(18.4480, 73.8180),
+    'sinhagad': LatLng(18.4480, 73.8180),
+  };
+
+  // ── Location Autocomplete Handlers ──────────────────────────────────────
+  void _onPickupAddrChanged(String text) {
+    _pickupDebounce?.cancel();
+    final q = text.trim();
+    if (q.length < 2) {
+      if (_pickupSuggestions.isNotEmpty || _searchingPickup) {
+        setState(() {
+          _pickupSuggestions = [];
+          _searchingPickup = false;
+        });
+      }
+      return;
+    }
+    setState(() => _searchingPickup = true);
+    _pickupDebounce = Timer(const Duration(milliseconds: 280), () async {
+      try {
+        final results = await LocationSearchService.search(
+          q,
+          userLocation: _pickupLocation ?? _location,
+        );
+        if (!mounted) return;
+        setState(() {
+          _pickupSuggestions = results;
+          _searchingPickup = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _searchingPickup = false);
+      }
+    });
+  }
+
+  void _selectPickupSuggestion(LocationSearchResult s) {
+    _pickupAddrCtrl.text = s.fullAddress;
+    _pickupLocation = s.toLatLng();
+    _location ??= _pickupLocation;
+    _pickupSuggestions = [];
+    _searchingPickup = false;
+    _pickupFocus.unfocus();
+    _recalcDistance();
+    setState(() {});
+  }
+
+  void _onDropAddrChanged(String text) {
+    _dropDebounce?.cancel();
+    final q = text.trim();
+    if (q.length < 2) {
+      if (_dropSuggestions.isNotEmpty || _searchingDrop) {
+        setState(() {
+          _dropSuggestions = [];
+          _searchingDrop = false;
+        });
+      }
+      return;
+    }
+    setState(() => _searchingDrop = true);
+    _dropDebounce = Timer(const Duration(milliseconds: 280), () async {
+      try {
+        final results = await LocationSearchService.search(
+          q,
+          userLocation: _dropLocation ?? _location,
+        );
+        if (!mounted) return;
+        setState(() {
+          _dropSuggestions = results;
+          _searchingDrop = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _searchingDrop = false);
+      }
+    });
+  }
+
+  void _selectDropSuggestion(LocationSearchResult s) {
+    _dropAddrCtrl.text = s.fullAddress;
+    _dropLocation = s.toLatLng();
+    _dropSuggestions = [];
+    _searchingDrop = false;
+    _dropFocus.unfocus();
+    _recalcDistance();
+    setState(() {});
+  }
+
+  void _onAddressChanged(String text) {
+    _addressDebounce?.cancel();
+    final q = text.trim();
+    if (q.length < 2) {
+      if (_addressSuggestions.isNotEmpty || _searchingAddress) {
+        setState(() {
+          _addressSuggestions = [];
+          _searchingAddress = false;
+        });
+      }
+      return;
+    }
+    setState(() => _searchingAddress = true);
+    _addressDebounce = Timer(const Duration(milliseconds: 280), () async {
+      try {
+        final results = await LocationSearchService.search(
+          q,
+          userLocation: _location,
+        );
+        if (!mounted) return;
+        setState(() {
+          _addressSuggestions = results;
+          _searchingAddress = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _searchingAddress = false);
+      }
+    });
+  }
+
+  void _selectAddressSuggestion(LocationSearchResult s) {
+    _addressCtrl.text = s.fullAddress;
+    _location = s.toLatLng();
+    _locationLabel = s.title;
+    _addressSuggestions = [];
+    _searchingAddress = false;
+    _addressFocus.unfocus();
+    setState(() {});
+  }
+
+  LatLng? _lookupKnownLocality(String text) {
+    final lower = text.toLowerCase().trim();
+    if (lower.isEmpty) return null;
+    for (final entry in _knownLocalityCoords.entries) {
+      if (lower.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  void _checkAndEstimateDistance() {
+    if (!_isDelivery) return;
+    if (_pickupLocation == null) {
+      final pText = '${_pickupAddrCtrl.text} ${_pickupAreaCtrl.text}'.trim();
+      final pLoc = _lookupKnownLocality(pText);
+      if (pLoc != null) {
+        _pickupLocation = pLoc;
+        _location ??= pLoc;
+      }
+    }
+    if (_dropLocation == null) {
+      final dText = '${_dropAddrCtrl.text} ${_dropAreaCtrl.text}'.trim();
+      final dLoc = _lookupKnownLocality(dText);
+      if (dLoc != null) {
+        _dropLocation = dLoc;
+      }
+    }
+    _recalcDistance();
+  }
+
+  /// Recalculates exact road distance (km) between pickup and drop matching Google Maps,
+  /// then auto-fills budget with category- and vehicle-specific distance fare.
+  Future<void> _recalcDistance() async {
     if (_pickupLocation != null && _dropLocation != null) {
-      final km = const Distance().as(
-        LengthUnit.Kilometer,
+      final seq = ++_distCalcSeq;
+      // 1. Instant road estimate (aerial * 1.25 road factor) for zero UI lag
+      final meters = const Distance().distance(
         _pickupLocation!,
         _dropLocation!,
       );
-      final minPrice = (km * 10).ceil().toDouble();
+      final immediateKm = (meters / 1000.0) * 1.25;
+      final immediatePrice = Task.calculateDistancePrice(
+        immediateKm,
+        _selectedCategory,
+        vehicle: _deliveryVehicle,
+      );
       final current = double.tryParse(_budgetCtrl.text) ?? 0;
-      if (current < minPrice) {
-        _budgetCtrl.text = minPrice.toStringAsFixed(0);
+      if (current < immediatePrice) {
+        _budgetCtrl.text = immediatePrice.toStringAsFixed(0);
       }
-      setState(() => _calculatedDistanceKm = km);
+      if (mounted) setState(() => _calculatedDistanceKm = immediateKm);
+
+      // 2. Fetch exact road driving route via OSRM (Google Maps parity)
+      try {
+        final roadKm = await LocationService.calculateRoadDistance(
+          _pickupLocation!,
+          _dropLocation!,
+        );
+        if (seq == _distCalcSeq && mounted) {
+          final exactPrice = Task.calculateDistancePrice(
+            roadKm,
+            _selectedCategory,
+            vehicle: _deliveryVehicle,
+          );
+          final currVal = double.tryParse(_budgetCtrl.text) ?? 0;
+          if (currVal < exactPrice) {
+            _budgetCtrl.text = exactPrice.toStringAsFixed(0);
+          }
+          setState(() => _calculatedDistanceKm = roadKm);
+        }
+      } catch (_) {}
     } else {
-      setState(() => _calculatedDistanceKm = null);
+      if (mounted) setState(() => _calculatedDistanceKm = null);
     }
   }
 
@@ -237,6 +499,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   _selectedCategory = c.id;
                                   _autoFillDescription();
                                 });
+                                _recalcDistance();
                                 Navigator.pop(ctx);
                               },
                               child: AnimatedContainer(
@@ -306,19 +569,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Auto-fill description with category-specific prompts/questions.
   /// Only fills if description is empty or still contains the previous template.
-  void _autoFillDescription({bool force = false}) {
-    final prompts = _prompts[_selectedCategory];
-    if (prompts == null || prompts.isEmpty) return;
-    final newTemplate = prompts.map((p) => 'Q: $p\nA: ').join('\n\n');
-    final current = _descCtrl.text;
-    // Don't overwrite if user has typed their own content
-    final isEmpty = current.trim().isEmpty;
-    final isTemplate = current.contains('Q: ') && current.contains('\nA: ');
-    if (force || isEmpty || isTemplate) {
-      _descCtrl.text = newTemplate;
-      _descCtrl.selection =
-          TextSelection.fromPosition(const TextPosition(offset: 0));
-    }
+  void _autoFillDescription() {
+    _compileDescriptionFromForm();
   }
 
   @override
@@ -326,20 +578,62 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     super.initState();
     _getLocation();
     _savedLocations = StorageService.getSavedLocations();
+    _areaCtrl.addListener(_onLocationAreaChanged);
+    _pickupAreaCtrl.addListener(_onLocationAreaChanged);
+    _dropAreaCtrl.addListener(_onLocationAreaChanged);
+    _addressCtrl.addListener(_onLocationAreaChanged);
+    _pickupAddrCtrl.addListener(_onLocationAreaChanged);
+    _dropAddrCtrl.addListener(_onLocationAreaChanged);
     // Auto-fill description with prompts for the default category on first open
-    WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillDescription());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _autoFillDescription();
+      if (!mounted) return;
+      // auth reference
+      final auth = context.read<AuthProvider>();
+    if (!auth.isPosterMode) {
+        final switched = await showProfileModeSwitchDialog(
+          context,
+          targetMode: 'poster',
+          title: 'Switch to Poster Profile',
+          message:
+              'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+          actionLabel: 'Switch to Poster & Continue',
+        );
+        if (switched != true && mounted) {
+          Navigator.of(context).pop();
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _areaCtrl.removeListener(_onLocationAreaChanged);
+    _pickupAreaCtrl.removeListener(_onLocationAreaChanged);
+    _dropAreaCtrl.removeListener(_onLocationAreaChanged);
+    _addressCtrl.removeListener(_onLocationAreaChanged);
+    _pickupAddrCtrl.removeListener(_onLocationAreaChanged);
+    _dropAddrCtrl.removeListener(_onLocationAreaChanged);
+    for (final ctrl in _descFormControllers.values) {
+      ctrl.dispose();
+    }
+    for (final fn in _descFormFocusNodes.values) {
+      fn.dispose();
+    }
+    _additionalNotesCtrl.dispose();
+    _additionalNotesFocus.dispose();
     _titleCtrl.dispose();
     _descCtrl.dispose();
     _budgetCtrl.dispose();
     _titleFocus.dispose();
     _descFocus.dispose();
     _budgetFocus.dispose();
+    _pickupDebounce?.cancel();
+    _dropDebounce?.cancel();
+    _addressDebounce?.cancel();
     _pickupFocus.dispose();
     _dropFocus.dispose();
+    _addressFocus.dispose();
     _addressCtrl.dispose();
     _flatNameCtrl.dispose();
     _areaCtrl.dispose();
@@ -1148,6 +1442,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _submit() async {
+    _compileDescriptionFromForm();
+
     // Always re-check title on every submit click (not relying on form cache)
     final titleErr = _validateTaskTitle(_titleCtrl.text);
     if (titleErr != null) {
@@ -1176,8 +1472,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         firstInvalidFocus ??= _titleFocus;
       }
       if (_descCtrl.text.trim().length < 10) {
-        missing.add('Description');
-        firstInvalidFocus ??= _descFocus;
+        missing.add('Task Details Form (min 10 characters)');
+        final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
+        for (final p in prompts) {
+          final ctrl = _descFormControllers[p];
+          if (ctrl == null || ctrl.text.trim().isEmpty) {
+            firstInvalidFocus ??= _getDescQuestionFocus(p);
+            break;
+          }
+        }
       }
       final budget = double.tryParse(_budgetCtrl.text);
       if (budget == null || budget <= 0) {
@@ -1240,8 +1543,22 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       return;
     }
 
-    // KYC must be verified to post a task
+    // auth reference
     final auth = context.read<AuthProvider>();
+    if (!auth.isPosterMode) {
+      final switched = await showProfileModeSwitchDialog(
+        context,
+        targetMode: 'poster',
+        title: 'Switch to Poster Profile',
+        message:
+            'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+        actionLabel: 'Switch to Poster & Continue',
+      );
+      if (switched != true) return;
+    }
+
+    // KYC must be verified to post a task
+    // auth reference
     if (!(auth.user?.isKycVerified ?? false)) {
       showDialog(
         context: context,
@@ -1273,8 +1590,37 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
 
     final budget = double.tryParse(_budgetCtrl.text) ?? 0;
-    final charge = Task.serviceChargeForCategory(_selectedCategory).toDouble();
-    final total  = budget + charge;
+    if (_isDelivery) {
+      if (_calculatedDistanceKm != null) {
+        final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
+        if (budget < distMin) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Minimum budget for ${_calculatedDistanceKm!.toStringAsFixed(1)} km is ₹${distMin.toInt()}')),
+          );
+          return;
+        }
+      } else if (_selectedCategory != 'delivery') {
+        final catMin = Task.minBudgetForCategory(_selectedCategory);
+        if (catMin > 0 && budget < catMin) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+          );
+          return;
+        }
+      }
+    } else {
+      final catMin = Task.minBudgetForCategory(_selectedCategory);
+      if (budget < catMin) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+        );
+        return;
+      }
+    }
+    final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
+    final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
+    final posterFee = budget * 0.20;
+    final total  = budget + charge + posterFee;
 
     // Confirm posting — payment is collected AFTER the helper completes the task
     final confirm = await showDialog<bool>(
@@ -1354,43 +1700,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Cost breakdown
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Column(
-                  children: [
-                    _CostRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
-                    if (charge > 0) ...[
-                      const SizedBox(height: 8),
-                      _CostRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
-                    ],
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Divider(height: 1, color: Color(0xFFE2E8F0)),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Total (due on verification)',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13.5,
-                                color: Color(0xFF1E293B))),
-                        Text('₹${total.toStringAsFixed(0)}',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                                color: Color(0xFF4338CA))),
-                      ],
-                    ),
-                  ],
-                ),
+              TaskPriceBreakdownCard(
+                budget: budget,
+                serviceCharge: charge,
+                posterFee: posterFee,
+                totalCost: total,
               ),
               const SizedBox(height: 24),
               // Action buttons
@@ -1495,16 +1809,23 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'lng': taskLocation.longitude,
         'address': combinedAddress ?? '',
       },
-      if (_isDelivery && _pickupAddrCtrl.text.trim().isNotEmpty)
-        'pickup_address': _pickupAddrCtrl.text.trim(),
-      if (_isDelivery && _dropAddrCtrl.text.trim().isNotEmpty) ...{
-        'delivery_address': _dropAddrCtrl.text.trim(),
-        'drop_location_address': _dropAddrCtrl.text.trim(),
-      },
-      if (_isDelivery && _dropLocation != null) ...{
+      if (_isDelivery) ...{
+        'vehicle': _selectedCategory == 'delivery' ? _deliveryVehicle : 'auto',
+        if (_pickupAddrCtrl.text.trim().isNotEmpty)
+          'pickup_address': _pickupAddrCtrl.text.trim(),
+        if (_dropAddrCtrl.text.trim().isNotEmpty) ...{
+          'delivery_address': _dropAddrCtrl.text.trim(),
+          'drop_location_address': _dropAddrCtrl.text.trim(),
+          'drop_address': _dropAddrCtrl.text.trim(),
+        },
+        'drop_location': {
+          'lat': _dropLocation?.latitude,
+          'lng': _dropLocation?.longitude,
+          'address': _dropAddrCtrl.text.trim(),
+        },
         'dropLocation': {
-          'lat': _dropLocation!.latitude,
-          'lng': _dropLocation!.longitude,
+          'lat': _dropLocation?.latitude,
+          'lng': _dropLocation?.longitude,
           'address': _dropAddrCtrl.text.trim(),
         },
       },
@@ -1527,6 +1848,628 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 context.read<TaskProvider>().error ?? 'Failed to post task')),
       );
     }
+  }
+
+    /// Controllers for each question in the description form.
+  final Map<String, TextEditingController> _descFormControllers = {};
+
+  /// Focus nodes for each question in the description form.
+  final Map<String, FocusNode> _descFormFocusNodes = {};
+
+  /// Controller for optional special instructions / additional notes.
+  final _additionalNotesCtrl = TextEditingController();
+  final _additionalNotesFocus = FocusNode();
+
+  TextEditingController _getDescQuestionCtrl(String question) {
+    return _descFormControllers.putIfAbsent(
+      question,
+      () => TextEditingController()..addListener(_compileDescriptionFromForm),
+    );
+  }
+
+  FocusNode _getDescQuestionFocus(String question) {
+    return _descFormFocusNodes.putIfAbsent(question, () => FocusNode());
+  }
+
+  List<String> _getChipsForQuestion(String q) {
+    final cleanQ = q.toLowerCase().replaceAll('?', '').trim();
+    for (final entry in _quickChips.entries) {
+      if (cleanQ.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+    return const [];
+  }
+
+  String _getHintForQuestion(String q) {
+    final lower = q.toLowerCase();
+    if (lower.contains('what') && lower.contains('deliver')) return 'e.g. Documents, food tiffin, small parcel';
+    if (lower.contains('pickup point')) return 'e.g. 3rd floor, Flat 301, near elevator';
+    if (lower.contains('drop point')) return 'e.g. Office reception, security desk';
+    if (lower.contains('item size') || lower.contains('weight')) return 'e.g. Fits in backpack, ~2 kg';
+    if (lower.contains('urgent')) return 'e.g. Yes within 1 hour / flexible';
+    if (lower.contains('electrical')) return 'e.g. Ceiling fan installation, switchboard sparking';
+    if (lower.contains('plumbing')) return 'e.g. Kitchen tap leaking, bathroom drain blocked';
+    if (lower.contains('repair')) return 'e.g. Washing machine not draining, AC cooling low';
+    if (lower.contains('how many rooms')) return 'e.g. 2 BHK, 1 kitchen, 2 bathrooms';
+    if (lower.contains('cuisine') || lower.contains('dishes')) return 'e.g. North Indian: 4 Rotis, Dal, Sabzi';
+    if (lower.contains('how many people')) return 'e.g. 2 adults, 1 child';
+    if (lower.contains('how many clothes')) return 'e.g. Around 15-20 clothes (daily wear)';
+    if (lower.contains('subject')) return 'e.g. Mathematics, Class 10 CBSE';
+    if (lower.contains('service do you need')) return 'e.g. WordPress website customization, logo design';
+    if (lower.contains('materials needed')) return 'e.g. Plywood provided / helper to bring screws';
+    if (lower.contains('colour')) return 'e.g. Off-white emulsion, 1 bedroom wall';
+    if (lower.contains('garden')) return 'e.g. Lawn mowing, trimming bushes, watering';
+    return 'Type your answer here...';
+  }
+
+  void _compileDescriptionFromForm() {
+    final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
+    final lines = <String>[];
+    for (final p in prompts) {
+      final ctrl = _descFormControllers[p];
+      final val = ctrl?.text.trim() ?? '';
+      if (val.isNotEmpty) {
+        lines.add('• $p $val');
+      }
+    }
+    final notes = _additionalNotesCtrl.text.trim();
+    if (notes.isNotEmpty) {
+      lines.add('Special Instructions: $notes');
+    }
+    _descCtrl.text = lines.join('\n');
+  }
+
+  Widget _buildDescriptionFormSection() {
+    final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
+    final categoryLabel = TaskCategory.all
+        .firstWhere((c) => c.id == _selectedCategory,
+            orElse: () => TaskCategory(id: _selectedCategory, label: _selectedCategory, icon: '📋'))
+        .label;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.assignment_outlined,
+                      size: 18, color: AppColors.primary),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Flexible(
+                            child: Text(
+                              'Task Details Form',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: AppColors.dark,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                categoryLabel,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Answer these questions so helpers understand your task',
+                        style: TextStyle(fontSize: 11, color: AppColors.gray),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Form Body (Form only)
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Render each question field
+                ...prompts.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final q = entry.value;
+                  final ctrl = _getDescQuestionCtrl(q);
+                  final fn = _getDescQuestionFocus(q);
+                  final chips = _getChipsForQuestion(q);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Question Label with index badge
+                        Row(
+                          children: [
+                            Container(
+                              width: 18,
+                              height: 18,
+                              alignment: Alignment.center,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFE2E8F0),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${idx + 1}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.dark,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                q,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  color: AppColors.dark,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        // Question Input
+                        TextFormField(
+                          controller: ctrl,
+                          focusNode: fn,
+                          decoration: InputDecoration(
+                            hintText: _getHintForQuestion(q),
+                            hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                            ),
+                          ),
+                        ),
+                        // Quick suggestion chips if available
+                        if (chips.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: chips.map((chipText) {
+                              final isSelected = ctrl.text == chipText;
+                              return InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    if (ctrl.text == chipText) {
+                                      ctrl.clear();
+                                    } else {
+                                      ctrl.text = chipText;
+                                    }
+                                    _compileDescriptionFromForm();
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(14),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    chipText,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                      color: isSelected ? Colors.white : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }),
+
+                // Additional notes / special instructions
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.notes_rounded, size: 16, color: AppColors.gray),
+                        SizedBox(width: 6),
+                        Text(
+                          'Special Instructions / Other Notes (Optional)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            color: AppColors.dark,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _additionalNotesCtrl,
+                      focusNode: _additionalNotesFocus,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Any specific instructions, parking info, access codes, etc.',
+                        hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
+                        contentPadding: const EdgeInsets.all(12),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onLocationAreaChanged() {
+    if (_isDelivery) {
+      _checkAndEstimateDistance();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildDeliveryVehicleSelector() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.delivery_dining, size: 18, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Text(
+                'Delivery Vehicle Option',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: AppColors.dark,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildVehicleTile(
+                  title: 'Bike',
+                  rate: '₹12 / km',
+                  desc: 'Small items / docs',
+                  icon: Icons.two_wheeler_rounded,
+                  isSelected: _deliveryVehicle == 'bike',
+                  onTap: () {
+                    if (_deliveryVehicle != 'bike') {
+                      setState(() => _deliveryVehicle = 'bike');
+                      _recalcDistance();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildVehicleTile(
+                  title: 'Rikshaw',
+                  rate: '₹18 / km',
+                  desc: 'Auto / medium items',
+                  icon: Icons.electric_rickshaw_rounded,
+                  isSelected: _deliveryVehicle == 'rikshaw',
+                  onTap: () {
+                    if (_deliveryVehicle != 'rikshaw') {
+                      setState(() => _deliveryVehicle = 'rikshaw');
+                      _recalcDistance();
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVehicleTile({
+    required String title,
+    required String rate,
+    required String desc,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : AppColors.light,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.border,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 22, color: isSelected ? AppColors.primary : AppColors.gray),
+                const Spacer(),
+                if (isSelected)
+                  const Icon(Icons.check_circle, size: 16, color: AppColors.primary),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: isSelected ? AppColors.primary : AppColors.dark,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              rate,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: isSelected ? AppColors.primary : AppColors.dark,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              desc,
+              style: const TextStyle(fontSize: 11, color: AppColors.gray),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuggestedBudgetCard() {
+    final areaCandidate = _isDelivery
+        ? (_dropAreaCtrl.text.trim().isNotEmpty
+            ? _dropAreaCtrl.text.trim()
+            : (_locationLabel ?? _pickupAddrCtrl.text.trim()))
+        : (_areaCtrl.text.trim().isNotEmpty
+            ? _areaCtrl.text.trim()
+            : (_locationLabel ?? _addressCtrl.text.trim()));
+
+    final suggestion = Task.getBudgetSuggestion(
+      _selectedCategory,
+      areaText: areaCandidate,
+      distanceKm: _calculatedDistanceKm,
+      vehicle: _deliveryVehicle,
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFC7D2FE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.auto_awesome, size: 14, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Suggested in ${suggestion.localityName}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E293B)),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E7FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    suggestion.localityTier,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          '₹${suggestion.suggestedBudget.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF4338CA),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            '(Typical: ₹${suggestion.minBudget.toInt()}–₹${suggestion.maxBudget.toInt()})',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Average value users in this area pay for ${_selectedCategory.replaceAll('_', ' ')}',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  _budgetCtrl.text = suggestion.suggestedBudget.toInt().toString();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                child: const Text('Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1626,12 +2569,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       .map((c) {
                     final sel = _selectedCategory == c.id;
                     return GestureDetector(
-                      onTap: () => setState(() {
-                        _selectedCategory = c.id;
-                        _categorySearchCtrl.clear();
-                        _categorySearch = '';
-                        _autoFillDescription();
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _selectedCategory = c.id;
+                          _categorySearchCtrl.clear();
+                          _categorySearch = '';
+                          _autoFillDescription();
+                        });
+                        _recalcDistance();
+                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1740,34 +2686,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ],
               const SizedBox(height: 14),
 
-              // Description
-              TextFormField(
-                controller: _descCtrl,
-                focusNode: _descFocus,
-                maxLines: 8,
-                decoration: InputDecoration(
-                  labelText: 'Description',
-                  prefixIcon: const Icon(Icons.description_outlined),
-                  alignLabelWithHint: true,
-                  contentPadding: const EdgeInsets.all(14),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                  ),
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().length < 10)
-                        ? 'Min 10 characters'
-                        : null,
-              ),
+              // ── Delivery Vehicle Selector (Bike vs Rikshaw) ──
+              if (_selectedCategory == 'delivery') ...[
+                _buildDeliveryVehicleSelector(),
+                const SizedBox(height: 14),
+              ],
+
+              // Description Form (replaces single raw textarea)
+              _buildDescriptionFormSection(),
               const SizedBox(height: 14),
+
+              // Suggested budget card based on category + selected area
+              _buildSuggestedBudgetCard(),
 
               // Budget
               TextFormField(
@@ -1778,9 +2708,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   labelText: 'Budget (₹)',
                   hintText: _isDelivery
                       ? (_calculatedDistanceKm != null
-                          ? 'Min ₹${(_calculatedDistanceKm! * 10).ceil()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km × ₹10/km)'
-                          : 'Set locations to auto-calculate')
-                      : 'Minimum ₹100',
+                          ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})'
+                          : (_selectedCategory == 'delivery'
+                              ? 'Enter budget (${_deliveryVehicle == 'bike' ? '₹12/km' : '₹18/km'})'
+                              : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory).toInt()})'))
+                      : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
+                  helperText: _isDelivery
+                      ? (_selectedCategory == 'delivery'
+                          ? (_calculatedDistanceKm != null
+                              ? 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
+                              : 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'}')
+                          : (_calculatedDistanceKm != null
+                              ? 'Rate: ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
+                              : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory, vehicle: _deliveryVehicle)}'))
+                      : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
                   prefixIcon: const Icon(Icons.currency_rupee),
                 ),
                 validator: (v) {
@@ -1788,13 +2729,21 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   if (n == null || n <= 0) return 'Please enter a budget';
                   if (_isDelivery) {
                     if (_calculatedDistanceKm != null) {
-                      final minPrice = (_calculatedDistanceKm! * 10).ceil();
-                      if (n < minPrice) {
-                        return 'Minimum ₹$minPrice (₹10/km × ${_calculatedDistanceKm!.toStringAsFixed(1)} km)';
+                      final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
+                      if (n < distMin) {
+                        return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
+                      }
+                    } else if (_selectedCategory != 'delivery') {
+                      final catMin = Task.minBudgetForCategory(_selectedCategory);
+                      if (catMin > 0 && n < catMin) {
+                        return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
                       }
                     }
                   } else {
-                    if (n < 100) return 'Minimum budget is ₹100';
+                    final catMin = Task.minBudgetForCategory(_selectedCategory);
+                    if (n < catMin) {
+                      return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+                    }
                   }
                   return null;
                 },
@@ -1845,6 +2794,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 TextFormField(
                   controller: _pickupAddrCtrl,
                   focusNode: _pickupFocus,
+                  onChanged: _onPickupAddrChanged,
                   decoration: InputDecoration(
                     labelText: 'Pickup Address *',
                     hintText: 'Where to pick up from',
@@ -1862,6 +2812,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Pickup address is required'
                       : null,
+                ),
+                LocationSuggestionsDropdown(
+                  suggestions: _pickupSuggestions,
+                  isLoading: _searchingPickup,
+                  accentColor: AppColors.primary,
+                  onSelect: _selectPickupSuggestion,
+                  onDismiss: () => setState(() => _pickupSuggestions = []),
                 ),
                 if (_pickupLocation != null)
                   Padding(
@@ -1973,6 +2930,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 TextFormField(
                   controller: _dropAddrCtrl,
                   focusNode: _dropFocus,
+                  onChanged: _onDropAddrChanged,
                   decoration: InputDecoration(
                     labelText: 'Drop / Delivery Address *',
                     hintText: 'Where to deliver / drop off',
@@ -1988,6 +2946,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Drop address is required'
                       : null,
+                ),
+                LocationSuggestionsDropdown(
+                  suggestions: _dropSuggestions,
+                  isLoading: _searchingDrop,
+                  accentColor: AppColors.danger,
+                  onSelect: _selectDropSuggestion,
+                  onDismiss: () => setState(() => _dropSuggestions = []),
                 ),
                 if (_dropLocation != null)
                   Padding(
@@ -2090,7 +3055,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Minimum price: ₹${(_calculatedDistanceKm! * 10).ceil()} (₹10 per km)',
+                                'Calculated price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})',
                                 style: const TextStyle(
                                     fontSize: 12, color: AppColors.gray),
                               ),
@@ -2157,9 +3122,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 // ── Address / Landmark ──────────────────────────────────────
                 TextFormField(
                   controller: _addressCtrl,
-                  readOnly: true,
+                  focusNode: _addressFocus,
+                  readOnly: false,
+                  onChanged: _onAddressChanged,
                   decoration: InputDecoration(
                     labelText: 'Address / Landmark (optional)',
+                    hintText: 'Type locality, landmark or address',
                     prefixIcon: const Icon(Icons.location_on_outlined),
                     suffixIcon: _AddressActionButtons(
                       isLoading: _gettingLocation,
@@ -2170,6 +3138,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     suffixIconConstraints:
                         const BoxConstraints(maxHeight: 48),
                   ),
+                ),
+                LocationSuggestionsDropdown(
+                  suggestions: _addressSuggestions,
+                  isLoading: _searchingAddress,
+                  accentColor: AppColors.primary,
+                  onSelect: _selectAddressSuggestion,
+                  onDismiss: () => setState(() => _addressSuggestions = []),
                 ),
                 if (_location != null)
                   Padding(
@@ -2261,61 +3236,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
               const SizedBox(height: 14),
 
-              // ── Cost breakdown — real-time via ValueListenableBuilder ──
+              // ── Price breakdown — real-time via ValueListenableBuilder ──
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _budgetCtrl,
                 builder: (_, value, __) {
                   final budget = double.tryParse(value.text) ?? 0;
-                  final charge = Task.serviceChargeForCategory(_selectedCategory).toDouble();
-                  final total = budget + charge;
-                  return Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.25)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.info_outline,
-                                size: 16, color: AppColors.primary),
-                            SizedBox(width: 6),
-                            Text(
-                              'Payment due on verification',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        _CostRow('Task Budget',
-                            '₹${budget.toStringAsFixed(0)}'),
-                        if (charge > 0) ...[
-                          const SizedBox(height: 4),
-                          _CostRow('Service Charge',
-                              '₹${charge.toStringAsFixed(0)}'),
-                        ],
-                        const Divider(height: 14),
-                        _CostRow('Total (pay after completion)',
-                            '₹${total.toStringAsFixed(0)}',
-                            bold: true),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'No payment needed now. You pay when the helper finishes and you verify the work.',
-                          style: TextStyle(
-                              color: AppColors.gray,
-                              fontSize: 11,
-                              height: 1.4),
-                        ),
-                      ],
-                    ),
+                  final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
+                  final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
+                  final posterFee = budget * 0.20;
+                  final total = budget + charge + posterFee;
+                  return TaskPriceBreakdownCard(
+                    budget: budget,
+                    serviceCharge: charge,
+                    posterFee: posterFee,
+                    totalCost: total,
                   );
                 },
               ),
@@ -2378,31 +3312,6 @@ class _AddressActionButtons extends StatelessWidget {
           padding: const EdgeInsets.all(10),
           constraints: const BoxConstraints(),
         ),
-      ],
-    );
-  }
-}
-
-/// Simple two-column label + value row used in cost breakdown dialogs.
-class _CostRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool bold;
-
-  const _CostRow(this.label, this.value, {this.bold = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-      color: bold ? AppColors.dark : AppColors.gray,
-      fontSize: bold ? 14 : 13,
-    );
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: style),
-        Text(value, style: style),
       ],
     );
   }

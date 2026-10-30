@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +12,7 @@ import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 import '../browse/browse_screen.dart';
+import '../../widgets/profile_mode_switch_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -351,7 +352,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── HERO ─────────────────────────────────────────────────────────────────
   Widget _buildHero(String firstName, String? gender) {
-    final heroEmoji = gender == 'male' ? '👦' : gender == 'female' ? '👧' : '🧑';
+    final heroEmoji = gender == 'male' ? '\u{1F466}' : gender == 'female' ? '\u{1F467}' : '\u{1F9D1}';
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       decoration: BoxDecoration(
@@ -441,7 +442,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () {
+                        onPressed: () async {
                           if (!context.read<AuthProvider>().cityVerified) {
                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                               content: Text('Verify your location first to post tasks.'),
@@ -449,7 +450,21 @@ class _HomeScreenState extends State<HomeScreen> {
                             ));
                             return;
                           }
-                          context.push('/post-task');
+                          final auth = context.read<AuthProvider>();
+                          if (!auth.isPosterMode) {
+                            final switched = await showProfileModeSwitchDialog(
+                              context,
+                              targetMode: 'poster',
+                              title: 'Switch to Poster Profile',
+                              message:
+                                  'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+                              actionLabel: 'Switch to Poster & Continue',
+                            );
+                            if (switched != true) return;
+                          }
+                          if (context.mounted) {
+                            context.push('/post-task');
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFF6B6B),

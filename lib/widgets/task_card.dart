@@ -71,34 +71,18 @@ class TaskCard extends StatelessWidget {
                     ),
                   ),
 
-                  // Total & Net Earning
+                  // Task Budget
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       const Text(
                         'Task Budget',
-                        style: TextStyle(fontSize: 9, color: AppColors.gray, fontWeight: FontWeight.w500),
-                      ),
-                      Text(
-                        '\u20b9${task.budget.toStringAsFixed(0)}',
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.dark),
+                        style: TextStyle(fontSize: 10, color: AppColors.gray, fontWeight: FontWeight.w500),
                       ),
                       const SizedBox(height: 2),
-                      const Text(
-                        'Net Earning',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: AppColors.gray,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
                       Text(
-                        '₹${task.netEarning.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          color: AppColors.success,
-                        ),
+                        '\u20b9${task.budget.toStringAsFixed(0)}',
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppColors.primary),
                       ),
                       if (task.distanceKm != null)
                         Text(
@@ -117,6 +101,49 @@ class TaskCard extends StatelessWidget {
                   ],
                 ],
               ),
+
+              // Route preview for delivery, pickup, transport, moving
+              if (task.isDeliveryCategory && task.effectiveDropAddress != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.radio_button_checked, size: 12, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          task.effectivePickupAddress.isNotEmpty
+                              ? task.effectivePickupAddress
+                              : 'Pickup',
+                          style: const TextStyle(fontSize: 11, color: AppColors.dark, fontWeight: FontWeight.w500),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: Icon(Icons.arrow_forward, size: 12, color: AppColors.grayLight),
+                      ),
+                      const Icon(Icons.location_on, size: 12, color: AppColors.danger),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          task.effectiveDropAddress!,
+                          style: const TextStyle(fontSize: 11, color: AppColors.danger, fontWeight: FontWeight.w700),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               // Description preview
               if (task.description.isNotEmpty) ...[

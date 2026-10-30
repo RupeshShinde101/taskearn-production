@@ -1,3 +1,19 @@
+class CategoryBudgetSuggestion {
+  final double minBudget;
+  final double suggestedBudget;
+  final double maxBudget;
+  final String localityName;
+  final String localityTier;
+
+  const CategoryBudgetSuggestion({
+    required this.minBudget,
+    required this.suggestedBudget,
+    required this.maxBudget,
+    required this.localityName,
+    required this.localityTier,
+  });
+}
+
 class Task {
   final String id;
   final String title;
@@ -305,20 +321,32 @@ class Task {
       isHidden: json['is_hidden'] == true,
       posterHasRatedHelper: json['poster_has_rated_helper'] == true,
       helperHasRatedPoster: json['helper_has_rated_poster'] == true,
-      pickupAddress: (pickup is Map ? pickup['address'] : null)?.toString()
-          ?? json['pickup_address']?.toString()
-          ?? json['pickupAddress']?.toString()
-          ?? json['pickup_addr']?.toString()
-          ?? json['from_address']?.toString(),
-      dropAddress: (dropLoc is Map ? dropLoc['address'] : null)?.toString()
-          ?? (destination is Map ? destination['address'] : null)?.toString()
-          ?? json['drop_location_address']?.toString()
-          ?? json['delivery_address']?.toString()
-          ?? json['drop_address']?.toString()
-          ?? json['dropAddress']?.toString()
-          ?? json['deliveryAddress']?.toString()
-          ?? json['to_address']?.toString()
-          ?? json['destination_address']?.toString(),
+      pickupAddress: (() {
+        final direct = (pickup is Map ? pickup['address'] : null)?.toString()
+            ?? json['pickup_address']?.toString()
+            ?? json['pickupAddress']?.toString()
+            ?? json['pickup_addr']?.toString()
+            ?? json['from_address']?.toString();
+        if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+        final rawAddr = locAddr?.toString() ?? json['address']?.toString() ?? json['location_address']?.toString() ?? '';
+        final m = RegExp(r'Pickup:\s*(.+?)(?:\n|$)', caseSensitive: false).firstMatch(rawAddr);
+        return m?.group(1)?.trim();
+      })(),
+      dropAddress: (() {
+        final direct = (dropLoc is Map ? dropLoc['address'] : null)?.toString()
+            ?? (destination is Map ? destination['address'] : null)?.toString()
+            ?? json['drop_location_address']?.toString()
+            ?? json['delivery_address']?.toString()
+            ?? json['drop_address']?.toString()
+            ?? json['dropAddress']?.toString()
+            ?? json['deliveryAddress']?.toString()
+            ?? json['to_address']?.toString()
+            ?? json['destination_address']?.toString();
+        if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+        final rawAddr = locAddr?.toString() ?? json['address']?.toString() ?? json['location_address']?.toString() ?? '';
+        final m = RegExp(r'Drop:\s*(.+?)(?:\n|$)', caseSensitive: false).firstMatch(rawAddr);
+        return m?.group(1)?.trim();
+      })(),
       dropLatitude: (() {
         // Primary: drop_location nested object (browse/user-tasks API)
         if (dropLoc is Map && dropLoc['lat'] != null) {
@@ -351,16 +379,428 @@ class Task {
     );
   }
 
-  double get totalAmount => budget + (serviceCharge ?? 0);
+  /// True for task categories that involve a pickup-to-drop delivery route.
+  bool get isDeliveryType =>
+      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category.toLowerCase());
 
-  /// Platform commission rate:
-  /// 15% for delivery/pickup/transport/moving; 17% for all other categories.
-  static const double platformCommission = 0.15;
+  /// Whether this task belongs to delivery / pickup / transport / moving categories.
+  bool get isDeliveryCategory =>
+      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category.toLowerCase());
 
-  /// Per-task commission rate based on category.
-  double get commissionRate {
-    const deliveryTypes = {'delivery', 'pickup', 'transport', 'moving'};
-    return deliveryTypes.contains(category) ? 0.15 : 0.17;
+  /// The effective pickup address (or standard task address).
+  String get effectivePickupAddress {
+    if (pickupAddress != null && pickupAddress!.trim().isNotEmpty) {
+      return pickupAddress!.trim();
+    }
+    if (address != null && address!.trim().isNotEmpty) {
+      final m = RegExp(r'Pickup:\s*(.+?)(?:\n|$)', caseSensitive: false).firstMatch(address!);
+      if (m != null && m.group(1)!.trim().isNotEmpty) {
+        return m.group(1)!.trim();
+      }
+      return address!.trim();
+    }
+    return '';
+  }
+
+  /// The effective drop address.
+  String? get effectiveDropAddress {
+    if (dropAddress != null && dropAddress!.trim().isNotEmpty) {
+      return dropAddress!.trim();
+    }
+    if (address != null && address!.trim().isNotEmpty) {
+      final m = RegExp(r'Drop:\s*(.+?)(?:\n|$)', caseSensitive: false).firstMatch(address!);
+      if (m != null && m.group(1)!.trim().isNotEmpty) {
+        return m.group(1)!.trim();
+      }
+    }
+    return null;
+  }
+
+  /// Platform commission rate (20% inclusive of GST & platform fee).
+  static const double platformCommission = 0.20;
+
+  /// Per-task helper commission rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
+  double get commissionRate => 0.20;
+
+  /// Per-task poster commission / platform fee rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
+  double get posterCommissionRate => 0.20;
+
+  /// Poster platform fee & GST amount: 20% of budget.
+  double get posterFee => budget * posterCommissionRate;
+
+  /// Total base task value before helper commission: budget + service charge.
+  double get totalTaskValue => budget + (serviceCharge ?? 0);
+
+  /// Total amount the poster pays: budget + distance service charge + 20% platform fee.
+  double get totalPosterCost => totalTaskValue + posterFee;
+
+  /// Legacy alias for total poster payment amount.
+  double get totalAmount => totalPosterCost;
+
+  /// Minimum budget required for a given task category based on current market rates.
+  static double minBudgetForCategory(String category) {
+    switch (category.toLowerCase()) {
+      // 1. Engineering & Skilled Trades
+      case 'electrician':
+      case 'plumbing':
+        return 150.0;
+      case 'carpentry':
+      case 'vehicle':
+        return 200.0;
+      case 'repair':
+      case 'tech_support':
+      case 'tech-support':
+        return 250.0;
+      case 'painting':
+        return 500.0;
+
+      // 2. Home & Household
+      case 'laundry':
+        return 100.0;
+      case 'household':
+        return 150.0;
+      case 'cooking':
+      case 'gardening':
+        return 250.0;
+      case 'cleaning':
+        return 300.0;
+
+      // 3. Shopping, Errands & On-Demand
+      case 'groceries':
+        return 100.0;
+      case 'shopping':
+        return 150.0;
+      case 'errands':
+      case 'errand':
+      case 'queue_standing':
+      case 'queue-standing':
+        return 200.0;
+      case 'event_help':
+      case 'event-help':
+        return 400.0;
+
+      // 4. Professional, Creative & Digital
+      case 'data_entry':
+      case 'data-entry':
+        return 150.0;
+      case 'tutoring':
+      case 'beauty':
+        return 250.0;
+      case 'freelancer':
+        return 300.0;
+      case 'photography':
+        return 1500.0;
+
+      // 5. Care Services
+      case 'pet_care':
+      case 'petcare':
+        return 150.0;
+      case 'child_care':
+      case 'babysitting':
+        return 200.0;
+      case 'elder_care':
+      case 'eldercare':
+        return 500.0;
+
+      // Delivery & Moving - dynamic distance-based pricing (no static ₹100 floor)
+      case 'delivery':
+        return 0.0; // No minimum budget for delivery; calculated from distance
+      case 'pickup':
+        return 30.0; // Auto pick & drop base min
+      case 'transport':
+        return 50.0; // Vehicle transport base min
+      case 'moving':
+        return 400.0; // Moving & packing base min
+
+      case 'other':
+      default:
+        return 100.0;
+    }
+  }
+
+  /// Returns the per-km rate (in ₹) for a delivery-related category and vehicle.
+  static double ratePerKmForCategory(String category, {String vehicle = 'bike'}) {
+    switch (category.toLowerCase()) {
+      case 'delivery':
+        return vehicle.toLowerCase() == 'rikshaw' ? 18.0 : 12.0;
+      case 'pickup':
+        return 18.0; // Rikshaw / Auto rate
+      case 'transport':
+        return 18.0; // Cab / Transport rate
+      case 'moving':
+        return 35.0; // Moving & Tempo: ₹35/km
+      default:
+        return 12.0;
+    }
+  }
+
+  /// Calculates the price (in ₹) based on distance, category, and vehicle.
+  static double calculateDistancePrice(double distanceKm, String category, {String vehicle = 'bike'}) {
+    if (distanceKm <= 0) return 0.0;
+    final cat = category.toLowerCase();
+    switch (cat) {
+      case 'delivery':
+        if (vehicle.toLowerCase() == 'rikshaw') {
+          // Rikshaw delivery: ₹18/km, base min ₹30
+          final raw = distanceKm * 18.0;
+          return (raw < 30.0 ? 30.0 : raw).roundToDouble();
+        } else {
+          // Bike delivery: ₹12/km, base min ₹24
+          final raw = distanceKm * 12.0;
+          return (raw < 24.0 ? 24.0 : raw).roundToDouble();
+        }
+      case 'pickup':
+        // Auto pick & drop: ₹18/km, base min ₹30
+        final raw = distanceKm * 18.0;
+        return (raw < 30.0 ? 30.0 : raw).roundToDouble();
+      case 'transport':
+        // Cab/Vehicle transport: ₹18/km, base min ₹50
+        final raw = distanceKm * 18.0;
+        return (raw < 50.0 ? 50.0 : raw).roundToDouble();
+      case 'moving':
+        // Moving & Packing: Base ₹400 (loading/unloading) + ₹35/km
+        final fare = 400.0 + (distanceKm > 2 ? (distanceKm - 2) * 35.0 : 0.0);
+        return (fare < 400.0 ? 400.0 : fare).roundToDouble();
+      default:
+        final raw = distanceKm * 12.0;
+        return (raw < 24.0 ? 24.0 : raw).roundToDouble();
+    }
+  }
+
+  /// Returns user-facing rate and pricing description.
+  static String distancePriceDescription(double distanceKm, String category, {String vehicle = 'bike'}) {
+    final cat = category.toLowerCase();
+    switch (cat) {
+      case 'delivery':
+        return vehicle.toLowerCase() == 'rikshaw'
+            ? '₹18 per km (Rikshaw)'
+            : '₹12 per km (Bike)';
+      case 'pickup':
+        return '₹18 per km (Rikshaw)';
+      case 'transport':
+        return '₹18 per km';
+      case 'moving':
+        return '₹400 base + ₹35 per km';
+      default:
+        return '₹12 per km';
+    }
+  }
+
+  /// Returns market-based suggested budget range based on category and selected area.
+  static CategoryBudgetSuggestion getBudgetSuggestion(
+    String category, {
+    String? areaText,
+    double? distanceKm,
+    String vehicle = 'bike',
+  }) {
+    final cat = category.toLowerCase();
+    final areaLower = (areaText ?? '').toLowerCase();
+
+    double multiplier = 1.0;
+    String tier = 'Standard Area';
+    String detectedName = 'Your Area';
+
+    // Premium & IT hubs (Pune)
+    const premiumAreas = [
+      'hinjewadi', 'baner', 'wakad', 'balewadi', 'koregaon', 'kalyani',
+      'viman', 'kharadi', 'magarpatta', 'aundh', 'bavdhan', 'pashan',
+      'sb road', 'senapati bapat', 'prabhat', 'model colony', 'boat club'
+    ];
+    // Central & Established
+    const centralAreas = [
+      'kothrud', 'shivaji nagar', 'shivajinagar', 'deccan', 'camp',
+      'erandwane', 'sadashiv', 'swargate', 'bibvewadi', 'sahakar',
+      'karve', 'wanowrie', 'nibm', 'kondhwa', 'peth'
+    ];
+    // Suburban / Developing
+    const suburbanAreas = [
+      'pimpri', 'chinchwad', 'bhosari', 'hadapsar', 'wagholi', 'nigdi',
+      'akurdi', 'moshi', 'ambegaon', 'warje', 'ravet', 'punawale', 'tathawade'
+    ];
+
+    for (final a in premiumAreas) {
+      if (areaLower.contains(a)) {
+        multiplier = 1.25;
+        tier = 'IT & High-Demand Hub';
+        detectedName = a[0].toUpperCase() + a.substring(1);
+        break;
+      }
+    }
+    if (multiplier == 1.0) {
+      for (final a in centralAreas) {
+        if (areaLower.contains(a)) {
+          multiplier = 1.10;
+          tier = 'Central Pune';
+          detectedName = a[0].toUpperCase() + a.substring(1);
+          break;
+        }
+      }
+    }
+    if (multiplier == 1.0) {
+      for (final a in suburbanAreas) {
+        if (areaLower.contains(a)) {
+          multiplier = 1.0;
+          tier = 'Suburban Hub';
+          detectedName = a[0].toUpperCase() + a.substring(1);
+          break;
+        }
+      }
+    }
+
+    if (detectedName == 'Your Area' && areaText != null && areaText.trim().isNotEmpty) {
+      final parts = areaText.split(RegExp(r'[, -]')).where((s) => s.trim().isNotEmpty).toList();
+      if (parts.isNotEmpty) {
+        final raw = parts.first.trim();
+        detectedName = raw.length > 1 ? raw[0].toUpperCase() + raw.substring(1) : raw;
+      }
+    }
+
+    double baseSuggested;
+    double baseMax;
+
+    switch (cat) {
+      case 'electrician':
+      case 'plumbing':
+        baseSuggested = 200.0;
+        baseMax = 400.0;
+        break;
+      case 'carpentry':
+        baseSuggested = 250.0;
+        baseMax = 500.0;
+        break;
+      case 'repair':
+      case 'tech_support':
+      case 'tech-support':
+        baseSuggested = 350.0;
+        baseMax = 650.0;
+        break;
+      case 'painting':
+        baseSuggested = 700.0;
+        baseMax = 1400.0;
+        break;
+      case 'vehicle':
+        baseSuggested = 350.0;
+        baseMax = 750.0;
+        break;
+      case 'cleaning':
+        baseSuggested = 400.0;
+        baseMax = 900.0;
+        break;
+      case 'cooking':
+        baseSuggested = 350.0;
+        baseMax = 650.0;
+        break;
+      case 'laundry':
+        baseSuggested = 150.0;
+        baseMax = 250.0;
+        break;
+      case 'household':
+        baseSuggested = 200.0;
+        baseMax = 400.0;
+        break;
+      case 'gardening':
+        baseSuggested = 350.0;
+        baseMax = 700.0;
+        break;
+      case 'groceries':
+        baseSuggested = 150.0;
+        baseMax = 250.0;
+        break;
+      case 'shopping':
+        baseSuggested = 200.0;
+        baseMax = 400.0;
+        break;
+      case 'errands':
+      case 'errand':
+      case 'queue_standing':
+      case 'queue-standing':
+        baseSuggested = 250.0;
+        baseMax = 450.0;
+        break;
+      case 'event_help':
+      case 'event-help':
+        baseSuggested = 550.0;
+        baseMax = 1000.0;
+        break;
+      case 'data_entry':
+      case 'data-entry':
+        baseSuggested = 250.0;
+        baseMax = 450.0;
+        break;
+      case 'tutoring':
+        baseSuggested = 350.0;
+        baseMax = 700.0;
+        break;
+      case 'beauty':
+        baseSuggested = 400.0;
+        baseMax = 900.0;
+        break;
+      case 'freelancer':
+        baseSuggested = 500.0;
+        baseMax = 1500.0;
+        break;
+      case 'photography':
+        baseSuggested = 2500.0;
+        baseMax = 5500.0;
+        break;
+      case 'pet_care':
+      case 'petcare':
+        baseSuggested = 200.0;
+        baseMax = 400.0;
+        break;
+      case 'child_care':
+      case 'babysitting':
+        baseSuggested = 300.0;
+        baseMax = 600.0;
+        break;
+      case 'elder_care':
+      case 'eldercare':
+        baseSuggested = 700.0;
+        baseMax = 1300.0;
+        break;
+      case 'moving':
+        if (distanceKm != null && distanceKm > 0) {
+          baseSuggested = calculateDistancePrice(distanceKm, 'moving');
+          baseMax = (baseSuggested * 1.35).roundToDouble();
+        } else {
+          baseSuggested = 600.0;
+          baseMax = 1500.0;
+        }
+        break;
+      case 'delivery':
+      case 'pickup':
+      case 'transport':
+        if (distanceKm != null && distanceKm > 0) {
+          final distPrice = calculateDistancePrice(distanceKm, cat, vehicle: vehicle);
+          baseSuggested = distPrice;
+          baseMax = (distPrice * 1.30).roundToDouble();
+        } else {
+          baseSuggested = cat == 'delivery'
+              ? (vehicle == 'rikshaw' ? 60.0 : 40.0)
+              : (cat == 'pickup' ? 70.0 : 100.0);
+          baseMax = baseSuggested * 1.5;
+        }
+        break;
+      case 'other':
+      default:
+        baseSuggested = 200.0;
+        baseMax = 450.0;
+        break;
+    }
+
+    final minB = minBudgetForCategory(cat);
+    double suggested = ((baseSuggested * multiplier) / 5).round() * 5.0;
+    if (minB > 0 && suggested < minB) suggested = minB;
+    double maxB = ((baseMax * multiplier) / 5).round() * 5.0;
+    if (maxB <= suggested) maxB = suggested + 30.0;
+
+    return CategoryBudgetSuggestion(
+      minBudget: minB,
+      suggestedBudget: suggested,
+      maxBudget: maxB,
+      localityName: detectedName,
+      localityTier: tier,
+    );
   }
 
   /// Returns the platform service charge estimate (in ₹) for a task category.
@@ -379,19 +819,15 @@ class Task {
     }
   }
 
-  /// Net amount the helper earns after [platformCommission] is deducted
+  /// Net amount the helper earns after helper commission is deducted
   /// from the total task value (budget + service charge).
-  double get netEarning => totalAmount * (1 - commissionRate);
+  double get netEarning => totalTaskValue * (1 - commissionRate);
 
   /// Max daily releases allowed before 48h suspension.
   static const int maxDailyReleases = 3;
 
   /// Remaining releases allowed today (0 to maxDailyReleases).
   int get remainingReleases => (maxDailyReleases - dailyReleasesUsed).clamp(0, maxDailyReleases);
-
-  /// True for task categories that involve a pickup-to-drop delivery route.
-  bool get isDeliveryType =>
-      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category);
 
   /// Returns a copy of this task with the given fields replaced.
   Task copyWith({

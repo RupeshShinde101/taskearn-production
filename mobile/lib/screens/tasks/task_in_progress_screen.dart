@@ -147,8 +147,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   Future<void> _showPaymentReceivedDialog() async {
     if (!mounted || _task == null) return;
     final task = _task!;
-    final taskTotal = task.totalAmount;                          // budget + service_charge
-    final commissionRate = task.commissionRate;                  // 0.15 delivery, 0.17 others
+    final taskTotal = task.totalTaskValue;                       // budget + service_charge
+    final commissionRate = task.commissionRate;                  // 20% across all categories
     final commissionAmt = taskTotal * commissionRate;
     final helperEarning = task.netEarning;                       // taskTotal × (1 − rate)
     final commissionPct = (commissionRate * 100).round();
@@ -313,6 +313,30 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
         } catch (_) {}
       }
     });
+  }
+
+  Future<void> _openNavigationTo(double? lat, double? lng, String? query) async {
+    Uri uri;
+    if (lat != null && lng != null && lat != 0 && lng != 0) {
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1'
+          '&destination=$lat,$lng'
+          '&travelmode=driving');
+    } else if (query != null && query.trim().isNotEmpty) {
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1'
+          '&destination=${Uri.encodeComponent(query.trim())}'
+          '&travelmode=driving');
+    } else {
+      return;
+    }
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open maps')),
+      );
+    }
   }
 
   Future<void> _openNavigation() async {
@@ -612,36 +636,136 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               // ── Navigate to Location (only while actively working) ───
               if (!_isVerifyPending && !_isDone)
                 _SectionCard(
-                  title: 'Task Location',
-                  icon: Icons.location_on_outlined,
+                  title: task.isDeliveryCategory ? 'Pickup & Drop Locations' : 'Task Location',
+                  icon: task.isDeliveryCategory ? Icons.alt_route_rounded : Icons.location_on_outlined,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (task.address != null && task.address!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Text(
-                            task.address!,
-                            style: const TextStyle(
-                                color: AppColors.gray,
-                                fontSize: 13,
-                                height: 1.4),
+                      if (task.isDeliveryCategory) ...[
+                        // Pickup
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.radio_button_checked,
+                                color: AppColors.primary, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Pickup Location',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                          color: AppColors.primary)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    task.effectivePickupAddress.isNotEmpty
+                                        ? task.effectivePickupAddress
+                                        : (task.address ?? 'Pickup location'),
+                                    style: const TextStyle(
+                                        color: AppColors.gray,
+                                        fontSize: 13,
+                                        height: 1.3),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => _openNavigationTo(
+                            task.latitude,
+                            task.longitude,
+                            task.effectivePickupAddress,
+                          ),
+                          icon: const Icon(Icons.navigation_rounded, size: 16),
+                          label: const Text('Navigate to Pickup'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary),
+                            minimumSize: const Size(double.infinity, 38),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _openNavigation,
-                          icon: const Icon(Icons.navigation_rounded, size: 18),
-                          label: const Text('Navigate to Task Location'),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 10),
+                          child: Divider(height: 1),
+                        ),
+                        // Drop
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.location_on,
+                                color: AppColors.danger, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Drop / Destination Location',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                          color: AppColors.danger)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    task.effectiveDropAddress ?? 'Drop location specified by poster',
+                                    style: const TextStyle(
+                                        color: AppColors.dark,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.3),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ElevatedButton.icon(
+                          onPressed: () => _openNavigationTo(
+                            task.dropLatitude ?? (task.dropAddress != null ? 0 : task.latitude),
+                            task.dropLongitude ?? (task.dropAddress != null ? 0 : task.longitude),
+                            task.effectiveDropAddress,
+                          ),
+                          icon: const Icon(Icons.navigation_rounded, size: 16),
+                          label: const Text('Navigate to Drop Location'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
+                            backgroundColor: AppColors.danger,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
+                            minimumSize: const Size(double.infinity, 42),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
-                      ),
+                      ] else ...[
+                        if (task.address != null && task.address!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              task.address!,
+                              style: const TextStyle(
+                                  color: AppColors.gray,
+                                  fontSize: 13,
+                                  height: 1.4),
+                            ),
+                          ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _openNavigation,
+                            icon: const Icon(Icons.navigation_rounded, size: 18),
+                            label: const Text('Navigate to Task Location'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

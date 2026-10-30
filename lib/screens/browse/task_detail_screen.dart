@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -9,6 +9,8 @@ import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/confirm_payment_dialog.dart';
+import '../../widgets/profile_mode_switch_dialog.dart';
 import '../tasks/edit_task_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
@@ -67,6 +69,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Future<void> _accept() async {
     // KYC must be verified to accept a task
     final auth = context.read<AuthProvider>();
+    if (!auth.isHelperMode) {
+      final switched = await showProfileModeSwitchDialog(
+        context,
+        targetMode: 'helper',
+        title: 'Switch to Helper Profile',
+        message:
+            'Accepting tasks requires switching to your Helper profile. Would you like to switch to Helper mode now to accept this task?',
+        actionLabel: 'Switch to Helper & Accept',
+      );
+      if (switched != true) return;
+    }
     if (!(auth.user?.isKycVerified ?? false)) {
       showDialog(
         context: context,
@@ -159,7 +172,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final task = _task!;
     final budget = task.budget;
     final charge = task.serviceCharge ?? 0;
-    final total  = budget + charge;
+    final posterFee = task.posterFee;
+    final total  = task.totalPosterCost;
 
     // Step 1: Check wallet balance
     final wallet = context.read<WalletProvider>();
@@ -167,88 +181,32 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     if (!mounted) return;
 
     if (wallet.balance.balance < total) {
-      final shortfall = total - wallet.balance.balance;
-      final go = await showDialog<bool>(
+      await ConfirmPaymentDialog.showInsufficientBalance(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Insufficient Wallet Balance'),
-          content: Text(
-            'You need ₹${total.toStringAsFixed(0)} to pay for this task '
-            '(budget ₹${budget.toStringAsFixed(0)}'
-            '${charge > 0 ? ' + service charge ₹${charge.toStringAsFixed(0)}' : ''}).\n\n'
-            'Current balance: ₹${wallet.balance.balance.toStringAsFixed(0)}\n'
-            'Add at least ₹${shortfall.ceil()} to continue.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Add Money'),
-            ),
-          ],
-        ),
+        totalCost: total,
+        currentBalance: wallet.balance.balance,
+        budget: budget,
+        serviceCharge: charge,
+        posterFee: posterFee,
       );
-      if (go == true && mounted) context.push('/wallet');
       return;
     }
-
-    // Step 2: Confirm payment amount
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'The following will be deducted from your wallet to pay the helper:',
-              style: TextStyle(color: AppColors.gray, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            _DetailRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
-            if (charge > 0) _DetailRow('Service Charge', '₹${charge.toStringAsFixed(0)}'),
-            const Divider(height: 20),
-            _DetailRow('Total Payment', '₹${total.toStringAsFixed(0)}', bold: true),
-            const SizedBox(height: 6),
-            Text(
-              'Wallet after payment: ₹${(wallet.balance.balance - total).toStringAsFixed(0)}',
-              style: const TextStyle(color: AppColors.gray, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Pay Now'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    // Step 3: Call pay-helper (no OTP required)
-    setState(() => _verifying = true);
-    final ok = await context.read<TaskProvider>().payHelper(widget.taskId);
     if (!mounted) return;
-    setState(() => _verifying = false);
 
-    if (ok) {
+    // Step 2: Confirm payment amount (Helper receives removed, modern price breakdown)
+    setState(() => _verifying = true);
+    final ok = await ConfirmPaymentDialog.show(
+      context: context,
+      budget: budget,
+      serviceCharge: charge,
+      posterFee: posterFee,
+      totalCost: total,
+      currentWalletBalance: wallet.balance.balance,
+      onConfirm: () => context.read<TaskProvider>().payHelper(widget.taskId),
+    );
+
+    if (mounted) setState(() => _verifying = false);
+    if (ok == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Payment released to helper successfully!'),
@@ -257,7 +215,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       );
       await _loadTask();
       if (mounted) _showRatingDialog(rateHelper: true);
-    } else {
+    } else if (ok == false && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(context.read<TaskProvider>().error ?? 'Payment failed. Please try again.'),
@@ -434,7 +392,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: GradientButton(
-            label: 'Accept Task \u2013 Earn \u20b9${task.netEarning.toStringAsFixed(0)}',
+            label: 'Accept Task – ₹${task.budget.toStringAsFixed(0)}',
             loading: _accepting,
             onPressed: _accepting ? () {} : _accept,
             icon: Icons.check_circle_outline,
@@ -709,30 +667,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       const Text(
                         'Task Budget',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 12,
                           color: AppColors.gray,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      const SizedBox(height: 2),
                       Text('₹${task.budget.toStringAsFixed(0)}',
                           style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.dark)),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Net Earning',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.gray,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      Text('₹${task.netEarning.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                              fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.success)),
-                      const Text(
-                        '− 15% platform fee',
-                        style: TextStyle(color: AppColors.gray, fontSize: 11),
-                      ),
+                              fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.primary)),
                     ],
                   ),
                 ],
@@ -752,58 +695,98 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               const Text('Location',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 8),
-              // Delivery tasks: show pickup + drop separately
-              if (const {'delivery', 'pickup', 'transport', 'moving'}
-                      .contains(task.category.toLowerCase()) &&
-                  (task.pickupAddress != null || task.dropAddress != null)) ...[
-                if (task.pickupAddress != null) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              // Delivery tasks: show pickup + drop clearly separated with dedicated cards
+              if (task.isDeliveryCategory) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
                     children: [
-                      const Icon(Icons.radio_button_checked,
-                          color: AppColors.primary, size: 18),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Pickup',
-                                style: TextStyle(
-                                    color: AppColors.gray,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600)),
-                            Text(task.pickupAddress!,
-                                style: const TextStyle(color: AppColors.gray)),
-                          ],
-                        ),
+                      // Pickup Location
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.radio_button_checked,
+                                color: AppColors.primary, size: 16),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Pickup Location',
+                                    style: TextStyle(
+                                        color: AppColors.gray,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  task.effectivePickupAddress.isNotEmpty
+                                      ? task.effectivePickupAddress
+                                      : (task.address ?? 'Pickup location specified by poster'),
+                                  style: const TextStyle(
+                                      color: AppColors.dark,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Divider(height: 1),
+                      ),
+                      // Drop / Destination Location
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: AppColors.danger.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.location_on,
+                                color: AppColors.danger, size: 16),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Drop / Destination Location',
+                                    style: TextStyle(
+                                        color: AppColors.danger,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  task.effectiveDropAddress ?? 'Drop location specified by poster',
+                                  style: const TextStyle(
+                                      color: AppColors.dark,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                ],
-                if (task.dropAddress != null) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.location_on, color: AppColors.danger, size: 18),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Drop / Destination',
-                                style: TextStyle(
-                                    color: AppColors.gray,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600)),
-                            Text(task.dropAddress!,
-                                style: const TextStyle(color: AppColors.gray)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ] else
                 Row(
                   children: [
@@ -1245,26 +1228,3 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-/// Simple two-column label + value row used in payment dialogs.
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool bold;
-  const _DetailRow(this.label, this.value, {this.bold = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-      color: bold ? AppColors.dark : AppColors.gray,
-      fontSize: bold ? 14 : 13,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [Text(label, style: style), Text(value, style: style)],
-      ),
-    );
-  }
-}

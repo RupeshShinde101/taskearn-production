@@ -1048,7 +1048,7 @@ def get_service_charge(category):
     """Return service charge for the given category.
     Service charge ONLY applies to Delivery/Pick&Drop categories (delivery, pickup, transport, moving).
     All other categories return 0.
-    Commission rates: Delivery/Pickup/Transport/Moving = 15%, all others = 17%."""
+    Commission rates: 20% helper commission and 20% poster platform fee & GST across all categories."""
     # Only Delivery/Pick&Drop categories carry a service charge
     DELIVERY_CATEGORIES = {'delivery', 'pickup', 'transport', 'moving'}
     if category not in DELIVERY_CATEGORIES:
@@ -1061,6 +1061,73 @@ def get_service_charge(category):
         'moving':   40,
     }
     return delivery_charges.get(category, 15)
+
+
+CATEGORY_MIN_PRICES = {
+    # Engineering & Skilled Trades
+    'electrician': 150.0,
+    'plumbing': 150.0,
+    'carpentry': 200.0,
+    'repair': 250.0,
+    'tech_support': 250.0,
+    'tech-support': 250.0,
+    'painting': 500.0,
+    'vehicle': 200.0,
+
+    # Home & Household
+    'laundry': 100.0,
+    'household': 150.0,
+    'cooking': 250.0,
+    'gardening': 250.0,
+    'cleaning': 300.0,
+
+    # Shopping, Errands & On-Demand
+    'groceries': 100.0,
+    'shopping': 150.0,
+    'errands': 200.0,
+    'errand': 200.0,
+    'queue_standing': 200.0,
+    'queue-standing': 200.0,
+    'event_help': 400.0,
+    'event-help': 400.0,
+
+    # Professional, Creative & Digital
+    'data_entry': 150.0,
+    'data-entry': 150.0,
+    'tutoring': 250.0,
+    'beauty': 250.0,
+    'freelancer': 300.0,
+    'photography': 1500.0,
+
+    # Care Services
+    'pet_care': 150.0,
+    'petcare': 150.0,
+    'child_care': 200.0,
+    'babysitting': 200.0,
+    'elder_care': 500.0,
+    'eldercare': 500.0,
+
+    # Delivery & Moving (dynamic distance pricing; removed ₹100 static floor for delivery)
+    'delivery': 1.0,
+    'pickup': 20.0,
+    'transport': 30.0,
+    'moving': 200.0,
+
+    'other': 100.0,
+}
+
+
+def get_min_price_for_category(category):
+    if not category:
+        return 100.0
+    cat_lower = str(category).lower()
+    if cat_lower == 'delivery':
+        return 1.0  # Dynamic distance-based; no static ₹100 minimum floor
+    if cat_lower in {'pickup', 'transport'}:
+        return 20.0
+    if cat_lower == 'moving':
+        return 200.0
+    return CATEGORY_MIN_PRICES.get(cat_lower, 100.0)
 
 
 def get_user_by_email(email):
@@ -2504,7 +2571,9 @@ def get_tasks():
                         'lat': task['drop_location_lat'],
                         'lng': task['drop_location_lng'],
                         'address': task.get('drop_location_address') or ''
-                    } if task.get('drop_location_lat') else None,
+                    } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                    'drop_address': task.get('drop_location_address') or '',
+                    'drop_location_address': task.get('drop_location_address') or '',
                     'price': float(task['price']),
                     'service_charge': float(task.get('service_charge') or 0),
                     'postedBy': {
@@ -2627,8 +2696,11 @@ def create_task():
         # Price validation
         try:
             price = float(data['price'])
-            if price < 10 or price > 50000:
-                return jsonify({'success': False, 'message': 'Price must be between ₹10 and ₹50,000'}), 400
+            category = str(data.get('category', 'other')).lower()
+            min_allowed = get_min_price_for_category(category)
+            if price < min_allowed or price > 50000:
+                cat_label = category.replace('_', ' ').replace('-', ' ').title()
+                return jsonify({'success': False, 'message': f'Minimum budget for {cat_label} is ₹{min_allowed:.0f} (max ₹50,000)'}), 400
         except (ValueError, TypeError):
             return jsonify({'success': False, 'message': 'Invalid price'}), 400
 
@@ -2691,6 +2763,19 @@ def create_task():
             
             location = data.get('location', {})
             drop_location = data.get('dropLocation') or data.get('drop_location') or {}
+            if not isinstance(drop_location, dict):
+                drop_location = {}
+            drop_addr_val = (
+                drop_location.get('address') or
+                data.get('drop_location_address') or
+                data.get('delivery_address') or
+                data.get('drop_address') or
+                data.get('to_address')
+            )
+            if not drop_addr_val and location.get('address'):
+                m_drop_extracted = re.search(r'Drop:\s*(.+?)(?:\n|$)', str(location.get('address')), re.IGNORECASE)
+                if m_drop_extracted:
+                    drop_addr_val = m_drop_extracted.group(1).strip()
             
             print(f"   Posted at: {posted_at}")
             print(f"   Expires at: {expires_at}")
@@ -2722,7 +2807,7 @@ def create_task():
                     html_escape(location.get('address', '') or ''),
                     drop_location.get('lat') if drop_location else None,
                     drop_location.get('lng') if drop_location else None,
-                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    html_escape(drop_addr_val or '') if drop_addr_val else None,
                     data['price'],
                     service_charge,
                     request.user_id,
@@ -2747,7 +2832,7 @@ def create_task():
                     html_escape(location.get('address', '') or ''),
                     drop_location.get('lat') if drop_location else None,
                     drop_location.get('lng') if drop_location else None,
-                    html_escape(drop_location.get('address', '') or '') if drop_location else None,
+                    html_escape(drop_addr_val or '') if drop_addr_val else None,
                     data['price'],
                     service_charge,
                     request.user_id,
@@ -2797,10 +2882,6 @@ def create_task():
         except Exception:
             pass
 
-        # Skill-match and nearby notifications are triggered by the Flutter client
-        # via /api/tasks/<id>/notify-skills and /api/tasks/<id>/notify-nearby after
-        # task creation. Do NOT send them inline here to avoid duplicates.
-
         response = {
             'success': True,
             'message': 'Task created successfully',
@@ -2808,6 +2889,20 @@ def create_task():
         }
         print(f'   Returning response: {response}')
         print('='*60)
+
+        # Auto-trigger notifications in a daemon thread so the API response
+        # is not delayed and works even on older app versions.
+        import threading as _notify_thread
+        _auto_task_id   = task_id
+        _auto_poster_id = request.user_id
+        _notify_thread.Thread(
+            target=lambda: (
+                _do_notify_skill_matched(_auto_task_id, _auto_poster_id),
+                _do_notify_nearby(_auto_task_id, _auto_poster_id),
+            ),
+            daemon=True,
+        ).start()
+
         return jsonify(response), 201
     
     except Exception as e:
@@ -3363,7 +3458,9 @@ def get_task(task_id):
                     'lat': task.get('drop_location_lat'),
                     'lng': task.get('drop_location_lng'),
                     'address': task.get('drop_location_address') or ''
-                } if task.get('drop_location_lat') else None,
+                } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                'drop_address': task.get('drop_location_address') or '',
+                'drop_location_address': task.get('drop_location_address') or '',
                 'price': float(task.get('price') or 0),
                 'service_charge': float(task.get('service_charge') or 0),
                 'postedBy': {
@@ -3425,8 +3522,11 @@ def update_task(task_id):
 
             try:
                 price = float(data['price'])
-                if price < 10 or price > 50000:
-                    return jsonify({'success': False, 'message': 'Price must be between ₹10 and ₹50,000'}), 400
+                category = str(data.get('category', task.get('category', 'other'))).lower()
+                min_allowed = get_min_price_for_category(category)
+                if price < min_allowed or price > 50000:
+                    cat_label = category.replace('_', ' ').replace('-', ' ').title()
+                    return jsonify({'success': False, 'message': f'Minimum budget for {cat_label} is ₹{min_allowed:.0f} (max ₹50,000)'}), 400
             except (ValueError, TypeError):
                 return jsonify({'success': False, 'message': 'Invalid price'}), 400
 
@@ -3672,11 +3772,12 @@ def complete_task(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
             # Calculate amounts for notification display
-            # Task Posting Fee removed — poster pays only the task value.
-            # poster_deduction = total_task_value * 0.05  # DISABLED
-            total_poster_cost = total_task_value  # No posting fee
             _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
-            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
+            _commission_rate = 0.20
+            _poster_commission_rate = 0.20
+            poster_fee = task_amount * _poster_commission_rate
+            total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
             
@@ -3741,7 +3842,7 @@ def complete_task(task_id):
 
             # Send email notification to poster
             try:
-                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, 0, total_poster_cost, task_id)
+                notify_task_completed_email(poster_id, helper_name, task['title'], task_amount, service_charge, poster_fee, total_poster_cost, task_id)
             except Exception:
                 pass
 
@@ -3813,10 +3914,12 @@ def verify_task(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             # Calculate amounts for notification
-            # poster_deduction = total_task_value * 0.05  # DISABLED — posting fee removed
-            total_poster_cost = total_task_value  # No posting fee
             _DELIVERY_CATS = {'delivery', 'pickup', 'transport', 'moving'}
-            _commission_rate = 0.15 if task.get('category', 'other') in _DELIVERY_CATS else 0.17
+            _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
+            _commission_rate = 0.20
+            _poster_commission_rate = 0.20
+            poster_fee = task_amount * _poster_commission_rate
+            total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
 
@@ -3930,7 +4033,7 @@ def mark_task_completed(task_id):
             _raw_sc = float(task.get('service_charge', 0))
             service_charge = _raw_sc if _category in _DELIVERY_CATS else 0.0
             total_task_value = task_amount + service_charge
-            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.17
+            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.20
             helper_total_deduction = total_task_value * _commission_rate
             helper_earnings = total_task_value - helper_total_deduction
             helper_id = request.user_id
@@ -4175,10 +4278,10 @@ def pay_helper(task_id):
     Poster pays for verified task (NEW FLOW) or completed task (legacy flow).
     NEW FLOW: status verify_pending → payment_released (helper must then click Mark as Completed)
     LEGACY FLOW: status completed → paid (kept for backward compat)
-    - Deduct helper commission (17% general / 15% delivery) from helper wallet
+    - Deduct 20% helper commission from helper wallet
     - Credit helper with task amount minus commission
     - Send platform income to Razorpay UPI
-    - Task Posting Fee: DISABLED (0%)
+    - Poster Platform Fee: 20% (inclusive of GST) for non-delivery categories
     """
     print(f"\n{'='*60}")
     print(f"💰 Payment Processing: Task {task_id}")
@@ -4223,26 +4326,28 @@ def pay_helper(task_id):
             total_task_value = task_amount + service_charge
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Commission: 15% for delivery/pickup/transport/moving, 17% for all others.
-            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.17
+            # Commission rates:
+            # 20% helper commission and 20% poster platform fee & GST for all categories.
+            _is_delivery = _category in _DELIVERY_CATS
+            _commission_rate = 0.20
+            _poster_commission_rate = 0.20
+
             helper_total_deduction = total_task_value * _commission_rate
-            # helper_commission = total_task_value * 0.10  # DISABLED
-            # helper_fee = total_task_value * 0.02  # DISABLED
-            # poster_deduction = total_task_value * 0.05  # DISABLED — posting fee removed
-            poster_deduction = 0  # No posting fee
+            poster_deduction = task_amount * _poster_commission_rate
+            total_poster_cost = total_task_value + poster_deduction
             
             print(f"\n💵 PAYMENT BREAKDOWN:")
             print(f"   Base Task Price: ₹{task_amount:.2f}")
             print(f"   Service Charge ({task.get('category', 'other')}): ₹{service_charge:.2f}")
             print(f"   ✨ TOTAL TASK VALUE: ₹{total_task_value:.2f}")
-            print(f"   Commission Rate ({task.get('category','other')}): {_commission_rate*100:.0f}%")
+            print(f"   Helper Commission Rate ({task.get('category','other')}): {_commission_rate*100:.0f}%")
             print(f"   Helper Total Deduction: ₹{helper_total_deduction:.2f}")
-            print(f"   Poster Fee: ₹0.00 (disabled)")
+            print(f"   Poster Platform Fee ({_poster_commission_rate*100:.0f}%): ₹{poster_deduction:.2f}")
+            print(f"   Total Poster Cost: ₹{total_poster_cost:.2f}")
             
             # ===== CHECK POSTER BALANCE FIRST =====
             poster_wallet = get_or_create_wallet(request.user_id)
             poster_balance = float(poster_wallet.get('balance', 0))
-            total_poster_cost = total_task_value  # No posting fee
             
             print(f"\n👤 Poster Balance Check:")
             print(f"   Current balance: ₹{poster_balance:.2f}")
@@ -4260,8 +4365,10 @@ def pay_helper(task_id):
             poster_new_balance = poster_balance - total_poster_cost
             
             print(f"\n👤 Poster Wallet Operations:")
-            print(f"   Deducting full task value: -₹{total_task_value:.2f}")
-            print(f"   Total deduction: -₹{total_poster_cost:.2f} (no posting fee)")
+            print(f"   Deducting task value: -₹{total_task_value:.2f}")
+            if poster_deduction > 0:
+                print(f"   Deducting poster platform fee (20%): -₹{poster_deduction:.2f}")
+            print(f"   Total deduction: -₹{total_poster_cost:.2f}")
             print(f"   Final balance: ₹{poster_new_balance:.2f}")
             
             cursor.execute(f'''
@@ -4270,7 +4377,7 @@ def pay_helper(task_id):
                 WHERE user_id = {PH}
             ''', (poster_new_balance, total_poster_cost, now, request.user_id))
             
-            # Record poster payment transaction (for the full task value)
+            # Record poster payment transaction (for the task value)
             cursor.execute(f'''
                 INSERT INTO wallet_transactions (
                     wallet_id, user_id, type, amount, balance_after,
@@ -4279,10 +4386,23 @@ def pay_helper(task_id):
             ''', (
                 poster_wallet.get('id'), request.user_id, 'debit',
                 total_task_value, poster_new_balance + poster_deduction,
-                f'Task payment to helper (INCLUDING service charge): ₹{total_task_value:.2f}',
+                f'Task payment to helper: ₹{total_task_value:.2f}',
                 f'task-payment-{task_id}', task_id, now
             ))
-            # Posting fee transaction DISABLED — poster_deduction = 0
+
+            # Record poster platform fee transaction (20% for all categories)
+            if poster_deduction > 0:
+                cursor.execute(f'''
+                    INSERT INTO wallet_transactions (
+                        wallet_id, user_id, type, amount, balance_after,
+                        description, reference_id, task_id, created_at
+                    ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (
+                    poster_wallet.get('id'), request.user_id, 'debit',
+                    poster_deduction, poster_new_balance,
+                    f'Platform fee & GST (20%): ₹{poster_deduction:.2f}',
+                    f'task-platform-fee-{task_id}', task_id, now
+                ))
             
             # ===== HELPER WALLET OPERATIONS (credit after poster deducted) =====
             helper_wallet = get_or_create_wallet(helper_id)
@@ -4331,8 +4451,8 @@ def pay_helper(task_id):
             ))
             
             # ===== COMPANY WALLET OPERATIONS =====
-            # Company receives: Helper commission only (posting fee disabled)
-            total_platform_income = helper_total_deduction  # no poster_deduction
+            # Company receives: Helper commission + Poster platform fee
+            total_platform_income = helper_total_deduction + poster_deduction
             
             company_wallet = get_or_create_wallet('1')
             company_balance = float(company_wallet.get('balance', 0))
@@ -4340,7 +4460,7 @@ def pay_helper(task_id):
             
             print(f"\n🏢 Company/Platform Income:")
             print(f"   Helper Commission ({_commission_rate*100:.0f}%): ₹{helper_total_deduction:.2f}")
-            print(f"   Poster Fee: ₹0.00 (disabled)")
+            print(f"   Poster Platform Fee ({_poster_commission_rate*100:.0f}%): ₹{poster_deduction:.2f}")
             print(f"   Total Platform Income: ₹{total_platform_income:.2f}")
             print(f"   Company balance: ₹{company_balance:.2f} → ₹{company_new_balance:.2f}")
             
@@ -4351,7 +4471,7 @@ def pay_helper(task_id):
                 WHERE user_id = {PH}
             ''', (company_new_balance, total_platform_income, now, '1'))
             
-            # Record company income transactions
+            # Record helper commission transaction
             cursor.execute(f'''
                 INSERT INTO wallet_transactions (
                     wallet_id, user_id, type, amount, balance_after,
@@ -4359,11 +4479,24 @@ def pay_helper(task_id):
                 ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
             ''', (
                 company_wallet.get('id'), '1', 'commission',
-                helper_total_deduction, company_new_balance - poster_deduction,
+                helper_total_deduction, company_balance + helper_total_deduction,
                 f'Helper commission ({_commission_rate*100:.0f}%) from task #{task_id}: ₹{helper_total_deduction:.2f}',
                 f'task-commission-{task_id}', task_id, now
             ))
-            # Posting fee company transaction DISABLED
+
+            # Record poster platform fee transaction
+            if poster_deduction > 0:
+                cursor.execute(f'''
+                    INSERT INTO wallet_transactions (
+                        wallet_id, user_id, type, amount, balance_after,
+                        description, reference_id, task_id, created_at
+                    ) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (
+                    company_wallet.get('id'), '1', 'commission',
+                    poster_deduction, company_new_balance,
+                    f'Poster platform fee & GST ({_poster_commission_rate*100:.0f}%) from task #{task_id}: ₹{poster_deduction:.2f}',
+                    f'task-poster-fee-{task_id}', task_id, now
+                ))
             
             # NOW: Send platform income to Razorpay UPI link (DISABLED FOR TESTING)
             print(f"\n🔄 Initiating UPI transfer to razorpay.me/@taskern...")
@@ -4425,10 +4558,13 @@ def pay_helper(task_id):
                 'taskTitle': task['title'],
                 'taskAmount': round(task_amount, 2),
                 'serviceCharge': round(service_charge, 2),
+                'posterFee': round(poster_deduction, 2),
                 'totalTaskValue': round(total_task_value, 2),
+                'totalPosterCost': round(total_poster_cost, 2),
                 'helperEarnings': round(helper_earnings, 2),
                 'commission': round(helper_total_deduction, 2),
                 'commissionPct': round(_commission_rate * 100),
+                'posterFeePct': round(_poster_commission_rate * 100),
                 'helperNewBalance': round(helper_new_balance, 2),
             }
             if is_new_flow:
@@ -9373,14 +9509,301 @@ def delete_account():
 # TASK NOTIFICATION BROADCAST ENDPOINTS
 # ========================================
 
+def _do_notify_skill_matched(task_id, poster_user_id):
+    """Send FCM skill_matched notifications for task_id to all users with matching
+    skills.  Runs in a daemon thread after task creation so notifications fire
+    regardless of client app version.  Returns count of users notified."""
+    import json as _nsj, datetime as _nsdt
+
+    def _norm(v):
+        return ' '.join(str(v or '').lower()
+            .replace('_', ' ').replace('&', ' and ').replace('/', ' ').split())
+
+    _aliases = {
+        'delivery':       {'delivery', 'deliver'},
+        'moving':         {'moving', 'moving packing', 'moving and packing', 'packing'},
+        'groceries':      {'groceries', 'grocery', 'shopping', 'errands'},
+        'cooking':        {'cooking', 'cook'},
+        'cleaning':       {'cleaning', 'clean'},
+        'laundry':        {'laundry'},
+        'household':      {'household', 'errands'},
+        'shopping':       {'shopping', 'errands'},
+        'electrician':    {'electrician', 'electrical'},
+        'plumbing':       {'plumbing', 'plumber'},
+        'carpentry':      {'carpentry', 'carpenter'},
+        'painting':       {'painting', 'painter'},
+        'repair':         {'repair', 'tech support'},
+        'vehicle':        {'vehicle', 'driving'},
+        'tutoring':       {'tutoring', 'teaching'},
+        'freelancer':     {'freelancer', 'graphic design', 'video editing',
+                           'web development', 'translation', 'data entry'},
+        'data_entry':     {'data entry'},
+        'photography':    {'photography'},
+        'gardening':      {'gardening'},
+        'beauty':         {'beauty'},
+        'pet_care':       {'pet care'},
+        'child_care':     {'child care', 'babysitting'},
+        'elder_care':     {'elder care'},
+        'errands':        {'errands', 'shopping'},
+        'queue_standing': {'errands'},
+        'event_help':     {'event help'},
+        'tech_support':   {'tech support', 'technical support', 'electrical'},
+        'assembly':       {'assembly'},
+        'security':       {'security'},
+    }
+
+    def _terms(v):
+        n = _norm(v)
+        if not n:
+            return set()
+        t = {n}
+        if n in _aliases:
+            t.update(_aliases[n])
+        for key, vals in _aliases.items():
+            if n in vals:
+                t.add(key)
+                t.update(vals)
+        return {_norm(x) for x in t if _norm(x)}
+
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(
+                f'SELECT id, posted_by, title, category, description, price '
+                f'FROM tasks WHERE id = {PH}', (task_id,))
+            row = cursor.fetchone()
+            task = dict_from_row(row) if row else None
+        if not task:
+            print(f'[FCM] notify-skills: task {task_id} not found')
+            return 0
+
+        cat       = (task.get('category') or '').lower()
+        cat_disp  = task.get('category', 'General')
+        price     = task.get('price', 0)
+        title_raw = task.get('title', '')
+        search_text = ' '.join(filter(None, [
+            _norm(cat), _norm(title_raw),
+            _norm(task.get('description') or ''),
+            _norm(cat_disp),
+            ' '.join(sorted(_terms(cat))),
+        ]))
+
+        _ensure_bio_skills_columns()
+        _ensure_fcm_token_column()
+        with get_db() as (cursor, _):
+            cursor.execute(f'''
+                SELECT id, fcm_token, skills FROM users
+                WHERE fcm_token IS NOT NULL
+                  AND id != {PH}
+                  AND skills IS NOT NULL
+                  AND skills NOT IN ({PH}, {PH}, {PH})
+            ''', (poster_user_id, '[]', '', 'null'))
+            candidates = [dict_from_row(r) for r in cursor.fetchall()]
+
+        print(f'[FCM] notify-skills task={task_id} cat={cat!r} '
+              f'search={search_text[:80]!r} candidates={len(candidates)}')
+
+        notified = 0
+        for user in candidates:
+            try:
+                raw = user.get('skills', '[]')
+                user_skills = [s.lower() for s in (
+                    _nsj.loads(raw) if isinstance(raw, str) else (raw or []))]
+                matched = any(
+                    any(t and t in search_text for t in _terms(sk))
+                    for sk in user_skills
+                )
+                print(f'[FCM]   user={user["id"]} skills={user_skills} matched={matched}')
+                if not matched:
+                    continue
+                n_title = '\U0001f4bc Task Matching Your Skills!'
+                n_body  = f'"{title_raw}" \u2014 \u20b9{price} \u2014 {cat_disp}'
+                _now = _nsdt.datetime.now(_nsdt.timezone.utc).isoformat()
+                try:
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title,
+                                 message, status, data, created_at)
+                            VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})
+                        ''', (user['id'], task_id, 'skill_matched', n_title, n_body,
+                              'unread',
+                              _nsj.dumps({'type': 'skill_matched', 'taskId': str(task_id),
+                                          'label': '\U0001f441\ufe0f View Task'}),
+                              _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
+                if user.get('fcm_token'):
+                    send_fcm_to_user(user['id'], n_title, n_body,
+                                     data={'type': 'skill_matched',
+                                           'task_id': str(task_id)},
+                                     channel='workmate4u_matched')
+                notified += 1
+            except Exception:
+                pass
+        print(f'[FCM] notify-skills task={task_id}: notified {notified} user(s)')
+        return notified
+    except Exception as e:
+        print(f'[FCM] notify-skills error: {e}')
+        return 0
+
+
+def _do_notify_nearby(task_id, poster_user_id):
+    """Send FCM nearby_task notifications for task_id to users within 10 km.
+    Skips users who already received a skill_matched push for the same task.
+    Returns count of users notified."""
+    import json as _nj, datetime as _dt
+    try:
+        with get_db() as (cursor, _):
+            cursor.execute(
+                f'SELECT id, posted_by, title, category, price, '
+                f'location_lat, location_lng FROM tasks WHERE id = {PH}', (task_id,))
+            row = cursor.fetchone()
+            task = dict_from_row(row) if row else None
+        if not task:
+            print(f'[FCM] notify-nearby: task {task_id} not found')
+            return 0
+
+        t_lat = task.get('location_lat')
+        t_lng = task.get('location_lng')
+        if t_lat is None or t_lng is None:
+            print(f'[FCM] notify-nearby task={task_id}: no location, skipping')
+            return 0
+        t_lat, t_lng = float(t_lat), float(t_lng)
+
+        title_raw = task.get('title', '')
+        cat_disp  = task.get('category', 'General')
+        price     = task.get('price', 0)
+
+        _ensure_user_location_columns()
+        _ensure_fcm_token_column()
+        with get_db() as (cursor, _):
+            cursor.execute(f'''
+                SELECT id, fcm_token, last_lat, last_lng FROM users
+                WHERE fcm_token IS NOT NULL
+                  AND id != {PH}
+                  AND last_lat IS NOT NULL
+                  AND last_lng IS NOT NULL
+            ''', (poster_user_id,))
+            candidates = [dict_from_row(r) for r in cursor.fetchall()]
+
+        try:
+            with get_db() as (_dc, _):
+                _dc.execute(f'''
+                    SELECT DISTINCT user_id FROM notifications
+                    WHERE task_id = {PH} AND notification_type = 'skill_matched'
+                ''', (task_id,))
+                _already = {str(r[0]) for r in _dc.fetchall()}
+        except Exception:
+            _already = set()
+
+        notified = 0
+        for user in candidates:
+            try:
+                u_lat = user.get('last_lat')
+                u_lng = user.get('last_lng')
+                if u_lat is None or u_lng is None:
+                    continue
+                if _haversine_km(t_lat, t_lng, float(u_lat), float(u_lng)) > 10.0:
+                    continue
+                if str(user['id']) in _already:
+                    continue
+                n_title = '\U0001f4cd New Task Near You!'
+                n_body  = f'"{title_raw}" \u2014 \u20b9{price} \u2014 {cat_disp}'
+                _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                try:
+                    with get_db() as (_nc, _nconn):
+                        _nc.execute(f'''
+                            INSERT INTO notifications
+                                (user_id, task_id, notification_type, title,
+                                 message, status, data, created_at)
+                            VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})
+                        ''', (user['id'], task_id, 'nearby_task', n_title, n_body,
+                              'unread',
+                              _nj.dumps({'type': 'nearby_task', 'taskId': task_id,
+                                         'label': '\U0001f441\ufe0f View Task'}),
+                              _now))
+                        _nconn.commit()
+                except Exception:
+                    pass
+                send_fcm_to_user(user['id'], n_title, n_body,
+                                 data={'type': 'nearby_task', 'task_id': str(task_id)},
+                                 channel='workmate4u_matched')
+                notified += 1
+            except Exception:
+                pass
+        print(f'[FCM] notify-nearby task={task_id}: notified {notified} user(s)')
+        return notified
+    except Exception as e:
+        print(f'[FCM] notify-nearby error: {e}')
+        return 0
+
+
 @app.route('/api/tasks/<int:task_id>/notify-skills', methods=['POST'])
 @require_auth
 def notify_task_skills(task_id):
     """Push FCM notification (type: skill_matched) to every user whose profile
-    skills overlap with this task's category/title/description AND who is
-    within 10 km of the task location.
+    skills overlap with this task's category/title/description.
+    No location radius is applied here.
     Only the task poster may call this endpoint."""
     import json as _nsj
+
+    def _norm_skill_text(value):
+        return ' '.join(
+            str(value or '')
+            .lower()
+            .replace('_', ' ')
+            .replace('&', ' and ')
+            .replace('/', ' ')
+            .split()
+        )
+
+    _skill_aliases = {
+        'delivery': {'delivery', 'deliver'},
+        'moving': {'moving', 'moving packing', 'moving and packing', 'packing'},
+        'groceries': {'groceries', 'grocery', 'shopping', 'errands'},
+        'cooking': {'cooking', 'cook'},
+        'cleaning': {'cleaning', 'clean'},
+        'laundry': {'laundry'},
+        'household': {'household', 'errands'},
+        'shopping': {'shopping', 'errands'},
+        'electrician': {'electrician', 'electrical'},
+        'plumbing': {'plumbing', 'plumber'},
+        'carpentry': {'carpentry', 'carpenter'},
+        'painting': {'painting', 'painter'},
+        'repair': {'repair', 'tech support'},
+        'vehicle': {'vehicle', 'driving'},
+        'tutoring': {'tutoring', 'teaching'},
+        'freelancer': {
+            'freelancer', 'graphic design', 'video editing',
+            'web development', 'translation', 'data entry'
+        },
+        'data_entry': {'data entry'},
+        'photography': {'photography'},
+        'gardening': {'gardening'},
+        'beauty': {'beauty'},
+        'pet_care': {'pet care'},
+        'child_care': {'child care', 'babysitting'},
+        'elder_care': {'elder care'},
+        'errands': {'errands', 'shopping'},
+        'queue_standing': {'errands'},
+        'event_help': {'event help'},
+        'tech_support': {'tech support', 'technical support', 'electrical'},
+    }
+
+    def _skill_terms(value):
+        normalized = _norm_skill_text(value)
+        if not normalized:
+            return set()
+        terms = {normalized}
+        if normalized in _skill_aliases:
+            terms.update(_skill_aliases[normalized])
+        for key, aliases in _skill_aliases.items():
+            if normalized in aliases:
+                terms.add(key)
+                terms.update(aliases)
+        return {_norm_skill_text(term) for term in terms if _norm_skill_text(term)}
+
     try:
         with get_db() as (cursor, _):
             cursor.execute(
@@ -9410,6 +9833,16 @@ def notify_task_skills(task_id):
         _task_price    = task.get('price', 0)
         _task_title_display = task.get('title', '')
         _task_cat_display   = task.get('category', 'General')
+        _task_search_text = ' '.join(
+            part for part in [
+                _norm_skill_text(_task_category),
+                _norm_skill_text(_task_title),
+                _norm_skill_text(_task_desc),
+                _norm_skill_text(_task_cat_display),
+                ' '.join(sorted(_skill_terms(_task_category))),
+            ]
+            if part
+        )
 
         # Task location — kept for display but NOT used to filter users
         _task_lat = task.get('location_lat')
@@ -9440,9 +9873,8 @@ def notify_task_skills(task_id):
                     _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])
                 )]
                 matched = any(
-                    sk in _task_category or _task_category in sk or
-                    sk in _task_title    or sk in _task_desc
-                    for sk in user_skills
+                    any(term and term in _task_search_text for term in _skill_terms(skill))
+                    for skill in user_skills
                 )
                 if not matched:
                     continue
@@ -10480,7 +10912,12 @@ def notify_task_completed_email(poster_id, helper_name, task_title, task_amount,
                     f'<td style="padding:8px 0;color:#6b7280;">Service Charge</td>'
                     f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{service_charge:.2f}</td></tr>'
                 )
-            # poster_fee row removed (posting fee disabled)
+            if poster_fee > 0:
+                breakdown_html += (
+                    f'<tr style="border-bottom:1px solid #f3f4f6;">'
+                    f'<td style="padding:8px 0;color:#6b7280;">Platform Fee & GST (20%)</td>'
+                    f'<td style="padding:8px 0;text-align:right;font-weight:600;color:#d97706;">+₹{poster_fee:.2f}</td></tr>'
+                )
             breakdown_html += (
                 f'<tr>'
                 f'<td style="padding:10px 0;color:#111827;font-weight:700;font-size:16px;">Total to Pay</td>'

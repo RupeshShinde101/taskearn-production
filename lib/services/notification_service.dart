@@ -6,6 +6,20 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'storage_service.dart';
+
+bool _isHelperTaskNotification(String type) {
+  return const {
+    'task_matched',
+    'matched_task',
+    'skill_matched',
+    'nearby_task',
+    'task_available',
+    'new_task',
+    'task_broadcast',
+  }.contains(type);
+}
 
 /// Top-level handler for background/terminated messages (must be outside class).
 ///
@@ -31,6 +45,19 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
   final data = message.data;
   final type = data['type']?.toString() ?? '';
   if (type.isEmpty) return;
+
+  if (_isHelperTaskNotification(type)) {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mode = prefs.getString('profile_mode') ?? 'poster';
+      if (mode != 'helper') {
+        debugPrint('[FCM bg] Suppressed helper task notification ($type) because mode is $mode');
+        return;
+      }
+    } catch (e) {
+      debugPrint('[FCM bg] Error checking profile mode: $e');
+    }
+  }
 
   // Re-initialise local notifications plugin inside this background isolate
   // and pre-create all three channels so notifications are never silently dropped.
@@ -345,8 +372,10 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     playSound: true,
   );
 
+  // Use type+task_id as the ID so skill_matched and nearby_task never collide.
+  final _notifId = (type + (data['task_id'] ?? data['taskId'] ?? '')).hashCode.abs();
   await local.show(
-    id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    id: _notifId,
     title: title,
     body: body,
     notificationDetails: NotificationDetails(android: androidDetails),
@@ -477,6 +506,14 @@ class NotificationService {
       debugPrint('[FCM] Foreground message: type=${message.data['type']} hasNotif=${message.notification != null}');
       final notification = message.notification;
       final type = message.data['type']?.toString() ?? '';
+
+      if (_isHelperTaskNotification(type)) {
+        final mode = StorageService.getString('profile_mode') ?? 'poster';
+        if (mode != 'helper') {
+          debugPrint('[FCM fg] Suppressed helper task notification ($type) because mode is $mode');
+          return;
+        }
+      }
 
 
       final isMatch = type == 'task_matched' || type == 'matched_task' ||

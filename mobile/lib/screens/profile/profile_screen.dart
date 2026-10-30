@@ -7,23 +7,10 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 
-// ── Rank colour helper ──────────────────────────────────────────────────────
-Color _rankColor(String rank) {
-  switch (rank) {
-    case 'Elite':    return const Color(0xFF7C3AED);
-    case 'Platinum': return const Color(0xFF0EA5E9);
-    case 'Gold':     return const Color(0xFFF59E0B);
-    case 'Silver':   return const Color(0xFF6B7280);
-    case 'Bronze':   return const Color(0xFFB45309);
-    default:         return AppColors.gray;
-  }
-}
-
-// ── All available skills the user can select ──────────────────────────────────
+// ── All available skills the user can select ─────────────────────────────────
 const _kAllSkills = [
   'Cleaning', 'Delivery', 'Driving', 'Cooking', 'Plumbing', 'Electrical',
   'Carpentry', 'Painting', 'Gardening', 'Moving & Packing', 'Shopping',
@@ -40,9 +27,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  List<Map<String, dynamic>> _reviews = [];
-  bool _reviewsLoading = false;
-  bool _showReviews = false;
   bool _showSkills = false;
 
   @override
@@ -50,33 +34,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
-      _loadReviews();
     });
   }
 
   Future<void> _refresh() async {
-    await Future.wait([
-      context.read<AuthProvider>().refreshUser(),
-      _loadReviews(),
-    ]);
-  }
-
-  Future<void> _loadReviews() async {
-    final userId = context.read<AuthProvider>().user?.id;
-    if (userId == null || userId.isEmpty) return;
-    if (!mounted) return;
-    setState(() => _reviewsLoading = true);
-    try {
-      final data = await ApiService.get('/user/$userId/reviews');
-      if (!mounted) return;
-      final list = (data['reviews'] as List? ?? []);
-      setState(() {
-        _reviews = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        _reviewsLoading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _reviewsLoading = false);
-    }
+    await context.read<AuthProvider>().refreshUser();
   }
 
   @override
@@ -102,7 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Avatar, name, email, rating ──────────────────────────────
+            // ── Avatar, name, email, rating ──────────────────────────────────
             Center(
               child: Column(
                 children: [
@@ -193,57 +155,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Stats grid (2×2: Completed | Posted / Rating | Rank) ─────────
+            // ── Profile Role Switcher (Poster vs Helper) ─────────────────────
+            _ProfileRoleSwitcher(
+              currentMode: auth.profileMode,
+              onModeChanged: (newMode) async {
+                if (newMode == auth.profileMode) return;
+                await auth.setProfileMode(newMode);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          Icon(
+                            newMode == 'poster'
+                                ? Icons.assignment_turned_in
+                                : Icons.handshake,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              newMode == 'poster'
+                                  ? 'Switched to Poster Mode: You can now post tasks.'
+                                  : 'Switched to Helper Mode: You can now accept tasks & receive task alerts.',
+                            ),
+                          ),
+                        ],
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: newMode == 'poster'
+                          ? AppColors.primary
+                          : const Color(0xFF10B981),
+                      duration: const Duration(seconds: 3),
+                    ),
+                  );
+                }
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            // ── Stats card (Tasks Completed | Tasks Posted) ──────────────────
             Card(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-                child: Column(
-                  children: [
-                    IntrinsicHeight(
-                      child: Row(
-                        children: [
-                          _StatCell(
-                            label: 'Tasks\nCompleted',
-                            value: '${user?.tasksCompleted ?? 0}',
-                          ),
-                          const VerticalDivider(width: 1),
-                          _StatCell(
-                            label: 'Tasks\nPosted',
-                            value: '${user?.tasksPosted ?? 0}',
-                          ),
-                        ],
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      _StatCell(
+                        label: 'Tasks\nCompleted',
+                        value: '${user?.tasksCompleted ?? 0}',
                       ),
-                    ),
-                    const Divider(height: 20),
-                    IntrinsicHeight(
-                      child: Row(
-                        children: [
-                          _StatCell(
-                            label: 'Rating',
-                            value: user != null && user.rating > 0
-                                ? '${user.rating.toStringAsFixed(1)} ★'
-                                : '— ★',
-                            valueColor: user != null && user.rating > 0
-                                ? AppColors.warning
-                                : AppColors.gray,
-                          ),
-                          const VerticalDivider(width: 1),
-                          _StatCell(
-                            label: 'Rank',
-                            value: user?.rank ?? 'New',
-                            valueColor: _rankColor(user?.rank ?? 'New'),
-                          ),
-                        ],
+                      const VerticalDivider(width: 1),
+                      _StatCell(
+                        label: 'Tasks\nPosted',
+                        value: '${user?.tasksPosted ?? 0}',
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
 
             const SizedBox(height: 16),
 
-            // ── KYC card ──────────────────────────────────────────────────
+            // ── KYC card ─────────────────────────────────────────────────────
             _KycCard(
               isVerified: user?.isKycVerified ?? false,
               kycStatus: user?.kycStatus,
@@ -252,7 +229,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── Bio section ───────────────────────────────────────────────
+            // ── Bio section ──────────────────────────────────────────────────
             if (user?.bio != null && user!.bio!.isNotEmpty) ...[
               const _SectionHeader('About Me'),
               const SizedBox(height: 8),
@@ -271,7 +248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
             ],
 
-            // ── Skills section ────────────────────────────────────────────
+            // ── Skills section ───────────────────────────────────────────────
             Row(
               children: [
                 Expanded(
@@ -376,80 +353,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Reviews Received ──────────────────────────────────────────
-            InkWell(
-              onTap: () => setState(() => _showReviews = !_showReviews),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Reviews Received',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (_reviews.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${_reviews.length}',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    const Spacer(),
-                    Icon(
-                      _showReviews
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
-                      color: AppColors.gray,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_showReviews) ...[
-              const SizedBox(height: 8),
-              if (_reviewsLoading)
-                const Center(
-                    child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: CircularProgressIndicator()))
-              else if (_reviews.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.light,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Text('No reviews yet',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.gray)),
-                )
-              else
-                Column(
-                  children: _reviews.map((r) => _ReviewCard(review: r)).toList(),
-                ),
-            ],
-
-            const SizedBox(height: 20),
-
-            // ── Menu items ────────────────────────────────────────────────
+            // ── Menu items ───────────────────────────────────────────────────
             Card(
               child: Column(
                 children: [
@@ -512,7 +416,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── Sign out ──────────────────────────────────────────────────────
+            // ── Sign out ─────────────────────────────────────────────────────
             Card(
               child: _MenuItem(
                 icon: Icons.logout,
@@ -659,7 +563,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 12),
 
-            // ── Delete account ────────────────────────────────────────────────
+            // ── Delete account ───────────────────────────────────────────────
             Card(
               child: _MenuItem(
                 icon: Icons.delete_forever_outlined,
@@ -678,7 +582,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Launch URL in external browser ────────────────────────────────────────
+  // ── Launch URL in external browser ─────────────────────────────────────────
   static Future<void> _launch(String url) async {
     final uri = Uri.parse(url);
     try {
@@ -699,7 +603,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Edit skills bottom sheet ──────────────────────────────────────────────
+  // ── Edit skills bottom sheet ───────────────────────────────────────────────
   void _showSkillsDialog(BuildContext context, AuthProvider auth) {
     showModalBottomSheet(
       context: context,
@@ -712,7 +616,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Delete Account dialog ─────────────────────────────────────────────────
+  // ── Delete Account dialog ──────────────────────────────────────────────────
   void _showDeleteAccountDialog(BuildContext context, AuthProvider auth) {
     final isGoogleUser = auth.user?.authProvider == 'google';
     final passwordCtrl = TextEditingController();
@@ -802,10 +706,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: Color(0xFF1E293B))),
                         const SizedBox(height: 12),
                         ...[
-                          '\ud83d\udccb Your profile & personal details',
-                          '\ud83d\udcb0 Wallet balance & transaction history',
-                          '\ud83d\udccc Posted & accepted tasks',
-                          '\u2b50 Ratings & reviews',
+                          '📋 Your profile & personal details',
+                          '💰 Wallet balance & transaction history',
+                          '📌 Posted & accepted tasks',
+                          '⭐ Ratings & reviews',
                         ].map((item) => Padding(
                           padding: const EdgeInsets.only(bottom: 6),
                           child: Text(item, style: const TextStyle(
@@ -969,8 +873,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Change Password dialog ────────────────────────────────────────────────
-  void _showChangePasswordDialog(BuildContext context, AuthProvider auth) {    final currentCtrl = TextEditingController();
+  // ── Change Password dialog ─────────────────────────────────────────────────
+  void _showChangePasswordDialog(BuildContext context, AuthProvider auth) {
+    final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -1115,7 +1020,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     super.dispose();
   }
 
-  // ── Image picking ────────────────────────────────────────────────────────
+  // ── Image picking ──────────────────────────────────────────────────────────
   Future<void> _pickImage(ImageSource source) async {
     if (source == ImageSource.camera) {
       final status = await Permission.camera.request();
@@ -1186,7 +1091,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     );
   }
 
-  // ── Save ─────────────────────────────────────────────────────────────────
+  // ── Save ───────────────────────────────────────────────────────────────────
   Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1260,7 +1165,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 16),
 
-            // ── Avatar picker ────────────────────────────────────────────
+            // ── Avatar picker ────────────────────────────────────────────────
             Center(
               child: GestureDetector(
                 onTap: _saving ? null : _showImageSourceSheet,
@@ -1323,7 +1228,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 16),
 
-            // ── Gender selection ─────────────────────────────────────
+            // ── Gender selection ─────────────────────────────────────────────
             const Text('Gender',
                 style: TextStyle(
                     fontSize: 14,
@@ -1370,7 +1275,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   }
 }
 
-// ── Gender option tile ────────────────────────────────────────────────────────
+// ── Gender option tile ───────────────────────────────────────────────────────
 class _GenderOption extends StatelessWidget {
   final String label;
   final String emoji;
@@ -1420,7 +1325,7 @@ class _GenderOption extends StatelessWidget {
   }
 }
 
-// ── Edit skills sheet ─────────────────────────────────────────────────────────
+// ── Edit skills sheet ────────────────────────────────────────────────────────
 class _EditSkillsSheet extends StatefulWidget {
   final AuthProvider auth;
   const _EditSkillsSheet({required this.auth});
@@ -1590,7 +1495,245 @@ class _KycCard extends StatelessWidget {
   }
 }
 
-// ── Section header ────────────────────────────────────────────────────────────
+// ── Profile Role Switcher (Poster vs Helper) ─────────────────────────────────
+class _ProfileRoleSwitcher extends StatelessWidget {
+  final String currentMode;
+  final ValueChanged<String> onModeChanged;
+
+  const _ProfileRoleSwitcher({
+    required this.currentMode,
+    required this.onModeChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isPoster = currentMode == 'poster';
+    final activeColor = isPoster ? AppColors.primary : const Color(0xFF10B981);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.swap_horiz_rounded, size: 20, color: AppColors.dark),
+                  SizedBox(width: 8),
+                  Text(
+                    'Profile Mode',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: activeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: activeColor.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: activeColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isPoster ? 'Poster Active' : 'Helper Active',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: activeColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _RoleCard(
+                  title: 'Poster Profile',
+                  subtitle: 'Post tasks & hire',
+                  icon: Icons.assignment_add,
+                  isSelected: isPoster,
+                  selectedColor: AppColors.primary,
+                  onTap: () => onModeChanged('poster'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _RoleCard(
+                  title: 'Helper Profile',
+                  subtitle: 'Accept tasks & earn',
+                  icon: Icons.handshake_rounded,
+                  isSelected: !isPoster,
+                  selectedColor: const Color(0xFF10B981),
+                  onTap: () => onModeChanged('helper'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 15,
+                  color: activeColor,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isPoster
+                        ? 'Poster Mode: You can post tasks. Helper task alerts are paused.'
+                        : 'Helper Mode: You can accept tasks and receive real-time "Task available" alerts.',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.gray,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoleCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool isSelected;
+  final Color selectedColor;
+  final VoidCallback onTap;
+
+  const _RoleCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isSelected,
+    required this.selectedColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? selectedColor.withValues(alpha: 0.08) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? selectedColor : AppColors.border,
+            width: isSelected ? 1.8 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? selectedColor.withValues(alpha: 0.15)
+                        : AppColors.light,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 18,
+                    color: isSelected ? selectedColor : AppColors.gray,
+                  ),
+                ),
+                if (isSelected)
+                  Icon(
+                    Icons.check_circle_rounded,
+                    size: 18,
+                    color: selectedColor,
+                  )
+                else
+                  Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.grayLight, width: 1.5),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: isSelected ? selectedColor : AppColors.dark,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.gray,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Section header ───────────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
   final String text;
   const _SectionHeader(this.text);
@@ -1602,7 +1745,7 @@ class _SectionHeader extends StatelessWidget {
           color: AppColors.dark));
 }
 
-// ── Empty skills hint ─────────────────────────────────────────────────────────
+// ── Empty skills hint ────────────────────────────────────────────────────────
 class _EmptySkillsHint extends StatelessWidget {
   final VoidCallback onAdd;
   const _EmptySkillsHint({required this.onAdd});
@@ -1633,7 +1776,7 @@ class _EmptySkillsHint extends StatelessWidget {
   }
 }
 
-// ── Shared widgets ────────────────────────────────────────────────────────────
+// ── Shared widgets ───────────────────────────────────────────────────────────
 class _StatCell extends StatelessWidget {
   final String label;
   final String value;
@@ -1686,105 +1829,6 @@ class _MenuItem extends StatelessWidget {
               fontWeight: FontWeight.w500)),
       trailing: const Icon(Icons.chevron_right, color: AppColors.grayLight),
       onTap: onTap,
-    );
-  }
-}
-
-// ── Individual review card ────────────────────────────────────────────────────
-class _ReviewCard extends StatelessWidget {
-  final Map<String, dynamic> review;
-  const _ReviewCard({required this.review});
-
-  @override
-  Widget build(BuildContext context) {
-    final rating = (review['rating'] as num?)?.toDouble() ?? 0;
-    final raterName = review['rater_name'] as String? ?? 'Anonymous';
-    final taskTitle = review['task_title'] as String? ?? 'Task';
-    final comment = (review['review'] as String? ?? '').trim();
-    final createdAt = review['created_at'] as String?;
-    String? dateStr;
-    if (createdAt != null) {
-      try {
-        final dt = DateTime.parse(createdAt).toLocal();
-        dateStr = '${dt.day}/${dt.month}/${dt.year}';
-      } catch (_) {}
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                child: Text(
-                  raterName.isNotEmpty ? raterName[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(raterName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.dark,
-                            fontSize: 13)),
-                    Text(taskTitle,
-                        style: const TextStyle(
-                            color: AppColors.gray, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    children: List.generate(5, (i) => Icon(
-                      i < rating.round() ? Icons.star : Icons.star_border,
-                      color: AppColors.warning,
-                      size: 14,
-                    )),
-                  ),
-                  if (dateStr != null)
-                    Text(dateStr,
-                        style: const TextStyle(
-                            color: AppColors.grayLight, fontSize: 10)),
-                ],
-              ),
-            ],
-          ),
-          if (comment.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(comment,
-                style: const TextStyle(
-                    color: AppColors.dark, fontSize: 13, height: 1.4)),
-          ],
-        ],
-      ),
     );
   }
 }

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../widgets/profile_mode_switch_dialog.dart';
 import '../../theme/app_theme.dart';
 
 class MainShell extends StatefulWidget {
@@ -273,7 +276,23 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
       bottomNavigationBar: _FloatingNavBar(
         selectedIndex: idx,
         onTabTap: _onTap,
-        onPostTap: () => context.push('/post-task'),
+        onPostTap: () async {
+          final auth = context.read<AuthProvider>();
+          if (!auth.isPosterMode) {
+            final switched = await showProfileModeSwitchDialog(
+              context,
+              targetMode: 'poster',
+              title: 'Switch to Poster Profile',
+              message:
+                  'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+              actionLabel: 'Switch to Poster & Continue',
+            );
+            if (switched != true) return;
+          }
+          if (context.mounted) {
+            context.push('/post-task');
+          }
+        },
       ),
     );
   }

@@ -23,6 +23,7 @@ class AuthProvider extends ChangeNotifier {
   /// Locally-uploaded avatar (data: URI). Persisted to a dedicated storage key
   /// so it survives refreshUser() calls where the backend ignores the field.
   String? _localAvatarUri;
+  String _profileMode = 'poster';
 
   // City gate — persisted across sessions (cleared only on full account wipe)
   bool _cityVerified = false;
@@ -46,8 +47,11 @@ class AuthProvider extends ChangeNotifier {
   // restricted = authenticated but city not verified and a reason is recorded
   bool get cityRestricted => !_cityVerified && _cityGateReason.isNotEmpty;
   String get cityGateReason => _cityGateReason;
+  String get profileMode => _profileMode;
+  bool get isPosterMode => _profileMode == 'poster';
+  bool get isHelperMode => _profileMode == 'helper';
 
-  /// Client-side session duration: 30 days after last successful login.
+  /// Client-side auto logout threshold: 30 days since last app use.
   static const Duration _kSessionDuration = Duration(days: 30);
 
   AuthProvider() {
@@ -57,6 +61,7 @@ class AuthProvider extends ChangeNotifier {
     ApiService.onUnauthorized = _handleUnauthorized;
     _cityVerified = StorageService.getBool('city_verified');
     _cityGateReason = StorageService.getString('city_gate_reason') ?? '';
+    _profileMode = StorageService.getString('profile_mode') ?? 'poster';
     _checkAuth();
   }
 
@@ -88,17 +93,27 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
 
-    // ── Client-side session expiry ─────────────────────────────────────────
-    final expiry = StorageService.getSessionExpiry();
-    if (expiry != null && DateTime.now().isAfter(expiry)) {
-      debugPrint('[AUTH] Session expired at $expiry — clearing session.');
-      await StorageService.clearSession();
-      await StorageService.clearSession();
+    // ── Client-side inactivity logout ──────────────────────────────────────
+    final now = DateTime.now();
+    var lastActive = StorageService.getSessionLastActive();
+    if (lastActive == null) {
+      final legacyExpiry = StorageService.getSessionExpiry();
+      lastActive = legacyExpiry != null && legacyExpiry.isAfter(now)
+          ? legacyExpiry.subtract(_kSessionDuration)
+          : now;
+      await StorageService.saveSessionLastActive(lastActive);
+      await StorageService.clearLegacySessionExpiry();
+    }
+
+    if (now.difference(lastActive) >= _kSessionDuration) {
+      debugPrint('[AUTH] Session inactive since $lastActive — clearing session.');
       await StorageService.clearSession();
       _status = AuthStatus.unauthenticated;
       notifyListeners();
       return;
     }
+
+    await StorageService.touchSessionActivity();
 
     // ── Restore user instantly from local cache (no network wait) ──────────
     final cachedJson = StorageService.getUserJson();
@@ -110,6 +125,12 @@ class AuthProvider extends ChangeNotifier {
         if (localGender != null) cachedJson['gender'] = localGender;
       }
       _user = User.fromJson(cachedJson);
+      final cachedMode = StorageService.getString('profile_mode');
+      if (cachedMode != null && cachedMode.isNotEmpty) {
+        _profileMode = cachedMode;
+      } else if (_user!.profileMode.isNotEmpty) {
+        _profileMode = _user!.profileMode;
+      }
       // Load and apply locally-uploaded avatar override
       _localAvatarUri = StorageService.getString('user_avatar_local');
       if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
@@ -138,6 +159,13 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      final activeMode = StorageService.getString('profile_mode');
+      if (activeMode != null && activeMode.isNotEmpty) {
+        _profileMode = activeMode;
+      } else if (_user!.profileMode.isNotEmpty) {
+        _profileMode = _user!.profileMode;
+        await StorageService.setString('profile_mode', _profileMode);
+      }
       // Re-apply locally-uploaded avatar if server doesn't return one
       if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
         _user = _user!.copyWithAvatar(_localAvatarUri);
@@ -148,8 +176,6 @@ class AuthProvider extends ChangeNotifier {
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403) {
         // Token explicitly rejected by server — full logout
-        await StorageService.clearSession();
-        await StorageService.clearSession();
         await StorageService.clearSession();
         _user = null;
         _status = AuthStatus.unauthenticated;
@@ -178,7 +204,7 @@ class AuthProvider extends ChangeNotifier {
         await Future.wait([
           StorageService.saveToken(token),
           StorageService.saveUserId(''),  // will be set below
-          StorageService.saveSessionExpiry(DateTime.now().add(_kSessionDuration)),
+            StorageService.touchSessionActivity(),
         ]);
         _user = User.fromJson(data['user'] ?? data);
         await Future.wait([
@@ -259,8 +285,7 @@ class AuthProvider extends ChangeNotifier {
           _user = User.fromJson(data['user'] ?? data);
           await StorageService.saveUserId(_user!.id);
           await StorageService.saveUserJson(_user!.toJson());
-          await StorageService.saveSessionExpiry(
-              DateTime.now().add(_kSessionDuration));
+            await StorageService.touchSessionActivity();
           _status = AuthStatus.authenticated;
           _pendingSuccessScreen = true;
         }
@@ -337,8 +362,6 @@ class AuthProvider extends ChangeNotifier {
       try { await ApiService.post('/auth/logout'); } catch (_) {}
       try { await _googleSignIn.signOut(); } catch (_) {}
       await StorageService.clearSession();
-      await StorageService.clearSession();
-      await StorageService.clearSession();
       await StorageService.setString('user_avatar_local', '');
     }());
   }
@@ -391,6 +414,13 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      final activeMode = StorageService.getString('profile_mode');
+      if (activeMode != null && activeMode.isNotEmpty) {
+        _profileMode = activeMode;
+      } else if (_user!.profileMode.isNotEmpty) {
+        _profileMode = _user!.profileMode;
+        await StorageService.setString('profile_mode', _profileMode);
+      }
       // Always re-apply locally-uploaded avatar — backend ignores the avatar
       // field on PUT /user/profile so /auth/me won't return our new photo.
       if (_localAvatarUri != null && _localAvatarUri!.isNotEmpty) {
@@ -456,12 +486,29 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> setProfileMode(String mode) async {
+    if (mode != 'poster' && mode != 'helper') return;
+    _profileMode = mode;
+    await StorageService.setString('profile_mode', mode);
+    if (_user != null) {
+      _user = _user!.copyWith(profileMode: mode);
+      await StorageService.saveUserJson(_user!.toJson());
+    }
+    notifyListeners();
+    // Re-register FCM device token with new profile_mode so backend filters match alerts
+    unawaited(_registerFcmToken());
+    try {
+      await ApiService.put('/user/profile', body: {'profile_mode': mode});
+    } catch (_) {}
+  }
+
   /// Register a device FCM token with the backend for push notifications.
   Future<void> updateFcmToken(String token) async {
     try {
       final res = await ApiService.post('/user/device-token', body: {
         'token': token,
         'platform': 'android',
+        'profile_mode': _profileMode,
       });
       debugPrint('[FCM] device-token saved: $res');
     } catch (e) {
@@ -607,8 +654,7 @@ class AuthProvider extends ChangeNotifier {
         _user = User.fromJson(data['user'] ?? data);
         await StorageService.saveUserId(_user!.id);
         await StorageService.saveUserJson(_user!.toJson());
-        await StorageService.saveSessionExpiry(
-            DateTime.now().add(_kSessionDuration));
+        await StorageService.touchSessionActivity();
         _status = AuthStatus.authenticated;
 
         final email = _user!.email.trim().toLowerCase();

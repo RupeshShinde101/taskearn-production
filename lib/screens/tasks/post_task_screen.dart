@@ -576,7 +576,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   @override
   void initState() {
     super.initState();
-    _getLocation();
     _savedLocations = StorageService.getSavedLocations();
     _areaCtrl.addListener(_onLocationAreaChanged);
     _pickupAreaCtrl.addListener(_onLocationAreaChanged);
@@ -2349,7 +2348,28 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+    bool get _isLocationSet {
+    if (_isDelivery) {
+      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
+        return true;
+      }
+      final hasPickup = _pickupLocation != null ||
+          _pickupAddrCtrl.text.trim().isNotEmpty ||
+          _pickupAreaCtrl.text.trim().isNotEmpty;
+      final hasDrop = _dropLocation != null ||
+          _dropAddrCtrl.text.trim().isNotEmpty ||
+          _dropAreaCtrl.text.trim().isNotEmpty;
+      return hasPickup && hasDrop;
+    } else {
+      return _location != null ||
+          (_locationLabel != null && _locationLabel!.trim().isNotEmpty) ||
+          _addressCtrl.text.trim().isNotEmpty ||
+          _areaCtrl.text.trim().isNotEmpty;
+    }
+  }
+
   Widget _buildSuggestedBudgetCard() {
+    if (!_isLocationSet) return const SizedBox.shrink();
     final areaCandidate = _isDelivery
         ? (_dropAreaCtrl.text.trim().isNotEmpty
             ? _dropAreaCtrl.text.trim()

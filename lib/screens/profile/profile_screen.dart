@@ -1780,8 +1780,7 @@ class _EmptySkillsHint extends StatelessWidget {
 class _StatCell extends StatelessWidget {
   final String label;
   final String value;
-  final Color? valueColor;
-  const _StatCell({required this.label, required this.value, this.valueColor});
+  const _StatCell({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -1790,10 +1789,10 @@ class _StatCell extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(value,
-              style: TextStyle(
+              style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 15,
-                  color: valueColor ?? AppColors.dark)),
+                  color: AppColors.dark)),
           const SizedBox(height: 4),
           Text(label,
               textAlign: TextAlign.center,

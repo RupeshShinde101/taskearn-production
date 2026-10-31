@@ -462,9 +462,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             );
                             if (switched != true) return;
                           }
-                          if (context.mounted) {
-                            context.push('/post-task');
-                          }
+                          if (!mounted) return;
+                          context.push('/post-task');
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFF6B6B),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -80,6 +80,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       );
       if (switched != true) return;
     }
+    if (!mounted) return;
     if (!(auth.user?.isKycVerified ?? false)) {
       showDialog(
         context: context,
@@ -96,7 +97,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                context.push('/kyc');
+                if (mounted) context.push('/kyc');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
@@ -111,7 +112,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
 
     setState(() => _accepting = true);
-    final ok = await context.read<TaskProvider>().acceptTask(widget.taskId);
+    final taskProvider = context.read<TaskProvider>();
+    final ok = await taskProvider.acceptTask(widget.taskId);
     if (!mounted) return;
     setState(() => _accepting = false);
     if (ok) {

@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -259,51 +259,58 @@ class _PostedTaskList extends StatelessWidget {
                     ],
 
                     // ── Action buttons ──────────────────────────────────
-                    // Contact buttons for helper (when helper phone available)
-                    if (hasHelper && t.helperPhone != null && t.helperPhone!.isNotEmpty) ...[
+                    // Contact buttons for helper (In-app Chat & Phone Call)
+                    if (hasHelper) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.call, size: 16),
-                              label: const Text('Call'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.success,
-                                side: const BorderSide(color: AppColors.success),
-                                minimumSize: const Size(double.infinity, 36),
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                          if (t.helperPhone != null && t.helperPhone!.isNotEmpty) ...[
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.call, size: 16),
+                                label: const Text('Call'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.success,
+                                  side: const BorderSide(color: AppColors.success),
+                                  minimumSize: const Size(double.infinity, 36),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                ),
+                                onPressed: () async {
+                                  final uri = Uri(scheme: 'tel', path: t.helperPhone);
+                                  try {
+                                    await launchUrl(uri,
+                                        mode: LaunchMode.externalApplication);
+                                  } catch (_) {}
+                                },
                               ),
-                              onPressed: () async {
-                                final uri = Uri(scheme: 'tel', path: t.helperPhone);
-                                try {
-                                  await launchUrl(uri,
-                                      mode: LaunchMode.externalApplication);
-                                } catch (_) {}
-                              },
                             ),
-                          ),
-                          const SizedBox(width: 8),
+                            const SizedBox(width: 8),
+                          ],
                           Expanded(
                             child: OutlinedButton.icon(
-                              icon: const Icon(Icons.chat, size: 16),
-                              label: const Text('WhatsApp'),
+                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                              label: const Text('Chat'),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF25D366),
-                                side: const BorderSide(color: Color(0xFF25D366)),
+                                foregroundColor: const Color(0xFF6366F1),
+                                side: const BorderSide(color: Color(0xFF6366F1)),
                                 minimumSize: const Size(double.infinity, 36),
                                 padding: const EdgeInsets.symmetric(horizontal: 8),
                               ),
-                              onPressed: () async {
-                                final phone = t.helperPhone!
-                                    .replaceAll(RegExp(r'[^\d]'), '');
-                                final number =
-                                    phone.startsWith('91') ? phone : '91$phone';
-                                final uri = Uri.parse('https://wa.me/$number');
-                                try {
-                                  await launchUrl(uri,
-                                      mode: LaunchMode.externalApplication);
-                                } catch (_) {}
+                              onPressed: () {
+                                context.push(
+                                  '/chat/' + t.id,
+                                  extra: {
+                                    'taskId': t.id,
+                                    'taskTitle': t.title,
+                                    'otherName': t.helperName ?? 'Helper',
+                                    'otherRole': 'Helper',
+                                    'otherPhone': t.helperPhone,
+                                    'category': t.category,
+                                    'budget': t.budget,
+                                    'status': t.status,
+                                    'isPoster': true,
+                                  },
+                                );
                               },
                             ),
                           ),

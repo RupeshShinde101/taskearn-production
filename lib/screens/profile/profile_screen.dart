@@ -366,22 +366,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           .toList(),
                     ),
                   ),
-                if (hasSensitiveSkill(user.skills)) ...[
+                if (hasSensitiveSkill(user?.skills ?? [])) ...[
                   const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: user.physicalVerificationStatus == 'verified'
+                      color: user?.physicalVerificationStatus == 'verified'
                           ? const Color(0xFFD1FAE5)
-                          : (user.physicalVerificationStatus == 'pending'
+                          : (user?.physicalVerificationStatus == 'pending'
                               ? const Color(0xFFFEF3C7)
                               : const Color(0xFFFEE2E2)),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: user.physicalVerificationStatus == 'verified'
+                        color: user?.physicalVerificationStatus == 'verified'
                             ? const Color(0xFFA7F3D0)
-                            : (user.physicalVerificationStatus == 'pending'
+                            : (user?.physicalVerificationStatus == 'pending'
                                 ? const Color(0xFFFDE68A)
                                 : const Color(0xFFFECACA)),
                       ),
@@ -389,41 +389,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Row(
                       children: [
                         Icon(
-                          user.physicalVerificationStatus == 'verified'
+                          user?.physicalVerificationStatus == 'verified'
                               ? Icons.verified_user_rounded
-                              : (user.physicalVerificationStatus == 'pending'
+                              : (user?.physicalVerificationStatus == 'pending'
                                   ? Icons.hourglass_top_rounded
                                   : Icons.warning_amber_rounded),
                           size: 16,
-                          color: user.physicalVerificationStatus == 'verified'
+                          color: user?.physicalVerificationStatus == 'verified'
                               ? const Color(0xFF059669)
-                              : (user.physicalVerificationStatus == 'pending'
+                              : (user?.physicalVerificationStatus == 'pending'
                                   ? const Color(0xFFD97706)
                                   : const Color(0xFFDC2626)),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            user.physicalVerificationStatus == 'verified'
+                            user?.physicalVerificationStatus == 'verified'
                                 ? 'Sensitive skills physically verified'
-                                : (user.physicalVerificationStatus == 'pending'
+                                : (user?.physicalVerificationStatus == 'pending'
                                     ? 'Physical onboarding request pending admin review'
                                     : 'Sensitive skills require physical verification by Admin'),
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w600,
-                              color: user.physicalVerificationStatus == 'verified'
+                              color: user?.physicalVerificationStatus == 'verified'
                                   ? const Color(0xFF065F46)
-                                  : (user.physicalVerificationStatus == 'pending'
+                                  : (user?.physicalVerificationStatus == 'pending'
                                       ? const Color(0xFF92400E)
                                       : const Color(0xFF991B1B)),
                             ),
                           ),
                         ),
-                        if (user.physicalVerificationStatus != 'verified' &&
-                            user.physicalVerificationStatus != 'pending')
+                        if (user?.physicalVerificationStatus != 'verified' &&
+                            user?.physicalVerificationStatus != 'pending')
                           GestureDetector(
-                            onTap: () => context.push('/physical-onboarding', extra: {'skills': user.skills}),
+                            onTap: () => context.push('/physical-onboarding', extra: {'skills': user?.skills ?? []}),
                             child: const Text(
                               'Verify Now',
                               style: TextStyle(
@@ -2007,6 +2007,7 @@ class _MenuItem extends StatelessWidget {
   final Color? textColor;
   final Color? iconColor;
   final String? badge;
+  final Color? badgeColor;
 
   const _MenuItem({
     required this.icon,
@@ -2015,6 +2016,7 @@ class _MenuItem extends StatelessWidget {
     this.textColor,
     this.iconColor,
     this.badge,
+    this.badgeColor,
   });
 
   @override
@@ -2038,19 +2040,19 @@ class _MenuItem extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                color: (badgeColor ?? const Color(0xFFF59E0B)).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                  color: (badgeColor ?? const Color(0xFFF59E0B)).withValues(alpha: 0.35),
                   width: 0.8,
                 ),
               ),
               child: Text(
                 badge!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFD97706),
+                  color: badgeColor ?? const Color(0xFFD97706),
                 ),
               ),
             ),

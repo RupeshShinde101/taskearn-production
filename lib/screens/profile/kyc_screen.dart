@@ -18,7 +18,8 @@ class _KycScreenState extends State<KycScreen> {
   String _docType = 'aadhaar';
   final _docNumberCtrl = TextEditingController();
   String? _frontImagePath;
-  String? _selfieImagePath;
+  String? _backImagePath;
+  bool _consented = false;
   bool _loading = false;
 
   @override
@@ -27,18 +28,18 @@ class _KycScreenState extends State<KycScreen> {
     super.dispose();
   }
 
-  Future<void> _pickImage(bool isSelfie) async {
+  Future<void> _pickImage({required bool isFront}) async {
     final picker = ImagePicker();
     final file = await picker.pickImage(
-      source: isSelfie ? ImageSource.camera : ImageSource.gallery,
+      source: ImageSource.gallery,
       imageQuality: 80,
     );
     if (file != null && mounted) {
       setState(() {
-        if (isSelfie) {
-          _selfieImagePath = file.path;
-        } else {
+        if (isFront) {
           _frontImagePath = file.path;
+        } else {
+          _backImagePath = file.path;
         }
       });
     }
@@ -64,12 +65,31 @@ class _KycScreenState extends State<KycScreen> {
       );
       return;
     }
+    // Aadhaar and Voter ID require both sides
+    if ((_docType == 'aadhaar' || _docType == 'voter_id') && _backImagePath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please upload the back of your document.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+    if (!_consented) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please accept the declaration to proceed.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
     setState(() => _loading = true);
     final ok = await auth.submitKyc(
       docType: _docType,
       docNumber: _docNumberCtrl.text.trim(),
       frontImagePath: _frontImagePath!,
-      backImagePath: _selfieImagePath,
+      backImagePath: _backImagePath,
     );
     if (!mounted) return;
     setState(() => _loading = false);
@@ -252,17 +272,29 @@ class _KycScreenState extends State<KycScreen> {
                   _DocTypeChip(
                       label: 'Aadhaar',
                       selected: _docType == 'aadhaar',
-                      onTap: () => setState(() => _docType = 'aadhaar')),
+                      onTap: () => setState(() {
+                        _docType = 'aadhaar';
+                        _frontImagePath = null;
+                        _backImagePath = null;
+                      })),
                   const SizedBox(width: 8),
                   _DocTypeChip(
                       label: 'PAN Card',
                       selected: _docType == 'pan',
-                      onTap: () => setState(() => _docType = 'pan')),
+                      onTap: () => setState(() {
+                        _docType = 'pan';
+                        _frontImagePath = null;
+                        _backImagePath = null;
+                      })),
                   const SizedBox(width: 8),
                   _DocTypeChip(
                       label: 'Voter ID',
                       selected: _docType == 'voter_id',
-                      onTap: () => setState(() => _docType = 'voter_id')),
+                      onTap: () => setState(() {
+                        _docType = 'voter_id';
+                        _frontImagePath = null;
+                        _backImagePath = null;
+                      })),
                 ],
               ),
               const SizedBox(height: 16),
@@ -294,20 +326,52 @@ class _KycScreenState extends State<KycScreen> {
                   style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.dark)),
               const SizedBox(height: 8),
               _ImagePickerCard(
-                label: 'Front of Document',
+                label: _docType == 'aadhaar'
+                    ? 'Front of Aadhaar'
+                    : _docType == 'voter_id'
+                        ? 'Front of Voter ID'
+                        : 'Front of PAN Card',
                 imagePath: _frontImagePath,
                 icon: Icons.document_scanner_outlined,
-                onPick: () => _pickImage(false),
+                onPick: () => _pickImage(isFront: true),
               ),
-              const SizedBox(height: 12),
-              _ImagePickerCard(
-                label: 'Selfie with Document',
-                imagePath: _selfieImagePath,
-                icon: Icons.camera_front_outlined,
-                onPick: () => _pickImage(true),
-              ),
+              if (_docType == 'aadhaar' || _docType == 'voter_id') ...[  
+                const SizedBox(height: 12),
+                _ImagePickerCard(
+                  label: _docType == 'aadhaar'
+                      ? 'Back of Aadhaar'
+                      : 'Back of Voter ID',
+                  imagePath: _backImagePath,
+                  icon: Icons.flip_outlined,
+                  onPick: () => _pickImage(isFront: false),
+                ),
+              ],
               const SizedBox(height: 28),
 
+              // Legal declaration — user must consent before submitting
+              GestureDetector(
+                onTap: () => setState(() => _consented = !_consented),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Checkbox(
+                      value: _consented,
+                      onChanged: (v) => setState(() => _consented = v ?? false),
+                      activeColor: AppColors.primary,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'I declare that the documents submitted are genuine, belong to me, and have not been shared with other users. I understand that submitting fraudulent documents may result in permanent account suspension.',
+                        style: TextStyle(color: AppColors.dark, fontSize: 12, height: 1.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               GradientButton(
                 label: 'Submit for Verification',
                 loading: _loading,

@@ -46,27 +46,10 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
   late final TextEditingController _addressCtrl;
   late final TextEditingController _primaryPhoneCtrl;
   late final TextEditingController _altPhoneCtrl;
-  late final TextEditingController _idNumberCtrl;
   late final TextEditingController _notesCtrl;
 
-  String _govtIdType = 'Aadhaar Card';
-  String _preferredSlot = 'Morning (10:00 AM – 01:00 PM)';
   bool _declarationAccepted = false;
   bool _submitting = false;
-
-  final List<String> _idTypes = const [
-    'Aadhaar Card',
-    'PAN Card',
-    'Voter ID Card',
-    'Driving License',
-  ];
-
-  final List<String> _timeSlots = const [
-    'Morning (10:00 AM – 01:00 PM)',
-    'Afternoon (02:00 PM – 05:00 PM)',
-    'Evening (05:00 PM – 08:00 PM)',
-    'Weekend Slot (Saturday / Sunday)',
-  ];
 
   @override
   void initState() {
@@ -76,7 +59,6 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     _addressCtrl = TextEditingController();
     _primaryPhoneCtrl = TextEditingController(text: user?.phone ?? '');
     _altPhoneCtrl = TextEditingController();
-    _idNumberCtrl = TextEditingController();
     _notesCtrl = TextEditingController();
   }
 
@@ -86,7 +68,6 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     _addressCtrl.dispose();
     _primaryPhoneCtrl.dispose();
     _altPhoneCtrl.dispose();
-    _idNumberCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
   }
@@ -155,9 +136,6 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
       primaryPhone: _primaryPhoneCtrl.text.trim(),
       alternativePhone: _altPhoneCtrl.text.trim(),
       skills: targetSkills,
-      govtIdType: _govtIdType,
-      govtIdNumber: _idNumberCtrl.text.trim(),
-      preferredSlot: _preferredSlot,
       notes: _notesCtrl.text.trim().isNotEmpty ? _notesCtrl.text.trim() : null,
     );
 
@@ -284,17 +262,13 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: AppColors.primary,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF4F46E5).withValues(alpha: 0.25),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
+                      color: AppColors.primary.withValues(alpha: 0.18),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
                     ),
                   ],
                 ),
@@ -314,7 +288,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         const SizedBox(width: 12),
                         const Expanded(
                           child: Text(
-                            'Admin Physical Verification',
+                            'Onboarding verification',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 17,
@@ -326,7 +300,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                     ),
                     const SizedBox(height: 10),
                     const Text(
-                      'For client safety and community trust, tasks involving in-home services, transit, caregiving, or technical trades require physical in-person verification by our administrative team.',
+                      'For client safety and community trust, tasks involving in-home services, transit, caregiving, or technical trades require onboarding verification by our administrative team.',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 12.5,
@@ -356,7 +330,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         Icon(Icons.verified_outlined, color: Color(0xFFD97706), size: 18),
                         SizedBox(width: 6),
                         Text(
-                          'Sensitive Skills Under Review',
+                          'Skill verification and onbaording',
                           style: TextStyle(
                             color: Color(0xFF92400E),
                             fontWeight: FontWeight.w700,
@@ -522,75 +496,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
 
                       const SizedBox(height: 16),
 
-                      // 5. Government ID Type & Number *
-                      _buildFieldLabel('Government ID Proof'),
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: DropdownButtonFormField<String>(
-                              value: _govtIdType,
-                              decoration: InputDecoration(
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              ),
-                              items: _idTypes.map((type) {
-                                return DropdownMenuItem(
-                                  value: type,
-                                  child: Text(type, style: const TextStyle(fontSize: 13)),
-                                );
-                              }).toList(),
-                              onChanged: (val) {
-                                if (val != null) setState(() => _govtIdType = val);
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            flex: 5,
-                            child: TextFormField(
-                              controller: _idNumberCtrl,
-                              textCapitalization: TextCapitalization.characters,
-                              decoration: InputDecoration(
-                                hintText: 'ID Number',
-                                prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.primary, size: 18),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              ),
-                              validator: (v) {
-                                if (v == null || v.trim().isEmpty) return 'ID number is required';
-                                return null;
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // 6. Preferred In-Person Verification Slot *
-                      _buildFieldLabel('Preferred In-Person Verification Slot'),
-                      DropdownButtonFormField<String>(
-                        value: _preferredSlot,
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.calendar_today_outlined, color: AppColors.primary, size: 18),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        ),
-                        items: _timeSlots.map((slot) {
-                          return DropdownMenuItem(
-                            value: slot,
-                            child: Text(slot, style: const TextStyle(fontSize: 13)),
-                          );
-                        }).toList(),
-                        onChanged: (val) {
-                          if (val != null) setState(() => _preferredSlot = val);
-                        },
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // 7. Additional Experience / Notes (Optional)
+                      // 5. Additional Experience / Notes (Optional)
                       _buildFieldLabel('Experience / Additional Remarks', isRequired: false),
                       TextFormField(
                         controller: _notesCtrl,
@@ -659,15 +565,13 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         height: 50,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
-                            ),
+                            color: AppColors.primary,
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF4F46E5).withValues(alpha: 0.35),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
+                                color: AppColors.primary.withValues(alpha: 0.25),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
                               ),
                             ],
                           ),

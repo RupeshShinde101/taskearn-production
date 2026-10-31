@@ -11602,7 +11602,7 @@ def request_helper_physical_verification():
         skills_str = ', '.join([s.strip() for s in skills if s.strip()])
     else:
         skills_str = str(skills or '').strip()
-    govt_id_type = (data.get('govtIdType') or 'Aadhaar Card').strip()
+    govt_id_type = (data.get('govtIdType') or '').strip()
     govt_id_number = (data.get('govtIdNumber') or '').strip()
     preferred_slot = (data.get('preferredSlot') or '').strip()
     notes = (data.get('notes') or '').strip()
@@ -11620,10 +11620,6 @@ def request_helper_physical_verification():
         return jsonify({'success': False, 'message': 'Alternative mobile number must be different from primary mobile number'}), 400
     if not skills_str:
         return jsonify({'success': False, 'message': 'At least one sensitive skill must be selected'}), 400
-    if not govt_id_number:
-        return jsonify({'success': False, 'message': 'Government ID number is required'}), 400
-    if not preferred_slot:
-        return jsonify({'success': False, 'message': 'Preferred in-person verification slot is required'}), 400
 
     now = datetime.now()
     try:

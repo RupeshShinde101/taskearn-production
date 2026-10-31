@@ -596,9 +596,9 @@ class AuthProvider extends ChangeNotifier {
     required String primaryPhone,
     required String alternativePhone,
     required List<String> skills,
-    required String govtIdType,
-    required String govtIdNumber,
-    required String preferredSlot,
+    String? govtIdType,
+    String? govtIdNumber,
+    String? preferredSlot,
     String? notes,
   }) async {
     _loading = true;
@@ -613,9 +613,9 @@ class AuthProvider extends ChangeNotifier {
           'primaryPhone': primaryPhone.trim(),
           'alternativePhone': alternativePhone.trim(),
           'skills': skills,
-          'govtIdType': govtIdType.trim(),
-          'govtIdNumber': govtIdNumber.trim(),
-          'preferredSlot': preferredSlot.trim(),
+          if (govtIdType != null && govtIdType.trim().isNotEmpty) 'govtIdType': govtIdType.trim(),
+          if (govtIdNumber != null && govtIdNumber.trim().isNotEmpty) 'govtIdNumber': govtIdNumber.trim(),
+          if (preferredSlot != null && preferredSlot.trim().isNotEmpty) 'preferredSlot': preferredSlot.trim(),
           if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
         },
       );

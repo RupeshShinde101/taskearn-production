@@ -22,6 +22,13 @@ class _TutorialScreenState extends State<TutorialScreen> {
           'Whether you need something done or want to earn money, we\'ve got you covered.',
     ),
     _TutorialStep(
+      emoji: '🔄',
+      title: 'Poster & Helper Modes',
+      description:
+          'Easily switch between Poster Mode (to post tasks) and Helper Mode (to accept jobs). '
+          'In Helper Mode, configure "My Skills" so our AI can match you with relevant tasks and send instant alerts.',
+    ),
+    _TutorialStep(
       emoji: '🔍',
       title: 'Browse Tasks',
       description:
@@ -36,6 +43,13 @@ class _TutorialScreenState extends State<TutorialScreen> {
           'Add a title, description, budget, and location. AI will suggest the best helpers for you.',
     ),
     _TutorialStep(
+      emoji: '💬',
+      title: 'Encrypted Chat & Calls',
+      description:
+          'Once a task is accepted, coordinate safely through 1-on-1 encrypted in-app chat and calls. '
+          'Never discuss or transact outside the app — in-app communication keeps your escrow payment secure and protected.',
+    ),
+    _TutorialStep(
       emoji: '🤝',
       title: 'Accept & Complete',
       description:
@@ -46,7 +60,7 @@ class _TutorialScreenState extends State<TutorialScreen> {
       emoji: '💰',
       title: 'Wallet & Payments',
       description:
-          'Top up your wallet using Razorpay. Payments are held securely until '
+          'Top up your wallet using Razorpay. Payments are held securely in escrow until '
           'you confirm the task is complete. Helpers can withdraw earnings anytime.',
     ),
     _TutorialStep(
@@ -61,7 +75,7 @@ class _TutorialScreenState extends State<TutorialScreen> {
       title: 'You\'re All Set!',
       description:
           'That\'s everything you need to get started. '
-          'Explore, post tasks, earn money, and grow your rank on Workmate4u!',
+          'Explore, post tasks, communicate safely, earn money, and grow your rank on Workmate4u!',
     ),
   ];
 

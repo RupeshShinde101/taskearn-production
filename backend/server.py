@@ -1287,7 +1287,8 @@ def user_to_response(user):
         'kycStatus': user.get('kyc_status', 'none'),
         'kycDocumentType': user.get('kyc_document_type'),
         'phoneVerified': bool(user.get('phone_verified', False)),
-        'gender': user.get('gender')
+        'gender': user.get('gender'),
+        'physicalVerificationStatus': user.get('physical_verification_status', 'none')
     }
 
 
@@ -11810,6 +11811,234 @@ def admin_verify_kyc(user_id):
         return jsonify({'success': True, 'message': f'KYC {action}d for user {user_id}'})
     except Exception as e:
         return jsonify({'success': False, 'message': 'Failed to process KYC'}), 500
+
+
+# ========================================
+# HELPER PHYSICAL ONBOARDING & VERIFICATION
+# ========================================
+
+_physical_onboarding_ensured = False
+
+def _ensure_physical_onboarding_table():
+    global _physical_onboarding_ensured
+    if _physical_onboarding_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS physical_onboarding_requests (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(50) NOT NULL,
+                    user_name VARCHAR(255) NOT NULL,
+                    address TEXT NOT NULL,
+                    primary_phone VARCHAR(20) NOT NULL,
+                    alternative_phone VARCHAR(20) NOT NULL,
+                    skills TEXT NOT NULL,
+                    govt_id_type VARCHAR(50),
+                    govt_id_number VARCHAR(100),
+                    preferred_slot VARCHAR(100),
+                    notes TEXT,
+                    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP
+                )
+            ''')
+            try:
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_phy_onboard_user_id ON physical_onboarding_requests(user_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_phy_onboard_status ON physical_onboarding_requests(status)')
+            except Exception:
+                pass
+            if PH == '%s':
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS physical_verification_status VARCHAR(50) DEFAULT 'none'")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'physical_verification_status' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN physical_verification_status VARCHAR(50) DEFAULT 'none'")
+            conn.commit()
+        _physical_onboarding_ensured = True
+        print("[Onboarding] ✅ physical_onboarding_requests table & columns verified")
+    except Exception as e:
+        print(f"[Onboarding] ⚠️ _ensure_physical_onboarding_table error: {e}")
+
+
+@app.route('/api/helper/physical-verification/request', methods=['POST'])
+@require_auth
+def request_helper_physical_verification():
+    """Helper: Submit physical onboarding verification request to admin for sensitive skills"""
+    _ensure_physical_onboarding_table()
+    data = request.get_json(silent=True) or {}
+    uid = str(request.user_id)
+
+    name = (data.get('name') or '').strip()
+    address = (data.get('address') or '').strip()
+    primary_phone = (data.get('primaryPhone') or '').strip()
+    alternative_phone = (data.get('alternativePhone') or '').strip()
+    skills = data.get('skills')
+    if isinstance(skills, list):
+        skills_str = ', '.join([s.strip() for s in skills if s.strip()])
+    else:
+        skills_str = str(skills or '').strip()
+    govt_id_type = (data.get('govtIdType') or 'Aadhaar Card').strip()
+    govt_id_number = (data.get('govtIdNumber') or '').strip()
+    preferred_slot = (data.get('preferredSlot') or '').strip()
+    notes = (data.get('notes') or '').strip()
+
+    # Validation
+    if not name:
+        return jsonify({'success': False, 'message': 'Full Name is required'}), 400
+    if not address or len(address) < 8:
+        return jsonify({'success': False, 'message': 'Complete residential address is required'}), 400
+    if not primary_phone or len(primary_phone) < 10:
+        return jsonify({'success': False, 'message': 'Valid 10-digit primary mobile number is required'}), 400
+    if not alternative_phone or len(alternative_phone) < 10:
+        return jsonify({'success': False, 'message': 'Valid 10-digit alternative mobile number is required'}), 400
+    if primary_phone == alternative_phone:
+        return jsonify({'success': False, 'message': 'Alternative mobile number must be different from primary mobile number'}), 400
+    if not skills_str:
+        return jsonify({'success': False, 'message': 'At least one sensitive skill must be selected'}), 400
+    if not govt_id_number:
+        return jsonify({'success': False, 'message': 'Government ID number is required'}), 400
+    if not preferred_slot:
+        return jsonify({'success': False, 'message': 'Preferred in-person verification slot is required'}), 400
+
+    now = datetime.now()
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                INSERT INTO physical_onboarding_requests
+                (user_id, user_name, address, primary_phone, alternative_phone, skills, govt_id_type, govt_id_number, preferred_slot, notes, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'pending', {PH})
+                RETURNING id
+            ''', (uid, name, address, primary_phone, alternative_phone, skills_str, govt_id_type, govt_id_number, preferred_slot, notes, now))
+            row = cursor.fetchone()
+            req_id = row[0] if row else None
+
+            # Update user profile verification status
+            cursor.execute(f'''
+                UPDATE users SET physical_verification_status = 'pending' WHERE id = {PH}
+            ''', (uid,))
+
+            # Notification to admin
+            try:
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, type, title, message, status, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, 'unread', {PH})
+                ''', ('admin', 'physical_onboarding_request', f'Physical Onboarding: {name}',
+                      f'Helper {name} (Primary: {primary_phone}, Alt: {alternative_phone}) requested physical verification for sensitive skills ({skills_str}). Address: {address}. Slot: {preferred_slot}',
+                      now))
+            except Exception as ne:
+                print(f"[Onboarding Notification Warning] {ne}")
+
+            # Confirmation notification to helper
+            try:
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, type, title, message, status, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, 'unread', {PH})
+                ''', (uid, 'physical_onboarding_received', 'Physical Verification Request Received',
+                      f'Your physical onboarding request for skills ({skills_str}) has been received. Our administrative team will reach out at {primary_phone} or {alternative_phone} to coordinate your physical verification.',
+                      now))
+            except Exception as ne:
+                print(f"[Onboarding User Notification Warning] {ne}")
+
+            conn.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Physical onboarding request submitted successfully to Admin.',
+            'requestId': req_id,
+            'status': 'pending'
+        })
+    except Exception as e:
+        print(f"[Helper Physical Verification Error] {e}")
+        return jsonify({'success': False, 'message': 'Failed to submit physical onboarding request. Please try again.'}), 500
+
+
+@app.route('/api/helper/physical-verification/status', methods=['GET'])
+@require_auth
+def get_helper_physical_verification_status():
+    """Helper: Get latest physical verification request status"""
+    _ensure_physical_onboarding_table()
+    uid = str(request.user_id)
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, user_name, address, primary_phone, alternative_phone, skills,
+                       govt_id_type, govt_id_number, preferred_slot, notes, status, created_at, updated_at
+                FROM physical_onboarding_requests
+                WHERE user_id = {PH}
+                ORDER BY created_at DESC LIMIT 1
+            ''', (uid,))
+            row = cursor.fetchone()
+
+        if not row:
+            return jsonify({
+                'success': True,
+                'status': 'none',
+                'hasRequest': False
+            })
+
+        r = dict_from_row(row)
+        return jsonify({
+            'success': True,
+            'hasRequest': True,
+            'request': {
+                'id': r.get('id'),
+                'userName': r.get('user_name'),
+                'address': r.get('address'),
+                'primaryPhone': r.get('primary_phone'),
+                'alternativePhone': r.get('alternative_phone'),
+                'skills': r.get('skills'),
+                'govtIdType': r.get('govt_id_type'),
+                'govtIdNumber': r.get('govt_id_number'),
+                'preferredSlot': r.get('preferred_slot'),
+                'notes': r.get('notes'),
+                'status': r.get('status', 'pending'),
+                'createdAt': r.get('created_at').isoformat() if hasattr(r.get('created_at'), 'isoformat') else str(r.get('created_at') or '')
+            }
+        })
+    except Exception as e:
+        print(f"[Helper Physical Verification Status Error] {e}")
+        return jsonify({'success': False, 'message': 'Failed to fetch status'}), 500
+
+
+@app.route('/api/admin/physical-verification/pending', methods=['GET'])
+@require_admin
+def admin_list_pending_physical_verifications():
+    """Admin: List pending physical verification requests"""
+    _ensure_physical_onboarding_table()
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('''
+                SELECT id, user_id, user_name, address, primary_phone, alternative_phone,
+                       skills, govt_id_type, govt_id_number, preferred_slot, notes, status, created_at
+                FROM physical_onboarding_requests
+                WHERE status = 'pending'
+                ORDER BY created_at DESC
+            ''')
+            rows = cursor.fetchall()
+            items = []
+            for row in rows:
+                r = dict_from_row(row)
+                items.append({
+                    'id': r.get('id'),
+                    'userId': r.get('user_id'),
+                    'userName': r.get('user_name'),
+                    'address': r.get('address'),
+                    'primaryPhone': r.get('primary_phone'),
+                    'alternativePhone': r.get('alternative_phone'),
+                    'skills': r.get('skills'),
+                    'govtIdType': r.get('govt_id_type'),
+                    'govtIdNumber': r.get('govt_id_number'),
+                    'preferredSlot': r.get('preferred_slot'),
+                    'notes': r.get('notes'),
+                    'status': r.get('status'),
+                    'createdAt': str(r.get('created_at'))
+                })
+        return jsonify({'success': True, 'requests': items})
+    except Exception as e:
+        print(f"[ADMIN PHYSICAL VERIFICATION LIST] {e}")
+        return jsonify({'success': False, 'message': 'Failed to load requests'}), 500
 
 
 # ========================================

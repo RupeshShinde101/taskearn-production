@@ -301,7 +301,9 @@ class Task {
       acceptedAt: _parseDateOrNull(json['accepted_at'] ?? json['acceptedAt']),
       completedAt: _parseDateOrNull(
           json['completed_at'] ?? json['completedAt'] ??
-          json['helper_final_completed_at']),  // 'done' tasks use this column
+          json['helper_final_completed_at'] ??
+          json['paid_at'] ?? json['payment_released_at'] ??
+          json['verified_at']),
       helperRating: json['helper_rating'] != null
           ? double.tryParse(json['helper_rating'].toString()) ?? 0.0
           : null,
@@ -317,7 +319,7 @@ class Task {
                     ?? json['posterPhone']?.toString()  // camelCase from some backends
                     ?? json['phone']?.toString());
           })(),
-      isPaid: json['is_paid'] == true || json['status'] == 'paid',
+      isPaid: json['is_paid'] == true || json['status'] == 'paid' || json['status'] == 'payment_released' || json['status'] == 'done',
       isHidden: json['is_hidden'] == true,
       posterHasRatedHelper: json['poster_has_rated_helper'] == true,
       helperHasRatedPoster: json['helper_has_rated_poster'] == true,

@@ -4871,16 +4871,14 @@ def get_user_tasks():
             WHERE t.posted_by = {PH}
               AND t.status NOT IN (
                 'removed', 'flagged', 'suspicious',
-                'done', 'finished', 'paid', 'verified',
+                'done', 'finished', 'paid', 'verified', 'payment_released',
                 'cancelled', 'poster_cancelled', 'rejected', 'expired'
               )
             ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
 
-        # Accepted tasks — include all active statuses + new flow statuses + legacy paid.
-        # Exclude tasks where helper_final_completed_at is set (legacy status='completed'
-        # tasks already fully finished) — those go into completedTasks instead.
+        # Accepted tasks — active only for helper; exclude fully finished and cancelled tasks.
         cursor.execute(f'''
             SELECT t.*, u.name as poster_name, u.phone as poster_phone,
                    u.email as poster_email, u.id as poster_user_id,
@@ -4888,27 +4886,49 @@ def get_user_tasks():
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id
             WHERE t.accepted_by = {PH}
-              AND t.status IN ('accepted', 'completed', 'paid', 'verify_pending', 'payment_released')
+              AND t.status IN ('accepted', 'in_progress', 'completed', 'verify_pending', 'payment_released')
+              AND t.status NOT IN ('done', 'paid', 'finished', 'verified', 'cancelled', 'poster_cancelled', 'rejected', 'expired')
               AND (t.helper_final_completed_at IS NULL OR t.status != 'completed')
             ORDER BY t.accepted_at DESC
         ''', (request.user_id,))
         accepted = [dict_from_row(t) for t in cursor.fetchall()]
 
-        # Completed tasks — helper clicked final "Mark as Completed".
-        # Includes new flow (status='done') AND legacy tasks that were already
-        # fully finished (status='completed' + helper_final_completed_at set).
+        # Completed tasks — includes BOTH poster's completed tasks and helper's completed tasks.
         cursor.execute(f'''
-            SELECT t.*, u.name as poster_name, u.phone as poster_phone,
+            SELECT t.*,
+                   u.name as poster_name, u.phone as poster_phone,
                    u.email as poster_email, u.id as poster_user_id,
-                   u.rating as poster_rating
+                   u.rating as poster_rating,
+                   h.name as helper_name, h.phone as helper_phone,
+                   h.email as helper_email, h.id as helper_user_id,
+                   h.rating as helper_rating
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.accepted_by = {PH}
-              AND (t.status = 'done'
-                   OR (t.status = 'completed' AND t.helper_final_completed_at IS NOT NULL))
-            ORDER BY t.helper_final_completed_at DESC NULLS LAST
-        ''', (request.user_id,))
+            LEFT JOIN users h ON t.accepted_by = h.id
+            WHERE (t.posted_by = {PH} OR t.accepted_by = {PH})
+              AND (
+                t.status IN ('done', 'paid', 'finished', 'verified')
+                OR (t.status = 'completed' AND (t.helper_final_completed_at IS NOT NULL OR t.paid_at IS NOT NULL OR t.payment_released_at IS NOT NULL))
+                OR (t.posted_by = {PH} AND t.status = 'payment_released')
+              )
+              AND t.status NOT IN ('removed', 'flagged', 'suspicious', 'cancelled', 'poster_cancelled', 'rejected', 'expired')
+        ''', (request.user_id, request.user_id, request.user_id))
         completed = [dict_from_row(t) for t in cursor.fetchall()]
+
+        for row in completed:
+            if not row.get('completed_at'):
+                row['completed_at'] = (
+                    row.get('helper_final_completed_at') or
+                    row.get('paid_at') or
+                    row.get('payment_released_at') or
+                    row.get('verified_at') or
+                    row.get('posted_at')
+                )
+
+        completed.sort(
+            key=lambda x: str(x.get('completed_at') or x.get('helper_final_completed_at') or x.get('paid_at') or x.get('posted_at') or ''),
+            reverse=True
+        )
 
         # Task IDs the current user has already rated (to mark UI as "rated")
         cursor.execute(f'SELECT task_id FROM helper_ratings WHERE rater_id = {PH}', (request.user_id,))

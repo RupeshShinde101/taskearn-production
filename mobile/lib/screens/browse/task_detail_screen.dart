@@ -1192,6 +1192,8 @@ class _StatusBadge extends StatelessWidget {
       case 'completed':
         return const Color(0xFFFF6B35);
       case 'verified':
+      case 'done':
+      case 'paid':
         return AppColors.success;
       case 'cancelled':
         return AppColors.danger;
@@ -1213,6 +1215,9 @@ class _StatusBadge extends StatelessWidget {
         return 'Awaiting Verification';
       case 'verified':
         return 'Verified ✓';
+      case 'done':
+      case 'paid':
+        return 'Completed';
       case 'cancelled':
         return 'Cancelled';
       default:

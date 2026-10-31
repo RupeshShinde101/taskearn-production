@@ -1102,8 +1102,8 @@ class _CompletedTaskList extends StatelessWidget {
     if (remaining.isNegative) return 'Expiring soon (kept for 48h)';
     final h = remaining.inHours;
     final m = remaining.inMinutes % 60;
-    if (h >= 1) return 'Disappears in h m';
-    if (m >= 1) return 'Disappears in m';
+    if (h >= 1) return 'Disappears in ${h}h ${m}m';
+    if (m >= 1) return 'Disappears in ${m}m';
     return 'Expiring in < 1m';
   }
 

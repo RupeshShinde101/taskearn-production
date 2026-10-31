@@ -46,6 +46,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
+    final userSkills = user?.skills ?? const <String>[];
+    final phyStatus = user?.physicalVerificationStatus;
 
     return Scaffold(
       appBar: AppBar(
@@ -265,8 +267,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600)),
-                            if (user?.skills != null &&
-                                user!.skills.isNotEmpty)
+                            if (userSkills.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(left: 6),
                                 child: Container(
@@ -278,7 +279,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         BorderRadius.circular(10),
                                   ),
                                   child: Text(
-                                    '${user.skills.length}',
+                                    '${userSkills.length}',
                                     style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 12,
@@ -291,7 +292,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ),
-                  if (user?.skills != null && user!.skills.isNotEmpty)
+                  if (userSkills.isNotEmpty)
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () => _showSkillsDialog(context, auth),
@@ -321,7 +322,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               if (_showSkills) ...[
                 const SizedBox(height: 8),
-                if (user?.skills == null || user!.skills.isEmpty)
+                if (userSkills.isEmpty)
                   _EmptySkillsHint(
                       onAdd: () => _showSkillsDialog(context, auth))
                 else
@@ -336,7 +337,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: user.skills
+                      children: userSkills
                           .map((s) => Chip(
                                 label: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -351,7 +352,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                                 backgroundColor: kSensitiveSkills.contains(s)
                                     ? const Color(0xFFFEF3C7)
-                                    : AppColors.primary.withValues(alpha: 0.1),
+                                    : AppColors.primary
+                                        .withValues(alpha: 0.1),
                                 labelStyle: TextStyle(
                                     color: kSensitiveSkills.contains(s)
                                         ? const Color(0xFF92400E)
@@ -366,22 +368,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           .toList(),
                     ),
                   ),
-                if (hasSensitiveSkill(user.skills)) ...[
+                if (hasSensitiveSkill(userSkills)) ...[
                   const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: user.physicalVerificationStatus == 'verified'
+                      color: phyStatus == 'verified'
                           ? const Color(0xFFD1FAE5)
-                          : (user.physicalVerificationStatus == 'pending'
+                          : (phyStatus == 'pending'
                               ? const Color(0xFFFEF3C7)
                               : const Color(0xFFFEE2E2)),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: user.physicalVerificationStatus == 'verified'
+                        color: phyStatus == 'verified'
                             ? const Color(0xFFA7F3D0)
-                            : (user.physicalVerificationStatus == 'pending'
+                            : (phyStatus == 'pending'
                                 ? const Color(0xFFFDE68A)
                                 : const Color(0xFFFECACA)),
                       ),
@@ -389,41 +391,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Row(
                       children: [
                         Icon(
-                          user.physicalVerificationStatus == 'verified'
+                          phyStatus == 'verified'
                               ? Icons.verified_user_rounded
-                              : (user.physicalVerificationStatus == 'pending'
+                              : (phyStatus == 'pending'
                                   ? Icons.hourglass_top_rounded
                                   : Icons.warning_amber_rounded),
                           size: 16,
-                          color: user.physicalVerificationStatus == 'verified'
+                          color: phyStatus == 'verified'
                               ? const Color(0xFF059669)
-                              : (user.physicalVerificationStatus == 'pending'
+                              : (phyStatus == 'pending'
                                   ? const Color(0xFFD97706)
                                   : const Color(0xFFDC2626)),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            user.physicalVerificationStatus == 'verified'
+                            phyStatus == 'verified'
                                 ? 'Sensitive skills physically verified'
-                                : (user.physicalVerificationStatus == 'pending'
+                                : (phyStatus == 'pending'
                                     ? 'Physical onboarding request pending admin review'
                                     : 'Sensitive skills require physical verification by Admin'),
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w600,
-                              color: user.physicalVerificationStatus == 'verified'
+                              color: phyStatus == 'verified'
                                   ? const Color(0xFF065F46)
-                                  : (user.physicalVerificationStatus == 'pending'
+                                  : (phyStatus == 'pending'
                                       ? const Color(0xFF92400E)
                                       : const Color(0xFF991B1B)),
                             ),
                           ),
                         ),
-                        if (user.physicalVerificationStatus != 'verified' &&
-                            user.physicalVerificationStatus != 'pending')
+                        if (phyStatus != 'verified' && phyStatus != 'pending')
                           GestureDetector(
-                            onTap: () => context.push('/physical-onboarding', extra: {'skills': user.skills}),
+                            onTap: () => context.push('/physical-onboarding', extra: {'skills': userSkills}),
                             child: const Text(
                               'Verify Now',
                               style: TextStyle(
@@ -469,14 +470,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _MenuItem(
                       icon: Icons.shield_outlined,
                       title: 'Physical Onboarding Request',
-                      badge: user?.physicalVerificationStatus == 'verified'
+                      badge: phyStatus == 'verified'
                           ? 'Verified'
-                          : (user?.physicalVerificationStatus == 'pending'
+                          : (phyStatus == 'pending'
                               ? 'Pending Review'
-                              : (hasSensitiveSkill(user?.skills ?? []) ? 'Action Required' : null)),
-                      badgeColor: user?.physicalVerificationStatus == 'verified'
+                              : (hasSensitiveSkill(userSkills) ? 'Action Required' : null)),
+                      badgeColor: phyStatus == 'verified'
                           ? AppColors.success
-                          : (user?.physicalVerificationStatus == 'pending'
+                          : (phyStatus == 'pending'
                               ? AppColors.warning
                               : AppColors.danger),
                       onTap: () => context.push('/physical-onboarding'),
@@ -1596,8 +1597,9 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
                       height: 34,
                       child: OutlinedButton.icon(
                         onPressed: () {
+                          final router = GoRouter.of(context);
                           Navigator.pop(context);
-                          context.push('/physical-onboarding', extra: {'skills': _selectedSkills});
+                          router.push('/physical-onboarding', extra: {'skills': _selectedSkills});
                         },
                         icon: const Icon(Icons.assignment_turned_in_outlined, size: 14, color: Color(0xFFB45309)),
                         label: const Text('Fill Physical Onboarding Form',
@@ -2007,6 +2009,7 @@ class _MenuItem extends StatelessWidget {
   final Color? textColor;
   final Color? iconColor;
   final String? badge;
+  final Color? badgeColor;
 
   const _MenuItem({
     required this.icon,
@@ -2015,10 +2018,12 @@ class _MenuItem extends StatelessWidget {
     this.textColor,
     this.iconColor,
     this.badge,
+    this.badgeColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bColor = badgeColor ?? const Color(0xFFD97706);
     return ListTile(
       leading: Icon(icon, color: iconColor ?? AppColors.gray, size: 22),
       title: Row(
@@ -2038,19 +2043,19 @@ class _MenuItem extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                color: bColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                  color: bColor.withValues(alpha: 0.35),
                   width: 0.8,
                 ),
               ),
               child: Text(
                 badge!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFD97706),
+                  color: bColor,
                 ),
               ),
             ),

@@ -582,7 +582,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                             value: slot,
                             child: Text(slot, style: const TextStyle(fontSize: 13)),
                           );
-                        }).toList>,
+                        }).toList(),
                         onChanged: (val) {
                           if (val != null) setState(() => _preferredSlot = val);
                         },
@@ -719,3 +719,4 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     );
   }
 }
+

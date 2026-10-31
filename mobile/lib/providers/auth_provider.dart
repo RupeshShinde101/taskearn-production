@@ -51,7 +51,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isPosterMode => _profileMode == 'poster';
   bool get isHelperMode => _profileMode == 'helper';
 
-  /// Client-side session duration: 30 days after last successful login.
+  /// Client-side auto logout threshold: 30 days since last app use.
   static const Duration _kSessionDuration = Duration(days: 30);
 
   AuthProvider() {
@@ -93,17 +93,27 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
 
-    // ── Client-side session expiry ─────────────────────────────────────────
-    final expiry = StorageService.getSessionExpiry();
-    if (expiry != null && DateTime.now().isAfter(expiry)) {
-      debugPrint('[AUTH] Session expired at $expiry — clearing session.');
-      await StorageService.clearSession();
-      await StorageService.clearSession();
+    // ── Client-side inactivity logout ──────────────────────────────────────
+    final now = DateTime.now();
+    var lastActive = StorageService.getSessionLastActive();
+    if (lastActive == null) {
+      final legacyExpiry = StorageService.getSessionExpiry();
+      lastActive = legacyExpiry != null && legacyExpiry.isAfter(now)
+          ? legacyExpiry.subtract(_kSessionDuration)
+          : now;
+      await StorageService.saveSessionLastActive(lastActive);
+      await StorageService.clearLegacySessionExpiry();
+    }
+
+    if (now.difference(lastActive) >= _kSessionDuration) {
+      debugPrint('[AUTH] Session inactive since $lastActive — clearing session.');
       await StorageService.clearSession();
       _status = AuthStatus.unauthenticated;
       notifyListeners();
       return;
     }
+
+    await StorageService.touchSessionActivity();
 
     // ── Restore user instantly from local cache (no network wait) ──────────
     final cachedJson = StorageService.getUserJson();
@@ -167,8 +177,6 @@ class AuthProvider extends ChangeNotifier {
       if (e.statusCode == 401 || e.statusCode == 403) {
         // Token explicitly rejected by server — full logout
         await StorageService.clearSession();
-        await StorageService.clearSession();
-        await StorageService.clearSession();
         _user = null;
         _status = AuthStatus.unauthenticated;
       }
@@ -196,7 +204,7 @@ class AuthProvider extends ChangeNotifier {
         await Future.wait([
           StorageService.saveToken(token),
           StorageService.saveUserId(''),  // will be set below
-          StorageService.saveSessionExpiry(DateTime.now().add(_kSessionDuration)),
+            StorageService.touchSessionActivity(),
         ]);
         _user = User.fromJson(data['user'] ?? data);
         await Future.wait([
@@ -277,8 +285,7 @@ class AuthProvider extends ChangeNotifier {
           _user = User.fromJson(data['user'] ?? data);
           await StorageService.saveUserId(_user!.id);
           await StorageService.saveUserJson(_user!.toJson());
-          await StorageService.saveSessionExpiry(
-              DateTime.now().add(_kSessionDuration));
+            await StorageService.touchSessionActivity();
           _status = AuthStatus.authenticated;
           _pendingSuccessScreen = true;
         }
@@ -354,8 +361,6 @@ class AuthProvider extends ChangeNotifier {
       try { await NotificationService.clearFcmToken(); } catch (_) {}
       try { await ApiService.post('/auth/logout'); } catch (_) {}
       try { await _googleSignIn.signOut(); } catch (_) {}
-      await StorageService.clearSession();
-      await StorageService.clearSession();
       await StorageService.clearSession();
       await StorageService.setString('user_avatar_local', '');
     }());
@@ -584,6 +589,63 @@ class AuthProvider extends ChangeNotifier {
 
   /// Simple Google sign-up/login: opens the account picker and creates or
   /// logs in the account on the backend in one step.
+  /// Submit physical onboarding & verification request to Admin for sensitive skills.
+  Future<bool> submitPhysicalOnboardingRequest({
+    required String name,
+    required String address,
+    required String primaryPhone,
+    required String alternativePhone,
+    required List<String> skills,
+    required String govtIdType,
+    required String govtIdNumber,
+    required String preferredSlot,
+    String? notes,
+  }) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final response = await ApiService.post(
+        '/helper/physical-verification/request',
+        body: {
+          'name': name.trim(),
+          'address': address.trim(),
+          'primaryPhone': primaryPhone.trim(),
+          'alternativePhone': alternativePhone.trim(),
+          'skills': skills,
+          'govtIdType': govtIdType.trim(),
+          'govtIdNumber': govtIdNumber.trim(),
+          'preferredSlot': preferredSlot.trim(),
+          if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        },
+      );
+      if (response != null && response['success'] == true) {
+        if (_user != null) {
+          _user = _user!.copyWith(physicalVerificationStatus: 'pending');
+        }
+        await refreshUser();
+        _loading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response?['message']?.toString() ?? 'Failed to submit physical onboarding request.';
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Failed to submit request. Please try again.';
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> loginWithGoogle({
     String? referralCode,
     DateTime? dob,
@@ -649,8 +711,7 @@ class AuthProvider extends ChangeNotifier {
         _user = User.fromJson(data['user'] ?? data);
         await StorageService.saveUserId(_user!.id);
         await StorageService.saveUserJson(_user!.toJson());
-        await StorageService.saveSessionExpiry(
-            DateTime.now().add(_kSessionDuration));
+        await StorageService.touchSessionActivity();
         _status = AuthStatus.authenticated;
 
         final email = _user!.email.trim().toLowerCase();

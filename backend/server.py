@@ -4180,9 +4180,9 @@ def mark_task_completed(task_id):
             # a separate completedTasks field and the mobile moves the task to
             # the Completed tab — even after an app restart.
             cursor.execute(f'''
-                UPDATE tasks SET status = 'done', helper_final_completed_at = {PH}
+                UPDATE tasks SET status = 'done', helper_final_completed_at = {PH}, completed_at = {PH}
                 WHERE id = {PH}
-            ''', (now, task_id))
+            ''', (now, now, task_id))
 
             # Increment tasks_completed and total_earnings for helper
             cursor.execute(f'''
@@ -4916,14 +4916,18 @@ def get_user_tasks():
         completed = [dict_from_row(t) for t in cursor.fetchall()]
 
         for row in completed:
-            if not row.get('completed_at'):
-                row['completed_at'] = (
-                    row.get('helper_final_completed_at') or
-                    row.get('paid_at') or
-                    row.get('payment_released_at') or
-                    row.get('verified_at') or
-                    row.get('posted_at')
-                )
+            # Anchor 48h timer to the latest final completion milestone:
+            # helper_final_completed_at > paid_at > payment_released_at > completed_at > posted_at
+            final_ts = (
+                row.get('helper_final_completed_at') or
+                row.get('paid_at') or
+                row.get('payment_released_at') or
+                row.get('completed_at') or
+                row.get('verified_at') or
+                row.get('posted_at')
+            )
+            row['completed_at'] = final_ts
+            row['helper_final_completed_at'] = row.get('helper_final_completed_at') or final_ts
 
         completed.sort(
             key=lambda x: str(x.get('completed_at') or x.get('helper_final_completed_at') or x.get('paid_at') or x.get('posted_at') or ''),

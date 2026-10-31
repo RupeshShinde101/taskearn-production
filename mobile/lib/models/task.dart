@@ -300,9 +300,11 @@ class Task {
       expiresAt: _parseDateOrNull(json['expiresAt'] ?? json['expires_at']),
       acceptedAt: _parseDateOrNull(json['accepted_at'] ?? json['acceptedAt']),
       completedAt: _parseDateOrNull(
-          json['completed_at'] ?? json['completedAt'] ??
           json['helper_final_completed_at'] ??
-          json['paid_at'] ?? json['payment_released_at'] ??
+          json['paid_at'] ??
+          json['payment_released_at'] ??
+          json['completed_at'] ??
+          json['completedAt'] ??
           json['verified_at']),
       helperRating: json['helper_rating'] != null
           ? double.tryParse(json['helper_rating'].toString()) ?? 0.0

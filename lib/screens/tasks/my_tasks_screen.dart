@@ -1050,8 +1050,7 @@ class _CompletedTaskList extends StatelessWidget {
                     ),
 
                     // ── Expiry bar ─────────────────────────────────────────
-                    if (expiry != null)
-                      Container(
+                    Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 7),
@@ -1095,23 +1094,24 @@ class _CompletedTaskList extends StatelessWidget {
       '${dt.day}/${dt.month}/${dt.year % 100}';
 
   /// Returns a human-readable expiry string based on completedAt + 48 h.
-  /// Returns null if no completedAt is available.
-  String? _expiryLabel(DateTime? completedAt) {
-    if (completedAt == null) return 'Visible for 48 h after completion';
-    final expireAt = completedAt.add(const Duration(hours: 48));
-    final remaining = expireAt.difference(DateTime.now());
-    if (remaining.isNegative) return null; // filtered out above, shouldn't reach
+  /// Always returns a valid string so the 48h timer is always visible on completed tasks.
+  String _expiryLabel(DateTime? completedAt) {
+    if (completedAt == null) return 'Disappears in 48h';
+    final target = completedAt.toLocal().add(const Duration(hours: 48));
+    final remaining = target.difference(DateTime.now());
+    if (remaining.isNegative) return 'Expiring soon (kept for 48h)';
     final h = remaining.inHours;
     final m = remaining.inMinutes % 60;
-    if (h >= 1) return 'Disappears in ${h}h ${m}m';
-    return 'Disappears in ${remaining.inMinutes} min';
+    if (h >= 1) return 'Disappears in h m';
+    if (m >= 1) return 'Disappears in m';
+    return 'Expiring in < 1m';
   }
 
   Color _expiryColor(DateTime? completedAt) {
-    if (completedAt == null) return AppColors.gray;
-    final remaining =
-        completedAt.add(const Duration(hours: 48)).difference(DateTime.now());
-    if (remaining.isNegative) return AppColors.grayLight;
+    if (completedAt == null) return AppColors.primary;
+    final target = completedAt.toLocal().add(const Duration(hours: 48));
+    final remaining = target.difference(DateTime.now());
+    if (remaining.isNegative) return AppColors.danger;
     if (remaining.inHours < 6) return AppColors.danger;
     if (remaining.inHours < 24) return AppColors.warning;
     return AppColors.success;

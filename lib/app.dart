@@ -327,9 +327,12 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     // ShellRoute child throws '!keyReservation.contains(key)'.
     const shellTabRoutes = {'/my-tasks', '/home', '/browse', '/profile'};
 
+    const chatTypes = {'chat', 'chat_message'};
     String destination;
     if (deletedTaskTypes.contains(type)) {
       destination = '/my-tasks';
+    } else if (chatTypes.contains(type) && taskId != null && taskId.isNotEmpty) {
+      destination = '/chat/$taskId';
     } else if (taskId != null && taskId.isNotEmpty) {
       destination = inProgressTypes.contains(type)
           ? '/task-in-progress/$taskId'

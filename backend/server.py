@@ -298,14 +298,25 @@ try:
     from firebase_admin import credentials as fb_credentials
     from firebase_admin import messaging as fb_messaging
 
-    _firebase_sa_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '')
-    if _firebase_sa_json:
+    _sa_raw = (os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON') or
+                   os.environ.get('FIREBASE_SERVICE_ACCOUNT') or
+                   os.environ.get('FIREBASE_CREDENTIALS') or
+                   os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or '').strip()
+    if _sa_raw:
         import json as _json_fcm
-        _cred = fb_credentials.Certificate(_json_fcm.loads(_firebase_sa_json))
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(_cred)
-        _has_fcm = True
-        print('[FCM] Firebase Admin SDK initialized ✅')
+        if _sa_raw.startswith('{'):
+            _cred = fb_credentials.Certificate(_json_fcm.loads(_sa_raw))
+        elif os.path.isfile(_sa_raw):
+            _cred = fb_credentials.Certificate(_sa_raw)
+        else:
+            _cred = None
+        if _cred:
+            if not firebase_admin._apps:
+                firebase_admin.initialize_app(_cred)
+            _has_fcm = True
+            print('[FCM] Firebase Admin SDK initialized ✅')
+        else:
+            print('[FCM] ⚠️ FIREBASE service account credentials invalid or file path not found')
     else:
         print('[FCM] FIREBASE_SERVICE_ACCOUNT_JSON not set — FCM push disabled')
 except ImportError:
@@ -433,13 +444,17 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
       workmate4u_main    — general task updates (high importance)
       workmate4u_matched — nearby task matches  (max importance)
       workmate4u_payment — payment events       (max importance)
+      workmate4u_chat    — chat messages        (max importance)
     """
     if not _has_fcm:
         return
     _ensure_fcm_token_column()
     try:
         with get_db() as (cursor, _):
-            cursor.execute(f'SELECT fcm_token FROM users WHERE id = {PH}', (str(user_id),))
+            if PH == '%s':
+                cursor.execute('SELECT fcm_token FROM users WHERE id::text = %s', (str(user_id),))
+            else:
+                cursor.execute(f'SELECT fcm_token FROM users WHERE id = {PH}', (str(user_id),))
             row = cursor.fetchone()
         if not row:
             print(f'[FCM] ⚠️ No user row for user_id={user_id} — skipping push')
@@ -454,21 +469,46 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
                    'title': title, 'body': body}
         if data:
             for k, v in data.items():
-                payload[str(k)] = str(v)
+                if v is not None:
+                    payload[str(k)] = str(v)
 
-        # Data-only message — no 'notification' key so the FCM SDK always
-        # routes it to the Flutter background handler (_bgMessageHandler) even
-        # when the app is killed.  The handler itself creates the local
-        # notification on the correct channel with the right importance.
+        # For direct targeted alerts (chat, payments, assignment), also attach a
+        # Notification object so Android OS / iOS APNs displays the heads-up banner
+        # directly from Google Play Services even if background execution is restricted.
+        notif_type = payload.get('type', '')
+        include_native_notification = notif_type in (
+            'chat', 'chat_message', 'task_accepted', 'task_completed',
+            'verify_and_pay', 'payment_released', 'payment_done'
+        )
+
+        fcm_notif = None
+        android_notif = None
+        aps_alert = None
+        if include_native_notification:
+            fcm_notif = fb_messaging.Notification(title=title, body=body)
+            android_notif = fb_messaging.AndroidNotification(
+                channel_id=channel,
+                priority='max' if channel in ('workmate4u_chat', 'workmate4u_payment', 'workmate4u_matched') else 'high',
+                default_sound=True,
+                default_vibrate_timings=True,
+            )
+            aps_alert = fb_messaging.ApsAlert(title=title, body=body)
+
         message = fb_messaging.Message(
+            notification=fcm_notif,
             data=payload,
             android=fb_messaging.AndroidConfig(
                 priority='high',   # FCM delivery priority — wakes up device
+                notification=android_notif,
             ),
             apns=fb_messaging.APNSConfig(
                 headers={'apns-priority': '10'},
                 payload=fb_messaging.APNSPayload(
-                    aps=fb_messaging.Aps(content_available=True),
+                    aps=fb_messaging.Aps(
+                        alert=aps_alert,
+                        sound='default' if include_native_notification else None,
+                        content_available=True,
+                    ),
                 ),
             ),
             token=token,
@@ -1400,16 +1440,107 @@ def send_message(data):
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     room = f'task_{task_id}'
     
-    # Store message in database
+    # Store message in database and notify recipient
     with get_db() as (cursor, conn):
+        _ensure_chat_messages_table()
+        cursor.execute(f'SELECT id, title, posted_by, accepted_by FROM tasks WHERE id = {PH}', (task_id,))
+        task_row = cursor.fetchone()
+        task_dict = dict_from_row(task_row) if task_row else {}
+
+        posted_by = str(task_dict.get('posted_by') or '').strip()
+        accepted_by = str(task_dict.get('accepted_by') or '').strip()
+
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'chat_messages'
+        """)
+        col_set = {
+            (row['column_name'] if isinstance(row, dict) else row[0]).lower()
+            for row in cursor.fetchall()
+        }
+
+        fields = ['task_id', 'message']
+        values = [task_id, message]
+        if 'user_id' in col_set:
+            fields.append('user_id')
+            values.append(str(user_id))
+        if 'sender_id' in col_set:
+            fields.append('sender_id')
+            values.append(str(user_id))
+        if 'user_name' in col_set:
+            fields.append('user_name')
+            values.append(user_name)
+        if 'timestamp' in col_set:
+            fields.append('timestamp')
+            values.append(timestamp)
+        if 'created_at' in col_set:
+            fields.append('created_at')
+            values.append(timestamp)
+
+        recipient_id = None
+        if str(user_id) == posted_by:
+            recipient_id = accepted_by if accepted_by else None
+        elif accepted_by and str(user_id) == accepted_by:
+            recipient_id = posted_by if posted_by else None
+
+        if recipient_id and 'receiver_id' in col_set:
+            fields.append('receiver_id')
+            values.append(recipient_id)
+
+        cols_sql = ', '.join(fields)
+        placeholders = ', '.join([PH] * len(fields))
+
         cursor.execute(f'''
-            INSERT INTO chat_messages (task_id, user_id, message, timestamp, user_name)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (task_id, user_id, message, timestamp, user_name))
-    
+            INSERT INTO chat_messages ({cols_sql})
+            VALUES ({placeholders})
+        ''', tuple(values))
+
+        if recipient_id:
+            task_title = task_dict.get("title") or "Task"
+            notif_title = f'💬 Message from {user_name}'
+            notif_body = f'{user_name}: New message on "{task_title}"'
+            try:
+                notif_data = json.dumps({
+                    'type': 'chat',
+                    'taskId': str(task_id),
+                    'task_id': str(task_id),
+                    'senderName': user_name,
+                    'senderId': str(user_id)
+                })
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (recipient_id, task_id, 'chat_message', notif_title, notif_body, 'unread', notif_data, timestamp))
+            except Exception as n_err:
+                print(f'[Chat Socket] DB notification warning: {n_err}')
+            
+            try:
+                send_fcm_to_user(
+                    recipient_id,
+                    notif_title,
+                    notif_body,
+                    data={
+                        'type': 'chat',
+                        'task_id': str(task_id),
+                        'taskId': str(task_id),
+                        'sender_name': str(user_name),
+                        'sender_id': str(user_id),
+                    },
+                    channel='workmate4u_chat'
+                )
+            except Exception as f_err:
+                print(f'[Chat Socket] FCM warning: {f_err}')
+
+            try:
+                send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
+            except Exception as p_err:
+                print(f'[Chat Socket] Web push warning: {p_err}')
+
     # Broadcast message to task room
     socketio.emit('new_message', {
-        'userId': user_id,
+        'taskId': task_id,
+        'userId': str(user_id),
         'userName': user_name,
         'message': message,
         'timestamp': timestamp
@@ -6238,26 +6369,67 @@ def send_chat_message(task_id):
             except Exception as se:
                 print(f'[Chat] Socket.IO emit error: {se}')
 
-            # Create in-app notification & push notification for recipient
-            recipient_id = accepted_by if uid == posted_by else posted_by
+            # Create in-app notification & FCM push notification for recipient
+            posted_by = str(task_dict.get('posted_by') or '').strip()
+            accepted_by = str(task_dict.get('accepted_by') or '').strip()
+            uid = str(uid).strip()
+
+            recipient_id = None
+            if uid == posted_by:
+                recipient_id = accepted_by if accepted_by else None
+            elif accepted_by and uid == accepted_by:
+                recipient_id = posted_by if posted_by else None
+            else:
+                if posted_by and uid != posted_by:
+                    recipient_id = posted_by
+                elif accepted_by and uid != accepted_by:
+                    recipient_id = accepted_by
+
             if recipient_id:
+                task_title = task_dict.get("title") or "Task"
+                notif_title = f'💬 Message from {user_name}'
+                notif_body = f'{user_name}: New message on "{task_title}"'
+                
+                # DB notification insert
                 try:
-                    notif_data = json.dumps({'type': 'chat', 'taskId': task_id, 'senderName': user_name})
+                    notif_data = json.dumps({
+                        'type': 'chat',
+                        'taskId': str(task_id),
+                        'task_id': str(task_id),
+                        'senderName': user_name,
+                        'senderId': str(uid)
+                    })
                     cursor.execute(f'''
                         INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                         VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (recipient_id, task_id, 'chat_message', f'💬 Message from {user_name}',
-                          f'{user_name} sent you a message about "{task_dict.get("title", "Task")}"',
-                          'unread', notif_data, timestamp_iso))
+                    ''', (recipient_id, task_id, 'chat_message', notif_title, notif_body, 'unread', notif_data, timestamp_iso))
                 except Exception as n_err:
                     print(f'[Chat] DB notification insert warning: {n_err}')
                 
+                # Send FCM push notification (Android/iOS)
                 try:
-                    send_push_to_user(recipient_id, f'💬 Message from {user_name}',
-                                      f'New message on "{task_dict.get("title", "Task")}"',
-                                      f'/chat/{task_id}')
+                    send_fcm_to_user(
+                        recipient_id,
+                        notif_title,
+                        notif_body,
+                        data={
+                            'type': 'chat',
+                            'task_id': str(task_id),
+                            'taskId': str(task_id),
+                            'sender_name': str(user_name),
+                            'sender_id': str(uid),
+                        },
+                        channel='workmate4u_chat'
+                    )
+                    print(f'[Chat] Sent FCM to recipient {recipient_id} for task {task_id}')
+                except Exception as fcm_err:
+                    print(f'[Chat] FCM send warning: {fcm_err}')
+
+                # Web push fallback
+                try:
+                    send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
                 except Exception as p_err:
-                    print(f'[Chat] Push notification warning: {p_err}')
+                    print(f'[Chat] Web push warning: {p_err}')
         
         return jsonify({
             'success': True,

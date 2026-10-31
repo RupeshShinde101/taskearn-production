@@ -21,6 +21,7 @@ import 'screens/chat/chat_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/profile/kyc_screen.dart';
+import 'screens/profile/physical_onboarding_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
 import 'screens/referral/referral_screen.dart';
 import 'screens/shell/main_shell.dart';
@@ -190,6 +191,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         GoRoute(
           path: '/privacy',
           builder: (_, __) => const PrivacyScreen(),
+        ),
+        GoRoute(
+          path: '/physical-onboarding',
+          builder: (_, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            return PhysicalOnboardingScreen(
+              initialSkills: (extra?['skills'] as List?)?.map((e) => e.toString()).toList(),
+            );
+          },
         ),
       ],
     );

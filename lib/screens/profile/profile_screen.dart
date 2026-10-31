@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
+import 'physical_onboarding_screen.dart';
 
 // ── All available skills the user can select ─────────────────────────────────
 const _kAllSkills = [
@@ -337,19 +338,106 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       runSpacing: 8,
                       children: user.skills
                           .map((s) => Chip(
-                                label: Text(s),
-                                backgroundColor: AppColors.primary
-                                    .withValues(alpha: 0.1),
-                                labelStyle: const TextStyle(
-                                    color: AppColors.primary,
+                                label: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(s),
+                                    if (kSensitiveSkills.contains(s)) ...[
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.shield_outlined,
+                                          size: 13, color: Color(0xFFD97706)),
+                                    ],
+                                  ],
+                                ),
+                                backgroundColor: kSensitiveSkills.contains(s)
+                                    ? const Color(0xFFFEF3C7)
+                                    : AppColors.primary.withValues(alpha: 0.1),
+                                labelStyle: TextStyle(
+                                    color: kSensitiveSkills.contains(s)
+                                        ? const Color(0xFF92400E)
+                                        : AppColors.primary,
                                     fontWeight: FontWeight.w500),
                                 side: BorderSide(
-                                    color: AppColors.primary
-                                        .withValues(alpha: 0.3)),
+                                    color: kSensitiveSkills.contains(s)
+                                        ? const Color(0xFFF59E0B)
+                                        : AppColors.primary
+                                            .withValues(alpha: 0.3)),
                               ))
                           .toList(),
                     ),
                   ),
+                if (hasSensitiveSkill(user.skills)) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: user.physicalVerificationStatus == 'verified'
+                          ? const Color(0xFFD1FAE5)
+                          : (user.physicalVerificationStatus == 'pending'
+                              ? const Color(0xFFFEF3C7)
+                              : const Color(0xFFFEE2E2)),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: user.physicalVerificationStatus == 'verified'
+                            ? const Color(0xFFA7F3D0)
+                            : (user.physicalVerificationStatus == 'pending'
+                                ? const Color(0xFFFDE68A)
+                                : const Color(0xFFFECACA)),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          user.physicalVerificationStatus == 'verified'
+                              ? Icons.verified_user_rounded
+                              : (user.physicalVerificationStatus == 'pending'
+                                  ? Icons.hourglass_top_rounded
+                                  : Icons.warning_amber_rounded),
+                          size: 16,
+                          color: user.physicalVerificationStatus == 'verified'
+                              ? const Color(0xFF059669)
+                              : (user.physicalVerificationStatus == 'pending'
+                                  ? const Color(0xFFD97706)
+                                  : const Color(0xFFDC2626)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            user.physicalVerificationStatus == 'verified'
+                                ? 'Sensitive skills physically verified'
+                                : (user.physicalVerificationStatus == 'pending'
+                                    ? 'Physical onboarding request pending admin review'
+                                    : 'Sensitive skills require physical verification by Admin'),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: user.physicalVerificationStatus == 'verified'
+                                  ? const Color(0xFF065F46)
+                                  : (user.physicalVerificationStatus == 'pending'
+                                      ? const Color(0xFF92400E)
+                                      : const Color(0xFF991B1B)),
+                            ),
+                          ),
+                        ),
+                        if (user.physicalVerificationStatus != 'verified' &&
+                            user.physicalVerificationStatus != 'pending')
+                          GestureDetector(
+                            onTap: () => context.push('/physical-onboarding', extra: {'skills': user.skills}),
+                            child: const Text(
+                              'Verify Now',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFDC2626),
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
               const SizedBox(height: 20),
             ],
@@ -377,6 +465,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () => context.push('/notifications'),
                   ),
                   const Divider(height: 1),
+                  if (auth.isHelperMode) ...[
+                    _MenuItem(
+                      icon: Icons.shield_outlined,
+                      title: 'Physical Onboarding Request',
+                      badge: user?.physicalVerificationStatus == 'verified'
+                          ? 'Verified'
+                          : (user?.physicalVerificationStatus == 'pending'
+                              ? 'Pending Review'
+                              : (hasSensitiveSkill(user?.skills ?? []) ? 'Action Required' : null)),
+                      badgeColor: user?.physicalVerificationStatus == 'verified'
+                          ? AppColors.success
+                          : (user?.physicalVerificationStatus == 'pending'
+                              ? AppColors.warning
+                              : AppColors.danger),
+                      onTap: () => context.push('/physical-onboarding'),
+                    ),
+                    const Divider(height: 1),
+                  ],
                   _MenuItem(
                     icon: Icons.security_outlined,
                     title: 'Security',
@@ -1362,19 +1468,38 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
     if (!mounted) return;
     setState(() => _saving = false);
     Navigator.pop(context);
+    final hasSensitive = hasSensitiveSkill(_selectedSkills);
+    final user = widget.auth.user;
+    final needsVerification = hasSensitive &&
+        user?.physicalVerificationStatus != 'verified' &&
+        user?.physicalVerificationStatus != 'pending';
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
-            ? 'Skills updated!'
+            ? (needsVerification
+                ? 'Skills saved! Sensitive skills require physical verification.'
+                : 'Skills updated successfully!')
             : (widget.auth.error ?? 'Failed to save skills. Please try again.')),
         backgroundColor: ok ? AppColors.success : AppColors.danger,
-        duration: const Duration(seconds: 3),
+        duration: Duration(seconds: needsVerification ? 5 : 3),
+        action: needsVerification
+            ? SnackBarAction(
+                label: 'Verify Now',
+                textColor: Colors.white,
+                onPressed: () {
+                  context.push('/physical-onboarding', extra: {'skills': _selectedSkills});
+                },
+              )
+            : null,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final hasSensitive = hasSensitiveSkill(_selectedSkills);
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
           20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
@@ -1397,26 +1522,96 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
               spacing: 8,
               runSpacing: 8,
               children: _kAllSkills
-                  .map((skill) => FilterChip(
-                        label: Text(skill),
-                        selected: _selectedSkills.contains(skill),
-                        onSelected: (_) => _toggleSkill(skill),
-                        selectedColor:
-                            AppColors.primary.withValues(alpha: 0.15),
-                        checkmarkColor: AppColors.primary,
-                        labelStyle: TextStyle(
-                            color: _selectedSkills.contains(skill)
-                                ? AppColors.primary
-                                : AppColors.gray,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500),
-                        side: BorderSide(
-                            color: _selectedSkills.contains(skill)
-                                ? AppColors.primary
-                                : AppColors.border),
-                      ))
+                  .map((skill) {
+                    final isSensitive = kSensitiveSkills.contains(skill);
+                    final isSelected = _selectedSkills.contains(skill);
+                    return FilterChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(skill),
+                          if (isSensitive) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.shield_outlined,
+                                size: 12,
+                                color: isSelected ? const Color(0xFFD97706) : const Color(0xFFB45309)),
+                          ],
+                        ],
+                      ),
+                      selected: isSelected,
+                      onSelected: (_) => _toggleSkill(skill),
+                      selectedColor: isSensitive
+                          ? const Color(0xFFFEF3C7)
+                          : AppColors.primary.withValues(alpha: 0.15),
+                      checkmarkColor: isSensitive ? const Color(0xFFB45309) : AppColors.primary,
+                      labelStyle: TextStyle(
+                          color: isSelected
+                              ? (isSensitive ? const Color(0xFF78350F) : AppColors.primary)
+                              : AppColors.gray,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500),
+                      side: BorderSide(
+                          color: isSelected
+                              ? (isSensitive ? const Color(0xFFF59E0B) : AppColors.primary)
+                              : AppColors.border),
+                    );
+                  })
                   .toList(),
             ),
+            if (hasSensitive) ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.shield_rounded, color: Color(0xFFD97706), size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          'Physical Verification Required',
+                          style: TextStyle(
+                            color: Color(0xFF92400E),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Selected sensitive skills require in-person physical verification by Admin. You must submit an onboarding request before taking these tasks.',
+                      style: TextStyle(color: Color(0xFF78350F), fontSize: 11, height: 1.35),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 34,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          context.push('/physical-onboarding', extra: {'skills': _selectedSkills});
+                        },
+                        icon: const Icon(Icons.assignment_turned_in_outlined, size: 14, color: Color(0xFFB45309)),
+                        label: const Text('Fill Physical Onboarding Form',
+                            style: TextStyle(color: Color(0xFFB45309), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFD97706)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,

@@ -589,6 +589,63 @@ class AuthProvider extends ChangeNotifier {
 
   /// Simple Google sign-up/login: opens the account picker and creates or
   /// logs in the account on the backend in one step.
+  /// Submit physical onboarding & verification request to Admin for sensitive skills.
+  Future<bool> submitPhysicalOnboardingRequest({
+    required String name,
+    required String address,
+    required String primaryPhone,
+    required String alternativePhone,
+    required List<String> skills,
+    required String govtIdType,
+    required String govtIdNumber,
+    required String preferredSlot,
+    String? notes,
+  }) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final response = await ApiService.post(
+        '/helper/physical-verification/request',
+        body: {
+          'name': name.trim(),
+          'address': address.trim(),
+          'primaryPhone': primaryPhone.trim(),
+          'alternativePhone': alternativePhone.trim(),
+          'skills': skills,
+          'govtIdType': govtIdType.trim(),
+          'govtIdNumber': govtIdNumber.trim(),
+          'preferredSlot': preferredSlot.trim(),
+          if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        },
+      );
+      if (response != null && response['success'] == true) {
+        if (_user != null) {
+          _user = _user!.copyWith(physicalVerificationStatus: 'pending');
+        }
+        await refreshUser();
+        _loading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response?['message']?.toString() ?? 'Failed to submit physical onboarding request.';
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
+    } on ApiException catch (e) {
+      _error = e.message;
+      _loading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Failed to submit request. Please try again.';
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> loginWithGoogle({
     String? referralCode,
     DateTime? dob,

@@ -67,8 +67,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Future<void> _accept() async {
+    // KYC must be verified to accept a task
     final auth = context.read<AuthProvider>();
-    // auth declared above
     if (!auth.isHelperMode) {
       final switched = await showProfileModeSwitchDialog(
         context,
@@ -80,9 +80,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       );
       if (switched != true) return;
     }
-
-    // KYC must be verified to accept a task
-    // auth declared above
+    if (!mounted) return;
     if (!(auth.user?.isKycVerified ?? false)) {
       showDialog(
         context: context,
@@ -99,7 +97,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                context.push('/kyc');
+                if (mounted) context.push('/kyc');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
@@ -114,7 +112,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
 
     setState(() => _accepting = true);
-    final ok = await context.read<TaskProvider>().acceptTask(widget.taskId);
+    final taskProvider = context.read<TaskProvider>();
+    final ok = await taskProvider.acceptTask(widget.taskId);
     if (!mounted) return;
     setState(() => _accepting = false);
     if (ok) {
@@ -856,20 +855,27 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: OutlinedButton.icon(
-                          icon: const Icon(Icons.chat, size: 18),
-                          label: const Text('WhatsApp'),
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
+                          label: const Text('Chat'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF25D366),
-                            side: const BorderSide(color: Color(0xFF25D366)),
+                            foregroundColor: const Color(0xFF6366F1),
+                            side: const BorderSide(color: Color(0xFF6366F1)),
                           ),
-                          onPressed: () async {
-                            final phone = task.helperPhone!.replaceAll(RegExp(r'[^\d]'), '');
-                            final number = phone.startsWith('91') ? phone : '91$phone';
-                            final uri = Uri.parse('https://wa.me/$number');
-                            try {
-                              await launchUrl(uri,
-                                  mode: LaunchMode.externalApplication);
-                            } catch (_) {}
+                          onPressed: () {
+                            context.push(
+                              '/chat/${task.id}',
+                              extra: {
+                                'taskId': task.id,
+                                'taskTitle': task.title,
+                                'otherName': task.helperName ?? 'Helper',
+                                'otherRole': 'Helper',
+                                'otherPhone': task.helperPhone,
+                                'category': task.category,
+                                'budget': task.budget,
+                                'status': task.status,
+                                'isPoster': true,
+                              },
+                            );
                           },
                         ),
                       ),

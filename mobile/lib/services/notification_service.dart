@@ -372,8 +372,10 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     playSound: true,
   );
 
+  // Use type+task_id as the ID so skill_matched and nearby_task never collide.
+  final notifId = (type + (data['task_id'] ?? data['taskId'] ?? '')).hashCode.abs();
   await local.show(
-    id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    id: notifId,
     title: title,
     body: body,
     notificationDetails: NotificationDetails(android: androidDetails),

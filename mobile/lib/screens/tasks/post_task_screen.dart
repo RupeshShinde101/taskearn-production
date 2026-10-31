@@ -1581,6 +1581,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (switched != true) return;
       if (!mounted) return;
     }
+    if (!mounted) return;
 
     // KYC must be verified to post a task
     // auth reference
@@ -1600,7 +1601,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                context.push('/kyc');
+                if (mounted) context.push('/kyc');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,

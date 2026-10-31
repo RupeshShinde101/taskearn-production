@@ -217,10 +217,10 @@
                 <tr><td>Date of birth</td><td>To verify the 16+ age requirement</td></tr>
                 <tr><td>Password</td><td>Account login (stored only as a salted PBKDF2-SHA256 hash, never in plain text)</td></tr>
                 <tr><td>Google account profile (if you choose "Sign in with Google")</td><td>Email, name, profile picture and a Google sub-id to authenticate you</td></tr>
-                <tr><td>Profile details, photo, bio, skills</td><td>Tasker discoverability and trust</td></tr>
-                <tr><td>Task details (description, photos, address, price)</td><td>To match Posters with Taskers and run the task</td></tr>
+                <tr><td>Profile details, photo, bio, skills</td><td>Helper discoverability and AI skill-matching (skills configured exclusively in Helper mode)</td></tr>
+                <tr><td>Task details (description, photos, address, price)</td><td>To match Posters with Helpers and run the task</td></tr>
                 <tr><td>Reviews &amp; ratings</td><td>Reputation system</td></tr>
-                <tr><td>Support tickets, chat &amp; voice-call metadata</td><td>To provide customer support and resolve disputes</td></tr>
+                <tr><td>In-app 1-on-1 encrypted chat messages &amp; voice-call metadata</td><td>Secure communication between matched Poster and Helper for task coordination, safety, and dispute resolution</td></tr>
                 <tr><td>UPI/bank details for payouts (Taskers)</td><td>Collected and stored by Razorpay; only a token reference is held by us</td></tr>
             </table>
             <h3>3.2 Information collected automatically</h3>
@@ -241,7 +241,8 @@
             <p>We process personal data to:</p>
             <ul>
                 <li>Create and operate your account and the marketplace;</li>
-                <li>Match Posters and Taskers and enable in-app chat &amp; voice calls;</li>
+                <li>Match Posters and Helpers and facilitate secure, end-to-end encrypted 1-on-1 in-app chat &amp; voice calls;</li>
+                <li>Enforce platform rules, prevent off-platform bypass or fraud, and protect task escrow;</li>
                 <li>Process wallet top-ups, task payments, service charges, platform commission deductions and Tasker payouts via Razorpay;</li>
                 <li>Calculate and apply service charges (for Delivery &amp; Pick/Drop tasks) and deduct platform commission (20% for all categories) from Tasker payouts on task completion;</li>
                 <li>Send essential transactional email (e.g. task accepted, payment receipt, commission statement, password reset) via SendGrid;</li>
@@ -256,7 +257,7 @@
 
             <h2>5. Who We Share Information With</h2>
             <h3>5.1 With other users</h3>
-            <p>Your display name, profile photo, ratings, reviews and approximate location are visible on the Platform. After a Tasker accepts a Poster's task, the two parties' phone numbers and exact task location may be shared between them to enable the task.</p>
+            <p>Your display name, profile photo, ratings, reviews and approximate location are visible on the Platform. Once a Helper is assigned to a task, both parties communicate directly and safely via the secure in-app encrypted chat and in-app voice call, keeping personal messaging accounts (such as WhatsApp) and private contact details protected.</p>
             <h3>5.2 With service providers (processors)</h3>
             <ul>
                 <li><strong>Razorpay Software Pvt. Ltd.</strong> — payment gateway, KYC for payouts, fraud screening;</li>
@@ -282,7 +283,8 @@
                 <li>Authentication uses signed JWT tokens stored on the user's device;</li>
                 <li>The database is hosted in a managed environment with access restricted to authorised personnel;</li>
                 <li>Payment card and bank details are never stored on our servers — they are handled directly by Razorpay (PCI-DSS compliant);</li>
-                <li>We monitor for abuse and apply rate-limiting and audit logging.</li>
+                <li>We monitor for abuse and apply rate-limiting and audit logging;</li>
+                <li>In-app 1-on-1 chat messages are encrypted and secured in transit and at rest, restricted exclusively to the matched Poster and Helper for that specific task.</li>
             </ul>
             <p>No system can be guaranteed 100% secure. In the event of a personal data breach affecting you, we will notify you and the Data Protection Board of India in line with the DPDP Act.</p>
 
@@ -290,7 +292,7 @@
             <table>
                 <tr><th>Data Type</th><th>Retention Period</th></tr>
                 <tr><td>Account profile</td><td>Until account deletion + up to 30 days in backups</td></tr>
-                <tr><td>Task records, chat &amp; reviews</td><td>Up to 5 years (dispute &amp; tax records)</td></tr>
+                <tr><td>Task records, encrypted in-app chat &amp; reviews</td><td>Up to 5 years (dispute &amp; tax records)</td></tr>
                 <tr><td>Wallet ledger &amp; payment records</td><td>Up to 8 years (Income-tax &amp; financial regulations)</td></tr>
                 <tr><td>Voice-call signalling metadata</td><td>Up to 90 days (no audio is recorded by Workmate4u)</td></tr>
                 <tr><td>Server access logs</td><td>Up to 12 months</td></tr>

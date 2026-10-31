@@ -45,10 +45,10 @@ class PrivacyScreen extends StatelessWidget {
                     'Date of birth — to verify the 16+ age requirement.',
                     'Password — stored only as a salted PBKDF2-SHA256 hash; never in plain text.',
                     'Google account profile (if you use Sign-in with Google) — email, name, profile picture and a Google sub-ID.',
-                    'Profile details, photo, bio, skills — Tasker discoverability and trust.',
-                    'Task details (description, photos, address, price) — to match Posters with Taskers.',
+                    'Profile details, photo, bio, skills — Helper discoverability and AI skill-matching (skills configured exclusively in Helper mode).',
+                    'Task details (description, photos, address, price) — to match Posters with Helpers.',
                     'Reviews & ratings — reputation system.',
-                    'Support tickets, chat & voice-call metadata — customer support and dispute resolution.',
+                    'In-app 1-on-1 encrypted chat messages & voice-call metadata — secure communication between matched Poster and Helper for task coordination, support, and dispute resolution.',
                     'UPI/bank details for payouts (Taskers) — collected and stored by Razorpay; we hold only a token reference.',
                   ]),
               const _SubSection('3.2 Information collected automatically', null,
@@ -68,7 +68,8 @@ class PrivacyScreen extends StatelessWidget {
             _section('4. How We Use Your Information',
                 'We process personal data to:', bullets: [
               'Create and operate your account and the marketplace;',
-              'Match Posters and Taskers and enable in-app chat & voice calls;',
+              'Match Posters and Helpers and facilitate secure, end-to-end encrypted 1-on-1 in-app chat & voice calls;',
+              'Enforce platform rules, prevent off-platform bypass or fraud, and protect task escrow;',
               'Process wallet top-ups, task payments, service charges, platform commission deductions and Tasker payouts via Razorpay;',
               'Send essential transactional notifications (task accepted, payment receipt, commission statement, password reset);',
               'Show approximate distance and (with your consent) live tracking during a task;',
@@ -83,7 +84,7 @@ class PrivacyScreen extends StatelessWidget {
 
             _section('5. Who We Share Information With', null, subsections: [
               const _SubSection('5.1 With other users',
-                  'Your display name, profile photo, ratings and approximate location are visible on the Platform. After a Tasker accepts a task, both parties\' phone numbers and exact task location may be shared between them to enable the task.'),
+                  'Your display name, profile photo, ratings and approximate location are visible on the Platform. Once a Helper is assigned to a task, both parties communicate directly via the secure in-app encrypted chat and in-app voice call, keeping personal messaging accounts (such as WhatsApp) and private contact details protected.'),
               const _SubSection('5.2 With service providers', null, bullets: [
                 'Razorpay Software Pvt. Ltd. — payment gateway, KYC for payouts, fraud screening.',
                 'Google LLC — Sign-In authentication and Google Maps navigation links.',
@@ -107,6 +108,7 @@ class PrivacyScreen extends StatelessWidget {
               'The database is hosted in a managed environment with access restricted to authorised personnel.',
               'Payment card and bank details are never stored on our servers — they are handled directly by Razorpay (PCI-DSS compliant).',
               'We monitor for abuse and apply rate-limiting and audit logging.',
+              'In-app 1-on-1 chat messages are encrypted and secured in transit and at rest, restricted exclusively to the matched Poster and Helper for that specific task.',
             ]),
             _infoBox(
                 '⚠️ No system can be guaranteed 100% secure. In the event of a personal data breach, we will notify you and the Data Protection Board of India in line with the DPDP Act, 2023.'),
@@ -213,7 +215,7 @@ class PrivacyScreen extends StatelessWidget {
   Widget _retentionTable() {
     const rows = [
       ['Account profile', 'Until deletion + 30 days in backups'],
-      ['Task records, chat & reviews', 'Up to 5 years (disputes & tax)'],
+      ['Task records, encrypted in-app chat & reviews', 'Up to 5 years (disputes & tax)'],
       ['Wallet & payment records', 'Up to 8 years (financial regulations)'],
       ['Voice-call signalling metadata', 'Up to 90 days (no audio recorded)'],
       ['Server access logs', 'Up to 12 months'],

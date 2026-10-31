@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +10,7 @@ import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/chat_encryption_service.dart';
+import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -111,7 +113,41 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (_) {}
   }
 
+  String get _cacheKey => 'cached_chat_messages_${widget.taskId}';
+
+  List<ChatMessage> _loadCachedMessages() {
+    try {
+      final raw = StorageService.getString(_cacheKey);
+      if (raw != null && raw.isNotEmpty) {
+        final list = jsonDecode(raw) as List? ?? [];
+        return list
+            .whereType<Map<String, dynamic>>()
+            .map((j) => ChatMessage.fromJson(j, fallbackTaskId: widget.taskId))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  void _persistCachedMessages(List<ChatMessage> msgs) {
+    try {
+      final jsonList = msgs.map((m) => m.toJson()).toList();
+      StorageService.setString(_cacheKey, jsonEncode(jsonList));
+    } catch (_) {}
+  }
+
   Future<void> _loadMessages() async {
+    // 1. Show cached messages immediately for instant offline/resilient access
+    final cached = _loadCachedMessages();
+    if (cached.isNotEmpty && mounted) {
+      setState(() {
+        _messages = cached;
+        _loading = false;
+      });
+      _scrollToBottom();
+    }
+
+    // 2. Fetch latest from server
     try {
       final data = await ApiService.get('/chat/${widget.taskId}/messages');
       final msgs = (data['messages'] as List? ?? [])
@@ -123,11 +159,12 @@ class _ChatScreenState extends State<ChatScreen> {
           _messages = msgs;
           _loading = false;
         });
+        _persistCachedMessages(msgs);
         _scrollToBottom();
       }
     } catch (e) {
       debugPrint('[ChatScreen] Load messages error: $e');
-      if (mounted) setState(() => _loading = false);
+      if (mounted && _messages.isEmpty) setState(() => _loading = false);
     }
   }
 
@@ -151,6 +188,7 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _messages = merged;
         });
+        _persistCachedMessages(merged);
         _scrollToBottom();
       }
     } catch (e) {
@@ -186,6 +224,7 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _messages.add(optimisticMsg);
     });
+    _persistCachedMessages(_messages);
     _scrollToBottom();
 
     try {
@@ -217,6 +256,7 @@ class _ChatScreenState extends State<ChatScreen> {
               );
             }
           });
+          _persistCachedMessages(_messages);
         }
       }
 

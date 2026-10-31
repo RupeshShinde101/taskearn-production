@@ -5954,10 +5954,7 @@ def admin_process_withdrawal():
 _chat_messages_ensured = False
 
 def _ensure_chat_messages_table():
-    """Ensure chat_messages table and indexes exist in PostgreSQL (idempotent)."""
-    global _chat_messages_ensured
-    if _chat_messages_ensured:
-        return
+    """Ensure chat_messages table and all columns exist in PostgreSQL (idempotent)."""
     try:
         with get_db() as (cursor, conn):
             cursor.execute('''
@@ -5967,20 +5964,34 @@ def _ensure_chat_messages_table():
                     user_id VARCHAR(50) NOT NULL,
                     user_name VARCHAR(255),
                     message TEXT NOT NULL,
-                    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            for col_sql in [
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_name VARCHAR(255)',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+            ]:
+                try:
+                    cursor.execute(col_sql)
+                except Exception as col_err:
+                    print(f"[Chat] {col_sql} notice: {col_err}")
+
             try:
-                cursor.execute('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_name VARCHAR(255)')
-            except Exception as e:
-                print(f"[Chat] ALTER TABLE user_name warning: {e}")
+                cursor.execute("UPDATE chat_messages SET timestamp = created_at WHERE timestamp IS NULL")
+            except Exception:
+                pass
+            try:
+                cursor.execute("UPDATE chat_messages SET created_at = timestamp WHERE created_at IS NULL")
+            except Exception:
+                pass
+
             try:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_task_id ON chat_messages(task_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)')
             except Exception:
                 pass
-        _chat_messages_ensured = True
-        print("[Chat] ✅ chat_messages table verified")
     except Exception as e:
         print(f"[Chat] ⚠️ _ensure_chat_messages_table error: {e}")
 
@@ -6028,14 +6039,36 @@ def get_chat_messages(task_id):
             if not is_participant:
                 return jsonify({'success': False, 'message': 'Unauthorized: You are not a participant in this task'}), 403
             
-            # Get messages
+            # Get messages dynamically based on actual columns present
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'chat_messages'
+            """)
+            col_set = {
+                (row['column_name'] if isinstance(row, dict) else row[0]).lower()
+                for row in cursor.fetchall()
+            }
+
+            user_name_expr = "COALESCE(user_name, 'User') as user_name" if 'user_name' in col_set else "'User' as user_name"
+            if 'timestamp' in col_set:
+                time_expr = "timestamp"
+            elif 'created_at' in col_set:
+                time_expr = "created_at as timestamp"
+            elif 'sent_at' in col_set:
+                time_expr = "sent_at as timestamp"
+            else:
+                time_expr = "CURRENT_TIMESTAMP as timestamp"
+
+            order_col = 'timestamp' if 'timestamp' in col_set else ('created_at' if 'created_at' in col_set else 'id')
+
             cursor.execute(f'''
                 SELECT id, task_id, user_id, 
-                       COALESCE(user_name, 'User') as user_name, 
-                       message, timestamp
+                       {user_name_expr}, 
+                       message, {time_expr}
                 FROM chat_messages
                 WHERE task_id = {PH}
-                ORDER BY timestamp ASC
+                ORDER BY {order_col} ASC
             ''', (task_id,))
             messages = [dict_from_row(row) for row in cursor.fetchall()]
         
@@ -6110,14 +6143,43 @@ def send_chat_message(task_id):
             if not user_name:
                 user_name = 'User'
             
-            # Store message
+            # Store message dynamically based on actual columns present
             now_dt = datetime.datetime.now(datetime.timezone.utc)
             timestamp_iso = now_dt.isoformat()
+
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'chat_messages'
+            """)
+            col_set = {
+                (row['column_name'] if isinstance(row, dict) else row[0]).lower()
+                for row in cursor.fetchall()
+            }
+
+            fields = ['task_id', 'user_id', 'message']
+            values = [task_id, uid, message]
+
+            if 'user_name' in col_set:
+                fields.append('user_name')
+                values.append(user_name)
+
+            if 'timestamp' in col_set:
+                fields.append('timestamp')
+                values.append(now_dt)
+
+            if 'created_at' in col_set:
+                fields.append('created_at')
+                values.append(now_dt)
+
+            placeholders = ', '.join([PH] * len(fields))
+            cols_sql = ', '.join(fields)
+
             cursor.execute(f'''
-                INSERT INTO chat_messages (task_id, user_id, user_name, message, timestamp)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                INSERT INTO chat_messages ({cols_sql})
+                VALUES ({placeholders})
                 RETURNING id
-            ''', (task_id, uid, user_name, message, now_dt))
+            ''', tuple(values))
             inserted = cursor.fetchone()
             msg_id = inserted['id'] if inserted and isinstance(inserted, dict) and 'id' in inserted else (inserted[0] if inserted else None)
 

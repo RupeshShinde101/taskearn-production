@@ -742,11 +742,16 @@ def init_postgres_db():
             print(f"[DB] \u26a0\ufe0f  Could not add drop_location columns: {e}")
 
         # Ensure chat_messages columns exist
-        try:
-            cursor.execute('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_name VARCHAR(255)')
-            print("[DB] \u2705 user_name column added to chat_messages or already exists")
-        except Exception as e:
-            print(f"[DB] \u26a0\ufe0f  Could not add user_name to chat_messages: {e}")
+        for col_sql in [
+            'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_name VARCHAR(255)',
+            'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+            'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+        ]:
+            try:
+                cursor.execute(col_sql)
+                print(f"[DB] \u2705 {col_sql}")
+            except Exception as e:
+                print(f"[DB] \u26a0\ufe0f  {col_sql} error: {e}")
         
         # ========================================
         # CREATE SYSTEM/COMPANY USER

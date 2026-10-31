@@ -5971,6 +5971,10 @@ def _ensure_chat_messages_table():
                 )
             ''')
             try:
+                cursor.execute('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_name VARCHAR(255)')
+            except Exception as e:
+                print(f"[Chat] ALTER TABLE user_name warning: {e}")
+            try:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_task_id ON chat_messages(task_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)')
             except Exception:
@@ -6026,7 +6030,9 @@ def get_chat_messages(task_id):
             
             # Get messages
             cursor.execute(f'''
-                SELECT id, task_id, user_id, user_name, message, timestamp
+                SELECT id, task_id, user_id, 
+                       COALESCE(user_name, 'User') as user_name, 
+                       message, timestamp
                 FROM chat_messages
                 WHERE task_id = {PH}
                 ORDER BY timestamp ASC

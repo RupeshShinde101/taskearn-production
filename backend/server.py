@@ -5961,7 +5961,9 @@ def _ensure_chat_messages_table():
                 CREATE TABLE IF NOT EXISTS chat_messages (
                     id SERIAL PRIMARY KEY,
                     task_id INTEGER NOT NULL,
-                    user_id VARCHAR(50) NOT NULL,
+                    user_id VARCHAR(50),
+                    sender_id VARCHAR(50),
+                    receiver_id VARCHAR(50),
                     user_name VARCHAR(255),
                     message TEXT NOT NULL,
                     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -5970,14 +5972,28 @@ def _ensure_chat_messages_table():
             ''')
             for col_sql in [
                 'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_name VARCHAR(255)',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_id VARCHAR(50)',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_id VARCHAR(50)',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS receiver_id VARCHAR(50)',
                 'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
                 'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+                'ALTER TABLE chat_messages ALTER COLUMN sender_id DROP NOT NULL',
+                'ALTER TABLE chat_messages ALTER COLUMN receiver_id DROP NOT NULL',
+                'ALTER TABLE chat_messages ALTER COLUMN user_id DROP NOT NULL',
             ]:
                 try:
                     cursor.execute(col_sql)
                 except Exception as col_err:
-                    print(f"[Chat] {col_sql} notice: {col_err}")
+                    pass
 
+            try:
+                cursor.execute("UPDATE chat_messages SET user_id = sender_id WHERE user_id IS NULL AND sender_id IS NOT NULL")
+            except Exception:
+                pass
+            try:
+                cursor.execute("UPDATE chat_messages SET sender_id = user_id WHERE sender_id IS NULL AND user_id IS NOT NULL")
+            except Exception:
+                pass
             try:
                 cursor.execute("UPDATE chat_messages SET timestamp = created_at WHERE timestamp IS NULL")
             except Exception:
@@ -6050,8 +6066,11 @@ def get_chat_messages(task_id):
                 for row in cursor.fetchall()
             }
 
+            user_id_expr = "COALESCE(user_id, sender_id, '') as user_id" if ('user_id' in col_set or 'sender_id' in col_set) else "'' as user_id"
             user_name_expr = "COALESCE(user_name, 'User') as user_name" if 'user_name' in col_set else "'User' as user_name"
-            if 'timestamp' in col_set:
+            if 'timestamp' in col_set and 'created_at' in col_set:
+                time_expr = "COALESCE(timestamp, created_at) as timestamp"
+            elif 'timestamp' in col_set:
                 time_expr = "timestamp"
             elif 'created_at' in col_set:
                 time_expr = "created_at as timestamp"
@@ -6063,7 +6082,8 @@ def get_chat_messages(task_id):
             order_col = 'timestamp' if 'timestamp' in col_set else ('created_at' if 'created_at' in col_set else 'id')
 
             cursor.execute(f'''
-                SELECT id, task_id, user_id, 
+                SELECT id, task_id, 
+                       {user_id_expr}, 
                        {user_name_expr}, 
                        message, {time_expr}
                 FROM chat_messages
@@ -6146,6 +6166,7 @@ def send_chat_message(task_id):
             # Store message dynamically based on actual columns present
             now_dt = datetime.datetime.now(datetime.timezone.utc)
             timestamp_iso = now_dt.isoformat()
+            recipient_id = accepted_by if uid == posted_by else posted_by
 
             cursor.execute("""
                 SELECT column_name 
@@ -6157,8 +6178,20 @@ def send_chat_message(task_id):
                 for row in cursor.fetchall()
             }
 
-            fields = ['task_id', 'user_id', 'message']
-            values = [task_id, uid, message]
+            fields = ['task_id', 'message']
+            values = [task_id, message]
+
+            if 'user_id' in col_set:
+                fields.append('user_id')
+                values.append(uid)
+
+            if 'sender_id' in col_set:
+                fields.append('sender_id')
+                values.append(uid)
+
+            if 'receiver_id' in col_set:
+                fields.append('receiver_id')
+                values.append(recipient_id if recipient_id else uid)
 
             if 'user_name' in col_set:
                 fields.append('user_name')
@@ -6171,6 +6204,14 @@ def send_chat_message(task_id):
             if 'created_at' in col_set:
                 fields.append('created_at')
                 values.append(now_dt)
+
+            if 'message_type' in col_set:
+                fields.append('message_type')
+                values.append('text')
+
+            if 'is_read' in col_set:
+                fields.append('is_read')
+                values.append(False)
 
             placeholders = ', '.join([PH] * len(fields))
             cols_sql = ', '.join(fields)

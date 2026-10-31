@@ -741,11 +741,17 @@ def init_postgres_db():
         except Exception as e:
             print(f"[DB] \u26a0\ufe0f  Could not add drop_location columns: {e}")
 
-        # Ensure chat_messages columns exist
+        # Ensure chat_messages columns exist and legacy constraints are dropped
         for col_sql in [
             'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_name VARCHAR(255)',
+            'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_id VARCHAR(50)',
+            'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_id VARCHAR(50)',
+            'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS receiver_id VARCHAR(50)',
             'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
             'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+            'ALTER TABLE chat_messages ALTER COLUMN sender_id DROP NOT NULL',
+            'ALTER TABLE chat_messages ALTER COLUMN receiver_id DROP NOT NULL',
+            'ALTER TABLE chat_messages ALTER COLUMN user_id DROP NOT NULL',
         ]:
             try:
                 cursor.execute(col_sql)

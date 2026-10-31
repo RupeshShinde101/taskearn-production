@@ -248,110 +248,111 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
             ],
 
-            // ── Skills section ───────────────────────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => _showSkills = !_showSkills),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          const Text('My Skills',
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600)),
-                          if (user?.skills != null &&
-                              user!.skills.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 6),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius:
-                                      BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '${user.skills.length}',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold),
+            // ── Skills section (Helper only) ─────────────────────────────────
+            if (auth.isHelperMode) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _showSkills = !_showSkills),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            const Text('My Skills',
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600)),
+                            if (user?.skills != null &&
+                                user!.skills.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    borderRadius:
+                                        BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${user.skills.length}',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold),
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (user?.skills != null && user!.skills.isNotEmpty)
+                  if (user?.skills != null && user!.skills.isNotEmpty)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showSkillsDialog(context, auth),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 8),
+                        child: Icon(Icons.edit_outlined,
+                            size: 20, color: AppColors.gray),
+                      ),
+                    ),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => _showSkillsDialog(context, auth),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 8),
-                      child: Icon(Icons.edit_outlined,
-                          size: 20, color: AppColors.gray),
+                    onTap: () =>
+                        setState(() => _showSkills = !_showSkills),
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                          left: 4, top: 8, bottom: 8),
+                      child: Icon(
+                        _showSkills
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        color: AppColors.gray,
+                      ),
                     ),
                   ),
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () =>
-                      setState(() => _showSkills = !_showSkills),
-                  child: Padding(
-                    padding: const EdgeInsets.only(
-                        left: 4, top: 8, bottom: 8),
-                    child: Icon(
-                      _showSkills
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
-                      color: AppColors.gray,
+                ],
+              ),
+              if (_showSkills) ...[
+                const SizedBox(height: 8),
+                if (user?.skills == null || user!.skills.isEmpty)
+                  _EmptySkillsHint(
+                      onAdd: () => _showSkillsDialog(context, auth))
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.light,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: user.skills
+                          .map((s) => Chip(
+                                label: Text(s),
+                                backgroundColor: AppColors.primary
+                                    .withValues(alpha: 0.1),
+                                labelStyle: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w500),
+                                side: BorderSide(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.3)),
+                              ))
+                          .toList(),
                     ),
                   ),
-                ),
               ],
-            ),
-            if (_showSkills) ...[  
-              const SizedBox(height: 8),
-              if (user?.skills == null || user!.skills.isEmpty)
-                _EmptySkillsHint(
-                    onAdd: () => _showSkillsDialog(context, auth))
-              else
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.light,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: user.skills
-                        .map((s) => Chip(
-                              label: Text(s),
-                              backgroundColor: AppColors.primary
-                                  .withValues(alpha: 0.1),
-                              labelStyle: const TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w500),
-                              side: BorderSide(
-                                  color: AppColors.primary
-                                      .withValues(alpha: 0.3)),
-                            ))
-                        .toList(),
-                  ),
-                ),
+              const SizedBox(height: 20),
             ],
-
-            const SizedBox(height: 20),
 
             // ── Menu items ───────────────────────────────────────────────────
             Card(

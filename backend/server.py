@@ -1422,7 +1422,7 @@ def join_task(data):
 
 @socketio.event
 def send_message(data):
-    """Send a chat message"""
+    """Send a chat message via Socket.IO"""
     message = data.get('message', '').strip()
     task_id = data.get('taskId')
     token = data.get('token')
@@ -1434,13 +1434,18 @@ def send_message(data):
     if not payload:
         return
     
-    user_id = payload['user_id']
+    user_id = str(payload['user_id'])
     user_name = data.get('userName', 'User')
     
-    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    timestamp = now_dt.isoformat()
     room = f'task_{task_id}'
     
-    # Store message in database and notify recipient
+    recipient_id = None
+    notif_title = f'💬 Message from {user_name}'
+    notif_body = f'New message from {user_name}'
+    msg_id = None
+
     with get_db() as (cursor, conn):
         _ensure_chat_messages_table()
         cursor.execute(f'SELECT id, title, posted_by, accepted_by FROM tasks WHERE id = {PH}', (task_id,))
@@ -1450,43 +1455,33 @@ def send_message(data):
         posted_by = str(task_dict.get('posted_by') or '').strip()
         accepted_by = str(task_dict.get('accepted_by') or '').strip()
 
-        cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'chat_messages'
-        """)
-        col_set = {
-            (row['column_name'] if isinstance(row, dict) else row[0]).lower()
-            for row in cursor.fetchall()
-        }
+        col_set = _get_chat_columns(cursor)
+
+        if user_id == posted_by:
+            recipient_id = accepted_by if accepted_by else None
+        elif accepted_by and user_id == accepted_by:
+            recipient_id = posted_by if posted_by else None
 
         fields = ['task_id', 'message']
         values = [task_id, message]
         if 'user_id' in col_set:
             fields.append('user_id')
-            values.append(str(user_id))
+            values.append(user_id)
         if 'sender_id' in col_set:
             fields.append('sender_id')
-            values.append(str(user_id))
+            values.append(user_id)
+        if 'receiver_id' in col_set:
+            fields.append('receiver_id')
+            values.append(recipient_id if recipient_id else user_id)
         if 'user_name' in col_set:
             fields.append('user_name')
             values.append(user_name)
         if 'timestamp' in col_set:
             fields.append('timestamp')
-            values.append(timestamp)
+            values.append(now_dt)
         if 'created_at' in col_set:
             fields.append('created_at')
-            values.append(timestamp)
-
-        recipient_id = None
-        if str(user_id) == posted_by:
-            recipient_id = accepted_by if accepted_by else None
-        elif accepted_by and str(user_id) == accepted_by:
-            recipient_id = posted_by if posted_by else None
-
-        if recipient_id and 'receiver_id' in col_set:
-            fields.append('receiver_id')
-            values.append(recipient_id)
+            values.append(now_dt)
 
         cols_sql = ', '.join(fields)
         placeholders = ', '.join([PH] * len(fields))
@@ -1494,7 +1489,10 @@ def send_message(data):
         cursor.execute(f'''
             INSERT INTO chat_messages ({cols_sql})
             VALUES ({placeholders})
+            RETURNING id
         ''', tuple(values))
+        inserted = cursor.fetchone()
+        msg_id = inserted['id'] if inserted and isinstance(inserted, dict) and 'id' in inserted else (inserted[0] if inserted else None)
 
         if recipient_id:
             task_title = task_dict.get("title") or "Task"
@@ -1506,7 +1504,7 @@ def send_message(data):
                     'taskId': str(task_id),
                     'task_id': str(task_id),
                     'senderName': user_name,
-                    'senderId': str(user_id)
+                    'senderId': user_id
                 })
                 cursor.execute(f'''
                     INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
@@ -1514,7 +1512,20 @@ def send_message(data):
                 ''', (recipient_id, task_id, 'chat_message', notif_title, notif_body, 'unread', notif_data, timestamp))
             except Exception as n_err:
                 print(f'[Chat Socket] DB notification warning: {n_err}')
-            
+
+    # Broadcast message to task room
+    socketio.emit('new_message', {
+        'id': msg_id,
+        'taskId': task_id,
+        'userId': user_id,
+        'userName': user_name,
+        'message': message,
+        'timestamp': timestamp
+    }, room=room)
+
+    if recipient_id:
+        import threading
+        def _async_push_socket():
             try:
                 send_fcm_to_user(
                     recipient_id,
@@ -1525,7 +1536,7 @@ def send_message(data):
                         'task_id': str(task_id),
                         'taskId': str(task_id),
                         'sender_name': str(user_name),
-                        'sender_id': str(user_id),
+                        'sender_id': user_id,
                     },
                     channel='workmate4u_chat'
                 )
@@ -1537,14 +1548,7 @@ def send_message(data):
             except Exception as p_err:
                 print(f'[Chat Socket] Web push warning: {p_err}')
 
-    # Broadcast message to task room
-    socketio.emit('new_message', {
-        'taskId': task_id,
-        'userId': str(user_id),
-        'userName': user_name,
-        'message': message,
-        'timestamp': timestamp
-    }, room=room)
+        threading.Thread(target=_async_push_socket, daemon=True).start()
     
     print(f"💬 Message from {user_name}: {message[:50]}...")
 
@@ -6083,9 +6087,31 @@ def admin_process_withdrawal():
     return jsonify({'success': True, 'message': f'Withdrawal {action}d successfully', 'newStatus': new_status})
 
 _chat_messages_ensured = False
+_chat_columns_cache = None
+
+def _get_chat_columns(cursor):
+    global _chat_columns_cache
+    if _chat_columns_cache is not None:
+        return _chat_columns_cache
+    try:
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'chat_messages'
+        """)
+        _chat_columns_cache = {
+            (row['column_name'] if isinstance(row, dict) else row[0]).lower()
+            for row in cursor.fetchall()
+        }
+    except Exception:
+        _chat_columns_cache = {'id', 'task_id', 'user_id', 'sender_id', 'receiver_id', 'user_name', 'message', 'timestamp', 'created_at'}
+    return _chat_columns_cache
 
 def _ensure_chat_messages_table():
-    """Ensure chat_messages table and all columns exist in PostgreSQL (idempotent)."""
+    """Ensure chat_messages table and all columns exist in PostgreSQL (one-time per process)."""
+    global _chat_messages_ensured
+    if _chat_messages_ensured:
+        return
     try:
         with get_db() as (cursor, conn):
             cursor.execute('''
@@ -6114,31 +6140,16 @@ def _ensure_chat_messages_table():
             ]:
                 try:
                     cursor.execute(col_sql)
-                except Exception as col_err:
+                except Exception:
                     pass
-
-            try:
-                cursor.execute("UPDATE chat_messages SET user_id = sender_id WHERE user_id IS NULL AND sender_id IS NOT NULL")
-            except Exception:
-                pass
-            try:
-                cursor.execute("UPDATE chat_messages SET sender_id = user_id WHERE sender_id IS NULL AND user_id IS NOT NULL")
-            except Exception:
-                pass
-            try:
-                cursor.execute("UPDATE chat_messages SET timestamp = created_at WHERE timestamp IS NULL")
-            except Exception:
-                pass
-            try:
-                cursor.execute("UPDATE chat_messages SET created_at = timestamp WHERE created_at IS NULL")
-            except Exception:
-                pass
 
             try:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_task_id ON chat_messages(task_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)')
             except Exception:
                 pass
+        _chat_messages_ensured = True
+        print("[Chat] chat_messages table and indexes verified ✅")
     except Exception as e:
         print(f"[Chat] ⚠️ _ensure_chat_messages_table error: {e}")
 
@@ -6186,16 +6197,8 @@ def get_chat_messages(task_id):
             if not is_participant:
                 return jsonify({'success': False, 'message': 'Unauthorized: You are not a participant in this task'}), 403
             
-            # Get messages dynamically based on actual columns present
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'chat_messages'
-            """)
-            col_set = {
-                (row['column_name'] if isinstance(row, dict) else row[0]).lower()
-                for row in cursor.fetchall()
-            }
+            # Dynamic read based on actual columns (cached)
+            col_set = _get_chat_columns(cursor)
 
             user_id_expr = "COALESCE(user_id, sender_id, '') as user_id" if ('user_id' in col_set or 'sender_id' in col_set) else "'' as user_id"
             user_name_expr = "COALESCE(user_name, 'User') as user_name" if 'user_name' in col_set else "'User' as user_name"
@@ -6249,6 +6252,13 @@ def send_chat_message(task_id):
             return jsonify({'success': False, 'message': 'Message too long (max 5000 chars)'}), 400
         
         uid = str(request.user_id)
+        recipient_id = None
+        user_name = 'User'
+        notif_title = ''
+        notif_body = ''
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        timestamp_iso = now_dt.isoformat()
+
         with get_db() as (cursor, conn):
             # Verify user is part of this task
             cursor.execute(f'SELECT id, title, posted_by, accepted_by FROM tasks WHERE id = {PH}', (task_id,))
@@ -6258,8 +6268,8 @@ def send_chat_message(task_id):
                 return jsonify({'success': False, 'message': 'Task not found'}), 404
             
             task_dict = dict_from_row(task)
-            posted_by = str(task_dict.get('posted_by') or '')
-            accepted_by = str(task_dict.get('accepted_by') or '')
+            posted_by = str(task_dict.get('posted_by') or '').strip()
+            accepted_by = str(task_dict.get('accepted_by') or '').strip()
             
             # Authorize: user is poster, accepted helper, or matched by phone
             is_participant = (uid == posted_by or uid == accepted_by)
@@ -6293,21 +6303,18 @@ def send_chat_message(task_id):
                 user_name = (dict_from_row(user_row) or {}).get('name') if user_row else 'User'
             if not user_name:
                 user_name = 'User'
-            
-            # Store message dynamically based on actual columns present
-            now_dt = datetime.datetime.now(datetime.timezone.utc)
-            timestamp_iso = now_dt.isoformat()
-            recipient_id = accepted_by if uid == posted_by else posted_by
 
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'chat_messages'
-            """)
-            col_set = {
-                (row['column_name'] if isinstance(row, dict) else row[0]).lower()
-                for row in cursor.fetchall()
-            }
+            if uid == posted_by:
+                recipient_id = accepted_by if accepted_by else None
+            elif accepted_by and uid == accepted_by:
+                recipient_id = posted_by if posted_by else None
+            else:
+                if posted_by and uid != posted_by:
+                    recipient_id = posted_by
+                elif accepted_by and uid != accepted_by:
+                    recipient_id = accepted_by
+
+            col_set = _get_chat_columns(cursor)
 
             fields = ['task_id', 'message']
             values = [task_id, message]
@@ -6355,42 +6362,11 @@ def send_chat_message(task_id):
             inserted = cursor.fetchone()
             msg_id = inserted['id'] if inserted and isinstance(inserted, dict) and 'id' in inserted else (inserted[0] if inserted else None)
 
-            # Emit via Socket.IO if available
-            try:
-                room = f'task_{task_id}'
-                socketio.emit('new_message', {
-                    'id': msg_id,
-                    'taskId': task_id,
-                    'userId': uid,
-                    'userName': user_name,
-                    'message': message,
-                    'timestamp': timestamp_iso
-                }, room=room)
-            except Exception as se:
-                print(f'[Chat] Socket.IO emit error: {se}')
-
-            # Create in-app notification & FCM push notification for recipient
-            posted_by = str(task_dict.get('posted_by') or '').strip()
-            accepted_by = str(task_dict.get('accepted_by') or '').strip()
-            uid = str(uid).strip()
-
-            recipient_id = None
-            if uid == posted_by:
-                recipient_id = accepted_by if accepted_by else None
-            elif accepted_by and uid == accepted_by:
-                recipient_id = posted_by if posted_by else None
-            else:
-                if posted_by and uid != posted_by:
-                    recipient_id = posted_by
-                elif accepted_by and uid != accepted_by:
-                    recipient_id = accepted_by
-
+            # In-app DB notification insert
             if recipient_id:
                 task_title = task_dict.get("title") or "Task"
                 notif_title = f'💬 Message from {user_name}'
                 notif_body = f'{user_name}: New message on "{task_title}"'
-                
-                # DB notification insert
                 try:
                     notif_data = json.dumps({
                         'type': 'chat',
@@ -6405,8 +6381,28 @@ def send_chat_message(task_id):
                     ''', (recipient_id, task_id, 'chat_message', notif_title, notif_body, 'unread', notif_data, timestamp_iso))
                 except Exception as n_err:
                     print(f'[Chat] DB notification insert warning: {n_err}')
-                
-                # Send FCM push notification (Android/iOS)
+
+        # ── Database transaction is committed immediately here ──
+
+        # Emit via Socket.IO if available (memory operation, instant)
+        try:
+            room = f'task_{task_id}'
+            socketio.emit('new_message', {
+                'id': msg_id,
+                'taskId': task_id,
+                'userId': uid,
+                'userName': user_name,
+                'message': message,
+                'timestamp': timestamp_iso
+            }, room=room)
+        except Exception as se:
+            print(f'[Chat] Socket.IO emit error: {se}')
+
+        # Dispatch FCM and WebPush asynchronously in daemon thread
+        # (Must NEVER block or slow down client HTTP response)
+        if recipient_id:
+            import threading
+            def _dispatch_push():
                 try:
                     send_fcm_to_user(
                         recipient_id,
@@ -6421,16 +6417,16 @@ def send_chat_message(task_id):
                         },
                         channel='workmate4u_chat'
                     )
-                    print(f'[Chat] Sent FCM to recipient {recipient_id} for task {task_id}')
-                except Exception as fcm_err:
-                    print(f'[Chat] FCM send warning: {fcm_err}')
-
-                # Web push fallback
+                    print(f'[Chat] Async FCM delivered to {recipient_id}')
+                except Exception as fe:
+                    print(f'[Chat] Async FCM error: {fe}')
                 try:
                     send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
-                except Exception as p_err:
-                    print(f'[Chat] Web push warning: {p_err}')
-        
+                except Exception as pe:
+                    print(f'[Chat] Async WebPush error: {pe}')
+
+            threading.Thread(target=_dispatch_push, daemon=True).start()
+
         return jsonify({
             'success': True,
             'message': {

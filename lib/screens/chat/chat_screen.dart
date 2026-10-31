@@ -191,7 +191,11 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final res = await ApiService.post(
         '/chat/${widget.taskId}/send',
-        body: {'message': encryptedPayload},
+        body: {
+          'message': encryptedPayload,
+          'userName': currentUserName,
+          'senderName': currentUserName,
+        },
       );
 
       // Immediately upgrade local pending message to server-confirmed

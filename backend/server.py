@@ -5951,10 +5951,41 @@ def admin_process_withdrawal():
 
     return jsonify({'success': True, 'message': f'Withdrawal {action}d successfully', 'newStatus': new_status})
 
+_chat_messages_ensured = False
+
+def _ensure_chat_messages_table():
+    """Ensure chat_messages table and indexes exist in PostgreSQL (idempotent)."""
+    global _chat_messages_ensured
+    if _chat_messages_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    task_id INTEGER NOT NULL,
+                    user_id VARCHAR(50) NOT NULL,
+                    user_name VARCHAR(255),
+                    message TEXT NOT NULL,
+                    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            try:
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_task_id ON chat_messages(task_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)')
+            except Exception:
+                pass
+        _chat_messages_ensured = True
+        print("[Chat] ✅ chat_messages table verified")
+    except Exception as e:
+        print(f"[Chat] ⚠️ _ensure_chat_messages_table error: {e}")
+
+
 @app.route('/api/chat/<int:task_id>/messages', methods=['GET'])
 @require_auth
 def get_chat_messages(task_id):
     """Get chat messages for a task"""
+    _ensure_chat_messages_table()
     try:
         uid = str(request.user_id)
         with get_db() as (cursor, conn):
@@ -5969,8 +6000,28 @@ def get_chat_messages(task_id):
             posted_by = str(task_dict.get('posted_by') or '')
             accepted_by = str(task_dict.get('accepted_by') or '')
             
-            # Check authorization (poster, accepted helper, or admin)
-            if uid != posted_by and uid != accepted_by:
+            # Check authorization (poster, accepted helper, or match by phone)
+            is_participant = (uid == posted_by or uid == accepted_by)
+            if not is_participant:
+                try:
+                    cursor.execute(f'SELECT phone FROM users WHERE id::text = {PH}', (uid,))
+                    curr_user = dict_from_row(cursor.fetchone())
+                    if curr_user and curr_user.get('phone'):
+                        u_phone = curr_user['phone'].strip()
+                        cursor.execute(f'''
+                            SELECT u.phone as p_phone, h.phone as h_phone 
+                            FROM tasks t 
+                            LEFT JOIN users u ON u.id = t.posted_by 
+                            LEFT JOIN users h ON h.id = t.accepted_by 
+                            WHERE t.id = {PH}
+                        ''', (task_id,))
+                        phones_row = dict_from_row(cursor.fetchone())
+                        if phones_row and u_phone in [str(phones_row.get('p_phone') or ''), str(phones_row.get('h_phone') or '')]:
+                            is_participant = True
+                except Exception:
+                    pass
+
+            if not is_participant:
                 return jsonify({'success': False, 'message': 'Unauthorized: You are not a participant in this task'}), 403
             
             # Get messages
@@ -5993,9 +6044,10 @@ def get_chat_messages(task_id):
 
 @app.route('/api/chat/<int:task_id>/send', methods=['POST'])
 @require_auth
-@rate_limit('30 per minute')
+@rate_limit('60 per minute')
 def send_chat_message(task_id):
     """Send a chat message (REST fallback for Socket.IO)"""
+    _ensure_chat_messages_table()
     try:
         data = request.get_json(silent=True) or {}
         message = data.get('message', '').strip()
@@ -6019,23 +6071,47 @@ def send_chat_message(task_id):
             posted_by = str(task_dict.get('posted_by') or '')
             accepted_by = str(task_dict.get('accepted_by') or '')
             
-            if uid != posted_by and uid != accepted_by:
+            # Authorize: user is poster, accepted helper, or matched by phone
+            is_participant = (uid == posted_by or uid == accepted_by)
+            if not is_participant:
+                try:
+                    cursor.execute(f'SELECT phone FROM users WHERE id::text = {PH}', (uid,))
+                    curr_user = dict_from_row(cursor.fetchone())
+                    if curr_user and curr_user.get('phone'):
+                        u_phone = curr_user['phone'].strip()
+                        cursor.execute(f'''
+                            SELECT u.phone as p_phone, h.phone as h_phone 
+                            FROM tasks t 
+                            LEFT JOIN users u ON u.id = t.posted_by 
+                            LEFT JOIN users h ON h.id = t.accepted_by 
+                            WHERE t.id = {PH}
+                        ''', (task_id,))
+                        phones_row = dict_from_row(cursor.fetchone())
+                        if phones_row and u_phone in [str(phones_row.get('p_phone') or ''), str(phones_row.get('h_phone') or '')]:
+                            is_participant = True
+                except Exception:
+                    pass
+
+            if not is_participant:
                 return jsonify({'success': False, 'message': 'Unauthorized: You are not a participant in this task'}), 403
             
             # Get user info
-            cursor.execute(f'SELECT id, name FROM users WHERE id::text = {PH}', (uid,))
-            user_row = cursor.fetchone()
-            user_name = (dict_from_row(user_row) or {}).get('name') if user_row else 'User'
+            user_name = data.get('userName') or data.get('senderName')
+            if not user_name or user_name == 'User':
+                cursor.execute(f'SELECT id, name FROM users WHERE id::text = {PH}', (uid,))
+                user_row = cursor.fetchone()
+                user_name = (dict_from_row(user_row) or {}).get('name') if user_row else 'User'
             if not user_name:
                 user_name = 'User'
             
             # Store message
-            timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            now_dt = datetime.datetime.now(datetime.timezone.utc)
+            timestamp_iso = now_dt.isoformat()
             cursor.execute(f'''
                 INSERT INTO chat_messages (task_id, user_id, user_name, message, timestamp)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
                 RETURNING id
-            ''', (task_id, uid, user_name, message, timestamp))
+            ''', (task_id, uid, user_name, message, now_dt))
             inserted = cursor.fetchone()
             msg_id = inserted['id'] if inserted and isinstance(inserted, dict) and 'id' in inserted else (inserted[0] if inserted else None)
 
@@ -6048,7 +6124,7 @@ def send_chat_message(task_id):
                     'userId': uid,
                     'userName': user_name,
                     'message': message,
-                    'timestamp': timestamp
+                    'timestamp': timestamp_iso
                 }, room=room)
             except Exception as se:
                 print(f'[Chat] Socket.IO emit error: {se}')
@@ -6063,7 +6139,7 @@ def send_chat_message(task_id):
                         VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                     ''', (recipient_id, task_id, 'chat_message', f'💬 Message from {user_name}',
                           f'{user_name} sent you a message about "{task_dict.get("title", "Task")}"',
-                          'unread', notif_data, timestamp))
+                          'unread', notif_data, timestamp_iso))
                 except Exception as n_err:
                     print(f'[Chat] DB notification insert warning: {n_err}')
                 
@@ -6082,12 +6158,14 @@ def send_chat_message(task_id):
                 'userId': uid,
                 'userName': user_name,
                 'message': message,
-                'timestamp': timestamp
+                'timestamp': timestamp_iso
             }
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f'[Chat] Error sending message for task {task_id}: {e}')
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/chat/unread', methods=['GET'])

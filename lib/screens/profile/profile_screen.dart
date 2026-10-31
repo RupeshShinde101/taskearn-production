@@ -366,6 +366,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _MenuItem(
                     icon: Icons.card_giftcard_outlined,
                     title: 'Referral & Rewards',
+                    badge: 'Coming Soon',
                     onTap: () => context.push('/referral'),
                   ),
                   const Divider(height: 1),
@@ -1809,6 +1810,7 @@ class _MenuItem extends StatelessWidget {
   final VoidCallback onTap;
   final Color? textColor;
   final Color? iconColor;
+  final String? badge;
 
   const _MenuItem({
     required this.icon,
@@ -1816,16 +1818,49 @@ class _MenuItem extends StatelessWidget {
     required this.onTap,
     this.textColor,
     this.iconColor,
+    this.badge,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon, color: iconColor ?? AppColors.gray, size: 22),
-      title: Text(title,
-          style: TextStyle(
-              color: textColor ?? AppColors.dark,
-              fontWeight: FontWeight.w500)),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              title,
+              style: TextStyle(
+                color: textColor ?? AppColors.dark,
+                fontWeight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (badge != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                  width: 0.8,
+                ),
+              ),
+              child: Text(
+                badge!,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFD97706),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
       trailing: const Icon(Icons.chevron_right, color: AppColors.grayLight),
       onTap: onTap,
     );

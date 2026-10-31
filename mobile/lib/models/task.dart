@@ -1011,16 +1011,16 @@ class TaskCategoryGroup {
           ))
       .toList();
 
-  static const List<TaskCategoryGroup> all = [
+    static const List<TaskCategoryGroup> all = [
     TaskCategoryGroup(
-      label: 'Engineering & Repair',
+      label: 'Repair',
       icon: '🔧',
-      categoryIds: ['electrician', 'plumbing', 'repair', 'carpentry', 'painting', 'vehicle', 'tech_support'],
+      categoryIds: ['repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'tech_support'],
     ),
     TaskCategoryGroup(
       label: 'Home & Lifestyle',
       icon: '🏠',
-      categoryIds: ['cleaning', 'laundry', 'cooking', 'household', 'gardening', 'beauty'],
+      categoryIds: ['cleaning', 'household', 'cooking', 'laundry', 'gardening', 'beauty'],
     ),
     TaskCategoryGroup(
       label: 'Delivery & Moving',
@@ -1030,12 +1030,12 @@ class TaskCategoryGroup {
     TaskCategoryGroup(
       label: 'Shopping & Errands',
       icon: '🛒',
-      categoryIds: ['groceries', 'shopping', 'errands', 'event_help', 'queue_standing'],
+      categoryIds: ['shopping', 'groceries', 'errands', 'queue_standing', 'event_help'],
     ),
     TaskCategoryGroup(
       label: 'Professional',
       icon: '💼',
-      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring'],
+      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring', 'painting'],
     ),
     TaskCategoryGroup(
       label: 'Care Services',

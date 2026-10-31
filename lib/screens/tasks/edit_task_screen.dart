@@ -675,7 +675,25 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     );
   }
 
+    bool get _isLocationSet {
+    if (_isDelivery) {
+      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
+        return true;
+      }
+      final hasPickup = _pickupLocation != null ||
+          _pickupAddrCtrl.text.trim().isNotEmpty;
+      final hasDrop = _dropLocation != null ||
+          _dropAddrCtrl.text.trim().isNotEmpty;
+      return hasPickup && hasDrop;
+    } else {
+      return _location != null ||
+          (_locationLabel != null && _locationLabel!.trim().isNotEmpty) ||
+          _addressCtrl.text.trim().isNotEmpty;
+    }
+  }
+
   Widget _buildSuggestedBudgetCard() {
+    if (!_isLocationSet) return const SizedBox.shrink();
     final areaCandidate = _isDelivery
         ? (_dropAddrCtrl.text.trim().isNotEmpty
             ? _dropAddrCtrl.text.trim()

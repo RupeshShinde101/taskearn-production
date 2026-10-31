@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -855,20 +855,27 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: OutlinedButton.icon(
-                          icon: const Icon(Icons.chat, size: 18),
-                          label: const Text('WhatsApp'),
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
+                          label: const Text('Chat'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF25D366),
-                            side: const BorderSide(color: Color(0xFF25D366)),
+                            foregroundColor: const Color(0xFF6366F1),
+                            side: const BorderSide(color: Color(0xFF6366F1)),
                           ),
-                          onPressed: () async {
-                            final phone = task.helperPhone!.replaceAll(RegExp(r'[^\d]'), '');
-                            final number = phone.startsWith('91') ? phone : '91$phone';
-                            final uri = Uri.parse('https://wa.me/$number');
-                            try {
-                              await launchUrl(uri,
-                                  mode: LaunchMode.externalApplication);
-                            } catch (_) {}
+                          onPressed: () {
+                            context.push(
+                              '/chat/${task.id}',
+                              extra: {
+                                'taskId': task.id,
+                                'taskTitle': task.title,
+                                'otherName': task.helperName ?? 'Helper',
+                                'otherRole': 'Helper',
+                                'otherPhone': task.helperPhone,
+                                'category': task.category,
+                                'budget': task.budget,
+                                'status': task.status,
+                                'isPoster': true,
+                              },
+                            );
                           },
                         ),
                       ),

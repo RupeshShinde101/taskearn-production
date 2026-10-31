@@ -125,7 +125,8 @@ class _ChatScreenState extends State<ChatScreen> {
         });
         _scrollToBottom();
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ChatScreen] Load messages error: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -139,14 +140,22 @@ class _ChatScreenState extends State<ChatScreen> {
           .toList();
 
       if (!mounted) return;
-      if (msgs.length != _messages.length ||
+      // Preserve local pending messages that haven't confirmed yet
+      final localPending = _messages.where((m) => m.id.startsWith('local_')).toList();
+      final serverContents = msgs.map((m) => m.content).toSet();
+      final remainingLocals = localPending.where((l) => !serverContents.contains(l.content)).toList();
+      final merged = [...msgs, ...remainingLocals];
+
+      if (merged.length != _messages.length ||
           (msgs.isNotEmpty && _messages.isNotEmpty && msgs.last.id != _messages.last.id)) {
         setState(() {
-          _messages = msgs;
+          _messages = merged;
         });
         _scrollToBottom();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ChatScreen] Poll error: $e');
+    }
   }
 
   Future<void> _send([String? customText]) async {
@@ -180,19 +189,54 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      await ApiService.post(
+      final res = await ApiService.post(
         '/chat/${widget.taskId}/send',
         body: {'message': encryptedPayload},
       );
-      // Background poll will synchronize the official message ID and timestamp
+
+      // Immediately upgrade local pending message to server-confirmed
+      if (res is Map && mounted) {
+        final serverMsg = res['message'];
+        final serverId = serverMsg is Map ? serverMsg['id']?.toString() : null;
+        if (serverId != null && serverId.isNotEmpty) {
+          setState(() {
+            final idx = _messages.indexWhere((m) => m.id == optimisticMsg.id);
+            if (idx != -1) {
+              _messages[idx] = ChatMessage(
+                id: serverId,
+                taskId: optimisticMsg.taskId,
+                senderId: optimisticMsg.senderId,
+                senderName: optimisticMsg.senderName,
+                content: optimisticMsg.content,
+                sentAt: optimisticMsg.sentAt,
+                isRead: true,
+              );
+            }
+          });
+        }
+      }
+
+      // Background poll will synchronize all messages
       _pollMessages();
     } catch (e) {
+      debugPrint('[ChatScreen] Send message failed: $e');
+      final errMsg = e is ApiException ? e.message : 'Failed to deliver message. Please check connection.';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to deliver message. Tap to retry.'),
+          SnackBar(
+            content: Text(errMsg),
             backgroundColor: AppColors.danger,
-            duration: Duration(seconds: 2),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () {
+                setState(() {
+                  _messages.removeWhere((m) => m.id == optimisticMsg.id);
+                });
+                _send(text);
+              },
+            ),
           ),
         );
       }
@@ -498,14 +542,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : _messages.isEmpty
                     ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Container(
-                                width: 68,
-                                height: 68,
+                                width: 56,
+                                height: 56,
                                 decoration: BoxDecoration(
                                   color: AppColors.primary.withValues(alpha: 0.08),
                                   shape: BoxShape.circle,
@@ -513,10 +558,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                 child: const Icon(
                                   Icons.chat_bubble_outline_rounded,
                                   color: AppColors.primary,
-                                  size: 32,
+                                  size: 28,
                                 ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
                               Text(
                                 'Chat with $_otherName',
                                 style: const TextStyle(
@@ -525,17 +570,17 @@ class _ChatScreenState extends State<ChatScreen> {
                                   color: AppColors.dark,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 4),
                               Text(
                                 'Discuss task details, timing, and directions in real-time. Messages are end-to-end encrypted.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  fontSize: 12.5,
+                                  fontSize: 12,
                                   color: AppColors.gray,
-                                  height: 1.4,
+                                  height: 1.35,
                                 ),
                               ),
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 16),
                               Wrap(
                                 spacing: 8,
                                 runSpacing: 8,

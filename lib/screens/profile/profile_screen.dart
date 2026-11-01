@@ -1464,42 +1464,49 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
   }
 
   Future<void> _save() async {
+    final user = widget.auth.user;
+    final isVerified = user?.physicalVerificationStatus == 'verified';
+
+    // Sensitive skills cannot be saved directly by unverified helpers
+    final sensitiveSelected = _selectedSkills.where((s) => kSensitiveSkills.contains(s)).toList();
+    if (sensitiveSelected.isNotEmpty && !isVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sensitive skills (${sensitiveSelected.join(", ")}) require admin verification. Please request onboarding verification.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
     final ok = await widget.auth.updateProfile(skills: _selectedSkills);
     if (!mounted) return;
     setState(() => _saving = false);
     Navigator.pop(context);
-    final hasSensitive = hasSensitiveSkill(_selectedSkills);
-    final user = widget.auth.user;
-    final needsVerification = hasSensitive &&
-        user?.physicalVerificationStatus != 'verified' &&
-        user?.physicalVerificationStatus != 'pending';
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
-            ? (needsVerification
-                ? 'Skills saved! Sensitive skills require physical verification.'
-                : 'Skills updated successfully!')
+            ? 'Skills updated successfully!'
             : (widget.auth.error ?? 'Failed to save skills. Please try again.')),
         backgroundColor: ok ? AppColors.success : AppColors.danger,
-        duration: Duration(seconds: needsVerification ? 5 : 3),
-        action: needsVerification
-            ? SnackBarAction(
-                label: 'Verify Now',
-                textColor: Colors.white,
-                onPressed: () {
-                  context.push('/physical-onboarding', extra: {'skills': _selectedSkills});
-                },
-              )
-            : null,
+        duration: const Duration(seconds: 3),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasSensitive = hasSensitiveSkill(_selectedSkills);
+    final user = widget.auth.user;
+    final isVerified = user?.physicalVerificationStatus == 'verified';
+    final isPending = user?.physicalVerificationStatus == 'pending';
+
+    final sensitiveSelected = _selectedSkills.where((s) => kSensitiveSkills.contains(s)).toList();
+    final hasSensitive = sensitiveSelected.isNotEmpty;
+
+    // Disabled when any sensitive skill is selected and helper is not physically verified
+    final bool disableSaveForSensitive = hasSensitive && !isVerified;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -1559,54 +1566,64 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
                   })
                   .toList(),
             ),
-            if (hasSensitive) ...[
+            if (disableSaveForSensitive) ...[
               const SizedBox(height: 14),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFFDE68A)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.shield_rounded, color: Color(0xFFD97706), size: 16),
-                        SizedBox(width: 6),
+                        const Icon(Icons.shield_rounded, color: Color(0xFFD97706), size: 18),
+                        const SizedBox(width: 8),
                         Text(
-                          'Physical Verification Required',
-                          style: TextStyle(
+                          isPending
+                              ? 'Verification Under Admin Review'
+                              : 'Onboarding Verification Required',
+                          style: const TextStyle(
                             color: Color(0xFF92400E),
-                            fontSize: 12,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Selected sensitive skills require in-person physical verification by Admin. You must submit an onboarding request before taking these tasks.',
-                      style: TextStyle(color: Color(0xFF78350F), fontSize: 11, height: 1.35),
+                    const SizedBox(height: 6),
+                    Text(
+                      isPending
+                          ? 'You have submitted an onboarding request. Once Admin approves it, your sensitive skills (${sensitiveSelected.join(", ")}) will be automatically added to your profile.'
+                          : 'Sensitive skills (${sensitiveSelected.join(", ")}) cannot be saved directly. Direct save is disabled. Submit an onboarding verification request below; once Admin approves, these skills will automatically be saved to your profile.',
+                      style: const TextStyle(color: Color(0xFF78350F), fontSize: 12, height: 1.4),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      height: 34,
-                      child: OutlinedButton.icon(
+                      height: 40,
+                      child: ElevatedButton.icon(
                         onPressed: () {
                           final router = GoRouter.of(context);
                           Navigator.pop(context);
-                          router.push('/physical-onboarding', extra: {'skills': _selectedSkills});
+                          router.push('/physical-onboarding', extra: {'skills': sensitiveSelected});
                         },
-                        icon: const Icon(Icons.assignment_turned_in_outlined, size: 14, color: Color(0xFFB45309)),
-                        label: const Text('Fill Physical Onboarding Form',
-                            style: TextStyle(color: Color(0xFFB45309), fontSize: 11.5, fontWeight: FontWeight.bold)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFFD97706)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
+                        label: Text(
+                          isPending
+                              ? 'View Pending Request'
+                              : 'Send Onboarding Request (${sensitiveSelected.length} sensitive)',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD97706),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
                         ),
                       ),
                     ),
@@ -1618,16 +1635,35 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _saving ? null : _save,
+                onPressed: (_saving || disableSaveForSensitive) ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  disabledBackgroundColor: const Color(0xFFE2E8F0),
+                  disabledForegroundColor: const Color(0xFF94A3B8),
+                ),
                 child: _saving
                     ? const SizedBox(
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
-                    : const Text('Save Skills'),
+                    : Text(
+                        disableSaveForSensitive
+                            ? 'Save Disabled (Verification Required)'
+                            : 'Save Skills',
+                      ),
               ),
             ),
+            if (disableSaveForSensitive)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Center(
+                  child: Text(
+                    'Deselect sensitive skills to save general skills, or send onboarding request.',
+                    style: TextStyle(fontSize: 11, color: AppColors.gray),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

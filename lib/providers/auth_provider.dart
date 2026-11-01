@@ -646,6 +646,31 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Admin: Approve physical onboarding request (automatically activates skills on helper profile)
+  Future<bool> adminApprovePhysicalVerification(int requestId) async {
+    try {
+      final response = await ApiService.post('/admin/physical-verification/${requestId}/approve');
+      return response != null && response['success'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Admin: Reject physical onboarding request
+  Future<bool> adminRejectPhysicalVerification(int requestId, {String? reason}) async {
+    try {
+      final response = await ApiService.post(
+        '/admin/physical-verification/${requestId}/reject',
+        body: {
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        },
+      );
+      return response != null && response['success'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> loginWithGoogle({
     String? referralCode,
     DateTime? dob,

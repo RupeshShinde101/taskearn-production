@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
@@ -19,14 +20,10 @@ class MyTasksScreen extends StatefulWidget {
   State<MyTasksScreen> createState() => _MyTasksScreenState();
 }
 
-class _MyTasksScreenState extends State<MyTasksScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabs;
-
+class _MyTasksScreenState extends State<MyTasksScreen> {
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<TaskProvider>().fetchMyTasks();
@@ -34,72 +31,73 @@ class _MyTasksScreenState extends State<MyTasksScreen>
   }
 
   @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Tasks'),
-        bottom: TabBar(
-          controller: _tabs,
-          labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.gray,
-          indicatorColor: AppColors.primary,
-          tabs: const [
-            Tab(text: 'Posted'),
-            Tab(text: 'Accepted'),
-            Tab(text: 'Completed'),
-          ],
-        ),
-      ),
-      body: Consumer<TaskProvider>(
-        builder: (_, tasks, __) {
-          // Show full spinner only on the very first load (no cached data yet).
-          // On subsequent refreshes show cached data + a subtle top progress bar.
-          final firstLoad = tasks.isLoadingMy && !tasks.hasMyTasksData;
-          if (firstLoad) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    final isHelper = context.watch<AuthProvider>().isHelperMode;
 
-          // Bottom inset so content never hides behind the floating navbar.
-          // viewPadding.bottom = raw device safe-area (unaffected by nested
-          // Scaffolds); +75 covers the navbar container (65) + padding (10).
-          final navbarInset =
-              MediaQuery.of(context).viewPadding.bottom + 75;
-
-          return Padding(
-            padding: EdgeInsets.only(bottom: navbarInset),
-            child: Stack(
-            children: [
-              TabBarView(
-                controller: _tabs,
-                children: [
-                  _PostedTaskList(tasks: tasks.myPostedTasks),
-                  _TaskList(
-                    tasks: tasks.myAcceptedTasks,
-                    emptyMsg: 'No accepted tasks',
-                    onTap: (t) => context.push('/task-in-progress/${t.id}'),
-                  ),
-                  _CompletedTaskList(
-                    tasks: tasks.myCompletedTasks,
-                    onTap: (t) => context.push('/task/${t.id}'),
-                  ),
-                ],
-              ),
-              // Subtle top bar shown while silently refreshing cached data.
-              if (tasks.isLoadingMy)
-                const Positioned(
-                  top: 0, left: 0, right: 0,
-                  child: LinearProgressIndicator(minHeight: 2),
-                ),
+    return DefaultTabController(
+      key: ValueKey(isHelper),
+      length: isHelper ? 3 : 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('My Tasks'),
+          bottom: TabBar(
+            labelColor: AppColors.primary,
+            unselectedLabelColor: AppColors.gray,
+            indicatorColor: AppColors.primary,
+            tabs: [
+              const Tab(text: 'Posted'),
+              if (isHelper) const Tab(text: 'Accepted'),
+              const Tab(text: 'Completed'),
             ],
           ),
-          );
-        },
+        ),
+        body: Consumer<TaskProvider>(
+          builder: (_, tasks, __) {
+            // Show full spinner only on the very first load (no cached data yet).
+            // On subsequent refreshes show cached data + a subtle top progress bar.
+            final firstLoad = tasks.isLoadingMy && !tasks.hasMyTasksData;
+            if (firstLoad) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            // Bottom inset so content never hides behind the floating navbar.
+            // viewPadding.bottom = raw device safe-area (unaffected by nested
+            // Scaffolds); +75 covers the navbar container (65) + padding (10).
+            final navbarInset =
+                MediaQuery.of(context).viewPadding.bottom + 75;
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: navbarInset),
+              child: Stack(
+                children: [
+                  TabBarView(
+                    children: [
+                      _PostedTaskList(tasks: tasks.myPostedTasks),
+                      if (isHelper)
+                        _TaskList(
+                          tasks: tasks.myAcceptedTasks,
+                          emptyMsg: 'No accepted tasks',
+                          onTap: (t) => context.push('/task-in-progress/${t.id}'),
+                        ),
+                      _CompletedTaskList(
+                        tasks: tasks.myCompletedTasks,
+                        onTap: (t) => context.push('/task/${t.id}'),
+                      ),
+                    ],
+                  ),
+                  // Subtle top bar shown while silently refreshing cached data.
+                  if (tasks.isLoadingMy)
+                    const Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

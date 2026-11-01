@@ -111,7 +111,7 @@ class _PostedTaskList extends StatelessWidget {
   static const _cancellableStatuses = {'posted', 'accepted', 'in_progress'};
   // Tasks in these states are finished/cancelled — hide from the Posted tab.
   static const _terminalStatuses = {
-    'done', 'finished', 'paid', 'verified',
+    'done', 'finished', 'paid', 'verified', 'payment_released',
     'cancelled', 'poster_cancelled', 'rejected', 'expired',
   };
 
@@ -843,14 +843,11 @@ class _CompletedTaskList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Filter: only show tasks completed within the last 48 h.
-    // If completedAt is null (backend didn't return the field yet),
-    // fall back to createdAt so the task still expires rather than staying forever.
-    final now = DateTime.now();
-    final visible = tasks.where((t) {
-      final ref = t.completedAt ?? t.createdAt;
-      return ref.add(const Duration(hours: 48)).isAfter(now);
-    }).toList();
+    final auth = context.watch<AuthProvider>();
+    final currentUserId = auth.user?.id;
+    final currentUserPhone = auth.user?.phone;
+
+    final visible = tasks;
 
     if (visible.isEmpty) {
       return const Center(
@@ -877,6 +874,10 @@ class _CompletedTaskList extends StatelessWidget {
         itemCount: visible.length,
         itemBuilder: (_, i) {
           final t = visible[i];
+          final isPoster = currentUserId != null &&
+              (t.posterId == currentUserId ||
+               (currentUserPhone != null && currentUserPhone.isNotEmpty && t.posterPhone == currentUserPhone));
+
           final expiry = _expiryLabel(t.completedAt);
           final expiryClr = _expiryColor(t.completedAt);
           return Padding(
@@ -939,7 +940,7 @@ class _CompletedTaskList extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              // Budget
+                              // Budget & Role badge
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
@@ -951,21 +952,27 @@ class _CompletedTaskList extends StatelessWidget {
                                       color: AppColors.success,
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.success
-                                          .withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: const Text(
-                                      'Completed',
-                                      style: TextStyle(
-                                          fontSize: 10,
-                                          color: AppColors.success,
-                                          fontWeight: FontWeight.w700),
-                                    ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: (isPoster ? AppColors.primary : const Color(0xFF8B5CF6))
+                                              .withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(5),
+                                        ),
+                                        child: Text(
+                                          isPoster ? 'Posted' : 'Completed',
+                                          style: TextStyle(
+                                              fontSize: 9.5,
+                                              color: isPoster ? AppColors.primary : const Color(0xFF8B5CF6),
+                                              fontWeight: FontWeight.w700),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -987,20 +994,27 @@ class _CompletedTaskList extends StatelessWidget {
                           const Divider(height: 1),
                           const SizedBox(height: 10),
 
-                          // ── Poster info row ──────────────────────────────
+                          // ── Partner info row ──────────────────────────────
                           Row(
                             children: [
-                              const Icon(Icons.person_outline,
-                                  size: 15, color: AppColors.gray),
+                              Icon(
+                                isPoster ? Icons.handyman_outlined : Icons.person_outline,
+                                size: 15,
+                                color: AppColors.gray,
+                              ),
                               const SizedBox(width: 5),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      t.posterName.isNotEmpty
-                                          ? t.posterName
-                                          : 'Unknown Poster',
+                                      isPoster
+                                          ? (t.helperName != null && t.helperName!.trim().isNotEmpty
+                                              ? 'Helper: ${t.helperName}'
+                                              : 'Assigned Helper')
+                                          : (t.posterName.trim().isNotEmpty
+                                              ? 'Poster: ${t.posterName}'
+                                              : 'Unknown Poster'),
                                       style: const TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
@@ -1008,9 +1022,10 @@ class _CompletedTaskList extends StatelessWidget {
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    if (t.posterId.isNotEmpty)
+                                    if ((isPoster ? t.helperId : t.posterId) != null &&
+                                        (isPoster ? t.helperId! : t.posterId).isNotEmpty)
                                       Text(
-                                        'ID: ${t.posterId.length > 12 ? '${t.posterId.substring(0, 12)}…' : t.posterId}',
+                                        '${isPoster ? "Helper" : "Poster"} ID: ${(isPoster ? t.helperId! : t.posterId).length > 12 ? '${(isPoster ? t.helperId! : t.posterId).substring(0, 12)}…' : (isPoster ? t.helperId! : t.posterId)}',
                                         style: const TextStyle(
                                             fontSize: 10,
                                             color: AppColors.grayLight,
@@ -1032,8 +1047,7 @@ class _CompletedTaskList extends StatelessWidget {
                     ),
 
                     // ── Expiry bar ─────────────────────────────────────────
-                    if (expiry != null)
-                      Container(
+                    Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 7),
@@ -1077,23 +1091,24 @@ class _CompletedTaskList extends StatelessWidget {
       '${dt.day}/${dt.month}/${dt.year % 100}';
 
   /// Returns a human-readable expiry string based on completedAt + 48 h.
-  /// Returns null if no completedAt is available.
-  String? _expiryLabel(DateTime? completedAt) {
-    if (completedAt == null) return 'Visible for 48 h after completion';
-    final expireAt = completedAt.add(const Duration(hours: 48));
-    final remaining = expireAt.difference(DateTime.now());
-    if (remaining.isNegative) return null; // filtered out above, shouldn't reach
+  /// Always returns a valid string so the 48h timer is always visible on completed tasks.
+  String _expiryLabel(DateTime? completedAt) {
+    if (completedAt == null) return 'Disappears in 48h';
+    final target = completedAt.toLocal().add(const Duration(hours: 48));
+    final remaining = target.difference(DateTime.now());
+    if (remaining.isNegative) return 'Expiring soon (kept for 48h)';
     final h = remaining.inHours;
     final m = remaining.inMinutes % 60;
     if (h >= 1) return 'Disappears in ${h}h ${m}m';
-    return 'Disappears in ${remaining.inMinutes} min';
+    if (m >= 1) return 'Disappears in ${m}m';
+    return 'Expiring in < 1m';
   }
 
   Color _expiryColor(DateTime? completedAt) {
-    if (completedAt == null) return AppColors.gray;
-    final remaining =
-        completedAt.add(const Duration(hours: 48)).difference(DateTime.now());
-    if (remaining.isNegative) return AppColors.grayLight;
+    if (completedAt == null) return AppColors.primary;
+    final target = completedAt.toLocal().add(const Duration(hours: 48));
+    final remaining = target.difference(DateTime.now());
+    if (remaining.isNegative) return AppColors.danger;
     if (remaining.inHours < 6) return AppColors.danger;
     if (remaining.inHours < 24) return AppColors.warning;
     return AppColors.success;

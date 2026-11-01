@@ -10,6 +10,7 @@ import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/chat_encryption_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 
@@ -45,6 +46,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    NotificationService.activeChatTaskId = widget.taskId;
     _initParticipantData();
     _loadMessages();
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => _pollMessages());
@@ -52,6 +54,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    if (NotificationService.activeChatTaskId == widget.taskId) {
+      NotificationService.activeChatTaskId = null;
+    }
     _pollTimer?.cancel();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();

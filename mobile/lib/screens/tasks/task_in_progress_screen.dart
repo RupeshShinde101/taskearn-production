@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -887,20 +887,31 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _whatsappPoster,
-                        icon: const Icon(Icons.chat_bubble_outline, size: 17),
-                        label: Text(
-                          hasPhone ? 'WhatsApp Poster' : 'WhatsApp (no number)',
+                        onPressed: () {
+                          if (_task == null) return;
+                          context.push(
+                            '/chat/' + _task!.id,
+                            extra: {
+                              'taskId': _task!.id,
+                              'taskTitle': _task!.title,
+                              'otherName': _task!.posterName ?? 'Poster',
+                              'otherRole': 'Task Poster',
+                              'otherPhone': _task!.posterPhone,
+                              'category': _task!.category,
+                              'budget': _task!.budget,
+                              'status': _task!.status,
+                              'isPoster': false,
+                            },
+                          );
+                        },
+                        icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
+                        label: const Text(
+                          'Chat with Poster',
                           overflow: TextOverflow.ellipsis,
                         ),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: hasPhone
-                              ? const Color(0xFF25D366)
-                              : AppColors.grayLight,
-                          side: BorderSide(
-                              color: hasPhone
-                                  ? const Color(0xFF25D366)
-                                  : AppColors.grayLight),
+                          foregroundColor: const Color(0xFF6366F1),
+                          side: const BorderSide(color: Color(0xFF6366F1)),
                           minimumSize: const Size(double.infinity, 44),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10)),

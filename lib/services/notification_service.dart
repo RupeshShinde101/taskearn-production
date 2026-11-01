@@ -91,6 +91,11 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       description: 'Account status and admin messages',
       importance: Importance.max,
     ));
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_chat', 'Chat Messages',
+      description: 'Direct messages from task poster or helper',
+      importance: Importance.max,
+    ));
   }
 
   // Choose channel, title, body and importance based on notification type.
@@ -102,6 +107,17 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
   Importance importance = Importance.high;
 
   switch (type) {
+    // ── Chat messages ──────────────────────────────────────────────────────
+    case 'chat':
+    case 'chat_message':
+      title = data['title'] ?? '💬 New Message';
+      body = data['body'] ?? 'You received a new message';
+      channelId = 'workmate4u_chat';
+      channelName = 'Chat Messages';
+      channelDesc = 'Direct messages from task poster or helper';
+      importance = Importance.max;
+      break;
+
     // ── Nearby task match (combined — legacy) ─────────────────────────────
     case 'task_matched':
     case 'matched_task':
@@ -363,8 +379,8 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     icon: '@mipmap/ic_launcher',
     color: channelId == 'workmate4u_payment'
         ? const Color(0xFF10B981)  // green for money
-        : channelId == 'workmate4u_matched'
-            ? const Color(0xFF6366F1)  // indigo for matches
+        : channelId == 'workmate4u_matched' || channelId == 'workmate4u_chat'
+            ? const Color(0xFF6366F1)  // indigo for matches & chat
             : channelId == 'workmate4u_admin'
                 ? const Color(0xFFEF4444)  // red for admin alerts
                 : const Color(0xFF0EA5E9), // sky-blue for tasks
@@ -389,6 +405,11 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
+
+  /// When user is currently inside a ChatScreen, this holds the active taskId.
+  /// Foreground notifications for this taskId are suppressed to prevent spamming
+  /// the user with banner popups while they are actively typing and reading.
+  static String? activeChatTaskId;
 
   static FirebaseMessaging get _fcm => FirebaseMessaging.instance;
 
@@ -478,6 +499,11 @@ class NotificationService {
         description: 'Account status and admin messages',
         importance: Importance.max,
       ));
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_chat', 'Chat Messages',
+        description: 'Direct messages from task poster or helper',
+        importance: Importance.max,
+      ));
     }
 
     // ── FCM permissions ────────────────────────────────────────────────────
@@ -516,6 +542,17 @@ class NotificationService {
       }
 
 
+      final isChat = type == 'chat' || type == 'chat_message';
+      final String? msgTaskId = message.data['task_id']?.toString()
+          ?? message.data['taskId']?.toString();
+
+      // If the user is currently on the chat screen for this task, suppress the popup banner
+      if (isChat && activeChatTaskId != null && activeChatTaskId == msgTaskId) {
+        debugPrint('[FCM fg] Chat message for task $msgTaskId suppressed because user is viewing chat screen');
+        onNewNotification?.call();
+        return;
+      }
+
       final isMatch = type == 'task_matched' || type == 'matched_task' ||
           type == 'skill_matched' || type == 'nearby_task';
       final isPayment = type == 'task_completed' || type == 'verify_and_pay' ||
@@ -539,11 +576,12 @@ class NotificationService {
         _showLocalNotification(
           title: notification.title ?? 'Workmate4u',
           body: notification.body ?? '',
-          taskId: message.data['task_id']?.toString(),
+          taskId: msgTaskId,
           notificationType: type,
           isMatchedTask: isMatch,
           isPayment: isPayment,
           isAdmin: isAdmin,
+          isChat: isChat,
         );
       } else {
         // Data-only FCM message — show for all known types
@@ -557,6 +595,11 @@ class NotificationService {
         // are always displayed even if the data fields are unexpectedly absent.
         if (msgTitle == null || msgBody == null) {
           switch (type) {
+            case 'chat':
+            case 'chat_message':
+              msgTitle ??= '💬 New Message';
+              msgBody ??= 'You received a new message';
+              break;
             case 'skill_matched':
               msgTitle ??= '💼 Task Matching Your Skills!';
               msgBody ??= 'A new task matches your skills. Tap to view.';
@@ -663,6 +706,7 @@ class NotificationService {
             isMatchedTask: isMatch,
             isPayment: isPayment,
             isAdmin: isAdmin,
+            isChat: isChat,
           );
         }
       }
@@ -794,6 +838,7 @@ class NotificationService {
     bool isMatchedTask = false,
     bool isPayment = false,
     bool isAdmin = false,
+    bool isChat = false,
   }) async {
     final AndroidNotificationDetails androidDetails;
     if (isAdmin) {
@@ -805,6 +850,18 @@ class NotificationService {
         priority: Priority.max,
         icon: '@mipmap/ic_launcher',
         color: Color(0xFFEF4444),
+        enableVibration: true,
+        playSound: true,
+      );
+    } else if (isChat) {
+      androidDetails = const AndroidNotificationDetails(
+        'workmate4u_chat',
+        'Chat Messages',
+        channelDescription: 'Direct messages from task poster or helper',
+        importance: Importance.max,
+        priority: Priority.max,
+        icon: '@mipmap/ic_launcher',
+        color: Color(0xFF6366F1),
         enableVibration: true,
         playSound: true,
       );

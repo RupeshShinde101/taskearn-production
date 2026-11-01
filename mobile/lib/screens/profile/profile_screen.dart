@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
+import 'physical_onboarding_screen.dart';
 
 // ── All available skills the user can select ─────────────────────────────────
 const _kAllSkills = [
@@ -45,6 +46,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
+    final userSkills = user?.skills ?? const <String>[];
+    final phyStatus = user?.physicalVerificationStatus;
 
     return Scaffold(
       appBar: AppBar(
@@ -248,110 +251,197 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
             ],
 
-            // ── Skills section ───────────────────────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => _showSkills = !_showSkills),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          const Text('My Skills',
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600)),
-                          if (user?.skills != null &&
-                              user!.skills.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 6),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius:
-                                      BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '${user.skills.length}',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold),
+            // ── Skills section (Helper only) ─────────────────────────────────
+            if (auth.isHelperMode) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _showSkills = !_showSkills),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            const Text('My Skills',
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600)),
+                            if (userSkills.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    borderRadius:
+                                        BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${userSkills.length}',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold),
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (user?.skills != null && user!.skills.isNotEmpty)
+                  if (userSkills.isNotEmpty)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showSkillsDialog(context, auth),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 8),
+                        child: Icon(Icons.edit_outlined,
+                            size: 20, color: AppColors.gray),
+                      ),
+                    ),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => _showSkillsDialog(context, auth),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 8),
-                      child: Icon(Icons.edit_outlined,
-                          size: 20, color: AppColors.gray),
+                    onTap: () =>
+                        setState(() => _showSkills = !_showSkills),
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                          left: 4, top: 8, bottom: 8),
+                      child: Icon(
+                        _showSkills
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        color: AppColors.gray,
+                      ),
                     ),
                   ),
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () =>
-                      setState(() => _showSkills = !_showSkills),
-                  child: Padding(
-                    padding: const EdgeInsets.only(
-                        left: 4, top: 8, bottom: 8),
-                    child: Icon(
-                      _showSkills
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
-                      color: AppColors.gray,
+                ],
+              ),
+              if (_showSkills) ...[
+                const SizedBox(height: 8),
+                if (userSkills.isEmpty)
+                  _EmptySkillsHint(
+                      onAdd: () => _showSkillsDialog(context, auth))
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.light,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: userSkills
+                          .map((s) => Chip(
+                                label: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(s),
+                                    if (kSensitiveSkills.contains(s)) ...[
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.shield_outlined,
+                                          size: 13, color: Color(0xFFD97706)),
+                                    ],
+                                  ],
+                                ),
+                                backgroundColor: kSensitiveSkills.contains(s)
+                                    ? const Color(0xFFFEF3C7)
+                                    : AppColors.primary
+                                        .withValues(alpha: 0.1),
+                                labelStyle: TextStyle(
+                                    color: kSensitiveSkills.contains(s)
+                                        ? const Color(0xFF92400E)
+                                        : AppColors.primary,
+                                    fontWeight: FontWeight.w500),
+                                side: BorderSide(
+                                    color: kSensitiveSkills.contains(s)
+                                        ? const Color(0xFFF59E0B)
+                                        : AppColors.primary
+                                            .withValues(alpha: 0.3)),
+                              ))
+                          .toList(),
                     ),
                   ),
-                ),
+                if (hasSensitiveSkill(userSkills)) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: phyStatus == 'verified'
+                          ? const Color(0xFFD1FAE5)
+                          : (phyStatus == 'pending'
+                              ? const Color(0xFFFEF3C7)
+                              : const Color(0xFFFEE2E2)),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: phyStatus == 'verified'
+                            ? const Color(0xFFA7F3D0)
+                            : (phyStatus == 'pending'
+                                ? const Color(0xFFFDE68A)
+                                : const Color(0xFFFECACA)),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          phyStatus == 'verified'
+                              ? Icons.verified_user_rounded
+                              : (phyStatus == 'pending'
+                                  ? Icons.hourglass_top_rounded
+                                  : Icons.warning_amber_rounded),
+                          size: 16,
+                          color: phyStatus == 'verified'
+                              ? const Color(0xFF059669)
+                              : (phyStatus == 'pending'
+                                  ? const Color(0xFFD97706)
+                                  : const Color(0xFFDC2626)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            phyStatus == 'verified'
+                                ? 'Sensitive skills physically verified'
+                                : (phyStatus == 'pending'
+                                    ? 'Physical onboarding request pending admin review'
+                                    : 'Sensitive skills require physical verification by Admin'),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: phyStatus == 'verified'
+                                  ? const Color(0xFF065F46)
+                                  : (phyStatus == 'pending'
+                                      ? const Color(0xFF92400E)
+                                      : const Color(0xFF991B1B)),
+                            ),
+                          ),
+                        ),
+                        if (phyStatus != 'verified' && phyStatus != 'pending')
+                          GestureDetector(
+                            onTap: () => context.push('/physical-onboarding', extra: {'skills': userSkills}),
+                            child: const Text(
+                              'Verify Now',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFDC2626),
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
-            ),
-            if (_showSkills) ...[  
-              const SizedBox(height: 8),
-              if (user?.skills == null || user!.skills.isEmpty)
-                _EmptySkillsHint(
-                    onAdd: () => _showSkillsDialog(context, auth))
-              else
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.light,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: user.skills
-                        .map((s) => Chip(
-                              label: Text(s),
-                              backgroundColor: AppColors.primary
-                                  .withValues(alpha: 0.1),
-                              labelStyle: const TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w500),
-                              side: BorderSide(
-                                  color: AppColors.primary
-                                      .withValues(alpha: 0.3)),
-                            ))
-                        .toList(),
-                  ),
-                ),
+              const SizedBox(height: 20),
             ],
-
-            const SizedBox(height: 20),
 
             // ── Menu items ───────────────────────────────────────────────────
             Card(
@@ -376,6 +466,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () => context.push('/notifications'),
                   ),
                   const Divider(height: 1),
+                  if (auth.isHelperMode) ...[
+                    _MenuItem(
+                      icon: Icons.shield_outlined,
+                      title: 'Physical Onboarding Request',
+                      badge: phyStatus == 'verified'
+                          ? 'Verified'
+                          : (phyStatus == 'pending'
+                              ? 'Pending Review'
+                              : (hasSensitiveSkill(userSkills) ? 'Action Required' : null)),
+                      badgeColor: phyStatus == 'verified'
+                          ? AppColors.success
+                          : (phyStatus == 'pending'
+                              ? AppColors.warning
+                              : AppColors.danger),
+                      onTap: () => context.push('/physical-onboarding'),
+                    ),
+                    const Divider(height: 1),
+                  ],
                   _MenuItem(
                     icon: Icons.security_outlined,
                     title: 'Security',
@@ -1356,15 +1464,31 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
   }
 
   Future<void> _save() async {
+    final user = widget.auth.user;
+    final isVerified = user?.physicalVerificationStatus == 'verified';
+
+    // Sensitive skills cannot be saved directly by unverified helpers
+    final sensitiveSelected = _selectedSkills.where((s) => kSensitiveSkills.contains(s)).toList();
+    if (sensitiveSelected.isNotEmpty && !isVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sensitive skills (${sensitiveSelected.join(", ")}) require admin verification. Please request onboarding verification.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
     final ok = await widget.auth.updateProfile(skills: _selectedSkills);
     if (!mounted) return;
     setState(() => _saving = false);
     Navigator.pop(context);
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
-            ? 'Skills updated!'
+            ? 'Skills updated successfully!'
             : (widget.auth.error ?? 'Failed to save skills. Please try again.')),
         backgroundColor: ok ? AppColors.success : AppColors.danger,
         duration: const Duration(seconds: 3),
@@ -1374,6 +1498,16 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final user = widget.auth.user;
+    final isVerified = user?.physicalVerificationStatus == 'verified';
+    final isPending = user?.physicalVerificationStatus == 'pending';
+
+    final sensitiveSelected = _selectedSkills.where((s) => kSensitiveSkills.contains(s)).toList();
+    final hasSensitive = sensitiveSelected.isNotEmpty;
+
+    // Disabled when any sensitive skill is selected and helper is not physically verified
+    final bool disableSaveForSensitive = hasSensitive && !isVerified;
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
           20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
@@ -1396,40 +1530,140 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
               spacing: 8,
               runSpacing: 8,
               children: _kAllSkills
-                  .map((skill) => FilterChip(
-                        label: Text(skill),
-                        selected: _selectedSkills.contains(skill),
-                        onSelected: (_) => _toggleSkill(skill),
-                        selectedColor:
-                            AppColors.primary.withValues(alpha: 0.15),
-                        checkmarkColor: AppColors.primary,
-                        labelStyle: TextStyle(
-                            color: _selectedSkills.contains(skill)
-                                ? AppColors.primary
-                                : AppColors.gray,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500),
-                        side: BorderSide(
-                            color: _selectedSkills.contains(skill)
-                                ? AppColors.primary
-                                : AppColors.border),
-                      ))
+                  .map((skill) {
+                    final isSensitive = kSensitiveSkills.contains(skill);
+                    final isSelected = _selectedSkills.contains(skill);
+                    return FilterChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(skill),
+                          if (isSensitive) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.shield_outlined,
+                                size: 12,
+                                color: isSelected ? const Color(0xFFD97706) : const Color(0xFFB45309)),
+                          ],
+                        ],
+                      ),
+                      selected: isSelected,
+                      onSelected: (_) => _toggleSkill(skill),
+                      selectedColor: isSensitive
+                          ? const Color(0xFFFEF3C7)
+                          : AppColors.primary.withValues(alpha: 0.15),
+                      checkmarkColor: isSensitive ? const Color(0xFFB45309) : AppColors.primary,
+                      labelStyle: TextStyle(
+                          color: isSelected
+                              ? (isSensitive ? const Color(0xFF78350F) : AppColors.primary)
+                              : AppColors.gray,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500),
+                      side: BorderSide(
+                          color: isSelected
+                              ? (isSensitive ? const Color(0xFFF59E0B) : AppColors.primary)
+                              : AppColors.border),
+                    );
+                  })
                   .toList(),
             ),
+            if (disableSaveForSensitive) ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.shield_rounded, color: Color(0xFFD97706), size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          isPending
+                              ? 'Verification Under Admin Review'
+                              : 'Onboarding Verification Required',
+                          style: const TextStyle(
+                            color: Color(0xFF92400E),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isPending
+                          ? 'You have submitted an onboarding request. Once Admin approves it, your sensitive skills (${sensitiveSelected.join(", ")}) will be automatically added to your profile.'
+                          : 'Sensitive skills (${sensitiveSelected.join(", ")}) cannot be saved directly. Direct save is disabled. Submit an onboarding verification request below; once Admin approves, these skills will automatically be saved to your profile.',
+                      style: const TextStyle(color: Color(0xFF78350F), fontSize: 12, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 40,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          final router = GoRouter.of(context);
+                          Navigator.pop(context);
+                          router.push('/physical-onboarding', extra: {'skills': sensitiveSelected});
+                        },
+                        icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
+                        label: Text(
+                          isPending
+                              ? 'View Pending Request'
+                              : 'Send Onboarding Request (${sensitiveSelected.length} sensitive)',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD97706),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _saving ? null : _save,
+                onPressed: (_saving || disableSaveForSensitive) ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  disabledBackgroundColor: const Color(0xFFE2E8F0),
+                  disabledForegroundColor: const Color(0xFF94A3B8),
+                ),
                 child: _saving
                     ? const SizedBox(
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
-                    : const Text('Save Skills'),
+                    : Text(
+                        disableSaveForSensitive
+                            ? 'Save Disabled (Verification Required)'
+                            : 'Save Skills',
+                      ),
               ),
             ),
+            if (disableSaveForSensitive)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Center(
+                  child: Text(
+                    'Deselect sensitive skills to save general skills, or send onboarding request.',
+                    style: TextStyle(fontSize: 11, color: AppColors.gray),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -1811,6 +2045,7 @@ class _MenuItem extends StatelessWidget {
   final Color? textColor;
   final Color? iconColor;
   final String? badge;
+  final Color? badgeColor;
 
   const _MenuItem({
     required this.icon,
@@ -1819,10 +2054,12 @@ class _MenuItem extends StatelessWidget {
     this.textColor,
     this.iconColor,
     this.badge,
+    this.badgeColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bColor = badgeColor ?? const Color(0xFFD97706);
     return ListTile(
       leading: Icon(icon, color: iconColor ?? AppColors.gray, size: 22),
       title: Row(
@@ -1842,19 +2079,19 @@ class _MenuItem extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                color: bColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                  color: bColor.withValues(alpha: 0.35),
                   width: 0.8,
                 ),
               ),
               child: Text(
                 badge!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFD97706),
+                  color: bColor,
                 ),
               ),
             ),

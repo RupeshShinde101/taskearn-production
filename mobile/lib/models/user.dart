@@ -23,6 +23,7 @@ class User {
   final int dailyReleaseCount;
   final String? authProvider; // 'email' | 'google' | null
   final String profileMode; // 'poster' | 'helper'
+  final String? physicalVerificationStatus; // 'none' | 'pending' | 'verified' | 'rejected'
 
   User({
     required this.id,
@@ -48,6 +49,7 @@ class User {
     this.dailyReleaseCount = 0,
     this.authProvider,
     this.profileMode = 'poster',
+    this.physicalVerificationStatus,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -92,6 +94,7 @@ class User {
               (json['dailyReleaseCount'] ?? json['daily_release_count'] ?? 0).toString()) ?? 0,
       authProvider: json['auth_provider']?.toString(),
       profileMode: json['profile_mode']?.toString() ?? json['profileMode']?.toString() ?? 'poster',
+      physicalVerificationStatus: json['physical_verification_status']?.toString() ?? json['physicalVerificationStatus']?.toString(),
     );
   }
 
@@ -115,6 +118,7 @@ class User {
         'created_at': createdAt.toIso8601String(),
         'dailyReleaseCount': dailyReleaseCount,
         'profile_mode': profileMode,
+        'physical_verification_status': physicalVerificationStatus,
       };
 
   User copyWith({
@@ -141,6 +145,7 @@ class User {
     int? dailyReleaseCount,
     String? authProvider,
     String? profileMode,
+    String? physicalVerificationStatus,
   }) =>
       User(
         id: id ?? this.id,
@@ -166,6 +171,7 @@ class User {
         dailyReleaseCount: dailyReleaseCount ?? this.dailyReleaseCount,
         authProvider: authProvider ?? this.authProvider,
         profileMode: profileMode ?? this.profileMode,
+        physicalVerificationStatus: physicalVerificationStatus ?? this.physicalVerificationStatus,
       );
 
   /// Returns a copy of this User with only the avatar replaced.

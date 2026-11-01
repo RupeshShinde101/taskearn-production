@@ -52,8 +52,9 @@ class TermsScreen extends StatelessWidget {
             _section('4. What Workmate4u Is — and What It Is Not',
                 'Workmate4u is an online intermediary marketplace that lets two types of users connect:',
                 bullets: [
-                  'Task Posters — users who post a task and pay for it to be completed.',
-                  'Taskers — users who accept and complete the task in return for the agreed price.',
+                  'Task Posters — users who post a task and pay for it to be completed (Poster Mode).',
+                  'Helpers (Taskers) — users who configure skills, accept, and complete tasks in return for the agreed price (Helper Mode).',
+                  'Dual Profile Modes — Users can switch dynamically between Poster Mode and Helper Mode from their Profile. Skills selection ("My Skills") is designated exclusively for Helper mode to facilitate relevant task matching.',
                 ]),
             _infoBox(
                 'Workmate4u only provides the technology platform (listings, matching, in-app chat and voice calls, payment routing through Razorpay, ratings, wallet ledger and dispute support). We are NOT a party to any agreement between a Task Poster and a Tasker, we are NOT the employer of any Tasker, and we do not perform tasks ourselves.\n\nThis Platform is provided in compliance with the Information Technology Act, 2000 and the IT (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021.'),
@@ -72,7 +73,8 @@ class TermsScreen extends StatelessWidget {
                     'Adult, sexual or escort services;',
                     'Activities that pose serious physical danger without licensed professional involvement;',
                     'Fraud, deception, phishing, doxxing, hacking or unauthorised data scraping;',
-                    'Soliciting cash, gifts or off-Platform payments to circumvent service charges;',
+                    'Soliciting cash, gifts or off-Platform payments to circumvent service charges or escrow protections;',
+                    'Diverting or soliciting task communications to external platforms (e.g., WhatsApp, Telegram, personal SMS) to bypass Platform safeguards;',
                     'Hate speech, harassment, threats or content prohibited under the IT Rules, 2021.',
                   ]),
               const _SubSection('5.3 Tasker Conduct',
@@ -99,8 +101,16 @@ class TermsScreen extends StatelessWidget {
                       'Requesting or paying any portion of the task price outside the Workmate4u Platform voids dispute protection and may result in permanent account termination.'),
                 ]),
 
-            _section('7. Communication, Voice Calls & Location',
-                'The Platform offers in-app chat and WebRTC voice calls between matched users, displays approximate distance, and provides live tracking between Poster and Tasker while a task is in progress. Recording or distributing another user\'s voice/messages without consent is prohibited.'),
+            _section('7. In-App Communication, Encrypted Chat & Voice Calls',
+                'To safeguard user privacy, escrow funds, and service accountability, Workmate4u provides built-in 1-on-1 encrypted chat and voice calls between the assigned Task Poster and Helper:',
+                bullets: [
+                  'Mandatory On-Platform Communication: All task coordination, arrival notices, and instructions MUST be conducted through the Workmate4u in-app encrypted chat or in-app voice call.',
+                  'Strict Ban on Off-Platform Redirection: Diverting communications to external apps (such as WhatsApp, Telegram, or phone calls outside the app) is strictly prohibited. Off-platform bypass voids all dispute resolution, cancellation guarantees, and escrow protection, and may lead to account suspension.',
+                  'End-to-End Task Encryption: 1-on-1 chat messages are encrypted between the assigned Poster and Helper for that specific task to safeguard contact numbers and private premises.',
+                  'Safety & Dispute Auditing: In the event of a reported violation, safety complaint, or formal dispute, verified communication audit records may be reviewed by the Workmate4u safety team to resolve the matter.',
+                  'Zero Tolerance for Misconduct: Harassment, abusive language, spam, threats, extortion, or offensive media in in-app chat is strictly prohibited.',
+                  'No Unauthorised Recording: Recording or redistributing chat messages or voice calls without mutual consent is strictly prohibited.',
+                ]),
 
             _section('8. Ratings, Reviews & Reputation',
                 'Both Posters and Taskers may rate each other after a task. Reviews must be honest and based on actual experience. We may remove reviews that are abusive, defamatory, paid, or violate these Terms.'),

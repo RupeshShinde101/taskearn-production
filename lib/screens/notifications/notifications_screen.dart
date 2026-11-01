@@ -48,7 +48,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     // doesn't conflict with the navigator key reservation.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (inProgressTypes.contains(type)) {
+      if (type == 'chat' || type == 'chat_message') {
+        context.push('/chat/$taskId');
+      } else if (inProgressTypes.contains(type)) {
         context.push('/task-in-progress/$taskId');
       } else {
         context.push('/task/$taskId');
@@ -166,6 +168,8 @@ class _NotificationTile extends StatelessWidget {
 
   IconData get _icon {
     switch (notification.type) {
+      case 'chat':
+      case 'chat_message':   return Icons.chat_bubble_outline_rounded;
       case 'skill_matched':
       case 'task_matched':
       case 'matched_task':
@@ -183,6 +187,8 @@ class _NotificationTile extends StatelessWidget {
 
   Color get _iconColor {
     switch (notification.type) {
+      case 'chat':
+      case 'chat_message':   return const Color(0xFF6366F1);
       case 'skill_matched':
       case 'task_matched':
       case 'matched_task':

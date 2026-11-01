@@ -216,7 +216,7 @@ class TaskProvider extends ChangeNotifier {
   /// Find a task by ID in all local caches (detail cache has highest priority)
   Task? _findCached(String id) {
     if (_detailCache.containsKey(id)) return _detailCache[id];
-    for (final list in [_browseTasks, _myPostedTasks, _myAcceptedTasks, _myCompletedTasks]) {
+    for (final list in [_myAcceptedTasks, _myPostedTasks, _myCompletedTasks, _browseTasks]) {
       for (final t in list) {
         if (t.id == id) return t;
       }
@@ -261,7 +261,9 @@ class TaskProvider extends ChangeNotifier {
       if (json != null && json.isNotEmpty) {
         final task = Task.fromJson(json);
         // Only cache if we got a real task (has both a non-empty id and title).
-        // This prevents a bare success response from becoming a bogus task.
+        // This prevents the accept endpoint's bare {success:true} response from
+        // being stored as a bogus task with status='active', which would cause
+        // isActivePoster=true and a phone-less short-circuit in getTaskDetail().
         if (task.id.isNotEmpty &&
             task.title.isNotEmpty &&
             (task.posterName != 'Anonymous' || task.posterPhone != null)) {
@@ -310,6 +312,7 @@ class TaskProvider extends ChangeNotifier {
           if (task.posterPhone == null || task.posterPhone!.trim().isEmpty) {
             var phone = _loadPhone(id) ?? _findPhoneInAllLists(id);
             if (phone == null && _myAcceptedTasks.isEmpty) {
+              // List not loaded yet (e.g. opened from notification) — fetch now.
               try {
                 await fetchMyTasks();
                 phone = _findPhoneInAllLists(id);
@@ -432,8 +435,8 @@ class TaskProvider extends ChangeNotifier {
 
   Future<bool> acceptTask(String taskId) async {
     try {
-      // Clear any stale detail cache so an older browse snapshot
-      // cannot short-circuit the first in-progress redirect.
+      // Clear any stale detail cache so a previous browse-list snapshot
+      // (which may lack posterPhone) cannot short-circuit getTaskDetail().
       _detailCache.remove(taskId);
 
       // Snapshot the poster phone AND name from the browse list NOW, before
@@ -527,6 +530,7 @@ class TaskProvider extends ChangeNotifier {
   Future<bool> markCompleted(String taskId, {String? proofPath}) async {
     try {
       if (proofPath != null && !proofPath.startsWith('http')) {
+        // Send proof image as multipart so backend can store it
         await ApiService.uploadFile(
           '/tasks/$taskId/complete',
           proofPath,
@@ -537,7 +541,7 @@ class TaskProvider extends ChangeNotifier {
       }
       // Invalidate detail cache so next load gets fresh status.
       _detailCache.remove(taskId);
-      fetchMyTasks();
+      fetchMyTasks(); // fire-and-forget; screen's _load() handles UI refresh
       return true;
     } on ApiException catch (e) {
       _error = e.message;

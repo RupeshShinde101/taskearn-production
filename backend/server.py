@@ -298,14 +298,25 @@ try:
     from firebase_admin import credentials as fb_credentials
     from firebase_admin import messaging as fb_messaging
 
-    _firebase_sa_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '')
-    if _firebase_sa_json:
+    _sa_raw = (os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON') or
+                   os.environ.get('FIREBASE_SERVICE_ACCOUNT') or
+                   os.environ.get('FIREBASE_CREDENTIALS') or
+                   os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or '').strip()
+    if _sa_raw:
         import json as _json_fcm
-        _cred = fb_credentials.Certificate(_json_fcm.loads(_firebase_sa_json))
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(_cred)
-        _has_fcm = True
-        print('[FCM] Firebase Admin SDK initialized ✅')
+        if _sa_raw.startswith('{'):
+            _cred = fb_credentials.Certificate(_json_fcm.loads(_sa_raw))
+        elif os.path.isfile(_sa_raw):
+            _cred = fb_credentials.Certificate(_sa_raw)
+        else:
+            _cred = None
+        if _cred:
+            if not firebase_admin._apps:
+                firebase_admin.initialize_app(_cred)
+            _has_fcm = True
+            print('[FCM] Firebase Admin SDK initialized ✅')
+        else:
+            print('[FCM] ⚠️ FIREBASE service account credentials invalid or file path not found')
     else:
         print('[FCM] FIREBASE_SERVICE_ACCOUNT_JSON not set — FCM push disabled')
 except ImportError:
@@ -433,13 +444,17 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
       workmate4u_main    — general task updates (high importance)
       workmate4u_matched — nearby task matches  (max importance)
       workmate4u_payment — payment events       (max importance)
+      workmate4u_chat    — chat messages        (max importance)
     """
     if not _has_fcm:
         return
     _ensure_fcm_token_column()
     try:
         with get_db() as (cursor, _):
-            cursor.execute(f'SELECT fcm_token FROM users WHERE id = {PH}', (str(user_id),))
+            if PH == '%s':
+                cursor.execute('SELECT fcm_token FROM users WHERE id::text = %s', (str(user_id),))
+            else:
+                cursor.execute(f'SELECT fcm_token FROM users WHERE id = {PH}', (str(user_id),))
             row = cursor.fetchone()
         if not row:
             print(f'[FCM] ⚠️ No user row for user_id={user_id} — skipping push')
@@ -454,21 +469,46 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
                    'title': title, 'body': body}
         if data:
             for k, v in data.items():
-                payload[str(k)] = str(v)
+                if v is not None:
+                    payload[str(k)] = str(v)
 
-        # Data-only message — no 'notification' key so the FCM SDK always
-        # routes it to the Flutter background handler (_bgMessageHandler) even
-        # when the app is killed.  The handler itself creates the local
-        # notification on the correct channel with the right importance.
+        # For direct targeted alerts (chat, payments, assignment), also attach a
+        # Notification object so Android OS / iOS APNs displays the heads-up banner
+        # directly from Google Play Services even if background execution is restricted.
+        notif_type = payload.get('type', '')
+        include_native_notification = notif_type in (
+            'chat', 'chat_message', 'task_accepted', 'task_completed',
+            'verify_and_pay', 'payment_released', 'payment_done'
+        )
+
+        fcm_notif = None
+        android_notif = None
+        aps_alert = None
+        if include_native_notification:
+            fcm_notif = fb_messaging.Notification(title=title, body=body)
+            android_notif = fb_messaging.AndroidNotification(
+                channel_id=channel,
+                priority='max' if channel in ('workmate4u_chat', 'workmate4u_payment', 'workmate4u_matched') else 'high',
+                default_sound=True,
+                default_vibrate_timings=True,
+            )
+            aps_alert = fb_messaging.ApsAlert(title=title, body=body)
+
         message = fb_messaging.Message(
+            notification=fcm_notif,
             data=payload,
             android=fb_messaging.AndroidConfig(
                 priority='high',   # FCM delivery priority — wakes up device
+                notification=android_notif,
             ),
             apns=fb_messaging.APNSConfig(
                 headers={'apns-priority': '10'},
                 payload=fb_messaging.APNSPayload(
-                    aps=fb_messaging.Aps(content_available=True),
+                    aps=fb_messaging.Aps(
+                        alert=aps_alert,
+                        sound='default' if include_native_notification else None,
+                        content_available=True,
+                    ),
                 ),
             ),
             token=token,
@@ -1383,7 +1423,7 @@ def join_task(data):
 
 @socketio.event
 def send_message(data):
-    """Send a chat message"""
+    """Send a chat message via Socket.IO"""
     message = data.get('message', '').strip()
     task_id = data.get('taskId')
     token = data.get('token')
@@ -1395,26 +1435,121 @@ def send_message(data):
     if not payload:
         return
     
-    user_id = payload['user_id']
+    user_id = str(payload['user_id'])
     user_name = data.get('userName', 'User')
     
-    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    timestamp = now_dt.isoformat()
     room = f'task_{task_id}'
     
-    # Store message in database
+    recipient_id = None
+    notif_title = f'💬 Message from {user_name}'
+    notif_body = f'New message from {user_name}'
+    msg_id = None
+
     with get_db() as (cursor, conn):
+        _ensure_chat_messages_table()
+        cursor.execute(f'SELECT id, title, posted_by, accepted_by FROM tasks WHERE id = {PH}', (task_id,))
+        task_row = cursor.fetchone()
+        task_dict = dict_from_row(task_row) if task_row else {}
+
+        posted_by = str(task_dict.get('posted_by') or '').strip()
+        accepted_by = str(task_dict.get('accepted_by') or '').strip()
+
+        col_set = _get_chat_columns(cursor)
+
+        if user_id == posted_by:
+            recipient_id = accepted_by if accepted_by else None
+        elif accepted_by and user_id == accepted_by:
+            recipient_id = posted_by if posted_by else None
+
+        fields = ['task_id', 'message']
+        values = [task_id, message]
+        if 'user_id' in col_set:
+            fields.append('user_id')
+            values.append(user_id)
+        if 'sender_id' in col_set:
+            fields.append('sender_id')
+            values.append(user_id)
+        if 'receiver_id' in col_set:
+            fields.append('receiver_id')
+            values.append(recipient_id if recipient_id else user_id)
+        if 'user_name' in col_set:
+            fields.append('user_name')
+            values.append(user_name)
+        if 'timestamp' in col_set:
+            fields.append('timestamp')
+            values.append(now_dt)
+        if 'created_at' in col_set:
+            fields.append('created_at')
+            values.append(now_dt)
+
+        cols_sql = ', '.join(fields)
+        placeholders = ', '.join([PH] * len(fields))
+
         cursor.execute(f'''
-            INSERT INTO chat_messages (task_id, user_id, message, timestamp, user_name)
-            VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
-        ''', (task_id, user_id, message, timestamp, user_name))
-    
+            INSERT INTO chat_messages ({cols_sql})
+            VALUES ({placeholders})
+            RETURNING id
+        ''', tuple(values))
+        inserted = cursor.fetchone()
+        msg_id = inserted['id'] if inserted and isinstance(inserted, dict) and 'id' in inserted else (inserted[0] if inserted else None)
+
+        if recipient_id:
+            task_title = task_dict.get("title") or "Task"
+            notif_title = f'💬 Message from {user_name}'
+            notif_body = f'{user_name}: New message on "{task_title}"'
+            try:
+                notif_data = json.dumps({
+                    'type': 'chat',
+                    'taskId': str(task_id),
+                    'task_id': str(task_id),
+                    'senderName': user_name,
+                    'senderId': user_id
+                })
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                ''', (recipient_id, task_id, 'chat_message', notif_title, notif_body, 'unread', notif_data, timestamp))
+            except Exception as n_err:
+                print(f'[Chat Socket] DB notification warning: {n_err}')
+
     # Broadcast message to task room
     socketio.emit('new_message', {
+        'id': msg_id,
+        'taskId': task_id,
         'userId': user_id,
         'userName': user_name,
         'message': message,
         'timestamp': timestamp
     }, room=room)
+
+    if recipient_id:
+        import threading
+        def _async_push_socket():
+            try:
+                send_fcm_to_user(
+                    recipient_id,
+                    notif_title,
+                    notif_body,
+                    data={
+                        'type': 'chat',
+                        'task_id': str(task_id),
+                        'taskId': str(task_id),
+                        'sender_name': str(user_name),
+                        'sender_id': user_id,
+                    },
+                    channel='workmate4u_chat'
+                )
+            except Exception as f_err:
+                print(f'[Chat Socket] FCM warning: {f_err}')
+
+            try:
+                send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
+            except Exception as p_err:
+                print(f'[Chat Socket] Web push warning: {p_err}')
+
+        threading.Thread(target=_async_push_socket, daemon=True).start()
     
     print(f"💬 Message from {user_name}: {message[:50]}...")
 
@@ -4071,9 +4206,9 @@ def mark_task_completed(task_id):
             # a separate completedTasks field and the mobile moves the task to
             # the Completed tab — even after an app restart.
             cursor.execute(f'''
-                UPDATE tasks SET status = 'done', helper_final_completed_at = {PH}
+                UPDATE tasks SET status = 'done', helper_final_completed_at = {PH}, completed_at = {PH}
                 WHERE id = {PH}
-            ''', (now, task_id))
+            ''', (now, now, task_id))
 
             # Increment tasks_completed and total_earnings for helper
             cursor.execute(f'''
@@ -4762,16 +4897,14 @@ def get_user_tasks():
             WHERE t.posted_by = {PH}
               AND t.status NOT IN (
                 'removed', 'flagged', 'suspicious',
-                'done', 'finished', 'paid', 'verified',
+                'done', 'finished', 'paid', 'verified', 'payment_released',
                 'cancelled', 'poster_cancelled', 'rejected', 'expired'
               )
             ORDER BY t.posted_at DESC
         ''', (request.user_id,))
         posted = [dict_from_row(t) for t in cursor.fetchall()]
 
-        # Accepted tasks — include all active statuses + new flow statuses + legacy paid.
-        # Exclude tasks where helper_final_completed_at is set (legacy status='completed'
-        # tasks already fully finished) — those go into completedTasks instead.
+        # Accepted tasks — active only for helper; exclude fully finished and cancelled tasks.
         cursor.execute(f'''
             SELECT t.*, u.name as poster_name, u.phone as poster_phone,
                    u.email as poster_email, u.id as poster_user_id,
@@ -4779,27 +4912,53 @@ def get_user_tasks():
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id
             WHERE t.accepted_by = {PH}
-              AND t.status IN ('accepted', 'completed', 'paid', 'verify_pending', 'payment_released')
+              AND t.status IN ('accepted', 'in_progress', 'completed', 'verify_pending', 'payment_released')
+              AND t.status NOT IN ('done', 'paid', 'finished', 'verified', 'cancelled', 'poster_cancelled', 'rejected', 'expired')
               AND (t.helper_final_completed_at IS NULL OR t.status != 'completed')
             ORDER BY t.accepted_at DESC
         ''', (request.user_id,))
         accepted = [dict_from_row(t) for t in cursor.fetchall()]
 
-        # Completed tasks — helper clicked final "Mark as Completed".
-        # Includes new flow (status='done') AND legacy tasks that were already
-        # fully finished (status='completed' + helper_final_completed_at set).
+        # Completed tasks — includes BOTH poster's completed tasks and helper's completed tasks.
         cursor.execute(f'''
-            SELECT t.*, u.name as poster_name, u.phone as poster_phone,
+            SELECT t.*,
+                   u.name as poster_name, u.phone as poster_phone,
                    u.email as poster_email, u.id as poster_user_id,
-                   u.rating as poster_rating
+                   u.rating as poster_rating,
+                   h.name as helper_name, h.phone as helper_phone,
+                   h.email as helper_email, h.id as helper_user_id,
+                   h.rating as helper_rating
             FROM tasks t
             LEFT JOIN users u ON t.posted_by = u.id
-            WHERE t.accepted_by = {PH}
-              AND (t.status = 'done'
-                   OR (t.status = 'completed' AND t.helper_final_completed_at IS NOT NULL))
-            ORDER BY t.helper_final_completed_at DESC NULLS LAST
-        ''', (request.user_id,))
+            LEFT JOIN users h ON t.accepted_by = h.id
+            WHERE (t.posted_by = {PH} OR t.accepted_by = {PH})
+              AND (
+                t.status IN ('done', 'paid', 'finished', 'verified')
+                OR (t.status = 'completed' AND (t.helper_final_completed_at IS NOT NULL OR t.paid_at IS NOT NULL OR t.payment_released_at IS NOT NULL))
+                OR (t.posted_by = {PH} AND t.status = 'payment_released')
+              )
+              AND t.status NOT IN ('removed', 'flagged', 'suspicious', 'cancelled', 'poster_cancelled', 'rejected', 'expired')
+        ''', (request.user_id, request.user_id, request.user_id))
         completed = [dict_from_row(t) for t in cursor.fetchall()]
+
+        for row in completed:
+            # Anchor 48h timer to the latest final completion milestone:
+            # helper_final_completed_at > paid_at > payment_released_at > completed_at > posted_at
+            final_ts = (
+                row.get('helper_final_completed_at') or
+                row.get('paid_at') or
+                row.get('payment_released_at') or
+                row.get('completed_at') or
+                row.get('verified_at') or
+                row.get('posted_at')
+            )
+            row['completed_at'] = final_ts
+            row['helper_final_completed_at'] = row.get('helper_final_completed_at') or final_ts
+
+        completed.sort(
+            key=lambda x: str(x.get('completed_at') or x.get('helper_final_completed_at') or x.get('paid_at') or x.get('posted_at') or ''),
+            reverse=True
+        )
 
         # Task IDs the current user has already rated (to mark UI as "rated")
         cursor.execute(f'SELECT task_id FROM helper_ratings WHERE rater_id = {PH}', (request.user_id,))
@@ -5979,9 +6138,28 @@ def admin_process_withdrawal():
     return jsonify({'success': True, 'message': f'Withdrawal {action}d successfully', 'newStatus': new_status})
 
 _chat_messages_ensured = False
+_chat_columns_cache = None
+
+def _get_chat_columns(cursor):
+    global _chat_columns_cache
+    if _chat_columns_cache is not None:
+        return _chat_columns_cache
+    try:
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'chat_messages'
+        """)
+        _chat_columns_cache = {
+            (row['column_name'] if isinstance(row, dict) else row[0]).lower()
+            for row in cursor.fetchall()
+        }
+    except Exception:
+        _chat_columns_cache = {'id', 'task_id', 'user_id', 'sender_id', 'receiver_id', 'user_name', 'message', 'timestamp', 'created_at'}
+    return _chat_columns_cache
 
 def _ensure_chat_messages_table():
-    """Ensure chat_messages table and indexes exist in PostgreSQL (idempotent)."""
+    """Ensure chat_messages table and all columns exist in PostgreSQL (one-time per process)."""
     global _chat_messages_ensured
     if _chat_messages_ensured:
         return
@@ -5991,19 +6169,38 @@ def _ensure_chat_messages_table():
                 CREATE TABLE IF NOT EXISTS chat_messages (
                     id SERIAL PRIMARY KEY,
                     task_id INTEGER NOT NULL,
-                    user_id VARCHAR(50) NOT NULL,
+                    user_id VARCHAR(50),
+                    sender_id VARCHAR(50),
+                    receiver_id VARCHAR(50),
                     user_name VARCHAR(255),
                     message TEXT NOT NULL,
-                    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            for col_sql in [
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_name VARCHAR(255)',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_id VARCHAR(50)',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_id VARCHAR(50)',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS receiver_id VARCHAR(50)',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+                'ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+                'ALTER TABLE chat_messages ALTER COLUMN sender_id DROP NOT NULL',
+                'ALTER TABLE chat_messages ALTER COLUMN receiver_id DROP NOT NULL',
+                'ALTER TABLE chat_messages ALTER COLUMN user_id DROP NOT NULL',
+            ]:
+                try:
+                    cursor.execute(col_sql)
+                except Exception:
+                    pass
+
             try:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_task_id ON chat_messages(task_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)')
             except Exception:
                 pass
         _chat_messages_ensured = True
-        print("[Chat] ✅ chat_messages table verified")
+        print("[Chat] chat_messages table and indexes verified ✅")
     except Exception as e:
         print(f"[Chat] ⚠️ _ensure_chat_messages_table error: {e}")
 
@@ -6051,12 +6248,32 @@ def get_chat_messages(task_id):
             if not is_participant:
                 return jsonify({'success': False, 'message': 'Unauthorized: You are not a participant in this task'}), 403
             
-            # Get messages
+            # Dynamic read based on actual columns (cached)
+            col_set = _get_chat_columns(cursor)
+
+            user_id_expr = "COALESCE(user_id, sender_id, '') as user_id" if ('user_id' in col_set or 'sender_id' in col_set) else "'' as user_id"
+            user_name_expr = "COALESCE(user_name, 'User') as user_name" if 'user_name' in col_set else "'User' as user_name"
+            if 'timestamp' in col_set and 'created_at' in col_set:
+                time_expr = "COALESCE(timestamp, created_at) as timestamp"
+            elif 'timestamp' in col_set:
+                time_expr = "timestamp"
+            elif 'created_at' in col_set:
+                time_expr = "created_at as timestamp"
+            elif 'sent_at' in col_set:
+                time_expr = "sent_at as timestamp"
+            else:
+                time_expr = "CURRENT_TIMESTAMP as timestamp"
+
+            order_col = 'timestamp' if 'timestamp' in col_set else ('created_at' if 'created_at' in col_set else 'id')
+
             cursor.execute(f'''
-                SELECT id, task_id, user_id, user_name, message, timestamp
+                SELECT id, task_id, 
+                       {user_id_expr}, 
+                       {user_name_expr}, 
+                       message, {time_expr}
                 FROM chat_messages
                 WHERE task_id = {PH}
-                ORDER BY timestamp ASC
+                ORDER BY {order_col} ASC
             ''', (task_id,))
             messages = [dict_from_row(row) for row in cursor.fetchall()]
         
@@ -6086,6 +6303,13 @@ def send_chat_message(task_id):
             return jsonify({'success': False, 'message': 'Message too long (max 5000 chars)'}), 400
         
         uid = str(request.user_id)
+        recipient_id = None
+        user_name = 'User'
+        notif_title = ''
+        notif_body = ''
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        timestamp_iso = now_dt.isoformat()
+
         with get_db() as (cursor, conn):
             # Verify user is part of this task
             cursor.execute(f'SELECT id, title, posted_by, accepted_by FROM tasks WHERE id = {PH}', (task_id,))
@@ -6095,8 +6319,8 @@ def send_chat_message(task_id):
                 return jsonify({'success': False, 'message': 'Task not found'}), 404
             
             task_dict = dict_from_row(task)
-            posted_by = str(task_dict.get('posted_by') or '')
-            accepted_by = str(task_dict.get('accepted_by') or '')
+            posted_by = str(task_dict.get('posted_by') or '').strip()
+            accepted_by = str(task_dict.get('accepted_by') or '').strip()
             
             # Authorize: user is poster, accepted helper, or matched by phone
             is_participant = (uid == posted_by or uid == accepted_by)
@@ -6130,53 +6354,130 @@ def send_chat_message(task_id):
                 user_name = (dict_from_row(user_row) or {}).get('name') if user_row else 'User'
             if not user_name:
                 user_name = 'User'
-            
-            # Store message
-            now_dt = datetime.datetime.now(datetime.timezone.utc)
-            timestamp_iso = now_dt.isoformat()
+
+            if uid == posted_by:
+                recipient_id = accepted_by if accepted_by else None
+            elif accepted_by and uid == accepted_by:
+                recipient_id = posted_by if posted_by else None
+            else:
+                if posted_by and uid != posted_by:
+                    recipient_id = posted_by
+                elif accepted_by and uid != accepted_by:
+                    recipient_id = accepted_by
+
+            col_set = _get_chat_columns(cursor)
+
+            fields = ['task_id', 'message']
+            values = [task_id, message]
+
+            if 'user_id' in col_set:
+                fields.append('user_id')
+                values.append(uid)
+
+            if 'sender_id' in col_set:
+                fields.append('sender_id')
+                values.append(uid)
+
+            if 'receiver_id' in col_set:
+                fields.append('receiver_id')
+                values.append(recipient_id if recipient_id else uid)
+
+            if 'user_name' in col_set:
+                fields.append('user_name')
+                values.append(user_name)
+
+            if 'timestamp' in col_set:
+                fields.append('timestamp')
+                values.append(now_dt)
+
+            if 'created_at' in col_set:
+                fields.append('created_at')
+                values.append(now_dt)
+
+            if 'message_type' in col_set:
+                fields.append('message_type')
+                values.append('text')
+
+            if 'is_read' in col_set:
+                fields.append('is_read')
+                values.append(False)
+
+            placeholders = ', '.join([PH] * len(fields))
+            cols_sql = ', '.join(fields)
+
             cursor.execute(f'''
-                INSERT INTO chat_messages (task_id, user_id, user_name, message, timestamp)
-                VALUES ({PH}, {PH}, {PH}, {PH}, {PH})
+                INSERT INTO chat_messages ({cols_sql})
+                VALUES ({placeholders})
                 RETURNING id
-            ''', (task_id, uid, user_name, message, now_dt))
+            ''', tuple(values))
             inserted = cursor.fetchone()
             msg_id = inserted['id'] if inserted and isinstance(inserted, dict) and 'id' in inserted else (inserted[0] if inserted else None)
 
-            # Emit via Socket.IO if available
-            try:
-                room = f'task_{task_id}'
-                socketio.emit('new_message', {
-                    'id': msg_id,
-                    'taskId': task_id,
-                    'userId': uid,
-                    'userName': user_name,
-                    'message': message,
-                    'timestamp': timestamp_iso
-                }, room=room)
-            except Exception as se:
-                print(f'[Chat] Socket.IO emit error: {se}')
-
-            # Create in-app notification & push notification for recipient
-            recipient_id = accepted_by if uid == posted_by else posted_by
+            # In-app DB notification insert
             if recipient_id:
+                task_title = task_dict.get("title") or "Task"
+                notif_title = f'💬 Message from {user_name}'
+                notif_body = f'{user_name}: New message on "{task_title}"'
                 try:
-                    notif_data = json.dumps({'type': 'chat', 'taskId': task_id, 'senderName': user_name})
+                    notif_data = json.dumps({
+                        'type': 'chat',
+                        'taskId': str(task_id),
+                        'task_id': str(task_id),
+                        'senderName': user_name,
+                        'senderId': str(uid)
+                    })
                     cursor.execute(f'''
                         INSERT INTO notifications (user_id, task_id, notification_type, title, message, status, data, created_at)
                         VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                    ''', (recipient_id, task_id, 'chat_message', f'💬 Message from {user_name}',
-                          f'{user_name} sent you a message about "{task_dict.get("title", "Task")}"',
-                          'unread', notif_data, timestamp_iso))
+                    ''', (recipient_id, task_id, 'chat_message', notif_title, notif_body, 'unread', notif_data, timestamp_iso))
                 except Exception as n_err:
                     print(f'[Chat] DB notification insert warning: {n_err}')
-                
+
+        # ── Database transaction is committed immediately here ──
+
+        # Emit via Socket.IO if available (memory operation, instant)
+        try:
+            room = f'task_{task_id}'
+            socketio.emit('new_message', {
+                'id': msg_id,
+                'taskId': task_id,
+                'userId': uid,
+                'userName': user_name,
+                'message': message,
+                'timestamp': timestamp_iso
+            }, room=room)
+        except Exception as se:
+            print(f'[Chat] Socket.IO emit error: {se}')
+
+        # Dispatch FCM and WebPush asynchronously in daemon thread
+        # (Must NEVER block or slow down client HTTP response)
+        if recipient_id:
+            import threading
+            def _dispatch_push():
                 try:
-                    send_push_to_user(recipient_id, f'💬 Message from {user_name}',
-                                      f'New message on "{task_dict.get("title", "Task")}"',
-                                      f'/chat/{task_id}')
-                except Exception as p_err:
-                    print(f'[Chat] Push notification warning: {p_err}')
-        
+                    send_fcm_to_user(
+                        recipient_id,
+                        notif_title,
+                        notif_body,
+                        data={
+                            'type': 'chat',
+                            'task_id': str(task_id),
+                            'taskId': str(task_id),
+                            'sender_name': str(user_name),
+                            'sender_id': str(uid),
+                        },
+                        channel='workmate4u_chat'
+                    )
+                    print(f'[Chat] Async FCM delivered to {recipient_id}')
+                except Exception as fe:
+                    print(f'[Chat] Async FCM error: {fe}')
+                try:
+                    send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
+                except Exception as pe:
+                    print(f'[Chat] Async WebPush error: {pe}')
+
+            threading.Thread(target=_dispatch_push, daemon=True).start()
+
         return jsonify({
             'success': True,
             'message': {

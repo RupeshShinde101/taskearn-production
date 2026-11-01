@@ -11628,9 +11628,9 @@ def request_helper_physical_verification():
         skills_str = ', '.join([s.strip() for s in skills if s.strip()])
     else:
         skills_str = str(skills or '').strip()
-    govt_id_type = (data.get('govtIdType') or '').strip()
-    govt_id_number = (data.get('govtIdNumber') or '').strip()
-    preferred_slot = (data.get('preferredSlot') or '').strip()
+    govt_id_type = (data.get('govtIdType') or 'In-person Verification').strip()
+    govt_id_number = (data.get('govtIdNumber') or 'To be verified in-person').strip()
+    preferred_slot = (data.get('preferredSlot') or 'Flexible / In-person').strip()
     notes = (data.get('notes') or '').strip()
 
     # Validation

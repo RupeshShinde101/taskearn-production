@@ -613,9 +613,15 @@ class AuthProvider extends ChangeNotifier {
           'primaryPhone': primaryPhone.trim(),
           'alternativePhone': alternativePhone.trim(),
           'skills': skills,
-          if (govtIdType != null && govtIdType.trim().isNotEmpty) 'govtIdType': govtIdType.trim(),
-          if (govtIdNumber != null && govtIdNumber.trim().isNotEmpty) 'govtIdNumber': govtIdNumber.trim(),
-          if (preferredSlot != null && preferredSlot.trim().isNotEmpty) 'preferredSlot': preferredSlot.trim(),
+          'govtIdType': (govtIdType != null && govtIdType.trim().isNotEmpty)
+              ? govtIdType.trim()
+              : 'In-person Verification',
+          'govtIdNumber': (govtIdNumber != null && govtIdNumber.trim().isNotEmpty)
+              ? govtIdNumber.trim()
+              : 'To be verified in-person',
+          'preferredSlot': (preferredSlot != null && preferredSlot.trim().isNotEmpty)
+              ? preferredSlot.trim()
+              : 'Flexible / In-person',
           if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
         },
       );

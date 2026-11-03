@@ -6,12 +6,14 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 import 'physical_onboarding_screen.dart';
+import 'vehicle_verification_screen.dart';
 
-// ── All available skills the user can select ─────────────────────────────────
+// â”€â”€ All available skills the user can select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _kAllSkills = [
   'Cleaning', 'Delivery', 'Driving', 'Cooking', 'Plumbing', 'Electrical',
   'Carpentry', 'Painting', 'Gardening', 'Moving & Packing', 'Shopping',
@@ -48,6 +50,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = auth.user;
     final userSkills = user?.skills ?? const <String>[];
     final phyStatus = user?.physicalVerificationStatus;
+    final vehStatus = user?.vehicleVerificationStatus;
+    final phyRemaining = user?.physicalVerificationReapplyRemaining ?? Duration.zero;
+    final vehRemaining = user?.vehicleVerificationReapplyRemaining ?? Duration.zero;
 
     return Scaffold(
       appBar: AppBar(
@@ -67,7 +72,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Avatar, name, email, rating ──────────────────────────────────
+            // â”€â”€ Avatar, name, email, rating â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Center(
               child: Column(
                 children: [
@@ -158,7 +163,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Profile Role Switcher (Poster vs Helper) ─────────────────────
+            // â”€â”€ Profile Role Switcher (Poster vs Helper) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             _ProfileRoleSwitcher(
               currentMode: auth.profileMode,
               onModeChanged: (newMode) async {
@@ -199,7 +204,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── Stats card (Tasks Completed | Tasks Posted) ──────────────────
+            // â”€â”€ Stats card (Tasks Completed | Tasks Posted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Card(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
@@ -223,16 +228,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── KYC card ─────────────────────────────────────────────────────
+            // â”€â”€ KYC card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             _KycCard(
-              isVerified: user?.isKycVerified ?? false,
-              kycStatus: user?.kycStatus,
+              user: user,
               onStart: () => context.push('/kyc'),
             ),
 
             const SizedBox(height: 16),
 
-            // ── Bio section ──────────────────────────────────────────────────
+            // â”€â”€ Bio section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (user?.bio != null && user!.bio!.isNotEmpty) ...[
               const _SectionHeader('About Me'),
               const SizedBox(height: 8),
@@ -251,7 +255,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
             ],
 
-            // ── Skills section (Helper only) ─────────────────────────────────
+            // â”€â”€ Skills section (Helper only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (auth.isHelperMode) ...[
               Row(
                 children: [
@@ -338,33 +342,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       spacing: 8,
                       runSpacing: 8,
                       children: userSkills
-                          .map((s) => Chip(
-                                label: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(s),
-                                    if (kSensitiveSkills.contains(s)) ...[
-                                      const SizedBox(width: 4),
-                                      const Icon(Icons.shield_outlined,
-                                          size: 13, color: Color(0xFFD97706)),
-                                    ],
+                          .map((s) {
+                            final isSensitive = kSensitiveSkills.contains(s);
+                            final isVehicle = isVehicleSkill(s);
+                            return Chip(
+                              label: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(s),
+                                  if (isSensitive) ...[
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.shield_outlined,
+                                        size: 13, color: Color(0xFFD97706)),
+                                  ] else if (isVehicle) ...[
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.directions_car_outlined,
+                                        size: 13, color: Color(0xFF1D4ED8)),
                                   ],
-                                ),
-                                backgroundColor: kSensitiveSkills.contains(s)
-                                    ? const Color(0xFFFEF3C7)
-                                    : AppColors.primary
-                                        .withValues(alpha: 0.1),
-                                labelStyle: TextStyle(
-                                    color: kSensitiveSkills.contains(s)
-                                        ? const Color(0xFF92400E)
-                                        : AppColors.primary,
-                                    fontWeight: FontWeight.w500),
-                                side: BorderSide(
-                                    color: kSensitiveSkills.contains(s)
-                                        ? const Color(0xFFF59E0B)
-                                        : AppColors.primary
-                                            .withValues(alpha: 0.3)),
-                              ))
+                                ],
+                              ),
+                              backgroundColor: isSensitive
+                                  ? const Color(0xFFFEF3C7)
+                                  : isVehicle
+                                      ? const Color(0xFFEFF6FF)
+                                      : AppColors.primary
+                                          .withValues(alpha: 0.1),
+                              labelStyle: TextStyle(
+                                  color: isSensitive
+                                      ? const Color(0xFF92400E)
+                                      : isVehicle
+                                          ? const Color(0xFF1E40AF)
+                                          : AppColors.primary,
+                                  fontWeight: FontWeight.w500),
+                              side: BorderSide(
+                                  color: isSensitive
+                                      ? const Color(0xFFF59E0B)
+                                      : isVehicle
+                                          ? const Color(0xFF3B82F6)
+                                          : AppColors.primary
+                                              .withValues(alpha: 0.3)),
+                            );
+                          })
                           .toList(),
                     ),
                   ),
@@ -409,8 +427,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             phyStatus == 'verified'
                                 ? 'Sensitive skills physically verified'
                                 : (phyStatus == 'pending'
-                                    ? 'Physical onboarding request pending admin review'
-                                    : 'Sensitive skills require physical verification by Admin'),
+                                    ? 'Physical onboarding under review (completes in 24 hrs)'
+                                    : (phyStatus == 'rejected'
+                                        ? (!(user?.canReapplyPhysicalVerification ?? true)
+                                            ? 'Onboarding rejected. Reapply in ${phyRemaining.inHours}h ${phyRemaining.inMinutes % 60}m'
+                                            : 'Onboarding rejected. 24h cooldown passed — reapply now')
+                                        : 'Sensitive skills require physical verification by Admin')),
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w600,
@@ -425,12 +447,91 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         if (phyStatus != 'verified' && phyStatus != 'pending')
                           GestureDetector(
                             onTap: () => context.push('/physical-onboarding', extra: {'skills': userSkills}),
-                            child: const Text(
-                              'Verify Now',
-                              style: TextStyle(
+                            child: Text(
+                              phyStatus == 'rejected'
+                                  ? (!(user?.canReapplyPhysicalVerification ?? true) ? 'View Status' : 'Reapply')
+                                  : 'Verify Now',
+                              style: const TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w700,
                                 color: Color(0xFFDC2626),
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (hasVehicleSkill(userSkills)) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: vehStatus == 'verified'
+                          ? const Color(0xFFD1FAE5)
+                          : (vehStatus == 'pending'
+                              ? const Color(0xFFFEF3C7)
+                              : const Color(0xFFEFF6FF)),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: vehStatus == 'verified'
+                            ? const Color(0xFFA7F3D0)
+                            : (vehStatus == 'pending'
+                                ? const Color(0xFFFDE68A)
+                                : const Color(0xFFBFDBFE)),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          vehStatus == 'verified'
+                              ? Icons.verified_user_rounded
+                              : (vehStatus == 'pending'
+                                  ? Icons.hourglass_top_rounded
+                                  : Icons.directions_car_rounded),
+                          size: 16,
+                          color: vehStatus == 'verified'
+                              ? const Color(0xFF059669)
+                              : (vehStatus == 'pending'
+                                  ? const Color(0xFFD97706)
+                                  : const Color(0xFF1D4ED8)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            vehStatus == 'verified'
+                                ? 'Vehicle skills verified'
+                                : (vehStatus == 'pending'
+                                    ? 'Vehical verification under review (completes in 24 hrs)'
+                                    : (vehStatus == 'rejected'
+                                        ? (!(user?.canReapplyVehicleVerification ?? true)
+                                            ? 'Vehical verification rejected. Reapply in ${vehRemaining.inHours}h ${vehRemaining.inMinutes % 60}m'
+                                            : 'Vehical verification rejected. 24h cooldown passed — reapply now')
+                                        : 'Vehicle skills require Driving License & RC verification')),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: vehStatus == 'verified'
+                                  ? const Color(0xFF065F46)
+                                  : (vehStatus == 'pending'
+                                      ? const Color(0xFF92400E)
+                                      : const Color(0xFF1E40AF)),
+                            ),
+                          ),
+                        ),
+                        if (vehStatus != 'verified' && vehStatus != 'pending')
+                          GestureDetector(
+                            onTap: () => context.push('/vehicle-verification', extra: {'skills': userSkills}),
+                            child: Text(
+                              vehStatus == 'rejected'
+                                  ? (!(user?.canReapplyVehicleVerification ?? true) ? 'View Status' : 'Reapply')
+                                  : 'Verify Now',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1D4ED8),
                                 decoration: TextDecoration.underline,
                               ),
                             ),
@@ -443,7 +544,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 20),
             ],
 
-            // ── Menu items ───────────────────────────────────────────────────
+            // â”€â”€ Menu items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Card(
               child: Column(
                 children: [
@@ -473,14 +574,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       badge: phyStatus == 'verified'
                           ? 'Verified'
                           : (phyStatus == 'pending'
-                              ? 'Pending Review'
-                              : (hasSensitiveSkill(userSkills) ? 'Action Required' : null)),
+                              ? 'In 24h Review'
+                              : (phyStatus == 'rejected'
+                                  ? (!(user?.canReapplyPhysicalVerification ?? true)
+                                      ? '24h Cooldown'
+                                      : 'Reapply Ready')
+                                  : (hasSensitiveSkill(userSkills) ? 'Action Required' : null))),
                       badgeColor: phyStatus == 'verified'
                           ? AppColors.success
                           : (phyStatus == 'pending'
                               ? AppColors.warning
                               : AppColors.danger),
                       onTap: () => context.push('/physical-onboarding'),
+                    ),
+                    const Divider(height: 1),
+                    _MenuItem(
+                      icon: Icons.directions_car_outlined,
+                      title: 'Vehical Verification',
+                      badge: vehStatus == 'verified'
+                          ? 'Verified'
+                          : (vehStatus == 'pending'
+                              ? 'In 24h Review'
+                              : (vehStatus == 'rejected'
+                                  ? (!(user?.canReapplyVehicleVerification ?? true)
+                                      ? '24h Cooldown'
+                                      : 'Reapply Ready')
+                                  : (hasVehicleSkill(userSkills) ? 'Action Required' : null))),
+                      badgeColor: vehStatus == 'verified'
+                          ? AppColors.success
+                          : (vehStatus == 'pending'
+                              ? AppColors.warning
+                              : AppColors.danger),
+                      onTap: () => context.push('/vehicle-verification'),
                     ),
                     const Divider(height: 1),
                   ],
@@ -525,7 +650,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // ── Sign out ─────────────────────────────────────────────────────
+            // â”€â”€ Sign out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Card(
               child: _MenuItem(
                 icon: Icons.logout,
@@ -672,7 +797,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 12),
 
-            // ── Delete account ───────────────────────────────────────────────
+            // â”€â”€ Delete account â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Card(
               child: _MenuItem(
                 icon: Icons.delete_forever_outlined,
@@ -691,7 +816,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Launch URL in external browser ─────────────────────────────────────────
+  // â”€â”€ Launch URL in external browser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   static Future<void> _launch(String url) async {
     final uri = Uri.parse(url);
     try {
@@ -699,7 +824,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {}
   }
 
-  // ── Edit personal details bottom sheet (pencil icon / avatar) ──────────────
+  // â”€â”€ Edit personal details bottom sheet (pencil icon / avatar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showEditDialog(BuildContext context, AuthProvider auth) {
     showModalBottomSheet(
       context: context,
@@ -712,7 +837,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Edit skills bottom sheet ───────────────────────────────────────────────
+  // â”€â”€ Edit skills bottom sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showSkillsDialog(BuildContext context, AuthProvider auth) {
     showModalBottomSheet(
       context: context,
@@ -725,7 +850,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Delete Account dialog ──────────────────────────────────────────────────
+  // â”€â”€ Delete Account dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showDeleteAccountDialog(BuildContext context, AuthProvider auth) {
     final isGoogleUser = auth.user?.authProvider == 'google';
     final passwordCtrl = TextEditingController();
@@ -815,10 +940,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: Color(0xFF1E293B))),
                         const SizedBox(height: 12),
                         ...[
-                          '📋 Your profile & personal details',
-                          '💰 Wallet balance & transaction history',
-                          '📌 Posted & accepted tasks',
-                          '⭐ Ratings & reviews',
+                          'ðŸ“‹ Your profile & personal details',
+                          'ðŸ’° Wallet balance & transaction history',
+                          'ðŸ“Œ Posted & accepted tasks',
+                          'â­ Ratings & reviews',
                         ].map((item) => Padding(
                           padding: const EdgeInsets.only(bottom: 6),
                           child: Text(item, style: const TextStyle(
@@ -982,7 +1107,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Change Password dialog ─────────────────────────────────────────────────
+  // â”€â”€ Change Password dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showChangePasswordDialog(BuildContext context, AuthProvider auth) {
     final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
@@ -1098,7 +1223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-// ── Edit profile sheet (stateful so it manages skill selection + feedback) ───
+// â”€â”€ Edit profile sheet (stateful so it manages skill selection + feedback) â”€â”€â”€
 class _EditProfileSheet extends StatefulWidget {
   final AuthProvider auth;
   const _EditProfileSheet({required this.auth});
@@ -1129,7 +1254,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     super.dispose();
   }
 
-  // ── Image picking ──────────────────────────────────────────────────────────
+  // â”€â”€ Image picking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _pickImage(ImageSource source) async {
     if (source == ImageSource.camera) {
       final status = await Permission.camera.request();
@@ -1200,7 +1325,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     );
   }
 
-  // ── Save ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1274,7 +1399,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 16),
 
-            // ── Avatar picker ────────────────────────────────────────────────
+            // â”€â”€ Avatar picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Center(
               child: GestureDetector(
                 onTap: _saving ? null : _showImageSourceSheet,
@@ -1337,7 +1462,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 16),
 
-            // ── Gender selection ─────────────────────────────────────────────
+            // â”€â”€ Gender selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const Text('Gender',
                 style: TextStyle(
                     fontSize: 14,
@@ -1348,7 +1473,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               children: [
                 Expanded(
                   child: _GenderOption(
-                    label: 'Male', emoji: '👦',
+                    label: 'Male', emoji: 'ðŸ‘¦',
                     selected: _gender == 'male',
                     onTap: () => setState(() => _gender = 'male'),
                   ),
@@ -1356,7 +1481,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _GenderOption(
-                    label: 'Female', emoji: '👧',
+                    label: 'Female', emoji: 'ðŸ‘§',
                     selected: _gender == 'female',
                     onTap: () => setState(() => _gender = 'female'),
                   ),
@@ -1384,7 +1509,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   }
 }
 
-// ── Gender option tile ───────────────────────────────────────────────────────
+// â”€â”€ Gender option tile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _GenderOption extends StatelessWidget {
   final String label;
   final String emoji;
@@ -1434,7 +1559,7 @@ class _GenderOption extends StatelessWidget {
   }
 }
 
-// ── Edit skills sheet ────────────────────────────────────────────────────────
+// â”€â”€ Edit skills sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _EditSkillsSheet extends StatefulWidget {
   final AuthProvider auth;
   const _EditSkillsSheet({required this.auth});
@@ -1459,13 +1584,96 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
         _selectedSkills.remove(skill);
       } else {
         _selectedSkills.add(skill);
+        final user = widget.auth.user;
+        if (isVehicleSkill(skill) && user?.vehicleVerificationStatus != 'verified') {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showVehicleVerificationPrompt(skill);
+          });
+        }
       }
     });
+  }
+
+  void _showVehicleVerificationPrompt(String skill) {
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (promptCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFDBEAFE),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.directions_car_rounded, color: Color(0xFF1D4ED8), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Vehical Verification Required',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E3A8A),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Skill "$skill" requires vehicle documentation (Driving License & Vehical RC) before you can accept vehicle tasks.',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.45),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(promptCtx);
+                    final router = GoRouter.of(context);
+                    Navigator.pop(context);
+                    final vehicleSelected = _selectedSkills.where((s) => isVehicleSkill(s)).toList();
+                    router.push('/vehicle-verification', extra: {
+                      'skills': vehicleSelected.isNotEmpty ? vehicleSelected : [skill],
+                    });
+                  },
+                  icon: const Icon(Icons.drive_eta_rounded, size: 18, color: Colors.white),
+                  label: const Text(
+                    'Open Verification Form',
+                    style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E40AF),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _save() async {
     final user = widget.auth.user;
     final isVerified = user?.physicalVerificationStatus == 'verified';
+    final isVehicleVerified = user?.vehicleVerificationStatus == 'verified';
 
     // Sensitive skills cannot be saved directly by unverified helpers
     final sensitiveSelected = _selectedSkills.where((s) => kSensitiveSkills.contains(s)).toList();
@@ -1473,6 +1681,18 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Sensitive skills (${sensitiveSelected.join(", ")}) require admin verification. Please request onboarding verification.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
+    // Vehicle skills cannot be saved directly by unverified helpers
+    final vehicleSelected = _selectedSkills.where((s) => isVehicleSkill(s)).toList();
+    if (vehicleSelected.isNotEmpty && !isVehicleVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Vehicle skills (${vehicleSelected.join(", ")}) require vehicle verification (DL & RC). Please submit verification.'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -1501,12 +1721,18 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
     final user = widget.auth.user;
     final isVerified = user?.physicalVerificationStatus == 'verified';
     final isPending = user?.physicalVerificationStatus == 'pending';
+    final isVehicleVerified = user?.vehicleVerificationStatus == 'verified';
+    final isVehiclePending = user?.vehicleVerificationStatus == 'pending';
 
     final sensitiveSelected = _selectedSkills.where((s) => kSensitiveSkills.contains(s)).toList();
     final hasSensitive = sensitiveSelected.isNotEmpty;
-
-    // Disabled when any sensitive skill is selected and helper is not physically verified
     final bool disableSaveForSensitive = hasSensitive && !isVerified;
+
+    final vehicleSelected = _selectedSkills.where((s) => isVehicleSkill(s)).toList();
+    final hasVehicle = vehicleSelected.isNotEmpty;
+    final bool disableSaveForVehicle = hasVehicle && !isVehicleVerified;
+
+    final bool disableSave = disableSaveForSensitive || disableSaveForVehicle;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -1532,6 +1758,7 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
               children: _kAllSkills
                   .map((skill) {
                     final isSensitive = kSensitiveSkills.contains(skill);
+                    final isVehicle = isVehicleSkill(skill);
                     final isSelected = _selectedSkills.contains(skill);
                     return FilterChip(
                       label: Row(
@@ -1543,6 +1770,11 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
                             Icon(Icons.shield_outlined,
                                 size: 12,
                                 color: isSelected ? const Color(0xFFD97706) : const Color(0xFFB45309)),
+                          ] else if (isVehicle) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.directions_car_outlined,
+                                size: 12,
+                                color: isSelected ? const Color(0xFF1D4ED8) : const Color(0xFF2563EB)),
                           ],
                         ],
                       ),
@@ -1550,17 +1782,31 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
                       onSelected: (_) => _toggleSkill(skill),
                       selectedColor: isSensitive
                           ? const Color(0xFFFEF3C7)
-                          : AppColors.primary.withValues(alpha: 0.15),
-                      checkmarkColor: isSensitive ? const Color(0xFFB45309) : AppColors.primary,
+                          : isVehicle
+                              ? const Color(0xFFEFF6FF)
+                              : AppColors.primary.withValues(alpha: 0.15),
+                      checkmarkColor: isSensitive
+                          ? const Color(0xFFB45309)
+                          : isVehicle
+                              ? const Color(0xFF1D4ED8)
+                              : AppColors.primary,
                       labelStyle: TextStyle(
                           color: isSelected
-                              ? (isSensitive ? const Color(0xFF78350F) : AppColors.primary)
+                              ? (isSensitive
+                                  ? const Color(0xFF78350F)
+                                  : isVehicle
+                                      ? const Color(0xFF1E3A8A)
+                                      : AppColors.primary)
                               : AppColors.gray,
                           fontSize: 12,
                           fontWeight: FontWeight.w500),
                       side: BorderSide(
                           color: isSelected
-                              ? (isSensitive ? const Color(0xFFF59E0B) : AppColors.primary)
+                              ? (isSensitive
+                                  ? const Color(0xFFF59E0B)
+                                  : isVehicle
+                                      ? const Color(0xFF3B82F6)
+                                      : AppColors.primary)
                               : AppColors.border),
                     );
                   })
@@ -1583,14 +1829,16 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
                       children: [
                         const Icon(Icons.shield_rounded, color: Color(0xFFD97706), size: 18),
                         const SizedBox(width: 8),
-                        Text(
-                          isPending
-                              ? 'Verification Under Admin Review'
-                              : 'Onboarding Verification Required',
-                          style: const TextStyle(
-                            color: Color(0xFF92400E),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                        Expanded(
+                          child: Text(
+                            isPending
+                                ? 'Verification Under Admin Review'
+                                : 'Onboarding Verification Required',
+                            style: const TextStyle(
+                              color: Color(0xFF92400E),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
@@ -1605,7 +1853,7 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      height: 40,
+                      height: 42,
                       child: ElevatedButton.icon(
                         onPressed: () {
                           final router = GoRouter.of(context);
@@ -1613,15 +1861,90 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
                           router.push('/physical-onboarding', extra: {'skills': sensitiveSelected});
                         },
                         icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
-                        label: Text(
-                          isPending
-                              ? 'View Pending Request'
-                              : 'Send Onboarding Request (${sensitiveSelected.length} sensitive)',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            isPending
+                                ? 'View Pending Request'
+                                : 'Send Onboarding Request (${sensitiveSelected.length} sensitive)',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                          ),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFD97706),
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (disableSaveForVehicle) ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.directions_car_rounded, color: Color(0xFF1D4ED8), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isVehiclePending
+                                ? 'Vehical Verification Under Admin Review'
+                                : 'Vehical Verification Required',
+                            style: const TextStyle(
+                              color: Color(0xFF1E40AF),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isVehiclePending
+                          ? 'You have submitted a vehicle verification request. Once Admin approves your DL and RC, your vehicle skills (${vehicleSelected.join(", ")}) will be automatically added to your profile.'
+                          : 'Vehicle skills (${vehicleSelected.join(", ")}) require vehicle and Driving License & RC verification. Direct save is disabled. Submit a vehicle verification request below; once Admin approves, these skills will automatically be saved to your profile.',
+                      style: const TextStyle(color: Color(0xFF1E3A8A), fontSize: 12, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 42,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          final router = GoRouter.of(context);
+                          Navigator.pop(context);
+                          router.push('/vehicle-verification', extra: {'skills': vehicleSelected});
+                        },
+                        icon: const Icon(Icons.drive_eta_rounded, size: 16, color: Colors.white),
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            isVehiclePending
+                                ? 'View Pending Vehicle Verification'
+                                : 'Open Vehical Verification Form (${vehicleSelected.length} skills)',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1D4ED8),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           elevation: 0,
                         ),
@@ -1635,7 +1958,7 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: (_saving || disableSaveForSensitive) ? null : _save,
+                onPressed: (_saving || disableSave) ? null : _save,
                 style: ElevatedButton.styleFrom(
                   disabledBackgroundColor: const Color(0xFFE2E8F0),
                   disabledForegroundColor: const Color(0xFF94A3B8),
@@ -1647,19 +1970,23 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : Text(
-                        disableSaveForSensitive
+                        disableSave
                             ? 'Save Disabled (Verification Required)'
                             : 'Save Skills',
                       ),
               ),
             ),
-            if (disableSaveForSensitive)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
+            if (disableSave)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
                 child: Center(
                   child: Text(
-                    'Deselect sensitive skills to save general skills, or send onboarding request.',
-                    style: TextStyle(fontSize: 11, color: AppColors.gray),
+                    disableSaveForVehicle && disableSaveForSensitive
+                        ? 'Deselect restricted skills to save general skills, or submit required verifications.'
+                        : (disableSaveForVehicle
+                            ? 'Deselect vehicle skills to save general skills, or open Vehical Verification form.'
+                            : 'Deselect sensitive skills to save general skills, or send onboarding request.'),
+                    style: const TextStyle(fontSize: 11, color: AppColors.gray),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -1671,23 +1998,57 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
   }
 }
 
-// ── KYC card ─────────────────────────────────────────────────────────────────
+// â”€â”€ KYC card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _KycCard extends StatelessWidget {
-  final bool isVerified;
-  final String? kycStatus;
+  final User? user;
   final VoidCallback onStart;
-  const _KycCard(
-      {required this.isVerified, required this.kycStatus, required this.onStart});
+  const _KycCard({required this.user, required this.onStart});
 
   @override
   Widget build(BuildContext context) {
-    final (icon, label, subtitle, color) = isVerified
-        ? (Icons.verified, 'KYC Verified', 'Your identity is verified.', AppColors.success)
-        : kycStatus == 'pending'
-            ? (Icons.hourglass_top_rounded, 'KYC Pending', 'Under review (24-48 hrs).', AppColors.warning)
-            : kycStatus == 'rejected'
-                ? (Icons.cancel_outlined, 'KYC Rejected', 'Please re-submit documents.', AppColors.danger)
-                : (Icons.badge_outlined, 'KYC Not Verified', 'Verify to build trust & unlock tasks.', AppColors.gray);
+    final isVerified = user?.isKycVerified ?? false;
+    final kycStatus = user?.kycStatus;
+    final canReapply = user?.canReapplyKyc ?? true;
+    final rem = user?.kycReapplyRemaining ?? Duration.zero;
+
+    final IconData icon;
+    final String label;
+    final String subtitle;
+    final Color color;
+    final String buttonLabel;
+
+    if (isVerified) {
+      icon = Icons.verified;
+      label = 'KYC Verified';
+      subtitle = 'Your identity is verified.';
+      color = AppColors.success;
+      buttonLabel = '';
+    } else if (kycStatus == 'pending') {
+      icon = Icons.hourglass_top_rounded;
+      label = 'KYC Pending';
+      subtitle = 'Under review (completes in 24 hrs).';
+      color = AppColors.warning;
+      buttonLabel = 'View Status';
+    } else if (kycStatus == 'rejected') {
+      icon = Icons.cancel_outlined;
+      label = 'KYC Rejected';
+      color = AppColors.danger;
+      if (!canReapply) {
+        final hours = rem.inHours;
+        final minutes = rem.inMinutes % 60;
+        subtitle = 'Rejected. Reapply in ${hours}h ${minutes}m (24h cooldown).';
+        buttonLabel = 'View Status';
+      } else {
+        subtitle = 'Rejected. 24h cooldown passed — ready to reapply.';
+        buttonLabel = 'Reapply';
+      }
+    } else {
+      icon = Icons.badge_outlined;
+      label = 'KYC Not Verified';
+      subtitle = 'Verify to build trust & unlock tasks.';
+      color = AppColors.gray;
+      buttonLabel = 'Start KYC';
+    }
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1716,13 +2077,13 @@ class _KycCard extends StatelessWidget {
               ],
             ),
           ),
-          if (!isVerified && kycStatus != 'pending')
+          if (buttonLabel.isNotEmpty)
             TextButton(
               onPressed: onStart,
               style: TextButton.styleFrom(
-                  foregroundColor: AppColors.primary,
+                  foregroundColor: color == AppColors.gray ? AppColors.primary : color,
                   padding: const EdgeInsets.symmetric(horizontal: 12)),
-              child: const Text('Start KYC'),
+              child: Text(buttonLabel),
             ),
         ],
       ),
@@ -1730,7 +2091,7 @@ class _KycCard extends StatelessWidget {
   }
 }
 
-// ── Profile Role Switcher (Poster vs Helper) ─────────────────────────────────
+// â”€â”€ Profile Role Switcher (Poster vs Helper) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _ProfileRoleSwitcher extends StatelessWidget {
   final String currentMode;
   final ValueChanged<String> onModeChanged;
@@ -1968,7 +2329,7 @@ class _RoleCard extends StatelessWidget {
   }
 }
 
-// ── Section header ───────────────────────────────────────────────────────────
+// â”€â”€ Section header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _SectionHeader extends StatelessWidget {
   final String text;
   const _SectionHeader(this.text);
@@ -1980,7 +2341,7 @@ class _SectionHeader extends StatelessWidget {
           color: AppColors.dark));
 }
 
-// ── Empty skills hint ────────────────────────────────────────────────────────
+// â”€â”€ Empty skills hint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _EmptySkillsHint extends StatelessWidget {
   final VoidCallback onAdd;
   const _EmptySkillsHint({required this.onAdd});
@@ -2011,7 +2372,7 @@ class _EmptySkillsHint extends StatelessWidget {
   }
 }
 
-// ── Shared widgets ───────────────────────────────────────────────────────────
+// â”€â”€ Shared widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _StatCell extends StatelessWidget {
   final String label;
   final String value;

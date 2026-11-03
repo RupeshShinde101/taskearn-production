@@ -3,17 +3,15 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/verification_cooldown_banner.dart';
 
 /// List of sensitive skills requiring admin physical verification
 const List<String> kSensitiveSkills = [
   'Cleaning',
-  'Delivery',
-  'Driving',
   'Cooking',
   'Plumbing',
   'Electrical',
   'Carpentry',
-  'Moving & Packing',
   'Pet Care',
   'Babysitting',
   'Elder Care',
@@ -99,8 +97,35 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     );
   }
 
+  String _formatDuration(Duration? d) {
+    if (d == null) return '0m';
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    if (h > 0) return '${h}h ${m}m';
+    return '${m}m';
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+
+    // Check 24-hour cooldown if previously rejected
+    if (user != null && !user.canReapplyPhysicalVerification) {
+      final rem = user.physicalVerificationReapplyRemaining ?? Duration.zero;
+      final hours = rem.inHours;
+      final minutes = rem.inMinutes % 60;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Onboarding verification was recently rejected. You can reapply in ${hours}h ${minutes}m.',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
       return;
     }
 
@@ -113,9 +138,6 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
       );
       return;
     }
-
-    final auth = context.read<AuthProvider>();
-    final user = auth.user;
 
     // Use initialSkills, or user's active sensitive skills, or default full sensitive skills list
     List<String> targetSkills = widget.initialSkills != null && widget.initialSkills!.isNotEmpty
@@ -190,7 +212,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Your physical onboarding request for sensitive skills has been successfully dispatched to the Workmate4u Admin team.\n\nOur verification agent will contact your primary or alternative number within 24–48 hours to schedule your physical in-person verification visit.',
+                'Your physical onboarding request for sensitive skills has been successfully dispatched to the Workmate4u Admin team.\n\nOur verification agent will contact your primary or alternative number to complete your physical verification review within 24 hours.',
                 style: TextStyle(
                   fontSize: 13,
                   color: Color(0xFF475569),
@@ -257,7 +279,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Top Header Notice Card ──────────────────────────────────────
+              // â”€â”€ Top Header Notice Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -313,7 +335,17 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
 
               const SizedBox(height: 16),
 
-              // ── Selected Sensitive Skills Chip Banner ───────────────────────
+              // ── Cooldown & Review Status Banner ──────────────────────────────
+              VerificationCooldownBanner(
+                verificationTitle: 'Physical Onboarding',
+                status: user?.physicalVerificationStatus ?? 'none',
+                rejectionReason: user?.physicalVerificationRejectReason,
+                rejectedAt: user?.physicalVerificationRejectedAt,
+              ),
+
+              const SizedBox(height: 16),
+
+              // â”€â”€ Selected Sensitive Skills Chip Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -375,7 +407,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
 
               const SizedBox(height: 20),
 
-              // ── Form Card ──────────────────────────────────────────────────
+              // â”€â”€ Form Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -559,58 +591,99 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
 
                       const SizedBox(height: 24),
 
-                      // ── Request Onboarding Button ──────────────────────────
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withValues(alpha: 0.25),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: ElevatedButton(
-                            onPressed: _submitting ? null : _submit,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(
+                      // â”€â”€ Request Onboarding Button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                      Builder(
+                        builder: (context) {
+                          final isVerified = user?.physicalVerificationStatus == 'verified';
+                          final isPending = user?.physicalVerificationStatus == 'pending';
+                          final isRejected = user?.physicalVerificationStatus == 'rejected';
+                          final canReapply = user?.canReapplyPhysicalVerification ?? true;
+                          final cooldownActive = isRejected && !canReapply;
+
+                          final bool isDisabled = _submitting || isVerified || isPending || cooldownActive;
+
+                          String buttonText = 'Request Onboarding';
+                          IconData buttonIcon = Icons.send_rounded;
+                          Color buttonBg = AppColors.primary;
+
+                          if (isVerified) {
+                            buttonText = 'Onboarding Verified';
+                            buttonIcon = Icons.verified_user_rounded;
+                            buttonBg = const Color(0xFF059669);
+                          } else if (isPending) {
+                            buttonText = 'Under Review (Completes in 24 hrs)';
+                            buttonIcon = Icons.hourglass_top_rounded;
+                            buttonBg = const Color(0xFFD97706);
+                          } else if (cooldownActive) {
+                            buttonText = 'Reapply in ${_formatDuration(user!.physicalVerificationReapplyRemaining)}';
+                            buttonIcon = Icons.timer_outlined;
+                            buttonBg = const Color(0xFFDC2626);
+                          } else if (isRejected) {
+                            buttonText = 'Reapply Onboarding Request';
+                            buttonIcon = Icons.refresh_rounded;
+                            buttonBg = AppColors.primary;
+                          }
+
+                          return SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: isDisabled ? buttonBg.withValues(alpha: 0.6) : buttonBg,
                                 borderRadius: BorderRadius.circular(12),
+                                boxShadow: isDisabled
+                                    ? null
+                                    : [
+                                        BoxShadow(
+                                          color: buttonBg.withValues(alpha: 0.25),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                              ),
+                              child: ElevatedButton(
+                                onPressed: isDisabled ? null : _submit,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.transparent,
+                                  shadowColor: Colors.transparent,
+                                  disabledForegroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: _submitting
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(buttonIcon, color: Colors.white, size: 20),
+                                          const SizedBox(width: 8),
+                                          Flexible(
+                                            child: Text(
+                                              buttonText,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 15,
+                                                letterSpacing: 0.3,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                               ),
                             ),
-                            child: _submitting
-                                ? const SizedBox(
-                                    height: 22,
-                                    width: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        'Request Onboarding',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 16,
-                                          letterSpacing: 0.3,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -623,4 +696,3 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     );
   }
 }
-

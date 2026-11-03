@@ -677,6 +677,100 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Submit vehicle verification request (DL & RC) for vehicle-dependent skills
+  Future<bool> submitVehicleVerificationRequest({
+    required String name,
+    required String address,
+    required String primaryPhone,
+    String? alternativePhone,
+    required List<String> skills,
+    required String dlNumber,
+    required String dlImagePath,
+    required String rcNumber,
+    required String rcImagePath,
+    String? vehicleType,
+    String? notes,
+  }) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final fields = <String, String>{
+        'name': name.trim(),
+        'address': address.trim(),
+        'primaryPhone': primaryPhone.trim(),
+        if (alternativePhone != null && alternativePhone.trim().isNotEmpty)
+          'alternativePhone': alternativePhone.trim(),
+        'skills': skills.join(','),
+        'dlNumber': dlNumber.trim().toUpperCase(),
+        'rcNumber': rcNumber.trim().toUpperCase(),
+        if (vehicleType != null && vehicleType.trim().isNotEmpty) 'vehicleType': vehicleType.trim(),
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      };
+
+      final filePaths = <String, String>{
+        'dlImage': dlImagePath,
+        'rcImage': rcImagePath,
+      };
+
+      final response = await ApiService.postMultipart(
+        '/helper/vehicle-verification/request',
+        fields: fields,
+        filePaths: filePaths,
+        timeout: const Duration(seconds: 120),
+      );
+
+      if (response != null && response['success'] == true) {
+        if (_user != null) {
+          _user = _user!.copyWith(vehicleVerificationStatus: 'pending');
+        }
+        await refreshUser();
+        _loading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response?['message'] ?? 'Failed to submit vehicle verification request';
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Error submitting vehicle verification: $e';
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Admin: Approve helper vehicle verification request
+  Future<bool> adminApproveVehicleVerification(int requestId) async {
+    try {
+      final response = await ApiService.post(
+        '/admin/vehicle-verification/$requestId/approve',
+        body: {'requestId': requestId},
+      );
+      return response != null && response['success'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Admin: Reject helper vehicle verification request
+  Future<bool> adminRejectVehicleVerification(int requestId, {String? reason}) async {
+    try {
+      final response = await ApiService.post(
+        '/admin/vehicle-verification/$requestId/reject',
+        body: {
+          'requestId': requestId,
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        },
+      );
+      return response != null && response['success'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> loginWithGoogle({
     String? referralCode,
     DateTime? dob,

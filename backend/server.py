@@ -688,6 +688,7 @@ def _ensure_kyc_columns():
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_image_hash TEXT")
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_flag_reason TEXT")
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_acknowledged_at TIMESTAMP")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_rejected_at TIMESTAMP")
             else:
                 # SQLite
                 cursor.execute("PRAGMA table_info(users)")
@@ -700,6 +701,8 @@ def _ensure_kyc_columns():
                     cursor.execute("ALTER TABLE users ADD COLUMN kyc_flag_reason TEXT")
                 if 'kyc_acknowledged_at' not in cols:
                     cursor.execute("ALTER TABLE users ADD COLUMN kyc_acknowledged_at TIMESTAMP")
+                if 'kyc_rejected_at' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN kyc_rejected_at TIMESTAMP")
         _kyc_columns_ensured = True
         print("✅ KYC columns verified")
     except Exception as e:
@@ -1286,9 +1289,16 @@ def user_to_response(user):
         'authProvider': user.get('auth_provider', 'email'),
         'kycStatus': user.get('kyc_status', 'none'),
         'kycDocumentType': user.get('kyc_document_type'),
+        'kycFlagReason': user.get('kyc_flag_reason'),
+        'kycRejectedAt': user.get('kyc_rejected_at').isoformat() if hasattr(user.get('kyc_rejected_at'), 'isoformat') else (str(user.get('kyc_rejected_at')) if user.get('kyc_rejected_at') else None),
         'phoneVerified': bool(user.get('phone_verified', False)),
         'gender': user.get('gender'),
-        'physicalVerificationStatus': user.get('physical_verification_status', 'none')
+        'physicalVerificationStatus': user.get('physical_verification_status', 'none'),
+        'physicalVerificationRejectReason': user.get('physical_verification_reject_reason'),
+        'physicalVerificationRejectedAt': user.get('physical_verification_rejected_at').isoformat() if hasattr(user.get('physical_verification_rejected_at'), 'isoformat') else (str(user.get('physical_verification_rejected_at')) if user.get('physical_verification_rejected_at') else None),
+        'vehicleVerificationStatus': user.get('vehicle_verification_status', 'none'),
+        'vehicleVerificationRejectReason': user.get('vehicle_verification_reject_reason'),
+        'vehicleVerificationRejectedAt': user.get('vehicle_verification_rejected_at').isoformat() if hasattr(user.get('vehicle_verification_rejected_at'), 'isoformat') else (str(user.get('vehicle_verification_rejected_at')) if user.get('vehicle_verification_rejected_at') else None)
     }
 
 
@@ -2406,28 +2416,38 @@ def update_profile():
     # Skills: stored as JSON string in the DB
     if 'skills' in data and isinstance(data['skills'], list):
         submitted_skills = [str(s).strip() for s in data['skills'] if str(s).strip()]
-        _K_SENSITIVE = {'cleaning', 'delivery', 'driving', 'cooking', 'plumbing', 'electrical', 
-                        'carpentry', 'moving & packing', 'pet care', 'babysitting', 'elder care'}
+        _K_SENSITIVE = {'cleaning', 'cooking', 'plumbing', 'electrical', 
+                        'carpentry', 'pet care', 'babysitting', 'elder care'}
+        _K_VEHICLE = {'delivery', 'driving', 'moving & packing', 'moving & packaging'}
         try:
             with get_db() as (cursor, _):
-                cursor.execute(f"SELECT physical_verification_status, skills FROM users WHERE id = {PH}", (str(request.user_id),))
+                cursor.execute(f"SELECT physical_verification_status, vehicle_verification_status, skills FROM users WHERE id = {PH}", (str(request.user_id),))
                 u_row = dict_from_row(cursor.fetchone()) or {}
-                is_verified = (u_row.get('physical_verification_status') == 'verified')
+                is_phy_verified = (u_row.get('physical_verification_status') == 'verified')
+                is_veh_verified = (u_row.get('vehicle_verification_status') == 'verified')
                 
-                if not is_verified:
-                    existing_user_skills = []
-                    if u_row.get('skills'):
-                        try:
-                            existing_user_skills = _json_profile.loads(u_row['skills']) if isinstance(u_row['skills'], str) else list(u_row['skills'])
-                        except Exception:
-                            existing_user_skills = [s.strip() for s in str(u_row['skills']).split(',') if s.strip()]
-                    existing_user_skills_lower = {s.lower() for s in existing_user_skills}
-                    
+                existing_user_skills = []
+                if u_row.get('skills'):
+                    try:
+                        existing_user_skills = _json_profile.loads(u_row['skills']) if isinstance(u_row['skills'], str) else list(u_row['skills'])
+                    except Exception:
+                        existing_user_skills = [s.strip() for s in str(u_row['skills']).split(',') if s.strip()]
+                existing_user_skills_lower = {s.lower() for s in existing_user_skills}
+                
+                if not is_phy_verified:
                     sensitive_added = [s for s in submitted_skills if s.lower() in _K_SENSITIVE and s.lower() not in existing_user_skills_lower]
                     if sensitive_added:
                         return jsonify({
                             'success': False,
                             'message': f'Sensitive skills ({", ".join(sensitive_added)}) require onboarding verification by Admin and cannot be saved directly.'
+                        }), 400
+
+                if not is_veh_verified:
+                    vehicle_added = [s for s in submitted_skills if s.lower() in _K_VEHICLE and s.lower() not in existing_user_skills_lower]
+                    if vehicle_added:
+                        return jsonify({
+                            'success': False,
+                            'message': f'Vehicle skills ({", ".join(vehicle_added)}) require vehicle verification (Driving License & RC) and cannot be saved directly.'
                         }), 400
         except Exception as se:
             print(f"[Skills Validation Warning] {se}")
@@ -11580,6 +11600,42 @@ def submit_kyc():
 
     _ensure_kyc_columns()
 
+    # 24-hour rejection cooldown check
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f"SELECT kyc_status, kyc_rejected_at, kyc_flag_reason FROM users WHERE id = {PH}", (request.user_id,))
+            u_row = cursor.fetchone()
+            if u_row:
+                u_data = dict_from_row(u_row)
+                if u_data.get('kyc_status') == 'rejected' and u_data.get('kyc_rejected_at'):
+                    rej_at = u_data['kyc_rejected_at']
+                    if isinstance(rej_at, str):
+                        try:
+                            rej_at = datetime.datetime.fromisoformat(rej_at.replace('Z', '+00:00'))
+                        except Exception:
+                            rej_at = None
+                    if rej_at:
+                        now_utc = datetime.datetime.now(datetime.timezone.utc)
+                        if rej_at.tzinfo is None:
+                            rej_at = rej_at.replace(tzinfo=datetime.timezone.utc)
+                        diff = (rej_at + datetime.timedelta(hours=24)) - now_utc
+                        if diff.total_seconds() > 0:
+                            rem_secs = int(diff.total_seconds())
+                            hrs = rem_secs // 3600
+                            mins = (rem_secs % 3600) // 60
+                            rem_text = f"{hrs}h {mins}m" if hrs > 0 else f"{mins}m"
+                            reason_text = u_data.get('kyc_flag_reason') or 'Document criteria not met'
+                            return jsonify({
+                                'success': False,
+                                'message': f'Your previous KYC was rejected ({reason_text}). You can reapply after 24 hours. Remaining time: {rem_text}.',
+                                'cooldownActive': True,
+                                'remainingSeconds': rem_secs,
+                                'rejectionReason': reason_text,
+                                'rejectedAt': rej_at.isoformat()
+                            }), 400
+    except Exception as ce:
+        print(f"[KYC Cooldown Check] {ce}")
+
     # Image quality check (soft — flags for review, doesn't reject)
     flags = []
     q_ok_front, q_reason_front = _kyc_image_quality_check(doc_image_front)
@@ -11722,7 +11778,7 @@ def get_kyc_status():
         with get_db() as (cursor, conn):
             cursor.execute(f'''
                 SELECT kyc_status, kyc_document_type, kyc_document_number, kyc_verified_at,
-                       phone_verified, email_verified, kyc_flag_reason,
+                       phone_verified, email_verified, kyc_flag_reason, kyc_rejected_at,
                        CASE WHEN kyc_document_image IS NOT NULL THEN TRUE ELSE FALSE END AS has_image
                 FROM users WHERE id = {PH}
             ''', (request.user_id,))
@@ -11733,6 +11789,25 @@ def get_kyc_status():
 
         row = dict_from_row(row)
         has_image = bool(row.get('has_image'))
+
+        can_reapply = True
+        remaining_seconds = 0
+        rej_at = row.get('kyc_rejected_at')
+        if row.get('kyc_status') == 'rejected' and rej_at:
+            if isinstance(rej_at, str):
+                try:
+                    rej_at = datetime.datetime.fromisoformat(rej_at.replace('Z', '+00:00'))
+                except Exception:
+                    rej_at = None
+            if rej_at:
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                if rej_at.tzinfo is None:
+                    rej_at = rej_at.replace(tzinfo=datetime.timezone.utc)
+                diff = (rej_at + datetime.timedelta(hours=24)) - now_utc
+                if diff.total_seconds() > 0:
+                    can_reapply = False
+                    remaining_seconds = int(diff.total_seconds())
+
         return jsonify({
             'success': True,
             'kyc': {
@@ -11741,9 +11816,12 @@ def get_kyc_status():
                 'documentNumber': row.get('kyc_document_number'),
                 'hasDocumentImage': has_image,
                 'verifiedAt': row.get('kyc_verified_at'),
+                'rejectedAt': row.get('kyc_rejected_at').isoformat() if hasattr(row.get('kyc_rejected_at'), 'isoformat') else (str(row.get('kyc_rejected_at')) if row.get('kyc_rejected_at') else None),
                 'phoneVerified': bool(row.get('phone_verified')),
                 'emailVerified': bool(row.get('email_verified')),
-                'flagReason': row.get('kyc_flag_reason')
+                'flagReason': row.get('kyc_flag_reason'),
+                'canReapply': can_reapply,
+                'remainingSeconds': remaining_seconds
             }
         })
     except Exception as e:
@@ -11836,22 +11914,24 @@ def admin_verify_kyc(user_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             if action == 'approve':
                 cursor.execute(f'''
-                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}, kyc_flag_reason = NULL
+                    UPDATE users SET kyc_status = 'verified', kyc_verified_at = {PH}, kyc_flag_reason = NULL, kyc_rejected_at = NULL
                     WHERE id = {PH}
                 ''', (now, user_id))
                 msg = '✅ Your KYC verification has been approved!'
+                notif_title = 'KYC Verification Approved'
             else:
-                flag = reject_reason or 'Rejected by admin'
+                flag = reject_reason or 'Document verification failed. Please ensure clear, matching documents.'
                 cursor.execute(f'''
-                    UPDATE users SET kyc_status = 'rejected', kyc_flag_reason = {PH}
+                    UPDATE users SET kyc_status = 'rejected', kyc_flag_reason = {PH}, kyc_rejected_at = {PH}
                     WHERE id = {PH}
-                ''', (flag, user_id))
-                msg = f'❌ Your KYC was rejected: {flag}. Please resubmit with correct documents.'
+                ''', (flag, now, user_id))
+                msg = f'❌ Your KYC was rejected: {flag}. You can reapply after 24 hours.'
+                notif_title = 'KYC Verification Rejected'
 
             cursor.execute(f'''
                 INSERT INTO notifications (user_id, notification_type, title, message, status, created_at)
                 VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            ''', (user_id, 'kyc_result', 'KYC Verification Update', msg, 'unread', now))
+            ''', (user_id, 'kyc_result', notif_title, msg, 'unread', now))
 
             cursor.execute(f'''
                 INSERT INTO admin_audit_log (admin_id, action, resource_type, resource_id, details, created_at)
@@ -11900,11 +11980,17 @@ def _ensure_physical_onboarding_table():
                 pass
             if PH == '%s':
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS physical_verification_status VARCHAR(50) DEFAULT 'none'")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS physical_verification_rejected_at TIMESTAMP")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS physical_verification_reject_reason TEXT")
             else:
                 cursor.execute("PRAGMA table_info(users)")
                 cols = [row[1] for row in cursor.fetchall()]
                 if 'physical_verification_status' not in cols:
                     cursor.execute("ALTER TABLE users ADD COLUMN physical_verification_status VARCHAR(50) DEFAULT 'none'")
+                if 'physical_verification_rejected_at' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN physical_verification_rejected_at TIMESTAMP")
+                if 'physical_verification_reject_reason' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN physical_verification_reject_reason TEXT")
             conn.commit()
         _physical_onboarding_ensured = True
         print("[Onboarding] ✅ physical_onboarding_requests table & columns verified")
@@ -11939,14 +12025,56 @@ def request_helper_physical_verification():
         return jsonify({'success': False, 'message': 'Full Name is required'}), 400
     if not address or len(address) < 8:
         return jsonify({'success': False, 'message': 'Complete residential address is required'}), 400
-    if not primary_phone or len(primary_phone) < 10:
+    clean_pri = ''.join([c for c in primary_phone if c.isdigit()])
+    if len(clean_pri) < 10:
         return jsonify({'success': False, 'message': 'Valid 10-digit primary mobile number is required'}), 400
-    if not alternative_phone or len(alternative_phone) < 10:
-        return jsonify({'success': False, 'message': 'Valid 10-digit alternative mobile number is required'}), 400
-    if primary_phone == alternative_phone:
-        return jsonify({'success': False, 'message': 'Alternative mobile number must be different from primary mobile number'}), 400
+    if alternative_phone:
+        clean_alt = ''.join([c for c in alternative_phone if c.isdigit()])
+        if len(clean_alt) < 10:
+            return jsonify({'success': False, 'message': 'Valid 10-digit alternative mobile number is required if provided'}), 400
+        if clean_alt == clean_pri:
+            return jsonify({'success': False, 'message': 'Alternative mobile number must be different from primary mobile number'}), 400
     if not skills_str:
         return jsonify({'success': False, 'message': 'At least one sensitive skill must be selected'}), 400
+
+    # 24-hour rejection cooldown check
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT status, updated_at, notes
+                FROM physical_onboarding_requests
+                WHERE user_id = {PH}
+                ORDER BY id DESC LIMIT 1
+            ''', (uid,))
+            last_req = cursor.fetchone()
+            if last_req:
+                lr = dict_from_row(last_req)
+                if lr.get('status') == 'rejected' and lr.get('updated_at'):
+                    rej_at = lr['updated_at']
+                    if isinstance(rej_at, str):
+                        try:
+                            rej_at = datetime.fromisoformat(rej_at.replace('Z', '+00:00'))
+                        except Exception:
+                            rej_at = None
+                    if rej_at:
+                        now_val = datetime.now(rej_at.tzinfo) if rej_at.tzinfo else datetime.now()
+                        diff = (rej_at + timedelta(hours=24)) - now_val
+                        if diff.total_seconds() > 0:
+                            rem_secs = int(diff.total_seconds())
+                            hrs = rem_secs // 3600
+                            mins = (rem_secs % 3600) // 60
+                            rem_str = f"{hrs}h {mins}m" if hrs > 0 else f"{mins}m"
+                            reason_text = lr.get('notes') or 'Onboarding criteria not met'
+                            return jsonify({
+                                'success': False,
+                                'message': f'Your previous onboarding request was rejected ({reason_text}). You can reapply after 24 hours. Remaining time: {rem_str}.',
+                                'cooldownActive': True,
+                                'remainingSeconds': rem_secs,
+                                'rejectionReason': reason_text,
+                                'rejectedAt': rej_at.isoformat()
+                            }), 400
+    except Exception as ce:
+        print(f"[Physical Onboarding Cooldown Check Warning] {ce}")
 
     now = datetime.now()
     try:
@@ -11982,7 +12110,7 @@ def request_helper_physical_verification():
                     INSERT INTO notifications (user_id, type, title, message, status, created_at)
                     VALUES ({PH}, {PH}, {PH}, {PH}, 'unread', {PH})
                 ''', (uid, 'physical_onboarding_received', 'Physical Verification Request Received',
-                      f'Your physical onboarding request for skills ({skills_str}) has been received. Our administrative team will reach out at {primary_phone} or {alternative_phone} to coordinate your physical verification.',
+                      f'Your physical onboarding request for skills ({skills_str}) has been received. Verification review completes within 24 hours.',
                       now))
             except Exception as ne:
                 print(f"[Onboarding User Notification Warning] {ne}")
@@ -11991,7 +12119,7 @@ def request_helper_physical_verification():
 
         return jsonify({
             'success': True,
-            'message': 'Physical onboarding request submitted successfully to Admin.',
+            'message': 'Onboarding verification request submitted! Verification review completes within 24 hours.',
             'requestId': req_id,
             'status': 'pending'
         })
@@ -12025,6 +12153,22 @@ def get_helper_physical_verification_status():
             })
 
         r = dict_from_row(row)
+        can_reapply = True
+        remaining_seconds = 0
+        rej_at = r.get('updated_at')
+        if r.get('status') == 'rejected' and rej_at:
+            if isinstance(rej_at, str):
+                try:
+                    rej_at = datetime.fromisoformat(rej_at.replace('Z', '+00:00'))
+                except Exception:
+                    rej_at = None
+            if rej_at:
+                now_val = datetime.now(rej_at.tzinfo) if rej_at.tzinfo else datetime.now()
+                diff = (rej_at + timedelta(hours=24)) - now_val
+                if diff.total_seconds() > 0:
+                    can_reapply = False
+                    remaining_seconds = int(diff.total_seconds())
+
         return jsonify({
             'success': True,
             'hasRequest': True,
@@ -12040,7 +12184,12 @@ def get_helper_physical_verification_status():
                 'preferredSlot': r.get('preferred_slot'),
                 'notes': r.get('notes'),
                 'status': r.get('status', 'pending'),
-                'createdAt': r.get('created_at').isoformat() if hasattr(r.get('created_at'), 'isoformat') else str(r.get('created_at') or '')
+                'createdAt': r.get('created_at').isoformat() if hasattr(r.get('created_at'), 'isoformat') else str(r.get('created_at') or ''),
+                'updatedAt': r.get('updated_at').isoformat() if hasattr(r.get('updated_at'), 'isoformat') else str(r.get('updated_at') or ''),
+                'rejectedAt': (r.get('updated_at').isoformat() if hasattr(r.get('updated_at'), 'isoformat') else str(r.get('updated_at') or '')) if r.get('status') == 'rejected' else None,
+                'rejectionReason': r.get('notes') if r.get('status') == 'rejected' else None,
+                'canReapply': can_reapply,
+                'remainingSeconds': remaining_seconds,
             }
         })
     except Exception as e:
@@ -12209,22 +12358,24 @@ def admin_reject_physical_verification(request_id=None):
 
             cursor.execute(f'''
                 UPDATE physical_onboarding_requests
-                SET status = 'rejected', notes = COALESCE(notes, '') || ' [Admin Rejection: ' || {PH} || ']', updated_at = {PH}
+                SET status = 'rejected', notes = {PH}, updated_at = {PH}
                 WHERE id = {PH}
             ''', (reason, now, req_id))
 
             cursor.execute(f'''
                 UPDATE users
-                SET physical_verification_status = 'rejected'
+                SET physical_verification_status = 'rejected',
+                    physical_verification_rejected_at = {PH},
+                    physical_verification_reject_reason = {PH}
                 WHERE id = {PH}
-            ''', (user_id,))
+            ''', (now, reason, user_id))
 
             try:
                 cursor.execute(f'''
                     INSERT INTO notifications (user_id, type, title, message, status, created_at)
                     VALUES ({PH}, {PH}, {PH}, {PH}, 'unread', {PH})
-                ''', (user_id, 'physical_onboarding_rejected', 'Onboarding Verification Update',
-                      f'Your onboarding request for sensitive skills was not approved at this time: {reason}. You can re-apply after updating your details.',
+                ''', (user_id, 'physical_onboarding_rejected', 'Onboarding Verification Rejected 🛡️',
+                      f'Your onboarding request for sensitive skills was not approved: {reason}. You can reapply with updated details after 24 hours.',
                       now))
             except Exception as ne:
                 print(f"[Onboarding Notification Warning] {ne}")
@@ -12241,6 +12392,455 @@ def admin_reject_physical_verification(request_id=None):
         print(f"[ADMIN REJECT PHYSICAL VERIFICATION ERROR] {e}")
         return jsonify({'success': False, 'message': 'Failed to reject verification request'}), 500
 
+
+
+# ========================================
+# HELPER VEHICLE VERIFICATION & ONBOARDING
+# ========================================
+
+_vehicle_verification_ensured = False
+
+def _ensure_vehicle_verification_table():
+    global _vehicle_verification_ensured
+    if _vehicle_verification_ensured:
+        return
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS vehicle_verification_requests (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(50) NOT NULL,
+                    user_name VARCHAR(255) NOT NULL,
+                    address TEXT NOT NULL,
+                    primary_phone VARCHAR(20) NOT NULL,
+                    alternative_phone VARCHAR(20) NOT NULL,
+                    skills TEXT NOT NULL,
+                    dl_number VARCHAR(100) NOT NULL,
+                    dl_image TEXT,
+                    rc_number VARCHAR(100) NOT NULL,
+                    rc_image TEXT,
+                    vehicle_type VARCHAR(100),
+                    notes TEXT,
+                    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP
+                )
+            ''')
+            try:
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_veh_verif_user_id ON vehicle_verification_requests(user_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_veh_verif_status ON vehicle_verification_requests(status)')
+            except Exception:
+                pass
+            if PH == '%s':
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS vehicle_verification_status VARCHAR(50) DEFAULT 'none'")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS vehicle_verification_rejected_at TIMESTAMP")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS vehicle_verification_reject_reason TEXT")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if 'vehicle_verification_status' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN vehicle_verification_status VARCHAR(50) DEFAULT 'none'")
+                if 'vehicle_verification_rejected_at' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN vehicle_verification_rejected_at TIMESTAMP")
+                if 'vehicle_verification_reject_reason' not in cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN vehicle_verification_reject_reason TEXT")
+            conn.commit()
+        _vehicle_verification_ensured = True
+        print("[Vehicle Verification] ✅ vehicle_verification_requests table & columns verified")
+    except Exception as e:
+        print(f"[Vehicle Verification] ⚠️ _ensure_vehicle_verification_table error: {e}")
+
+
+@app.route('/api/helper/vehicle-verification/request', methods=['POST'])
+@require_auth
+def request_helper_vehicle_verification():
+    """Helper: Submit vehicle verification request (DL & RC) to admin for vehicle skills"""
+    _ensure_vehicle_verification_table()
+    import base64 as _b64
+    uid = str(request.user_id)
+    now = datetime.now()
+
+    def _file_to_data_uri(field_name):
+        f = request.files.get(field_name)
+        if not f:
+            return None, None, 0
+        raw = f.read()
+        size = len(raw)
+        mime = (f.content_type or 'image/jpeg').split(';')[0].strip().lower()
+        return f'data:{mime};base64,{_b64.b64encode(raw).decode()}', mime, size
+
+    content_type = request.content_type or ''
+    if 'multipart/form-data' in content_type:
+        name = (request.form.get('name') or '').strip()
+        address = (request.form.get('address') or '').strip()
+        primary_phone = (request.form.get('primaryPhone') or '').strip()
+        alternative_phone = (request.form.get('alternativePhone') or '').strip()
+        skills = request.form.get('skills') or ''
+        dl_number = (request.form.get('dlNumber') or '').strip().upper()
+        rc_number = (request.form.get('rcNumber') or '').strip().upper()
+        vehicle_type = (request.form.get('vehicleType') or 'Two Wheeler').strip()
+        notes = (request.form.get('notes') or '').strip()
+
+        dl_data_uri, dl_mime, dl_size = _file_to_data_uri('dlImage')
+        rc_data_uri, rc_mime, rc_size = _file_to_data_uri('rcImage')
+    else:
+        data = request.get_json(silent=True) or {}
+        name = (data.get('name') or '').strip()
+        address = (data.get('address') or '').strip()
+        primary_phone = (data.get('primaryPhone') or '').strip()
+        alternative_phone = (data.get('alternativePhone') or '').strip()
+        skills = data.get('skills') or ''
+        dl_number = (data.get('dlNumber') or '').strip().upper()
+        rc_number = (data.get('rcNumber') or '').strip().upper()
+        vehicle_type = (data.get('vehicleType') or 'Two Wheeler').strip()
+        notes = (data.get('notes') or '').strip()
+
+        dl_data_uri = data.get('dlImage')
+        rc_data_uri = data.get('rcImage')
+        dl_mime = 'image/jpeg'
+        rc_mime = 'image/jpeg'
+        dl_size = len(dl_data_uri or '')
+        rc_size = len(rc_data_uri or '')
+
+    if isinstance(skills, list):
+        skills_str = ', '.join([s.strip() for s in skills if s.strip()])
+    else:
+        skills_str = str(skills).strip()
+
+    # Validations
+    if not name:
+        return jsonify({'success': False, 'message': 'Full Legal Name is required'}), 400
+    if not address or len(address) < 8:
+        return jsonify({'success': False, 'message': 'Complete residential address is required'}), 400
+    clean_pri = ''.join([c for c in primary_phone if c.isdigit()])
+    if len(clean_pri) < 10:
+        return jsonify({'success': False, 'message': 'Valid 10-digit primary mobile number is required'}), 400
+    if alternative_phone:
+        clean_alt = ''.join([c for c in alternative_phone if c.isdigit()])
+        if len(clean_alt) < 10:
+            return jsonify({'success': False, 'message': 'Valid 10-digit alternative mobile number is required if provided'}), 400
+        if clean_alt == clean_pri:
+            return jsonify({'success': False, 'message': 'Alternative mobile number must be different from primary mobile number'}), 400
+    if not dl_number:
+        return jsonify({'success': False, 'message': 'Driving License number is required'}), 400
+    if not rc_number:
+        return jsonify({'success': False, 'message': 'Vehical RC number is required'}), 400
+    if not dl_data_uri:
+        return jsonify({'success': False, 'message': 'Driving License photo is required'}), 400
+    if not rc_data_uri:
+        return jsonify({'success': False, 'message': 'Vehical RC photo is required'}), 400
+
+    # Max 2MB check: 2 * 1024 * 1024 bytes
+    MAX_SIZE = 2 * 1024 * 1024
+    if dl_size > MAX_SIZE:
+        return jsonify({'success': False, 'message': 'Driving License image exceeds 2MB limit'}), 400
+    if rc_size > MAX_SIZE:
+        return jsonify({'success': False, 'message': 'Vehical RC image exceeds 2MB limit'}), 400
+
+    # PNG/JPEG format check
+    if dl_mime and not any(m in dl_mime for m in ('jpeg', 'jpg', 'png')):
+        return jsonify({'success': False, 'message': 'Driving License must be in PNG or JPEG format'}), 400
+    if rc_mime and not any(m in rc_mime for m in ('jpeg', 'jpg', 'png')):
+        return jsonify({'success': False, 'message': 'Vehical RC must be in PNG or JPEG format'}), 400
+
+    # 24-hour rejection cooldown check
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT status, updated_at, notes
+                FROM vehicle_verification_requests
+                WHERE user_id = {PH}
+                ORDER BY id DESC LIMIT 1
+            ''', (uid,))
+            last_req = cursor.fetchone()
+            if last_req:
+                lr = dict_from_row(last_req)
+                if lr.get('status') == 'rejected' and lr.get('updated_at'):
+                    rej_at = lr['updated_at']
+                    if isinstance(rej_at, str):
+                        try:
+                            rej_at = datetime.fromisoformat(rej_at.replace('Z', '+00:00'))
+                        except Exception:
+                            rej_at = None
+                    if rej_at:
+                        now_val = datetime.now(rej_at.tzinfo) if rej_at.tzinfo else datetime.now()
+                        diff = (rej_at + timedelta(hours=24)) - now_val
+                        if diff.total_seconds() > 0:
+                            rem_secs = int(diff.total_seconds())
+                            hrs = rem_secs // 3600
+                            mins = (rem_secs % 3600) // 60
+                            rem_str = f"{hrs}h {mins}m" if hrs > 0 else f"{mins}m"
+                            reason_text = lr.get('notes') or 'Documents could not be validated'
+                            return jsonify({
+                                'success': False,
+                                'message': f'Your previous vehicle verification request was rejected ({reason_text}). You can reapply after 24 hours. Remaining time: {rem_str}.',
+                                'cooldownActive': True,
+                                'remainingSeconds': rem_secs,
+                                'rejectionReason': reason_text,
+                                'rejectedAt': rej_at.isoformat()
+                            }), 400
+    except Exception as ce:
+        print(f"[Vehicle Verification Cooldown Check Warning] {ce}")
+
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                INSERT INTO vehicle_verification_requests
+                (user_id, user_name, address, primary_phone, alternative_phone, skills, dl_number, dl_image, rc_number, rc_image, vehicle_type, notes, status, created_at)
+                VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, 'pending', {PH})
+                RETURNING id
+            ''', (uid, name, address, primary_phone, alternative_phone, skills_str, dl_number, dl_data_uri, rc_number, rc_data_uri, vehicle_type, notes, now))
+            row = cursor.fetchone()
+            req_id = row[0] if row else None
+
+            cursor.execute(f'''
+                UPDATE users SET vehicle_verification_status = 'pending' WHERE id = {PH}
+            ''', (uid,))
+
+            # Notification to admin
+            try:
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, type, title, message, status, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, 'unread', {PH})
+                ''', ('admin', 'vehicle_verification_request', f'Vehical Verification: {name}',
+                      f'Helper {name} (DL: {dl_number}, RC: {rc_number}) requested vehicle verification for skills ({skills_str}). Primary: {primary_phone}, Alt: {alternative_phone}.',
+                      now))
+            except Exception as ne:
+                print(f"[Vehicle Notification Warning] {ne}")
+
+            # Notification to helper
+            try:
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, type, title, message, status, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, 'unread', {PH})
+                ''', (uid, 'vehicle_verification_received', 'Vehical Verification Request Received',
+                      f'Your vehicle verification request (DL: {dl_number}, RC: {rc_number}) for skills ({skills_str}) has been received. Verification review completes within 24 hours.',
+                      now))
+            except Exception as ne:
+                print(f"[Vehicle User Notification Warning] {ne}")
+
+            conn.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Vehical verification request submitted! Verification review completes within 24 hours.',
+            'requestId': req_id,
+            'status': 'pending'
+        })
+    except Exception as e:
+        print(f"[Helper Vehicle Verification Error] {e}")
+        return jsonify({'success': False, 'message': 'Failed to submit vehicle verification request. Please try again.'}), 500
+
+
+@app.route('/api/helper/vehicle-verification/status', methods=['GET'])
+@require_auth
+def get_helper_vehicle_verification_status():
+    """Helper: Get latest vehicle verification request status"""
+    _ensure_vehicle_verification_table()
+    uid = str(request.user_id)
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, user_name, address, primary_phone, alternative_phone, skills,
+                       dl_number, rc_number, vehicle_type, notes, status, created_at, updated_at
+                FROM vehicle_verification_requests
+                WHERE user_id = {PH}
+                ORDER BY created_at DESC LIMIT 1
+            ''', (uid,))
+            row = cursor.fetchone()
+
+        if not row:
+            return jsonify({
+                'success': True,
+                'status': 'none',
+                'hasRequest': False
+            })
+
+        r = dict_from_row(row)
+        can_reapply = True
+        remaining_seconds = 0
+        rej_at = r.get('updated_at')
+        if r.get('status') == 'rejected' and rej_at:
+            if isinstance(rej_at, str):
+                try:
+                    rej_at = datetime.fromisoformat(rej_at.replace('Z', '+00:00'))
+                except Exception:
+                    rej_at = None
+            if rej_at:
+                now_val = datetime.now(rej_at.tzinfo) if rej_at.tzinfo else datetime.now()
+                diff = (rej_at + timedelta(hours=24)) - now_val
+                if diff.total_seconds() > 0:
+                    can_reapply = False
+                    remaining_seconds = int(diff.total_seconds())
+
+        return jsonify({
+            'success': True,
+            'hasRequest': True,
+            'request': {
+                'id': r.get('id'),
+                'userName': r.get('user_name'),
+                'address': r.get('address'),
+                'primaryPhone': r.get('primary_phone'),
+                'alternativePhone': r.get('alternative_phone'),
+                'skills': r.get('skills'),
+                'dlNumber': r.get('dl_number'),
+                'rcNumber': r.get('rc_number'),
+                'vehicleType': r.get('vehicle_type'),
+                'notes': r.get('notes'),
+                'status': r.get('status', 'pending'),
+                'createdAt': r.get('created_at').isoformat() if hasattr(r.get('created_at'), 'isoformat') else str(r.get('created_at') or ''),
+                'updatedAt': r.get('updated_at').isoformat() if hasattr(r.get('updated_at'), 'isoformat') else str(r.get('updated_at') or ''),
+                'rejectedAt': (r.get('updated_at').isoformat() if hasattr(r.get('updated_at'), 'isoformat') else str(r.get('updated_at') or '')) if r.get('status') == 'rejected' else None,
+                'rejectionReason': r.get('notes') if r.get('status') == 'rejected' else None,
+                'canReapply': can_reapply,
+                'remainingSeconds': remaining_seconds,
+            }
+        })
+    except Exception as e:
+        print(f"[Helper Vehicle Verification Status Error] {e}")
+        return jsonify({'success': False, 'message': 'Failed to fetch status'}), 500
+
+
+@app.route('/api/admin/vehicle-verification/<int:request_id>/approve', methods=['POST'])
+@app.route('/api/admin/vehicle-verification/approve', methods=['POST'])
+@require_admin
+def admin_approve_vehicle_verification(request_id=None):
+    """Admin: Approve vehicle verification and automatically save vehicle skills to helper profile"""
+    _ensure_vehicle_verification_table()
+    data = request.get_json(silent=True) or {}
+    req_id = request_id or data.get('requestId') or data.get('request_id') or data.get('id')
+    if not req_id:
+        return jsonify({'success': False, 'message': 'Request ID is required'}), 400
+
+    now = datetime.now()
+    import json as _json_vv
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, user_id, user_name, skills, dl_number, rc_number, status
+                FROM vehicle_verification_requests
+                WHERE id = {PH}
+            ''', (req_id,))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': 'Verification request not found'}), 404
+
+            req = dict_from_row(row)
+            user_id = str(req.get('user_id'))
+            user_name = str(req.get('user_name') or 'Helper')
+            skills_str = str(req.get('skills') or '').strip()
+
+            cursor.execute(f'''
+                UPDATE vehicle_verification_requests
+                SET status = 'verified', updated_at = {PH}
+                WHERE id = {PH}
+            ''', (now, req_id))
+
+            cursor.execute(f'''
+                SELECT id, skills, vehicle_verification_status
+                FROM users
+                WHERE id = {PH}
+            ''', (user_id,))
+            u_row = cursor.fetchone()
+            if u_row:
+                user_dict = dict_from_row(u_row)
+                current_skills = []
+                raw_skills = user_dict.get('skills')
+                if raw_skills:
+                    try:
+                        current_skills = _json_vv.loads(raw_skills) if isinstance(raw_skills, str) else list(raw_skills)
+                    except Exception:
+                        current_skills = [s.strip() for s in str(raw_skills).split(',') if s.strip()]
+
+                approved_skills = [s.strip() for s in skills_str.split(',') if s.strip()]
+                merged_skills = list(current_skills)
+                existing_lower = {s.lower() for s in merged_skills}
+                for s in approved_skills:
+                    if s.lower() not in existing_lower:
+                        merged_skills.append(s)
+                        existing_lower.add(s.lower())
+
+                cursor.execute(f'''
+                    UPDATE users
+                    SET skills = {PH}, vehicle_verification_status = 'verified'
+                    WHERE id = {PH}
+                ''', (_json_vv.dumps(merged_skills), user_id))
+
+            try:
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, type, title, message, status, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, 'unread', {PH})
+                ''', (user_id, 'vehicle_verification_approved', 'Vehical Verification Approved! 🚗',
+                      f'Congratulations {user_name}! Your vehicle verification has been approved by Admin. Your vehicle skills ({skills_str}) are now active on your profile.',
+                      now))
+            except Exception as ne:
+                print(f"[Vehicle Notification Warning] {ne}")
+
+            conn.commit()
+
+        return jsonify({'success': True, 'message': 'Vehical verification request approved successfully.'})
+    except Exception as e:
+        print(f"[ADMIN VEHICLE VERIFICATION APPROVE ERROR] {e}")
+        return jsonify({'success': False, 'message': 'Failed to approve request'}), 500
+
+
+@app.route('/api/admin/vehicle-verification/<int:request_id>/reject', methods=['POST'])
+@app.route('/api/admin/vehicle-verification/reject', methods=['POST'])
+@require_admin
+def admin_reject_vehicle_verification(request_id=None):
+    """Admin: Reject vehicle verification request"""
+    _ensure_vehicle_verification_table()
+    data = request.get_json(silent=True) or {}
+    req_id = request_id or data.get('requestId') or data.get('request_id') or data.get('id')
+    reason = (data.get('reason') or 'Documents could not be validated.').strip()
+    if not req_id:
+        return jsonify({'success': False, 'message': 'Request ID is required'}), 400
+
+    now = datetime.now()
+    try:
+        with get_db() as (cursor, conn):
+            cursor.execute(f'''
+                SELECT id, user_id, user_name, skills, status
+                FROM vehicle_verification_requests
+                WHERE id = {PH}
+            ''', (req_id,))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': 'Verification request not found'}), 404
+
+            req = dict_from_row(row)
+            user_id = str(req.get('user_id'))
+
+            cursor.execute(f'''
+                UPDATE vehicle_verification_requests
+                SET status = 'rejected', notes = {PH}, updated_at = {PH}
+                WHERE id = {PH}
+            ''', (reason, now, req_id))
+
+            cursor.execute(f'''
+                UPDATE users
+                SET vehicle_verification_status = 'rejected',
+                    vehicle_verification_rejected_at = {PH},
+                    vehicle_verification_reject_reason = {PH}
+                WHERE id = {PH}
+            ''', (now, reason, user_id))
+
+            try:
+                cursor.execute(f'''
+                    INSERT INTO notifications (user_id, type, title, message, status, created_at)
+                    VALUES ({PH}, {PH}, {PH}, {PH}, 'unread', {PH})
+                ''', (user_id, 'vehicle_verification_rejected', 'Vehical Verification Rejected 🚗',
+                      f'Your vehicle verification request was not approved: {reason}. You can reapply with valid DL & RC documents after 24 hours.',
+                      now))
+            except Exception as ne:
+                print(f"[Vehicle Notification Warning] {ne}")
+
+            conn.commit()
+
+        return jsonify({'success': True, 'message': 'Vehical verification request rejected.'})
+    except Exception as e:
+        print(f"[ADMIN VEHICLE VERIFICATION REJECT ERROR] {e}")
+        return jsonify({'success': False, 'message': 'Failed to reject verification request'}), 500
 
 
 # ========================================

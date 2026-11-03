@@ -22,6 +22,7 @@ import 'screens/wallet/wallet_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/profile/kyc_screen.dart';
 import 'screens/profile/physical_onboarding_screen.dart';
+import 'screens/profile/vehicle_verification_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
 import 'screens/referral/referral_screen.dart';
 import 'screens/shell/main_shell.dart';
@@ -65,7 +66,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
           return loc == '/auth-success' ? null : '/auth-success';
         }
 
-        // Auth-success is a post-login bridge screen — authenticated only.
+        // Auth-success is a post-login bridge screen â€” authenticated only.
         if (loc == '/auth-success') {
           return status == AuthStatus.unauthenticated ? '/login' : null;
         }
@@ -201,6 +202,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
             );
           },
         ),
+        GoRoute(
+          path: '/vehicle-verification',
+          builder: (_, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            return VehicleVerificationScreen(
+              initialSkills: (extra?['skills'] as List?)?.map((e) => e.toString()).toList(),
+            );
+          },
+        ),
       ],
     );
   }
@@ -225,7 +235,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       _handleNotifTap(pendingTap);
     }
 
-    // Consume any notification tap that arrived during a background→foreground
+    // Consume any notification tap that arrived during a backgroundâ†’foreground
     // transition before the stream listener above was registered.
     final pendingBgTap = NotificationService.consumePendingBackgroundTap();
     if (pendingBgTap != null && pendingTap == null) {
@@ -281,14 +291,14 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
   }
 
   void _handleNotifTap(Map<String, dynamic> data) {
-    // Resolve task ID — check all common key names the backend may send.
+    // Resolve task ID â€” check all common key names the backend may send.
     final taskId = data['task_id']?.toString()
         ?? data['taskId']?.toString()
         ?? data['id']?.toString();
     final type = data['type']?.toString() ?? '';
 
     // Determine where to navigate.
-    // inProgressTypes — these screens should open the in-progress view.
+    // inProgressTypes â€” these screens should open the in-progress view.
     const inProgressTypes = {
       'task_assigned',       // helper just accepted
       'task_accepted',       // poster confirmation
@@ -306,7 +316,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'withdrawal_requested', 'withdrawal_approved', 'withdrawal_rejected',
       'penalty_deducted', 'release_penalty', 'task_abandoned_penalty',
     };
-    // Admin notification types — navigate to the notifications screen.
+    // Admin notification types â€” navigate to the notifications screen.
     const adminTypes = {
       'account_suspended', 'admin_suspended',
       'account_banned', 'admin_banned',
@@ -315,7 +325,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'admin_balance_adjusted',
     };
 
-    // task_expired: only mark as read — no navigation (task no longer exists).
+    // task_expired: only mark as read â€” no navigation (task no longer exists).
     if (type == 'task_expired') {
       if (_authProvider?.status == AuthStatus.authenticated &&
           taskId != null && taskId.isNotEmpty) {
@@ -329,11 +339,11 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       return;
     }
 
-    // Notification types whose task has been deleted — navigate to My Tasks
+    // Notification types whose task has been deleted â€” navigate to My Tasks
     // instead of trying to open a non-existent task detail.
     // Use go() for shell tab routes to avoid the navigator key assertion.
     const deletedTaskTypes = {'task_cancelled_confirmation'};
-    // Shell tab routes must use go() not push() — push() on an already-mounted
+    // Shell tab routes must use go() not push() â€” push() on an already-mounted
     // ShellRoute child throws '!keyReservation.contains(key)'.
     const shellTabRoutes = {'/my-tasks', '/home', '/browse', '/profile'};
 
@@ -348,11 +358,11 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
           ? '/task-in-progress/$taskId'
           : '/task/$taskId';
     } else {
-      // No task ID in the FCM payload — pick the most appropriate screen.
+      // No task ID in the FCM payload â€” pick the most appropriate screen.
       if (adminTypes.contains(type)) {
         destination = '/notifications';
       } else if (matchedTypes.contains(type)) {
-        destination = '/browse'; // Matched-task alerts → browse for the task
+        destination = '/browse'; // Matched-task alerts â†’ browse for the task
       } else if (walletTypes.contains(type) || type.contains('payment')) {
         destination = '/wallet';
       } else if (type.isNotEmpty) {

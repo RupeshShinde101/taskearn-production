@@ -28,6 +28,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     // triggers '!keyReservation.contains(key)' when the tab is already mounted.
     // task_expired: notification already marked read by caller — no navigation.
     if (type == 'task_expired') return;
+
+    // Verification-related notifications: KYC, Physical Onboarding, Vehicle Verification
+    if (type == 'kyc_result' || type == 'kyc_request') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.push('/kyc');
+      });
+      return;
+    }
+    if (type.startsWith('physical_onboarding')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.push('/physical-onboarding');
+      });
+      return;
+    }
+    if (type.startsWith('vehicle_verification')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.push('/vehicle-verification');
+      });
+      return;
+    }
+
     const noTaskTypes = {'task_cancelled_confirmation'};
     if (noTaskTypes.contains(type)) {
       // Defer until the current frame (markRead notifyListeners) is done.
@@ -181,6 +202,21 @@ class _NotificationTile extends StatelessWidget {
       case 'payment_done':   return Icons.payments_outlined;
       case 'task_completed':
       case 'verify_and_pay': return Icons.verified_outlined;
+      case 'kyc_result':
+      case 'kyc_request':
+        return Icons.badge_outlined;
+      case 'physical_onboarding_approved':
+        return Icons.verified_user_rounded;
+      case 'physical_onboarding_rejected':
+        return Icons.gpp_bad_outlined;
+      case 'physical_onboarding_received':
+        return Icons.shield_outlined;
+      case 'vehicle_verification_approved':
+        return Icons.directions_car_filled_rounded;
+      case 'vehicle_verification_rejected':
+        return Icons.no_crash_rounded;
+      case 'vehicle_verification_received':
+        return Icons.directions_car_outlined;
       default:               return Icons.notifications_outlined;
     }
   }
@@ -198,6 +234,20 @@ class _NotificationTile extends StatelessWidget {
       case 'payment_done':   return AppColors.success;
       case 'task_completed':
       case 'verify_and_pay': return AppColors.warning;
+      case 'kyc_result':
+        return notification.title.toLowerCase().contains('reject') ||
+                notification.body.toLowerCase().contains('reject')
+            ? AppColors.danger
+            : AppColors.success;
+      case 'physical_onboarding_approved':
+      case 'vehicle_verification_approved':
+        return AppColors.success;
+      case 'physical_onboarding_rejected':
+      case 'vehicle_verification_rejected':
+        return AppColors.danger;
+      case 'physical_onboarding_received':
+      case 'vehicle_verification_received':
+        return const Color(0xFF1D4ED8);
       default:               return AppColors.primary;
     }
   }

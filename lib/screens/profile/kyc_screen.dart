@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/verification_cooldown_banner.dart';
 
 class KycScreen extends StatefulWidget {
   const KycScreen({super.key});
@@ -45,10 +46,35 @@ class _KycScreenState extends State<KycScreen> {
     }
   }
 
+  String _formatDuration(Duration? d) {
+    if (d == null) return '0m';
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    if (h > 0) return '${h}h ${m}m';
+    return '${m}m';
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     final auth = context.read<AuthProvider>();
+    final user = auth.user;
+
+    // Check 24-hour cooldown if previously rejected
+    if (user != null && !user.canReapplyKyc) {
+      final rem = user.kycReapplyRemaining ?? Duration.zero;
+      final hours = rem.inHours;
+      final minutes = rem.inMinutes % 60;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'KYC verification was recently rejected. You can reapply in ${hours}h ${minutes}m.',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
 
     // Require email to be verified before KYC submission
     if (auth.user?.isEmailVerified == false) {
@@ -97,7 +123,7 @@ class _KycScreenState extends State<KycScreen> {
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('KYC submitted! Verification usually takes 24-48 hours.'),
+          content: Text('KYC submitted! Verification review completes within 24 hours.'),
           backgroundColor: AppColors.success,
           duration: Duration(seconds: 4),
         ),
@@ -210,8 +236,15 @@ class _KycScreenState extends State<KycScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Status banner
-              _buildStatusBanner(user?.kycStatus, user?.isKycVerified ?? false),
+              // Status & Cooldown banner
+              VerificationCooldownBanner(
+                verificationTitle: 'KYC Verification',
+                status: (user?.isKycVerified == true)
+                    ? 'verified'
+                    : (user?.kycStatus ?? 'none'),
+                rejectionReason: user?.kycFlagReason,
+                rejectedAt: user?.kycRejectedAt,
+              ),
               const SizedBox(height: 12),
 
               // Email verification warning
@@ -372,17 +405,61 @@ class _KycScreenState extends State<KycScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              GradientButton(
-                label: 'Submit for Verification',
-                loading: _loading,
-                onPressed: _submit,
-                icon: Icons.verified_outlined,
-              ),
+              if (user?.isKycVerified == true)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.verified, color: AppColors.success, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'KYC Verified Successfully',
+                        style: TextStyle(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (user?.kycStatus == 'pending')
+                const GradientButton(
+                  label: 'Under Review (Completes in 24 hrs)',
+                  loading: false,
+                  onPressed: null,
+                  icon: Icons.hourglass_top_rounded,
+                )
+              else if (user?.kycStatus == 'rejected' && !(user?.canReapplyKyc ?? true))
+                GradientButton(
+                  label: 'Reapply in ${_formatDuration(user!.kycReapplyRemaining)}',
+                  loading: false,
+                  onPressed: null,
+                  icon: Icons.timer_outlined,
+                )
+              else
+                GradientButton(
+                  label: user?.kycStatus == 'rejected'
+                      ? 'Reapply KYC Verification'
+                      : 'Submit for Verification',
+                  loading: _loading,
+                  onPressed: _submit,
+                  icon: user?.kycStatus == 'rejected'
+                      ? Icons.refresh_rounded
+                      : Icons.verified_outlined,
+                ),
 
               const SizedBox(height: 16),
               const Center(
                 child: Text(
-                  'Your documents are encrypted and stored securely.\nVerification takes 24-48 hours.',
+                  'Your documents are encrypted and stored securely.\nVerification review completes within 24 hours.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.gray, fontSize: 12, height: 1.4),
                 ),
@@ -390,86 +467,6 @@ class _KycScreenState extends State<KycScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildStatusBanner(String? kycStatus, bool isVerified) {
-    if (isVerified) {
-      return const _Banner(
-        icon: Icons.verified,
-        label: 'KYC Verified',
-        subtitle: 'Your identity has been verified.',
-        color: AppColors.success,
-      );
-    }
-    if (kycStatus == 'pending') {
-      return const _Banner(
-        icon: Icons.hourglass_top_rounded,
-        label: 'Verification Pending',
-        subtitle: 'Your documents are under review.',
-        color: AppColors.warning,
-      );
-    }
-    if (kycStatus == 'rejected') {
-      return const _Banner(
-        icon: Icons.cancel_outlined,
-        label: 'Verification Rejected',
-        subtitle: 'Please re-submit with valid documents.',
-        color: AppColors.danger,
-      );
-    }
-    return const _Banner(
-      icon: Icons.badge_outlined,
-      label: 'Not Verified',
-      subtitle: 'Complete KYC to build trust and unlock tasks.',
-      color: AppColors.gray,
-    );
-  }
-}
-
-class _Banner extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final Color color;
-  const _Banner({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(subtitle,
-                    style:
-                        const TextStyle(color: AppColors.gray, fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

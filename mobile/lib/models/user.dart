@@ -24,6 +24,7 @@ class User {
   final String? authProvider; // 'email' | 'google' | null
   final String profileMode; // 'poster' | 'helper'
   final String? physicalVerificationStatus; // 'none' | 'pending' | 'verified' | 'rejected'
+  final String? vehicleVerificationStatus; // 'none' | 'pending' | 'verified' | 'rejected'
 
   User({
     required this.id,
@@ -50,7 +51,21 @@ class User {
     this.authProvider,
     this.profileMode = 'poster',
     this.physicalVerificationStatus,
+    this.vehicleVerificationStatus,
+    this.kycFlagReason,
+    this.kycRejectedAt,
+    this.physicalVerificationRejectReason,
+    this.physicalVerificationRejectedAt,
+    this.vehicleVerificationRejectReason,
+    this.vehicleVerificationRejectedAt,
   });
+
+  final String? kycFlagReason;
+  final DateTime? kycRejectedAt;
+  final String? physicalVerificationRejectReason;
+  final DateTime? physicalVerificationRejectedAt;
+  final String? vehicleVerificationRejectReason;
+  final DateTime? vehicleVerificationRejectedAt;
 
   factory User.fromJson(Map<String, dynamic> json) {
     final kycStatus = json['kyc_status']?.toString();
@@ -95,6 +110,27 @@ class User {
       authProvider: json['auth_provider']?.toString(),
       profileMode: json['profile_mode']?.toString() ?? json['profileMode']?.toString() ?? 'poster',
       physicalVerificationStatus: json['physical_verification_status']?.toString() ?? json['physicalVerificationStatus']?.toString(),
+      vehicleVerificationStatus: json['vehicle_verification_status']?.toString() ?? json['vehicleVerificationStatus']?.toString(),
+      kycFlagReason: json['kyc_flag_reason']?.toString() ?? json['kycFlagReason']?.toString(),
+      kycRejectedAt: json['kyc_rejected_at'] != null
+          ? DateTime.tryParse(json['kyc_rejected_at'].toString())
+          : (json['kycRejectedAt'] != null
+              ? DateTime.tryParse(json['kycRejectedAt'].toString())
+              : null),
+      physicalVerificationRejectReason: json['physical_verification_reject_reason']?.toString() ??
+          json['physicalVerificationRejectReason']?.toString(),
+      physicalVerificationRejectedAt: json['physical_verification_rejected_at'] != null
+          ? DateTime.tryParse(json['physical_verification_rejected_at'].toString())
+          : (json['physicalVerificationRejectedAt'] != null
+              ? DateTime.tryParse(json['physicalVerificationRejectedAt'].toString())
+              : null),
+      vehicleVerificationRejectReason: json['vehicle_verification_reject_reason']?.toString() ??
+          json['vehicleVerificationRejectReason']?.toString(),
+      vehicleVerificationRejectedAt: json['vehicle_verification_rejected_at'] != null
+          ? DateTime.tryParse(json['vehicle_verification_rejected_at'].toString())
+          : (json['vehicleVerificationRejectedAt'] != null
+              ? DateTime.tryParse(json['vehicleVerificationRejectedAt'].toString())
+              : null),
     );
   }
 
@@ -119,6 +155,13 @@ class User {
         'dailyReleaseCount': dailyReleaseCount,
         'profile_mode': profileMode,
         'physical_verification_status': physicalVerificationStatus,
+        'vehicle_verification_status': vehicleVerificationStatus,
+        'kyc_flag_reason': kycFlagReason,
+        'kyc_rejected_at': kycRejectedAt?.toIso8601String(),
+        'physical_verification_reject_reason': physicalVerificationRejectReason,
+        'physical_verification_rejected_at': physicalVerificationRejectedAt?.toIso8601String(),
+        'vehicle_verification_reject_reason': vehicleVerificationRejectReason,
+        'vehicle_verification_rejected_at': vehicleVerificationRejectedAt?.toIso8601String(),
       };
 
   User copyWith({
@@ -146,6 +189,13 @@ class User {
     String? authProvider,
     String? profileMode,
     String? physicalVerificationStatus,
+    String? vehicleVerificationStatus,
+    String? kycFlagReason,
+    DateTime? kycRejectedAt,
+    String? physicalVerificationRejectReason,
+    DateTime? physicalVerificationRejectedAt,
+    String? vehicleVerificationRejectReason,
+    DateTime? vehicleVerificationRejectedAt,
   }) =>
       User(
         id: id ?? this.id,
@@ -172,10 +222,56 @@ class User {
         authProvider: authProvider ?? this.authProvider,
         profileMode: profileMode ?? this.profileMode,
         physicalVerificationStatus: physicalVerificationStatus ?? this.physicalVerificationStatus,
+        vehicleVerificationStatus: vehicleVerificationStatus ?? this.vehicleVerificationStatus,
+        kycFlagReason: kycFlagReason ?? this.kycFlagReason,
+        kycRejectedAt: kycRejectedAt ?? this.kycRejectedAt,
+        physicalVerificationRejectReason: physicalVerificationRejectReason ?? this.physicalVerificationRejectReason,
+        physicalVerificationRejectedAt: physicalVerificationRejectedAt ?? this.physicalVerificationRejectedAt,
+        vehicleVerificationRejectReason: vehicleVerificationRejectReason ?? this.vehicleVerificationRejectReason,
+        vehicleVerificationRejectedAt: vehicleVerificationRejectedAt ?? this.vehicleVerificationRejectedAt,
       );
 
+  /// Returns remaining Duration before user can reapply for KYC (24 hours after rejection).
+  Duration? get kycReapplyRemaining {
+    if (kycStatus != 'rejected' || kycRejectedAt == null) return null;
+    final diff = kycRejectedAt!.toLocal().add(const Duration(hours: 24)).difference(DateTime.now());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  bool get canReapplyKyc {
+    if (kycStatus != 'rejected') return true;
+    final rem = kycReapplyRemaining;
+    return rem == null || rem == Duration.zero;
+  }
+
+  /// Returns remaining Duration before helper can reapply for physical onboarding.
+  Duration? get physicalVerificationReapplyRemaining {
+    if (physicalVerificationStatus != 'rejected' || physicalVerificationRejectedAt == null) return null;
+    final diff = physicalVerificationRejectedAt!.toLocal().add(const Duration(hours: 24)).difference(DateTime.now());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  bool get canReapplyPhysicalVerification {
+    if (physicalVerificationStatus != 'rejected') return true;
+    final rem = physicalVerificationReapplyRemaining;
+    return rem == null || rem == Duration.zero;
+  }
+
+  /// Returns remaining Duration before helper can reapply for vehicle verification.
+  Duration? get vehicleVerificationReapplyRemaining {
+    if (vehicleVerificationStatus != 'rejected' || vehicleVerificationRejectedAt == null) return null;
+    final diff = vehicleVerificationRejectedAt!.toLocal().add(const Duration(hours: 24)).difference(DateTime.now());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  bool get canReapplyVehicleVerification {
+    if (vehicleVerificationStatus != 'rejected') return true;
+    final rem = vehicleVerificationReapplyRemaining;
+    return rem == null || rem == Duration.zero;
+  }
+
   /// Returns a copy of this User with only the avatar replaced.
-  /// Preserves ALL fields (unlike toJson→fromJson which loses rank etc.).
+  /// Preserves ALL fields (unlike toJsonâ†’fromJson which loses rank etc.).
   User copyWithAvatar(String? newAvatar) => User(
         id: id,
         name: name,

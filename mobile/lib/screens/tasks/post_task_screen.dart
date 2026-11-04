@@ -12,7 +12,6 @@ import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 import 'dart:async';
 import '../../services/location_search_service.dart';
-import '../../widgets/gradient_button.dart';
 import '../../widgets/location_suggestions_dropdown.dart';
 import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/map_location_picker.dart';
@@ -61,10 +60,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _dropAreaCtrl   = TextEditingController();
 
   String _selectedCategory = 'delivery';
-  String _deliveryVehicle = 'bike'; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
+  String _deliveryVehicle = 'bike';
+  bool _isTaskDetailsExpanded = false; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
   int _distCalcSeq = 0;
-  final _categorySearchCtrl = TextEditingController();
-  String _categorySearch = '';
   LatLng? _location;
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
@@ -1486,6 +1484,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
 
     if (!_formKey.currentState!.validate()) {
+      setState(() => _isTaskDetailsExpanded = true);
       // Scroll to top and jump cursor to the first invalid field
       _scrollCtrl.animateTo(0,
           duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
@@ -2230,84 +2229,84 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildDeliveryVehicleSelector() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.delivery_dining, size: 18, color: AppColors.primary),
-              const SizedBox(width: 8),
-              const Text(
-                'Delivery Vehicle Option',
-                style: TextStyle(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 18),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Delivery Vehicle Option',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: Color(0xFF102A56),
+              ),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
+                style: const TextStyle(
                   fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: AppColors.dark,
+                  fontSize: 11,
+                  color: Color(0xFF2563EB),
                 ),
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    color: AppColors.primary,
-                  ),
-                ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildVehicleTile(
+                title: 'Bike',
+                rate: '₹12 / km',
+                desc: 'Small items / docs',
+                imageAsset: 'assets/images/vehicle_bike.png',
+                isSelected: _deliveryVehicle == 'bike',
+                onTap: () {
+                  if (_deliveryVehicle != 'bike') {
+                    setState(() => _deliveryVehicle = 'bike');
+                    _recalcDistance();
+                  }
+                },
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _buildVehicleTile(
-                  title: 'Bike',
-                  rate: '₹12 / km',
-                  desc: 'Small items / docs',
-                  icon: Icons.two_wheeler_rounded,
-                  isSelected: _deliveryVehicle == 'bike',
-                  onTap: () {
-                    if (_deliveryVehicle != 'bike') {
-                      setState(() => _deliveryVehicle = 'bike');
-                      _recalcDistance();
-                    }
-                  },
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildVehicleTile(
+                title: 'Rikshaw',
+                rate: '₹18 / km',
+                desc: 'Auto / medium items',
+                imageAsset: 'assets/images/vehicle_rikshaw.png',
+                isSelected: _deliveryVehicle == 'rikshaw',
+                onTap: () {
+                  if (_deliveryVehicle != 'rikshaw') {
+                    setState(() => _deliveryVehicle = 'rikshaw');
+                    _recalcDistance();
+                  }
+                },
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildVehicleTile(
-                  title: 'Rikshaw',
-                  rate: '₹18 / km',
-                  desc: 'Auto / medium items',
-                  icon: Icons.electric_rickshaw_rounded,
-                  isSelected: _deliveryVehicle == 'rikshaw',
-                  onTap: () {
-                    if (_deliveryVehicle != 'rikshaw') {
-                      setState(() => _deliveryVehicle = 'rikshaw');
-                      _recalcDistance();
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -2315,7 +2314,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     required String title,
     required String rate,
     required String desc,
-    required IconData icon,
+    required String imageAsset,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
@@ -2323,51 +2322,78 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : AppColors.light,
-          borderRadius: BorderRadius.circular(12),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.border,
-            width: isSelected ? 2 : 1,
+            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE5EDF7),
+            width: isSelected ? 1.8 : 1.2,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: isSelected
+                  ? const Color(0xFF2563EB).withValues(alpha: 0.12)
+                  : const Color(0xFF102A56).withValues(alpha: 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Icon(icon, size: 22, color: isSelected ? AppColors.primary : AppColors.gray),
-                const Spacer(),
-                if (isSelected)
-                  const Icon(Icons.check_circle, size: 16, color: AppColors.primary),
-              ],
+            Image.asset(
+              imageAsset,
+              width: 44,
+              height: 44,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.two_wheeler_rounded, size: 36, color: Color(0xFF2563EB)),
             ),
-            const SizedBox(height: 6),
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: isSelected ? AppColors.primary : AppColors.dark,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: Color(0xFF102A56),
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    rate,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    desc,
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF52627A)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              rate,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-                color: isSelected ? AppColors.primary : AppColors.dark,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              desc,
-              style: const TextStyle(fontSize: 11, color: AppColors.gray),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            if (isSelected)
+              Container(
+                width: 18,
+                height: 18,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF2563EB),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check, size: 12, color: Colors.white),
+              )
+            else
+              const SizedBox(width: 18),
           ],
         ),
       ),
@@ -2519,285 +2545,499 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Post a Task')),
-      body: SingleChildScrollView(
-        controller: _scrollCtrl,
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
+  Widget _buildTopHeader() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Title
-              TextFormField(
-                controller: _titleCtrl,
-                focusNode: _titleFocus,
-                decoration: const InputDecoration(
-                  labelText: 'Task Title',
-                  hintText: 'e.g. Pick up parcel from Bandra',
-                  prefixIcon: Icon(Icons.title),
-                ),
-                validator: _validateTaskTitle,
-              ),
-              const SizedBox(height: 14),
-
-  // ── Category picker (hierarchical) ──────────────────────
-              const Text('Category',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600, color: AppColors.dark)),
-              const SizedBox(height: 4),
-              // Selected category pill
-              if (_selectedCategory.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_circle, color: AppColors.primary, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Selected: ${TaskCategory.all.firstWhere((c) => c.id == _selectedCategory, orElse: () => TaskCategory(id: '', label: _selectedCategory, icon: '')).label}',
-                        style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600),
-                      ),
-                    ],
+              GestureDetector(
+                onTap: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  } else {
+                    context.go('/tasks');
+                  }
+                },
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEAF2FF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back,
+                    color: Color(0xFF2563EB),
+                    size: 20,
                   ),
                 ),
-              // Category search bar
-              TextField(
-                controller: _categorySearchCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Search category\u2026',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: _categorySearch.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () => setState(() {
-                            _categorySearchCtrl.clear();
-                            _categorySearch = '';
-                          }),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Post a Task',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Tell us what you need. We\'ll help you find the right person.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF52627A),
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Image.asset(
+          'assets/images/header_avatar.png',
+          width: 140,
+          height: 140,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const SizedBox(width: 140, height: 140),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTaskTitleInput() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDCEBFF),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const Text(
+              'T',
+              style: TextStyle(
+                color: Color(0xFF2563EB),
+                fontWeight: FontWeight.w800,
+                fontSize: 17,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextFormField(
+              controller: _titleCtrl,
+              focusNode: _titleFocus,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Task Title',
+                hintStyle: TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              validator: _validateTaskTitle,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategorySection() {
+    final categories = [
+      (
+        label: 'Delivery & Moving',
+        groupName: 'Delivery & Moving',
+        defaultId: 'delivery',
+        image: 'assets/images/cat_3d_delivery.png',
+      ),
+      (
+        label: 'Repair',
+        groupName: 'Repair',
+        defaultId: 'repair',
+        image: 'assets/images/cat_3d_repair.png',
+      ),
+      (
+        label: 'Home & Lifestyle',
+        groupName: 'Home & Lifestyle',
+        defaultId: 'cleaning',
+        image: 'assets/images/cat_3d_home.png',
+      ),
+      (
+        label: 'Shopping & Errands',
+        groupName: 'Shopping & Errands',
+        defaultId: 'shopping',
+        image: 'assets/images/cat_3d_shopping.png',
+      ),
+      (
+        label: 'Professional',
+        groupName: 'Professional',
+        defaultId: 'freelancer',
+        image: 'assets/images/cat_3d_professional.png',
+      ),
+      (
+        label: 'Care Services',
+        groupName: 'Care Services',
+        defaultId: 'child_care',
+        image: 'assets/images/cat_3d_care.png',
+      ),
+    ];
+
+    final otherGroup = TaskCategoryGroup.all.firstWhere(
+      (g) => g.label == 'Other',
+      orElse: () => const TaskCategoryGroup(label: 'Other', icon: '📋', categoryIds: ['other']),
+    );
+    final isOtherSelected = otherGroup.categoryIds.contains(_selectedCategory);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.grid_view_rounded, color: Color(0xFF2563EB), size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Select Category',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF102A56),
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Choose the best category for your task',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF52627A),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: categories.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            mainAxisExtent: 72,
+          ),
+          itemBuilder: (ctx, i) {
+            final cat = categories[i];
+            final group = TaskCategoryGroup.all.firstWhere(
+              (g) => g.label == cat.groupName,
+              orElse: () => TaskCategoryGroup(label: cat.groupName, icon: '📋', categoryIds: [cat.defaultId]),
+            );
+            final isSelected = group.categoryIds.contains(_selectedCategory);
+
+            return GestureDetector(
+              onTap: () {
+                if (!isSelected) {
+                  setState(() {
+                    _selectedCategory = cat.defaultId;
+                    _autoFillDescription();
+                  });
+                  _recalcDistance();
+                } else {
+                  _showSubCategorySheet(group);
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: isSelected
+                      ? const LinearGradient(
+                          colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
                         )
                       : null,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
+                  color: isSelected ? null : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: isSelected
+                      ? null
+                      : Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isSelected
+                          ? const Color(0xFF0B63F6).withValues(alpha: 0.28)
+                          : const Color(0xFF102A56).withValues(alpha: 0.03),
+                      blurRadius: isSelected ? 10 : 6,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
-                onChanged: (v) => setState(() {
-                  _categorySearch = v.trim().toLowerCase();
-                }),
-              ),
-              const SizedBox(height: 10),
-              // Show search results OR parent category groups
-              if (_categorySearch.isNotEmpty) ...[
-                // ── Flat search results ───────────────────────────────
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: TaskCategory.all
-                      .where((c) => c.label.toLowerCase().contains(_categorySearch) ||
-                                    c.id.contains(_categorySearch))
-                      .map((c) {
-                    final sel = _selectedCategory == c.id;
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedCategory = c.id;
-                          _categorySearchCtrl.clear();
-                          _categorySearch = '';
-                          _autoFillDescription();
-                        });
-                        _recalcDistance();
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: AppColors.primary,
-                            width: sel ? 2 : 1.5,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(c.icon, style: const TextStyle(fontSize: 16)),
-                            const SizedBox(width: 6),
-                            Text(c.label,
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: sel ? Colors.white : AppColors.dark)),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ] else ...[
-                // ── Parent category grid ──────────────────────────────
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: TaskCategoryGroup.all.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 1.0,
-                  ),
-                  itemBuilder: (ctx, i) {
-                    final group = TaskCategoryGroup.all[i];
-                    // Check if current selection belongs to this group
-                    final groupActive = group.categoryIds.contains(_selectedCategory);
-                    return GestureDetector(
-                      onTap: () {
-                        FocusScope.of(context).unfocus();
-                        _showSubCategorySheet(group);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        decoration: BoxDecoration(
-                          color: groupActive ? AppColors.primary : Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: groupActive ? AppColors.primary : AppColors.border,
-                            width: groupActive ? 2 : 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: groupActive
-                                  ? AppColors.primary.withValues(alpha: 0.2)
-                                  : Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
+                child: Row(
+                  children: [
+                    Image.asset(
+                      cat.image,
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.category_rounded, size: 36, color: Color(0xFF2563EB)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            cat.label,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: isSelected ? Colors.white : const Color(0xFF102A56),
+                              height: 1.15,
                             ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(group.icon, style: const TextStyle(fontSize: 26)),
-                            const SizedBox(height: 6),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (isSelected && _selectedCategory != cat.defaultId) ...[
+                            const SizedBox(height: 2),
                             Text(
-                              group.label,
-                              style: TextStyle(
+                              TaskCategory.all.firstWhere(
+                                (c) => c.id == _selectedCategory,
+                                orElse: () => const TaskCategory(id: '', label: '', icon: ''),
+                              ).label,
+                              style: const TextStyle(
                                 fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: groupActive ? Colors.white : AppColors.dark,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white70,
                               ),
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            if (groupActive) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                TaskCategory.all.firstWhere(
-                                  (c) => c.id == _selectedCategory,
-                                  orElse: () => const TaskCategory(id: '', label: '', icon: ''),
-                                ).label,
-                                style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.white70,
-                                    fontWeight: FontWeight.w500),
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
                           ],
-                        ),
+                        ],
                       ),
-                    );
-                  },
+                    ),
+                    const SizedBox(width: 4),
+                    if (isSelected)
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Container(
+                            width: 18,
+                            height: 18,
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.check, size: 12, color: Color(0xFF0B63F6)),
+                          ),
+                          const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.white),
+                        ],
+                      )
+                    else
+                      const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF94A3B8)),
+                  ],
                 ),
-              ],
-              const SizedBox(height: 14),
-
-              // ── Delivery Vehicle Selector (Bike vs Rikshaw) ──
-              if (_selectedCategory == 'delivery') ...[
-                _buildDeliveryVehicleSelector(),
-                const SizedBox(height: 14),
-              ],
-
-              // Description Form (replaces single raw textarea)
-              _buildDescriptionFormSection(),
-              const SizedBox(height: 14),
-
-              // Suggested budget card based on category + selected area
-              _buildSuggestedBudgetCard(),
-
-              // Budget
-              TextFormField(
-                controller: _budgetCtrl,
-                focusNode: _budgetFocus,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Budget (₹)',
-                  hintText: _isDelivery
-                      ? (_calculatedDistanceKm != null
-                          ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})'
-                          : (_selectedCategory == 'delivery'
-                              ? 'Enter budget (${_deliveryVehicle == 'bike' ? '₹12/km' : '₹18/km'})'
-                              : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory).toInt()})'))
-                      : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
-                  helperText: _isDelivery
-                      ? (_selectedCategory == 'delivery'
-                          ? (_calculatedDistanceKm != null
-                              ? 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
-                              : 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'}')
-                          : (_calculatedDistanceKm != null
-                              ? 'Rate: ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
-                              : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory, vehicle: _deliveryVehicle)}'))
-                      : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
-                  prefixIcon: const Icon(Icons.currency_rupee),
-                ),
-                validator: (v) {
-                  final n = double.tryParse(v ?? '');
-                  if (n == null || n <= 0) return 'Please enter a budget';
-                  if (_isDelivery) {
-                    if (_calculatedDistanceKm != null) {
-                      final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
-                      if (n < distMin) {
-                        return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
-                      }
-                    } else if (_selectedCategory != 'delivery') {
-                      final catMin = Task.minBudgetForCategory(_selectedCategory);
-                      if (catMin > 0 && n < catMin) {
-                        return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
-                      }
-                    }
-                  } else {
-                    final catMin = Task.minBudgetForCategory(_selectedCategory);
-                    if (n < catMin) {
-                      return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
-                    }
-                  }
-                  return null;
-                },
               ),
-              const SizedBox(height: 14),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: () {
+            if (!isOtherSelected) {
+              setState(() {
+                _selectedCategory = 'other';
+                _autoFillDescription();
+              });
+              _recalcDistance();
+            } else {
+              _showSubCategorySheet(otherGroup);
+            }
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isOtherSelected ? const Color(0xFF0B63F6) : const Color(0xFFE5EDF7),
+                width: isOtherSelected ? 1.8 : 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isOtherSelected
+                      ? const Color(0xFF0B63F6).withValues(alpha: 0.15)
+                      : const Color(0xFF102A56).withValues(alpha: 0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF2FF),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.more_horiz_rounded, color: Color(0xFF2563EB), size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Other',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF102A56),
+                  ),
+                ),
+                const Spacer(),
+                Image.asset(
+                  'assets/images/cat_3d_other_skyline.png',
+                  height: 34,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: isOtherSelected ? const Color(0xFF0B63F6) : const Color(0xFF94A3B8),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-              // ── Address fields (each with GPS + Map inline buttons) ──────
+  Widget _buildBudgetField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Budget',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            color: Color(0xFF102A56),
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: _budgetCtrl,
+          focusNode: _budgetFocus,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'Budget (₹)',
+            hintText: _isDelivery
+                ? (_calculatedDistanceKm != null
+                    ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})'
+                    : (_selectedCategory == 'delivery'
+                        ? 'Enter budget (${_deliveryVehicle == 'bike' ? '₹12/km' : '₹18/km'})'
+                        : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory).toInt()})'))
+                : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
+            helperText: _isDelivery
+                ? (_selectedCategory == 'delivery'
+                    ? (_calculatedDistanceKm != null
+                        ? 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
+                        : 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'}')
+                    : (_calculatedDistanceKm != null
+                        ? 'Rate: ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
+                        : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory, vehicle: _deliveryVehicle)}'))
+                : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
+            helperMaxLines: 2,
+            prefixIcon: const Icon(Icons.currency_rupee, color: Color(0xFF2563EB)),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE5EDF7)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE5EDF7)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+            ),
+          ),
+          validator: (v) {
+            final n = double.tryParse(v ?? '');
+            if (n == null || n <= 0) return 'Please enter a budget';
+            if (_isDelivery) {
+              if (_calculatedDistanceKm != null) {
+                final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
+                if (n < distMin) {
+                  return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
+                }
+              } else if (_selectedCategory != 'delivery') {
+                final catMin = Task.minBudgetForCategory(_selectedCategory);
+                if (catMin > 0 && n < catMin) {
+                  return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+                }
+              }
+            } else {
+              final catMin = Task.minBudgetForCategory(_selectedCategory);
+              if (n < catMin) {
+                return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+              }
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationFieldsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+// ── Address fields (each with GPS + Map inline buttons) ──────
               if (_isDelivery) ...[
                 // ── Pickup ─────────────────────────────────────────────
                 // Saved chips for pickup
@@ -3280,36 +3520,245 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ],
               ],
+      ],
+    );
+  }
 
-              const SizedBox(height: 14),
+  Widget _buildPriceBreakdownSection() {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: _budgetCtrl,
+      builder: (_, value, __) {
+        final budget = double.tryParse(value.text) ?? 0;
+        final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
+        final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
+        final posterFee = budget * 0.20;
+        final total = budget + charge + posterFee;
+        return TaskPriceBreakdownCard(
+          budget: budget,
+          serviceCharge: charge,
+          posterFee: posterFee,
+          totalCost: total,
+        );
+      },
+    );
+  }
 
-              // ── Price breakdown — real-time via ValueListenableBuilder ──
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _budgetCtrl,
-                builder: (_, value, __) {
-                  final budget = double.tryParse(value.text) ?? 0;
-                  final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
-                  final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-                  final posterFee = budget * 0.20;
-                  final total = budget + charge + posterFee;
-                  return TaskPriceBreakdownCard(
-                    budget: budget,
-                    serviceCharge: charge,
-                    posterFee: posterFee,
-                    totalCost: total,
-                  );
-                },
+  Widget _buildTaskDetailsFormDropdown() {
+    final catLabel = TaskCategory.all.firstWhere(
+      (c) => c.id == _selectedCategory,
+      orElse: () => TaskCategory(id: '', label: _selectedCategory, icon: ''),
+    ).label;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isTaskDetailsExpanded = !_isTaskDetailsExpanded;
+              });
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF2FF),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.assignment_outlined,
+                      color: Color(0xFF2563EB),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'Task Details Form',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF102A56),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDCEBFF),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                catLabel,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF2563EB),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        const Text(
+                          'Answer these questions so helpers understand your task',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF52627A),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    _isTaskDetailsExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.chevron_right_rounded,
+                    color: const Color(0xFF94A3B8),
+                    size: 22,
+                  ),
+                ],
               ),
-
-              const SizedBox(height: 16),
-
-              GradientButton(
-                label: 'Post Task',
-                loading: _loading,
-                onPressed: _submit,
+            ),
+          ),
+          if (_isTaskDetailsExpanded) ...[
+            const Divider(height: 1, color: Color(0xFFE5EDF7)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDescriptionFormSection(),
+                  const SizedBox(height: 16),
+                  _buildLocationFieldsSection(),
+                  const SizedBox(height: 16),
+                  _buildSuggestedBudgetCard(),
+                  _buildBudgetField(),
+                  const SizedBox(height: 16),
+                  _buildPriceBreakdownSection(),
+                ],
               ),
-              const SizedBox(height: 20),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomContinueButton() {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          height: 52,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0B63F6).withValues(alpha: 0.35),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
             ],
+          ),
+          child: ElevatedButton(
+            onPressed: _loading ? null : _submit,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              shadowColor: Colors.transparent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            child: _loading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Continue',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      SizedBox(width: 8),
+                      Icon(Icons.arrow_forward_rounded, size: 20, color: Colors.white),
+                    ],
+                  ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'You can review before posting',
+          style: TextStyle(
+            fontSize: 12,
+            color: Color(0xFF52627A),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F8FF),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          controller: _scrollCtrl,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTopHeader(),
+                const SizedBox(height: 16),
+                _buildTaskTitleInput(),
+                const SizedBox(height: 18),
+                _buildCategorySection(),
+                if (_isDelivery) ...[
+                  const SizedBox(height: 16),
+                  _buildDeliveryVehicleSelector(),
+                ],
+                const SizedBox(height: 16),
+                _buildTaskDetailsFormDropdown(),
+                const SizedBox(height: 24),
+                _buildBottomContinueButton(),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),

@@ -2244,15 +2244,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 18),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'Delivery Vehicle Option',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: Color(0xFF102A56),
+            const Expanded(
+              child: Text(
+                'Delivery Vehicle Option',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: Color(0xFF102A56),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
@@ -2322,7 +2326,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: const EdgeInsets.fromLTRB(9, 10, 8, 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -2349,7 +2353,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => const Icon(Icons.two_wheeler_rounded, size: 36, color: Color(0xFF2563EB)),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2375,14 +2379,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   const SizedBox(height: 1),
                   Text(
                     desc,
-                    style: const TextStyle(fontSize: 10, color: Color(0xFF52627A)),
-                    maxLines: 1,
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF52627A), height: 1.15),
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            if (isSelected)
+            if (isSelected) ...[
+              const SizedBox(width: 4),
               Container(
                 width: 18,
                 height: 18,
@@ -2391,9 +2396,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.check, size: 12, color: Colors.white),
-              )
-            else
-              const SizedBox(width: 18),
+              ),
+            ] else
+              const SizedBox(width: 2),
           ],
         ),
       ),
@@ -2547,63 +2552,74 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   Widget _buildTopHeader() {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GestureDetector(
-                onTap: () {
-                  if (Navigator.of(context).canPop()) {
-                    Navigator.of(context).pop();
-                  } else {
-                    context.go('/tasks');
-                  }
-                },
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFEAF2FF),
-                    shape: BoxShape.circle,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    } else {
+                      context.go('/tasks');
+                    }
+                  },
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEAF2FF),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back,
+                      color: Color(0xFF2563EB),
+                      size: 20,
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.arrow_back,
-                    color: Color(0xFF2563EB),
-                    size: 20,
+                ),
+                const SizedBox(height: 14),
+                const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Post a Task',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF102A56),
+                      letterSpacing: -0.5,
+                    ),
+                    maxLines: 1,
                   ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Post a Task',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF102A56),
-                  letterSpacing: -0.5,
+                const SizedBox(height: 6),
+                const Text(
+                  'Tell us what you need. We\'ll help you find the right person.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF52627A),
+                    height: 1.35,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Tell us what you need. We\'ll help you find the right person.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF52627A),
-                  height: 1.35,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        Image.asset(
-          'assets/images/header_avatar.png',
-          width: 140,
-          height: 140,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const SizedBox(width: 140, height: 140),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: 146,
+          height: 152,
+          child: Image.asset(
+            'assets/images/header_avatar.png',
+            fit: BoxFit.contain,
+            alignment: Alignment.bottomCenter,
+            errorBuilder: (_, __, ___) => const SizedBox(width: 146, height: 152),
+          ),
         ),
       ],
     );
@@ -2727,11 +2743,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               child: const Icon(Icons.grid_view_rounded, color: Color(0xFF2563EB), size: 20),
             ),
             const SizedBox(width: 10),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Select Category',
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Select Category',
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
@@ -2741,12 +2758,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 SizedBox(height: 2),
                 Text(
                   'Choose the best category for your task',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF52627A),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF52627A),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -2759,7 +2777,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             crossAxisCount: 2,
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            mainAxisExtent: 72,
+            mainAxisExtent: 76,
           ),
           itemBuilder: (ctx, i) {
             final cat = categories[i];
@@ -2783,7 +2801,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
                 decoration: BoxDecoration(
                   gradient: isSelected
                       ? const LinearGradient(
@@ -2811,12 +2829,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   children: [
                     Image.asset(
                       cat.image,
-                      width: 44,
-                      height: 44,
+                      width: 42,
+                      height: 42,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.category_rounded, size: 36, color: Color(0xFF2563EB)),
+                      errorBuilder: (_, __, ___) => const Icon(Icons.category_rounded, size: 34, color: Color(0xFF2563EB)),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -2825,9 +2843,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           Text(
                             cat.label,
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: 12.0,
                               fontWeight: FontWeight.w700,
                               color: isSelected ? Colors.white : const Color(0xFF102A56),
+                              letterSpacing: -0.2,
                               height: 1.15,
                             ),
                             maxLines: 2,
@@ -2852,7 +2871,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 2),
                     if (isSelected)
                       Column(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2932,12 +2951,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     color: Color(0xFF102A56),
                   ),
                 ),
-                const Spacer(),
-                Image.asset(
-                  'assets/images/cat_3d_other_skyline.png',
-                  height: 34,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.bottomRight,
+                    child: Image.asset(
+                      'assets/images/cat_3d_other_skyline.png',
+                      height: 42,
+                      fit: BoxFit.contain,
+                      alignment: Alignment.bottomRight,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Icon(
@@ -3596,27 +3621,35 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       children: [
                         Row(
                           children: [
-                            const Text(
-                              'Task Details Form',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF102A56),
+                            const Flexible(
+                              child: Text(
+                                'Task Details Form',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF102A56),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFDCEBFF),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                catLabel,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF2563EB),
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFDCEBFF),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  catLabel,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF2563EB),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ),
@@ -3744,7 +3777,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildTopHeader(),
-                const SizedBox(height: 16),
                 _buildTaskTitleInput(),
                 const SizedBox(height: 18),
                 _buildCategorySection(),
@@ -3798,15 +3830,15 @@ class _AddressActionButtons extends StatelessWidget {
             icon: Icon(Icons.my_location, size: 20, color: accentColor),
             tooltip: 'Use GPS',
             onPressed: onGps,
-            padding: const EdgeInsets.all(10),
-            constraints: const BoxConstraints(),
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
         IconButton(
           icon: Icon(Icons.map_outlined, size: 20, color: accentColor),
           tooltip: 'Pick on map',
           onPressed: onMap,
-          padding: const EdgeInsets.all(10),
-          constraints: const BoxConstraints(),
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
       ],
     );

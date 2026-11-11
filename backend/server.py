@@ -1100,7 +1100,7 @@ def get_service_charge(category):
         'transport': 15,
         'moving':   40,
     }
-    return delivery_charges.get(category, 15)
+    return 0  # Extra service charge removed (distance fare is in task budget)
 
 
 CATEGORY_MIN_PRICES = {
@@ -1151,7 +1151,7 @@ CATEGORY_MIN_PRICES = {
     'delivery': 1.0,
     'pickup': 20.0,
     'transport': 30.0,
-    'moving': 200.0,
+    'moving': 400.0,
 
     'other': 100.0,
 }
@@ -1166,7 +1166,7 @@ def get_min_price_for_category(category):
     if cat_lower in {'pickup', 'transport'}:
         return 20.0
     if cat_lower == 'moving':
-        return 200.0
+        return 400.0
     return CATEGORY_MIN_PRICES.get(cat_lower, 100.0)
 
 
@@ -3702,16 +3702,26 @@ def update_task(task_id):
             location_lat = location.get('lat') or data.get('latitude') or data.get('location_lat')
             location_lng = location.get('lng') or data.get('longitude') or data.get('location_lng')
             location_address = location.get('address') or data.get('address') or data.get('location_address') or ''
+            client_sc = data.get('serviceCharge', data.get('service_charge'))
+            try:
+                client_sc_val = float(client_sc) if client_sc is not None else None
+            except (TypeError, ValueError):
+                client_sc_val = None
+            new_service_charge = (
+                client_sc_val
+                if (client_sc_val is not None and 0 <= client_sc_val <= 500)
+                else get_service_charge(category)
+            )
 
             cursor.execute(f'''
                 UPDATE tasks
                 SET title = {PH}, description = {PH}, category = {PH},
                     location_lat = {PH}, location_lng = {PH}, location_address = {PH},
-                    price = {PH}
+                    price = {PH}, service_charge = {PH}
                 WHERE id = {PH}
             ''', (data['title'], data['description'], data['category'],
                   location_lat, location_lng, location_address,
-                  price, task_id))
+                  price, new_service_charge, task_id))
             conn.commit()
 
         print(f"✅ Task {task_id} updated by user {request.user_id}")

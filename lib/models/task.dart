@@ -562,13 +562,24 @@ class Task {
         final raw = distanceKm * 18.0;
         return (raw < 50.0 ? 50.0 : raw).roundToDouble();
       case 'moving':
-        // Moving & Packing: Base ₹400 (loading/unloading) + ₹35/km
-        final fare = 400.0 + (distanceKm > 2 ? (distanceKm - 2) * 35.0 : 0.0);
+        // Moving & Packing: Base ₹400 + ₹35/km across full distance
+        final fare = 400.0 + (distanceKm * 35.0);
         return (fare < 400.0 ? 400.0 : fare).roundToDouble();
       default:
         final raw = distanceKm * 12.0;
         return (raw < 24.0 ? 24.0 : raw).roundToDouble();
     }
+  }
+
+  // ── Distance Fare Helpers ─────────────────────────────────────────────────
+  /// Returns user-facing itemized fare breakdown for a distance-priced category.
+  static String distanceFareSummary(double distanceKm, String category, {String vehicle = 'bike'}) {
+    final total = calculateDistancePrice(distanceKm, category, vehicle: vehicle).toInt();
+    if (category.toLowerCase() == 'moving') {
+      final distPart = (distanceKm * 35.0).round();
+      return 'Min fare: ₹$total (₹400 base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹35/km)';
+    }
+    return 'Min fare: ₹$total (${distancePriceDescription(distanceKm, category, vehicle: vehicle)})';
   }
 
   /// Returns user-facing rate and pricing description.
@@ -792,7 +803,12 @@ class Task {
         break;
     }
 
-    final minB = minBudgetForCategory(cat);
+    final catMin = minBudgetForCategory(cat);
+    const distCats = {'delivery', 'pickup', 'transport', 'moving'};
+    final distFloor = (distCats.contains(cat) && distanceKm != null && distanceKm > 0)
+        ? calculateDistancePrice(distanceKm, cat, vehicle: vehicle)
+        : 0.0;
+    final minB = distFloor > catMin ? distFloor : catMin;
     double suggested = ((baseSuggested * multiplier) / 5).round() * 5.0;
     if (minB > 0 && suggested < minB) suggested = minB;
     double maxB = ((baseMax * multiplier) / 5).round() * 5.0;
@@ -815,9 +831,9 @@ class Task {
       case 'delivery':
       case 'pickup':
       case 'transport':
-        return 25; // mid-range estimate (actual: ₹10–₹35 by distance)
+        return 0; // extra service charge removed (distance included in budget)
       case 'moving':
-        return 40; // estimate for large-item moves
+        return 0; // extra service charge removed for moving
       default:
         return 0;
     }

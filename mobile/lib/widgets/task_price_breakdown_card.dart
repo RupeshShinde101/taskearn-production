@@ -37,51 +37,62 @@ class TaskPriceBreakdownCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header row with title and badge
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Row(
-                children: [
-                  Icon(
-                    Icons.receipt_long_rounded,
-                    size: 16,
-                    color: Color(0xFF4F46E5),
-                  ),
-                  SizedBox(width: 7),
-                  Text(
-                    'Price Breakdown',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13.5,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF5),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFA7F3D0)),
-                ),
-                child: const Row(
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.shield_outlined, size: 11, color: Color(0xFF059669)),
-                    SizedBox(width: 4),
-                    Text(
-                      'Pay on Verification',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF059669),
+                    Icon(
+                      Icons.receipt_long_rounded,
+                      size: 16,
+                      color: Color(0xFF4F46E5),
+                    ),
+                    SizedBox(width: 7),
+                    Flexible(
+                      child: Text(
+                        'Price Breakdown',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                          color: Color(0xFF0F172A),
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.shield_outlined, size: 11, color: Color(0xFF059669)),
+                      SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          'Pay on Verification',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF059669),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
 
@@ -89,7 +100,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
           _PriceRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
           if (serviceCharge > 0) ...[
             const SizedBox(height: 8),
-            _PriceRow('Distance / Service Charge', '₹${serviceCharge.toStringAsFixed(0)}'),
+            _PriceRow('Service Charge', '₹${serviceCharge.toStringAsFixed(0)}'),
           ],
           if (posterFee > 0) ...[
             const SizedBox(height: 8),
@@ -107,14 +118,17 @@ class TaskPriceBreakdownCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              const Text(
-                'Total (Pay after completion)',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13.5,
-                  color: Color(0xFF0F172A),
+              const Expanded(
+                child: Text(
+                  'Total (Pay after completion)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                    color: Color(0xFF0F172A),
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
                 '₹${totalCost.toStringAsFixed(0)}',
                 style: const TextStyle(
@@ -174,14 +188,17 @@ class _PriceRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12.5,
-            color: Color(0xFF64748B),
-            fontWeight: FontWeight.w500,
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
+        const SizedBox(width: 8),
         Text(
           value,
           style: const TextStyle(

@@ -27,6 +27,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _descCtrl;
   late final TextEditingController _budgetCtrl;
+  final _budgetFieldKey = GlobalKey<FormFieldState<String>>();
   late final TextEditingController _addressCtrl;
   late final TextEditingController _pickupAddrCtrl;
   late final TextEditingController _dropAddrCtrl;
@@ -41,6 +42,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   double? _calculatedDistanceKm;
   String _deliveryVehicle = 'bike'; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
   int _distCalcSeq = 0;
+  String? _lastAutoBudgetText;
   bool _gettingPickupGps = false;
   bool _gettingDropGps = false;
 
@@ -55,7 +57,20 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   bool _searchingDrop = false;
   bool _searchingAddress = false;
 
+  void _syncAutoBudget(double fare) {
+    final formatted = fare.toStringAsFixed(0);
+    _budgetCtrl.text = formatted;
+    _lastAutoBudgetText = formatted;
+    _budgetFieldKey.currentState?.validate();
+  }
+
   Future<void> _recalcDistance() async {
+    if (!_isDelivery) {
+      if (_calculatedDistanceKm != null && mounted) {
+        setState(() => _calculatedDistanceKm = null);
+      }
+      return;
+    }
     if (_pickupLocation != null && _dropLocation != null) {
       final seq = ++_distCalcSeq;
       // 1. Instant road estimate (aerial * 1.25 road factor) for zero UI lag
@@ -70,8 +85,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         vehicle: _deliveryVehicle,
       );
       final current = double.tryParse(_budgetCtrl.text) ?? 0;
-      if (current < immediatePrice) {
-        _budgetCtrl.text = immediatePrice.toStringAsFixed(0);
+      if (current < immediatePrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+        _syncAutoBudget(immediatePrice);
       }
       if (mounted) setState(() => _calculatedDistanceKm = immediateKm);
 
@@ -88,8 +103,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
             vehicle: _deliveryVehicle,
           );
           final currVal = double.tryParse(_budgetCtrl.text) ?? 0;
-          if (currVal < exactPrice) {
-            _budgetCtrl.text = exactPrice.toStringAsFixed(0);
+          if (currVal < exactPrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+            _syncAutoBudget(exactPrice);
           }
           setState(() => _calculatedDistanceKm = roadKm);
         }
@@ -104,6 +119,14 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _pickupDebounce?.cancel();
     final q = text.trim();
     if (q.length < 2) {
+      if (q.isEmpty && (_pickupLocation != null || _calculatedDistanceKm != null)) {
+        setState(() {
+          _pickupLocation = null;
+          _calculatedDistanceKm = null;
+          _pickupSuggestions = [];
+          _searchingPickup = false;
+        });
+      }
       if (_pickupSuggestions.isNotEmpty || _searchingPickup) {
         setState(() {
           _pickupSuggestions = [];
@@ -145,6 +168,14 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _dropDebounce?.cancel();
     final q = text.trim();
     if (q.length < 2) {
+      if (q.isEmpty && (_dropLocation != null || _calculatedDistanceKm != null)) {
+        setState(() {
+          _dropLocation = null;
+          _calculatedDistanceKm = null;
+          _dropSuggestions = [];
+          _searchingDrop = false;
+        });
+      }
       if (_dropSuggestions.isNotEmpty || _searchingDrop) {
         setState(() {
           _dropSuggestions = [];
@@ -474,7 +505,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       'category': _selectedCategory,
       'price': budget,
       'budget': budget,
-      if (charge > 0) 'service_charge': charge,
+      'service_charge': charge,
+      'serviceCharge': charge,
       // Nest location as the backend update_task endpoint expects.
       'location': {
         'lat': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.latitude,
@@ -528,6 +560,80 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
     void _onLocationAreaChanged() {
     if (mounted) setState(() {});
+  }
+
+  Widget _buildDistanceCategoryRateBanner() {
+    final isMoving = _selectedCategory == 'moving';
+    final isPickup = _selectedCategory == 'pickup';
+    final title = isMoving
+        ? 'Moving & Packing Rate'
+        : (isPickup ? 'Pick & Drop Rate' : 'Transport Rate');
+    final rateBadge = isMoving
+        ? '₹400 base + ₹35 / km'
+        : (isPickup ? 'Min ₹30 · ₹18 / km' : 'Min ₹50 · ₹18 / km');
+    final icon = isMoving
+        ? Icons.local_shipping_rounded
+        : (isPickup
+            ? Icons.electric_rickshaw_rounded
+            : Icons.directions_car_rounded);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: AppColors.dark,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        rateBadge,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'Distance fare is included in your budget (₹0 extra service charge)',
+                  style: TextStyle(fontSize: 11, color: AppColors.gray),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildDeliveryVehicleSelector() {
@@ -789,7 +895,10 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
               const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () {
-                  _budgetCtrl.text = suggestion.suggestedBudget.toInt().toString();
+                  final suggestedText = suggestion.suggestedBudget.toInt().toString();
+                  _budgetCtrl.text = suggestedText;
+                  _lastAutoBudgetText = suggestedText;
+                  _budgetFieldKey.currentState?.validate();
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6366F1),
@@ -847,6 +956,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
               if (_selectedCategory == 'delivery') ...[
                 const SizedBox(height: 14),
                 _buildDeliveryVehicleSelector(),
+              ] else if (_isDelivery) ...[
+                const SizedBox(height: 14),
+                _buildDistanceCategoryRateBanner(),
               ],
               const SizedBox(height: 14),
 
@@ -872,7 +984,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
               // Budget
               TextFormField(
+                key: _budgetFieldKey,
                 controller: _budgetCtrl,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Budget (₹)',
@@ -1031,7 +1145,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Calculated price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})',
+                                Task.distanceFareSummary(
+                                  _calculatedDistanceKm!,
+                                  _selectedCategory,
+                                  vehicle: _deliveryVehicle,
+                                ),
                                 style: const TextStyle(
                                     fontSize: 12, color: AppColors.gray),
                               ),

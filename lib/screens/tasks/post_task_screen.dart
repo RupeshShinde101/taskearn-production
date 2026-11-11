@@ -29,6 +29,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _budgetCtrl = TextEditingController();
+  final _budgetFieldKey = GlobalKey<FormFieldState<String>>();
 
   // FocusNodes so we can jump cursor to the first invalid field
   final _titleFocus   = FocusNode();
@@ -63,6 +64,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   String _deliveryVehicle = 'bike';
   bool _isTaskDetailsExpanded = false; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
   int _distCalcSeq = 0;
+  String? _lastAutoBudgetText;
   LatLng? _location;
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
@@ -188,6 +190,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _pickupDebounce?.cancel();
     final q = text.trim();
     if (q.length < 2) {
+      if (q.isEmpty && (_pickupLocation != null || _calculatedDistanceKm != null)) {
+        setState(() {
+          _pickupLocation = null;
+          _calculatedDistanceKm = null;
+          _pickupSuggestions = [];
+          _searchingPickup = false;
+        });
+      }
       if (_pickupSuggestions.isNotEmpty || _searchingPickup) {
         setState(() {
           _pickupSuggestions = [];
@@ -229,6 +239,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _dropDebounce?.cancel();
     final q = text.trim();
     if (q.length < 2) {
+      if (q.isEmpty && (_dropLocation != null || _calculatedDistanceKm != null)) {
+        setState(() {
+          _dropLocation = null;
+          _calculatedDistanceKm = null;
+          _dropSuggestions = [];
+          _searchingDrop = false;
+        });
+      }
       if (_dropSuggestions.isNotEmpty || _searchingDrop) {
         setState(() {
           _dropSuggestions = [];
@@ -317,7 +335,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _checkAndEstimateDistance() {
-    if (!_isDelivery) return;
+    if (!_isDelivery) {
+      if (_calculatedDistanceKm != null && mounted) {
+        setState(() => _calculatedDistanceKm = null);
+      }
+      return;
+    }
     if (_pickupLocation == null) {
       final pText = '${_pickupAddrCtrl.text} ${_pickupAreaCtrl.text}'.trim();
       final pLoc = _lookupKnownLocality(pText);
@@ -338,7 +361,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Recalculates exact road distance (km) between pickup and drop matching Google Maps,
   /// then auto-fills budget with category- and vehicle-specific distance fare.
+  void _syncAutoBudget(double fare) {
+    final formatted = fare.toStringAsFixed(0);
+    _budgetCtrl.text = formatted;
+    _lastAutoBudgetText = formatted;
+    _budgetFieldKey.currentState?.validate();
+  }
+
   Future<void> _recalcDistance() async {
+    if (!_isDelivery) {
+      if (_calculatedDistanceKm != null && mounted) {
+        setState(() => _calculatedDistanceKm = null);
+      }
+      return;
+    }
     if (_pickupLocation != null && _dropLocation != null) {
       final seq = ++_distCalcSeq;
       // 1. Instant road estimate (aerial * 1.25 road factor) for zero UI lag
@@ -353,8 +389,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         vehicle: _deliveryVehicle,
       );
       final current = double.tryParse(_budgetCtrl.text) ?? 0;
-      if (current < immediatePrice) {
-        _budgetCtrl.text = immediatePrice.toStringAsFixed(0);
+      if (current < immediatePrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+        _syncAutoBudget(immediatePrice);
       }
       if (mounted) setState(() => _calculatedDistanceKm = immediateKm);
 
@@ -371,8 +407,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             vehicle: _deliveryVehicle,
           );
           final currVal = double.tryParse(_budgetCtrl.text) ?? 0;
-          if (currVal < exactPrice) {
-            _budgetCtrl.text = exactPrice.toStringAsFixed(0);
+          if (currVal < exactPrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+            _syncAutoBudget(exactPrice);
           }
           setState(() => _calculatedDistanceKm = roadKm);
         }
@@ -493,7 +529,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   _selectedCategory = c.id;
                                   _autoFillDescription();
                                 });
-                                _recalcDistance();
+                                _checkAndEstimateDistance();
                                 Navigator.pop(ctx);
                               },
                               child: AnimatedContainer(
@@ -717,53 +753,56 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           title: const Text('Save Address',
               style:
                   TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Quick labels:',
-                  style: TextStyle(fontSize: 12, color: AppColors.gray)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: ['Home', 'Work', 'Other'].map((t) {
-                  final sel = selectedType == t;
-                  return GestureDetector(
-                    onTap: () => setDlg(() {
-                      selectedType = t;
-                      if (t != 'Other') nameCtrl.text = t;
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: sel
-                            ? AppColors.primary
-                            : AppColors.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: AppColors.primary.withValues(
-                                alpha: sel ? 1.0 : 0.3)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Quick labels:',
+                    style: TextStyle(fontSize: 12, color: AppColors.gray)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: ['Home', 'Work', 'Other'].map((t) {
+                    final sel = selectedType == t;
+                    return GestureDetector(
+                      onTap: () => setDlg(() {
+                        selectedType = t;
+                        if (t != 'Other') nameCtrl.text = t;
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: sel
+                              ? AppColors.primary
+                              : AppColors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: AppColors.primary.withValues(
+                                  alpha: sel ? 1.0 : 0.3)),
+                        ),
+                        child: Text(t,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: sel ? Colors.white : AppColors.primary)),
                       ),
-                      child: Text(t,
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: sel ? Colors.white : AppColors.primary)),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Address name',
-                  hintText: 'e.g. Home, Office, Mom\'s place',
-                  prefixIcon: Icon(Icons.label_outline),
+                    );
+                  }).toList(),
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Address name',
+                    hintText: 'e.g. Home, Office, Mom\'s place',
+                    prefixIcon: Icon(Icons.label_outline),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -996,48 +1035,51 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Save Address',
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Quick labels:',
-                  style: TextStyle(fontSize: 12, color: AppColors.gray)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: ['Home', 'Work', 'Other'].map((t) {
-                  final sel = selectedType == t;
-                  return GestureDetector(
-                    onTap: () => setDlg(() {
-                      selectedType = t;
-                      if (t != 'Other') nameCtrl.text = t;
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: sel ? AppColors.primary : AppColors.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.primary.withValues(alpha: sel ? 1.0 : 0.3)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Quick labels:',
+                    style: TextStyle(fontSize: 12, color: AppColors.gray)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: ['Home', 'Work', 'Other'].map((t) {
+                    final sel = selectedType == t;
+                    return GestureDetector(
+                      onTap: () => setDlg(() {
+                        selectedType = t;
+                        if (t != 'Other') nameCtrl.text = t;
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : AppColors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppColors.primary.withValues(alpha: sel ? 1.0 : 0.3)),
+                        ),
+                        child: Text(t,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: sel ? Colors.white : AppColors.primary)),
                       ),
-                      child: Text(t,
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: sel ? Colors.white : AppColors.primary)),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Address name',
-                  hintText: 'e.g. Home, Office, Mom\'s place',
-                  prefixIcon: Icon(Icons.label_outline),
+                    );
+                  }).toList(),
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Address name',
+                    hintText: 'e.g. Home, Office, Mom\'s place',
+                    prefixIcon: Icon(Icons.label_outline),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -1679,20 +1721,22 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 14),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Post Your Task',
-                          style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF1E293B),
-                              letterSpacing: -0.4)),
-                      Text('Review before posting',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF94A3B8))),
-                    ],
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Post Your Task',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF1E293B),
+                                letterSpacing: -0.4)),
+                        Text('Review before posting',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF94A3B8))),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1736,24 +1780,29 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               Row(
                 children: [
                   Expanded(
+                    flex: 2,
                     child: TextButton(
                       onPressed: () => Navigator.of(ctx).pop(false),
                       style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF64748B),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                           side: const BorderSide(color: Color(0xFFE2E8F0)),
                         ),
                       ),
-                      child: const Text('Cancel',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 14)),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Cancel',
+                            maxLines: 1,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 14)),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    flex: 2,
+                    flex: 3,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
@@ -1773,9 +1822,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       child: ElevatedButton.icon(
                         onPressed: () => Navigator.of(ctx).pop(true),
                         icon: const Icon(Icons.rocket_launch_rounded, size: 16),
-                        label: const Text('Post Task',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 14)),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Post Task',
+                              maxLines: 1,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 14)),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           foregroundColor: Colors.white,
@@ -1827,7 +1880,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'category': _selectedCategory,
       'price': double.tryParse(_budgetCtrl.text) ?? 0,
       'budget': double.tryParse(_budgetCtrl.text) ?? 0,
-      if (charge > 0) 'service_charge': charge,
+      'service_charge': charge,
+      'serviceCharge': charge,
       // Nested location object expected by the backend
       'location': {
         'lat': taskLocation.latitude,
@@ -2176,12 +2230,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       children: [
                         Icon(Icons.notes_rounded, size: 16, color: AppColors.gray),
                         SizedBox(width: 6),
-                        Text(
-                          'Special Instructions / Other Notes (Optional)',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                            color: AppColors.dark,
+                        Expanded(
+                          child: Text(
+                            'Special Instructions / Other Notes (Optional)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                              color: AppColors.dark,
+                            ),
                           ),
                         ),
                       ],
@@ -2232,47 +2288,56 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF2FF),
-                borderRadius: BorderRadius.circular(8),
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF2FF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  const Flexible(
+                    child: Text(
+                      'Delivery Vehicle Option',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: Color(0xFF102A56),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 18),
-            ),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Delivery Vehicle Option',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: Color(0xFF102A56),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF2FF),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF2FF),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11,
-                  color: Color(0xFF2563EB),
+                child: Text(
+                  _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                    color: Color(0xFF2563EB),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 10),
         Row(
@@ -2287,7 +2352,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 onTap: () {
                   if (_deliveryVehicle != 'bike') {
                     setState(() => _deliveryVehicle = 'bike');
-                    _recalcDistance();
+                    _checkAndEstimateDistance();
                   }
                 },
               ),
@@ -2303,7 +2368,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 onTap: () {
                   if (_deliveryVehicle != 'rikshaw') {
                     setState(() => _deliveryVehicle = 'rikshaw');
-                    _recalcDistance();
+                    _checkAndEstimateDistance();
                   }
                 },
               ),
@@ -2530,7 +2595,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () {
-                  _budgetCtrl.text = suggestion.suggestedBudget.toInt().toString();
+                  final suggestedText = suggestion.suggestedBudget.toInt().toString();
+                  _budgetCtrl.text = suggestedText;
+                  _lastAutoBudgetText = suggestedText;
+                  _budgetFieldKey.currentState?.validate();
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6366F1),
@@ -2777,7 +2845,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             crossAxisCount: 2,
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            mainAxisExtent: 76,
+            mainAxisExtent: 82,
           ),
           itemBuilder: (ctx, i) {
             final cat = categories[i];
@@ -2794,7 +2862,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     _selectedCategory = cat.defaultId;
                     _autoFillDescription();
                   });
-                  _recalcDistance();
+                  _checkAndEstimateDistance();
                 } else {
                   _showSubCategorySheet(group);
                 }
@@ -2837,6 +2905,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -2992,7 +3061,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         ),
         const SizedBox(height: 6),
         TextFormField(
+          key: _budgetFieldKey,
           controller: _budgetCtrl,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           focusNode: _budgetFocus,
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
@@ -3367,7 +3438,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Calculated price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})',
+                                Task.distanceFareSummary(
+                                  _calculatedDistanceKm!,
+                                  _selectedCategory,
+                                  vehicle: _deliveryVehicle,
+                                ),
                                 style: const TextStyle(
                                     fontSize: 12, color: AppColors.gray),
                               ),
@@ -3702,6 +3777,99 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  Widget _buildDistanceCategoryRateBanner() {
+    final isMoving = _selectedCategory == 'moving';
+    final isPickup = _selectedCategory == 'pickup';
+    final title = isMoving
+        ? 'Moving & Packing Rate'
+        : (isPickup ? 'Pick & Drop Rate' : 'Transport Rate');
+    final rateBadge = isMoving
+        ? '₹400 base + ₹35 / km'
+        : (isPickup ? 'Min ₹30 · ₹18 / km' : 'Min ₹50 · ₹18 / km');
+    final icon = isMoving
+        ? Icons.local_shipping_rounded
+        : (isPickup
+            ? Icons.electric_rickshaw_rounded
+            : Icons.directions_car_rounded);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF2FF),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: const Color(0xFF2563EB), size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                        color: Color(0xFF102A56),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF2FF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        rateBadge,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'Distance fare is included in your budget (₹0 extra service charge)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF52627A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomContinueButton() {
     return Column(
       children: [
@@ -3740,9 +3908,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 : const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        'Continue',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      Flexible(
+                        child: Text(
+                          'Continue',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        ),
                       ),
                       SizedBox(width: 8),
                       Icon(Icons.arrow_forward_rounded, size: 20, color: Colors.white),
@@ -3780,9 +3952,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 _buildTaskTitleInput(),
                 const SizedBox(height: 18),
                 _buildCategorySection(),
-                if (_isDelivery) ...[
+                if (_selectedCategory == 'delivery') ...[
                   const SizedBox(height: 16),
                   _buildDeliveryVehicleSelector(),
+                ] else if (_isDelivery) ...[
+                  const SizedBox(height: 16),
+                  _buildDistanceCategoryRateBanner(),
                 ],
                 const SizedBox(height: 16),
                 _buildTaskDetailsFormDropdown(),

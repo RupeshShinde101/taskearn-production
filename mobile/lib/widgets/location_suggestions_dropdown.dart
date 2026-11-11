@@ -48,15 +48,19 @@ class LocationSuggestionsDropdown extends StatelessWidget {
               children: [
                 Icon(Icons.near_me, size: 14, color: accentColor),
                 const SizedBox(width: 6),
-                Text(
-                  'Suggested Locations',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: accentColor,
+                Expanded(
+                  child: Text(
+                    'Suggested Locations',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: accentColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 if (isLoading)
                   SizedBox(
                     width: 12,

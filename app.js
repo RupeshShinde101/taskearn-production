@@ -113,7 +113,7 @@ const CATEGORY_MIN_PRICES = {
     'delivery': 100,
     'pickup': 100,
     'transport': 100,
-    'moving': 500,
+    'moving': 400,
 
     'other': 100,
 };
@@ -145,12 +145,12 @@ const DELIVERY_CATEGORIES = new Set(['delivery', 'pickup', 'transport', 'moving'
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
     // Distance-based categories (Delivery / Moving / Pick&Drop): ₹10–₹40 scaled by km.
-    'delivery':  { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
-    'pickup':    { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
-    'transport': { charge: 15, time: '10-30 mins', level: 'Quick',  distance: true },
+    'delivery':  { charge: 0, time: '15-30 mins', level: 'Quick',  distance: true },
+    'pickup':    { charge: 0, time: '15-30 mins', level: 'Quick',  distance: true },
+    'transport': { charge: 0, time: '10-30 mins', level: 'Quick',  distance: true },
     'document':  { charge: 15, time: '15-30 mins', level: 'Quick' },
     'errand':    { charge: 20, time: '30-45 mins', level: 'Quick' },
-    'moving':    { charge: 40, time: '2-6 hours',  level: 'Heavy',  distance: true },
+    'moving':    { charge: 0, time: '2-6 hours',  level: 'Heavy',  distance: true },
     
     // Medium tasks (1-2 hours) - ₹40-50
     'groceries': { charge: 40, time: '1-2 hours', level: 'Medium' },
@@ -193,7 +193,7 @@ function getServiceCharge(category, distanceKm, vehicleKey) {
     if (category === 'delivery' || category === 'transport') {
         const km = (typeof distanceKm === 'number' && distanceKm > 0) ? distanceKm : 0;
         const raw = 10 + 2 * km;
-        return Math.min(40, Math.max(10, Math.round(raw / 5) * 5));
+        return 0; // Extra service charge removed (distance fare included in budget)
     }
     // All other categories: no service charge.
     return 0;

@@ -895,7 +895,7 @@
         laundry:     { low: 100, high: 400,  min: 100 },
         gardening:   { low: 300, high: 1000, min: 200 },
         waste:       { low: 150, high: 500,  min: 100 },
-        moving:      { low: 800, high: 3500, min: 500 },
+        moving:      { low: 600, high: 3500, min: 400 },
         delivery:    { low: 100, high: 600,  min: 100 },  // bike ₹10/km
         pickup:      { low: 150, high: 1500, min: 100 },  // auto ₹17/km (up to ~85km)
         transport:   { low: 150, high: 1500, min: 100 },  // auto/cab ₹17/km+
@@ -937,7 +937,7 @@
         transport: { base: 30,  perKm: 18, label: 'Pick & Drop' },  // auto/rickshaw default
         pickup:    { base: 30,  perKm: 18, label: 'Pick & Drop' },  // same as transport
         delivery:  { base: 24,  perKm: 12, label: 'Delivery' },     // bike delivery
-        moving:    { base: 500, perKm: 40, label: 'Moving & Packing' },
+        moving:    { base: 400, perKm: 35, label: 'Moving & Packing' },
     };
 
     // Vehicle classes with per-km fare matching real Indian city rates.

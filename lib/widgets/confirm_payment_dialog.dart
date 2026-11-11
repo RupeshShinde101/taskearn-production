@@ -306,7 +306,7 @@ class _ConfirmPaymentDialogState extends State<ConfirmPaymentDialog> {
                     if (widget.serviceCharge > 0) ...[
                       const SizedBox(height: 8),
                       _DetailRow(
-                        'Distance / Service Charge',
+                        'Service Charge',
                         '₹${widget.serviceCharge.toStringAsFixed(0)}',
                       ),
                     ],

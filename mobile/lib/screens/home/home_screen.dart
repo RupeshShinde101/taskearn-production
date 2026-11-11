@@ -443,13 +443,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () async {
-                          if (!context.read<AuthProvider>().cityVerified) {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text('Verify your location first to post tasks.'),
-                              behavior: SnackBarBehavior.floating,
-                            ));
-                            return;
-                          }
                           final auth = context.read<AuthProvider>();
                           if (!auth.isPosterMode) {
                             final switched = await showProfileModeSwitchDialog(
@@ -1279,13 +1272,6 @@ class _HomeScreenState extends State<HomeScreen> {
           // ── Post a Task card ────────────────────────────────────────
           GestureDetector(
             onTap: () {
-              if (!context.read<AuthProvider>().cityVerified) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Verify your location first to post tasks.'),
-                  behavior: SnackBarBehavior.floating,
-                ));
-                return;
-              }
               context.push('/post-task');
             },
             child: Container(

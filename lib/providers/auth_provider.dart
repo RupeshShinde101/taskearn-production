@@ -25,10 +25,6 @@ class AuthProvider extends ChangeNotifier {
   String? _localAvatarUri;
   String _profileMode = 'poster';
 
-  // City gate — persisted across sessions (cleared only on full account wipe)
-  bool _cityVerified = false;
-  String _cityGateReason = '';
-
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: '874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com',
     scopes: ['email', 'profile'],
@@ -43,10 +39,6 @@ class AuthProvider extends ChangeNotifier {
       _googleProfileCompletionRequired;
   bool get pendingSuccessScreen => _pendingSuccessScreen;
   bool get googleAuthPending => _googleAuthPending;
-  bool get cityVerified => _cityVerified;
-  // restricted = authenticated but city not verified and a reason is recorded
-  bool get cityRestricted => !_cityVerified && _cityGateReason.isNotEmpty;
-  String get cityGateReason => _cityGateReason;
   String get profileMode => _profileMode;
   bool get isPosterMode => _profileMode == 'poster';
   bool get isHelperMode => _profileMode == 'helper';
@@ -59,8 +51,6 @@ class AuthProvider extends ChangeNotifier {
     // "Invalid or expired token" response automatically clears the session
     // and redirects the user to login — regardless of where in the app it fires.
     ApiService.onUnauthorized = _handleUnauthorized;
-    _cityVerified = StorageService.getBool('city_verified');
-    _cityGateReason = StorageService.getString('city_gate_reason') ?? '';
     _profileMode = StorageService.getString('profile_mode') ?? 'poster';
     _checkAuth();
   }
@@ -317,33 +307,6 @@ class AuthProvider extends ChangeNotifier {
   void clearPendingSuccessScreen() {
     _pendingSuccessScreen = false;
     _googleProfileCompletionRequired = false;
-    notifyListeners();
-  }
-
-  void setCityVerified() {
-    _cityVerified = true;
-    _cityGateReason = '';
-    unawaited(StorageService.setBool('city_verified', true));
-    unawaited(StorageService.setString('city_gate_reason', ''));
-    notifyListeners();
-  }
-
-  void setCityBlocked() {
-    _cityGateReason = 'blocked';
-    unawaited(StorageService.setString('city_gate_reason', 'blocked'));
-    notifyListeners();
-  }
-
-  void setCityMismatch() {
-    _cityGateReason = 'mismatch';
-    unawaited(StorageService.setString('city_gate_reason', 'mismatch'));
-    notifyListeners();
-  }
-
-  // Clears the gate reason so the popup re-shows for a retry attempt
-  void resetCityGateForRetry() {
-    _cityGateReason = '';
-    unawaited(StorageService.setString('city_gate_reason', ''));
     notifyListeners();
   }
 

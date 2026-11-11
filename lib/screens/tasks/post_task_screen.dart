@@ -61,8 +61,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _dropAreaCtrl   = TextEditingController();
 
   String _selectedCategory = 'delivery';
-  String _deliveryVehicle = 'bike';
-  bool _isTaskDetailsExpanded = false; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
+  String _deliveryVehicle = 'bike'; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
   int _distCalcSeq = 0;
   String? _lastAutoBudgetText;
   LatLng? _location;
@@ -1527,7 +1526,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
 
     if (!_formKey.currentState!.validate()) {
-      setState(() => _isTaskDetailsExpanded = true);
       // Scroll to top and jump cursor to the first invalid field
       _scrollCtrl.animateTo(0,
           duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
@@ -2008,16 +2006,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         .label;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -2028,20 +2025,21 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
+              color: Color(0xFFF6F9FF),
               borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              border: Border(bottom: BorderSide(color: Color(0xFFE5EDF7))),
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(7),
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
+                    color: const Color(0xFFEAF2FF),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(Icons.assignment_outlined,
-                      size: 18, color: AppColors.primary),
+                      size: 19, color: Color(0xFF2563EB)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2054,27 +2052,27 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             child: Text(
                               'Task Details Form',
                               style: TextStyle(
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w800,
                                 fontSize: 14,
-                                color: AppColors.dark,
+                                color: Color(0xFF102A56),
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 8),
                           Flexible(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
+                                color: const Color(0xFFDCEBFF),
+                                borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
                                 categoryLabel,
                                 style: const TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.primary,
+                                  color: Color(0xFF2563EB),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -2085,7 +2083,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       const SizedBox(height: 2),
                       const Text(
                         'Answer these questions so helpers understand your task',
-                        style: TextStyle(fontSize: 11, color: AppColors.gray),
+                        style: TextStyle(fontSize: 11, color: Color(0xFF52627A)),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -2697,25 +2695,41 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildTaskTitleInput() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF102A56).withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+    return AnimatedBuilder(
+      animation: _titleFocus,
+      builder: (context, child) {
+        final hasFocus = _titleFocus.hasFocus;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: hasFocus
+                  ? const Color(0xFF2563EB)
+                  : const Color(0xFFE5EDF7),
+              width: hasFocus ? 1.5 : 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: hasFocus
+                    ? const Color(0xFF2563EB).withValues(alpha: 0.08)
+                    : const Color(0xFF102A56).withValues(alpha: 0.04),
+                blurRadius: hasFocus ? 14 : 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: child,
+        );
+      },
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               color: const Color(0xFFDCEBFF),
               borderRadius: BorderRadius.circular(10),
@@ -2735,12 +2749,31 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             child: TextFormField(
               controller: _titleCtrl,
               focusNode: _titleFocus,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.next,
+              style: const TextStyle(
+                color: Color(0xFF102A56),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
               decoration: const InputDecoration(
+                filled: false,
+                isDense: true,
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
                 hintText: 'Task Title',
                 hintStyle: TextStyle(
                   color: Color(0xFF94A3B8),
                   fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+                errorStyle: TextStyle(
+                  color: AppColors.danger,
+                  fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
                 contentPadding: EdgeInsets.symmetric(vertical: 12),
@@ -2860,7 +2893,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
             return GestureDetector(
               onTap: () {
-                if (!isSelected) {
+                if (group.subCategories.length <= 1) {
                   setState(() {
                     _selectedCategory = cat.defaultId;
                     _autoFillDescription();
@@ -3646,140 +3679,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
-  Widget _buildTaskDetailsFormDropdown() {
-    final catLabel = TaskCategory.all.firstWhere(
-      (c) => c.id == _selectedCategory,
-      orElse: () => TaskCategory(id: '', label: _selectedCategory, icon: ''),
-    ).label;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF102A56).withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: () {
-              setState(() {
-                _isTaskDetailsExpanded = !_isTaskDetailsExpanded;
-              });
-            },
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAF2FF),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.assignment_outlined,
-                      color: Color(0xFF2563EB),
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Flexible(
-                              child: Text(
-                                'Task Details Form',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF102A56),
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDCEBFF),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  catLabel,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF2563EB),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        const Text(
-                          'Answer these questions so helpers understand your task',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF52627A),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    _isTaskDetailsExpanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.chevron_right_rounded,
-                    color: const Color(0xFF94A3B8),
-                    size: 22,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_isTaskDetailsExpanded) ...[
-            const Divider(height: 1, color: Color(0xFFE5EDF7)),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildDescriptionFormSection(),
-                  const SizedBox(height: 16),
-                  _buildLocationFieldsSection(),
-                  const SizedBox(height: 16),
-                  _buildSuggestedBudgetCard(),
-                  _buildBudgetField(),
-                  const SizedBox(height: 16),
-                  _buildPriceBreakdownSection(),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildDistanceCategoryRateBanner() {
     final isMoving = _selectedCategory == 'moving';
     final isPickup = _selectedCategory == 'pickup';
@@ -3963,7 +3862,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   _buildDistanceCategoryRateBanner(),
                 ],
                 const SizedBox(height: 16),
-                _buildTaskDetailsFormDropdown(),
+                _buildDescriptionFormSection(),
+                const SizedBox(height: 16),
+                _buildLocationFieldsSection(),
+                const SizedBox(height: 16),
+                _buildSuggestedBudgetCard(),
+                _buildBudgetField(),
+                const SizedBox(height: 16),
+                _buildPriceBreakdownSection(),
                 const SizedBox(height: 24),
                 _buildBottomContinueButton(),
                 const SizedBox(height: 24),

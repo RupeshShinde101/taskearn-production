@@ -140,9 +140,21 @@ void main() {
       expect(find.text('Delivery Vehicle Option'), findsOneWidget);
       expect(find.text('₹12 / km (Bike)'), findsOneWidget);
 
-      await tester.ensureVisible(find.text('Task Details Form'));
-      await tester.tap(find.text('Task Details Form'));
-      await tester.pumpAndSettle();
+      // Task Details Form, Budget, and Location fields are directly visible (no dropdown collapse)
+      expect(find.text('Task Details Form'), findsOneWidget);
+      expect(find.text('Budget'), findsOneWidget);
+
+      // Verify Task Title field disables inherited inner OutlineInputBorder
+      final titleField = tester.widget<TextField>(
+        find.descendant(
+          of: find.widgetWithText(TextFormField, 'Task Title'),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(titleField.decoration?.border, InputBorder.none);
+      expect(titleField.decoration?.enabledBorder, InputBorder.none);
+      expect(titleField.decoration?.focusedBorder, InputBorder.none);
+      expect(titleField.decoration?.filled, isFalse);
 
       // Enter ₹20 without coordinates -> below ₹24 Bike min
       final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
@@ -202,7 +214,17 @@ void main() {
       // Default category is delivery -> Bike / Rikshaw selector is visible
       expect(find.text('Delivery Vehicle Option'), findsOneWidget);
 
-      // Delivery & Moving is already selected -> second tap opens sub-category sheet
+      // Tapping an unselected parent category opens its child category sheet on the FIRST tap
+      await tester.tap(find.text('Repair'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select a specific category'), findsOneWidget);
+      expect(find.text('Electrician'), findsOneWidget);
+      await tester.tap(find.text('Electrician'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select a specific category'), findsNothing);
+      expect(find.text('Delivery Vehicle Option'), findsNothing);
+
+      // Tapping Delivery & Moving opens its child category sheet on the FIRST tap even when unselected
       await tester.tap(find.text('Delivery & Moving'));
       await tester.pumpAndSettle();
 
@@ -214,10 +236,8 @@ void main() {
       expect(find.text('Moving & Packing Rate'), findsOneWidget);
       expect(find.text('₹400 base + ₹35 / km'), findsOneWidget);
 
-      // Expand Task Details Form and verify zero layout overflow
-      await tester.ensureVisible(find.text('Task Details Form'));
-      await tester.tap(find.text('Task Details Form'));
-      await tester.pumpAndSettle();
+      // Task Details Form, Budget, and Price Breakdown remain directly visible without dropdown
+      expect(find.text('Task Details Form'), findsOneWidget);
 
       expect(find.text('Budget'), findsOneWidget);
       expect(find.text('Price Breakdown'), findsOneWidget);

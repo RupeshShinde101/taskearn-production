@@ -47,9 +47,41 @@ void main() {
       expect(kothrud.suggestedBudget, greaterThanOrEqualTo(565.0));
     });
 
-    test('delivery pricing supports bike (₹12/km) and rikshaw (₹18/km)', () {
+    test('delivery pricing supports bike (₹12/km, min ₹24) and rikshaw (₹18/km, min ₹30)', () {
+      expect(Task.minBudgetForCategory('delivery'), 24.0);
+      expect(Task.minBudgetForCategory('delivery', vehicle: 'rikshaw'), 30.0);
+      expect(Task.minBudgetForCategory('pickup'), 30.0);
+      expect(Task.minBudgetForCategory('transport'), 50.0);
+
       expect(Task.calculateDistancePrice(4.7, 'delivery', vehicle: 'bike'), 56.0);
       expect(Task.calculateDistancePrice(4.7, 'delivery', vehicle: 'rikshaw'), 85.0);
+      expect(Task.calculateDistancePrice(1.0, 'delivery', vehicle: 'bike'), 24.0);
+      expect(Task.calculateDistancePrice(1.0, 'delivery', vehicle: 'rikshaw'), 30.0);
+
+      expect(Task.distanceFareSummary(4.7, 'delivery', vehicle: 'bike'),
+          'Min fare: ₹56 (4.7 km @ ₹12/km (Bike))');
+      expect(Task.distanceFareSummary(1.0, 'delivery', vehicle: 'bike'),
+          'Min fare: ₹24 (1.0 km @ ₹12/km — ₹24 min (Bike))');
+      expect(Task.distanceFareSummary(4.7, 'delivery', vehicle: 'rikshaw'),
+          'Min fare: ₹85 (4.7 km @ ₹18/km (Rikshaw))');
+      expect(Task.distanceFareSummary(1.0, 'delivery', vehicle: 'rikshaw'),
+          'Min fare: ₹30 (1.0 km @ ₹18/km — ₹30 min (Rikshaw))');
+
+      final bikeNoDist = Task.getBudgetSuggestion('delivery', vehicle: 'bike');
+      expect(bikeNoDist.minBudget, 24.0);
+      expect(bikeNoDist.suggestedBudget, greaterThanOrEqualTo(24.0));
+
+      final autoNoDist = Task.getBudgetSuggestion('delivery', vehicle: 'rikshaw');
+      expect(autoNoDist.minBudget, 30.0);
+      expect(autoNoDist.suggestedBudget, greaterThanOrEqualTo(30.0));
+
+      final bike47 = Task.getBudgetSuggestion('delivery', distanceKm: 4.7, vehicle: 'bike');
+      expect(bike47.minBudget, 56.0);
+      expect(bike47.suggestedBudget, 56.0);
+
+      final auto47 = Task.getBudgetSuggestion('delivery', distanceKm: 4.7, vehicle: 'rikshaw');
+      expect(auto47.minBudget, 85.0);
+      expect(auto47.suggestedBudget, 85.0);
     });
   });
 
@@ -80,6 +112,69 @@ void main() {
       expect(find.text('₹678'), findsOneWidget);
       expect(find.text('Service Charge'), findsNothing);
       expect(find.text('Distance / Service Charge'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('PostTaskScreen Delivery enforces ₹24 Bike / ₹30 Rikshaw minimum and zero extra service charge',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Default category is delivery -> Bike selected
+      expect(find.text('Delivery Vehicle Option'), findsOneWidget);
+      expect(find.text('₹12 / km (Bike)'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Task Details Form'));
+      await tester.tap(find.text('Task Details Form'));
+      await tester.pumpAndSettle();
+
+      // Enter ₹20 without coordinates -> below ₹24 Bike min
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      await tester.ensureVisible(budgetField);
+      await tester.enterText(budgetField, '20');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum budget for delivery is ₹24'), findsOneWidget);
+
+      // Enter ₹25 -> valid for Bike (>= ₹24)
+      await tester.enterText(budgetField, '25');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum budget for'), findsNothing);
+
+      // Switch to Rikshaw -> ₹25 is now below ₹30 Rikshaw min!
+      await tester.ensureVisible(find.text('Rikshaw'));
+      await tester.tap(find.text('Rikshaw'));
+      await tester.pumpAndSettle();
+      expect(find.text('₹18 / km (Rikshaw)'), findsOneWidget);
+      expect(find.textContaining('Minimum budget for delivery is ₹30'), findsOneWidget);
+
+      // Set Pickup & Drop localities -> computes distance fare and updates breakdown cleanly
+      await tester.ensureVisible(find.text('Pickup Address *'));
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Pickup Address *'), 'Baner');
+      await tester.ensureVisible(find.text('Drop / Delivery Address *'));
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Drop / Delivery Address *'),
+          'Kothrud');
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('₹18/km (Rikshaw)'), findsWidgets);
+      expect(find.text('Service Charge'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 

@@ -466,8 +466,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
           );
           return;
         }
-      } else if (_selectedCategory != 'delivery') {
-        final catMin = Task.minBudgetForCategory(_selectedCategory);
+      } else {
+        final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
         if (catMin > 0 && budget < catMin) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
@@ -476,7 +476,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         }
       }
     } else {
-      final catMin = Task.minBudgetForCategory(_selectedCategory);
+      final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
       if (budget < catMin) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
@@ -514,7 +514,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         'address': combinedAddress ?? '',
       },
       if (_isDelivery) ...{
-        if (_pickupAddrCtrl.text.trim().isNotEmpty)
+        if (_pickupAddrCtrl.text.trim().isNotEmpty) 'pickup_address': _pickupAddrCtrl.text.trim(),
+        'vehicle': _selectedCategory == 'delivery' ? _deliveryVehicle : 'auto',
           'pickup_address': _pickupAddrCtrl.text.trim(),
         if (_dropAddrCtrl.text.trim().isNotEmpty) ...{
           'delivery_address': _dropAddrCtrl.text.trim(),
@@ -691,6 +692,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                     if (_deliveryVehicle != 'bike') {
                       setState(() => _deliveryVehicle = 'bike');
                       _recalcDistance();
+                      WidgetsBinding.instance.addPostFrameCallback((_) { if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate(); });
                     }
                   },
                 ),
@@ -707,6 +709,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                     if (_deliveryVehicle != 'rikshaw') {
                       setState(() => _deliveryVehicle = 'rikshaw');
                       _recalcDistance();
+                      WidgetsBinding.instance.addPostFrameCallback((_) { if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate(); });
                     }
                   },
                 ),
@@ -994,18 +997,18 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                       ? (_calculatedDistanceKm != null
                           ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})'
                           : (_selectedCategory == 'delivery'
-                              ? 'Enter budget (${_deliveryVehicle == 'bike' ? '₹12/km' : '₹18/km'})'
-                              : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory).toInt()})'))
-                      : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
+                              ? 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_deliveryVehicle == 'bike' ? '₹12/km Bike' : '₹18/km Rikshaw'})'
+                              : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()})'))
+                      : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()}',
                   helperText: _isDelivery
                       ? (_selectedCategory == 'delivery'
                           ? (_calculatedDistanceKm != null
                               ? 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
-                              : 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'}')
+                              : 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike · Min ₹24)' : '₹18/km (Rikshaw · Min ₹30)'}')
                           : (_calculatedDistanceKm != null
                               ? 'Rate: ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
                               : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory, vehicle: _deliveryVehicle)}'))
-                      : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
+                      : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()}',
                   prefixIcon: const Icon(Icons.currency_rupee),
                 ),
                 validator: (v) {
@@ -1017,14 +1020,14 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                       if (n < distMin) {
                         return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
                       }
-                    } else if (_selectedCategory != 'delivery') {
-                      final catMin = Task.minBudgetForCategory(_selectedCategory);
+                    } else {
+                      final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
                       if (catMin > 0 && n < catMin) {
                         return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
                       }
                     }
                   } else {
-                    final catMin = Task.minBudgetForCategory(_selectedCategory);
+                    final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
                     if (n < catMin) {
                       return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
                     }

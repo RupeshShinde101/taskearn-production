@@ -1148,9 +1148,9 @@ CATEGORY_MIN_PRICES = {
     'eldercare': 500.0,
 
     # Delivery & Moving (dynamic distance pricing; removed ₹100 static floor for delivery)
-    'delivery': 1.0,
-    'pickup': 20.0,
-    'transport': 30.0,
+    'delivery': 24.0,
+    'pickup': 30.0,
+    'transport': 50.0,
     'moving': 400.0,
 
     'other': 100.0,
@@ -1162,9 +1162,10 @@ def get_min_price_for_category(category):
         return 100.0
     cat_lower = str(category).lower()
     if cat_lower == 'delivery':
-        return 1.0  # Dynamic distance-based; no static ₹100 minimum floor
-    if cat_lower in {'pickup', 'transport'}:
-        return 20.0
+        return 24.0  # Bike delivery base minimum (₹12/km, min ₹24)
+    if cat_lower == 'pickup': return 30.0
+    if cat_lower == 'transport': return 50.0
+    # Delivery/transport min handled above
     if cat_lower == 'moving':
         return 400.0
     return CATEGORY_MIN_PRICES.get(cat_lower, 100.0)
@@ -3955,7 +3956,7 @@ def complete_task(task_id):
             
             print(f"\n💵 AMOUNTS (for notification):")
             print(f"   Total Task Value: ₹{total_task_value:.2f}")
-            print(f"   Poster will pay: ₹{total_poster_cost:.2f} (no posting fee)")
+            print(f"   Poster will pay: ₹{total_poster_cost:.2f} (incl. 20% platform fee & GST)")
             print(f"   Helper commission rate: {_commission_rate*100:.0f}%")
             print(f"   Helper will receive: ₹{helper_net_receives:.2f}")
             
@@ -4205,7 +4206,7 @@ def mark_task_completed(task_id):
             _raw_sc = float(task.get('service_charge', 0))
             service_charge = _raw_sc if _category in _DELIVERY_CATS else 0.0
             total_task_value = task_amount + service_charge
-            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.20
+            _commission_rate = 0.20
             helper_total_deduction = total_task_value * _commission_rate
             helper_earnings = total_task_value - helper_total_deduction
             helper_id = request.user_id

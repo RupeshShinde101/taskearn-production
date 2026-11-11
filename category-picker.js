@@ -896,9 +896,9 @@
         gardening:   { low: 300, high: 1000, min: 200 },
         waste:       { low: 150, high: 500,  min: 100 },
         moving:      { low: 600, high: 3500, min: 400 },
-        delivery:    { low: 100, high: 600,  min: 100 },  // bike ₹10/km
-        pickup:      { low: 150, high: 1500, min: 100 },  // auto ₹17/km (up to ~85km)
-        transport:   { low: 150, high: 1500, min: 100 },  // auto/cab ₹17/km+
+        delivery:    { low: 50,  high: 600,  min: 24  },  // bike ₹12/km (min ₹24) / rikshaw ₹18/km (min ₹30)
+        pickup:      { low: 80,  high: 1500, min: 30  },  // rikshaw ₹18/km (min ₹30)
+        transport:   { low: 100, high: 1500, min: 50  },  // cab/vehicle ₹18/km+
         shopping:    { low: 150, high: 500,  min: 100 },
         petcare:     { low: 200, high: 700,  min: 150 },
         beauty:      { low: 300, high: 1500, min: 200 },
@@ -930,9 +930,9 @@
 
     // --- Distance-based pricing -------------------------------------------
     // Per-km rates based on actual market rates:
-    //   Bike delivery: ₹10/km | Auto/Rickshaw: ₹17/km (as per city meter)
+    //   Bike delivery: ₹12/km (min ₹24) | Rikshaw/Auto: ₹18/km (min ₹30)
     //   Mini cab: ₹12/km | Sedan: ₹15/km | SUV: ₹18/km
-    // total = base + perKm × distance, rounded to nearest ₹10.
+    // For delivery/pickup/transport: max(base, round(perKm * distance)). Moving: 400 + 35 * distance.
     const DISTANCE_PRICING = {
         transport: { base: 30,  perKm: 18, label: 'Pick & Drop' },  // auto/rickshaw default
         pickup:    { base: 30,  perKm: 18, label: 'Pick & Drop' },  // same as transport
@@ -955,6 +955,17 @@
         delivery:  ['bike', 'auto'],
     };
     const VEHICLE_DEFAULT = { transport: 'auto', pickup: 'auto', delivery: 'bike' };
+    function calcDistancePrice(catKey, distanceKm, vehMetaOrKey) {
+        if (distanceKm == null || distanceKm <= 0) return 0;
+        const meta = (vehMetaOrKey && typeof vehMetaOrKey === 'object')
+            ? vehMetaOrKey
+            : (vehMetaOrKey && VEHICLES[vehMetaOrKey]) || DISTANCE_PRICING[catKey] || { base: 24, perKm: 12 };
+        if (catKey === 'moving') {
+            return Math.max(400, Math.round(400 + 35 * distanceKm));
+        }
+        return Math.max(meta.base || 24, Math.round((meta.perKm || 12) * distanceKm));
+    }
+    window.WMCalculateDistancePrice = calcDistancePrice;
 
     // Fetch road-network route via OSRM (free public demo server).
     // Returns { distance(km), duration(min), geometry(GeoJSON LineString) } or null.
@@ -1401,8 +1412,8 @@
                     if (!selectedVehicle || vehicleKeys.indexOf(selectedVehicle) === -1) {
                         selectedVehicle = VEHICLE_DEFAULT[key] || vehicleKeys[0];
                     }
-                    try { window.__wmSelectedVehicle = selectedVehicle; } catch (e) {}
-                    try { window.__wmSelectedVehicle = selectedVehicle; } catch (e) {}
+                    try { window.__wmSelectedVehicle = selectedVehicle; if (window.WMUpdateBudgetMinLabel) window.WMUpdateBudgetMinLabel(); } catch (e) {}
+                    try { window.__wmSelectedVehicle = selectedVehicle; if (window.WMUpdateBudgetMinLabel) window.WMUpdateBudgetMinLabel(); } catch (e) {}
                     effMeta = VEHICLES[selectedVehicle];
                 }
 
@@ -1421,7 +1432,7 @@
                         const v = VEHICLES[vk];
                         let est = '';
                         if (lastDistance != null) {
-                            const a = Math.max(v.base, Math.round((v.base + v.perKm * lastDistance) / 10) * 10);
+                            const a = calcDistancePrice(key, lastDistance, v);
                             est = '<span class="wm-vehicle-amt">' + fmtRupee(a) + '</span>';
                         } else {
                             est = '<span class="wm-vehicle-amt wm-vehicle-amt-mute">' + fmtRupee(v.perKm) + '/km</span>';
@@ -1439,8 +1450,9 @@
 
                 let suggestedAmt = null;
                 if (lastDistance != null) {
-                    const raw = effMeta.base + effMeta.perKm * lastDistance;
-                    suggestedAmt = Math.max(effMeta.base, Math.round(raw / 10) * 10);
+                    // distance fare calculated directly (no flat base surcharge on delivery/pickup/transport)
+                    suggestedAmt = calcDistancePrice(key, lastDistance, effMeta);
+                    try { window.__wmLastSuggestedAmt = suggestedAmt; } catch (e) {}
                     const speed = effMeta.speed || 25;
                     const etaMin = lastDuration != null
                         ? Math.max(2, Math.round(lastDuration))
@@ -1496,7 +1508,7 @@
                 hint.querySelectorAll('.wm-vehicle-chip').forEach(btn => {
                     btn.addEventListener('click', () => {
                         selectedVehicle = btn.dataset.veh;
-                        try { window.__wmSelectedVehicle = selectedVehicle; } catch (e) {}
+                        try { window.__wmSelectedVehicle = selectedVehicle; if (window.WMUpdateBudgetMinLabel) window.WMUpdateBudgetMinLabel(); } catch (e) {}
                         update();
                         // If pickup+drop are already set, vehicle change should re-apply
                         // a per-vehicle suggested price (handled by the next update()),
@@ -1667,7 +1679,7 @@
             calculating = false;
             // Expose distance globally so updateTotalBudgetDisplay() can scale the
             // service charge for distance-based categories (Pick&Drop / Delivery / Moving).
-            try { window.__wmLastDistance = lastDistance; } catch (e) {}
+            try { window.__wmLastDistance = lastDistance; if (window.WMUpdateBudgetMinLabel) window.WMUpdateBudgetMinLabel(); } catch (e) {}
             update();
             // Re-render the service-charge box with the new distance-aware charge.
             try {

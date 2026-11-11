@@ -442,7 +442,7 @@ class Task {
   double get totalAmount => totalPosterCost;
 
   /// Minimum budget required for a given task category based on current market rates.
-  static double minBudgetForCategory(String category) {
+  static double minBudgetForCategory(String category, {String vehicle = 'bike'}) {
     switch (category.toLowerCase()) {
       // 1. Engineering & Skilled Trades
       case 'electrician':
@@ -506,9 +506,9 @@ class Task {
       case 'eldercare':
         return 500.0;
 
-      // Delivery & Moving - dynamic distance-based pricing (no static ₹100 floor)
+      // Delivery & Moving - distance-based pricing with vehicle/category base minimums
       case 'delivery':
-        return 0.0; // No minimum budget for delivery; calculated from distance
+        return vehicle.toLowerCase() == 'rikshaw' ? 30.0 : 24.0; // Vehicle base min
       case 'pickup':
         return 30.0; // Auto pick & drop base min
       case 'transport':
@@ -575,11 +575,21 @@ class Task {
   /// Returns user-facing itemized fare breakdown for a distance-priced category.
   static String distanceFareSummary(double distanceKm, String category, {String vehicle = 'bike'}) {
     final total = calculateDistancePrice(distanceKm, category, vehicle: vehicle).toInt();
-    if (category.toLowerCase() == 'moving') {
+    final cat = category.toLowerCase();
+    if (cat == 'moving') {
       final distPart = (distanceKm * 35.0).round();
       return 'Min fare: ₹$total (₹400 base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹35/km)';
     }
-    return 'Min fare: ₹$total (${distancePriceDescription(distanceKm, category, vehicle: vehicle)})';
+    final rate = ratePerKmForCategory(cat, vehicle: vehicle).toInt();
+    final baseMin = minBudgetForCategory(cat, vehicle: vehicle).toInt();
+    final raw = distanceKm * rate;
+    final vehSuffix = cat == 'delivery'
+        ? (vehicle.toLowerCase() == 'rikshaw' ? ' (Rikshaw)' : ' (Bike)')
+        : (cat == 'pickup' ? ' (Rikshaw)' : '');
+    if (raw < baseMin) {
+      return 'Min fare: ₹$total (${distanceKm.toStringAsFixed(1)} km @ ₹$rate/km — ₹$baseMin min$vehSuffix)';
+    }
+    return 'Min fare: ₹$total (${distanceKm.toStringAsFixed(1)} km @ ₹$rate/km$vehSuffix)';
   }
 
   /// Returns user-facing rate and pricing description.
@@ -803,7 +813,7 @@ class Task {
         break;
     }
 
-    final catMin = minBudgetForCategory(cat);
+    final catMin = minBudgetForCategory(cat, vehicle: vehicle);
     const distCats = {'delivery', 'pickup', 'transport', 'moving'};
     final distFloor = (distCats.contains(cat) && distanceKm != null && distanceKm > 0)
         ? calculateDistancePrice(distanceKm, cat, vehicle: vehicle)

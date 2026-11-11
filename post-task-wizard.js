@@ -25,13 +25,19 @@
     function updateBudgetMinLabel() {
         const cat = document.getElementById('modalTaskCategory')?.value || '';
         const lbl = document.getElementById('wmBudgetMinLabel');
-        const minVal = (typeof window.getMinTaskPrice === 'function') ? window.getMinTaskPrice(cat) : 100;
+        const veh = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+        const km = (typeof window.__wmLastDistance === 'number' && window.__wmLastDistance > 0) ? window.__wmLastDistance : null;
+        const catMin = (typeof window.getMinTaskPrice === 'function') ? window.getMinTaskPrice(cat, veh) : 100;
+        const distMin = (DISTANCE_CATS.has(cat) && km && typeof window.WMCalculateDistancePrice === 'function') ? window.WMCalculateDistancePrice(cat, km, veh) : 0;
+        const minVal = distMin > catMin ? distMin : catMin;
         if (lbl) {
-            lbl.style.display = DISTANCE_CATS.has(cat) ? 'none' : '';
-            lbl.textContent = 'Min ₹' + minVal;
+            lbl.style.display = '';
+            lbl.textContent = '(Min ₹' + minVal + ')';
+        // updated label above
         }
     }
 
+    window.WMUpdateBudgetMinLabel = updateBudgetMinLabel;
     let currentStep = 1;
 
     function $(id) { return document.getElementById(id); }
@@ -120,9 +126,13 @@
         } else if (step === 3) {
             const v = parseFloat(($('customBudget') || {}).value);
             const cat3 = ($('modalTaskCategory') || {}).value || '';
-            const noMin = cat3 === 'delivery' || cat3 === 'transport' || cat3 === 'pickup' || cat3 === 'moving';
-            const catMin = (typeof window.getMinTaskPrice === 'function') ? window.getMinTaskPrice(cat3) : 100;
-            if (!v || (!noMin && v < catMin)) return noMin ? 'Please enter a budget.' : 'Minimum task budget for this category is ₹' + catMin + '.';
+            const veh3 = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+            const km3 = (typeof window.__wmLastDistance === 'number' && window.__wmLastDistance > 0) ? window.__wmLastDistance : null;
+            const catMin = (typeof window.getMinTaskPrice === 'function') ? window.getMinTaskPrice(cat3, veh3) : 100;
+            const distMin = (DISTANCE_CATS.has(cat3) && km3 && typeof window.WMCalculateDistancePrice === 'function') ? window.WMCalculateDistancePrice(cat3, km3, veh3) : 0;
+            const effMin = distMin > catMin ? distMin : catMin;
+            // min computed above
+            if (!v || v < effMin) return 'Minimum task budget for this category is ₹' + effMin + '.';
         }
         return null;
     }
@@ -408,7 +418,7 @@
                 <section class="wm-step" data-step="4" role="tabpanel" hidden>
                     <div class="wm-step-head"><h3><i class="fas fa-receipt"></i> Review &amp; Post</h3><p class="wm-step-sub">Quick summary of what you're posting and the total amount you'll pay.</p></div>
                     <div class="wm-review-summary" id="wmReviewSummary"></div>
-                    <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Charges</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" id="serviceChargeRow" style="color:#10b981;"><span>+ Service Charge (<span id="serviceChargeLevel">Delivery</span>):</span><span id="serviceChargeAmount">₹15</span></div><div class="charge-row" id="serviceChargeTimeRow" style="font-size:12px;color:#666;"><span>Est. Time:</span><span id="serviceChargeTime">15-30 mins</span></div><div class="charge-row" style="color:#d97706;display:none;"><span>+ Platform Fee:</span><span id="platformFeeAmount">₹0</span></div><div class="charge-row total"><span><strong>Total You Pay:</strong></span><span><strong id="totalPayable">₹100</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> No platform posting fee — you pay exactly what you set. Service charge (₹10–₹40 by distance) applies <strong>only to Delivery &amp; Pick/Drop</strong> tasks.</p></div>
+                    <div class="service-charge-box"><div class="charge-header"><i class="fas fa-receipt"></i><span>Charges</span></div><div class="charge-details"><div class="charge-row"><span>Task Budget:</span><span id="displayTaskBudget">₹100</span></div><div class="charge-row" id="serviceChargeRow" style="color:#10b981;display:none;"><span>+ Service Charge (<span id="serviceChargeLevel">Delivery</span>):</span><span id="serviceChargeAmount">₹0</span></div><div class="charge-row" id="serviceChargeTimeRow" style="font-size:12px;color:#666;display:none;"><span>Est. Time:</span><span id="serviceChargeTime">15-30 mins</span></div><div class="charge-row" style="color:#d97706;"><span>+ Platform Fee &amp; GST (20%):</span><span id="platformFeeAmount">₹20</span></div><div class="charge-row total"><span><strong>Total You Pay:</strong></span><span><strong id="totalPayable">₹120</strong></span></div></div><p class="charge-note"><i class="fas fa-info-circle"></i> Includes 20% Platform Fee &amp; GST (₹0 extra service charge).</p></div>
                     <div class="task-info-box"><i class="fas fa-info-circle"></i><div><strong>Task Visibility</strong><p>Your task will be visible to nearby taskers for 24 hours. You can edit or delete the task anytime before it's accepted.</p></div></div>
                 </section>
                 <div class="wm-step-actions">

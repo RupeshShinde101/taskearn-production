@@ -110,17 +110,22 @@ const CATEGORY_MIN_PRICES = {
     'eldercare': 500,
 
     // Delivery & Moving
-    'delivery': 100,
-    'pickup': 100,
-    'transport': 100,
+    'delivery': 24,
+    'pickup': 30,
+    'transport': 50,
     'moving': 400,
 
     'other': 100,
 };
 
-function getMinTaskPrice(category) {
+function getMinTaskPrice(category, vehicleKey) {
     if (!category) return 100;
-    return CATEGORY_MIN_PRICES[category.toLowerCase()] || 100;
+    const cat = String(category).toLowerCase();
+    if (cat === 'delivery') {
+        const v = String(vehicleKey || (typeof window !== 'undefined' ? window.__wmSelectedVehicle : '') || 'bike').toLowerCase();
+        return (v === 'auto' || v === 'rikshaw') ? 30 : 24;
+    }
+    return CATEGORY_MIN_PRICES[cat] || 100;
 }
 window.getMinTaskPrice = getMinTaskPrice;
 let selectedTask = null;
@@ -4881,7 +4886,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
     const baseAmount = task.price || 0;
     const svcCharge = task.service_charge || 0;
     const totalTaskVal = baseAmount + svcCharge;
-    // Posting fee DISABLED: const posterFee = totalTaskVal * 0.05;
+    const posterFee = Math.round(baseAmount * 0.20 * 100) / 100;
     const content = `
         <div style="text-align: center; padding: 20px;">
             <div style="font-size: 60px; margin-bottom: 15px;">✅</div>
@@ -4894,6 +4899,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
                     <span style="color: #999;">Budget:</span>
                     <span style="font-weight: 600;">₹${baseAmount.toFixed(2)}</span>
                 </div>
+                ${posterFee > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span style="color: #999;">Platform Fee &amp; GST (20%):</span><span style="font-weight: 600; color: #fbbf24;">+₹${posterFee.toFixed(2)}</span></div>` : ''}
                 ${svcCharge > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                     <span style="color: #999;">Service Charge:</span>
                     <span style="font-weight: 600; color: #fbbf24;">+₹${svcCharge.toFixed(2)}</span>
@@ -5143,9 +5149,9 @@ async function showPaymentInvoice(taskId) {
     const totalTaskValue = taskAmount + serviceCharge;
     const commRate = getCommissionRate(task.category || 'other');
     const helperCommission = totalTaskValue * commRate;
-    // Poster posting fee: DISABLED (was 5%)
+    const posterFee = Math.round(taskAmount * 0.20 * 100) / 100;
     // const posterFee = totalTaskValue * 0.05;
-    const totalCost = totalTaskValue; // No posting fee
+    const totalCost = totalTaskValue + posterFee;
     const helperNetReceives = totalTaskValue - helperCommission;
 
     // Fetch real wallet balance from server
@@ -5194,6 +5200,10 @@ async function showPaymentInvoice(taskId) {
                     <span style="color: #ccc;">Service Charge <span style="font-size:11px;opacity:0.7;">(Delivery/Distance)</span></span>
                     <span style="color: #fbbf24; font-weight: 600;">+₹${serviceCharge.toFixed(2)}</span>
                 </div>` : ''}
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                    <span style="color: #ccc;">Platform Fee &amp; GST (20%)</span>
+                    <span style="color: #fbbf24; font-weight: 600;">+₹${posterFee.toFixed(2)}</span>
+                </div>
                 <div style="display: flex; justify-content: space-between; padding: 12px 0 0 0; border-top: 2px solid rgba(139, 92, 246, 0.4); font-size: 18px; font-weight: 800;">
                     <span style="color: #fff;">Total to Pay</span>
                     <span style="color: #ef4444;">₹${totalCost.toFixed(2)}</span>
@@ -5286,8 +5296,8 @@ async function executePayment(taskId) {
     const totalTaskValue = taskAmount + serviceCharge;
     const commRate2 = getCommissionRate(task.category || 'other');
     const helperCommission = totalTaskValue * commRate2;
-    // Poster posting fee DISABLED: const posterFee = totalTaskValue * 0.05;
-    const totalCost = totalTaskValue; // No posting fee
+    const posterFee = Math.round(taskAmount * 0.20 * 100) / 100;
+    const totalCost = totalTaskValue + posterFee;
     const helperNetReceives = totalTaskValue - helperCommission;
 
     try {
@@ -5399,20 +5409,23 @@ async function handleTaskSubmit(event) {
     let baseBudget = customBudgetValue > 0 ? customBudgetValue : selectedBudget;
     
     const category = document.getElementById('modalTaskCategory').value;
-    const catMin = getMinTaskPrice(category);
-    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < catMin) {
-        baseBudget = catMin;
-        showToast('⚠️ Minimum task budget for this category is ₹' + catMin);
+    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
+    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    // vehicleKey resolved above
+    const catMin = getMinTaskPrice(category, vehicleKey);
+    const distMin = (DELIVERY_CATEGORIES.has(category) && distanceKm > 0 && typeof window.WMCalculateDistancePrice === 'function') ? window.WMCalculateDistancePrice(category, distanceKm, vehicleKey) : 0;
+    const effMin = distMin > catMin ? distMin : catMin;
+    if (baseBudget < effMin) {
+        showToast('⚠️ Minimum task budget for this category is ₹' + effMin);
+        return;
     }
     
     const totalPrice = baseBudget + currentBonus;
-    // Distance-aware service charge for pick&drop / delivery / moving.
-    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    // Distance-aware service charge (0 across all categories; included in budget).
     const serviceCharge = getServiceCharge(category, distanceKm, vehicleKey);
-    // Posting fee DISABLED: const platformFeeForSubmit = Math.round((totalPrice + serviceCharge) * 0.05 * 100) / 100;
-    const platformFeeForSubmit = 0; // No posting fee
-    const totalPayable = totalPrice + serviceCharge; // No posting fee
+    // 20% platform fee & GST on task budget across all categories
+    const platformFeeForSubmit = Math.round(totalPrice * 0.20 * 100) / 100;
+    const totalPayable = totalPrice + serviceCharge + platformFeeForSubmit;
 
     // If a specific vehicle was chosen for ride/delivery categories, surface it
     // on the task so only taskers with that vehicle are eligible.
@@ -5482,6 +5495,8 @@ async function handleTaskSubmit(event) {
         dropLocation: (dropLat !== null) ? { lat: dropLat, lng: dropLng, address: dropAddress } : null,
         price: totalPrice,
         serviceCharge: serviceCharge,
+        service_charge: serviceCharge,
+        vehicle: DELIVERY_CATEGORIES.has(category) ? (vehicleKey || (category === 'delivery' ? 'bike' : 'auto')) : undefined,
         totalPaid: totalPayable
     };
 
@@ -7695,17 +7710,20 @@ function updateTotalBudgetDisplay() {
     
     // ₹100 minimum only for non-distance categories; delivery/pickup use km-based price
     const category = document.getElementById('modalTaskCategory')?.value || 'other';
-    const catMin = getMinTaskPrice(category);
-    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < catMin) {
-        baseBudget = catMin;
+    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
+    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    // vehicleKey resolved above
+    const catMin = getMinTaskPrice(category, vehicleKey);
+    const distMin = (DELIVERY_CATEGORIES.has(category) && distanceKm > 0 && typeof window.WMCalculateDistancePrice === 'function') ? window.WMCalculateDistancePrice(category, distanceKm, vehicleKey) : 0;
+    const effMin = distMin > catMin ? distMin : catMin;
+    if (customBudget <= 0) {
+        baseBudget = effMin;
     }
     
     const total = baseBudget + currentBonus;
     
-    // Get service charge based on selected category.
-    // Service charge ONLY for Delivery/Pick&Drop categories; 0 for everything else.
-    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const vehicleKeyForCharge = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    // Get service charge based on selected category (0 across all categories).
+    const vehicleKeyForCharge = vehicleKey;
     const serviceCharge = getServiceCharge(category, distanceKm, vehicleKeyForCharge); // 0 for non-delivery
     const chargeInfo = getServiceChargeInfo(category);
 
@@ -7756,7 +7774,7 @@ function updateTotalBudgetDisplay() {
 
     // Hide the platform-fee row (posting fee disabled).
     const platformRow = platformFeeDisplay ? platformFeeDisplay.closest('.charge-row') : null;
-    if (platformRow) platformRow.style.display = 'none';
+    if (platformRow) platformRow.style.display = '';
     // Show service-charge row ONLY for Delivery/Pick&Drop categories.
     const feeRow = document.getElementById('serviceChargeRow');
     const timeRow = document.getElementById('serviceChargeTimeRow');

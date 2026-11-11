@@ -491,7 +491,21 @@ class Task {
       case 'beauty':
         return 250.0;
       case 'freelancer':
+      case 'business_admin':
+      case 'business-admin':
         return 300.0;
+      case 'graphic_design':
+      case 'graphic-design':
+        return 350.0;
+      case 'video_audio_editing':
+      case 'video-audio-editing':
+        return 400.0;
+      case 'digital_marketing':
+      case 'digital-marketing':
+        return 500.0;
+      case 'web_app_tech':
+      case 'web-app-tech':
+        return 800.0;
       case 'photography':
         return 1500.0;
 
@@ -612,13 +626,436 @@ class Task {
   }
 
   /// Returns market-based suggested budget range based on category and selected area.
+  static bool isFreelancerCategory(String category) {
+    final c = category.toLowerCase().replaceAll('-', '_');
+    return c == 'freelancer' || TaskCategoryGroup.freelancerChildIds.contains(c);
+  }
+
+  static const Map<String, FreelancerPricingConfig> _freelancerPricingConfigs = {
+    'web_app_tech': FreelancerPricingConfig(
+      categoryId: 'web_app_tech',
+      minHourlyRate: 400.0,
+      defaultHourlyRate: 600.0,
+      maxHourlyRate: 1200.0,
+      minHours: 2,
+      defaultHours: 3,
+      maxHours: 40,
+      shortUnitHint: 'From ₹800 · /page or /hr',
+      separateCostsTitle: 'Domain & Hosting Separate',
+      separateCostsDescription:
+          'Domain registration (~₹900/yr), Hosting/VPS & paid APIs are paid directly by you (excluded from budget & 20% fee).',
+      tiers: [
+        FreelancerPackageTier(
+          id: 'website_pages',
+          label: 'Website (/page)',
+          unitLabel: 'page',
+          unitPlural: 'pages',
+          baseMin: 0.0,
+          baseSuggested: 0.0,
+          baseMax: 0.0,
+          perUnitMin: 800.0,
+          perUnitSuggested: 1500.0,
+          perUnitMax: 3000.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 30,
+          summaryHint: 'Responsive web pages, forms & basic SEO setup',
+        ),
+        FreelancerPackageTier(
+          id: 'bug_fix',
+          label: 'Bug Fix / Script',
+          baseMin: 800.0,
+          baseSuggested: 1200.0,
+          baseMax: 2000.0,
+          summaryHint: 'Targeted bug fix, plugin tweak or automation script',
+        ),
+        FreelancerPackageTier(
+          id: 'landing_page',
+          label: 'Landing Page',
+          baseMin: 2000.0,
+          baseSuggested: 3000.0,
+          baseMax: 4500.0,
+          summaryHint: 'Custom single-page conversion layout & lead form',
+        ),
+        FreelancerPackageTier(
+          id: 'app_mvp',
+          label: 'App / E-comm',
+          baseMin: 12000.0,
+          baseSuggested: 18000.0,
+          baseMax: 35000.0,
+          summaryHint: 'Multi-screen mobile app or store with checkout',
+        ),
+      ],
+    ),
+    'graphic_design': FreelancerPricingConfig(
+      categoryId: 'graphic_design',
+      minHourlyRate: 350.0,
+      defaultHourlyRate: 500.0,
+      maxHourlyRate: 900.0,
+      minHours: 1,
+      defaultHours: 2,
+      maxHours: 40,
+      shortUnitHint: 'From ₹350 · /design or /hr',
+      separateCostsTitle: 'Print & Stock Licenses Separate',
+      separateCostsDescription:
+          'Printing costs, paid stock photography & commercial font licenses are paid separately by client.',
+      tiers: [
+        FreelancerPackageTier(
+          id: 'per_design',
+          label: 'Post / Flyer',
+          unitLabel: 'design',
+          unitPlural: 'designs',
+          perUnitMin: 350.0,
+          perUnitSuggested: 600.0,
+          perUnitMax: 1200.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 30,
+          summaryHint: 'Social media creatives, posters, thumbnails or banners',
+        ),
+        FreelancerPackageTier(
+          id: 'logo_pack',
+          label: 'Logo Package',
+          baseMin: 1200.0,
+          baseSuggested: 2000.0,
+          baseMax: 3500.0,
+          summaryHint: '2 concepts, source SVG/PNG files & revisions',
+        ),
+        FreelancerPackageTier(
+          id: 'brand_kit',
+          label: 'Full Brand Kit',
+          baseMin: 3500.0,
+          baseSuggested: 5500.0,
+          baseMax: 9000.0,
+          summaryHint: 'Logo, palette, typography guide & business cards',
+        ),
+        FreelancerPackageTier(
+          id: 'brochure_pages',
+          label: 'Brochure / Menu',
+          unitLabel: 'page',
+          unitPlural: 'pages',
+          perUnitMin: 400.0,
+          perUnitSuggested: 650.0,
+          perUnitMax: 1200.0,
+          minUnits: 1,
+          defaultUnits: 2,
+          maxUnits: 24,
+          summaryHint: 'Print-ready multi-page menu, catalogue or flyer',
+        ),
+      ],
+    ),
+    'video_audio_editing': FreelancerPricingConfig(
+      categoryId: 'video_audio_editing',
+      minHourlyRate: 400.0,
+      defaultHourlyRate: 600.0,
+      maxHourlyRate: 1000.0,
+      minHours: 1,
+      defaultHours: 2,
+      maxHours: 40,
+      shortUnitHint: 'From ₹400 · /reel or /hr',
+      separateCostsTitle: 'Licensed Music & B-Roll Separate',
+      separateCostsDescription:
+          'Paid music/SFX licenses, stock footage & AI voiceover credits are paid separately if requested.',
+      tiers: [
+        FreelancerPackageTier(
+          id: 'short_reel',
+          label: 'Reel / Short',
+          unitLabel: 'reel',
+          unitPlural: 'reels',
+          perUnitMin: 400.0,
+          perUnitSuggested: 750.0,
+          perUnitMax: 1500.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 30,
+          summaryHint: 'Vertical edit up to 60s with captions, cuts & BGM',
+        ),
+        FreelancerPackageTier(
+          id: 'long_video_mins',
+          label: 'Long Video (/min)',
+          unitLabel: 'min',
+          unitPlural: 'mins',
+          baseMin: 600.0,
+          baseSuggested: 1000.0,
+          baseMax: 1500.0,
+          perUnitMin: 400.0,
+          perUnitSuggested: 600.0,
+          perUnitMax: 1000.0,
+          minUnits: 1,
+          defaultUnits: 5,
+          maxUnits: 45,
+          summaryHint: 'Base ₹600 + ₹600/min edited for YouTube or promo videos',
+        ),
+        FreelancerPackageTier(
+          id: 'audio_episode',
+          label: 'Audio / Podcast',
+          unitLabel: 'episode',
+          unitPlural: 'episodes',
+          perUnitMin: 400.0,
+          perUnitSuggested: 700.0,
+          perUnitMax: 1200.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 20,
+          summaryHint: 'Noise removal, levelling, intro/outro & mastering',
+        ),
+      ],
+    ),
+    'digital_marketing': FreelancerPricingConfig(
+      categoryId: 'digital_marketing',
+      minHourlyRate: 500.0,
+      defaultHourlyRate: 800.0,
+      maxHourlyRate: 1500.0,
+      minHours: 1,
+      defaultHours: 2,
+      maxHours: 40,
+      shortUnitHint: 'From ₹500 · /pkg or /hr',
+      separateCostsTitle: 'Ad Wallet Spend Separate',
+      separateCostsDescription:
+          'Meta / Google Ad spend & SMS/CRM credits go straight to your ad account — budget is service fee only.',
+      tiers: [
+        FreelancerPackageTier(
+          id: 'setup_audit',
+          label: 'Audit / Setup',
+          baseMin: 500.0,
+          baseSuggested: 1000.0,
+          baseMax: 2500.0,
+          summaryHint: 'Google Business Profile, Pixel or quick SEO audit',
+        ),
+        FreelancerPackageTier(
+          id: 'seo_pages',
+          label: 'On-Page SEO',
+          unitLabel: 'page',
+          unitPlural: 'pages',
+          perUnitMin: 500.0,
+          perUnitSuggested: 800.0,
+          perUnitMax: 1500.0,
+          minUnits: 1,
+          defaultUnits: 3,
+          maxUnits: 30,
+          summaryHint: 'Keywords, meta tags, speed & schema optimization',
+        ),
+        FreelancerPackageTier(
+          id: 'ads_mgmt',
+          label: 'Ads Campaign',
+          unitLabel: 'campaign',
+          unitPlural: 'campaigns',
+          perUnitMin: 2500.0,
+          perUnitSuggested: 4000.0,
+          perUnitMax: 7500.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 6,
+          summaryHint: 'Meta / Google ad setup, targeting & optimization fee',
+        ),
+        FreelancerPackageTier(
+          id: 'monthly_smm',
+          label: 'Social Retainer',
+          unitLabel: 'month',
+          unitPlural: 'months',
+          perUnitMin: 5000.0,
+          perUnitSuggested: 8000.0,
+          perUnitMax: 15000.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 6,
+          summaryHint: '12–15 posts/reels/month calendar, posting & growth',
+        ),
+      ],
+    ),
+    'business_admin': FreelancerPricingConfig(
+      categoryId: 'business_admin',
+      minHourlyRate: 300.0,
+      defaultHourlyRate: 400.0,
+      maxHourlyRate: 800.0,
+      minHours: 1,
+      defaultHours: 2,
+      maxHours: 40,
+      shortUnitHint: 'From ₹300 · /pkg or /hr',
+      separateCostsTitle: 'Software & Portal Fees Separate',
+      separateCostsDescription:
+          'Paid software seats (MS 365, Tally, Zapier), government portal fees & courier charges are separate.',
+      tiers: [
+        FreelancerPackageTier(
+          id: 'resume_doc',
+          label: 'Resume / Doc',
+          baseMin: 300.0,
+          baseSuggested: 500.0,
+          baseMax: 1000.0,
+          summaryHint: 'ATS resume makeover, formatting or business letter',
+        ),
+        FreelancerPackageTier(
+          id: 'slides',
+          label: 'Pitch Deck (/slide)',
+          unitLabel: 'slide',
+          unitPlural: 'slides',
+          perUnitMin: 150.0,
+          perUnitSuggested: 250.0,
+          perUnitMax: 450.0,
+          minUnits: 2,
+          defaultUnits: 10,
+          maxUnits: 60,
+          summaryHint: 'Designed PowerPoint / Google Slides presentation',
+        ),
+        FreelancerPackageTier(
+          id: 'excel_workbook',
+          label: 'Excel / Sheet',
+          unitLabel: 'sheet',
+          unitPlural: 'sheets',
+          perUnitMin: 500.0,
+          perUnitSuggested: 1000.0,
+          perUnitMax: 2500.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 15,
+          summaryHint: 'Formulas, pivot dashboard or data cleanup workbook',
+        ),
+        FreelancerPackageTier(
+          id: 'translation_pages',
+          label: 'Translation / Typing',
+          unitLabel: 'page',
+          unitPlural: 'pages',
+          perUnitMin: 150.0,
+          perUnitSuggested: 250.0,
+          perUnitMax: 400.0,
+          minUnits: 2,
+          defaultUnits: 3,
+          maxUnits: 50,
+          summaryHint: 'Document translation, proofreading or formatting',
+        ),
+      ],
+    ),
+    'freelancer': FreelancerPricingConfig(
+      categoryId: 'freelancer',
+      minHourlyRate: 300.0,
+      defaultHourlyRate: 500.0,
+      maxHourlyRate: 1200.0,
+      minHours: 1,
+      defaultHours: 2,
+      maxHours: 40,
+      shortUnitHint: 'From ₹300 · /project or /hr',
+      separateCostsTitle: 'Third-Party Tools & Assets Separate',
+      separateCostsDescription:
+          'Domain, hosting, ad spend, printing & paid software licenses are billed directly to client.',
+      tiers: [
+        FreelancerPackageTier(
+          id: 'general_project',
+          label: 'Standard Project',
+          baseMin: 300.0,
+          baseSuggested: 500.0,
+          baseMax: 1500.0,
+          summaryHint: 'Single milestone freelance deliverable',
+        ),
+      ],
+    ),
+  };
+
+  static FreelancerPricingConfig? freelancerPricingConfigFor(String category) {
+    final c = category.toLowerCase().replaceAll('-', '_');
+    return _freelancerPricingConfigs[c];
+  }
+
+  static String freelancerShortUnitHint(String category) {
+    return freelancerPricingConfigFor(category)?.shortUnitHint ??
+        'From ₹${minBudgetForCategory(category).toInt()}';
+  }
+
+  static FreelancerPriceQuote calculateFreelancerQuote(
+    String category, {
+    String mode = 'package',
+    String? tierId,
+    int? units,
+    double? hourlyRate,
+    int? hours,
+  }) {
+    final cat = category.toLowerCase().replaceAll('-', '_');
+    final cfg = freelancerPricingConfigFor(cat) ?? _freelancerPricingConfigs['freelancer']!;
+    final entryFloor = minBudgetForCategory(cat);
+
+    if (mode == 'hourly') {
+      final effHours = (hours ?? cfg.defaultHours).clamp(cfg.minHours, cfg.maxHours);
+      final rawRate = hourlyRate ?? cfg.defaultHourlyRate;
+      final effRate = rawRate < cfg.minHourlyRate
+          ? cfg.minHourlyRate
+          : (rawRate > 10000.0 ? 10000.0 : rawRate);
+      double minB = (cfg.minHourlyRate * effHours).roundToDouble();
+      if (minB < entryFloor) minB = entryFloor;
+      double sugB = (effRate * effHours).roundToDouble();
+      if (sugB < minB) sugB = minB;
+      double maxB = (cfg.maxHourlyRate * effHours).roundToDouble();
+      if (maxB <= sugB) maxB = (sugB * 1.35).roundToDouble();
+
+      final hrsLabel = effHours == 1 ? '1 hr' : '$effHours hrs';
+      return FreelancerPriceQuote(
+        pricingMode: 'hourly',
+        scopeSummary: 'Hourly (₹${effRate.toInt()}/hr × $hrsLabel)',
+        minBudget: minB,
+        suggestedBudget: sugB,
+        maxBudget: maxB,
+        hourlyRate: effRate,
+        hours: effHours,
+        separateCostsTitle: cfg.separateCostsTitle,
+        separateCostsDescription: cfg.separateCostsDescription,
+      );
+    }
+
+    final tier = cfg.tierById(tierId);
+    final effUnits = tier.usesUnits
+        ? (units ?? tier.defaultUnits).clamp(tier.minUnits, tier.maxUnits)
+        : 1;
+    double minB = (tier.baseMin + (tier.usesUnits ? effUnits * tier.perUnitMin : 0.0)).roundToDouble();
+    if (minB < entryFloor) minB = entryFloor;
+    double sugB = (tier.baseSuggested + (tier.usesUnits ? effUnits * tier.perUnitSuggested : 0.0)).roundToDouble();
+    if (sugB < minB) sugB = minB;
+    double maxB = (tier.baseMax + (tier.usesUnits ? effUnits * tier.perUnitMax : 0.0)).roundToDouble();
+    if (maxB <= sugB) maxB = (sugB * 1.35).roundToDouble();
+
+    final summary = tier.usesUnits
+        ? '${tier.label} ($effUnits ${effUnits == 1 ? tier.unitLabel : tier.unitPlural})'
+        : tier.label;
+
+    return FreelancerPriceQuote(
+      pricingMode: 'package',
+      scopeSummary: summary,
+      minBudget: minB,
+      suggestedBudget: sugB,
+      maxBudget: maxB,
+      tier: tier,
+      units: tier.usesUnits ? effUnits : null,
+      separateCostsTitle: cfg.separateCostsTitle,
+      separateCostsDescription: cfg.separateCostsDescription,
+    );
+  }
+
   static CategoryBudgetSuggestion getBudgetSuggestion(
     String category, {
     String? areaText,
     double? distanceKm,
     String vehicle = 'bike',
+    String? freelancerMode,
+    String? tierId,
+    int? units,
+    double? hourlyRate,
+    int? hours,
   }) {
     final cat = category.toLowerCase();
+    if (freelancerMode != null && isFreelancerCategory(cat)) {
+      final q = calculateFreelancerQuote(
+        cat,
+        mode: freelancerMode,
+        tierId: tierId,
+        units: units,
+        hourlyRate: hourlyRate,
+        hours: hours,
+      );
+      return CategoryBudgetSuggestion(
+        minBudget: q.minBudget,
+        suggestedBudget: q.suggestedBudget,
+        maxBudget: q.maxBudget,
+        localityName: freelancerMode == 'hourly' ? 'Hourly Rate' : 'Project Package',
+        localityTier: q.scopeSummary,
+      );
+    }
     final areaLower = (areaText ?? '').toLowerCase();
 
     double multiplier = 1.0;
@@ -763,6 +1200,31 @@ class Task {
       case 'freelancer':
         baseSuggested = 500.0;
         baseMax = 1500.0;
+        break;
+      case 'graphic_design':
+      case 'graphic-design':
+        baseSuggested = 600.0;
+        baseMax = 1500.0;
+        break;
+      case 'web_app_tech':
+      case 'web-app-tech':
+        baseSuggested = 1500.0;
+        baseMax = 4000.0;
+        break;
+      case 'video_audio_editing':
+      case 'video-audio-editing':
+        baseSuggested = 750.0;
+        baseMax = 2000.0;
+        break;
+      case 'digital_marketing':
+      case 'digital-marketing':
+        baseSuggested = 1000.0;
+        baseMax = 2500.0;
+        break;
+      case 'business_admin':
+      case 'business-admin':
+        baseSuggested = 500.0;
+        baseMax = 1000.0;
         break;
       case 'photography':
         baseSuggested = 2500.0;
@@ -999,6 +1461,11 @@ class TaskCategory {
     TaskCategory(id: 'vehicle', label: 'Vehicle', icon: '🚘'),
     TaskCategory(id: 'tutoring', label: 'Tutoring', icon: '📚'),
     TaskCategory(id: 'freelancer', label: 'Freelancer', icon: '💼'),
+    TaskCategory(id: 'graphic_design', label: 'Graphic Design & Branding', icon: '🎨'),
+    TaskCategory(id: 'web_app_tech', label: 'Web, App & Tech Projects', icon: '🌐'),
+    TaskCategory(id: 'video_audio_editing', label: 'Video & Audio Editing', icon: '🎬'),
+    TaskCategory(id: 'digital_marketing', label: 'Digital Marketing', icon: '📣'),
+    TaskCategory(id: 'business_admin', label: 'Business, Office & Admin', icon: '📊'),
     TaskCategory(id: 'data_entry', label: 'Data Entry', icon: '💻'),
     TaskCategory(id: 'photography', label: 'Photography', icon: '📷'),
     TaskCategory(id: 'gardening', label: 'Gardening', icon: '🌱'),
@@ -1022,6 +1489,107 @@ class TaskCategory {
   }
 }
 
+class FreelancerPackageTier {
+  final String id;
+  final String label;
+  final String unitLabel;
+  final String unitPlural;
+  final double baseMin;
+  final double baseSuggested;
+  final double baseMax;
+  final double perUnitMin;
+  final double perUnitSuggested;
+  final double perUnitMax;
+  final int minUnits;
+  final int defaultUnits;
+  final int maxUnits;
+  final String summaryHint;
+
+  const FreelancerPackageTier({
+    required this.id,
+    required this.label,
+    this.unitLabel = '',
+    this.unitPlural = '',
+    this.baseMin = 0.0,
+    this.baseSuggested = 0.0,
+    this.baseMax = 0.0,
+    this.perUnitMin = 0.0,
+    this.perUnitSuggested = 0.0,
+    this.perUnitMax = 0.0,
+    this.minUnits = 1,
+    this.defaultUnits = 1,
+    this.maxUnits = 1,
+    this.summaryHint = '',
+  });
+
+  bool get usesUnits => perUnitMin > 0 && maxUnits > 1;
+}
+
+class FreelancerPricingConfig {
+  final String categoryId;
+  final List<FreelancerPackageTier> tiers;
+  final double minHourlyRate;
+  final double defaultHourlyRate;
+  final double maxHourlyRate;
+  final int minHours;
+  final int defaultHours;
+  final int maxHours;
+  final String shortUnitHint;
+  final String separateCostsTitle;
+  final String separateCostsDescription;
+
+  const FreelancerPricingConfig({
+    required this.categoryId,
+    required this.tiers,
+    required this.minHourlyRate,
+    required this.defaultHourlyRate,
+    required this.maxHourlyRate,
+    this.minHours = 1,
+    this.defaultHours = 2,
+    this.maxHours = 40,
+    required this.shortUnitHint,
+    required this.separateCostsTitle,
+    required this.separateCostsDescription,
+  });
+
+  FreelancerPackageTier tierById(String? id) {
+    if (id != null) {
+      for (final t in tiers) {
+        if (t.id == id) return t;
+      }
+    }
+    return tiers.first;
+  }
+}
+
+class FreelancerPriceQuote {
+  final String pricingMode;
+  final String scopeSummary;
+  final double minBudget;
+  final double suggestedBudget;
+  final double maxBudget;
+  final double? hourlyRate;
+  final int? hours;
+  final FreelancerPackageTier? tier;
+  final int? units;
+  final String separateCostsTitle;
+  final String separateCostsDescription;
+
+  const FreelancerPriceQuote({
+    required this.pricingMode,
+    required this.scopeSummary,
+    required this.minBudget,
+    required this.suggestedBudget,
+    required this.maxBudget,
+    this.hourlyRate,
+    this.hours,
+    this.tier,
+    this.units,
+    required this.separateCostsTitle,
+    required this.separateCostsDescription,
+  });
+}
+
 /// A parent/group category for the hierarchical category picker in post task.
 class TaskCategoryGroup {
   final String label;
@@ -1033,6 +1601,28 @@ class TaskCategoryGroup {
     required this.icon,
     required this.categoryIds,
   });
+
+  static const List<String> freelancerChildIds = [
+    'graphic_design',
+    'web_app_tech',
+    'video_audio_editing',
+    'digital_marketing',
+    'business_admin',
+  ];
+
+  static const TaskCategoryGroup freelancerGroup = TaskCategoryGroup(
+    label: 'Freelancer',
+    icon: '💼',
+    categoryIds: freelancerChildIds,
+  );
+
+  bool containsCategory(String id) {
+    if (categoryIds.contains(id)) return true;
+    if (categoryIds.contains('freelancer') && freelancerChildIds.contains(id)) {
+      return true;
+    }
+    return false;
+  }
 
   List<TaskCategory> get subCategories => categoryIds
       .map((id) => TaskCategory.all.firstWhere(

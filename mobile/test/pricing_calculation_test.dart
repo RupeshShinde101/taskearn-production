@@ -281,5 +281,178 @@ void main() {
       expect(find.text('Service Charge'), findsNothing);
       expect(tester.takeException(), isNull);
     });
+
+    test('freelancer child categories enforce real-world market pricing', () {
+      expect(TaskCategoryGroup.freelancerChildIds, hasLength(5));
+      expect(Task.minBudgetForCategory('business_admin'), 300.0);
+      expect(Task.minBudgetForCategory('graphic_design'), 350.0);
+      expect(Task.minBudgetForCategory('video_audio_editing'), 400.0);
+      expect(Task.minBudgetForCategory('digital_marketing'), 500.0);
+      expect(Task.minBudgetForCategory('web_app_tech'), 800.0);
+
+      final gfx = Task.getBudgetSuggestion('graphic_design');
+      expect(gfx.minBudget, 350.0);
+      expect(gfx.suggestedBudget, 600.0);
+      expect(gfx.maxBudget, 1500.0);
+
+      final web = Task.getBudgetSuggestion('web_app_tech');
+      expect(web.minBudget, 800.0);
+      expect(web.suggestedBudget, 1500.0);
+      expect(web.maxBudget, 4000.0);
+
+      final webPremium = Task.getBudgetSuggestion('web_app_tech', areaText: 'Hinjewadi');
+      expect(webPremium.suggestedBudget, 1875.0);
+      expect(webPremium.maxBudget, 5000.0);
+
+      final vid = Task.getBudgetSuggestion('video_audio_editing');
+      expect(vid.minBudget, 400.0);
+      expect(vid.suggestedBudget, 750.0);
+      expect(vid.maxBudget, 2000.0);
+
+      final mkt = Task.getBudgetSuggestion('digital_marketing');
+      expect(mkt.minBudget, 500.0);
+      expect(mkt.suggestedBudget, 1000.0);
+      expect(mkt.maxBudget, 2500.0);
+
+      final biz = Task.getBudgetSuggestion('business_admin');
+      expect(biz.minBudget, 300.0);
+      expect(biz.suggestedBudget, 500.0);
+      expect(biz.maxBudget, 1000.0);
+    });
+
+    test('freelancer dual pricing calculates package/unit & hourly quotes across all categories', () {
+      // Web Website (/page): ₹800 min / ₹1500 sug per page + Domain & Hosting separate
+      final web1 = Task.calculateFreelancerQuote('web_app_tech', mode: 'package', tierId: 'website_pages', units: 1);
+      expect(web1.minBudget, 800.0);
+      expect(web1.suggestedBudget, 1500.0);
+      expect(web1.separateCostsTitle, 'Domain & Hosting Separate');
+
+      final web5 = Task.calculateFreelancerQuote('web_app_tech', mode: 'package', tierId: 'website_pages', units: 5);
+      expect(web5.minBudget, 4000.0);
+      expect(web5.suggestedBudget, 7500.0);
+      expect(web5.scopeSummary, 'Website (/page) (5 pages)');
+
+      final webLanding = Task.calculateFreelancerQuote('web_app_tech', mode: 'package', tierId: 'landing_page');
+      expect(webLanding.minBudget, 2000.0);
+      expect(webLanding.suggestedBudget, 3000.0);
+
+      // Web Hourly: min ₹400/hr, custom rate * hours
+      final webHourly = Task.calculateFreelancerQuote('web_app_tech', mode: 'hourly', hourlyRate: 700, hours: 4);
+      expect(webHourly.minBudget, 1600.0);
+      expect(webHourly.suggestedBudget, 2800.0);
+      expect(webHourly.scopeSummary, 'Hourly (₹700/hr × 4 hrs)');
+
+      // Video Long Video (/min): base + per min
+      final vid5 = Task.calculateFreelancerQuote('video_audio_editing', mode: 'package', tierId: 'long_video_mins', units: 5);
+      expect(vid5.minBudget, 2600.0);
+      expect(vid5.suggestedBudget, 4000.0);
+
+      // Pitch Deck (/slide) & Ads Campaign
+      final deck10 = Task.calculateFreelancerQuote('business_admin', mode: 'package', tierId: 'slides', units: 10);
+      expect(deck10.minBudget, 1500.0);
+      expect(deck10.suggestedBudget, 2500.0);
+
+      final mktHourly = Task.calculateFreelancerQuote('digital_marketing', mode: 'hourly', hourlyRate: 900, hours: 2);
+      expect(mktHourly.minBudget, 1000.0);
+      expect(mktHourly.suggestedBudget, 1800.0);
+      expect(mktHourly.separateCostsTitle, 'Ad Wallet Spend Separate');
+    });
+
+    testWidgets('Professional -> Freelancer -> Dual Pricing (Per Project pages & Hourly) sets market pricing',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Step 1: Tap Professional -> opens Professional subcategory popup
+      await tester.ensureVisible(find.text('Professional'));
+      await tester.tap(find.text('Professional'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select a specific category'), findsOneWidget);
+      expect(find.text('Freelancer'), findsOneWidget);
+
+      // Step 2: Tap Freelancer -> opens nested Freelancer child category popup
+      await tester.tap(find.text('Freelancer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select a freelancer category'), findsOneWidget);
+      expect(find.text('Graphic Design & Branding'), findsOneWidget);
+      expect(find.text('Web, App & Tech Projects'), findsOneWidget);
+      expect(find.text('Video & Audio Editing'), findsOneWidget);
+      expect(find.text('Digital Marketing'), findsOneWidget);
+      expect(find.text('Business, Office & Admin'), findsOneWidget);
+      expect(find.text('From ₹350 · /design or /hr'), findsOneWidget);
+      expect(find.text('From ₹800 · /page or /hr'), findsOneWidget);
+
+      // Verify back arrow returns cleanly to Professional popup, then re-open Freelancer
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('Select a specific category'), findsOneWidget);
+      await tester.tap(find.text('Freelancer'));
+      await tester.pumpAndSettle();
+
+      // Step 3: Select 'Web, App & Tech Projects'
+      await tester.tap(find.text('Web, App & Tech Projects'));
+      await tester.pumpAndSettle();
+
+      // Dual Pricing card & Domain/Hosting Separate disclosure appear immediately
+      expect(find.text('Freelancer Pricing Model'), findsOneWidget);
+      expect(find.text('Per Project'), findsOneWidget);
+      expect(find.text('Hourly Rate'), findsOneWidget);
+      expect(find.text('Website (/page)'), findsOneWidget);
+      expect(find.text('Domain & Hosting Separate'), findsOneWidget);
+
+      // Step 4: Increase website pages from 1 -> 3 via '+' stepper -> min ₹2400, auto-budget ₹4500
+      final unitInc = find.byKey(const Key('freelancer_unit_inc'));
+      await tester.ensureVisible(unitInc);
+      await tester.tap(unitInc);
+      await tester.pumpAndSettle();
+      await tester.tap(unitInc);
+      await tester.pumpAndSettle();
+
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      final budgetWidget = tester.widget<TextFormField>(budgetField);
+      expect(budgetWidget.controller?.text, '4500');
+      expect(find.text('Min ₹2400'), findsOneWidget);
+
+      // Enter ₹2000 -> inline validation warns minimum ₹2400 for 3 pages
+      await tester.ensureVisible(budgetField);
+      await tester.enterText(budgetField, '2000');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum budget for web app tech (Website (/page) (3 pages)) is ₹2400'),
+          findsOneWidget);
+
+      // Step 5: Switch to Hourly Rate mode -> defaults ₹600/hr × 3 hrs = ₹1800, then +₹50 & +1h = 650 × 4 = ₹2600
+      final hourlyTab = find.byKey(const Key('freelancer_mode_hourly'));
+      await tester.ensureVisible(hourlyTab);
+      await tester.tap(hourlyTab);
+      await tester.pumpAndSettle();
+
+      expect(find.text('₹600'), findsOneWidget);
+      expect(find.text('3 hrs'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('freelancer_rate_inc')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('freelancer_hours_inc')));
+      await tester.pumpAndSettle();
+
+      final updatedBudget = tester.widget<TextFormField>(budgetField);
+      expect(updatedBudget.controller?.text, '2600');
+      expect(find.text('Minimum budget for'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

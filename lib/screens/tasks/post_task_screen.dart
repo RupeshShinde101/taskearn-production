@@ -87,6 +87,88 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
 
+  String _freelancerPricingMode = 'package'; // 'package' | 'hourly'
+  String? _freelancerTierId;
+  int _freelancerUnits = 1;
+  int _freelancerHours = 2;
+  double _freelancerHourlyRate = 500.0;
+  bool _separateChargesClientPaid = true;
+
+  bool get _isFreelancer => Task.isFreelancerCategory(_selectedCategory);
+  FreelancerPricingConfig? get _freelancerConfig =>
+      Task.freelancerPricingConfigFor(_selectedCategory);
+  FreelancerPriceQuote? get _freelancerQuote => !_isFreelancer
+      ? null
+      : Task.calculateFreelancerQuote(
+          _selectedCategory,
+          mode: _freelancerPricingMode,
+          tierId: _freelancerTierId,
+          units: _freelancerUnits,
+          hourlyRate: _freelancerHourlyRate,
+          hours: _freelancerHours,
+        );
+
+  double _currentMinBudget() {
+    if (_isDelivery) {
+      if (_calculatedDistanceKm != null) {
+        return Task.calculateDistancePrice(
+          _calculatedDistanceKm!,
+          _selectedCategory,
+          vehicle: _deliveryVehicle,
+        );
+      }
+      return Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+    }
+    if (_isFreelancer) {
+      return _freelancerQuote!.minBudget;
+    }
+    return Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+  }
+
+  String _currentMinBudgetMessage() {
+    if (_isDelivery && _calculatedDistanceKm != null) {
+      final distMin = Task.calculateDistancePrice(
+        _calculatedDistanceKm!,
+        _selectedCategory,
+        vehicle: _deliveryVehicle,
+      );
+      return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
+    }
+    if (_isFreelancer) {
+      final q = _freelancerQuote!;
+      return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} (${q.scopeSummary}) is ₹${q.minBudget.toInt()}';
+    }
+    final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+    return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+  }
+
+  void _applySelectedCategory(String categoryId) {
+    final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
+        (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
+    _selectedCategory = categoryId;
+    if (Task.isFreelancerCategory(categoryId)) {
+      final cfg = Task.freelancerPricingConfigFor(categoryId)!;
+      _freelancerPricingMode = 'package';
+      _freelancerTierId = cfg.tiers.first.id;
+      _freelancerUnits = cfg.tiers.first.defaultUnits;
+      _freelancerHours = cfg.defaultHours;
+      _freelancerHourlyRate = cfg.defaultHourlyRate;
+      _separateChargesClientPaid = true;
+      if (wasAutoOrEmpty) {
+        final q = Task.calculateFreelancerQuote(
+          categoryId,
+          mode: _freelancerPricingMode,
+          tierId: _freelancerTierId,
+          units: _freelancerUnits,
+          hourlyRate: _freelancerHourlyRate,
+          hours: _freelancerHours,
+        );
+        _syncAutoBudget(q.suggestedBudget);
+      }
+    }
+    _autoFillDescription();
+  }
+
   /// Per-category description prompt chips shown below the description field.
   static const Map<String, List<String>> _prompts = {
     'delivery':    ['What to deliver?', 'Pickup point?', 'Drop point?', 'Item size/weight?', 'Urgent?'],
@@ -105,6 +187,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'vehicle':     ['Vehicle type?', 'Service needed?', 'Make/model?', 'At-home or garage?'],
     'tutoring':    ['Which subject?', 'Grade/level?', 'Hours needed?', 'Online or in-person?'],
     'freelancer':  ['What service do you need?', 'Skill level required?', 'Deadline?', 'Remote or in-person?', 'Tools/software needed?'],
+    'graphic_design':      ['Type of design needed?', 'Brand style / colours?', 'Dimensions / format?', 'Deliverables & files?', 'Deadline?'],
+    'web_app_tech':        ['Project type (website/app/bug fix)?', 'Tech stack / platform?', 'Key features needed?', 'Remote or in-person?', 'Deadline?'],
+    'video_audio_editing': ['Type of video/audio edit?', 'Raw footage length?', 'Final duration / format?', 'Subtitles / music / effects?', 'Deadline?'],
+    'digital_marketing':   ['Service (SEO/Ads/Social Media)?', 'Target audience / location?', 'Campaign duration?', 'Platforms involved?', 'Goal / KPI?'],
+    'business_admin':      ['Type of work (deck/Excel/admin)?', 'Volume / number of pages?', 'Software / format needed?', 'Confidentiality / NDA?', 'Deadline?'],
     'carpentry':   ['What carpentry work?', 'Materials needed?', 'Approximate dimensions?'],
     'painting':    ['What to paint?', 'Colour preference?', 'Area size?'],
     'beauty':      ['What treatment/service?', 'At-home or salon?', 'Duration?', 'Gender preference?'],
@@ -418,7 +505,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
-  void _showSubCategorySheet(TaskCategoryGroup group) {
+  void _showSubCategorySheet(TaskCategoryGroup group, {TaskCategoryGroup? parentGroup}) {
     FocusScope.of(context).unfocus();
     showGeneralDialog(
       context: context,
@@ -469,6 +556,24 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                     child: Row(
                       children: [
+                        if (parentGroup != null) ...[
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              _showSubCategorySheet(parentGroup);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.20),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.arrow_back_rounded,
+                                  color: Colors.white, size: 18),
+                            ),
+                          ),
+                        ],
                         Text(group.icon,
                             style: const TextStyle(fontSize: 26)),
                         const SizedBox(width: 10),
@@ -481,8 +586,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                       fontSize: 17,
                                       fontWeight: FontWeight.w700,
                                       color: Colors.white)),
-                              const Text('Select a specific category',
-                                  style: TextStyle(
+                              Text(
+                                  parentGroup != null
+                                      ? 'Select a freelancer category'
+                                      : 'Select a specific category',
+                                  style: const TextStyle(
                                       fontSize: 12,
                                       color: Colors.white70)),
                             ],
@@ -517,16 +625,30 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             crossAxisCount: 2,
                             mainAxisSpacing: 8,
                             crossAxisSpacing: 8,
-                            mainAxisExtent: 68,
+                            mainAxisExtent: 82,
                           ),
                           itemBuilder: (_, i) {
                             final c = group.subCategories[i];
-                            final sel = _selectedCategory == c.id;
+                            final isFreelancerEntry = c.id == 'freelancer';
+                            final isFreelancerChild =
+                                TaskCategoryGroup.freelancerChildIds.contains(c.id);
+                            final sel = isFreelancerEntry
+                                ? (_selectedCategory == 'freelancer' ||
+                                    TaskCategoryGroup.freelancerChildIds
+                                        .contains(_selectedCategory))
+                                : _selectedCategory == c.id;
                             return GestureDetector(
                               onTap: () {
+                                if (isFreelancerEntry) {
+                                  Navigator.pop(ctx);
+                                  _showSubCategorySheet(
+                                    TaskCategoryGroup.freelancerGroup,
+                                    parentGroup: group,
+                                  );
+                                  return;
+                                }
                                 setState(() {
-                                  _selectedCategory = c.id;
-                                  _autoFillDescription();
+                                  _applySelectedCategory(c.id);
                                 });
                                 _checkAndEstimateDistance();
                     WidgetsBinding.instance.addPostFrameCallback((_) { if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate(); });
@@ -581,31 +703,59 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          c.label,
-                                          style: TextStyle(
-                                            fontSize: 12.5,
-                                            fontWeight: sel
-                                                ? FontWeight.w700
-                                                : FontWeight.w600,
-                                            color: sel
-                                                ? AppColors.primaryDark
-                                                : AppColors.dark,
-                                            letterSpacing: -0.2,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            c.label,
+                                            style: TextStyle(
+                                              fontSize: 11.8,
+                                              fontWeight: sel
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w600,
+                                              color: sel
+                                                  ? AppColors.primaryDark
+                                                  : AppColors.dark,
+                                              letterSpacing: -0.2,
+                                              height: 1.15,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          maxLines: 1,
-                                        ),
+                                          if (isFreelancerChild) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              Task.freelancerShortUnitHint(c.id),
+                                              style: const TextStyle(
+                                                fontSize: 10.0,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.primary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ),
                                     if (sel) ...[
-                                      const SizedBox(width: 4),
+                                      const SizedBox(width: 2),
                                       const Icon(
                                         Icons.check_circle_rounded,
                                         size: 16,
                                         color: AppColors.primary,
+                                      ),
+                                    ],
+                                    if (isFreelancerEntry) ...[
+                                      const SizedBox(width: 2),
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        size: 18,
+                                        color: sel
+                                            ? AppColors.primary
+                                            : AppColors.gray,
                                       ),
                                     ],
                                   ],
@@ -1675,10 +1825,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         }
       }
     } else {
-      final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
-      if (budget < catMin) {
+      final minAllowed = _currentMinBudget();
+      if (budget < minAllowed) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+          SnackBar(content: Text(_currentMinBudgetMessage())),
         );
         return;
       }
@@ -1887,6 +2037,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'lng': taskLocation.longitude,
         'address': combinedAddress ?? '',
       },
+      if (_isFreelancer) ...{
+        'pricing_model': _freelancerPricingMode,
+        'pricing_scope': _freelancerQuote?.scopeSummary,
+        if (_freelancerPricingMode == 'hourly') ...{
+          'hourly_rate': _freelancerHourlyRate,
+          'estimated_hours': _freelancerHours,
+        } else ...{
+          'pricing_tier': _freelancerQuote?.tier?.id,
+          if (_freelancerQuote?.units != null) 'unit_count': _freelancerQuote!.units,
+        },
+        'separate_costs': _freelancerQuote?.separateCostsTitle,
+      },
       if (_isDelivery) ...{
         'vehicle': _selectedCategory == 'delivery' ? _deliveryVehicle : 'auto',
         if (_pickupAddrCtrl.text.trim().isNotEmpty)
@@ -1975,6 +2137,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (lower.contains('how many clothes')) return 'e.g. Around 15-20 clothes (daily wear)';
     if (lower.contains('subject')) return 'e.g. Mathematics, Class 10 CBSE';
     if (lower.contains('service do you need')) return 'e.g. WordPress website customization, logo design';
+    if (lower.contains('design needed')) return 'e.g. Logo, Instagram post pack, brochure, menu';
+    if (lower.contains('project type') || lower.contains('tech stack')) return 'e.g. WordPress site, React landing page, Flutter/bug fix';
+    if (lower.contains('video/audio edit')) return 'e.g. Instagram Reel edit, YouTube video, podcast cleanup';
+    if (lower.contains('seo/ads/social media')) return 'e.g. Meta/Google Ads setup, Google Business SEO, social posts';
+    if (lower.contains('deck/excel/admin')) return 'e.g. Pitch deck, Excel dashboard, resume formatting';
     if (lower.contains('materials needed')) return 'e.g. Plywood provided / helper to bring screws';
     if (lower.contains('colour')) return 'e.g. Off-white emulsion, 1 bedroom wall';
     if (lower.contains('garden')) return 'e.g. Lawn mowing, trimming bushes, watering';
@@ -1984,6 +2151,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void _compileDescriptionFromForm() {
     final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
     final lines = <String>[];
+    if (_isFreelancer && _freelancerQuote != null) {
+      final q = _freelancerQuote!;
+      lines.add('• Pricing Scope: ${q.scopeSummary}');
+      if (_selectedCategory == 'web_app_tech') {
+        lines.add(_separateChargesClientPaid
+            ? '• Domain & Hosting: Paid separately by client (excluded from budget)'
+            : '• Domain & Hosting: Client already owns domain & hosting');
+      } else {
+        lines.add('• Excluded Costs: ${q.separateCostsTitle} (separate from fee)');
+      }
+    }
     for (final p in prompts) {
       final ctrl = _descFormControllers[p];
       final val = ctrl?.text.trim() ?? '';
@@ -2492,7 +2670,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildSuggestedBudgetCard() {
-    if (!_isLocationSet) return const SizedBox.shrink();
+    if (!_isLocationSet && !_isFreelancer) return const SizedBox.shrink();
     final areaCandidate = _isDelivery
         ? (_dropAreaCtrl.text.trim().isNotEmpty
             ? _dropAreaCtrl.text.trim()
@@ -2506,6 +2684,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       areaText: areaCandidate,
       distanceKm: _calculatedDistanceKm,
       vehicle: _deliveryVehicle,
+      freelancerMode: _isFreelancer ? _freelancerPricingMode : null,
+      tierId: _freelancerTierId,
+      units: _freelancerUnits,
+      hourlyRate: _freelancerHourlyRate,
+      hours: _freelancerHours,
     );
 
     return Container(
@@ -2587,7 +2770,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Average value users in this area pay for ${_selectedCategory.replaceAll('_', ' ')}',
+                      _isFreelancer && _freelancerQuote != null
+                          ? '${_freelancerQuote!.scopeSummary} · ${_freelancerQuote!.separateCostsTitle}'
+                          : 'Average value users in this area pay for ${_selectedCategory.replaceAll('_', ' ')}',
                       style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                     ),
                   ],
@@ -2905,14 +3090,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               (g) => g.label == cat.groupName,
               orElse: () => TaskCategoryGroup(label: cat.groupName, icon: '📋', categoryIds: [cat.defaultId]),
             );
-            final isSelected = group.categoryIds.contains(_selectedCategory);
+            final isSelected = group.containsCategory(_selectedCategory);
 
             return GestureDetector(
               onTap: () {
                 if (group.subCategories.length <= 1) {
                   setState(() {
-                    _selectedCategory = cat.defaultId;
-                    _autoFillDescription();
+                    _applySelectedCategory(cat.defaultId);
                   });
                   _checkAndEstimateDistance();
                 } else {
@@ -3023,8 +3207,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           onTap: () {
             if (!isOtherSelected) {
               setState(() {
-                _selectedCategory = 'other';
-                _autoFillDescription();
+                _applySelectedCategory('other');
               });
               _recalcDistance();
             } else {
@@ -3126,7 +3309,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     : (_selectedCategory == 'delivery'
                         ? 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_deliveryVehicle == 'bike' ? '₹12/km Bike' : '₹18/km Rikshaw'})'
                         : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()})'))
-                : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()}',
+                : (_isFreelancer && _freelancerQuote != null
+                    ? 'Minimum ₹${_freelancerQuote!.minBudget.toInt()} (${_freelancerQuote!.scopeSummary})'
+                    : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()}'),
             helperText: _isDelivery
                 ? (_selectedCategory == 'delivery'
                     ? (_calculatedDistanceKm != null
@@ -3135,7 +3320,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     : (_calculatedDistanceKm != null
                         ? 'Rate: ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
                         : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory, vehicle: _deliveryVehicle)}'))
-                : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()}',
+                : (_isFreelancer && _freelancerQuote != null
+                    ? 'Min ₹${_freelancerQuote!.minBudget.toInt()} · ${_freelancerQuote!.scopeSummary} (${_freelancerQuote!.separateCostsTitle})'
+                    : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()}'),
             helperMaxLines: 2,
             prefixIcon: const Icon(Icons.currency_rupee, color: Color(0xFF2563EB)),
             filled: true,
@@ -3169,9 +3356,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 }
               }
             } else {
-              final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
-              if (n < catMin) {
-                return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+              final minAllowed = _currentMinBudget();
+              if (n < minAllowed) {
+                return _currentMinBudgetMessage();
               }
             }
             return null;
@@ -3676,6 +3863,620 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  Widget _buildFreelancerPricingCard() {
+    final cfg = _freelancerConfig;
+    final quote = _freelancerQuote;
+    if (cfg == null || quote == null) return const SizedBox.shrink();
+
+    final isHourly = _freelancerPricingMode == 'hourly';
+    final tier = cfg.tierById(_freelancerTierId);
+
+    void updateQuoteAndSync(VoidCallback mutate) {
+      setState(() {
+        mutate();
+        final updated = _freelancerQuote!;
+        _syncAutoBudget(updated.suggestedBudget);
+        _compileDescriptionFromForm();
+      });
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.calculate_rounded,
+                  color: Color(0xFF2563EB),
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Freelancer Pricing Model',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                        color: Color(0xFF102A56),
+                      ),
+                    ),
+                    Text(
+                      'Choose Per Project / Unit or Hourly rate',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF52627A)),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF2FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  isHourly
+                      ? '₹${_freelancerHourlyRate.toInt()}/hr'
+                      : 'Min ₹${quote.minBudget.toInt()}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Dual Mode Segmented Switcher
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    key: const Key('freelancer_mode_package'),
+                    onTap: () {
+                      if (_freelancerPricingMode != 'package') {
+                        updateQuoteAndSync(() => _freelancerPricingMode = 'package');
+                      }
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: !isHourly ? Colors.white : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                        boxShadow: !isHourly
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.layers_outlined,
+                            size: 15,
+                            color: !isHourly ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              'Per Project',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: !isHourly ? FontWeight.w700 : FontWeight.w600,
+                                color: !isHourly ? const Color(0xFF102A56) : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    key: const Key('freelancer_mode_hourly'),
+                    onTap: () {
+                      if (_freelancerPricingMode != 'hourly') {
+                        updateQuoteAndSync(() => _freelancerPricingMode = 'hourly');
+                      }
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: isHourly ? Colors.white : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                        boxShadow: isHourly
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 15,
+                            color: isHourly ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              'Hourly Rate',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: isHourly ? FontWeight.w700 : FontWeight.w600,
+                                color: isHourly ? const Color(0xFF102A56) : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          if (!isHourly) ...[
+            // Package / Unit Tiers
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: cfg.tiers.map((t) {
+                final selectedTier = t.id == tier.id;
+                return GestureDetector(
+                  onTap: () {
+                    if (t.id != _freelancerTierId) {
+                      updateQuoteAndSync(() {
+                        _freelancerTierId = t.id;
+                        _freelancerUnits = t.defaultUnits;
+                      });
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: selectedTier ? const Color(0xFFEAF2FF) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: selectedTier ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                        width: selectedTier ? 1.4 : 1.0,
+                      ),
+                    ),
+                    child: Text(
+                      t.label,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: selectedTier ? FontWeight.w700 : FontWeight.w600,
+                        color: selectedTier ? const Color(0xFF1D4ED8) : const Color(0xFF334155),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 10),
+            if (tier.usesUnits) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Number of ${tier.unitPlural}',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF102A56),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            tier.baseMin > 0
+                                ? 'Base ₹${tier.baseSuggested.toInt()} + ₹${tier.perUnitSuggested.toInt()}/${tier.unitLabel}'
+                                : '₹${tier.perUnitSuggested.toInt()} suggested / ${tier.unitLabel} (min ₹${tier.perUnitMin.toInt()})',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Color(0xFF52627A),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildStepperButton(
+                          key: const Key('freelancer_unit_dec'),
+                          icon: Icons.remove_rounded,
+                          enabled: _freelancerUnits > tier.minUnits,
+                          onTap: () => updateQuoteAndSync(() => _freelancerUnits--),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            '$_freelancerUnits',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF102A56),
+                            ),
+                          ),
+                        ),
+                        _buildStepperButton(
+                          key: const Key('freelancer_unit_inc'),
+                          icon: Icons.add_rounded,
+                          enabled: _freelancerUnits < tier.maxUnits,
+                          onTap: () => updateQuoteAndSync(() => _freelancerUnits++),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tier.summaryHint,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Market suggested: ₹${quote.suggestedBudget.toInt()} (Min ₹${quote.minBudget.toInt()})',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2563EB),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ] else ...[
+            // Hourly Rate & Estimated Hours Steppers
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Hourly Rate',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF52627A),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildStepperButton(
+                              key: const Key('freelancer_rate_dec'),
+                              icon: Icons.remove_rounded,
+                              enabled: _freelancerHourlyRate - 50 >= cfg.minHourlyRate,
+                              onTap: () => updateQuoteAndSync(
+                                () => _freelancerHourlyRate = (_freelancerHourlyRate - 50)
+                                    .clamp(cfg.minHourlyRate, 10000.0),
+                              ),
+                            ),
+                            Flexible(
+                              child: Text(
+                                '₹${_freelancerHourlyRate.toInt()}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF102A56),
+                                ),
+                              ),
+                            ),
+                            _buildStepperButton(
+                              key: const Key('freelancer_rate_inc'),
+                              icon: Icons.add_rounded,
+                              enabled: (_freelancerHourlyRate + 50) * _freelancerHours <= 50000,
+                              onTap: () => updateQuoteAndSync(
+                                () => _freelancerHourlyRate += 50,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Min ₹${cfg.minHourlyRate.toInt()}/hr',
+                          style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Estimated Hours',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF52627A),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildStepperButton(
+                              key: const Key('freelancer_hours_dec'),
+                              icon: Icons.remove_rounded,
+                              enabled: _freelancerHours > cfg.minHours,
+                              onTap: () => updateQuoteAndSync(() => _freelancerHours--),
+                            ),
+                            Flexible(
+                              child: Text(
+                                '$_freelancerHours ${_freelancerHours == 1 ? 'hr' : 'hrs'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF102A56),
+                                ),
+                              ),
+                            ),
+                            _buildStepperButton(
+                              key: const Key('freelancer_hours_inc'),
+                              icon: Icons.add_rounded,
+                              enabled: _freelancerHours < cfg.maxHours &&
+                                  (_freelancerHourlyRate * (_freelancerHours + 1)) <= 50000,
+                              onTap: () => updateQuoteAndSync(() => _freelancerHours++),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Calc ₹${quote.suggestedBudget.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2563EB),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 10),
+
+          // Separate Pass-Through Charges Disclosure / Toggle
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded, size: 15, color: Color(0xFFB45309)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        cfg.separateCostsTitle,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  cfg.separateCostsDescription,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: Color(0xFF78350F),
+                    height: 1.3,
+                  ),
+                ),
+                if (_selectedCategory == 'web_app_tech') ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _separateChargesClientPaid = true;
+                            _compileDescriptionFromForm();
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _separateChargesClientPaid ? const Color(0xFFD97706) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFF59E0B)),
+                          ),
+                          child: Text(
+                            'I pay Domain/Hosting directly',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: _separateChargesClientPaid ? Colors.white : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _separateChargesClientPaid = false;
+                            _compileDescriptionFromForm();
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: !_separateChargesClientPaid ? const Color(0xFFD97706) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFF59E0B)),
+                          ),
+                          child: Text(
+                            'Already own Domain & Hosting',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: !_separateChargesClientPaid ? Colors.white : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepperButton({
+    Key? key,
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      key: key,
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 28,
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: enabled ? Colors.white : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: enabled ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 16,
+          color: enabled ? const Color(0xFF102A56) : const Color(0xFFCBD5E1),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPriceBreakdownSection() {
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: _budgetCtrl,
@@ -3685,11 +4486,30 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
         final posterFee = budget * 0.20;
         final total = budget + charge + posterFee;
-        return TaskPriceBreakdownCard(
-          budget: budget,
-          serviceCharge: charge,
-          posterFee: posterFee,
-          totalCost: total,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TaskPriceBreakdownCard(
+              budget: budget,
+              serviceCharge: charge,
+              posterFee: posterFee,
+              totalCost: total,
+            ),
+            if (_isFreelancer && _freelancerQuote != null) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  'Excluded from 20% fee: ${_freelancerQuote!.separateCostsTitle} (client-paid direct).',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ],
         );
       },
     );
@@ -3881,6 +4701,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       ] else if (_isDelivery) ...[
                         const SizedBox(height: 16),
                         _buildDistanceCategoryRateBanner(),
+                      ] else if (_isFreelancer) ...[
+                        const SizedBox(height: 16),
+                        _buildFreelancerPricingCard(),
                       ],
                       const SizedBox(height: 16),
                       _buildDescriptionFormSection(),

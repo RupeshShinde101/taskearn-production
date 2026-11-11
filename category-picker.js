@@ -47,7 +47,12 @@
         // Digital & Skilled Services
         { key: 'tutoring',    label: 'Online Tutoring',       parent: 'Digital & Skills',     icon: '📚', keywords: ['teach','tutor','study','class','math','science','english','coaching','homework'] },
         { key: 'techsupport', label: 'Tech Support',          parent: 'Digital & Skills',     icon: '💻', keywords: ['computer','laptop','wifi','internet','software','printer','mobile','phone fix'] },
-        { key: 'freelance',   label: 'Freelance Services',    parent: 'Digital & Skills',     icon: '✍️', keywords: ['design','logo','website','content','writing','graphic','editing','marketing','seo'] },
+        { key: 'freelance',           label: 'Freelance Services',          parent: 'Digital & Skills', icon: '✍️', keywords: ['design','logo','website','content','writing','graphic','editing','marketing','seo'] },
+        { key: 'graphic_design',      label: 'Graphic Design & Branding',   parent: 'Digital & Skills', icon: '🎨', keywords: ['logo','branding','poster','banner','flyer','social media','brochure','canva'] },
+        { key: 'web_app_tech',        label: 'Web, App & Tech Projects',    parent: 'Digital & Skills', icon: '🌐', keywords: ['website','wordpress','shopify','landing page','app','react','flutter','bug','code'] },
+        { key: 'video_audio_editing', label: 'Video & Audio Editing',       parent: 'Digital & Skills', icon: '🎬', keywords: ['video','reel','shorts','youtube','podcast','audio','subtitles','premiere','capcut'] },
+        { key: 'digital_marketing',   label: 'Digital Marketing',           parent: 'Digital & Skills', icon: '📣', keywords: ['marketing','seo','ads','meta','google ads','instagram','social media','leads'] },
+        { key: 'business_admin',      label: 'Business, Office & Admin',    parent: 'Digital & Skills', icon: '📊', keywords: ['excel','powerpoint','pitch deck','resume','admin','virtual assistant','sheets'] },
         { key: 'tailoring',   label: 'Tailoring & Alterations', parent: 'Digital & Skills',   icon: '🧵', keywords: ['stitch','sew','alter','dress','blouse','cloth','tailor','fitting'] },
 
         // Other
@@ -825,6 +830,36 @@
             'Deadline',
             'Budget range, if any',
         ],
+        graphic_design: [
+            'Type of design (logo, banner, social media post, brochure)',
+            'Brand style, colours & text to include',
+            'Dimensions / file formats needed',
+            'Deadline',
+        ],
+        web_app_tech: [
+            'Billing model (Per Page / Package or Hourly) & page count or hours',
+            'Platform or tech stack (WordPress, React, Flutter, Python, etc.)',
+            'Domain & Hosting status (separate client-paid direct or already owned)',
+            'Key features, reference links & deadline',
+        ],
+        video_audio_editing: [
+            'Type of edit (Reel, YouTube video, podcast audio)',
+            'Raw footage length & final duration needed',
+            'Subtitles, music, or motion graphics needed?',
+            'Deadline',
+        ],
+        digital_marketing: [
+            'Service model (Setup/Audit, Per Page SEO, Campaign or Monthly Retainer)',
+            'Target location / audience & platforms involved',
+            'Note: Meta/Google Ad spend wallet is separate from service fee',
+            'Campaign duration',
+        ],
+        business_admin: [
+            'Type of work (PowerPoint deck, Excel sheet, resume, admin support)',
+            'Volume / number of slides, rows, or pages',
+            'Software / file format needed',
+            'Deadline',
+        ],
         tailoring: [
             'What needs to be stitched / altered? (blouse, kurta, trousers, dress)',
             'Quantity and current measurements / fitting issue',
@@ -911,7 +946,12 @@
         photography: { low: 1000, high: 5000, min: 500 },
         tutoring:    { low: 200, high: 800,  min: 150 },
         techsupport: { low: 200, high: 800,  min: 150 },
-        freelance:   { low: 300, high: 3000, min: 150 },
+        freelance:           { low: 300,  high: 3000, min: 300 },
+        graphic_design:      { low: 450,  high: 1500, min: 350 },
+        web_app_tech:        { low: 1000, high: 4000, min: 800 },
+        video_audio_editing: { low: 500,  high: 2000, min: 400 },
+        digital_marketing:   { low: 700,  high: 2500, min: 500 },
+        business_admin:      { low: 350,  high: 1000, min: 300 },
         tailoring:   { low: 150, high: 700,  min: 100 },
         other:       { low: 200, high: 800,  min: 100 },
     };

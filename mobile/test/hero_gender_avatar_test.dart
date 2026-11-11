@@ -139,6 +139,20 @@ void main() {
     expect(find.text('\u{1F9D1}'), findsNothing);
     expect(find.text('Post a Task'), findsOneWidget);
     expect(find.text('Find Tasks'), findsOneWidget);
+    // Compact left-column button width (< 210dp on 360dp screen)
+    expect(tester.getSize(find.widgetWithText(ElevatedButton, 'Post a Task')).width,
+        lessThan(210));
+    expect(tester.getSize(find.widgetWithText(OutlinedButton, 'Find Tasks')).width,
+        lessThan(210));
+    // Trusted local experts banner is informational only (no GestureDetector wrapper)
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -240));
+    await tester.pump(const Duration(milliseconds: 100));
+    final trustedFinder = find.text('Trusted local experts');
+    expect(trustedFinder, findsOneWidget);
+    expect(
+      find.ancestor(of: trustedFinder, matching: find.byType(GestureDetector)),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
 
     // Switch gender to male

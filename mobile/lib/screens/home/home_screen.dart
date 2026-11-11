@@ -394,227 +394,232 @@ class _HomeScreenState extends State<HomeScreen> {
           top: 0,
           left: 0,
           right: 0,
-          height: 224,
+          height: 262,
           child: IgnorePointer(
             child: CustomPaint(
               painter: HeroMapBackgroundPainter(
                 fadeBottom: true,
-                beaconTop: 34,
-                beaconRightOffset: 146,
+                beaconTop: 50,
+                beaconRightOffset: 138,
                 beaconLeftMinFactor: 0.56,
-                mapCenterYFactor: 0.44,
+                mapCenterYFactor: 0.48,
               ),
             ),
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              // Visual hero stage: left greeting & value props + right illustration
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    right: 2,
-                    bottom: 0,
-                    width: 148,
-                    height: 162,
-                    child: IgnorePointer(
-                      child: Image.asset(
-                        avatarAsset,
-                        fit: BoxFit.contain,
-                        alignment: Alignment.bottomCenter,
-                        errorBuilder: (_, __, ___) =>
-                            const SizedBox(width: 148, height: 162),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                width: 152,
+                height: 188,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    avatarAsset,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.bottomCenter,
+                    errorBuilder: (_, __, ___) =>
+                        const SizedBox(width: 152, height: 188),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE5EDF7)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF1B4073).withValues(alpha: 0.06),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.star_rounded,
+                          color: Color(0xFFF59E0B), size: 15),
+                      SizedBox(width: 4),
+                      Text('4.9',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF102A56))),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 6,
+                top: 38,
+                child: IgnorePointer(child: _floatingBadge('⚡', 'Fast')),
+              ),
+              Positioned(
+                right: 4,
+                bottom: 8,
+                child: IgnorePointer(child: _paidBadge()),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 146, bottom: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 11, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF2FF),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFC5DCFF)),
+                      ),
+                      child: const Text(
+                        "India's Task App",
+                        style: TextStyle(
+                          color: Color(0xFF2563EB),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                    const SizedBox(height: 10),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text('Hi $firstName! 👋',
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF102A56),
+                            letterSpacing: -0.5,
+                          )),
+                    ),
+                    const SizedBox(height: 10),
+                    _bullet(
+                      Icons.check_circle_rounded,
+                      const Color(0xFF2563EB),
+                      'Earn money locally',
+                    ),
+                    const SizedBox(height: 6),
+                    _bullet(
+                      Icons.bolt_rounded,
+                      const Color(0xFFF59E0B),
+                      'Get tasks done fast',
+                    ),
+                    const SizedBox(height: 6),
+                    _bullet(
+                      Icons.verified_user_rounded,
+                      const Color(0xFF2563EB),
+                      'Secure payments',
+                    ),
+                    const SizedBox(height: 14),
+                    // Compact left-aligned Primary CTA button
+                    Container(
+                      width: double.infinity,
+                      height: 44,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFE5EDF7)),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(22),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF1B4073)
-                                .withValues(alpha: 0.06),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
+                            color: const Color(0xFF2563EB)
+                                .withValues(alpha: 0.24),
+                            blurRadius: 14,
+                            offset: const Offset(0, 5),
                           ),
                         ],
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star_rounded,
-                              color: Color(0xFFF59E0B), size: 15),
-                          SizedBox(width: 4),
-                          Text('4.9',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF102A56))),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 106,
-                    bottom: 100,
-                    child: IgnorePointer(child: _floatingBadge('⚡', 'Fast')),
-                  ),
-                  Positioned(
-                    right: 0,
-                    bottom: 8,
-                    child: IgnorePointer(child: _paidBadge()),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 148, bottom: 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 11, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEAF2FF),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFFC5DCFF)),
-                          ),
-                          child: const Text(
-                            "India's Task App",
-                            style: TextStyle(
-                              color: Color(0xFF2563EB),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final auth = context.read<AuthProvider>();
+                          if (!auth.isPosterMode) {
+                            final switched = await showProfileModeSwitchDialog(
+                              context,
+                              targetMode: 'poster',
+                              title: 'Switch to Poster Profile',
+                              message:
+                                  'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+                              actionLabel: 'Switch to Poster & Continue',
+                            );
+                            if (switched != true) return;
+                          }
+                          if (!mounted) return;
+                          context.push('/post-task');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 44),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(22)),
+                          textStyle: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700),
                         ),
-                        const SizedBox(height: 12),
-                        FittedBox(
+                        child: const FittedBox(
                           fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text('Hi $firstName! 👋',
-                              maxLines: 1,
-                              style: const TextStyle(
-                                fontSize: 25,
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF102A56),
-                                letterSpacing: -0.5,
-                              )),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Post a Task'),
+                              SizedBox(width: 5),
+                              Icon(Icons.arrow_forward_rounded, size: 16),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        _bullet(
-                          Icons.check_circle_rounded,
-                          const Color(0xFF2563EB),
-                          'Earn money locally',
-                        ),
-                        const SizedBox(height: 6),
-                        _bullet(
-                          Icons.bolt_rounded,
-                          const Color(0xFFF59E0B),
-                          'Get tasks done fast',
-                        ),
-                        const SizedBox(height: 6),
-                        _bullet(
-                          Icons.verified_user_rounded,
-                          const Color(0xFF2563EB),
-                          'Secure payments',
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              // Primary CTA button (Electric Blue gradient)
-              Container(
-                width: double.infinity,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF2563EB).withValues(alpha: 0.24),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
+                    const SizedBox(height: 8),
+                    // Compact left-aligned Secondary CTA button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton(
+                        onPressed: () => context.go('/browse'),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          minimumSize: const Size(0, 44),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          side: const BorderSide(
+                              color: Color(0xFF2563EB), width: 1.5),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(22)),
+                          foregroundColor: const Color(0xFF2563EB),
+                          textStyle: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Find Tasks'),
+                              SizedBox(width: 5),
+                              Icon(Icons.arrow_forward_rounded, size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ],
-                ),
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final auth = context.read<AuthProvider>();
-                    if (!auth.isPosterMode) {
-                      final switched = await showProfileModeSwitchDialog(
-                        context,
-                        targetMode: 'poster',
-                        title: 'Switch to Poster Profile',
-                        message:
-                            'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
-                        actionLabel: 'Switch to Poster & Continue',
-                      );
-                      if (switched != true) return;
-                    }
-                    if (!mounted) return;
-                    context.push('/post-task');
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    shadowColor: Colors.transparent,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24)),
-                    textStyle: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Post a Task'),
-                      SizedBox(width: 6),
-                      Icon(Icons.arrow_forward_rounded, size: 18),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              // Secondary CTA button (White with Blue 600 border)
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: OutlinedButton(
-                  onPressed: () => context.go('/browse'),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(48),
-                    side: const BorderSide(
-                        color: Color(0xFF2563EB), width: 1.5),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24)),
-                    foregroundColor: const Color(0xFF2563EB),
-                    textStyle: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Find Tasks'),
-                      SizedBox(width: 6),
-                      Icon(Icons.arrow_forward_rounded, size: 18),
-                    ],
-                  ),
                 ),
               ),
             ],
@@ -899,106 +904,103 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── FEATURED TRUST BANNER ─────────────────────────────────────────────────
   Widget _buildTrustedExpertsBanner() {
-    return GestureDetector(
-      onTap: () async {
-        final auth = context.read<AuthProvider>();
-        if (!auth.isPosterMode) {
-          final switched = await showProfileModeSwitchDialog(
-            context,
-            targetMode: 'poster',
-            title: 'Switch to Poster Profile',
-            message:
-                'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
-            actionLabel: 'Switch to Poster & Continue',
-          );
-          if (switched != true) return;
-        }
-        if (!mounted) return;
-        context.push('/post-task');
-      },
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFFF7FAFF), Color(0xFFEAF2FF)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFD3E0F0)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF1B4073).withValues(alpha: 0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 4),
-            ),
-          ],
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFFFFF), Color(0xFFEAF2FF)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(19),
-          child: Stack(
-            children: [
-              Positioned(
-                right: 0,
-                bottom: 0,
-                width: 145,
-                height: 86,
-                child: IgnorePointer(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5EDF7)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1B4073).withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(19),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -4,
+              bottom: 0,
+              width: 242,
+              height: 77,
+              child: IgnorePointer(
+                child: ShaderMask(
+                  shaderCallback: (rect) => const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      Colors.transparent,
+                      Colors.white,
+                      Colors.white,
+                    ],
+                    stops: [0.0, 0.34, 1.0],
+                  ).createShader(rect),
+                  blendMode: BlendMode.dstIn,
                   child: Image.asset(
                     'assets/images/cat_3d_other_skyline.png',
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     alignment: Alignment.bottomRight,
                     errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),
               ),
-              const Positioned(
-                right: 52,
-                top: 12,
+            ),
+            const Positioned(
+              right: 52,
+              top: 10,
+              child: IgnorePointer(
                 child: Icon(
                   Icons.location_on_rounded,
                   size: 28,
                   color: Color(0xFF2563EB),
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(18, 16, 136, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'GET THINGS DONE',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.0,
-                        color: Color(0xFF52627A),
-                      ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 16, 132, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'GET THINGS DONE',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.0,
+                      color: Color(0xFF52627A),
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Trusted local experts',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF102A56),
-                        letterSpacing: -0.3,
-                      ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Trusted local experts',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF102A56),
+                      letterSpacing: -0.3,
                     ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Quick. Safe. Near you.',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF52627A),
-                      ),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'Quick. Safe. Near you.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF52627A),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

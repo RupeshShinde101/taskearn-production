@@ -993,7 +993,7 @@ class TaskCategory {
     TaskCategory(id: 'shopping', label: 'Shopping', icon: '🛍️'),
     TaskCategory(id: 'electrician', label: 'Electrician', icon: '⚡'),
     TaskCategory(id: 'plumbing', label: 'Plumbing', icon: '🔧'),
-    TaskCategory(id: 'carpentry', label: 'Carpentry', icon: '🪚'),
+    TaskCategory(id: 'carpentry', label: 'Carpentry', icon: '🛠️'),
     TaskCategory(id: 'painting', label: 'Painting', icon: '🎨'),
     TaskCategory(id: 'repair', label: 'Repair', icon: '🔨'),
     TaskCategory(id: 'vehicle', label: 'Vehicle', icon: '🚘'),

@@ -2620,74 +2620,130 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildTopHeader() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    if (Navigator.of(context).canPop()) {
-                      Navigator.of(context).pop();
-                    } else {
-                      context.go('/tasks');
-                    }
-                  },
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEAF2FF),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.arrow_back,
-                      color: Color(0xFF2563EB),
-                      size: 20,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Post a Task',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF102A56),
-                      letterSpacing: -0.5,
-                    ),
-                    maxLines: 1,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Tell us what you need. We\'ll help you find the right person.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF52627A),
-                    height: 1.35,
-                  ),
-                ),
-              ],
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: _HeroMapBackgroundPainter(),
             ),
           ),
         ),
-        const SizedBox(width: 6),
-        SizedBox(
-          width: 146,
-          height: 152,
-          child: Image.asset(
-            'assets/images/header_avatar.png',
-            fit: BoxFit.contain,
-            alignment: Alignment.bottomCenter,
-            errorBuilder: (_, __, ___) => const SizedBox(width: 146, height: 152),
+        Positioned(
+          top: 12,
+          right: 156,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE5EDF7), width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF102A56).withValues(alpha: 0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.location_on_rounded,
+                    size: 13,
+                    color: Color(0xFF2563EB),
+                  ),
+                  SizedBox(width: 4),
+                  Text(
+                    'Near you',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF102A56),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          if (Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
+                          } else {
+                            context.go('/tasks');
+                          }
+                        },
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEAF2FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back,
+                            color: Color(0xFF2563EB),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Post a Task',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF102A56),
+                            letterSpacing: -0.5,
+                          ),
+                          maxLines: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Tell us what you need. We\'ll help you find the right person.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF52627A),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 146,
+                height: 152,
+                child: Image.asset(
+                  'assets/images/header_avatar.png',
+                  fit: BoxFit.contain,
+                  alignment: Alignment.bottomCenter,
+                  errorBuilder: (_, __, ___) =>
+                      const SizedBox(width: 146, height: 152),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -3844,35 +3900,43 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           controller: _scrollCtrl,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.only(bottom: 24),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildTopHeader(),
-                _buildTaskTitleInput(),
-                const SizedBox(height: 18),
-                _buildCategorySection(),
-                if (_selectedCategory == 'delivery') ...[
-                  const SizedBox(height: 16),
-                  _buildDeliveryVehicleSelector(),
-                ] else if (_isDelivery) ...[
-                  const SizedBox(height: 16),
-                  _buildDistanceCategoryRateBanner(),
-                ],
-                const SizedBox(height: 16),
-                _buildDescriptionFormSection(),
-                const SizedBox(height: 16),
-                _buildLocationFieldsSection(),
-                const SizedBox(height: 16),
-                _buildSuggestedBudgetCard(),
-                _buildBudgetField(),
-                const SizedBox(height: 16),
-                _buildPriceBreakdownSection(),
-                const SizedBox(height: 24),
-                _buildBottomContinueButton(),
-                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTaskTitleInput(),
+                      const SizedBox(height: 18),
+                      _buildCategorySection(),
+                      if (_selectedCategory == 'delivery') ...[
+                        const SizedBox(height: 16),
+                        _buildDeliveryVehicleSelector(),
+                      ] else if (_isDelivery) ...[
+                        const SizedBox(height: 16),
+                        _buildDistanceCategoryRateBanner(),
+                      ],
+                      const SizedBox(height: 16),
+                      _buildDescriptionFormSection(),
+                      const SizedBox(height: 16),
+                      _buildLocationFieldsSection(),
+                      const SizedBox(height: 16),
+                      _buildSuggestedBudgetCard(),
+                      _buildBudgetField(),
+                      const SizedBox(height: 16),
+                      _buildPriceBreakdownSection(),
+                      const SizedBox(height: 24),
+                      _buildBottomContinueButton(),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -3927,4 +3991,150 @@ class _AddressActionButtons extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Subtle tilted street map + location radar background behind the Post Task hero header.
+class _HeroMapBackgroundPainter extends CustomPainter {
+  const _HeroMapBackgroundPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+
+    final bounds = Offset.zero & size;
+    canvas.saveLayer(bounds, Paint());
+
+    // Rotated subtle street grid across top & right half
+    canvas.save();
+    canvas.translate(size.width * 0.68, size.height * 0.45);
+    canvas.rotate(-0.40);
+
+    final blockPaintA = Paint()..color = const Color(0xFFD9E6FC);
+    final blockPaintB = Paint()..color = const Color(0xFFE5EFFD);
+    final roadPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.90)
+      ..strokeWidth = 5.0
+      ..style = PaintingStyle.stroke;
+    final avenuePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.95)
+      ..strokeWidth = 8.0
+      ..style = PaintingStyle.stroke;
+
+    const cellW = 36.0;
+    const cellH = 28.0;
+    for (int col = -6; col <= 6; col++) {
+      for (int row = -5; row <= 5; row++) {
+        final rx = col * cellW + 3.0;
+        final ry = row * cellH + 3.0;
+        const rw = cellW - 6.0;
+        const rh = cellH - 6.0;
+        final block = RRect.fromRectAndRadius(
+          Rect.fromLTWH(rx, ry, rw, rh),
+          const Radius.circular(4),
+        );
+        canvas.drawRRect(
+          block,
+          ((col + row).abs() % 2 == 0) ? blockPaintA : blockPaintB,
+        );
+      }
+    }
+
+    for (int col = -6; col <= 6; col++) {
+      final x = col * cellW;
+      canvas.drawLine(
+        Offset(x, -180),
+        Offset(x, 180),
+        (col % 2 == 0) ? avenuePaint : roadPaint,
+      );
+    }
+    for (int row = -5; row <= 5; row++) {
+      final y = row * cellH;
+      canvas.drawLine(
+        Offset(-240, y),
+        Offset(240, y),
+        (row % 2 == 0) ? avenuePaint : roadPaint,
+      );
+    }
+    canvas.restore();
+
+    // Soft mini pastel map trees in safe upper corners behind boy
+    void drawTree(Offset pos, double scale) {
+      final trunk = Paint()
+        ..color = const Color(0xFF94A3B8).withValues(alpha: 0.55)
+        ..strokeWidth = 2.0 * scale
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(
+        Offset(pos.dx, pos.dy + 4 * scale),
+        Offset(pos.dx, pos.dy + 11 * scale),
+        trunk,
+      );
+      canvas.drawCircle(
+        pos,
+        6.5 * scale,
+        Paint()..color = const Color(0xFF9BD4B2).withValues(alpha: 0.80),
+      );
+      canvas.drawCircle(
+        Offset(pos.dx - 1.5 * scale, pos.dy - 1.5 * scale),
+        4.0 * scale,
+        Paint()..color = const Color(0xFFBEE6CF).withValues(alpha: 0.85),
+      );
+    }
+
+    drawTree(Offset(size.width * 0.48, 16), 0.95);
+    drawTree(Offset(size.width - 50, 22), 1.05);
+    drawTree(Offset(size.width - 22, 32), 0.90);
+
+    // Horizontal & diagonal fade out behind left typography
+    final leftFade = Paint()
+      ..blendMode = BlendMode.dstIn
+      ..shader = LinearGradient(
+        begin: Alignment.centerRight,
+        end: Alignment.centerLeft,
+        colors: [
+          Colors.white,
+          Colors.white.withValues(alpha: 0.85),
+          Colors.white.withValues(alpha: 0.12),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.44, 0.72, 0.95],
+      ).createShader(bounds);
+    canvas.drawRect(bounds, leftFade);
+
+    // Smooth bottom feather into #F4F8FF canvas
+    final bottomFade = Paint()
+      ..blendMode = BlendMode.dstIn
+      ..shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Colors.white, Colors.white, Colors.transparent],
+        stops: [0.0, 0.72, 1.0],
+      ).createShader(bounds);
+    canvas.drawRect(bounds, bottomFade);
+
+    canvas.restore();
+
+    // Soft blue location radar dot in the clear pocket upper-left of the boy
+    final dotCenter = Offset(
+      (size.width - 172).clamp(size.width * 0.46, size.width - 144),
+      60,
+    );
+    canvas.drawCircle(
+      dotCenter,
+      18,
+      Paint()..color = const Color(0xFF3B82F6).withValues(alpha: 0.12),
+    );
+    canvas.drawCircle(
+      dotCenter,
+      10.5,
+      Paint()..color = Colors.white.withValues(alpha: 0.96),
+    );
+    canvas.drawCircle(
+      dotCenter,
+      5.5,
+      Paint()..color = const Color(0xFF2563EB),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeroMapBackgroundPainter oldDelegate) => false;
 }

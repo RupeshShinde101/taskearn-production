@@ -9,10 +9,12 @@ import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
+import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
-import '../browse/browse_screen.dart';
+import '../../widgets/hero_map_background.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
+import '../browse/browse_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -331,7 +333,12 @@ class _HomeScreenState extends State<HomeScreen> {
               }),
             ),
 
-          SliverToBoxAdapter(child: _buildHero(firstName, auth.user?.gender)),
+          SliverToBoxAdapter(
+            child: _buildHero(
+              firstName,
+              auth.user?.gender ?? StorageService.getGender(),
+            ),
+          ),
           SliverToBoxAdapter(child: _buildSearch()),
           SliverToBoxAdapter(child: _buildCategories()),
           if (_suggestedTasks.isNotEmpty)
@@ -352,199 +359,207 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── HERO ─────────────────────────────────────────────────────────────────
   Widget _buildHero(String firstName, String? gender) {
-    final heroEmoji = gender == 'male' ? '\u{1F466}' : gender == 'female' ? '\u{1F467}' : '\u{1F9D1}';
+    final avatarAsset = heroAvatarAssetForGender(gender);
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFF4F8FF),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFDCE8FC), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: const Color(0xFF2563EB).withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Badge + rating row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  "India's Task App",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(19),
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: HeroMapBackgroundPainter(
+                    fadeBottom: false,
+                    beaconTop: 88,
+                    beaconRightOffset: 136,
+                    beaconLeftMinFactor: 0.56,
+                    mapCenterYFactor: 0.56,
                   ),
                 ),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.star_rounded,
-                        color: Color(0xFFF59E0B), size: 13),
-                    SizedBox(width: 3),
-                    Text('4.9',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.dark)),
-                  ],
+            ),
+            Positioned(
+              right: 2,
+              bottom: 0,
+              width: 140,
+              height: 158,
+              child: IgnorePointer(
+                child: Image.asset(
+                  avatarAsset,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.bottomCenter,
+                  errorBuilder: (_, __, ___) =>
+                      const SizedBox(width: 140, height: 158),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // Content row: left text + right illustration
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Left column
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Hi $firstName! 👋',
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.dark,
-                        )),
-                    const SizedBox(height: 10),
-                    _bullet('✅', 'Earn money locally'),
-                    const SizedBox(height: 4),
-                    _bullet('⚡', 'Get tasks done fast'),
-                    const SizedBox(height: 4),
-                    _bullet('🔒', 'Secure payments'),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final auth = context.read<AuthProvider>();
-                          if (!auth.isPosterMode) {
-                            final switched = await showProfileModeSwitchDialog(
-                              context,
-                              targetMode: 'poster',
-                              title: 'Switch to Poster Profile',
-                              message:
-                                  'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
-                              actionLabel: 'Switch to Poster & Continue',
-                            );
-                            if (switched != true) return;
-                          }
-                          if (!mounted) return;
-                          context.push('/post-task');
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFF6B6B),
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(0, 42),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(22)),
-                          elevation: 0,
-                          textStyle: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700),
-                        ),
-                        child: const Text('Post a Task'),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: () => context.go('/browse'),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(0, 42),
-                          side: const BorderSide(
-                              color: AppColors.primary, width: 1.5),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(22)),
-                          foregroundColor: AppColors.primary,
-                          textStyle: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700),
-                        ),
-                        child: const Text('Find Tasks'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Right: illustration with floating badges
-              SizedBox(
-                width: 110,
-                height: 130,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // ⚡ Fast badge (top left)
-                    Positioned(
-                      top: 0,
-                      left: -10,
-                      child: _floatingBadge('⚡', 'Fast'),
-                    ),
-                    // Character circle
-                    Positioned(
-                      top: 20,
-                      left: 10,
-                      child: Container(
-                        width: 80,
-                        height: 80,
+            ),
+            Positioned(
+              right: 14,
+              top: 52,
+              child: IgnorePointer(child: _floatingBadge('⚡', 'Fast')),
+            ),
+            Positioned(
+              right: 90,
+              bottom: 12,
+              child: IgnorePointer(child: _floatingBadge('₹', 'Paid')),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 14, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Badge + rating row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF1F2F8),
-                          shape: BoxShape.circle,
-                          border:
-                              Border.all(color: AppColors.border, width: 2),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Center(
-                          child: Text(heroEmoji,
-                              style: const TextStyle(fontSize: 40)),
+                        child: const Text(
+                          "India's Task App",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                    ),
-                    // ₹ Paid badge (bottom right)
-                    Positioned(
-                      bottom: 6,
-                      right: -6,
-                      child: _floatingBadge('₹', 'Paid'),
-                    ),
-                    // 📍 Near badge (bottom left)
-                    Positioned(
-                      bottom: 6,
-                      left: -10,
-                      child: _floatingBadge('📍', 'Near'),
-                    ),
-                  ],
-                ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFDCE8FC)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.star_rounded,
+                                color: Color(0xFFF59E0B), size: 13),
+                            SizedBox(width: 3),
+                            Text('4.9',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.dark)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Content row: left text + reserved clear zone for illustration
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text('Hi $firstName! 👋',
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppColors.dark,
+                                  )),
+                            ),
+                            const SizedBox(height: 10),
+                            _bullet('✅', 'Earn money locally'),
+                            const SizedBox(height: 4),
+                            _bullet('⚡', 'Get tasks done fast'),
+                            const SizedBox(height: 4),
+                            _bullet('🔒', 'Secure payments'),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () async {
+                                  final auth = context.read<AuthProvider>();
+                                  if (!auth.isPosterMode) {
+                                    final switched =
+                                        await showProfileModeSwitchDialog(
+                                      context,
+                                      targetMode: 'poster',
+                                      title: 'Switch to Poster Profile',
+                                      message:
+                                          'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+                                      actionLabel: 'Switch to Poster & Continue',
+                                    );
+                                    if (switched != true) return;
+                                  }
+                                  if (!mounted) return;
+                                  context.push('/post-task');
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFFF6B6B),
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(0, 42),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(22)),
+                                  elevation: 0,
+                                  textStyle: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                                child: const Text('Post a Task'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: () => context.go('/browse'),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor:
+                                      Colors.white.withValues(alpha: 0.92),
+                                  minimumSize: const Size(0, 42),
+                                  side: const BorderSide(
+                                      color: AppColors.primary, width: 1.5),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(22)),
+                                  foregroundColor: AppColors.primary,
+                                  textStyle: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                                child: const Text('Find Tasks'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 132),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -554,11 +569,18 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Text(icon, style: const TextStyle(fontSize: 13)),
         const SizedBox(width: 6),
-        Text(text,
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.dark,
-                fontWeight: FontWeight.w500)),
+              fontSize: 13,
+              color: AppColors.dark,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
       ],
     );
   }

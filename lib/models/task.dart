@@ -1045,7 +1045,7 @@ class TaskCategoryGroup {
     TaskCategoryGroup(
       label: 'Repair',
       icon: '🔧',
-      categoryIds: ['repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'tech_support'],
+      categoryIds: ['repair', 'electrician', 'plumbing', 'carpentry', 'vehicle'],
     ),
     TaskCategoryGroup(
       label: 'Home & Lifestyle',
@@ -1065,7 +1065,7 @@ class TaskCategoryGroup {
     TaskCategoryGroup(
       label: 'Professional',
       icon: '💼',
-      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring', 'painting'],
+      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring', 'painting', 'tech_support'],
     ),
     TaskCategoryGroup(
       label: 'Care Services',

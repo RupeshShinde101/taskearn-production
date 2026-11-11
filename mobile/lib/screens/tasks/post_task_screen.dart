@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
@@ -2630,46 +2630,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             ),
           ),
         ),
-        Positioned(
-          top: 12,
-          right: 156,
-          child: IgnorePointer(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFE5EDF7), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF102A56).withValues(alpha: 0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.location_on_rounded,
-                    size: 13,
-                    color: Color(0xFF2563EB),
-                  ),
-                  SizedBox(width: 4),
-                  Text(
-                    'Near you',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF102A56),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Row(
@@ -3993,7 +3953,7 @@ class _AddressActionButtons extends StatelessWidget {
   }
 }
 
-/// Subtle tilted street map + location radar background behind the Post Task hero header.
+/// Illustrated 3D-style neighborhood map + location radar background behind the Post Task hero header.
 class _HeroMapBackgroundPainter extends CustomPainter {
   const _HeroMapBackgroundPainter();
 
@@ -4004,87 +3964,250 @@ class _HeroMapBackgroundPainter extends CustomPainter {
     final bounds = Offset.zero & size;
     canvas.saveLayer(bounds, Paint());
 
-    // Rotated subtle street grid across top & right half
+    // Soft sky-ice radial glow behind the right hero side
+    canvas.drawRect(
+      bounds,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0.55, -0.25),
+          radius: 0.95,
+          colors: [
+            const Color(0xFFE3EEFE),
+            const Color(0xFFECF3FF).withValues(alpha: 0.65),
+            const Color(0xFFF4F8FF).withValues(alpha: 0.0),
+          ],
+          stops: const [0.0, 0.55, 1.0],
+        ).createShader(bounds),
+    );
+
+    // Tilted neighborhood map grid with varied parcels, parks & 3D buildings
     canvas.save();
-    canvas.translate(size.width * 0.68, size.height * 0.45);
-    canvas.rotate(-0.40);
+    canvas.translate(size.width * 0.69, size.height * 0.42);
+    canvas.rotate(-0.36);
 
-    final blockPaintA = Paint()..color = const Color(0xFFD9E6FC);
-    final blockPaintB = Paint()..color = const Color(0xFFE5EFFD);
-    final roadPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.90)
-      ..strokeWidth = 5.0
-      ..style = PaintingStyle.stroke;
-    final avenuePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.95)
-      ..strokeWidth = 8.0
-      ..style = PaintingStyle.stroke;
+    final parcelBlueA = Paint()..color = const Color(0xFFD2E2FA);
+    final parcelBlueB = Paint()..color = const Color(0xFFDEEAFD);
+    final parcelSoft = Paint()..color = const Color(0xFFE9F2FF);
+    final parkPaint = Paint()..color = const Color(0xFFD3EEDF);
+    final parkInnerPaint = Paint()..color = const Color(0xFFC2E5D3);
 
-    const cellW = 36.0;
-    const cellH = 28.0;
-    for (int col = -6; col <= 6; col++) {
-      for (int row = -5; row <= 5; row++) {
-        final rx = col * cellW + 3.0;
-        final ry = row * cellH + 3.0;
-        const rw = cellW - 6.0;
-        const rh = cellH - 6.0;
-        final block = RRect.fromRectAndRadius(
-          Rect.fromLTWH(rx, ry, rw, rh),
-          const Radius.circular(4),
-        );
-        canvas.drawRRect(
-          block,
-          ((col + row).abs() % 2 == 0) ? blockPaintA : blockPaintB,
-        );
+    void drawParcel(Rect rect, Paint fill, {double radius = 6}) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, Radius.circular(radius)),
+        fill,
+      );
+    }
+
+    void drawMiniBuilding(Rect base, {double heightOffset = 4.0}) {
+      // Subtle 3D extrusion base shadow
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          base.translate(1.5, heightOffset * 0.7),
+          const Radius.circular(3.5),
+        ),
+        Paint()..color = const Color(0xFFB4CCF2).withValues(alpha: 0.75),
+      );
+      // Side wall
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          base,
+          const Radius.circular(3.5),
+        ),
+        Paint()..color = const Color(0xFFC4D8F7),
+      );
+      // Light roof top shifted slightly up-left
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          base.translate(-1.2, -heightOffset * 0.55),
+          const Radius.circular(3.5),
+        ),
+        Paint()..color = const Color(0xFFEEF5FF),
+      );
+    }
+
+    // Curated asymmetric city parcels (varied widths/heights)
+    final parcels = <(Rect, int)>[
+      (const Rect.fromLTWH(-180, -110, 62, 42), 1),
+      (const Rect.fromLTWH(-110, -110, 48, 42), 3), // park parcel
+      (const Rect.fromLTWH(-54, -110, 74, 42), 0),
+      (const Rect.fromLTWH(28, -110, 58, 42), 2),
+      (const Rect.fromLTWH(94, -110, 64, 42), 1),
+      (const Rect.fromLTWH(-180, -60, 46, 52), 2),
+      (const Rect.fromLTWH(-126, -60, 64, 24), 0),
+      (const Rect.fromLTWH(-126, -30, 64, 22), 1),
+      (const Rect.fromLTWH(-54, -60, 40, 52), 3), // park parcel
+      (const Rect.fromLTWH(-6, -60, 66, 52), 0),
+      (const Rect.fromLTWH(68, -60, 50, 26), 1),
+      (const Rect.fromLTWH(68, -28, 50, 20), 2),
+      (const Rect.fromLTWH(126, -60, 52, 52), 0),
+      (const Rect.fromLTWH(-170, 2, 52, 38), 1),
+      (const Rect.fromLTWH(-110, 2, 48, 38), 2),
+      (const Rect.fromLTWH(-54, 2, 74, 38), 1),
+      (const Rect.fromLTWH(28, 2, 54, 38), 3), // park parcel
+      (const Rect.fromLTWH(90, 2, 70, 38), 0),
+      (const Rect.fromLTWH(-140, 48, 72, 44), 2),
+      (const Rect.fromLTWH(-60, 48, 56, 44), 0),
+      (const Rect.fromLTWH(4, 48, 78, 44), 1),
+      (const Rect.fromLTWH(90, 48, 66, 44), 3),
+    ];
+
+    for (final (rect, kind) in parcels) {
+      final fill = switch (kind) {
+        0 => parcelBlueA,
+        1 => parcelBlueB,
+        3 => parkPaint,
+        _ => parcelSoft,
+      };
+      drawParcel(rect, fill);
+      if (kind == 3) {
+        drawParcel(rect.deflate(5), parkInnerPaint, radius: 4);
       }
     }
 
-    for (int col = -6; col <= 6; col++) {
-      final x = col * cellW;
-      canvas.drawLine(
-        Offset(x, -180),
-        Offset(x, 180),
-        (col % 2 == 0) ? avenuePaint : roadPaint,
-      );
+    // Crisp white road network (primary avenues, secondary streets & a roundabout plaza)
+    final mainBoulevard = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 9.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final boulevardCasing = Paint()
+      ..color = const Color(0xFFC4D8F8).withValues(alpha: 0.70)
+      ..strokeWidth = 11.2
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final crossStreet = Paint()
+      ..color = Colors.white.withValues(alpha: 0.96)
+      ..strokeWidth = 5.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final laneStroke = Paint()
+      ..color = Colors.white.withValues(alpha: 0.90)
+      ..strokeWidth = 3.5
+      ..style = PaintingStyle.stroke;
+
+    // Horizontal roads
+    for (final y in [-64.0, -4.0, 44.0]) {
+      final p1 = Offset(-210, y);
+      final p2 = Offset(200, y);
+      if (y == -4.0) {
+        canvas.drawLine(p1, p2, boulevardCasing);
+        canvas.drawLine(p1, p2, mainBoulevard);
+      } else {
+        canvas.drawLine(p1, p2, crossStreet);
+      }
     }
-    for (int row = -5; row <= 5; row++) {
-      final y = row * cellH;
-      canvas.drawLine(
-        Offset(-240, y),
-        Offset(240, y),
-        (row % 2 == 0) ? avenuePaint : roadPaint,
-      );
+    // Vertical roads
+    for (final x in [-114.0, -58.0, 24.0, 86.0]) {
+      final p1 = Offset(x, -140);
+      final p2 = Offset(x, 130);
+      if (x == 24.0) {
+        canvas.drawLine(p1, p2, boulevardCasing);
+        canvas.drawLine(p1, p2, mainBoulevard);
+      } else {
+        canvas.drawLine(p1, p2, crossStreet);
+      }
     }
+    // Short inner lane splits
+    canvas.drawLine(const Offset(-128, -32), const Offset(-60, -32), laneStroke);
+    canvas.drawLine(const Offset(66, -30), const Offset(120, -30), laneStroke);
+
+    // Subtle traffic circle / plaza on the main boulevard intersection
+    const plaza = Offset(24, -4);
+    canvas.drawCircle(
+      plaza,
+      14,
+      Paint()..color = const Color(0xFFC4D8F8).withValues(alpha: 0.65),
+    );
+    canvas.drawCircle(plaza, 12.2, Paint()..color = Colors.white);
+    canvas.drawCircle(plaza, 5.2, Paint()..color = const Color(0xFFD5EDE0));
+
+    // Curved collector road sweeping across upper-right corner
+    final curvePath = Path()
+      ..moveTo(-190, 92)
+      ..quadraticBezierTo(-20, 74, 175, -92);
+    canvas.drawPath(
+      curvePath,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.85)
+        ..strokeWidth = 6.0
+        ..style = PaintingStyle.stroke,
+    );
+
+    // Low-contrast 3D building silhouettes nestled inside select parcels
+    drawMiniBuilding(const Rect.fromLTWH(-44, -100, 26, 20), heightOffset: 4.5);
+    drawMiniBuilding(const Rect.fromLTWH(-12, -96, 22, 16), heightOffset: 3.5);
+    drawMiniBuilding(const Rect.fromLTWH(2, -50, 28, 22), heightOffset: 5.0);
+    drawMiniBuilding(const Rect.fromLTWH(34, -46, 18, 26), heightOffset: 4.0);
+    drawMiniBuilding(const Rect.fromLTWH(98, -100, 28, 22), heightOffset: 5.0);
+    drawMiniBuilding(const Rect.fromLTWH(134, -48, 26, 24), heightOffset: 4.5);
+    drawMiniBuilding(const Rect.fromLTWH(98, 12, 32, 20), heightOffset: 4.0);
+
     canvas.restore();
 
-    // Soft mini pastel map trees in safe upper corners behind boy
+    // Soft 3D pastel lollipop trees (cluster top-center, behind right shoulder & right edge)
     void drawTree(Offset pos, double scale) {
-      final trunk = Paint()
-        ..color = const Color(0xFF94A3B8).withValues(alpha: 0.55)
-        ..strokeWidth = 2.0 * scale
-        ..strokeCap = StrokeCap.round;
-      canvas.drawLine(
-        Offset(pos.dx, pos.dy + 4 * scale),
-        Offset(pos.dx, pos.dy + 11 * scale),
-        trunk,
+      // Soft ground shadow oval
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(pos.dx + 1.5 * scale, pos.dy + 11 * scale),
+          width: 9 * scale,
+          height: 3.6 * scale,
+        ),
+        Paint()..color = const Color(0xFF94A3B8).withValues(alpha: 0.22),
       );
+      // Trunk
+      canvas.drawLine(
+        Offset(pos.dx, pos.dy + 3.5 * scale),
+        Offset(pos.dx, pos.dy + 11 * scale),
+        Paint()
+          ..color = const Color(0xFF8C7A6B).withValues(alpha: 0.55)
+          ..strokeWidth = 2.0 * scale
+          ..strokeCap = StrokeCap.round,
+      );
+      // Base mint canopy
       canvas.drawCircle(
         pos,
-        6.5 * scale,
-        Paint()..color = const Color(0xFF9BD4B2).withValues(alpha: 0.80),
+        7.0 * scale,
+        Paint()..color = const Color(0xFF8FD0A8).withValues(alpha: 0.90),
       );
+      // Lit upper-left highlight
       canvas.drawCircle(
-        Offset(pos.dx - 1.5 * scale, pos.dy - 1.5 * scale),
-        4.0 * scale,
-        Paint()..color = const Color(0xFFBEE6CF).withValues(alpha: 0.85),
+        Offset(pos.dx - 1.8 * scale, pos.dy - 1.8 * scale),
+        4.3 * scale,
+        Paint()..color = const Color(0xFFBBE6CB).withValues(alpha: 0.92),
       );
     }
 
-    drawTree(Offset(size.width * 0.48, 16), 0.95);
-    drawTree(Offset(size.width - 50, 22), 1.05);
-    drawTree(Offset(size.width - 22, 32), 0.90);
+    drawTree(Offset(size.width * 0.49, 14), 0.95);
+    drawTree(Offset(size.width * 0.54, 42), 0.78);
+    drawTree(Offset(size.width - 54, 18), 1.05);
+    drawTree(Offset(size.width - 26, 28), 0.92);
+    drawTree(Offset(size.width - 14, 56), 0.78);
 
-    // Horizontal & diagonal fade out behind left typography
+    // Subtle dotted route path arcing cleanly across map toward beacon
+    final routeOrigin = Offset(size.width - 20, 92);
+    final beaconPos = Offset(
+      (size.width - 172).clamp(size.width * 0.46, size.width - 144),
+      58,
+    );
+    final routeCtrl = Offset(
+      (routeOrigin.dx + beaconPos.dx) * 0.5,
+      24,
+    );
+    final routePath = Path()
+      ..moveTo(routeOrigin.dx, routeOrigin.dy)
+      ..quadraticBezierTo(routeCtrl.dx, routeCtrl.dy, beaconPos.dx, beaconPos.dy);
+    final dotPaint = Paint()..color = const Color(0xFF2563EB).withValues(alpha: 0.30);
+    for (final metric in routePath.computeMetrics()) {
+      for (double d = 0; d < metric.length; d += 9.0) {
+        final tangent = metric.getTangentForOffset(d);
+        if (tangent != null) {
+          canvas.drawCircle(tangent.position, 1.8, dotPaint);
+        }
+      }
+    }
+
+    // Crisp horizontal fade out so left typography sits over pure #F4F8FF
     final leftFade = Paint()
       ..blendMode = BlendMode.dstIn
       ..shader = LinearGradient(
@@ -4092,11 +4215,11 @@ class _HeroMapBackgroundPainter extends CustomPainter {
         end: Alignment.centerLeft,
         colors: [
           Colors.white,
-          Colors.white.withValues(alpha: 0.85),
-          Colors.white.withValues(alpha: 0.12),
+          Colors.white.withValues(alpha: 0.96),
+          Colors.white.withValues(alpha: 0.24),
           Colors.transparent,
         ],
-        stops: const [0.0, 0.44, 0.72, 0.95],
+        stops: const [0.0, 0.46, 0.68, 0.88],
       ).createShader(bounds);
     canvas.drawRect(bounds, leftFade);
 
@@ -4107,31 +4230,46 @@ class _HeroMapBackgroundPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [Colors.white, Colors.white, Colors.transparent],
-        stops: [0.0, 0.72, 1.0],
+        stops: [0.0, 0.74, 1.0],
       ).createShader(bounds);
     canvas.drawRect(bounds, bottomFade);
 
     canvas.restore();
 
-    // Soft blue location radar dot in the clear pocket upper-left of the boy
+    // Soft blue location radar beacon in the clear pocket upper-left of the boy
     final dotCenter = Offset(
       (size.width - 172).clamp(size.width * 0.46, size.width - 144),
-      60,
+      58,
     );
     canvas.drawCircle(
       dotCenter,
-      18,
-      Paint()..color = const Color(0xFF3B82F6).withValues(alpha: 0.12),
+      22,
+      Paint()..color = const Color(0xFF3B82F6).withValues(alpha: 0.08),
     );
     canvas.drawCircle(
       dotCenter,
-      10.5,
-      Paint()..color = Colors.white.withValues(alpha: 0.96),
+      15,
+      Paint()..color = const Color(0xFF3B82F6).withValues(alpha: 0.14),
+    );
+    canvas.drawCircle(
+      dotCenter.translate(0, 1.5),
+      10,
+      Paint()..color = const Color(0xFF102A56).withValues(alpha: 0.08),
     );
     canvas.drawCircle(
       dotCenter,
-      5.5,
+      9.8,
+      Paint()..color = Colors.white,
+    );
+    canvas.drawCircle(
+      dotCenter,
+      5.4,
       Paint()..color = const Color(0xFF2563EB),
+    );
+    canvas.drawCircle(
+      dotCenter.translate(-1.5, -1.5),
+      1.6,
+      Paint()..color = Colors.white.withValues(alpha: 0.55),
     );
   }
 

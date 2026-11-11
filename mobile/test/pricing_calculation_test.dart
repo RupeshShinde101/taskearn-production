@@ -212,7 +212,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Default category is delivery -> Bike / Rikshaw selector & hero map badge are visible
-      expect(find.text('Near you'), findsOneWidget);
+      expect(find.text('Near you'), findsNothing);
       expect(find.text('Delivery Vehicle Option'), findsOneWidget);
 
       // Tapping an unselected parent category opens its child category sheet on the FIRST tap
@@ -223,6 +223,13 @@ void main() {
       expect(find.text('Carpentry'), findsOneWidget);
       expect(TaskCategory.iconFor('carpentry'), isNot('\u{1FA9A}'));
       expect(find.text(TaskCategory.iconFor('carpentry')), findsOneWidget);
+      expect(find.text('Tech Support'), findsNothing);
+      expect(
+        TaskCategoryGroup.all
+            .firstWhere((g) => g.label == 'Professional')
+            .categoryIds,
+        contains('tech_support'),
+      );
       await tester.tap(find.text('Electrician'));
       await tester.pumpAndSettle();
       expect(find.text('Select a specific category'), findsNothing);

@@ -4484,7 +4484,18 @@ function openEditTask(taskId) {
     document.getElementById('editTaskTitle').value = task.title;
     document.getElementById('editTaskCategory').value = task.category;
     document.getElementById('editTaskDescription').value = task.description;
-    document.getElementById('editTaskLocation').value = task.location?.address || '';
+    const editLocEl = document.getElementById('editTaskLocation');
+    if (editLocEl) {
+        editLocEl.value = task.location?.address || '';
+        const isFlEdit = (typeof window.WMIsFreelancerCategory === 'function')
+            ? window.WMIsFreelancerCategory(task.category)
+            : ['freelance', 'freelancer', 'graphic_design', 'web_app_tech', 'video_audio_editing', 'digital_marketing', 'business_admin']
+                .includes(String(task.category || '').toLowerCase().replace(/-/g, '_'));
+        const editLocFg = editLocEl.closest('.form-group');
+        if (editLocFg) editLocFg.style.display = isFlEdit ? 'none' : '';
+        if (isFlEdit) editLocEl.removeAttribute('required');
+        else editLocEl.setAttribute('required', '');
+    }
     document.getElementById('editCurrentBudget').textContent = '₹' + task.price;
     document.getElementById('editNewBudget').textContent = '₹' + task.price;
     document.getElementById('customBudgetIncrease').value = '';
@@ -4563,10 +4574,16 @@ async function saveTaskEdit(event) {
     const newLocation = document.getElementById('editTaskLocation').value.trim();
     const newPrice = editTaskState.originalBudget + editTaskState.budgetIncrease;
 
-    // Geocode if address changed
-    let newLat = task.location.lat;
-    let newLng = task.location.lng;
-    if (newLocation && newLocation !== task.location.address) {
+    const isFlEditSave = (typeof window.WMIsFreelancerCategory === 'function')
+        ? window.WMIsFreelancerCategory(newCategory)
+        : ['freelance', 'freelancer', 'graphic_design', 'web_app_tech', 'video_audio_editing', 'digital_marketing', 'business_admin']
+            .includes(String(newCategory || '').toLowerCase().replace(/-/g, '_'));
+
+    // Geocode if address changed (not needed for remote freelancer services)
+    let newLat = isFlEditSave ? null : (task.location ? task.location.lat : null);
+    let newLng = isFlEditSave ? null : (task.location ? task.location.lng : null);
+    const effectiveLocation = isFlEditSave ? 'Remote / Online' : newLocation;
+    if (!isFlEditSave && newLocation && newLocation !== (task.location && task.location.address)) {
         const geo = await geocodeAddress(newLocation);
         if (geo) {
             newLat = geo.lat;
@@ -4581,7 +4598,7 @@ async function saveTaskEdit(event) {
             category: newCategory,
             description: newDescription,
             price: newPrice,
-            location: { lat: newLat, lng: newLng, address: newLocation }
+            location: { lat: newLat, lng: newLng, address: effectiveLocation }
         });
         if (!result || !result.success) {
             showToast('❌ ' + (result ? result.message || 'Failed to save task' : 'Failed to save task'));
@@ -5465,28 +5482,34 @@ async function handleTaskSubmit(event) {
             + descriptionText;
     }
 
-    // Resolve task location coordinates
-    const addressText = document.getElementById('modalTaskLocation').value.trim();
-    let taskLat, taskLng;
+    // Resolve task location coordinates (not needed for remote freelancer services)
+    const isFlSubmit = (typeof window.WMIsFreelancerCategory === 'function')
+        ? window.WMIsFreelancerCategory(category)
+        : ['freelance', 'freelancer', 'graphic_design', 'web_app_tech', 'video_audio_editing', 'digital_marketing', 'business_admin']
+            .includes(String(category || '').toLowerCase().replace(/-/g, '_'));
+    let addressText = isFlSubmit ? 'Remote / Online' : document.getElementById('modalTaskLocation').value.trim();
+    let taskLat = null, taskLng = null;
 
-    if (modalTaskCoords) {
-        // User clicked "Use My Location" — use captured GPS coords
-        taskLat = modalTaskCoords.lat;
-        taskLng = modalTaskCoords.lng;
-    } else if (addressText) {
-        // User typed an address — geocode it
-        showToast('📍 Looking up location...');
-        const geo = await geocodeAddress(addressText);
-        if (geo) {
-            taskLat = geo.lat;
-            taskLng = geo.lng;
+    if (!isFlSubmit) {
+        if (modalTaskCoords) {
+            // User clicked "Use My Location" — use captured GPS coords
+            taskLat = modalTaskCoords.lat;
+            taskLng = modalTaskCoords.lng;
+        } else if (addressText) {
+            // User typed an address — geocode it
+            showToast('📍 Looking up location...');
+            const geo = await geocodeAddress(addressText);
+            if (geo) {
+                taskLat = geo.lat;
+                taskLng = geo.lng;
+            } else {
+                showToast('❌ Could not find that address. Please try a different address or use "My Location".');
+                return;
+            }
         } else {
-            showToast('❌ Could not find that address. Please try a different address or use "My Location".');
+            showToast('❌ Please enter a task location');
             return;
         }
-    } else {
-        showToast('❌ Please enter a task location');
-        return;
     }
 
     // Resolve drop location for delivery/transport categories

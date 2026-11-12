@@ -262,8 +262,10 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     if (!wasAutoOrEmpty || _isDelivery) return;
     final suggestion = Task.getBudgetSuggestion(
       _selectedCategory,
-      areaText: _currentAreaCandidate(),
+      areaText: _isFreelancer ? null : _currentAreaCandidate(),
       vehicle: _deliveryVehicle,
+      title: _titleCtrl.text,
+      description: _descCtrl.text,
     );
     _syncAutoBudget(suggestion.suggestedBudget);
   }
@@ -282,6 +284,13 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
+  bool get _isFreelancer => Task.isFreelancerCategory(_selectedCategory);
+
+  void _onFreelancerDetailsChanged() {
+    if (!mounted || !_isFreelancer) return;
+    _syncAreaBudgetIfAuto();
+    setState(() {});
+  }
 
   @override
   void initState() {
@@ -307,7 +316,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       _addressCtrl    = TextEditingController(text: t.address ?? '');
     }
 
-    _location = LatLng(t.latitude, t.longitude);
+    _location = (t.latitude == 0 && t.longitude == 0) ? null : LatLng(t.latitude, t.longitude);
     _locationLabel = t.address;
     if (_isDelivery) {
       _pickupLocation = _location;
@@ -320,6 +329,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) => _recalcDistance());
     }
+    _titleCtrl.addListener(_onFreelancerDetailsChanged);
+    _descCtrl.addListener(_onFreelancerDetailsChanged);
     _addressCtrl.addListener(_onLocationAreaChanged);
     _pickupAddrCtrl.addListener(_onLocationAreaChanged);
     _dropAddrCtrl.addListener(_onLocationAreaChanged);
@@ -330,6 +341,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _pickupDebounce?.cancel();
     _dropDebounce?.cancel();
     _addressDebounce?.cancel();
+    _titleCtrl.removeListener(_onFreelancerDetailsChanged);
+    _descCtrl.removeListener(_onFreelancerDetailsChanged);
     _titleCtrl.dispose();
     _descCtrl.dispose();
     _budgetCtrl.dispose();
@@ -476,7 +489,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_location == null) {
+    if (!_isFreelancer && _location == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please set a location on the map')),
       );
@@ -514,7 +527,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     final charge = Task.serviceChargeForCategory(_selectedCategory).toDouble();
 
     final String? combinedAddress;
-    if (_isDelivery) {
+    if (_isFreelancer) {
+      combinedAddress = 'Remote / Online';
+    } else if (_isDelivery) {
       final pickup = _pickupAddrCtrl.text.trim();
       final drop   = _dropAddrCtrl.text.trim();
       combinedAddress = (pickup.isNotEmpty || drop.isNotEmpty)
@@ -536,10 +551,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       'serviceCharge': charge,
       // Nest location as the backend update_task endpoint expects.
       'location': {
-        'lat': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.latitude,
-        'lng': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.longitude,
+        'lat': _isFreelancer ? null : (_isDelivery ? (_pickupLocation ?? _location) : _location)?.latitude,
+        'lng': _isFreelancer ? null : (_isDelivery ? (_pickupLocation ?? _location) : _location)?.longitude,
         'address': combinedAddress ?? '',
       },
+      if (_isFreelancer) 'is_remote': true,
       if (_isDelivery) ...{
         if (_pickupAddrCtrl.text.trim().isNotEmpty) 'pickup_address': _pickupAddrCtrl.text.trim(),
         'vehicle': _selectedCategory == 'delivery' ? _deliveryVehicle : 'auto',
@@ -832,14 +848,16 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   }
 
   Widget _buildSuggestedBudgetCard() {
-    if (!_isLocationSet) return const SizedBox.shrink();
+    if (!_isLocationSet && !_isFreelancer) return const SizedBox.shrink();
     final areaCandidate = _currentAreaCandidate();
 
     final suggestion = Task.getBudgetSuggestion(
       _selectedCategory,
-      areaText: areaCandidate,
+      areaText: _isFreelancer ? null : areaCandidate,
       distanceKm: _calculatedDistanceKm,
       vehicle: _deliveryVehicle,
+      title: _titleCtrl.text,
+      description: _descCtrl.text,
     );
 
     return Container(
@@ -866,19 +884,24 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Suggested in ${suggestion.localityName}',
+                  _isFreelancer
+                      ? 'Suggested by ${suggestion.localityName}'
+                      : 'Suggested in ${suggestion.localityName}',
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E293B)),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE0E7FF),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  suggestion.localityTier,
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E7FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    suggestion.localityTier,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],
@@ -913,7 +936,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Average value users in this area pay for ${_selectedCategory.replaceAll('_', ' ')}',
+                      _isFreelancer
+                          ? 'Based on task details for ${_selectedCategory.replaceAll('_', ' ')} (no location needed)'
+                          : 'Average value users in this area pay for ${_selectedCategory.replaceAll('_', ' ')}',
                       style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                     ),
                   ],
@@ -1068,7 +1093,33 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
               const SizedBox(height: 14),
 
               // ── Address fields (each with GPS + Map inline buttons) ──────
-              if (_isDelivery) ...[
+              if (_isFreelancer) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.public_rounded, size: 18, color: Color(0xFF2563EB)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Remote Freelancer Service — No location needed.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1E3A8A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (_isDelivery) ...[
                 // Pickup Address
                 TextFormField(
                   controller: _pickupAddrCtrl,

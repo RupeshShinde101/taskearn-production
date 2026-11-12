@@ -94,6 +94,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   int _freelancerHours = 2;
   double _freelancerHourlyRate = 500.0;
   bool _separateChargesClientPaid = true;
+  bool _freelancerManualScope = false;
+  String? _freelancerDetailsReason;
 
   bool get _isFreelancer => Task.isFreelancerCategory(_selectedCategory);
   FreelancerPricingConfig? get _freelancerConfig =>
@@ -108,6 +110,32 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           hourlyRate: _freelancerHourlyRate,
           hours: _freelancerHours,
         );
+
+  void _onFreelancerDetailsChanged() {
+    if (!mounted || !_isFreelancer) return;
+    final det = Task.suggestFreelancerFromDetails(
+      _selectedCategory,
+      title: _titleCtrl.text,
+      description: _descCtrl.text,
+    );
+    final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
+        (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
+    setState(() {
+      _freelancerDetailsReason = det.reason;
+      if (!_freelancerManualScope && det.hasDetailsMatch) {
+        _freelancerPricingMode = det.mode;
+        _freelancerTierId = det.tierId;
+        if (det.units != null) _freelancerUnits = det.units!;
+        _freelancerHours = det.hours;
+        _freelancerHourlyRate = det.hourlyRate;
+        if (wasAutoOrEmpty) {
+          _syncAutoBudget(det.quote.suggestedBudget);
+        }
+      } else if (!_freelancerManualScope && wasAutoOrEmpty) {
+        _syncAutoBudget(det.quote.suggestedBudget);
+      }
+    });
+  }
 
   double _currentMinBudget() {
     if (_isDelivery) {
@@ -198,33 +226,39 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
     _selectedCategory = categoryId;
     if (Task.isFreelancerCategory(categoryId)) {
+      _freelancerManualScope = false;
+      final det = Task.suggestFreelancerFromDetails(
+        categoryId,
+        title: _titleCtrl.text,
+        description: _descCtrl.text,
+      );
+      _freelancerPricingMode = det.mode;
+      _freelancerTierId = det.tierId;
       final cfg = Task.freelancerPricingConfigFor(categoryId)!;
-      _freelancerPricingMode = 'package';
-      _freelancerTierId = cfg.tiers.first.id;
-      _freelancerUnits = cfg.tiers.first.defaultUnits;
-      _freelancerHours = cfg.defaultHours;
-      _freelancerHourlyRate = cfg.defaultHourlyRate;
+      _freelancerUnits = det.units ?? cfg.tiers.first.defaultUnits;
+      _freelancerHours = det.hours;
+      _freelancerHourlyRate = det.hourlyRate;
+      _freelancerDetailsReason = det.reason;
       _separateChargesClientPaid = true;
       if (wasAutoOrEmpty) {
-        final q = Task.calculateFreelancerQuote(
-          categoryId,
-          mode: _freelancerPricingMode,
-          tierId: _freelancerTierId,
-          units: _freelancerUnits,
-          hourlyRate: _freelancerHourlyRate,
-          hours: _freelancerHours,
-        );
-        _syncAutoBudget(q.suggestedBudget);
+        _syncAutoBudget(det.quote.suggestedBudget);
       }
     } else if (!_isDelivery) {
+      _freelancerManualScope = false;
+      _freelancerDetailsReason = null;
       _syncAreaBudgetIfAuto(wasAutoOverride: wasAutoOrEmpty);
     } else if (wasAutoOrEmpty && _selectedCategory == 'moving' && _calculatedDistanceKm == null) {
+      _freelancerManualScope = false;
+      _freelancerDetailsReason = null;
       final s = Task.getBudgetSuggestion(
         categoryId,
         areaText: _currentAreaCandidate(),
         vehicle: _deliveryVehicle,
       );
       _syncAutoBudget(s.suggestedBudget);
+    } else {
+      _freelancerManualScope = false;
+      _freelancerDetailsReason = null;
     }
     _autoFillDescription();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -251,12 +285,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'repair':      ['What to repair?', 'Brand/model?', 'How long broken?'],
     'vehicle':     ['Vehicle type?', 'Service needed?', 'Make/model?', 'At-home or garage?'],
     'tutoring':    ['Which subject?', 'Grade/level?', 'Hours needed?', 'Online or in-person?'],
-    'freelancer':  ['What service do you need?', 'Skill level required?', 'Deadline?', 'Remote or in-person?', 'Tools/software needed?'],
-    'graphic_design':      ['Type of design needed?', 'Brand style / colours?', 'Dimensions / format?', 'Deliverables & files?', 'Deadline?'],
-    'web_app_tech':        ['Project type (website/app/bug fix)?', 'Tech stack / platform?', 'Key features needed?', 'Remote or in-person?', 'Deadline?'],
-    'video_audio_editing': ['Type of video/audio edit?', 'Raw footage length?', 'Final duration / format?', 'Subtitles / music / effects?', 'Deadline?'],
-    'digital_marketing':   ['Service (SEO/Ads/Social Media)?', 'Target audience / location?', 'Campaign duration?', 'Platforms involved?', 'Goal / KPI?'],
-    'business_admin':      ['Type of work (deck/Excel/admin)?', 'Volume / number of pages?', 'Software / format needed?', 'Confidentiality / NDA?', 'Deadline?'],
+    'freelancer':  ['What service do you need?', 'Skill level required?', 'Expected hours or deliverables?', 'Tools/software needed?', 'Deadline?'],
+    'graphic_design':      ['Type of design needed?', 'Number of designs / pages?', 'Brand style / colours?', 'Dimensions / format?', 'Deadline?'],
+    'web_app_tech':        ['Project type (website/app/bug fix)?', 'Number of pages / features?', 'Tech stack / platform?', 'Timeline / deadline?'],
+    'video_audio_editing': ['Type of video/audio edit?', 'How many reels / mins?', 'Raw footage length?', 'Subtitles / music / effects?', 'Deadline?'],
+    'digital_marketing':   ['Service (SEO/Ads/Social Media)?', 'Target audience / niche?', 'Campaign duration?', 'Platforms involved?', 'Goal / KPI?'],
+    'business_admin':      ['Type of work (deck/Excel/admin)?', 'Volume / slides or pages?', 'Software / format needed?', 'Confidentiality / NDA?', 'Deadline?'],
     'carpentry':   ['What carpentry work?', 'Materials needed?', 'Approximate dimensions?'],
     'painting':    ['What to paint?', 'Colour preference?', 'Area size?'],
     'beauty':      ['What treatment/service?', 'At-home or salon?', 'Duration?', 'Gender preference?'],
@@ -570,15 +604,137 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
-  /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
+  ({String bgAsset, String badgeAsset, Color c1, Color c2, String footerNote})
+      _categoryPopupTheme(TaskCategoryGroup group, {TaskCategoryGroup? parentGroup}) {
+    if (parentGroup != null || group.label == 'Freelancer') {
+      return (
+        bgAsset: 'assets/images/cat_professional.jpg',
+        badgeAsset: 'assets/images/cat_3d_professional.png',
+        c1: const Color(0xFF1D4ED8),
+        c2: const Color(0xFF2563EB),
+        footerNote: 'Remote / Online • Price suggested from task details',
+      );
+    }
+    switch (group.label) {
+      case 'Delivery & Moving':
+        return (
+          bgAsset: 'assets/images/cat_delivery.jpg',
+          badgeAsset: 'assets/images/cat_3d_delivery.png',
+          c1: const Color(0xFF1E40AF),
+          c2: const Color(0xFF2563EB),
+          footerNote: 'Live distance-based fair pricing • Verified helpers',
+        );
+      case 'Repair':
+        return (
+          bgAsset: 'assets/images/cat_repair.jpg',
+          badgeAsset: 'assets/images/cat_3d_repair.png',
+          c1: const Color(0xFF1D4ED8),
+          c2: const Color(0xFF3B82F6),
+          footerNote: 'Skilled technicians nearby • Pay only after completion',
+        );
+      case 'Home & Lifestyle':
+        return (
+          bgAsset: 'assets/images/cat_home.jpg',
+          badgeAsset: 'assets/images/cat_3d_home.png',
+          c1: const Color(0xFF0F766E),
+          c2: const Color(0xFF0EA5E9),
+          footerNote: 'Trusted home helpers • Flexible time slots',
+        );
+      case 'Shopping & Errands':
+        return (
+          bgAsset: 'assets/images/cat_shopping.jpg',
+          badgeAsset: 'assets/images/cat_3d_shopping.png',
+          c1: const Color(0xFF4338CA),
+          c2: const Color(0xFF6366F1),
+          footerNote: 'Fast local errands & deliveries around you',
+        );
+      case 'Professional':
+        return (
+          bgAsset: 'assets/images/cat_professional.jpg',
+          badgeAsset: 'assets/images/cat_3d_professional.png',
+          c1: const Color(0xFF1D4ED8),
+          c2: const Color(0xFF4F46E5),
+          footerNote: 'Verified pros & remote freelance specialists',
+        );
+      case 'Care Services':
+        return (
+          bgAsset: 'assets/images/cat_care.jpg',
+          badgeAsset: 'assets/images/cat_3d_care.png',
+          c1: const Color(0xFFBE185D),
+          c2: const Color(0xFFEC4899),
+          footerNote: 'KYC-verified & background-checked caregivers',
+        );
+      default:
+        return (
+          bgAsset: 'assets/images/cat_other.jpg',
+          badgeAsset: 'assets/images/cat_3d_other_skyline.png',
+          c1: const Color(0xFF1E3A8A),
+          c2: const Color(0xFF2563EB),
+          footerNote: 'Post custom tasks & receive offers quickly',
+        );
+    }
+  }
+
+  List<Color> _squircleGradientFor(String categoryId) {
+    switch (categoryId) {
+      case 'graphic_design':
+      case 'painting':
+      case 'beauty':
+        return const [Color(0xFFA855F7), Color(0xFFEC4899)];
+      case 'web_app_tech':
+      case 'tech_support':
+      case 'electrician':
+        return const [Color(0xFF2563EB), Color(0xFF06B6D4)];
+      case 'video_audio_editing':
+      case 'cooking':
+      case 'photography':
+        return const [Color(0xFFF97316), Color(0xFFEF4444)];
+      case 'digital_marketing':
+      case 'event_help':
+      case 'shopping':
+        return const [Color(0xFF6366F1), Color(0xFF8B5CF6)];
+      case 'business_admin':
+      case 'data_entry':
+      case 'cleaning':
+      case 'gardening':
+        return const [Color(0xFF10B981), Color(0xFF06B6D4)];
+      case 'delivery':
+      case 'moving':
+      case 'vehicle':
+      case 'repair':
+        return const [Color(0xFF0EA5E9), Color(0xFF2563EB)];
+      case 'plumbing':
+      case 'carpentry':
+      case 'laundry':
+      case 'household':
+        return const [Color(0xFF14B8A6), Color(0xFF3B82F6)];
+      case 'child_care':
+      case 'elder_care':
+      case 'pet_care':
+        return const [Color(0xFFEC4899), Color(0xFFF43F5E)];
+      default:
+        return const [Color(0xFF3B82F6), Color(0xFF6366F1)];
+    }
+  }
+
+  /// Show Option 5 centered dialog popup with category-specific illustrated
+  /// banner background and crisp hairline-divided single-line rows.
   void _showSubCategorySheet(TaskCategoryGroup group, {TaskCategoryGroup? parentGroup}) {
     FocusScope.of(context).unfocus();
-    showGeneralDialog(
+    final theme = _categoryPopupTheme(group, parentGroup: parentGroup);
+    final breadcrumb = parentGroup != null
+        ? '${parentGroup.label} › ${group.label}'
+        : 'Workmate4u › ${group.label}';
+    final subtitle = parentGroup != null
+        ? 'Select a freelancer category'
+        : 'Select a specific category';
+
+    showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
       barrierColor: Colors.black.withValues(alpha: 0.55),
-      transitionDuration: const Duration(milliseconds: 240),
+      transitionDuration: const Duration(milliseconds: 230),
       transitionBuilder: (ctx, anim, _, child) {
         final curved =
             CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
@@ -593,247 +749,435 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       pageBuilder: (ctx, _, __) {
         final maxH = MediaQuery.of(ctx).size.height - 48;
         return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
-              constraints: BoxConstraints(maxWidth: 440, maxHeight: maxH),
-              decoration: BoxDecoration(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
+            constraints: BoxConstraints(maxWidth: 440, maxHeight: maxH),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 36,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(26),
+              child: Material(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 40,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 16, 14),
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(20)),
-                    ),
-                    child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ── Illustrated Banner Header with Category Background ──
+                    Stack(
                       children: [
-                        if (parentGroup != null) ...[
-                          GestureDetector(
-                            onTap: () {
-                              Navigator.pop(ctx);
-                              _showSubCategorySheet(parentGroup);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.20),
-                                shape: BoxShape.circle,
+                        Positioned.fill(
+                          child: Image.asset(
+                            theme.bgAsset,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  theme.c1.withValues(alpha: 0.88),
+                                  theme.c2.withValues(alpha: 0.82),
+                                ],
                               ),
-                              child: const Icon(Icons.arrow_back_rounded,
-                                  color: Colors.white, size: 18),
                             ),
                           ),
-                        ],
-                        Text(group.icon,
-                            style: const TextStyle(fontSize: 26)),
-                        const SizedBox(width: 10),
-                        Expanded(
+                        ),
+                        Positioned(
+                          right: 14,
+                          bottom: 6,
+                          child: IgnorePointer(
+                            child: Opacity(
+                              opacity: 0.24,
+                              child: Image.asset(
+                                theme.badgeAsset,
+                                width: 88,
+                                height: 88,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 26),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(group.label,
+                              Row(
+                                children: [
+                                  if (parentGroup != null)
+                                    GestureDetector(
+                                      onTap: () {
+                                        Navigator.pop(ctx);
+                                        _showSubCategorySheet(parentGroup);
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(7),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.20),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.arrow_back_rounded,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.20),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        group.icon,
+                                        style: const TextStyle(fontSize: 16),
+                                      ),
+                                    ),
+                                  const Spacer(),
+                                  GestureDetector(
+                                    onTap: () => Navigator.pop(ctx),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(7),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.20),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.close_rounded,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.24),
+                                  ),
+                                ),
+                                child: Text(
+                                  breadcrumb,
                                   style: const TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white)),
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
                               Text(
-                                  parentGroup != null
-                                      ? 'Select a freelancer category'
-                                      : 'Select a specific category',
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.white70)),
+                                group.label,
+                                style: const TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitle,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: Colors.white.withValues(alpha: 0.88),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () => Navigator.pop(ctx),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.20),
-                              shape: BoxShape.circle,
+                        const Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: SizedBox(
+                            height: 14,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(22)),
+                              ),
                             ),
-                            child: const Icon(Icons.close,
-                                color: Colors.white, size: 18),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                        child: GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: group.subCategories.length,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                            mainAxisExtent: 82,
-                          ),
-                          itemBuilder: (_, i) {
-                            final c = group.subCategories[i];
-                            final isFreelancerEntry = c.id == 'freelancer';
-                            final isFreelancerChild =
-                                TaskCategoryGroup.freelancerChildIds.contains(c.id);
-                            final sel = isFreelancerEntry
-                                ? (_selectedCategory == 'freelancer' ||
-                                    TaskCategoryGroup.freelancerChildIds
-                                        .contains(_selectedCategory))
-                                : _selectedCategory == c.id;
-                            return GestureDetector(
-                              onTap: () {
-                                if (isFreelancerEntry) {
-                                  Navigator.pop(ctx);
-                                  _showSubCategorySheet(
-                                    TaskCategoryGroup.freelancerGroup,
-                                    parentGroup: group,
-                                  );
-                                  return;
-                                }
-                                setState(() {
-                                  _applySelectedCategory(c.id);
-                                });
-                                _checkAndEstimateDistance();
-                    WidgetsBinding.instance.addPostFrameCallback((_) { if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate(); });
-                                Navigator.pop(ctx);
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: sel
-                                      ? const Color(0xFFEEF2FF)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: sel
-                                        ? AppColors.primary
-                                        : const Color(0xFFE2E8F0),
-                                    width: sel ? 2 : 1,
+
+                    // ── White Dialog Body ──
+                    Flexible(
+                      child: Container(
+                        color: Colors.white,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: 2),
+                              Flexible(
+                                child: ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 4),
+                                  itemCount: group.subCategories.length,
+                                  separatorBuilder: (_, __) => const Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: Color(0xFFF1F5F9),
+                                    indent: 62,
+                                    endIndent: 12,
                                   ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black
-                                          .withValues(alpha: 0.04),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 1),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 38,
-                                      height: 38,
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: sel
-                                            ? Colors.white
-                                            : const Color(0xFFF8FAFC),
-                                        borderRadius:
-                                            BorderRadius.circular(10),
-                                        border: Border.all(
+                                  itemBuilder: (_, i) {
+                                    final c = group.subCategories[i];
+                                    final isFreelancerEntry = c.id == 'freelancer';
+                                    final sel = isFreelancerEntry
+                                        ? (_selectedCategory == 'freelancer' ||
+                                            TaskCategoryGroup.freelancerChildIds
+                                                .contains(_selectedCategory))
+                                        : _selectedCategory == c.id;
+                                    final grad = _squircleGradientFor(c.id);
+                                    final iconAsset =
+                                        TaskCategory.subcatAssetFor(c.id);
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(14),
+                                      onTap: () {
+                                        if (isFreelancerEntry) {
+                                          Navigator.pop(ctx);
+                                          _showSubCategorySheet(
+                                            TaskCategoryGroup.freelancerGroup,
+                                            parentGroup: group,
+                                          );
+                                          return;
+                                        }
+                                        setState(() {
+                                          _applySelectedCategory(c.id);
+                                        });
+                                        _checkAndEstimateDistance();
+                                        WidgetsBinding.instance
+                                            .addPostFrameCallback((_) {
+                                          if (_budgetCtrl.text.trim().isNotEmpty) {
+                                            _budgetFieldKey.currentState
+                                                ?.validate();
+                                          }
+                                        });
+                                        Navigator.pop(ctx);
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 10),
+                                        decoration: BoxDecoration(
                                           color: sel
-                                              ? AppColors.primary
-                                                  .withValues(alpha: 0.25)
-                                              : const Color(0xFFE2E8F0),
+                                              ? const Color(0xFFEEF2FF)
+                                              : Colors.transparent,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 44,
+                                              height: 44,
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: grad.first
+                                                        .withValues(alpha: 0.24),
+                                                    blurRadius: 8,
+                                                    offset: const Offset(0, 3),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: iconAsset != null
+                                                  ? ClipRRect(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              11),
+                                                      child: Image.asset(
+                                                        iconAsset,
+                                                        width: 44,
+                                                        height: 44,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder: (_, __,
+                                                                ___) =>
+                                                            Container(
+                                                          alignment:
+                                                              Alignment.center,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            gradient:
+                                                                LinearGradient(
+                                                              begin: Alignment
+                                                                  .topLeft,
+                                                              end: Alignment
+                                                                  .bottomRight,
+                                                              colors: grad,
+                                                            ),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        11),
+                                                          ),
+                                                          child: Text(
+                                                            c.icon,
+                                                            style:
+                                                                const TextStyle(
+                                                                    fontSize:
+                                                                        20),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    )
+                                                  : Container(
+                                                      alignment:
+                                                          Alignment.center,
+                                                      decoration: BoxDecoration(
+                                                        gradient:
+                                                            LinearGradient(
+                                                          begin:
+                                                              Alignment.topLeft,
+                                                          end: Alignment
+                                                              .bottomRight,
+                                                          colors: grad,
+                                                        ),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(11),
+                                                      ),
+                                                      child: Text(
+                                                        c.icon,
+                                                        style: const TextStyle(
+                                                            fontSize: 20),
+                                                      ),
+                                                    ),
+                                            ),
+                                            const SizedBox(width: 14),
+                                            Expanded(
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: FittedBox(
+                                                  fit: BoxFit.scaleDown,
+                                                  alignment:
+                                                      Alignment.centerLeft,
+                                                  child: Text(
+                                                    c.label,
+                                                    style: TextStyle(
+                                                      fontSize: 14.2,
+                                                      fontWeight: sel
+                                                          ? FontWeight.w700
+                                                          : FontWeight.w600,
+                                                      color: sel
+                                                          ? AppColors.primaryDark
+                                                          : const Color(
+                                                              0xFF0F172A),
+                                                      letterSpacing: -0.2,
+                                                      height: 1.15,
+                                                    ),
+                                                    maxLines: 1,
+                                                    softWrap: false,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            if (sel && !isFreelancerEntry)
+                                              const Icon(
+                                                Icons.check_circle_rounded,
+                                                size: 22,
+                                                color: AppColors.primary,
+                                              )
+                                            else
+                                              Container(
+                                                width: 28,
+                                                height: 28,
+                                                decoration: BoxDecoration(
+                                                  color: sel
+                                                      ? AppColors.primary
+                                                          .withValues(
+                                                              alpha: 0.14)
+                                                      : const Color(0xFFF1F5F9),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: Icon(
+                                                  Icons.chevron_right_rounded,
+                                                  size: 18,
+                                                  color: sel
+                                                      ? AppColors.primary
+                                                      : const Color(0xFF64748B),
+                                                ),
+                                              ),
+                                          ],
                                         ),
                                       ),
-                                      child: Text(c.icon,
-                                          style: const TextStyle(
-                                              fontSize: 20)),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            c.label,
-                                            style: TextStyle(
-                                              fontSize: 11.8,
-                                              fontWeight: sel
-                                                  ? FontWeight.w700
-                                                  : FontWeight.w600,
-                                              color: sel
-                                                  ? AppColors.primaryDark
-                                                  : AppColors.dark,
-                                              letterSpacing: -0.2,
-                                              height: 1.15,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          if (isFreelancerChild) ...[
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              Task.freelancerShortUnitHint(c.id),
-                                              style: const TextStyle(
-                                                fontSize: 10.0,
-                                                fontWeight: FontWeight.w700,
-                                                color: AppColors.primary,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    if (sel) ...[
-                                      const SizedBox(width: 2),
-                                      const Icon(
-                                        Icons.check_circle_rounded,
-                                        size: 16,
-                                        color: AppColors.primary,
-                                      ),
-                                    ],
-                                    if (isFreelancerEntry) ...[
-                                      const SizedBox(width: 2),
-                                      Icon(
-                                        Icons.chevron_right_rounded,
-                                        size: 18,
-                                        color: sel
-                                            ? AppColors.primary
-                                            : AppColors.gray,
-                                      ),
-                                    ],
-                                  ],
+                                    );
+                                  },
                                 ),
                               ),
-                            );
-                          },
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        (parentGroup != null ||
+                                                group.label == 'Freelancer')
+                                            ? Icons.public_rounded
+                                            : Icons.verified_user_outlined,
+                                        size: 14,
+                                        color: const Color(0xFF475569),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          theme.footerNote,
+                                          style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF475569),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -852,6 +1196,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void initState() {
     super.initState();
     _savedLocations = StorageService.getSavedLocations();
+    _titleCtrl.addListener(_onFreelancerDetailsChanged);
+    _additionalNotesCtrl.addListener(_compileDescriptionFromForm);
+    _additionalNotesCtrl.addListener(_onFreelancerDetailsChanged);
     _areaCtrl.addListener(_onLocationAreaChanged);
     _pickupAreaCtrl.addListener(_onLocationAreaChanged);
     _dropAreaCtrl.addListener(_onLocationAreaChanged);
@@ -882,6 +1229,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   @override
   void dispose() {
+    _titleCtrl.removeListener(_onFreelancerDetailsChanged);
+    _additionalNotesCtrl.removeListener(_compileDescriptionFromForm);
+    _additionalNotesCtrl.removeListener(_onFreelancerDetailsChanged);
     _areaCtrl.removeListener(_onLocationAreaChanged);
     _pickupAreaCtrl.removeListener(_onLocationAreaChanged);
     _dropAreaCtrl.removeListener(_onLocationAreaChanged);
@@ -1811,9 +2161,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    final LatLng? taskLocation =
-        _isDelivery ? (_pickupLocation ?? _location) : _location;
-    if (taskLocation == null) {
+    final LatLng? taskLocation = _isFreelancer
+        ? null
+        : (_isDelivery ? (_pickupLocation ?? _location) : _location);
+    if (!_isFreelancer && taskLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -2067,9 +2418,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     setState(() => _loading = true);
 
-    // Build the address field: for delivery categories combine pickup + drop.
+    // Build the address field: for freelancer tasks remote/online; for delivery combine pickup + drop.
     final String? combinedAddress;
-    if (_isDelivery) {
+    if (_isFreelancer) {
+      combinedAddress = 'Remote / Online';
+    } else if (_isDelivery) {
       final pickup = _pickupAddrCtrl.text.trim();
       final drop   = _dropAddrCtrl.text.trim();
       combinedAddress = (pickup.isNotEmpty || drop.isNotEmpty)
@@ -2097,13 +2450,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'budget': double.tryParse(_budgetCtrl.text) ?? 0,
       'service_charge': charge,
       'serviceCharge': charge,
-      // Nested location object expected by the backend
+      // Nested location object expected by the backend (null coords for remote freelancer services)
       'location': {
-        'lat': taskLocation.latitude,
-        'lng': taskLocation.longitude,
+        'lat': taskLocation?.latitude,
+        'lng': taskLocation?.longitude,
         'address': combinedAddress ?? '',
       },
       if (_isFreelancer) ...{
+        'is_remote': true,
         'pricing_model': _freelancerPricingMode,
         'pricing_scope': _freelancerQuote?.scopeSummary,
         if (_freelancerPricingMode == 'hourly') ...{
@@ -2169,7 +2523,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   TextEditingController _getDescQuestionCtrl(String question) {
     return _descFormControllers.putIfAbsent(
       question,
-      () => TextEditingController()..addListener(_compileDescriptionFromForm),
+      () => TextEditingController()
+        ..addListener(() {
+          _compileDescriptionFromForm();
+          _onFreelancerDetailsChanged();
+        }),
     );
   }
 
@@ -2743,7 +3101,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     final suggestion = Task.getBudgetSuggestion(
       _selectedCategory,
-      areaText: areaCandidate,
+      areaText: _isFreelancer ? null : areaCandidate,
       distanceKm: _calculatedDistanceKm,
       vehicle: _deliveryVehicle,
       freelancerMode: _isFreelancer ? _freelancerPricingMode : null,
@@ -2751,7 +3109,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       units: _freelancerUnits,
       hourlyRate: _freelancerHourlyRate,
       hours: _freelancerHours,
+      title: _titleCtrl.text,
+      description: _descCtrl.text,
     );
+    final headerText = _isFreelancer
+        ? (_freelancerManualScope
+            ? 'Suggested for Selected Scope'
+            : 'Suggested by Task Details')
+        : 'Suggested in ${suggestion.localityName}';
+    final badgeText = _isFreelancer && !_freelancerManualScope && (_freelancerDetailsReason ?? '').isNotEmpty
+        ? _freelancerDetailsReason!
+        : suggestion.localityTier;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -2777,7 +3145,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Suggested in ${suggestion.localityName}',
+                  headerText,
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E293B)),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -2791,7 +3159,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    suggestion.localityTier,
+                    badgeText,
                     style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -3939,6 +4307,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     void updateQuoteAndSync(VoidCallback mutate) {
       setState(() {
+        _freelancerManualScope = true;
         mutate();
         final updated = _freelancerQuote!;
         _syncAutoBudget(updated.suggestedBudget);
@@ -4773,8 +5142,38 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       ],
                       const SizedBox(height: 16),
                       _buildDescriptionFormSection(),
-                      const SizedBox(height: 16),
-                      _buildLocationFieldsSection(),
+                      if (!_isFreelancer) ...[
+                        const SizedBox(height: 16),
+                        _buildLocationFieldsSection(),
+                      ] else ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          key: const Key('freelancer_remote_badge'),
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.public_rounded, size: 18, color: Color(0xFF2563EB)),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Remote Freelancer Service — No location needed. Price is suggested from your task details & scope.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1E3A8A),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       _buildSuggestedBudgetCard(),
                       _buildBudgetField(),

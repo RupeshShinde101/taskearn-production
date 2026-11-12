@@ -20,20 +20,29 @@
 
     // Categories that are distance-priced (and thus need pickup + drop)
     const DISTANCE_CATS = new Set(['transport', 'pickup', 'delivery', 'moving']);
+    const FREELANCER_CATS = new Set([
+        'freelance', 'freelancer', 'graphic_design', 'web_app_tech',
+        'video_audio_editing', 'digital_marketing', 'business_admin',
+    ]);
+    function isFreelancerCat(cat) {
+        if (typeof window.WMIsFreelancerCategory === 'function') {
+            return window.WMIsFreelancerCategory(cat);
+        }
+        return FREELANCER_CATS.has(String(cat || '').trim().toLowerCase().replace(/-/g, '_'));
+    }
 
     // Dynamically update the "Min ₹..." label based on selected category
-    function updateBudgetMinLabel() {
+    function updateBudgetMinLabel(overrideMin) {
         const cat = document.getElementById('modalTaskCategory')?.value || '';
         const lbl = document.getElementById('wmBudgetMinLabel');
         const veh = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
         const km = (typeof window.__wmLastDistance === 'number' && window.__wmLastDistance > 0) ? window.__wmLastDistance : null;
         const catMin = (typeof window.getMinTaskPrice === 'function') ? window.getMinTaskPrice(cat, veh) : 100;
         const distMin = (DISTANCE_CATS.has(cat) && km && typeof window.WMCalculateDistancePrice === 'function') ? window.WMCalculateDistancePrice(cat, km, veh) : 0;
-        const minVal = distMin > catMin ? distMin : catMin;
+        const minVal = Math.max(catMin, distMin, Number(overrideMin) || 0);
         if (lbl) {
             lbl.style.display = '';
             lbl.textContent = '(Min ₹' + minVal + ')';
-        // updated label above
         }
     }
 
@@ -57,24 +66,51 @@
         const cat = ($('modalTaskCategory') || {}).value || '';
         const isDistance = DISTANCE_CATS.has(cat);
         const isTransport = cat === 'transport';
+        const isFreelancer = isFreelancerCat(cat);
 
-        // Step 2 (When & Where) labels — adapt for distance categories that need pickup + drop
+        // Step 2 (When & Where) labels — adapt for remote freelancer & distance categories
         const step2Label = $('wmStep2Label');
         const step2Heading = $('wmStep2Heading');
         const step2Sub = $('wmStep2Sub');
-        if (step2Label) step2Label.textContent = isDistance ? 'When & Pickup' : 'When & Where';
+        if (step2Label) step2Label.textContent = isFreelancer ? 'When' : (isDistance ? 'When & Pickup' : 'When & Where');
         if (step2Heading) {
-            step2Heading.innerHTML = isDistance
-                ? '<i class="fas fa-route"></i> When &amp; pickup'
-                : '<i class="fas fa-calendar-alt"></i> When &amp; where?';
+            step2Heading.innerHTML = isFreelancer
+                ? '<i class="fas fa-calendar-alt"></i> When do you need it?'
+                : isDistance
+                    ? '<i class="fas fa-route"></i> When &amp; pickup'
+                    : '<i class="fas fa-calendar-alt"></i> When &amp; where?';
         }
         if (step2Sub) {
-            step2Sub.textContent = isTransport
-                ? 'Pick a date/time, then set the pickup spot and drop location.'
-                : isDistance
-                    ? 'Pick a date/time, then set pickup and drop addresses.'
-                    : 'Pick a date and time, then set the location. Tasks are visible to nearby taskers for 24 hours.';
+            step2Sub.textContent = isFreelancer
+                ? 'Remote freelancer service — no physical location needed. Pick a deadline for your task.'
+                : isTransport
+                    ? 'Pick a date/time, then set the pickup spot and drop location.'
+                    : isDistance
+                        ? 'Pick a date/time, then set pickup and drop addresses.'
+                        : 'Pick a date and time, then set the location. Tasks are visible to nearby taskers for 24 hours.';
         }
+
+        // Toggle location field & remote badge on Step 2
+        const locEl = $('modalTaskLocation');
+        const locFg = locEl ? locEl.closest('.form-group') : null;
+        if (locEl && locEl.dataset.wmWasReq === undefined) {
+            locEl.dataset.wmWasReq = locEl.hasAttribute('required') ? '1' : '0';
+        }
+        if (locFg) locFg.style.display = isFreelancer ? 'none' : '';
+        if (locEl) {
+            if (isFreelancer) locEl.removeAttribute('required');
+            else if (locEl.dataset.wmWasReq === '1') locEl.setAttribute('required', '');
+        }
+        let remoteNote = $('wmFreelancerRemoteNotice');
+        if (!remoteNote && locFg && locFg.parentNode) {
+            remoteNote = document.createElement('div');
+            remoteNote.id = 'wmFreelancerRemoteNotice';
+            remoteNote.className = 'wm-price-hint';
+            remoteNote.style.margin = '14px 0 0 0';
+            remoteNote.innerHTML = '<div class="wm-price-hint-head"><span class="wm-price-icon">🌐</span><span class="wm-price-text"><strong>Remote / Online Service</strong> — No location needed. Price is suggested from your task details.</span></div>';
+            locFg.parentNode.insertBefore(remoteNote, locFg.nextSibling);
+        }
+        if (remoteNote) remoteNote.style.display = isFreelancer ? 'block' : 'none';
 
         // Step 3 (Budget) labels — adapt for distance (vehicle picker shown)
         const step3Label = $('wmStep3Label');
@@ -87,9 +123,11 @@
                 : '<i class="fas fa-rupee-sign"></i> Fair price &amp; budget';
         }
         if (step3Sub) {
-            step3Sub.textContent = isDistance
-                ? 'Choose a vehicle to see the fair distance price, then set your budget.'
-                : 'Choose a fair budget. Add a small nudge to attract taskers faster.';
+            step3Sub.textContent = isFreelancer
+                ? 'Price is suggested from your task details & deliverables. Adjust anytime.'
+                : isDistance
+                    ? 'Choose a vehicle to see the fair distance price, then set your budget.'
+                    : 'Choose a fair budget. Add a small nudge to attract taskers faster.';
         }
         updateBudgetMinLabel();
         // Show/hide the drop location field for distance categories
@@ -115,13 +153,15 @@
             const when = new Date(dt).getTime();
             if (isNaN(when)) return 'Please pick a valid date and time.';
             if (when < Date.now() - 5 * 60 * 1000) return 'Please pick a future date and time.';
-            const loc = ($('modalTaskLocation').value || '').trim();
-            if (!loc) return 'Please enter the task location (or use My Location / Pick on Map).';
             const cat = $('modalTaskCategory').value;
-            if (DISTANCE_CATS.has(cat)) {
-                const dropEl = $('modalTaskLocation_drop');
-                const dropVal = dropEl ? (dropEl.value || '').trim() : '';
-                if (!dropVal) return 'Please set the drop location.';
+            if (!isFreelancerCat(cat)) {
+                const loc = ($('modalTaskLocation').value || '').trim();
+                if (!loc) return 'Please enter the task location (or use My Location / Pick on Map).';
+                if (DISTANCE_CATS.has(cat)) {
+                    const dropEl = $('modalTaskLocation_drop');
+                    const dropVal = dropEl ? (dropEl.value || '').trim() : '';
+                    if (!dropVal) return 'Please set the drop location.';
+                }
             }
         } else if (step === 3) {
             const v = parseFloat(($('customBudget') || {}).value);
@@ -171,7 +211,9 @@
         rows.push(['Task', title || '—']);
         rows.push(['Category', catLabel]);
         rows.push(['When', dateStr]);
-        if (DISTANCE_CATS.has(cat)) {
+        if (isFreelancerCat(cat)) {
+            rows.push(['Service Mode', 'Remote / Online (no location needed)']);
+        } else if (DISTANCE_CATS.has(cat)) {
             rows.push(['Pickup', pickup || '—']);
             rows.push(['Drop', drop || '—']);
             if (distance) rows.push(['Distance', distance]);

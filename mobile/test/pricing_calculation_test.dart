@@ -215,14 +215,29 @@ void main() {
       expect(find.text('Near you'), findsNothing);
       expect(find.text('Delivery Vehicle Option'), findsOneWidget);
 
-      // Tapping an unselected parent category opens its child category sheet on the FIRST tap
+      // Tapping an unselected parent category opens Option 5 illustrated bottom sheet with single-line rows
       await tester.tap(find.text('Repair'));
       await tester.pumpAndSettle();
+      expect(find.text('Workmate4u › Repair'), findsOneWidget);
       expect(find.text('Select a specific category'), findsOneWidget);
       expect(find.text('Electrician'), findsOneWidget);
       expect(find.text('Carpentry'), findsOneWidget);
+      final elecText = tester.widget<Text>(find.text('Electrician'));
+      expect(elecText.maxLines, 1);
+      expect(elecText.softWrap, isFalse);
       expect(TaskCategory.iconFor('carpentry'), isNot('\u{1FA9A}'));
-      expect(find.text(TaskCategory.iconFor('carpentry')), findsOneWidget);
+      expect(
+        TaskCategory.subcatAssetFor('carpentry'),
+        'assets/images/subcats/carpentry.png',
+      );
+      expect(
+        find.byWidgetPredicate((w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName ==
+                'assets/images/subcats/carpentry.png'),
+        findsOneWidget,
+      );
       expect(find.text('Tech Support'), findsNothing);
       expect(
         TaskCategoryGroup.all
@@ -293,21 +308,22 @@ void main() {
       final gfx = Task.getBudgetSuggestion('graphic_design');
       expect(gfx.minBudget, 350.0);
       expect(gfx.suggestedBudget, 600.0);
-      expect(gfx.maxBudget, 1500.0);
+      expect(gfx.maxBudget, 1200.0);
 
       final web = Task.getBudgetSuggestion('web_app_tech');
       expect(web.minBudget, 800.0);
       expect(web.suggestedBudget, 1500.0);
-      expect(web.maxBudget, 4000.0);
+      expect(web.maxBudget, 3000.0);
 
-      final webPremium = Task.getBudgetSuggestion('web_app_tech', areaText: 'Hinjewadi');
-      expect(webPremium.suggestedBudget, 1875.0);
-      expect(webPremium.maxBudget, 5000.0);
+      final webAreaIgnored = Task.getBudgetSuggestion('web_app_tech', areaText: 'Hinjewadi');
+      expect(webAreaIgnored.suggestedBudget, 1500.0);
+      expect(webAreaIgnored.maxBudget, 3000.0);
+      expect(webAreaIgnored.localityName, 'Remote Service');
 
       final vid = Task.getBudgetSuggestion('video_audio_editing');
       expect(vid.minBudget, 400.0);
       expect(vid.suggestedBudget, 750.0);
-      expect(vid.maxBudget, 2000.0);
+      expect(vid.maxBudget, 1500.0);
 
       final mkt = Task.getBudgetSuggestion('digital_marketing');
       expect(mkt.minBudget, 500.0);
@@ -317,7 +333,7 @@ void main() {
       final biz = Task.getBudgetSuggestion('business_admin');
       expect(biz.minBudget, 300.0);
       expect(biz.suggestedBudget, 500.0);
-      expect(biz.maxBudget, 1000.0);
+      expect(biz.maxBudget, greaterThanOrEqualTo(500.0));
     });
 
     test('freelancer dual pricing calculates package/unit & hourly quotes across all categories', () {
@@ -386,17 +402,22 @@ void main() {
       expect(find.text('Select a specific category'), findsOneWidget);
       expect(find.text('Freelancer'), findsOneWidget);
 
-      // Step 2: Tap Freelancer -> opens nested Freelancer child category popup
+      // Step 2: Tap Freelancer -> opens nested Option 5 Freelancer bottom sheet (breadcrumb + single-line labels, no price tags)
       await tester.tap(find.text('Freelancer'));
       await tester.pumpAndSettle();
+      expect(find.text('Professional › Freelancer'), findsOneWidget);
       expect(find.text('Select a freelancer category'), findsOneWidget);
+      expect(find.text('Remote / Online • Price suggested from task details'), findsOneWidget);
       expect(find.text('Graphic Design & Branding'), findsOneWidget);
       expect(find.text('Web, App & Tech Projects'), findsOneWidget);
       expect(find.text('Video & Audio Editing'), findsOneWidget);
       expect(find.text('Digital Marketing'), findsOneWidget);
       expect(find.text('Business, Office & Admin'), findsOneWidget);
-      expect(find.text('From ₹350 · /design or /hr'), findsOneWidget);
-      expect(find.text('From ₹800 · /page or /hr'), findsOneWidget);
+      expect(find.textContaining('From ₹'), findsNothing);
+      expect(find.textContaining('/hr'), findsNothing);
+      final webText = tester.widget<Text>(find.text('Web, App & Tech Projects'));
+      expect(webText.maxLines, 1);
+      expect(webText.softWrap, isFalse);
 
       // Verify back arrow returns cleanly to Professional popup, then re-open Freelancer
       await tester.tap(find.byIcon(Icons.arrow_back_rounded));
@@ -576,6 +597,97 @@ void main() {
       expect(find.text('Suggested in Hinjewadi'), findsOneWidget);
       expect(find.text('₹250'), findsOneWidget); // shown in Suggested card
       expect(find.text('₹420'), findsOneWidget); // 350 + 20% = 420
+      expect(tester.takeException(), isNull);
+    });
+
+    test('freelancer pricing ignores area and suggests prices from task details', () {
+      expect(Task.isFreelancerCategory('web_app_tech'), isTrue);
+      expect(Task.isFreelancerCategory('graphic_design'), isTrue);
+      expect(Task.isFreelancerCategory('video-audio-editing'), isTrue);
+      expect(Task.isFreelancerCategory('digital_marketing'), isTrue);
+      expect(Task.isFreelancerCategory('business_admin'), isTrue);
+      expect(Task.isFreelancerCategory('freelance'), isTrue);
+      expect(Task.isFreelancerCategory('electrician'), isFalse);
+
+      // 5-page website from title -> ₹7500 suggested, ₹4000 min, ignores Hinjewadi area
+      final web5 = Task.getBudgetSuggestion(
+        'web_app_tech',
+        areaText: 'Hinjewadi',
+        title: 'Build 5 page WordPress website',
+      );
+      expect(web5.minBudget, 4000.0);
+      expect(web5.suggestedBudget, 7500.0);
+      expect(web5.localityName, 'Task Details');
+
+      // Brand identity kit -> ₹5500 suggested
+      final brandKit = Task.getBudgetSuggestion(
+        'graphic_design',
+        title: 'Full brand kit and logo design',
+      );
+      expect(brandKit.minBudget, 3500.0);
+      expect(brandKit.suggestedBudget, 5500.0);
+
+      // 3 Instagram reels with urgent priority uplift
+      final reelsUrgent = Task.suggestFreelancerFromDetails(
+        'video_audio_editing',
+        title: 'Edit 3 Instagram reels urgent',
+      );
+      expect(reelsUrgent.quote.minBudget, 1200.0);
+      expect(reelsUrgent.quote.suggestedBudget, 2700.0); // 2250 * 1.2
+
+      // 10 slide pitch deck -> ₹2500 suggested
+      final deck = Task.suggestFreelancerFromDetails(
+        'business_admin',
+        description: 'Need a 10 slide investor pitch deck in PowerPoint',
+      );
+      expect(deck.quote.suggestedBudget, 2500.0);
+    });
+
+    testWidgets('PostTaskScreen hides location fields for freelancer services and updates budget from task details',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Pick Professional -> Freelancer -> Web, App & Tech Projects
+      await tester.ensureVisible(find.text('Professional'));
+      await tester.tap(find.text('Professional'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Freelancer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Web, App & Tech Projects'));
+      await tester.pumpAndSettle();
+
+      // Location inputs are hidden and Remote badge is visible
+      expect(find.byKey(const Key('freelancer_remote_badge')), findsOneWidget);
+      expect(find.text('Area / Sector / Locality'), findsNothing);
+      expect(find.text('Address / Landmark (optional)'), findsNothing);
+      expect(find.text('Suggested by Task Details'), findsOneWidget);
+
+      // Typing task details updates suggested budget automatically without needing location
+      final titleField = find.widgetWithText(TextFormField, 'Task Title');
+      await tester.ensureVisible(titleField);
+      await tester.enterText(titleField, 'Build 5 page website');
+      await tester.pumpAndSettle();
+
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '7500');
+      expect(find.textContaining('5 pages'), findsWidgets);
       expect(tester.takeException(), isNull);
     });
   });

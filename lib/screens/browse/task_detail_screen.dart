@@ -797,7 +797,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        task.address ?? '${task.latitude}, ${task.longitude}',
+                        (task.address != null && task.address!.trim().isNotEmpty)
+                            ? task.address!
+                            : ((Task.isFreelancerCategory(task.category) ||
+                                    (task.latitude == 0 && task.longitude == 0))
+                                ? 'Remote / Online'
+                                : '${task.latitude}, ${task.longitude}'),
                         style: const TextStyle(color: AppColors.gray),
                       ),
                     ),

@@ -655,9 +655,9 @@ class Task {
     }
   }
 
-  /// Returns market-based suggested budget range based on category and selected area.
+  /// Returns true for remote-friendly freelancer categories where physical location is optional/not needed.
   static bool isFreelancerCategory(String category) {
-    final c = category.toLowerCase().replaceAll('-', '_');
+    final c = _normalizeCategoryKey(category);
     return c == 'freelancer' || TaskCategoryGroup.freelancerChildIds.contains(c);
   }
 
@@ -1057,6 +1057,293 @@ class Task {
     );
   }
 
+  static int? _extractUnitCount(String text, List<String> nouns) {
+    final nounPattern = nouns.map(RegExp.escape).join('|');
+    final rx = RegExp(
+      '\\b(\\d{1,3})\\s*(?:[a-zA-Z]+\\s+){0,2}(?:$nounPattern)s?\\b',
+      caseSensitive: false,
+    );
+    final m = rx.firstMatch(text);
+    if (m == null) return null;
+    return int.tryParse(m.group(1) ?? '');
+  }
+
+  static FreelancerDetailsSuggestion suggestFreelancerFromDetails(
+    String category, {
+    String title = '',
+    String description = '',
+  }) {
+    final cat = _normalizeCategoryKey(category);
+    final cfg = freelancerPricingConfigFor(cat) ?? _freelancerPricingConfigs['freelancer']!;
+
+    // Strip auto-generated scope/excluded lines so re-compilation doesn't loop.
+    final cleanedDescLines = description
+        .split('\n')
+        .where((line) {
+          final l = line.trim().toLowerCase();
+          return !l.startsWith('• pricing scope:') &&
+              !l.startsWith('• excluded costs:') &&
+              !l.startsWith('• domain & hosting:');
+        })
+        .join(' ');
+    final combined = '${title.trim()} $cleanedDescLines'.trim().toLowerCase();
+
+    if (combined.isEmpty) {
+      final defaultTier = cfg.tiers.first;
+      final q = calculateFreelancerQuote(
+        cat,
+        mode: 'package',
+        tierId: defaultTier.id,
+        units: defaultTier.defaultUnits,
+      );
+      return FreelancerDetailsSuggestion(
+        mode: 'package',
+        tierId: defaultTier.id,
+        units: defaultTier.usesUnits ? defaultTier.defaultUnits : null,
+        hours: cfg.defaultHours,
+        hourlyRate: cfg.defaultHourlyRate,
+        hasDetailsMatch: false,
+        reason: 'Standard ${q.scopeSummary}',
+        quote: q,
+      );
+    }
+
+    String mode = 'package';
+    String tierId = cfg.tiers.first.id;
+    int? units = cfg.tiers.first.usesUnits ? cfg.tiers.first.defaultUnits : null;
+    int hours = cfg.defaultHours;
+    double hourlyRate = cfg.defaultHourlyRate;
+    bool matched = false;
+    String reason = '';
+
+    bool hasAny(List<String> keywords) =>
+        keywords.any((k) => RegExp('\\b${RegExp.escape(k)}', caseSensitive: false).hasMatch(combined));
+
+    final detectedHours = _extractUnitCount(combined, ['hr', 'hour']);
+
+    switch (cat) {
+      case 'web_app_tech':
+        if (hasAny(['mobile app', 'flutter', 'android', 'ios', 'ecommerce', 'e-commerce', 'shopify', 'store', 'checkout', 'mvp', 'saas', 'full stack'])) {
+          tierId = 'app_mvp';
+          matched = true;
+          reason = 'App / E-commerce scope in task details';
+        } else if (hasAny(['landing page', 'one page', 'single page', 'conversion page'])) {
+          tierId = 'landing_page';
+          matched = true;
+          reason = 'Landing page scope in task details';
+        } else if (hasAny(['bug', 'fix', 'error', 'issue', 'debug', 'crash', 'script', 'plugin', 'automation'])) {
+          tierId = 'bug_fix';
+          matched = true;
+          reason = 'Bug fix / script scope in task details';
+        } else if (hasAny(['website', 'site', 'wordpress', 'react', 'web app', 'page', 'screen'])) {
+          tierId = 'website_pages';
+          final pages = _extractUnitCount(combined, ['page', 'screen']);
+          if (pages != null && pages > 0) {
+            units = pages;
+            reason = '$pages ${pages == 1 ? 'page' : 'pages'} detected in task details';
+          } else {
+            units = 1;
+            reason = 'Website scope detected in task details';
+          }
+          matched = true;
+        } else if (detectedHours != null && detectedHours > 0) {
+          mode = 'hourly';
+          hours = detectedHours;
+          matched = true;
+          reason = '$hours ${hours == 1 ? 'hr' : 'hrs'} estimated in task details';
+        }
+        break;
+
+      case 'graphic_design':
+        if (hasAny(['brand kit', 'brand identity', 'branding', 'stationery', 'guidelines'])) {
+          tierId = 'brand_kit';
+          matched = true;
+          reason = 'Full Brand Kit detected in task details';
+        } else if (hasAny(['logo'])) {
+          tierId = 'logo_pack';
+          matched = true;
+          reason = 'Logo package detected in task details';
+        } else if (hasAny(['brochure', 'menu', 'catalogue', 'catalog', 'booklet', 'pamphlet'])) {
+          tierId = 'brochure_pages';
+          final pages = _extractUnitCount(combined, ['page', 'side']);
+          units = (pages != null && pages > 0) ? pages : 2;
+          matched = true;
+          reason = '$units-page brochure/menu scope in task details';
+        } else if (hasAny(['poster', 'flyer', 'banner', 'thumbnail', 'instagram', 'social', 'post', 'creative', 'design'])) {
+          tierId = 'per_design';
+          final cnt = _extractUnitCount(combined, ['design', 'post', 'poster', 'flyer', 'banner', 'thumbnail', 'creative']);
+          units = (cnt != null && cnt > 0) ? cnt : 1;
+          matched = true;
+          reason = '$units ${units == 1 ? 'design' : 'designs'} detected in task details';
+        } else if (detectedHours != null && detectedHours > 0) {
+          mode = 'hourly';
+          hours = detectedHours;
+          matched = true;
+          reason = '$hours ${hours == 1 ? 'hr' : 'hrs'} estimated in task details';
+        }
+        break;
+
+      case 'video_audio_editing':
+        if (hasAny(['podcast', 'audio', 'voiceover', 'voice', 'episode', 'mastering', 'noise'])) {
+          tierId = 'audio_episode';
+          final eps = _extractUnitCount(combined, ['episode', 'track', 'audio', 'podcast']);
+          units = (eps != null && eps > 0) ? eps : 1;
+          matched = true;
+          reason = '$units audio/podcast ${units == 1 ? 'episode' : 'episodes'} in task details';
+        } else if (hasAny(['youtube', 'long video', 'documentary', 'explainer', 'vlog', 'promo video']) ||
+            _extractUnitCount(combined, ['min', 'minute']) != null) {
+          tierId = 'long_video_mins';
+          final mins = _extractUnitCount(combined, ['min', 'minute']);
+          units = (mins != null && mins > 0) ? mins : 5;
+          matched = true;
+          reason = '$units min video edit detected in task details';
+        } else if (hasAny(['reel', 'reels', 'short', 'shorts', 'vertical', 'instagram', 'tiktok'])) {
+          tierId = 'short_reel';
+          final reels = _extractUnitCount(combined, ['reel', 'short', 'video', 'clip']);
+          units = (reels != null && reels > 0) ? reels : 1;
+          matched = true;
+          reason = '$units ${units == 1 ? 'reel' : 'reels'} detected in task details';
+        } else if (detectedHours != null && detectedHours > 0) {
+          mode = 'hourly';
+          hours = detectedHours;
+          matched = true;
+          reason = '$hours ${hours == 1 ? 'hr' : 'hrs'} estimated in task details';
+        }
+        break;
+
+      case 'digital_marketing':
+        if (hasAny(['monthly', 'retainer', 'month', 'smm', 'social media management', 'manage instagram'])) {
+          tierId = 'monthly_smm';
+          final mos = _extractUnitCount(combined, ['month']);
+          units = (mos != null && mos > 0) ? mos : 1;
+          matched = true;
+          reason = '$units month social retainer in task details';
+        } else if (hasAny(['ads', 'meta', 'facebook', 'google ads', 'ppc', 'campaign', 'lead gen'])) {
+          tierId = 'ads_mgmt';
+          final camps = _extractUnitCount(combined, ['campaign', 'ad']);
+          units = (camps != null && camps > 0) ? camps : 1;
+          matched = true;
+          reason = 'Ads campaign setup/mgmt in task details';
+        } else if (hasAny(['seo', 'on-page', 'keyword', 'ranking', 'schema', 'backlink'])) {
+          tierId = 'seo_pages';
+          final pages = _extractUnitCount(combined, ['page', 'url', 'blog', 'article']);
+          units = (pages != null && pages > 0) ? pages : 3;
+          matched = true;
+          reason = 'SEO ($units pages) detected in task details';
+        } else if (hasAny(['audit', 'pixel', 'analytics', 'google business', 'gbp'])) {
+          tierId = 'setup_audit';
+          matched = true;
+          reason = 'Audit / setup scope in task details';
+        } else if (detectedHours != null && detectedHours > 0) {
+          mode = 'hourly';
+          hours = detectedHours;
+          matched = true;
+          reason = '$hours ${hours == 1 ? 'hr' : 'hrs'} estimated in task details';
+        }
+        break;
+
+      case 'business_admin':
+        if (hasAny(['pitch deck', 'deck', 'ppt', 'powerpoint', 'slides', 'slide', 'presentation'])) {
+          tierId = 'slides';
+          final sl = _extractUnitCount(combined, ['slide']);
+          units = (sl != null && sl >= 2) ? sl : 10;
+          matched = true;
+          reason = '$units slides presentation in task details';
+        } else if (hasAny(['excel', 'spreadsheet', 'sheet', 'pivot', 'macro', 'vba', 'dashboard', 'formula'])) {
+          tierId = 'excel_workbook';
+          final sh = _extractUnitCount(combined, ['sheet', 'workbook', 'tab', 'dashboard']);
+          units = (sh != null && sh > 0) ? sh : 1;
+          matched = true;
+          reason = 'Excel / workbook ($units) in task details';
+        } else if (hasAny(['translate', 'translation', 'proofread', 'typing', 'transcription', 'type'])) {
+          tierId = 'translation_pages';
+          final pg = _extractUnitCount(combined, ['page', 'doc', 'document']);
+          units = (pg != null && pg >= 2) ? pg : 3;
+          matched = true;
+          reason = 'Translation/typing ($units pages) in task details';
+        } else if (hasAny(['resume', 'cv', 'cover letter', 'linkedin', 'letter'])) {
+          tierId = 'resume_doc';
+          matched = true;
+          reason = 'Resume / document makeover in task details';
+        } else if (detectedHours != null && detectedHours > 0) {
+          mode = 'hourly';
+          hours = detectedHours;
+          matched = true;
+          reason = '$hours ${hours == 1 ? 'hr' : 'hrs'} estimated in task details';
+        }
+        break;
+
+      case 'freelancer':
+      default:
+        if (detectedHours != null && detectedHours > 0) {
+          mode = 'hourly';
+          hours = detectedHours;
+          matched = true;
+          reason = '$hours ${hours == 1 ? 'hr' : 'hrs'} scope in task details';
+        } else if (hasAny(['website', 'app', 'ecommerce', 'dashboard', 'full'])) {
+          mode = 'hourly';
+          hours = 4;
+          matched = true;
+          reason = 'Multi-step project scope in task details';
+        } else if (hasAny(['urgent', 'asap', 'complex', 'custom', 'content', 'writing', 'article'])) {
+          mode = 'hourly';
+          hours = 2;
+          matched = true;
+          reason = 'Custom freelance scope in task details';
+        }
+        break;
+    }
+
+    var quote = calculateFreelancerQuote(
+      cat,
+      mode: mode,
+      tierId: tierId,
+      units: units,
+      hourlyRate: hourlyRate,
+      hours: hours,
+    );
+
+    // Subtle urgency/complexity uplift (+20% rounded to ₹50) when urgent delivery or 4K/motion cues exist
+    final isUrgentOrComplex = hasAny(['urgent', 'asap', 'same day', '4k', 'motion graphics', 'animation', 'custom api']);
+    if (isUrgentOrComplex) {
+      final bumpSug = ((quote.suggestedBudget * 1.20) / 50).round() * 50.0;
+      final adjSug = bumpSug > quote.suggestedBudget ? bumpSug : quote.suggestedBudget;
+      final adjMax = quote.maxBudget <= adjSug ? (adjSug * 1.35).roundToDouble() : quote.maxBudget;
+      quote = FreelancerPriceQuote(
+        pricingMode: quote.pricingMode,
+        scopeSummary: '${quote.scopeSummary} · Priority',
+        minBudget: quote.minBudget,
+        suggestedBudget: adjSug,
+        maxBudget: adjMax,
+        hourlyRate: quote.hourlyRate,
+        hours: quote.hours,
+        tier: quote.tier,
+        units: quote.units,
+        separateCostsTitle: quote.separateCostsTitle,
+        separateCostsDescription: quote.separateCostsDescription,
+      );
+      matched = true;
+      reason = reason.isNotEmpty
+          ? '$reason (+priority uplift)'
+          : 'Priority / complex scope in task details';
+    }
+
+    if (reason.isEmpty) {
+      reason = 'Based on ${quote.scopeSummary} (no location required)';
+    }
+
+    return FreelancerDetailsSuggestion(
+      mode: mode,
+      tierId: tierId,
+      units: units,
+      hours: hours,
+      hourlyRate: hourlyRate,
+      hasDetailsMatch: matched,
+      reason: reason,
+      quote: quote,
+    );
+  }
+
   static bool _matchesAreaToken(String areaLower, String token) {
     final escaped = RegExp.escape(token);
     return RegExp('(^|[\\s,/\\-])$escaped(\$|[\\s,/\\-])').hasMatch(areaLower);
@@ -1114,23 +1401,39 @@ class Task {
     int? units,
     double? hourlyRate,
     int? hours,
+    String? title,
+    String? description,
   }) {
     final cat = _normalizeCategoryKey(category);
-    if (freelancerMode != null && isFreelancerCategory(cat)) {
-      final q = calculateFreelancerQuote(
+    if (isFreelancerCategory(cat)) {
+      if (freelancerMode != null) {
+        final q = calculateFreelancerQuote(
+          cat,
+          mode: freelancerMode,
+          tierId: tierId,
+          units: units,
+          hourlyRate: hourlyRate,
+          hours: hours,
+        );
+        return CategoryBudgetSuggestion(
+          minBudget: q.minBudget,
+          suggestedBudget: q.suggestedBudget,
+          maxBudget: q.maxBudget,
+          localityName: freelancerMode == 'hourly' ? 'Hourly Rate' : 'Task Scope',
+          localityTier: q.scopeSummary,
+        );
+      }
+      final det = suggestFreelancerFromDetails(
         cat,
-        mode: freelancerMode,
-        tierId: tierId,
-        units: units,
-        hourlyRate: hourlyRate,
-        hours: hours,
+        title: title ?? '',
+        description: description ?? '',
       );
       return CategoryBudgetSuggestion(
-        minBudget: q.minBudget,
-        suggestedBudget: q.suggestedBudget,
-        maxBudget: q.maxBudget,
-        localityName: freelancerMode == 'hourly' ? 'Hourly Rate' : 'Project Package',
-        localityTier: q.scopeSummary,
+        minBudget: det.quote.minBudget,
+        suggestedBudget: det.quote.suggestedBudget,
+        maxBudget: det.quote.maxBudget,
+        localityName: det.hasDetailsMatch ? 'Task Details' : 'Remote Service',
+        localityTier: det.reason,
       );
     }
     final areaRaw = (areaText ?? '').trim();
@@ -1761,6 +2064,50 @@ class TaskCategory {
     TaskCategory(id: 'other', label: 'Other', icon: '📋'),
   ];
 
+  static const Set<String> subcatAssetIds = {
+    'beauty',
+    'business_admin',
+    'carpentry',
+    'child_care',
+    'cleaning',
+    'cooking',
+    'data_entry',
+    'delivery',
+    'digital_marketing',
+    'elder_care',
+    'electrician',
+    'errands',
+    'event_help',
+    'freelancer',
+    'gardening',
+    'graphic_design',
+    'groceries',
+    'household',
+    'laundry',
+    'moving',
+    'other',
+    'painting',
+    'pet_care',
+    'photography',
+    'plumbing',
+    'queue_standing',
+    'repair',
+    'shopping',
+    'tech_support',
+    'tutoring',
+    'vehicle',
+    'video_audio_editing',
+    'web_app_tech',
+  };
+
+  /// Returns the custom squircle PNG asset path for [category], or null.
+  static String? subcatAssetFor(String category) {
+    if (subcatAssetIds.contains(category)) {
+      return 'assets/images/subcats/$category.png';
+    }
+    return null;
+  }
+
   /// Returns the icon emoji for [category], falling back to '📋' if not found.
   static String iconFor(String category) {
     return all.firstWhere(
@@ -1868,6 +2215,28 @@ class FreelancerPriceQuote {
     this.units,
     required this.separateCostsTitle,
     required this.separateCostsDescription,
+  });
+}
+
+class FreelancerDetailsSuggestion {
+  final String mode;
+  final String tierId;
+  final int? units;
+  final int hours;
+  final double hourlyRate;
+  final bool hasDetailsMatch;
+  final String reason;
+  final FreelancerPriceQuote quote;
+
+  const FreelancerDetailsSuggestion({
+    required this.mode,
+    required this.tierId,
+    required this.units,
+    required this.hours,
+    required this.hourlyRate,
+    required this.hasDetailsMatch,
+    required this.reason,
+    required this.quote,
   });
 }
 

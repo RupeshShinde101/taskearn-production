@@ -2755,14 +2755,30 @@ def get_tasks():
                 base_where += f" AND t.price >= {PH}"
                 base_params.append(min_budget)
             if lat is not None and lng is not None and radius_km is not None:
-                # Haversine formula — filter tasks within radius_km of user's location
+                # Haversine formula — filter physical tasks within radius_km of user's location,
+                # while keeping remote freelancer tasks (which do not require a physical location).
                 base_where += f"""
-                    AND t.location_lat IS NOT NULL AND t.location_lng IS NOT NULL
-                    AND (6371 * acos(LEAST(1.0,
-                        cos(radians({PH})) * cos(radians(t.location_lat)) *
-                        cos(radians(t.location_lng) - radians({PH})) +
-                        sin(radians({PH})) * sin(radians(t.location_lat))
-                    ))) <= {PH}"""
+                    AND (
+                        (
+                            t.location_lat IS NOT NULL AND t.location_lng IS NOT NULL
+                            AND (6371 * acos(LEAST(1.0,
+                                cos(radians({PH})) * cos(radians(t.location_lat)) *
+                                cos(radians(t.location_lng) - radians({PH})) +
+                                sin(radians({PH})) * sin(radians(t.location_lat))
+                            ))) <= {PH}
+                        )
+                        OR (
+                            (t.location_lat IS NULL OR t.location_lng IS NULL)
+                            AND LOWER(COALESCE(t.category, '')) IN (
+                                'freelancer', 'freelance',
+                                'graphic_design', 'graphic-design',
+                                'web_app_tech', 'web-app-tech',
+                                'video_audio_editing', 'video-audio-editing',
+                                'digital_marketing', 'digital-marketing',
+                                'business_admin', 'business-admin'
+                            )
+                        )
+                    )"""
                 base_params.extend([lat, lng, lat, radius_km])
             
             if page is not None:

@@ -660,8 +660,8 @@
         wireTemplate('modalTaskCategory', 'modalTaskDescription');
         wireTemplate('editTaskCategory',  'editTaskDescription');
         // Wire price-range suggestions (post-task + edit-task forms)
-        wirePriceHint('modalTaskCategory', { budgetInputId: 'customBudget', pickupInputId: 'modalTaskLocation', applyBudget: true });
-        wirePriceHint('editTaskCategory',  { applyBudget: false });
+        wirePriceHint('modalTaskCategory', { budgetInputId: 'customBudget', pickupInputId: 'modalTaskLocation', titleInputId: 'modalTaskTitle', descInputId: 'modalTaskDescription', applyBudget: true });
+        wirePriceHint('editTaskCategory',  { locationInputId: 'editTaskLocation', titleInputId: 'editTaskTitle', descInputId: 'editTaskDescription', applyBudget: false });
     }
 
     // --- Description templates --------------------------------------------
@@ -956,6 +956,187 @@
         tailoring:   { low: 250, high: 650,  min: 150 },
         other:       { low: 200, high: 500,  min: 100 },
     };
+
+    const FREELANCER_CATEGORIES = new Set([
+        'freelance', 'freelancer',
+        'graphic_design', 'web_app_tech',
+        'video_audio_editing', 'digital_marketing', 'business_admin',
+    ]);
+
+    function normalizeCatKey(key) {
+        return String(key || '').trim().toLowerCase().replace(/-/g, '_');
+    }
+
+    function isFreelancerCategory(key) {
+        return FREELANCER_CATEGORIES.has(normalizeCatKey(key));
+    }
+    window.WMIsFreelancerCategory = isFreelancerCategory;
+
+    function extractUnitCount(text, nounsPattern) {
+        const re = new RegExp('\\b(\\d{1,3})\\s*(?:x\\s*)?(?:[a-z]+\\s+){0,2}(?:' + nounsPattern + ')\\b', 'i');
+        const m = text.match(re);
+        if (!m) return null;
+        const n = parseInt(m[1], 10);
+        if (isNaN(n) || n < 1) return null;
+        return Math.min(n, 200);
+    }
+
+    function roundTo50(n) {
+        return Math.round(n / 50) * 50;
+    }
+
+    function stripCompiledMeta(desc) {
+        return String(desc || '')
+            .split('\n')
+            .filter(line => {
+                const l = line.trim().toLowerCase();
+                return !l.startsWith('• pricing scope:') &&
+                       !l.startsWith('• excluded costs:') &&
+                       !l.startsWith('• domain & hosting:') &&
+                       !l.startsWith('domain & hosting status') &&
+                       !l.startsWith('billing model (per page') &&
+                       !l.startsWith('service model (setup');
+            })
+            .join('\n');
+    }
+
+    function suggestFreelancerFromDetails(catKey, title, description) {
+        const key = normalizeCatKey(catKey);
+        const base = PRICE_RANGES[key] || PRICE_RANGES.freelance;
+        const cleanDesc = stripCompiledMeta(description);
+        const rawText = (String(title || '') + '\n' + cleanDesc).trim();
+        const text = rawText.toLowerCase().replace(/\s+/g, ' ');
+        const hasUrgent = /\b(urgent|asap|today|same day|priority|rush|fast delivery)\b/i.test(text);
+        const hasComplex = /\b(4k|animation|motion graphics|after effects|custom api|payment gateway|dashboard|admin panel)\b/i.test(text);
+        const uplift = (hasUrgent || hasComplex) ? 1.20 : 1.0;
+
+        let min = base.min;
+        let suggested = base.low;
+        let high = base.high;
+        let reason = 'Baseline rate (add details for an exact quote)';
+
+        if (text.length >= 4) {
+            const hrs = extractUnitCount(text, 'hours?|hrs?');
+            if (hrs != null && hrs >= 1) {
+                const rateMin = min;
+                const rateSug = Math.max(roundTo50(base.low), 500);
+                min = Math.max(base.min, rateMin * hrs);
+                suggested = Math.max(min, rateSug * hrs);
+                high = Math.max(suggested + 500, suggested * 2);
+                reason = 'Based on ' + hrs + '-hour estimate in task details';
+            } else if (key === 'web_app_tech') {
+                const pages = extractUnitCount(text, 'pages?|screens?|views?');
+                if (/\b(ecommerce|e-commerce|online store|shopify|woocommerce|checkout)\b/i.test(text)) {
+                    min = 4000; suggested = 6000; high = 12000;
+                    reason = 'E-commerce / store scope from task details';
+                } else if (/\b(full[-\s]?stack|web app|mobile app|flutter|react native|android|ios|saas)\b/i.test(text)) {
+                    min = 5000; suggested = 8000; high = 15000;
+                    reason = 'App / full-stack project scope from task details';
+                } else if (pages != null) {
+                    min = 800 * pages; suggested = 1500 * pages; high = Math.max(suggested + 1500, suggested * 2);
+                    reason = 'Based on ' + pages + ' ' + (pages === 1 ? 'page' : 'pages') + ' in task details';
+                } else if (/\b(landing page|one[-\s]?page|single page)\b/i.test(text)) {
+                    min = 2000; suggested = 3000; high = 5500;
+                    reason = 'Landing page scope from task details';
+                } else if (/\b(wordpress|webflow|wix|website|portfolio|business site)\b/i.test(text)) {
+                    min = 2400; suggested = 4500; high = 8000;
+                    reason = 'Standard multi-page website scope from details';
+                } else if (/\b(bug|fix|error|issue|debug|patch|tweak|responsive|speed)\b/i.test(text)) {
+                    min = 800; suggested = 1200; high = 2500;
+                    reason = 'Bug fix / small tech update scope';
+                }
+            } else if (key === 'graphic_design') {
+                const qty = extractUnitCount(text, 'designs?|posts?|creatives?|banners?|posters?|flyers?|thumbnails?|logos?');
+                if (/\b(brand kit|brand identity|branding|guidelines|full brand)\b/i.test(text)) {
+                    min = 3500; suggested = 5500; high = 10000;
+                    reason = 'Brand identity kit scope from task details';
+                } else if (/\b(pitch deck|brochure|catalog|catalogue|menu|booklet)\b/i.test(text)) {
+                    const p = pagesOrDefault(text, 6);
+                    min = Math.max(800, 350 * p); suggested = Math.max(1500, 600 * p); high = suggested * 2;
+                    reason = 'Multi-page design layout (' + p + ' pages)';
+                } else if (/\b(logo)\b/i.test(text)) {
+                    min = 1200; suggested = 2000; high = 4000;
+                    reason = 'Custom logo design scope from task details';
+                } else if (qty != null) {
+                    min = 350 * qty; suggested = 600 * qty; high = Math.max(1200, 1200 * qty);
+                    reason = 'Based on ' + qty + ' ' + (qty === 1 ? 'design' : 'designs') + ' in task details';
+                }
+            } else if (key === 'video_audio_editing') {
+                const mins = extractUnitCount(text, 'mins?|minutes?');
+                const reels = extractUnitCount(text, 'reels?|shorts?|videos?|clips?|episodes?');
+                if (/\b(youtube|long video|documentary|vlog|interview)\b/i.test(text) || (mins != null && mins >= 3)) {
+                    const m = mins || 5;
+                    min = 800 + 360 * m; suggested = 1500 + 500 * m; high = suggested * 2;
+                    reason = 'Long-form video (~' + m + ' min) from task details';
+                } else if (reels != null) {
+                    min = 400 * reels; suggested = 750 * reels; high = Math.max(1500, 1500 * reels);
+                    reason = 'Based on ' + reels + ' ' + (reels === 1 ? 'video / reel' : 'videos / reels') + ' in details';
+                } else if (/\b(reel|short|instagram|promo|teaser)\b/i.test(text)) {
+                    min = 500; suggested = 900; high = 1800;
+                    reason = 'Short-form Reel / Promo edit scope';
+                } else if (/\b(podcast|audio|voiceover|mix|master|noise)\b/i.test(text)) {
+                    min = 500; suggested = 1000; high = 2200;
+                    reason = 'Audio / podcast editing scope';
+                }
+            } else if (key === 'digital_marketing') {
+                const months = extractUnitCount(text, 'months?');
+                const campaigns = extractUnitCount(text, 'campaigns?|ads?|ad sets?');
+                if (/\b(monthly|retainer|full management|smm|social media management|seo)\b/i.test(text) || months != null) {
+                    const mo = months || 1;
+                    min = 3500 * mo; suggested = 5500 * mo; high = 10000 * mo;
+                    reason = 'Monthly growth / SEO retainer (' + mo + ' ' + (mo === 1 ? 'month' : 'months') + ')';
+                } else if (campaigns != null) {
+                    min = 1200 * campaigns; suggested = 2000 * campaigns; high = 4000 * campaigns;
+                    reason = 'Ad campaign scope (' + campaigns + ' ' + (campaigns === 1 ? 'campaign' : 'campaigns') + ')';
+                } else if (/\b(meta ads|facebook ads|google ads|instagram ads|lead gen|audit)\b/i.test(text)) {
+                    min = 1500; suggested = 2500; high = 5000;
+                    reason = 'Ad setup / audit scope from task details';
+                }
+            } else if (key === 'business_admin') {
+                const slides = extractUnitCount(text, 'slides?');
+                const sheets = extractUnitCount(text, 'sheets?|pages?|docs?|documents?');
+                if (slides != null || /\b(pitch deck|presentation|ppt|powerpoint)\b/i.test(text)) {
+                    const s = slides || 10;
+                    min = Math.max(500, 150 * s); suggested = Math.max(1000, 250 * s); high = Math.max(2000, 450 * s);
+                    reason = 'Presentation / deck (~' + s + ' slides) from details';
+                } else if (sheets != null) {
+                    min = Math.max(300, 250 * sheets); suggested = Math.max(500, 400 * sheets); high = Math.max(1000, 800 * sheets);
+                    reason = 'Based on ' + sheets + ' docs / sheets in task details';
+                } else if (/\b(excel|google sheet|macro|vba|automation|crm|accounting|gst|bookkeeping)\b/i.test(text)) {
+                    min = 800; suggested = 1500; high = 3000;
+                    reason = 'Spreadsheet / automation / finance scope';
+                } else if (/\b(resume|cv|cover letter|linkedin)\b/i.test(text)) {
+                    min = 500; suggested = 900; high = 1800;
+                    reason = 'Resume / profile writing scope';
+                }
+            } else {
+                const items = extractUnitCount(text, 'articles?|blogs?|pages?|designs?|items?|tasks?');
+                if (items != null) {
+                    min = Math.max(300, 250 * items); suggested = Math.max(500, 450 * items); high = Math.max(1200, 900 * items);
+                    reason = 'Based on ' + items + ' deliverables in task details';
+                }
+            }
+        }
+
+        if (uplift > 1.0) {
+            suggested = Math.max(min, roundTo50(suggested * uplift));
+            high = Math.max(suggested + 300, roundTo50(high * uplift));
+            reason = reason + ' (+priority/complexity)';
+        }
+
+        return {
+            min: Math.round(min),
+            low: Math.max(min, roundTo50(suggested * 0.85)),
+            suggested: Math.max(min, roundTo50(suggested)),
+            high: Math.max(Math.round(suggested) + 200, roundTo50(high)),
+            reason: reason
+        };
+    }
+
+    function pagesOrDefault(text, fallback) {
+        const n = extractUnitCount(text, 'pages?|slides?');
+        return n != null ? n : fallback;
+    }
 
     function getAreaMultiplier(locationText) {
         const txt = String(locationText || '').toLowerCase();
@@ -1447,8 +1628,21 @@
         let selectedVehicle = null;    // selected vehicle key for transport/delivery
         let calculating  = false;      // true while distance/route is being fetched
         let lastError    = null;       // user-friendly error message if calc failed
+        const locInputId = opts.locationInputId || pickupId;
+        let lastAutoAmt  = null;
 
-        const applyValueToBudget = (amt) => {
+        const budgetElInit = opts.applyBudget ? document.getElementById(opts.budgetInputId || 'customBudget') : null;
+        if (budgetElInit && budgetElInit.dataset.wmAutoWired !== '1') {
+            budgetElInit.dataset.wmAutoWired = '1';
+            budgetElInit.addEventListener('input', (ev) => {
+                if (ev && ev.isTrusted) {
+                    lastAutoAmt = null;
+                    budgetElInit.dataset.wmAutoAmt = '';
+                }
+            });
+        }
+
+        const applyValueToBudget = (amt, shouldFocus) => {
             const customId = opts.budgetInputId || 'customBudget';
             const budget = document.getElementById(customId);
             if (!budget) return;
@@ -1460,12 +1654,34 @@
                     window.updateTotalBudgetDisplay();
                 }
             } catch (e) {}
-            budget.focus();
+            if (shouldFocus) budget.focus();
+        };
+
+        const syncFreelancerLocationUi = (isFl) => {
+            if (!locInputId) return;
+            const locInput = document.getElementById(locInputId);
+            if (!locInput) return;
+            const locFg = locInput.closest('.form-group');
+            if (locInput.dataset.wmWasReq === undefined) {
+                locInput.dataset.wmWasReq = locInput.hasAttribute('required') ? '1' : '0';
+            }
+            if (isFl) {
+                if (locFg) locFg.style.display = 'none';
+                locInput.removeAttribute('required');
+            } else {
+                if (locFg) locFg.style.display = '';
+                if (locInput.dataset.wmWasReq === '1') {
+                    locInput.setAttribute('required', '');
+                }
+            }
         };
 
         const update = () => {
             const key = sel.value;
-            const baseRange = PRICE_RANGES[key];
+            const isFl = isFreelancerCategory(key);
+            syncFreelancerLocationUi(isFl);
+
+            const baseRange = PRICE_RANGES[key] || PRICE_RANGES[normalizeCatKey(key)];
             const cat = (window.WMCategories && window.WMCategories.byKey(key)) || null;
             if (!key || key === 'all' || !baseRange) {
                 hint.style.display = 'none';
@@ -1475,16 +1691,81 @@
             const distMeta = DISTANCE_PRICING[key];
             // Show drop field + pickup map button only for distance-based categories
             if (dropApi) {
-                if (distMeta) dropApi.show(); else dropApi.hide();
+                if (distMeta && !isFl) dropApi.show(); else dropApi.hide();
             }
             if (pickupMapBtn) {
-                pickupMapBtn.style.display = distMeta ? '' : 'none';
+                pickupMapBtn.style.display = (distMeta && !isFl) ? '' : 'none';
+            }
+
+            const label = cat ? cat.label : key;
+            const icon  = cat ? cat.icon : '💡';
+
+            if (isFl) {
+                const titleEl = opts.titleInputId ? document.getElementById(opts.titleInputId) : null;
+                const descEl  = opts.descInputId ? document.getElementById(opts.descInputId) : null;
+                const sug = suggestFreelancerFromDetails(key, titleEl ? titleEl.value : '', descEl ? descEl.value : '');
+                try {
+                    window.__wmLastSuggestedAmt = sug.suggested;
+                    if (window.WMUpdateBudgetMinLabel) window.WMUpdateBudgetMinLabel(sug.min);
+                } catch (e) {}
+
+                if (opts.applyBudget) {
+                    const budget = document.getElementById(opts.budgetInputId || 'customBudget');
+                    if (budget) {
+                        const cur = String(budget.value || '').trim();
+                        if (!cur || cur === String(lastAutoAmt || '') || cur === String(budget.dataset.wmAutoAmt || '')) {
+                            lastAutoAmt = sug.suggested;
+                            budget.dataset.wmAutoAmt = String(sug.suggested);
+                            applyValueToBudget(sug.suggested, false);
+                        }
+                    }
+                }
+
+                let html = ''
+                    + '<div class="wm-price-hint-head">'
+                    +   '<span class="wm-price-icon">🌐</span>'
+                    +   '<span class="wm-price-text">'
+                    +     '<strong>Remote ' + label + '</strong> (no location needed) — '
+                    +     'suggested <strong>' + fmtRupee(sug.suggested) + '</strong> '
+                    +     '(typical <strong>' + fmtRupee(sug.low) + ' – ' + fmtRupee(sug.high) + '</strong>).'
+                    +     '<div style="font-size:0.8rem;color:#4f46e5;margin-top:2px;">' + sug.reason + '</div>'
+                    +   '</span>'
+                    + '</div>';
+
+                if (opts.applyBudget) {
+                    html += '<div class="wm-price-hint-actions">'
+                         +    '<span class="wm-price-hint-label">Quick set:</span>'
+                         +    '<button type="button" class="wm-price-chip" data-amt="' + sug.low + '">' + fmtRupee(sug.low) + '</button>'
+                         +    '<button type="button" class="wm-price-chip wm-price-chip-suggest active" data-amt="' + sug.suggested + '">' + fmtRupee(sug.suggested) + '</button>'
+                         +    '<button type="button" class="wm-price-chip" data-amt="' + sug.high + '">' + fmtRupee(sug.high) + '</button>'
+                         + '</div>'
+                         + '<div class="wm-price-hint-warn">'
+                         +   'Minimum budget for this scope: ' + fmtRupee(sug.min) + ' · Price updates live from your task title &amp; details.'
+                         + '</div>';
+                }
+                hint.innerHTML = html;
+                hint.style.display = 'block';
+
+                if (opts.applyBudget) {
+                    hint.querySelectorAll('.wm-price-chip').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const amt = parseInt(btn.dataset.amt, 10);
+                            if (!isNaN(amt)) {
+                                lastAutoAmt = null;
+                                const bEl = document.getElementById(opts.budgetInputId || 'customBudget');
+                                if (bEl) bEl.dataset.wmAutoAmt = '';
+                                applyValueToBudget(amt, true);
+                            }
+                            hint.querySelectorAll('.wm-price-chip').forEach(b => b.classList.remove('active'));
+                            btn.classList.add('active');
+                        });
+                    });
+                }
+                return;
             }
 
             const city  = getUserCity(pickupId);
             const range = getAreaAdjustedRange(key, city);
-            const label = cat ? cat.label : key;
-            const icon  = cat ? cat.icon : '💡';
             const lowFmt  = fmtRupee(range.low);
             const highFmt = fmtRupee(range.high);
 
@@ -1567,7 +1848,7 @@
                 }
                 if (opts.applyBudget && suggestedAmt != null) {
                     // Auto-apply suggested price to budget input.
-                    try { applyValueToBudget(suggestedAmt); } catch (e) {}
+                    try { applyValueToBudget(suggestedAmt, false); } catch (e) {}
                     html += '<div class="wm-price-hint-actions">'
                          +    '<span class="wm-price-hint-label"><i class="fas fa-check-circle" style="color:#10b981"></i> Applied to your budget:</span>'
                          +    '<strong class="wm-price-chip wm-price-chip-suggest active">' + fmtRupee(suggestedAmt) + '</strong>'
@@ -1609,7 +1890,7 @@
                     hint.querySelectorAll('.wm-price-chip').forEach(btn => {
                         btn.addEventListener('click', () => {
                             const amt = parseInt(btn.dataset.amt, 10);
-                            if (!isNaN(amt)) applyValueToBudget(amt);
+                            if (!isNaN(amt)) applyValueToBudget(amt, true);
                             hint.querySelectorAll('.wm-price-chip').forEach(b => b.classList.remove('active'));
                             btn.classList.add('active');
                         });
@@ -1681,7 +1962,7 @@
                 hint.querySelectorAll('.wm-price-chip').forEach(btn => {
                     btn.addEventListener('click', () => {
                         const amt = parseInt(btn.dataset.amt, 10);
-                        if (!isNaN(amt)) applyValueToBudget(amt);
+                        if (!isNaN(amt)) applyValueToBudget(amt, true);
                         hint.querySelectorAll('.wm-price-chip').forEach(b => b.classList.remove('active'));
                         btn.classList.add('active');
                     });
@@ -1792,6 +2073,7 @@
         const pickupEl = pickupId ? document.getElementById(pickupId) : null;
         if (pickupEl) {
             pickupEl.addEventListener('blur', () => {
+                if (isFreelancerCategory(sel.value)) return;
                 if (dropApi) dropApi.pickupCoords = null;
                 if (DISTANCE_PRICING[sel.value]) {
                     refreshDistance();
@@ -1800,6 +2082,16 @@
                 }
             });
         }
+        [opts.titleInputId, opts.descInputId].forEach(fid => {
+            if (!fid) return;
+            const fEl = document.getElementById(fid);
+            if (fEl && fEl.dataset.wmFlWired !== selectId) {
+                fEl.dataset.wmFlWired = selectId;
+                fEl.addEventListener('input', () => {
+                    if (isFreelancerCategory(sel.value)) update();
+                });
+            }
+        });
         if (dropApi) {
             dropApi.input.addEventListener('blur', () => {
                 // User typed manually — clear any prior map-picked coords
@@ -1867,7 +2159,7 @@
         });
         wireTemplate('modalTaskCategory', 'modalTaskDescription');
         wireTemplate('editTaskCategory',  'editTaskDescription');
-        wirePriceHint('modalTaskCategory', { budgetInputId: 'customBudget', pickupInputId: 'modalTaskLocation', applyBudget: true });
-        wirePriceHint('editTaskCategory',  { applyBudget: false });
+        wirePriceHint('modalTaskCategory', { budgetInputId: 'customBudget', pickupInputId: 'modalTaskLocation', titleInputId: 'modalTaskTitle', descInputId: 'modalTaskDescription', applyBudget: true });
+        wirePriceHint('editTaskCategory',  { locationInputId: 'editTaskLocation', titleInputId: 'editTaskTitle', descInputId: 'editTaskDescription', applyBudget: false });
     };
 })();

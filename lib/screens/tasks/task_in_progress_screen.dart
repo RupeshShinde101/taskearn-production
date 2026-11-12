@@ -739,6 +739,25 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
+                      ] else if (Task.isFreelancerCategory(task.category) ||
+                          (task.latitude == 0 && task.longitude == 0)) ...[
+                        const Row(
+                          children: [
+                            Icon(Icons.public_rounded,
+                                color: AppColors.primary, size: 18),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Remote / Online Service — No physical location needed',
+                                style: TextStyle(
+                                    color: AppColors.gray,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.4),
+                              ),
+                            ),
+                          ],
+                        ),
                       ] else ...[
                         if (task.address != null && task.address!.isNotEmpty)
                           Padding(

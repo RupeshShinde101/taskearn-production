@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../screens/legal/privacy_screen.dart';
-import '../../screens/legal/terms_screen.dart';
-import '../../theme/app_theme.dart';
-import '../../widgets/gradient_button.dart';
+import '../providers/auth_provider.dart';
+import '../screens/legal/privacy_screen.dart';
+import '../screens/legal/terms_screen.dart';
+import '../theme/app_theme.dart';
+import '../utils/legal_constants.dart';
+import '../widgets/gradient_button.dart';
 
 /// Popup shown immediately after a successful Google sign-up.
 ///
@@ -71,16 +72,6 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
     super.dispose();
   }
 
-  int _ageInYears(DateTime dob) {
-    final now = DateTime.now();
-    int age = now.year - dob.year;
-    if (now.month < dob.month ||
-        (now.month == dob.month && now.day < dob.day)) {
-      age--;
-    }
-    return age;
-  }
-
   void _msg(String msg) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg)));
@@ -100,8 +91,8 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
       _msg('Please select your date of birth.');
       return;
     }
-    if (_ageInYears(_dob!) < 16) {
-      _msg('You must be at least 16 years old to join WorkMate4U.');
+    if (!isEligibleAdultDob(_dob!)) {
+      _msg(kMinAgeErrorMessage);
       return;
     }
     if (!_agreeTerms || !_agreePrivacy) {
@@ -110,7 +101,7 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
         builder: (_) => AlertDialog(
           title: const Text('Acceptance Required'),
           content: const Text(
-            'You must accept both the Terms & Conditions and the Privacy Policy to create your account.',
+            'You must confirm you are 18+ and accept both the Terms & Conditions and the Privacy Policy to create your account.',
           ),
           actions: [
             TextButton(
@@ -135,11 +126,12 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
 
     setState(() => _submitting = false);
     if (!ok) {
-      // Show error briefly but don't block — account is already created,
-      // user can update their profile from settings later.
-      _msg(auth.error ?? 'Profile saved partially. You can update it later.');
+      final err = auth.error ?? 'Profile saved partially. You can update it later.';
+      _msg(err);
+      if (err.contains('18') || err.toLowerCase().contains('age')) {
+        return;
+      }
     }
-    // Always close the popup and proceed to home.
     if (mounted) Navigator.of(context).pop(ok);
   }
 
@@ -250,7 +242,7 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Just a few details required to get you started.',
+                'Confirm you are 18+ years old (India) and enter your details to continue.',
                 style: TextStyle(
                     fontSize: 13, color: AppColors.gray, height: 1.4),
               ),
@@ -278,14 +270,12 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               // ── DOB picker ───────────────────────────────────────────
               GestureDetector(
                 onTap: () async {
-                  final now = DateTime.now();
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: _dob ??
-                        DateTime(now.year - 20, now.month, now.day),
+                    initialDate: defaultInitialDob(currentDob: _dob),
                     firstDate: DateTime(1920),
-                    lastDate: DateTime(now.year - 13, now.month, now.day),
-                    helpText: 'Date of Birth',
+                    lastDate: maxEligibleDob(),
+                    helpText: 'Date of Birth (Must be 18+)',
                   );
                   if (picked != null && mounted) {
                     setState(() => _dob = picked);
@@ -308,7 +298,7 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
                         child: Text(
                           _dob != null
                               ? DateFormat('dd / MM / yyyy').format(_dob!)
-                              : 'Date of Birth',
+                              : 'Date of Birth (Must be 18+)',
                           style: TextStyle(
                             color: _dob != null
                                 ? AppColors.dark
@@ -329,7 +319,7 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               _CheckRow(
                 value: _agreeTerms,
                 onToggle: () => setState(() => _agreeTerms = !_agreeTerms),
-                label: 'I agree to the ',
+                label: 'I confirm I am 18+ years old and agree to the ',
                 linkText: 'Terms & Conditions',
                 onLinkTap: () => Navigator.of(context, rootNavigator: true).push(
                   MaterialPageRoute(builder: (_) => const TermsScreen()),

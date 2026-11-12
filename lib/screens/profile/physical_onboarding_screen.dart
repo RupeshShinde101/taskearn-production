@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/legal_constants.dart';
 
 /// List of sensitive skills requiring admin physical verification
 const List<String> kSensitiveSkills = [
@@ -116,6 +117,16 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
 
     final auth = context.read<AuthProvider>();
     final user = auth.user;
+
+    if (user?.isConfirmedUnderage == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(kMinAgeErrorMessage),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
 
     // Use initialSkills, or user's active sensitive skills, or default full sensitive skills list
     List<String> targetSkills = widget.initialSkills != null && widget.initialSkills!.isNotEmpty
@@ -540,7 +551,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                                   padding: EdgeInsets.only(top: 8),
                                   child: Text.rich(
                                     TextSpan(
-                                      text: 'I declare that the address and contact details provided are authentic. I agree to an in-person physical background and skill verification by an authorized Workmate4u admin or agent.',
+                                      text: 'I confirm that I am at least 18 years old with full legal capacity in India, and will perform tasks personally without engaging any minor or adolescent under 18. I declare that the address and contact details provided are authentic and consent to an in-person background and skill verification by an authorized Workmate4u admin or agent.',
                                       style: TextStyle(fontSize: 11.5, color: Color(0xFF334155), height: 1.4),
                                       children: [
                                         TextSpan(

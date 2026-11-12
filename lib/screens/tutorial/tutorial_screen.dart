@@ -18,8 +18,8 @@ class _TutorialScreenState extends State<TutorialScreen> {
       emoji: '👋',
       title: 'Welcome to Workmate4u',
       description:
-          'Workmate4u connects people who need tasks done with skilled helpers nearby. '
-          'Whether you need something done or want to earn money, we\'ve got you covered.',
+          'Workmate4u connects verified adults (18+ in India) who need tasks done with skilled helpers nearby. '
+          'Whether you need something done or want to earn money, you must be at least 18 years old to join.',
     ),
     _TutorialStep(
       emoji: '🔄',
@@ -44,24 +44,24 @@ class _TutorialScreenState extends State<TutorialScreen> {
     ),
     _TutorialStep(
       emoji: '💬',
-      title: 'Encrypted Chat & Calls',
+      title: 'Encrypted Chat & Coordination',
       description:
-          'Once a task is accepted, coordinate safely through 1-on-1 encrypted in-app chat and calls. '
-          'Never discuss or transact outside the app — in-app communication keeps your escrow payment secure and protected.',
+          'Once a task is accepted, coordinate through 1-on-1 encrypted in-app task chat or active-task call options. '
+          'Never pay or accept payments outside Workmate4u — in-app payments keep your task settlement protected.',
     ),
     _TutorialStep(
       emoji: '🤝',
       title: 'Accept & Complete',
       description:
-          'Helpers apply to your task — you pick the best one. '
-          'Once the task is done, confirm completion and the payment is released automatically.',
+          'Verified adult helpers accept your task and upload photo proof upon completion. '
+          'Once you verify the work, payment is released directly from your wallet.',
     ),
     _TutorialStep(
       emoji: '💰',
       title: 'Wallet & Payments',
       description:
-          'Top up your wallet using Razorpay. Payments are held securely in escrow until '
-          'you confirm the task is complete. Helpers can withdraw earnings anytime.',
+          'Post tasks with no upfront wallet charge — top up via Razorpay and pay after verifying completion. '
+          'KYC-verified helpers can withdraw earnings (min ₹100) to their bank account.',
     ),
     _TutorialStep(
       emoji: '⭐',

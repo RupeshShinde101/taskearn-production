@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../screens/legal/privacy_screen.dart';
+import '../../screens/legal/terms_screen.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/legal_constants.dart';
 import '../../widgets/gradient_button.dart';
 
 /// Popup shown immediately after a successful Google sign-up.
@@ -69,16 +72,6 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
     super.dispose();
   }
 
-  int _ageInYears(DateTime dob) {
-    final now = DateTime.now();
-    int age = now.year - dob.year;
-    if (now.month < dob.month ||
-        (now.month == dob.month && now.day < dob.day)) {
-      age--;
-    }
-    return age;
-  }
-
   void _msg(String msg) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg)));
@@ -98,12 +91,12 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
       _msg('Please select your date of birth.');
       return;
     }
-    if (_ageInYears(_dob!) < 16) {
-      _msg('You must be at least 16 years old to join WorkMate4U.');
+    if (!isEligibleAdultDob(_dob!)) {
+      _msg(kMinAgeErrorMessage);
       return;
     }
     if (!_agreeTerms || !_agreePrivacy) {
-      _msg('Please accept both the Terms & Conditions and Privacy Policy.');
+      _msg('Please confirm you are 18+ and accept both the Terms & Conditions and Privacy Policy.');
       return;
     }
 
@@ -119,11 +112,12 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
 
     setState(() => _submitting = false);
     if (!ok) {
-      // Show error briefly but don't block — account is already created,
-      // user can update their profile from settings later.
-      _msg(auth.error ?? 'Profile saved partially. You can update it later.');
+      final err = auth.error ?? 'Failed to save profile. Please try again.';
+      _msg(err);
+      if (err.contains('18') || err.toLowerCase().contains('age')) {
+        return;
+      }
     }
-    // Always close the popup and proceed to home.
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -131,7 +125,9 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Padding(
+    return PopScope(
+      canPop: false,
+      child: Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -211,7 +207,7 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Just a few details required to get you started.',
+                'Confirm you are 18+ years old (India) and enter your details to continue.',
                 style: TextStyle(
                     fontSize: 13, color: AppColors.gray, height: 1.4),
               ),
@@ -239,14 +235,12 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               // ── DOB picker ───────────────────────────────────────────
               GestureDetector(
                 onTap: () async {
-                  final now = DateTime.now();
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: _dob ??
-                        DateTime(now.year - 20, now.month, now.day),
+                    initialDate: defaultInitialDob(currentDob: _dob),
                     firstDate: DateTime(1920),
-                    lastDate: DateTime(now.year - 13, now.month, now.day),
-                    helpText: 'Date of Birth',
+                    lastDate: maxEligibleDob(),
+                    helpText: 'Date of Birth (Must be 18+)',
                   );
                   if (picked != null && mounted) {
                     setState(() => _dob = picked);
@@ -269,7 +263,7 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
                         child: Text(
                           _dob != null
                               ? DateFormat('dd / MM / yyyy').format(_dob!)
-                              : 'Date of Birth',
+                              : 'Date of Birth (Must be 18+)',
                           style: TextStyle(
                             color: _dob != null
                                 ? AppColors.dark
@@ -290,13 +284,21 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
               _CheckRow(
                 value: _agreeTerms,
                 onTap: () => setState(() => _agreeTerms = !_agreeTerms),
-                label: 'I agree to the Terms & Conditions',
+                label: 'I confirm I am 18+ years old and agree to the ',
+                linkText: 'Terms & Conditions',
+                onLinkTap: () => Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute(builder: (_) => const TermsScreen()),
+                ),
               ),
               const SizedBox(height: 10),
               _CheckRow(
                 value: _agreePrivacy,
                 onTap: () => setState(() => _agreePrivacy = !_agreePrivacy),
-                label: 'I agree to the Privacy Policy',
+                label: 'I agree to the ',
+                linkText: 'Privacy Policy',
+                onLinkTap: () => Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                ),
               ),
               const SizedBox(height: 24),
 
@@ -306,27 +308,11 @@ class _GoogleProfilePopupState extends State<GoogleProfilePopup> {
                 loading: _submitting,
                 onPressed: _submitting ? null : _submit,
               ),
-              const SizedBox(height: 10),
-
-              // ── Skip ──────────────────────────────────────────────────
-              Center(
-                child: TextButton(
-                  onPressed:
-                      _submitting ? null : () => Navigator.of(context).pop(),
-                  child: const Text(
-                    'Skip for now',
-                    style: TextStyle(
-                      color: AppColors.gray,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -388,22 +374,25 @@ class _CheckRow extends StatelessWidget {
   final bool value;
   final VoidCallback onTap;
   final String label;
+  final String linkText;
+  final VoidCallback onLinkTap;
 
   const _CheckRow({
     required this.value,
     required this.onTap,
     required this.label,
+    required this.linkText,
+    required this.onLinkTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AnimatedContainer(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             width: 22,
             height: 22,
@@ -420,16 +409,34 @@ class _CheckRow extends StatelessWidget {
                     size: 14, color: Colors.white)
                 : null,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.dark, height: 1.4),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: GestureDetector(
+            onTap: onTap,
+            child: Wrap(
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.dark, height: 1.4)),
+                GestureDetector(
+                  onTap: onLinkTap,
+                  child: Text(
+                    linkText,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.primary,
+                      decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

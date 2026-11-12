@@ -5753,6 +5753,22 @@ async function handleLogin(event) {
     }
 }
 
+function isEligibleAdultDob(dobStr, minAge = 18) {
+    if (!dobStr || typeof dobStr !== 'string') return false;
+    const parts = dobStr.trim().split('T')[0].split('-');
+    if (parts.length !== 3) return false;
+    const y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+    if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d) || y < 1900) return false;
+    const dob = new Date(y, m - 1, d);
+    if (dob.getFullYear() !== y || dob.getMonth() !== m - 1 || dob.getDate() !== d) return false;
+    const today = new Date();
+    if (dob > today) return false;
+    let age = today.getFullYear() - y;
+    const monthDiff = (today.getMonth() + 1) - m;
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < d)) age--;
+    return age >= minAge;
+}
+
 async function handleSignup(event) {
     event.preventDefault();
 
@@ -5764,12 +5780,9 @@ async function handleSignup(event) {
     const dob = document.getElementById('signupDOB').value;
     const signupBtn = event.target.querySelector('button[type="submit"]');
     
-    // Validate age
-    const dobDate = new Date(dob);
-    const age = Math.floor((Date.now() - dobDate.getTime()) / (365.25 * 24 * 3600000));
-
-    if (age < 16) {
-        showToast('You must be 16+ to use Workmate4u');
+    // Validate age (must be 18+ legal adult in India)
+    if (!isEligibleAdultDob(dob, 18)) {
+        showToast('You must be 18 or older to use Workmate4u', 'error');
         return;
     }
     
@@ -5800,6 +5813,8 @@ async function handleSignup(event) {
                 password: password,
                 phone: phone,
                 dob: dob,
+                terms_accepted_at: new Date().toISOString(),
+                terms_version: '2026-11-12',
             });
             
             if (result.success) {
@@ -8582,8 +8597,9 @@ function showCompleteProfileModal() {
                     <label for="cpDob">Date of Birth <span style="color:#ef4444;">*</span></label>
                     <input type="date" id="cpDob" required
                         style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
-                    <small style="color:#64748b;">You must be 16 or older to use Workmate4u</small>
+                    <small style="color:#64748b;">You must be 18 or older to use Workmate4u</small>
                 </div>` : ''}
+                <p style="font-size:12px;color:#64748b;margin:8px 0 0;">By continuing, you confirm you are 18+ and agree to our <a href="terms.html" target="_blank">Terms &amp; Conditions</a> and <a href="privacy.html" target="_blank">Privacy Policy</a>.</p>
                 <button type="submit" class="btn btn-primary btn-block" style="margin-top:10px;">
                     <i class="fas fa-check"></i> Save & Continue
                 </button>
@@ -8609,9 +8625,10 @@ async function submitCompleteProfile(e) {
     if (dobEl) {
         const dob = dobEl.value;
         if (!dob) { showToast('❌ Please enter your date of birth', 'error'); return; }
-        const age = Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600000));
-        if (age < 16) { showToast('❌ You must be 16 or older to use Workmate4u', 'error'); return; }
+        if (!isEligibleAdultDob(dob, 18)) { showToast('❌ You must be 18 or older to use Workmate4u', 'error'); return; }
         updates.dob = dob;
+        updates.terms_accepted_at = new Date().toISOString();
+        updates.terms_version = '2026-11-12';
     }
 
     try {

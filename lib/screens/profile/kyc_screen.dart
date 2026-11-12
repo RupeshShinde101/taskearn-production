@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/legal_constants.dart';
 import '../../widgets/gradient_button.dart';
 
 class KycScreen extends StatefulWidget {
@@ -49,6 +50,16 @@ class _KycScreenState extends State<KycScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final auth = context.read<AuthProvider>();
+
+    if (auth.user?.isConfirmedUnderage == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(kMinAgeErrorMessage),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
 
     // Require email to be verified before KYC submission
     if (auth.user?.isEmailVerified == false) {
@@ -364,7 +375,7 @@ class _KycScreenState extends State<KycScreen> {
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
-                        'I declare that the documents submitted are genuine, belong to me, and have not been shared with other users. I understand that submitting fraudulent documents may result in permanent account suspension.',
+                        'I confirm that I am at least 18 years old (legal adult age in India), the documents submitted are genuine and belong solely to me, and I will never share this account or allow any minor (<18) to perform tasks. I understand that false age or fraudulent KYC submission results in permanent suspension, wallet freeze, and legal action.',
                         style: TextStyle(color: AppColors.dark, fontSize: 12, height: 1.5),
                       ),
                     ),

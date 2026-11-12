@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/legal_constants.dart';
 import '../../widgets/gradient_button.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -35,16 +36,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  int _ageInYears(DateTime dob) {
-    final now = DateTime.now();
-    int age = now.year - dob.year;
-    if (now.month < dob.month ||
-        (now.month == dob.month && now.day < dob.day)) {
-      age--;
-    }
-    return age;
-  }
-
   Future<void> _signUpWithGoogle() async {
     final auth = context.read<AuthProvider>();
     final ok = await auth.loginWithGoogle();
@@ -66,11 +57,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
-    if (_ageInYears(_dob!) < 16) {
+    if (!isEligibleAdultDob(_dob!)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content:
-                Text('You must be at least 16 years old to join WorkMate4U')),
+            content: Text(kMinAgeErrorMessage)),
       );
       return;
     }
@@ -177,7 +167,74 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         onTap: auth.isLoading ? null : _signUpWithGoogle,
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 12),
+
+                    // ── 18+ Eligibility & Terms Banner (visible on entry) ───
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: const Color(0xFF6366F1)
+                                .withValues(alpha: 0.25)),
+                      ),
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text(
+                            '18+ Adults Only (India): You must be at least 18 years old. By continuing with Google, you confirm your age (verified next step) and agree to our ',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFF475569),
+                              height: 1.45,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => context.push('/terms'),
+                            child: const Text(
+                              'Terms & Conditions',
+                              style: TextStyle(
+                                color: Color(0xFF4F46E5),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11.5,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                          const Text(
+                            ' and ',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFF475569),
+                              height: 1.45,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => context.push('/privacy'),
+                            child: const Text(
+                              'Privacy Policy',
+                              style: TextStyle(
+                                color: Color(0xFF4F46E5),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11.5,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                          const Text(
+                            '.',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFF475569),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
 
                     // ── OR divider ──────────────────────────────────────
                     const Row(
@@ -279,26 +336,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           // ── DOB picker ──────────────────────────────
                           FormField<DateTime>(
                             initialValue: _dob,
-                            validator: (v) => v == null
-                                ? 'Date of birth is required'
-                                : null,
+                            validator: (v) {
+                              if (v == null) {
+                                return 'Date of birth is required';
+                              }
+                              if (!isEligibleAdultDob(v)) {
+                                return kMinAgeErrorMessage;
+                              }
+                              return null;
+                            },
                             builder: (state) => Column(
                               crossAxisAlignment:
                                   CrossAxisAlignment.start,
                               children: [
                                 GestureDetector(
                                   onTap: () async {
-                                    final now = DateTime.now();
+                                    final maxDob = maxEligibleDob();
                                     final picked =
                                         await showDatePicker(
                                       context: context,
-                                      initialDate: _dob ??
-                                          DateTime(now.year - 20,
-                                              now.month, now.day),
+                                      initialDate: defaultInitialDob(
+                                          currentDob: _dob),
                                       firstDate: DateTime(1920),
-                                      lastDate: DateTime(now.year - 13,
-                                          now.month, now.day),
-                                      helpText: 'Date of Birth',
+                                      lastDate: maxDob,
+                                      helpText: 'Date of Birth (Must be 18+)',
                                     );
                                     if (picked != null) {
                                       setState(() => _dob = picked);
@@ -328,7 +389,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         const SizedBox(width: 12),
                                         const Expanded(
                                           child: Text(
-                                            'Date of birth',
+                                            'Date of birth (18+)',
                                             style: TextStyle(
                                               color: Color(0xFF1E293B),
                                               fontSize: 15,
@@ -434,7 +495,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   child: Wrap(
                                     children: [
                                       const Text(
-                                        'I agree to the ',
+                                        'I confirm I am 18+ years old and agree to the ',
                                         style: TextStyle(
                                             fontSize: 13,
                                             color: Color(0xFF64748B)),
@@ -447,6 +508,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             color: Color(0xFF6366F1),
                                             fontWeight: FontWeight.w700,
                                             fontSize: 13,
+                                            decoration: TextDecoration.underline,
                                           ),
                                         ),
                                       ),
@@ -504,6 +566,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             color: Color(0xFF6366F1),
                                             fontWeight: FontWeight.w700,
                                             fontSize: 13,
+                                            decoration: TextDecoration.underline,
                                           ),
                                         ),
                                       ),

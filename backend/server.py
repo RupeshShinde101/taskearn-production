@@ -898,6 +898,67 @@ def verify_jwt_token(token):
         return None
 
 
+MINIMUM_LEGAL_AGE = 18
+TERMS_VERSION = '2026-11-12'
+MIN_AGE_ERROR_MESSAGE = 'You must be at least 18 years old (legal adult age in India) to use Workmate4u.'
+_IST_TZ = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+
+def _parse_dob_date(dob_value):
+    """Parse YYYY-MM-DD (or ISO datetime string) into a datetime.date, or return None."""
+    if not dob_value or not isinstance(dob_value, str):
+        return None
+    raw = dob_value.strip()
+    if not raw:
+        return None
+    date_part = raw.split('T')[0].strip()
+    try:
+        parsed = datetime.date.fromisoformat(date_part)
+    except ValueError:
+        return None
+    if parsed.year < 1900:
+        return None
+    return parsed
+
+
+def calculate_age_years(dob_date, reference_date=None):
+    """Exact calendar-year age calculation (handles leap years accurately)."""
+    if dob_date is None:
+        return None
+    today = reference_date or datetime.datetime.now(_IST_TZ).date()
+    age = today.year - dob_date.year
+    if (today.month, today.day) < (dob_date.month, dob_date.day):
+        age -= 1
+    return age
+
+
+def validate_adult_dob(dob_value):
+    """Validate that dob_value represents an adult aged >= 18.
+    Returns (is_valid: bool, normalized_dob: str | None, error_message: str | None).
+    """
+    parsed = _parse_dob_date(dob_value)
+    if parsed is None:
+        return False, None, 'Invalid date of birth format (YYYY-MM-DD required)'
+    today = datetime.datetime.now(_IST_TZ).date()
+    if parsed > today:
+        return False, None, 'Date of birth cannot be in the future'
+    age = calculate_age_years(parsed, today)
+    if age is None or age < MINIMUM_LEGAL_AGE:
+        return False, None, MIN_AGE_ERROR_MESSAGE
+    return True, parsed.isoformat(), None
+
+
+def is_confirmed_underage_user(user_row):
+    """True when a user record has a valid stored DOB showing age < 18."""
+    if not user_row:
+        return False
+    parsed = _parse_dob_date(user_row.get('dob'))
+    if parsed is None:
+        return False
+    age = calculate_age_years(parsed)
+    return age is not None and age < MINIMUM_LEGAL_AGE
+
+
 def validate_email(email):
     """Validate email format"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -1037,6 +1098,10 @@ def screen_task_content(title, description, category):
          'Weapons-related tasks are prohibited.'),
         (r'\b(mdma|lsd|ganja|hashish|opium|brown\s*sugar)\b',
          'Drug-related tasks are prohibited.'),
+
+        # Child / minor labour prohibition (18+ only platform)
+        (r'\b(child\s*labou?r|under\s*18|underage\s*(helper|worker|boy|girl|teen)|minor\s*(worker|helper|boy|girl|for\s*work))\b',
+         'Tasks involving minors under 18 years old are strictly prohibited.'),
     ]
     for rx, reason in extra_blocks:
         try:
@@ -1625,14 +1690,11 @@ def register():
         if get_user_by_email(email):
             return jsonify({'success': False, 'message': 'Email already registered'}), 400
 
-        # Validate age (must be 16+)
-        try:
-            dob_date = datetime.datetime.strptime(dob, '%Y-%m-%d')
-            age = (datetime.datetime.now() - dob_date).days // 365
-            if age < 16:
-                return jsonify({'success': False, 'message': 'You must be 16 or older'}), 400
-        except ValueError:
-            return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
+        # Validate age (must be 18+ legal adult in India)
+        dob_ok, normalized_dob, dob_err = validate_adult_dob(dob)
+        if not dob_ok:
+            return jsonify({'success': False, 'message': dob_err}), 400
+        dob = normalized_dob
 
         # Create user
         user_id = generate_user_id()
@@ -1643,7 +1705,7 @@ def register():
             try:
                 _ensure_terms_columns()
                 terms_at = data.get('terms_accepted_at') or joined_at
-                terms_ver = data.get('terms_version', '2026-05-22')
+                terms_ver = (data.get('terms_version') or TERMS_VERSION).strip() or TERMS_VERSION
                 cursor.execute(f'''
                     INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at, terms_accepted_at, terms_version)
                     VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
@@ -1754,6 +1816,10 @@ def login():
         # Check if user is banned
         if user.get('is_banned'):
             return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
+
+        # Reject confirmed underage (<18) accounts
+        if is_confirmed_underage_user(user):
+            return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
 
         # Update last login
         with get_db() as (cursor, conn):
@@ -2404,10 +2470,14 @@ def reset_password():
 @require_auth
 def update_profile():
     """Update user profile"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     _ensure_bio_skills_columns()
     _ensure_terms_columns()
     import json as _json_profile
+
+    current_user_row = get_user_by_id(request.user_id)
+    if is_confirmed_underage_user(current_user_row) and 'dob' not in data:
+        return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
 
     _ensure_gender_column()
     allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio', 'gender',
@@ -2444,15 +2514,15 @@ def update_profile():
             print(f"[Skills Validation Warning] {se}")
         updates['skills'] = _json_profile.dumps(submitted_skills)
 
-    # Validate DOB / age if provided
+    # Validate DOB / age if provided (must be 18+)
     if 'dob' in updates:
-        try:
-            dob_date = datetime.datetime.strptime(updates['dob'], '%Y-%m-%d')
-            age = (datetime.datetime.now() - dob_date).days // 365
-            if age < 16:
-                return jsonify({'success': False, 'message': 'You must be 16 or older to use Workmate4u'}), 400
-        except ValueError:
-            return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
+        dob_ok, normalized_dob, dob_err = validate_adult_dob(updates['dob'])
+        if not dob_ok:
+            return jsonify({'success': False, 'message': dob_err}), 400
+        updates['dob'] = normalized_dob
+
+    if 'terms_accepted_at' in updates and 'terms_version' not in updates:
+        updates['terms_version'] = TERMS_VERSION
 
     # Validate email uniqueness if changing email
     if 'email' in updates:
@@ -2826,6 +2896,8 @@ def create_task():
         
         # Check phone number is set (required for task helpers to contact poster)
         user_check = get_user_by_id(request.user_id)
+        if is_confirmed_underage_user(user_check):
+            return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
         if user_check and not user_check.get('phone'):
             return jsonify({'success': False, 'message': 'Please add your phone number in Profile before posting tasks. It is required so task helpers can contact you.', 'needsPhone': True}), 400
 
@@ -11582,6 +11654,10 @@ def submit_kyc():
         doc_image_back = _ensure_data_uri(doc_image_back)
         acknowledged = bool(data.get('acknowledged'))
 
+    user_row = get_user_by_id(request.user_id)
+    if is_confirmed_underage_user(user_row):
+        return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
+
     # Mandatory legal declaration (acts as legal evidence in case of fraud)
     if not acknowledged:
         return jsonify({
@@ -11966,6 +12042,10 @@ def request_helper_physical_verification():
     _ensure_physical_onboarding_table()
     data = request.get_json(silent=True) or {}
     uid = str(request.user_id)
+
+    user_row = get_user_by_id(uid)
+    if is_confirmed_underage_user(user_row):
+        return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
 
     name = (data.get('name') or '').strip()
     address = (data.get('address') or '').strip()
@@ -12638,14 +12718,23 @@ def google_login():
     id_token = data.get('credential', '')
     # Optional registration fields (collected via Flutter onboarding)
     reg_phone = (data.get('phone') or '').strip()
-    reg_dob = (data.get('dob') or None)
+    raw_reg_dob = data.get('dob')
+    reg_dob = raw_reg_dob.strip() if isinstance(raw_reg_dob, str) else raw_reg_dob
     reg_referral = (data.get('referral_code') or '').strip()
     reg_terms_at = data.get('terms_accepted_at') or None
-    reg_terms_ver = data.get('terms_version', '2026-05-22')
+    reg_terms_ver = (data.get('terms_version') or TERMS_VERSION).strip() or TERMS_VERSION
     reg_name_override = (data.get('name') or '').strip()  # name confirmed in onboarding
 
     if not id_token:
         return jsonify({'success': False, 'message': 'Google credential is required'}), 400
+
+    # Strictly reject underage (<18) or malformed DOB if supplied on /auth/google
+    validated_reg_dob = None
+    if reg_dob is not None and str(reg_dob).strip() != '':
+        dob_ok, normalized_dob, dob_err = validate_adult_dob(str(reg_dob))
+        if not dob_ok:
+            return jsonify({'success': False, 'message': dob_err}), 400
+        validated_reg_dob = normalized_dob
 
     try:
         # Ensure Google auth schema is ready. Return 503 if the DB isn't up
@@ -12734,16 +12823,8 @@ def google_login():
                             # Use onboarding-confirmed name if provided, else Google profile name
                             final_name = reg_name_override if reg_name_override else name
                             terms_at = reg_terms_at or joined_at
-                            # Validate DOB if provided (must be 16+)
-                            dob_value = None
-                            if reg_dob:
-                                try:
-                                    dob_date = datetime.datetime.strptime(reg_dob, '%Y-%m-%d')
-                                    age = (datetime.datetime.now() - dob_date).days // 365
-                                    if age >= 16:
-                                        dob_value = reg_dob
-                                except ValueError:
-                                    pass
+                            # DOB already validated as 18+ if supplied
+                            dob_value = validated_reg_dob
                             # Check phone uniqueness if a phone number was provided
                             if reg_phone:
                                 cursor.execute(f'SELECT id FROM users WHERE phone = {PH}', (reg_phone,))
@@ -12798,6 +12879,8 @@ def google_login():
                     user = get_user_by_id(user_id)
                     if user and user.get('is_banned'):
                         return jsonify({'success': False, 'message': 'Account is banned'}), 403
+                    if is_confirmed_underage_user(user):
+                        return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
                 break
             except Exception as db_exc:
                 err = str(db_exc).lower()

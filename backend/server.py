@@ -1195,6 +1195,8 @@ CATEGORY_MIN_PRICES = {
     'queue-standing': 200.0,
     'event_help': 400.0,
     'event-help': 400.0,
+    'eventhelp': 400.0,
+    'catering': 500.0,
 
     # Professional, Creative & Digital
     'data_entry': 150.0,
@@ -1202,6 +1204,8 @@ CATEGORY_MIN_PRICES = {
     'tutoring': 250.0,
     'beauty': 250.0,
     'freelancer': 300.0,
+    'freelance': 300.0,
+    'techsupport': 250.0,
     'business_admin': 300.0,
     'business-admin': 300.0,
     'graphic_design': 350.0,
@@ -1214,13 +1218,17 @@ CATEGORY_MIN_PRICES = {
     'web-app-tech': 800.0,
     'photography': 1500.0,
 
-    # Care Services
+    # Care & Lifestyle
     'pet_care': 150.0,
     'petcare': 150.0,
     'child_care': 200.0,
+    'childcare': 200.0,
     'babysitting': 200.0,
     'elder_care': 500.0,
     'eldercare': 500.0,
+    'fitness': 250.0,
+    'tailoring': 150.0,
+    'waste': 100.0,
 
     # Delivery & Moving (dynamic distance pricing; removed ₹100 static floor for delivery)
     'delivery': 24.0,

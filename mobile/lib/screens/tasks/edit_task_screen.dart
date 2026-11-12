@@ -242,12 +242,39 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     });
   }
 
+  String _currentAreaCandidate() {
+    if (_isDelivery) {
+      return [
+        _dropAddrCtrl.text.trim(),
+        _pickupAddrCtrl.text.trim(),
+        (_locationLabel ?? '').trim(),
+      ].where((s) => s.isNotEmpty).join(', ');
+    }
+    return [
+      _addressCtrl.text.trim(),
+      (_locationLabel ?? '').trim(),
+    ].where((s) => s.isNotEmpty).join(', ');
+  }
+
+  void _syncAreaBudgetIfAuto() {
+    final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
+        (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
+    if (!wasAutoOrEmpty || _isDelivery) return;
+    final suggestion = Task.getBudgetSuggestion(
+      _selectedCategory,
+      areaText: _currentAreaCandidate(),
+      vehicle: _deliveryVehicle,
+    );
+    _syncAutoBudget(suggestion.suggestedBudget);
+  }
+
   void _selectAddressSuggestion(LocationSearchResult s) {
     _addressCtrl.text = s.fullAddress;
     _location = s.toLatLng();
-    _locationLabel = s.title;
+    _locationLabel = s.fullAddress;
     _addressSuggestions = [];
     _searchingAddress = false;
+    _syncAreaBudgetIfAuto();
     FocusScope.of(context).unfocus();
     setState(() {});
   }
@@ -559,7 +586,10 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     }
   }
 
-    void _onLocationAreaChanged() {
+  void _onLocationAreaChanged() {
+    if (!_isDelivery) {
+      _syncAreaBudgetIfAuto();
+    }
     if (mounted) setState(() {});
   }
 
@@ -803,13 +833,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
   Widget _buildSuggestedBudgetCard() {
     if (!_isLocationSet) return const SizedBox.shrink();
-    final areaCandidate = _isDelivery
-        ? (_dropAddrCtrl.text.trim().isNotEmpty
-            ? _dropAddrCtrl.text.trim()
-            : (_locationLabel ?? _pickupAddrCtrl.text.trim()))
-        : (_addressCtrl.text.trim().isNotEmpty
-            ? _addressCtrl.text.trim()
-            : (_locationLabel ?? ''));
+    final areaCandidate = _currentAreaCandidate();
 
     final suggestion = Task.getBudgetSuggestion(
       _selectedCategory,
@@ -954,6 +978,12 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                 onChanged: (c) {
                   setState(() => _selectedCategory = c);
                   _recalcDistance();
+                  _syncAreaBudgetIfAuto();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _budgetCtrl.text.trim().isNotEmpty) {
+                      _budgetFieldKey.currentState?.validate();
+                    }
+                  });
                 },
               ),
               if (_selectedCategory == 'delivery') ...[
@@ -1183,6 +1213,26 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                           _location = loc;
                           _locationLabel = null;
                         });
+                        try {
+                          final places = await placemarkFromCoordinates(
+                                  loc.latitude, loc.longitude)
+                              .timeout(const Duration(seconds: 6));
+                          if (mounted && places.isNotEmpty) {
+                            final p = places.first;
+                            final parts = [p.name, p.subLocality, p.locality]
+                                .where((s) => s != null && s.isNotEmpty)
+                                .map((s) => s!)
+                                .toList();
+                            final addr = parts.isEmpty ? null : parts.join(', ');
+                            if (mounted) {
+                              setState(() => _locationLabel = addr);
+                              if (!_isDelivery && _addressCtrl.text.isEmpty && addr != null) {
+                                _addressCtrl.text = addr;
+                              }
+                              _syncAreaBudgetIfAuto();
+                            }
+                          }
+                        } catch (_) {}
                       },
                       onMap: _pickLocationFromMap,
                     ),

@@ -441,9 +441,47 @@ class Task {
   /// Legacy alias for total poster payment amount.
   double get totalAmount => totalPosterCost;
 
+  /// Normalizes category IDs across snake_case, kebab-case, space-separated, and legacy web keys.
+  static String _normalizeCategoryKey(String category) {
+    final clean = category.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+    switch (clean) {
+      case 'techsupport':
+        return 'tech_support';
+      case 'eventhelp':
+        return 'event_help';
+      case 'freelance':
+        return 'freelancer';
+      case 'petcare':
+        return 'pet_care';
+      case 'childcare':
+      case 'babysitting':
+        return 'child_care';
+      case 'eldercare':
+        return 'elder_care';
+      case 'errand':
+        return 'errands';
+      case 'queuestanding':
+        return 'queue_standing';
+      case 'dataentry':
+        return 'data_entry';
+      case 'businessadmin':
+        return 'business_admin';
+      case 'graphicdesign':
+        return 'graphic_design';
+      case 'videoaudioediting':
+        return 'video_audio_editing';
+      case 'digitalmarketing':
+        return 'digital_marketing';
+      case 'webapptech':
+        return 'web_app_tech';
+      default:
+        return clean;
+    }
+  }
+
   /// Minimum budget required for a given task category based on current market rates.
   static double minBudgetForCategory(String category, {String vehicle = 'bike'}) {
-    switch (category.toLowerCase()) {
+    switch (_normalizeCategoryKey(category)) {
       // 1. Engineering & Skilled Trades
       case 'electrician':
       case 'plumbing':
@@ -453,18 +491,20 @@ class Task {
         return 200.0;
       case 'repair':
       case 'tech_support':
-      case 'tech-support':
         return 250.0;
       case 'painting':
         return 500.0;
 
       // 2. Home & Household
       case 'laundry':
+      case 'waste':
         return 100.0;
       case 'household':
+      case 'tailoring':
         return 150.0;
       case 'cooking':
       case 'gardening':
+      case 'fitness':
         return 250.0;
       case 'cleaning':
         return 300.0;
@@ -475,49 +515,39 @@ class Task {
       case 'shopping':
         return 150.0;
       case 'errands':
-      case 'errand':
       case 'queue_standing':
-      case 'queue-standing':
         return 200.0;
       case 'event_help':
-      case 'event-help':
         return 400.0;
+      case 'catering':
+        return 500.0;
 
       // 4. Professional, Creative & Digital
       case 'data_entry':
-      case 'data-entry':
         return 150.0;
       case 'tutoring':
       case 'beauty':
         return 250.0;
       case 'freelancer':
       case 'business_admin':
-      case 'business-admin':
         return 300.0;
       case 'graphic_design':
-      case 'graphic-design':
         return 350.0;
       case 'video_audio_editing':
-      case 'video-audio-editing':
         return 400.0;
       case 'digital_marketing':
-      case 'digital-marketing':
         return 500.0;
       case 'web_app_tech':
-      case 'web-app-tech':
         return 800.0;
       case 'photography':
         return 1500.0;
 
       // 5. Care Services
       case 'pet_care':
-      case 'petcare':
         return 150.0;
       case 'child_care':
-      case 'babysitting':
         return 200.0;
       case 'elder_care':
-      case 'eldercare':
         return 500.0;
 
       // Delivery & Moving - distance-based pricing with vehicle/category base minimums
@@ -1027,6 +1057,53 @@ class Task {
     );
   }
 
+  static bool _matchesAreaToken(String areaLower, String token) {
+    final escaped = RegExp.escape(token);
+    return RegExp('(^|[\\s,/\\-])$escaped(\$|[\\s,/\\-])').hasMatch(areaLower);
+  }
+
+  static String _formatLocalityTitle(String raw) {
+    const upperAcronyms = {'bkc', 'omr', 'hsr', 'btm', 'dlf', 'mg', 'sb', 'fc', 'jm', 'jp', 'nibm', 'sg', 'ncr'};
+    return raw
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .map((w) {
+          final lower = w.toLowerCase();
+          if (upperAcronyms.contains(lower)) return lower.toUpperCase();
+          return w.length > 1 ? w[0].toUpperCase() + lower.substring(1) : w.toUpperCase();
+        })
+        .join(' ');
+  }
+
+  static String _extractFallbackLocality(String areaText) {
+    final segments = areaText
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final skipGeneric = RegExp(
+      r'^(flat|house|plot|shop|room|floor|wing|bldg|building|sector|phase|block|apt|apartment|society|road|rd|near|opp|opposite|behind|india|maharashtra|karnataka|delhi|telangana|tamil nadu|west bengal|gujarat|\d+[a-z]?|\d{5,6})$',
+      caseSensitive: false,
+    );
+    for (final seg in segments) {
+      if (RegExp(r'^\d+$').hasMatch(seg)) continue;
+      final firstWord = seg.split(RegExp(r'\s+')).first;
+      if (skipGeneric.hasMatch(seg) ||
+          RegExp(r'^(flat|house|plot|shop|room|floor)\b', caseSensitive: false).hasMatch(firstWord)) {
+        continue;
+      }
+      final cleaned = seg.replaceAll(RegExp(r'\s*\b\d{6}\b$'), '').trim();
+      if (cleaned.length >= 2) {
+        return _formatLocalityTitle(cleaned);
+      }
+    }
+    if (segments.isNotEmpty) {
+      return _formatLocalityTitle(segments.first);
+    }
+    return 'Your Area';
+  }
+
   static CategoryBudgetSuggestion getBudgetSuggestion(
     String category, {
     String? areaText,
@@ -1038,7 +1115,7 @@ class Task {
     double? hourlyRate,
     int? hours,
   }) {
-    final cat = category.toLowerCase();
+    final cat = _normalizeCategoryKey(category);
     if (freelancerMode != null && isFreelancerCategory(cat)) {
       final q = calculateFreelancerQuote(
         cat,
@@ -1056,64 +1133,265 @@ class Task {
         localityTier: q.scopeSummary,
       );
     }
-    final areaLower = (areaText ?? '').toLowerCase();
+    final areaRaw = (areaText ?? '').trim();
+    final areaLower = areaRaw.toLowerCase();
 
     double multiplier = 1.0;
     String tier = 'Standard Area';
     String detectedName = 'Your Area';
 
-    // Premium & IT hubs (Pune)
-    const premiumAreas = [
-      'hinjewadi', 'baner', 'wakad', 'balewadi', 'koregaon', 'kalyani',
-      'viman', 'kharadi', 'magarpatta', 'aundh', 'bavdhan', 'pashan',
-      'sb road', 'senapati bapat', 'prabhat', 'model colony', 'boat club'
-    ];
-    // Central & Established
-    const centralAreas = [
-      'kothrud', 'shivaji nagar', 'shivajinagar', 'deccan', 'camp',
-      'erandwane', 'sadashiv', 'swargate', 'bibvewadi', 'sahakar',
-      'karve', 'wanowrie', 'nibm', 'kondhwa', 'peth'
-    ];
-    // Suburban / Developing
-    const suburbanAreas = [
-      'pimpri', 'chinchwad', 'bhosari', 'hadapsar', 'wagholi', 'nigdi',
-      'akurdi', 'moshi', 'ambegaon', 'warje', 'ravet', 'punawale', 'tathawade'
+    // 1. Premium & IT / High-Demand Hubs nationwide (1.25x)
+    const premiumAreas = <String, String>{
+      // Pune
+      'koregaon park': 'IT & High-Demand Hub',
+      'kalyani nagar': 'IT & High-Demand Hub',
+      'viman nagar': 'IT & High-Demand Hub',
+      'model colony': 'IT & High-Demand Hub',
+      'senapati bapat': 'IT & High-Demand Hub',
+      'boat club': 'IT & High-Demand Hub',
+      'prabhat road': 'IT & High-Demand Hub',
+      'sb road': 'IT & High-Demand Hub',
+      'hinjewadi': 'IT & High-Demand Hub',
+      'balewadi': 'IT & High-Demand Hub',
+      'magarpatta': 'IT & High-Demand Hub',
+      'koregaon': 'IT & High-Demand Hub',
+      'kalyani': 'IT & High-Demand Hub',
+      'kharadi': 'IT & High-Demand Hub',
+      'baner': 'IT & High-Demand Hub',
+      'wakad': 'IT & High-Demand Hub',
+      'aundh': 'IT & High-Demand Hub',
+      'bavdhan': 'IT & High-Demand Hub',
+      'pashan': 'IT & High-Demand Hub',
+      'viman': 'IT & High-Demand Hub',
+      'prabhat': 'IT & High-Demand Hub',
+      // Mumbai
+      'bandra kurla': 'Metro High-Demand Hub',
+      'nariman point': 'Metro High-Demand Hub',
+      'cuffe parade': 'Metro High-Demand Hub',
+      'malabar hill': 'Metro High-Demand Hub',
+      'lower parel': 'Metro High-Demand Hub',
+      'andheri west': 'Metro High-Demand Hub',
+      'goregaon east': 'Metro High-Demand Hub',
+      'bandra': 'Metro High-Demand Hub',
+      'worli': 'Metro High-Demand Hub',
+      'powai': 'Metro High-Demand Hub',
+      'juhu': 'Metro High-Demand Hub',
+      'colaba': 'Metro High-Demand Hub',
+      'prabhadevi': 'Metro High-Demand Hub',
+      'versova': 'Metro High-Demand Hub',
+      'bkc': 'Metro High-Demand Hub',
+      // Bengaluru
+      'electronic city': 'IT & High-Demand Hub',
+      'sadashivanagar': 'Metro High-Demand Hub',
+      'hsr layout': 'IT & High-Demand Hub',
+      'marathahalli': 'IT & High-Demand Hub',
+      'koramangala': 'IT & High-Demand Hub',
+      'indiranagar': 'IT & High-Demand Hub',
+      'whitefield': 'IT & High-Demand Hub',
+      'bellandur': 'IT & High-Demand Hub',
+      'sarjapur': 'IT & High-Demand Hub',
+      'manyata': 'IT & High-Demand Hub',
+      'mg road': 'Metro High-Demand Hub',
+      'ulsoor': 'Metro High-Demand Hub',
+      'hebbal': 'IT & High-Demand Hub',
+      'hsr': 'IT & High-Demand Hub',
+      // Delhi NCR
+      'connaught place': 'Metro High-Demand Hub',
+      'golf course road': 'IT & High-Demand Hub',
+      'greater kailash': 'Metro High-Demand Hub',
+      'defence colony': 'Metro High-Demand Hub',
+      'south extension': 'Metro High-Demand Hub',
+      'chanakyapuri': 'Metro High-Demand Hub',
+      'vasant vihar': 'Metro High-Demand Hub',
+      'vasant kunj': 'Metro High-Demand Hub',
+      'cyber city': 'IT & High-Demand Hub',
+      'dlf phase': 'IT & High-Demand Hub',
+      'hauz khas': 'Metro High-Demand Hub',
+      'saket': 'Metro High-Demand Hub',
+      'dlf': 'IT & High-Demand Hub',
+      // Hyderabad
+      'financial district': 'IT & High-Demand Hub',
+      'jubilee hills': 'Metro High-Demand Hub',
+      'banjara hills': 'Metro High-Demand Hub',
+      'hitec city': 'IT & High-Demand Hub',
+      'hitech city': 'IT & High-Demand Hub',
+      'gachibowli': 'IT & High-Demand Hub',
+      'madhapur': 'IT & High-Demand Hub',
+      'kondapur': 'IT & High-Demand Hub',
+      'kokapet': 'IT & High-Demand Hub',
+      // Chennai
+      'besant nagar': 'Metro High-Demand Hub',
+      'nungambakkam': 'Metro High-Demand Hub',
+      'sholinganallur': 'IT & High-Demand Hub',
+      'anna nagar': 'Metro High-Demand Hub',
+      'poes garden': 'Metro High-Demand Hub',
+      'alwarpet': 'Metro High-Demand Hub',
+      't nagar': 'Metro High-Demand Hub',
+      'adyar': 'Metro High-Demand Hub',
+      'omr': 'IT & High-Demand Hub',
+      // Kolkata
+      'ballygunge': 'Metro High-Demand Hub',
+      'park street': 'Metro High-Demand Hub',
+      'salt lake': 'IT & High-Demand Hub',
+      'sector v': 'IT & High-Demand Hub',
+      'new town': 'IT & High-Demand Hub',
+      'alipore': 'Metro High-Demand Hub',
+      // Ahmedabad
+      'sindhu bhavan': 'Metro High-Demand Hub',
+      'prahlad nagar': 'Metro High-Demand Hub',
+      'sg highway': 'Metro High-Demand Hub',
+      'bodakdev': 'Metro High-Demand Hub',
+      'satellite': 'Metro High-Demand Hub',
+    };
+
+    // 2. Central & Established City Areas (1.10x)
+    const centralAreas = <String, String>{
+      // Pune Central
+      'shivaji nagar': 'Central Pune',
+      'shivajinagar': 'Central Pune',
+      'sahakar nagar': 'Central Pune',
+      'karve nagar': 'Central Pune',
+      'sadashiv peth': 'Central Pune',
+      'erandwane': 'Central Pune',
+      'bibvewadi': 'Central Pune',
+      'wanowrie': 'Central Pune',
+      'sadashiv': 'Central Pune',
+      'kothrud': 'Central Pune',
+      'swargate': 'Central Pune',
+      'kondhwa': 'Central Pune',
+      'deccan': 'Central Pune',
+      'sahakar': 'Central Pune',
+      'fc road': 'Central Pune',
+      'jm road': 'Central Pune',
+      'karve': 'Central Pune',
+      'camp': 'Central Pune',
+      'nibm': 'Central Pune',
+      'peth': 'Central Pune',
+      // Mumbai Suburbs / Established
+      'vile parle': 'Metro City Area',
+      'ghatkopar': 'Metro City Area',
+      'santacruz': 'Metro City Area',
+      'kandivali': 'Metro City Area',
+      'borivali': 'Metro City Area',
+      'andheri': 'Metro City Area',
+      'goregaon': 'Metro City Area',
+      'matunga': 'Metro City Area',
+      'chembur': 'Metro City Area',
+      'mulund': 'Metro City Area',
+      'kharghar': 'Metro City Area',
+      'dadar': 'Metro City Area',
+      'malad': 'Metro City Area',
+      'vashi': 'Metro City Area',
+      'kurla': 'Metro City Area',
+      'thane': 'Metro City Area',
+      // Bengaluru Established
+      'malleshwaram': 'Metro City Area',
+      'malleswaram': 'Metro City Area',
+      'banashankari': 'Metro City Area',
+      'rajajinagar': 'Metro City Area',
+      'vijayanagar': 'Metro City Area',
+      'btm layout': 'Metro City Area',
+      'yelahanka': 'Metro City Area',
+      'jayanagar': 'Metro City Area',
+      'jp nagar': 'Metro City Area',
+      'btm': 'Metro City Area',
+      // Delhi NCR Established
+      'rajouri garden': 'Metro City Area',
+      'lajpat nagar': 'Metro City Area',
+      'mayur vihar': 'Metro City Area',
+      'indirapuram': 'Metro City Area',
+      'karol bagh': 'Metro City Area',
+      'pitampura': 'Metro City Area',
+      'janakpuri': 'Metro City Area',
+      'new delhi': 'Metro City Area',
+      'gurugram': 'Metro City Area',
+      'gurgaon': 'Metro City Area',
+      'dwarka': 'Metro City Area',
+      'rohini': 'Metro City Area',
+      'noida': 'Metro City Area',
+      'delhi': 'Metro City Area',
+      // Other Metro Hubs & City Names
+      'secunderabad': 'Metro City Area',
+      'thoraipakkam': 'Metro City Area',
+      'tollygunge': 'Metro City Area',
+      'navrangpura': 'Metro City Area',
+      'velachery': 'Metro City Area',
+      'mylapore': 'Metro City Area',
+      'bengaluru': 'Metro City Area',
+      'bangalore': 'Metro City Area',
+      'hyderabad': 'Metro City Area',
+      'ahmedabad': 'Metro City Area',
+      'chandigarh': 'Metro City Area',
+      'guindy': 'Metro City Area',
+      'behala': 'Metro City Area',
+      'bopal': 'Metro City Area',
+      'mumbai': 'Metro City Area',
+      'chennai': 'Metro City Area',
+      'kolkata': 'Metro City Area',
+      'pune': 'Metro City Area',
+    };
+
+    // 3. Suburban / Developing & Tier-2 Cities (1.0x)
+    const broadCityTokens = <String>{
+      'nashik', 'surat', 'kochi', 'patna', 'jaipur', 'indore', 'bhopal',
+      'nagpur', 'lucknow', 'vadodara', 'coimbatore', 'visakhapatnam',
+      'howrah', 'faridabad', 'ghaziabad', 'navi mumbai', 'greater noida',
+      'mohali', 'mumbai', 'pune', 'bengaluru', 'bangalore', 'delhi',
+      'new delhi', 'hyderabad', 'chennai', 'kolkata', 'ahmedabad',
+      'chandigarh', 'gurugram', 'gurgaon', 'noida', 'thane',
+    };
+    const suburbanAreas = <String>[
+      'navi mumbai', 'greater noida', 'visakhapatnam', 'coimbatore',
+      'chinchwad', 'tathawade', 'ambegaon', 'dombivli', 'punawale',
+      'faridabad', 'ghaziabad', 'vadodara', 'hadapsar', 'pimpri',
+      'bhosari', 'wagholi', 'mira road', 'zirakpur', 'lucknow',
+      'akurdi', 'kalyan', 'panvel', 'howrah', 'mohali', 'nagpur',
+      'jaipur', 'indore', 'bhopal', 'nigdi', 'moshi', 'warje',
+      'ravet', 'katraj', 'dhayari', 'vasai', 'virar', 'nashik',
+      'surat', 'kochi', 'patna',
     ];
 
-    for (final a in premiumAreas) {
-      if (areaLower.contains(a)) {
-        multiplier = 1.25;
-        tier = 'IT & High-Demand Hub';
-        detectedName = a[0].toUpperCase() + a.substring(1);
-        break;
-      }
-    }
-    if (multiplier == 1.0) {
-      for (final a in centralAreas) {
-        if (areaLower.contains(a)) {
-          multiplier = 1.10;
-          tier = 'Central Pune';
-          detectedName = a[0].toUpperCase() + a.substring(1);
+    String? matchedToken;
+    if (areaLower.isNotEmpty) {
+      for (final entry in premiumAreas.entries) {
+        if (_matchesAreaToken(areaLower, entry.key)) {
+          multiplier = 1.25;
+          tier = entry.value;
+          matchedToken = entry.key;
+          detectedName = _formatLocalityTitle(entry.key);
           break;
         }
       }
-    }
-    if (multiplier == 1.0) {
-      for (final a in suburbanAreas) {
-        if (areaLower.contains(a)) {
-          multiplier = 1.0;
-          tier = 'Suburban Hub';
-          detectedName = a[0].toUpperCase() + a.substring(1);
-          break;
+      if (multiplier == 1.0) {
+        for (final entry in centralAreas.entries) {
+          if (_matchesAreaToken(areaLower, entry.key)) {
+            multiplier = 1.10;
+            tier = entry.value;
+            matchedToken = entry.key;
+            detectedName = _formatLocalityTitle(entry.key);
+            break;
+          }
+        }
+      }
+      if (multiplier == 1.0) {
+        for (final a in suburbanAreas) {
+          if (_matchesAreaToken(areaLower, a)) {
+            multiplier = 1.0;
+            tier = 'Suburban Hub';
+            matchedToken = a;
+            detectedName = _formatLocalityTitle(a);
+            break;
+          }
         }
       }
     }
 
-    if (detectedName == 'Your Area' && areaText != null && areaText.trim().isNotEmpty) {
-      final parts = areaText.split(RegExp(r'[, -]')).where((s) => s.trim().isNotEmpty).toList();
-      if (parts.isNotEmpty) {
-        final raw = parts.first.trim();
-        detectedName = raw.length > 1 ? raw[0].toUpperCase() + raw.substring(1) : raw;
+    if (areaRaw.isNotEmpty &&
+        (detectedName == 'Your Area' ||
+            (matchedToken != null && broadCityTokens.contains(matchedToken)))) {
+      final fallback = _extractFallbackLocality(areaRaw);
+      if (fallback != 'Your Area') {
+        detectedName = fallback;
       }
     }
 
@@ -1132,7 +1410,6 @@ class Task {
         break;
       case 'repair':
       case 'tech_support':
-      case 'tech-support':
         baseSuggested = 350.0;
         baseMax = 650.0;
         break;
@@ -1156,13 +1433,25 @@ class Task {
         baseSuggested = 150.0;
         baseMax = 250.0;
         break;
+      case 'waste':
+        baseSuggested = 150.0;
+        baseMax = 350.0;
+        break;
       case 'household':
         baseSuggested = 200.0;
         baseMax = 400.0;
         break;
+      case 'tailoring':
+        baseSuggested = 250.0;
+        baseMax = 600.0;
+        break;
       case 'gardening':
         baseSuggested = 350.0;
         baseMax = 700.0;
+        break;
+      case 'fitness':
+        baseSuggested = 400.0;
+        baseMax = 900.0;
         break;
       case 'groceries':
         baseSuggested = 150.0;
@@ -1173,19 +1462,19 @@ class Task {
         baseMax = 400.0;
         break;
       case 'errands':
-      case 'errand':
       case 'queue_standing':
-      case 'queue-standing':
         baseSuggested = 250.0;
         baseMax = 450.0;
         break;
       case 'event_help':
-      case 'event-help':
         baseSuggested = 550.0;
         baseMax = 1000.0;
         break;
+      case 'catering':
+        baseSuggested = 1500.0;
+        baseMax = 5000.0;
+        break;
       case 'data_entry':
-      case 'data-entry':
         baseSuggested = 250.0;
         baseMax = 450.0;
         break;
@@ -1202,27 +1491,22 @@ class Task {
         baseMax = 1500.0;
         break;
       case 'graphic_design':
-      case 'graphic-design':
         baseSuggested = 600.0;
         baseMax = 1500.0;
         break;
       case 'web_app_tech':
-      case 'web-app-tech':
         baseSuggested = 1500.0;
         baseMax = 4000.0;
         break;
       case 'video_audio_editing':
-      case 'video-audio-editing':
         baseSuggested = 750.0;
         baseMax = 2000.0;
         break;
       case 'digital_marketing':
-      case 'digital-marketing':
         baseSuggested = 1000.0;
         baseMax = 2500.0;
         break;
       case 'business_admin':
-      case 'business-admin':
         baseSuggested = 500.0;
         baseMax = 1000.0;
         break;
@@ -1231,17 +1515,14 @@ class Task {
         baseMax = 5500.0;
         break;
       case 'pet_care':
-      case 'petcare':
         baseSuggested = 200.0;
         baseMax = 400.0;
         break;
       case 'child_care':
-      case 'babysitting':
         baseSuggested = 300.0;
         baseMax = 600.0;
         break;
       case 'elder_care':
-      case 'eldercare':
         baseSuggested = 700.0;
         baseMax = 1300.0;
         break;

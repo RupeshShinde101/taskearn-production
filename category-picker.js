@@ -919,45 +919,90 @@
     // {low, high} → "Most users pay between ₹low and ₹high".
     // {min} → minimum the platform should accept (used to flag unrealistic posts).
     const PRICE_RANGES = {
-        plumbing:    { low: 200, high: 600,  min: 150 },
-        electrician: { low: 250, high: 700,  min: 150 },
-        carpentry:   { low: 300, high: 900,  min: 200 },
-        painting:    { low: 500, high: 2500, min: 300 },
-        repair:      { low: 300, high: 1200, min: 200 },
-        vehicle:     { low: 200, high: 800,  min: 150 },
-        household:   { low: 150, high: 500,  min: 100 },
-        cleaning:    { low: 300, high: 1500, min: 200 },
-        laundry:     { low: 100, high: 400,  min: 100 },
-        gardening:   { low: 300, high: 1000, min: 200 },
-        waste:       { low: 150, high: 500,  min: 100 },
-        moving:      { low: 600, high: 3500, min: 400 },
+        plumbing:    { low: 200, high: 450,  min: 150 },
+        electrician: { low: 200, high: 450,  min: 150 },
+        carpentry:   { low: 250, high: 550,  min: 200 },
+        painting:    { low: 700, high: 1500, min: 500 },
+        repair:      { low: 350, high: 750,  min: 250 },
+        vehicle:     { low: 350, high: 750,  min: 200 },
+        household:   { low: 200, high: 450,  min: 150 },
+        cleaning:    { low: 400, high: 950,  min: 300 },
+        laundry:     { low: 150, high: 300,  min: 100 },
+        gardening:   { low: 350, high: 750,  min: 250 },
+        waste:       { low: 150, high: 350,  min: 100 },
+        moving:      { low: 600, high: 2000, min: 400 },
         delivery:    { low: 50,  high: 600,  min: 24  },  // bike ₹12/km (min ₹24) / rikshaw ₹18/km (min ₹30)
         pickup:      { low: 80,  high: 1500, min: 30  },  // rikshaw ₹18/km (min ₹30)
         transport:   { low: 100, high: 1500, min: 50  },  // cab/vehicle ₹18/km+
-        shopping:    { low: 150, high: 500,  min: 100 },
-        petcare:     { low: 200, high: 700,  min: 150 },
-        beauty:      { low: 300, high: 1500, min: 200 },
-        babysitting: { low: 200, high: 800,  min: 150 },
-        eldercare:   { low: 300, high: 1200, min: 200 },
-        fitness:     { low: 300, high: 1200, min: 200 },
-        cooking:     { low: 250, high: 1000, min: 200 },
-        catering:    { low: 1500, high: 8000, min: 500 },
-        eventhelp:   { low: 500, high: 3000, min: 300 },
-        photography: { low: 1000, high: 5000, min: 500 },
-        tutoring:    { low: 200, high: 800,  min: 150 },
-        techsupport: { low: 200, high: 800,  min: 150 },
-        freelance:           { low: 300,  high: 3000, min: 300 },
-        graphic_design:      { low: 450,  high: 1500, min: 350 },
-        web_app_tech:        { low: 1000, high: 4000, min: 800 },
-        video_audio_editing: { low: 500,  high: 2000, min: 400 },
-        digital_marketing:   { low: 700,  high: 2500, min: 500 },
-        business_admin:      { low: 350,  high: 1000, min: 300 },
-        tailoring:   { low: 150, high: 700,  min: 100 },
-        other:       { low: 200, high: 800,  min: 100 },
+        shopping:    { low: 200, high: 450,  min: 150 },
+        groceries:   { low: 150, high: 300,  min: 100 },
+        petcare:     { low: 200, high: 450,  min: 150 },
+        beauty:      { low: 400, high: 900,  min: 250 },
+        babysitting: { low: 300, high: 650,  min: 200 },
+        eldercare:   { low: 700, high: 1400, min: 500 },
+        fitness:     { low: 400, high: 900,  min: 250 },
+        cooking:     { low: 350, high: 700,  min: 250 },
+        catering:    { low: 1500, high: 5000, min: 500 },
+        eventhelp:   { low: 550, high: 1200, min: 400 },
+        photography: { low: 2500, high: 5500, min: 1500 },
+        tutoring:    { low: 350, high: 750,  min: 250 },
+        techsupport: { low: 350, high: 700,  min: 250 },
+        freelance:           { low: 500,  high: 1500, min: 300 },
+        graphic_design:      { low: 600,  high: 1500, min: 350 },
+        web_app_tech:        { low: 1500, high: 4000, min: 800 },
+        video_audio_editing: { low: 750,  high: 2000, min: 400 },
+        digital_marketing:   { low: 1000, high: 2500, min: 500 },
+        business_admin:      { low: 500,  high: 1000, min: 300 },
+        tailoring:   { low: 250, high: 650,  min: 150 },
+        other:       { low: 200, high: 500,  min: 100 },
     };
 
-    function getUserCity() {
+    function getAreaMultiplier(locationText) {
+        const txt = String(locationText || '').toLowerCase();
+        if (!txt || txt === 'your area') return 1.0;
+        const premium = [
+            'hinjewadi','baner','wakad','balewadi','koregaon','kalyani','viman','kharadi',
+            'magarpatta','aundh','bavdhan','pashan','sb road','senapati bapat','model colony','boat club',
+            'bandra','worli','lower parel','bkc','juhu','colaba','powai','andheri west',
+            'koramangala','indiranagar','whitefield','hsr','sarjapur','bellandur','marathahalli','electronic city',
+            'connaught place','vasant vihar','vasant kunj','hauz khas','greater kailash','defence colony','saket','cyber city','dlf',
+            'jubilee hills','banjara hills','gachibowli','hitec city','hitech city','madhapur','kondapur',
+            'adyar','alwarpet','besant nagar','anna nagar','t nagar','nungambakkam','omr','sholinganallur',
+            'ballygunge','park street','salt lake','new town','prahlad nagar','bodakdev','sg highway','satellite'
+        ];
+        const central = [
+            'kothrud','shivajinagar','shivaji nagar','deccan','erandwane','sadashiv','swargate','bibvewadi','karve','wanowrie','nibm','kondhwa',
+            'mumbai','andheri','dadar','chembur','goregaon','malad','borivali','thane','vashi','kharghar',
+            'bengaluru','bangalore','jayanagar','jp nagar','malleswaram','btm',
+            'delhi','new delhi','gurugram','gurgaon','noida','dwarka','janakpuri','karol bagh',
+            'hyderabad','secunderabad','chennai','velachery','kolkata','ahmedabad','pune','chandigarh'
+        ];
+        for (const p of premium) {
+            if (txt.includes(p)) return 1.25;
+        }
+        for (const c of central) {
+            if (txt.includes(c)) return 1.10;
+        }
+        return 1.0;
+    }
+
+    function getAreaAdjustedRange(key, locationText) {
+        const base = PRICE_RANGES[key] || PRICE_RANGES.other;
+        const mult = getAreaMultiplier(locationText);
+        const min = base.min;
+        const low = Math.max(min, Math.round((base.low * mult) / 5) * 5);
+        const high = Math.max(low + 50, Math.round((base.high * mult) / 5) * 5);
+        return { low, high, min };
+    }
+
+    function getUserCity(pickupId) {
         try {
+            if (pickupId) {
+                const el = document.getElementById(pickupId);
+                if (el && el.value && el.value.trim()) return el.value.trim();
+            }
+            const locEl = document.getElementById('modalTaskLocation');
+            if (locEl && locEl.value && locEl.value.trim()) return locEl.value.trim();
             const u = window.currentUser;
             if (u && u.city) return String(u.city).trim();
             const stored = localStorage.getItem('userCity') || localStorage.getItem('city');
@@ -1420,9 +1465,9 @@
 
         const update = () => {
             const key = sel.value;
-            const range = PRICE_RANGES[key];
+            const baseRange = PRICE_RANGES[key];
             const cat = (window.WMCategories && window.WMCategories.byKey(key)) || null;
-            if (!key || key === 'all' || !range) {
+            if (!key || key === 'all' || !baseRange) {
                 hint.style.display = 'none';
                 if (dropApi) dropApi.hide();
                 return;
@@ -1436,7 +1481,8 @@
                 pickupMapBtn.style.display = distMeta ? '' : 'none';
             }
 
-            const city  = getUserCity();
+            const city  = getUserCity(pickupId);
+            const range = getAreaAdjustedRange(key, city);
             const label = cat ? cat.label : key;
             const icon  = cat ? cat.icon : '💡';
             const lowFmt  = fmtRupee(range.low);
@@ -1741,18 +1787,23 @@
         // Expose a hook so other code paths (e.g. Use My Location) can ask the
         // distance-based price hint to recompute itself.
         if (opts.applyBudget) {
-            try { window.__wmRefreshDistance = () => refreshDistance(); } catch (e) {}
+            try { window.__wmRefreshDistance = () => { if (DISTANCE_PRICING[sel.value]) { refreshDistance(); } else { update(); } }; } catch (e) {}
+        }
+        const pickupEl = pickupId ? document.getElementById(pickupId) : null;
+        if (pickupEl) {
+            pickupEl.addEventListener('blur', () => {
+                if (dropApi) dropApi.pickupCoords = null;
+                if (DISTANCE_PRICING[sel.value]) {
+                    refreshDistance();
+                } else {
+                    update();
+                }
+            });
         }
         if (dropApi) {
             dropApi.input.addEventListener('blur', () => {
                 // User typed manually — clear any prior map-picked coords
                 dropApi.dropCoords = null;
-                refreshDistance();
-            });
-            const pickupEl = document.getElementById(pickupId);
-            if (pickupEl) pickupEl.addEventListener('blur', () => {
-                // Manual edit clears cached pickup coords
-                if (dropApi) dropApi.pickupCoords = null;
                 refreshDistance();
             });
 

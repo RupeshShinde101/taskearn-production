@@ -92,6 +92,8 @@ const CATEGORY_MIN_PRICES = {
     'queue-standing': 200,
     'event_help': 400,
     'event-help': 400,
+    'eventhelp': 400,
+    'catering': 500,
 
     // Professional, Creative & Digital
     'data_entry': 150,
@@ -99,6 +101,8 @@ const CATEGORY_MIN_PRICES = {
     'tutoring': 250,
     'beauty': 250,
     'freelancer': 300,
+    'freelance': 300,
+    'techsupport': 250,
     'business_admin': 300,
     'business-admin': 300,
     'graphic_design': 350,
@@ -111,13 +115,17 @@ const CATEGORY_MIN_PRICES = {
     'web-app-tech': 800,
     'photography': 1500,
 
-    // Care Services
+    // Care & Lifestyle
     'pet_care': 150,
     'petcare': 150,
     'child_care': 200,
+    'childcare': 200,
     'babysitting': 200,
     'elder_care': 500,
     'eldercare': 500,
+    'fitness': 250,
+    'tailoring': 150,
+    'waste': 100,
 
     // Delivery & Moving
     'delivery': 24,

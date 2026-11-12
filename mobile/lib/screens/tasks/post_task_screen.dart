@@ -143,6 +143,56 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
   }
 
+  String _currentAreaCandidate() {
+    if (_isDelivery) {
+      final parts = [
+        _dropAreaCtrl.text.trim(),
+        _dropAddrCtrl.text.trim(),
+        _pickupAreaCtrl.text.trim(),
+        _pickupAddrCtrl.text.trim(),
+        (_locationLabel ?? '').trim(),
+      ].where((s) => s.isNotEmpty).toList();
+      return parts.join(', ');
+    }
+    final parts = [
+      _areaCtrl.text.trim(),
+      _addressCtrl.text.trim(),
+      (_locationLabel ?? '').trim(),
+    ].where((s) => s.isNotEmpty).toList();
+    return parts.join(', ');
+  }
+
+  void _syncAreaBudgetIfAuto({bool wasAutoOverride = false}) {
+    final wasAutoOrEmpty = wasAutoOverride ||
+        _budgetCtrl.text.trim().isEmpty ||
+        (_lastAutoBudgetText != null &&
+            _budgetCtrl.text.trim() == _lastAutoBudgetText);
+    if (!wasAutoOrEmpty) return;
+
+    if (Task.isFreelancerCategory(_selectedCategory)) {
+      final q = _freelancerQuote;
+      if (q != null) _syncAutoBudget(q.suggestedBudget);
+      return;
+    }
+    if (_isDelivery) {
+      if (_selectedCategory == 'moving' && _calculatedDistanceKm == null && _budgetCtrl.text.trim().isNotEmpty) {
+        final s = Task.getBudgetSuggestion(
+          _selectedCategory,
+          areaText: _currentAreaCandidate(),
+          vehicle: _deliveryVehicle,
+        );
+        _syncAutoBudget(s.suggestedBudget);
+      }
+      return;
+    }
+    final s = Task.getBudgetSuggestion(
+      _selectedCategory,
+      areaText: _currentAreaCandidate(),
+      vehicle: _deliveryVehicle,
+    );
+    _syncAutoBudget(s.suggestedBudget);
+  }
+
   void _applySelectedCategory(String categoryId) {
     final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
         (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
@@ -166,8 +216,22 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         );
         _syncAutoBudget(q.suggestedBudget);
       }
+    } else if (!_isDelivery) {
+      _syncAreaBudgetIfAuto(wasAutoOverride: wasAutoOrEmpty);
+    } else if (wasAutoOrEmpty && _selectedCategory == 'moving' && _calculatedDistanceKm == null) {
+      final s = Task.getBudgetSuggestion(
+        categoryId,
+        areaText: _currentAreaCandidate(),
+        vehicle: _deliveryVehicle,
+      );
+      _syncAutoBudget(s.suggestedBudget);
     }
     _autoFillDescription();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _budgetCtrl.text.trim().isNotEmpty) {
+        _budgetFieldKey.currentState?.validate();
+      }
+    });
   }
 
   /// Per-category description prompt chips shown below the description field.
@@ -403,10 +467,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void _selectAddressSuggestion(LocationSearchResult s) {
     _addressCtrl.text = s.fullAddress;
     _location = s.toLatLng();
-    _locationLabel = s.title;
+    _locationLabel = s.fullAddress;
     _addressSuggestions = [];
     _searchingAddress = false;
     _addressFocus.unfocus();
+    _syncAreaBudgetIfAuto();
     setState(() {});
   }
 
@@ -1343,8 +1408,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           if (!_isDelivery && _addressCtrl.text.isEmpty && addr != null) {
             _addressCtrl.text = addr;
           }
-          // Auto-fill Area field with subLocality + locality
-          // (intentionally removed — area stays empty for user to fill)
+          _syncAreaBudgetIfAuto();
         }
       }
     } catch (_) {}
@@ -1366,6 +1430,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         if (!_isDelivery && addr != null) _addressCtrl.text = addr;
         _showSavePrompt = true; // offer to save
       });
+      _syncAreaBudgetIfAuto();
     }
   }
 
@@ -2458,6 +2523,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void _onLocationAreaChanged() {
     if (_isDelivery) {
       _checkAndEstimateDistance();
+    } else {
+      _syncAreaBudgetIfAuto();
     }
     if (mounted) setState(() {});
   }
@@ -2672,13 +2739,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   Widget _buildSuggestedBudgetCard() {
     if (!_isLocationSet && !_isFreelancer) return const SizedBox.shrink();
-    final areaCandidate = _isDelivery
-        ? (_dropAreaCtrl.text.trim().isNotEmpty
-            ? _dropAreaCtrl.text.trim()
-            : (_locationLabel ?? _pickupAddrCtrl.text.trim()))
-        : (_areaCtrl.text.trim().isNotEmpty
-            ? _areaCtrl.text.trim()
-            : (_locationLabel ?? _addressCtrl.text.trim()));
+    final areaCandidate = _currentAreaCandidate();
 
     final suggestion = Task.getBudgetSuggestion(
       _selectedCategory,
@@ -3214,7 +3275,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               setState(() {
                 _applySelectedCategory('other');
               });
-              _recalcDistance();
+              _checkAndEstimateDistance();
             } else {
               _showSubCategorySheet(otherGroup);
             }

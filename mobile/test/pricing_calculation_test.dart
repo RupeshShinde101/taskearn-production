@@ -454,5 +454,129 @@ void main() {
       expect(find.text('Minimum budget for'), findsNothing);
       expect(tester.takeException(), isNull);
     });
+
+    test('other task categories enforce market minimums, normalized aliases, and pan-India area suggestions', () {
+      // Category minimums & web/legacy alias parity
+      expect(Task.minBudgetForCategory('electrician'), 150.0);
+      expect(Task.minBudgetForCategory('cleaning'), 300.0);
+      expect(Task.minBudgetForCategory('painting'), 500.0);
+      expect(Task.minBudgetForCategory('photography'), 1500.0);
+      expect(Task.minBudgetForCategory('elder_care'), 500.0);
+      expect(Task.minBudgetForCategory('eldercare'), 500.0);
+      expect(Task.minBudgetForCategory('eventhelp'), 400.0);
+      expect(Task.minBudgetForCategory('techsupport'), 250.0);
+      expect(Task.minBudgetForCategory('freelance'), 300.0);
+      expect(Task.minBudgetForCategory('catering'), 500.0);
+      expect(Task.minBudgetForCategory('fitness'), 250.0);
+      expect(Task.minBudgetForCategory('tailoring'), 150.0);
+
+      // Area multipliers across Indian cities & hubs (Electrician base=200, min=150)
+      final std = Task.getBudgetSuggestion('electrician', areaText: 'Pimpri');
+      expect(std.suggestedBudget, 200.0);
+      expect(std.localityName, 'Pimpri');
+      expect(std.localityTier, 'Suburban Hub');
+
+      final kothrud = Task.getBudgetSuggestion('electrician', areaText: 'Kothrud, Pune');
+      expect(kothrud.suggestedBudget, 220.0);
+      expect(kothrud.localityName, 'Kothrud');
+      expect(kothrud.localityTier, 'Central Pune');
+
+      final baner = Task.getBudgetSuggestion('electrician', areaText: 'Baner, Pune');
+      expect(baner.suggestedBudget, 250.0);
+      expect(baner.localityName, 'Baner');
+      expect(baner.localityTier, 'IT & High-Demand Hub');
+
+      final bandra = Task.getBudgetSuggestion('cleaning', areaText: 'Bandra, Mumbai');
+      expect(bandra.suggestedBudget, 500.0);
+      expect(bandra.localityName, 'Bandra');
+      expect(bandra.localityTier, 'Metro High-Demand Hub');
+
+      final koramangala = Task.getBudgetSuggestion('painting', areaText: 'Koramangala, Bengaluru');
+      expect(koramangala.suggestedBudget, 875.0);
+      expect(koramangala.localityName, 'Koramangala');
+
+      final andheri = Task.getBudgetSuggestion('cleaning', areaText: 'Andheri East, Mumbai');
+      expect(andheri.suggestedBudget, 440.0);
+      expect(andheri.localityName, 'Andheri');
+      expect(andheri.localityTier, 'Metro City Area');
+
+      // Fallback locality skips house/flat prefixes & Campus does not falsely match Camp
+      final fallback = Task.getBudgetSuggestion('plumbing', areaText: 'Flat 4B, Campus Colony, Nashik');
+      expect(fallback.suggestedBudget, 200.0);
+      expect(fallback.localityName, 'Campus Colony');
+      expect(fallback.localityTier, 'Suburban Hub');
+    });
+
+    testWidgets('PostTaskScreen auto-syncs budget and breakdown for other categories when category or area changes',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Switch to Repair -> Electrician while budget is empty -> auto-fills ₹200 + 20% fee = ₹240
+      await tester.ensureVisible(find.text('Repair'));
+      await tester.tap(find.text('Repair'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Electrician'));
+      await tester.pumpAndSettle();
+
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '200');
+      expect(find.text('₹200'), findsOneWidget);
+      expect(find.text('₹40'), findsOneWidget);
+      expect(find.text('₹240'), findsOneWidget);
+      expect(find.text('Service Charge'), findsNothing);
+
+      // Type 'Baner, Pune' in Area / Sector / Locality -> auto-updates suggested budget to ₹250 & breakdown to ₹300
+      final areaField = find.widgetWithText(TextFormField, 'Area / Sector / Locality');
+      await tester.ensureVisible(areaField);
+      await tester.enterText(areaField, 'Baner, Pune');
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '250');
+      expect(find.text('Suggested in Baner'), findsOneWidget);
+      expect(find.text('IT & High-Demand Hub'), findsOneWidget);
+      expect(find.text('₹250'), findsWidgets);
+      expect(find.text('₹50'), findsOneWidget);
+      expect(find.text('₹300'), findsOneWidget);
+
+      // Switch area to 'Kothrud' -> auto-updates suggested budget to ₹220 (220 + 44 = 264)
+      await tester.enterText(areaField, 'Kothrud');
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '220');
+      expect(find.text('Suggested in Kothrud'), findsOneWidget);
+      expect(find.text('₹264'), findsOneWidget);
+
+      // Manual custom budget override (₹350) should NOT be overwritten when area changes again
+      await tester.ensureVisible(budgetField);
+      await tester.enterText(budgetField, '350');
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(areaField);
+      await tester.enterText(areaField, 'Hinjewadi');
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '350');
+      expect(find.text('Suggested in Hinjewadi'), findsOneWidget);
+      expect(find.text('₹250'), findsOneWidget); // shown in Suggested card
+      expect(find.text('₹420'), findsOneWidget); // 350 + 20% = 420
+      expect(tester.takeException(), isNull);
+    });
   });
 }

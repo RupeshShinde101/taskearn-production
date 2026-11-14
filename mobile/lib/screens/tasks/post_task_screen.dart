@@ -2500,9 +2500,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     if (isVehicleCategory) {
       final postedBudget = double.tryParse(_budgetCtrl.text) ?? 0.0;
-      final vehicleType = _selectedCategory == 'moving'
-          ? 'mini_truck'
-          : (_deliveryVehicle.isNotEmpty ? _deliveryVehicle : 'bike');
+      final String vehicleType;
+      if (_selectedCategory == 'moving') {
+        vehicleType = 'mini_truck';
+      } else if (_selectedCategory == 'transport') {
+        vehicleType = 'car';
+      } else if (_selectedCategory == 'pickup') {
+        vehicleType = _deliveryVehicle.isNotEmpty ? _deliveryVehicle : 'rikshaw';
+      } else {
+        vehicleType = _deliveryVehicle.isNotEmpty ? _deliveryVehicle : 'bike';
+      }
 
       final postedOk = await VehicleTaskPostingDialog.show(
         context: context,

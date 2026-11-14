@@ -3,17 +3,26 @@ import 'package:flutter/material.dart';
 
 /// A high-fidelity, realistic popup dialog for Workmate4u task posting.
 ///
-/// Implements a 2-stage interaction matching the user's design:
-/// - Stage 1 (Posting In-Progress): Shows an arched road track with the user's
-///   selected vehicle running from start point to end point with cartoon dust puffs,
-///   a real-time progress bar (0% -> 100%), and status message.
-/// - Stage 2 (Task Posted): Smoothly morphs into the success state displaying the
-///   selected vehicle with delivery box (or cargo boxes + helper avatar), green
-///   checkmark badge, "Task Posted!" / "Moving Task Posted!", "Waiting for helper...",
-///   the task info pill, and the primary "Track in My Tasks" button.
+/// Implements the exact 2-stage interaction matching the user's design:
+/// - Stage 1 (Posting In-Progress):
+///   - Clean white card with rounded corners (24px).
+///   - Winding road illustration with blue start location pin (📍) on left,
+///     checkered finish flag (🏁) on right, and the user's selected vehicle.
+///   - Contained strictly within the card boundaries (never overflows).
+///   - Graceful 3.5s animation duration with smooth road bobbing.
+///   - Headline: "Posting your task..."
+///   - Clean circular loading spinner.
+///
+/// - Stage 2 (Task is Posted!):
+///   - 3D vehicle parked beside delivery parcel box (or cargo boxes + helper avatar)
+///     with a glowing green verified checkmark badge.
+///   - Headline: "Task is Posted!"
+///   - Mint Status Pill: "🟢 Waiting for Helper..."
+///   - Detail Pill: "[Selected Vehicle] • Instant Radar Active"
+///   - Full-width royal blue button: "Track in My Tasks"
 class VehicleTaskPostingDialog extends StatefulWidget {
   final String category;
-  final String vehicleType; // 'bike', 'rikshaw', 'mini_truck', 'pickup', 'car'
+  final String vehicleType; // 'bike', 'rikshaw', 'auto', 'mini_truck', 'pickup', 'car'
   final double budget;
   final double? distanceKm;
   final String? customTitle;
@@ -48,7 +57,7 @@ class VehicleTaskPostingDialog extends StatefulWidget {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black.withValues(alpha: 0.55),
+      barrierColor: Colors.black.withValues(alpha: 0.50),
       builder: (ctx) => VehicleTaskPostingDialog(
         category: category,
         vehicleType: vehicleType,
@@ -77,20 +86,45 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
 
   bool get _isMoving =>
       widget.category.toLowerCase() == 'moving' ||
-      widget.vehicleType.toLowerCase().contains('truck');
+      widget.vehicleType.toLowerCase().contains('truck') ||
+      widget.vehicleType.toLowerCase().contains('pickup');
 
   bool get _isRikshaw =>
       widget.vehicleType.toLowerCase() == 'rikshaw' ||
       widget.vehicleType.toLowerCase() == 'auto';
 
+  bool get _isCar =>
+      widget.category.toLowerCase() == 'transport' ||
+      widget.vehicleType.toLowerCase() == 'car' ||
+      widget.vehicleType.toLowerCase() == 'cab';
+
+  String get _postingAsset {
+    if (_isMoving) return 'assets/images/style_b_truck_posting.png';
+    if (_isRikshaw) return 'assets/images/style_b_rikshaw_posting.png';
+    return 'assets/images/style_b_scooter_posting.png';
+  }
+
+  String get _postedAsset {
+    if (_isMoving) return 'assets/images/style_b_moving_truck_posted.png';
+    if (_isRikshaw) return 'assets/images/style_b_rikshaw_posted.png';
+    return 'assets/images/style_b_scooter_posted.png';
+  }
+
+  String get _vehiclePillLabel {
+    if (_isMoving) return 'Mini Truck Moving • Instant Radar Active';
+    if (_isRikshaw) return 'Auto Delivery • Instant Radar Active';
+    if (_isCar) return 'Cab Transport • Instant Radar Active';
+    return 'Bike Delivery • Instant Radar Active';
+  }
+
   @override
   void initState() {
     super.initState();
 
-    // Drive animation runs across 2.0 seconds while post is processing
+    // Paced 3.4 seconds duration so user enjoys the cartoon road animation
     _driveController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2100),
+      duration: const Duration(milliseconds: 3400),
     );
 
     _driveAnimation = CurvedAnimation(
@@ -100,7 +134,7 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
 
     _morphController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 450),
+      duration: const Duration(milliseconds: 400),
     );
 
     _startFlow();
@@ -109,7 +143,7 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   void _startFlow() async {
     _driveController.forward();
 
-    // Call the actual task creation API in parallel
+    // Call actual task creation API in parallel
     try {
       final success = await widget.onPostTask();
       _postSuccess = success;
@@ -119,10 +153,10 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
 
     if (!mounted) return;
 
-    // Ensure the driving animation has at least reached 90% so the user enjoys the cartoon run
-    if (_driveController.value < 0.90) {
+    // Ensure the animation has played sufficiently (at least 2.5s) so the animation is clearly visible
+    if (_driveController.value < 0.85) {
       await Future.delayed(
-        Duration(milliseconds: ((0.95 - _driveController.value) * 2100).toInt().clamp(100, 1500)),
+        Duration(milliseconds: ((0.90 - _driveController.value) * 3400).toInt().clamp(200, 2500)),
       );
     }
 
@@ -134,7 +168,6 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
       });
       _morphController.forward();
     } else {
-      // If failed, close dialog after a tiny delay so error can be shown
       Navigator.of(context).pop(false);
     }
   }
@@ -149,33 +182,33 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _isPosted, // Prevent dismissing mid-flight
+      canPop: _isPosted,
       child: Center(
         child: Material(
           color: Colors.transparent,
           child: Container(
-            width: 330,
+            width: 315,
             margin: const EdgeInsets.symmetric(horizontal: 24),
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 36,
-                  offset: const Offset(0, 14),
+                  color: Colors.black.withValues(alpha: 0.10),
+                  blurRadius: 32,
+                  offset: const Offset(0, 12),
                 ),
               ],
             ),
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
+              duration: const Duration(milliseconds: 350),
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
               transitionBuilder: (child, anim) => FadeTransition(
                 opacity: anim,
                 child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
+                  scale: Tween<double>(begin: 0.96, end: 1.0).animate(anim),
                   child: child,
                 ),
               ),
@@ -188,274 +221,161 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STAGE 1: WHILE POSTING (Vehicle running along curved road)
+  // STAGE 1: WHILE POSTING (Road track + driving vehicle + spinner)
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildPostingView() {
-    return AnimatedBuilder(
+    return Column(
       key: const ValueKey('stage1_posting'),
-      animation: _driveAnimation,
-      builder: (context, _) {
-        final progress = _driveAnimation.value;
-        final percentInt = (progress * 100).clamp(0, 100).toInt();
-
-        String statusText = 'Loading status';
-        if (percentInt < 30) {
-          statusText = 'Preparing task details...';
-        } else if (percentInt < 70) {
-          statusText = 'Securing escrow budget...';
-        } else if (percentInt < 95) {
-          statusText = 'Broadcasting to nearby helpers...';
-        } else {
-          statusText = 'Finalizing task...';
-        }
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Arched Road Track with Running Vehicle
-            SizedBox(
-              height: 190,
-              width: double.infinity,
-              child: CustomPaint(
-                painter: _RoadTrackPainter(),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // Animated Vehicle positioning along curved road arc
-                    _buildAnimatedVehicleOnRoad(progress),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // Progress text row: "Posting your task..." on left, "85%" on right
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Posting your task...',
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                Text(
-                  '$percentInt%',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Vibrant Royal Blue Progress Bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                height: 7,
-                child: LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: const Color(0xFFE2E8F0),
-                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF1D64EC)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Subtitle / Status message
-            Text(
-              statusText,
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF64748B),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// Calculates position and tilt along the arched road curve
-  Widget _buildAnimatedVehicleOnRoad(double t) {
-    // Road arc parameters: starts lower on left, peaks in center, slopes down to right
-    const double trackWidth = 270.0;
-    const double startX = 10.0;
-    final double posX = startX + (trackWidth * t);
-
-    // Parabolic arc for Y: y = a*(x-x0)^2 + peak
-    // Normalized x from 0 to 1
-    final double nx = t;
-    // Base hill curve: starts at y=110, peaks at y=45 at t=0.55, ends at y=95 at t=1.0
-    final double posY = 105.0 - (75.0 * math.sin(nx * math.pi));
-
-    // Tangent angle for realistic vehicle tilt along road
-    final double slope = -75.0 * math.pi * math.cos(nx * math.pi) / trackWidth;
-    final double rotationAngle = math.atan(slope) * 0.75;
-
-    Widget vehicleSprite;
-    if (_isMoving) {
-      vehicleSprite = Image.asset(
-        'assets/images/popup_truck_driving.png',
-        width: 105,
-        height: 75,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _buildFallbackTruck(),
-      );
-    } else if (_isRikshaw) {
-      vehicleSprite = Image.asset(
-        'assets/images/vehicle_rikshaw.png',
-        width: 85,
-        height: 70,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _buildFallbackScooter(),
-      );
-    } else {
-      vehicleSprite = Image.asset(
-        'assets/images/popup_scooter_driving.png',
-        width: 90,
-        height: 75,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _buildFallbackScooter(),
-      );
-    }
-
-    return Positioned(
-      left: posX - 45,
-      top: posY - 55,
-      child: Transform.rotate(
-        angle: rotationAngle,
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // Cartoon smoke dust puffs trailing behind
-            if (t > 0.08)
-              Opacity(
-                opacity: (1.0 - (t * 0.3)).clamp(0.4, 0.95),
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 2, bottom: 8),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Road track illustration strictly clipped within container boundaries
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            color: Colors.white,
+            height: 180,
+            width: double.infinity,
+            alignment: Alignment.center,
+            child: AnimatedBuilder(
+              animation: _driveAnimation,
+              builder: (context, _) {
+                // Subtle road bobbing animation strictly within frame
+                final floatOffset = math.sin(_driveAnimation.value * 6 * math.pi) * 2.2;
+                return Transform.translate(
+                  offset: Offset(0, floatOffset),
                   child: Image.asset(
-                    'assets/images/popup_dust_puffs.png',
-                    width: 32,
-                    height: 24,
+                    _postingAsset,
+                    height: 175,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Text(
-                      '💨',
-                      style: TextStyle(fontSize: 16),
-                    ),
+                    errorBuilder: (_, __, ___) => _buildFallbackPostingHero(),
                   ),
-                ),
-              ),
-            vehicleSprite,
-          ],
+                );
+              },
+            ),
+          ),
         ),
-      ),
+        const SizedBox(height: 16),
+
+        // Headline: "Posting your task..."
+        const Text(
+          'Posting your task...',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Modern circular loading spinner (as shown in reference image)
+        const SizedBox(
+          width: 26,
+          height: 26,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.6,
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STAGE 2: TASK POSTED (Vehicle parked + delivery box + "Track in My Tasks")
+  // STAGE 2: TASK POSTED (Vehicle parked + parcel box + "Track in My Tasks")
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildPostedView() {
-    final title = _isMoving ? 'Moving Task Posted!' : 'Task Posted!';
-    final distStr = widget.distanceKm != null
-        ? '${widget.distanceKm!.toStringAsFixed(1)} km'
-        : '2.4 km';
-    final budgetStr = '₹${widget.budget.toInt()}';
-
-    String pillText;
-    if (_isMoving) {
-      pillText = 'Moving • Mini Truck • $budgetStr';
-    } else if (_isRikshaw) {
-      pillText = 'Delivery • Auto • $budgetStr';
-    } else {
-      pillText = 'Delivery • $distStr • $budgetStr';
-    }
-
-    Widget heroIllustration;
-    if (_isMoving) {
-      heroIllustration = Image.asset(
-        'assets/images/popup_moving_truck.png',
-        height: 185,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _buildFallbackTruckHero(),
-      );
-    } else {
-      heroIllustration = Image.asset(
-        'assets/images/popup_delivery_scooter.png',
-        height: 185,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _buildFallbackScooterHero(),
-      );
-    }
-
     return Column(
       key: const ValueKey('stage2_posted'),
       mainAxisSize: MainAxisSize.min,
       children: [
         // Top Cartoon Vehicle + Delivery Box / Cargo Illustration
-        SizedBox(
-          height: 190,
-          child: Center(child: heroIllustration),
-        ),
-        const SizedBox(height: 14),
-
-        // Bold Headline: "Task Posted!" or "Moving Task Posted!"
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.4,
-            color: Color(0xFF0F172A),
-          ),
-        ),
-        const SizedBox(height: 5),
-
-        // Subtitle: "Waiting for helper..."
-        const Text(
-          'Waiting for helper...',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF64748B),
-          ),
-        ),
-        const SizedBox(height: 14),
-
-        // Task Detail Pill: e.g. "Delivery • 2.4 km • ₹250"
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF1F5F9),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            pillText,
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF334155),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            color: Colors.white,
+            height: 190,
+            width: double.infinity,
+            alignment: Alignment.center,
+            child: Image.asset(
+              _postedAsset,
+              height: 185,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => _buildFallbackPostedHero(),
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 14),
+
+        // Bold Headline: "Task is Posted!"
+        const Text(
+          'Task is Posted!',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // Mint Status Pill: "🟢 Waiting for Helper..."
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE6FFFA),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF10B981),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                'Waiting for Helper...',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0D9488),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Detail Pill: e.g. "Bike Delivery • Instant Radar Active"
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Text(
+            _vehiclePillLabel,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF475569),
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
 
         // Primary Button: "Track in My Tasks"
         SizedBox(
@@ -469,7 +389,7 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1D64EC),
+              backgroundColor: const Color(0xFF2563EB),
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -490,20 +410,24 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
     );
   }
 
-  // ── Fallback Graphic Builders (if assets take milliseconds to initialize) ─
-  Widget _buildFallbackScooter() {
-    return const Icon(Icons.two_wheeler_rounded, size: 64, color: Color(0xFF0284C7));
+  // ── Fallback Graphic Builders ──────────────────────────────────────────────
+  Widget _buildFallbackPostingHero() {
+    return Icon(
+      _isMoving ? Icons.local_shipping_rounded : Icons.two_wheeler_rounded,
+      size: 72,
+      color: const Color(0xFF2563EB),
+    );
   }
 
-  Widget _buildFallbackTruck() {
-    return const Icon(Icons.local_shipping_rounded, size: 70, color: Color(0xFF0284C7));
-  }
-
-  Widget _buildFallbackScooterHero() {
+  Widget _buildFallbackPostedHero() {
     return Stack(
       alignment: Alignment.center,
       children: [
-        const Icon(Icons.two_wheeler_rounded, size: 100, color: Color(0xFF0284C7)),
+        Icon(
+          _isMoving ? Icons.local_shipping_rounded : Icons.two_wheeler_rounded,
+          size: 96,
+          color: const Color(0xFF2563EB),
+        ),
         Positioned(
           top: 15,
           right: 35,
@@ -519,93 +443,4 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
       ],
     );
   }
-
-  Widget _buildFallbackTruckHero() {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        const Icon(Icons.local_shipping_rounded, size: 110, color: Color(0xFF0284C7)),
-        Positioned(
-          top: 15,
-          right: 35,
-          child: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: const BoxDecoration(
-              color: Color(0xFF10B981),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.check, color: Colors.white, size: 20),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Custom painter for drawing the arched road track with dashed divider line
-class _RoadTrackPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final borderPaint = Paint()
-      ..color = const Color(0xFF1E293B)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4
-      ..strokeCap = StrokeCap.round;
-
-    final dashPaint = Paint()
-      ..color = const Color(0xFF475569)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-
-    // Road top boundary curve: arched mound
-    final topPath = Path();
-    topPath.moveTo(0, size.height * 0.65);
-    topPath.quadraticBezierTo(
-      size.width * 0.52,
-      size.height * 0.16,
-      size.width,
-      size.height * 0.60,
-    );
-    canvas.drawPath(topPath, borderPaint);
-
-    // Road bottom boundary curve
-    final bottomPath = Path();
-    bottomPath.moveTo(0, size.height * 0.77);
-    bottomPath.quadraticBezierTo(
-      size.width * 0.52,
-      size.height * 0.30,
-      size.width,
-      size.height * 0.73,
-    );
-    canvas.drawPath(bottomPath, borderPaint);
-
-    // Center dashed divider line along the road
-    const double dashWidth = 8.0;
-    const double dashSpace = 7.0;
-    final int numDashes = (size.width / (dashWidth + dashSpace)).floor();
-
-    for (int i = 0; i < numDashes; i++) {
-      final double t1 = i / numDashes;
-      final double t2 = (i + 0.55) / numDashes;
-
-      final p1 = _getArcPoint(t1, size, 0.71, 0.23, 0.665);
-      final p2 = _getArcPoint(t2, size, 0.71, 0.23, 0.665);
-
-      canvas.drawLine(p1, p2, dashPaint);
-    }
-  }
-
-  Offset _getArcPoint(double t, Size size, double startY, double peakY, double endY) {
-    final double x = size.width * t;
-    // Quadratic bezier point: B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
-    final double y0 = size.height * startY;
-    final double y1 = size.height * peakY;
-    final double y2 = size.height * endY;
-
-    final double y = math.pow(1 - t, 2) * y0 + 2 * (1 - t) * t * y1 + math.pow(t, 2) * y2;
-    return Offset(x, y);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -133,10 +133,10 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
             : 'Delivery');
 
     final String middleDetail;
-    if (_isMoving) {
-      middleDetail = _isTempo ? 'Cargo Tempo' : 'Mini Truck';
-    } else if (_isTempo) {
-      middleDetail = 'Cargo Tempo';
+    if (_isTempo) {
+      middleDetail = 'Tempo';
+    } else if (_isMoving) {
+      middleDetail = 'Truck';
     } else if (_isRikshaw) {
       middleDetail = 'Auto Rikshaw';
     } else if (widget.distanceKm != null && widget.distanceKm! > 0) {
@@ -160,7 +160,9 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
 
   /// High-resolution 3D vehicle assets uploaded by user
   String get _vehicleImageAsset {
-    if (_isMoving) {
+    if (_isTempo) {
+      return 'assets/images/popup_delivery_tempo_3d.png';
+    } else if (_isMoving) {
       return 'assets/images/popup_moving_truck_3d.png';
     } else if (_isRikshaw) {
       return 'assets/images/popup_rikshaw_3d.png';
@@ -170,7 +172,9 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   }
 
   Size get _stage1VehicleSize {
-    if (_isMoving) {
+    if (_isTempo) {
+      return const Size(82, 54);
+    } else if (_isMoving) {
       return const Size(86, 58);
     } else if (_isRikshaw) {
       return const Size(74, 52);
@@ -180,7 +184,9 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   }
 
   Size get _stage2VehicleSize {
-    if (_isMoving) {
+    if (_isTempo) {
+      return const Size(220, 150);
+    } else if (_isMoving) {
       return const Size(240, 160);
     } else if (_isRikshaw) {
       return const Size(215, 150);
@@ -505,7 +511,7 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildPostedView() {
     final String headline = _isMoving
-        ? (_isTempo ? 'Cargo Tempo Posted!' : 'Moving Task Posted!')
+        ? (_isTempo ? 'Moving Tempo Posted!' : 'Moving Truck Posted!')
         : (_isTempo
             ? 'Cargo Tempo Posted!'
             : (_isRikshaw ? 'Auto-Rikshaw Posted!' : 'Task Posted!'));

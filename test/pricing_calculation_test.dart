@@ -138,10 +138,12 @@ void main() {
 
       // Default category is delivery -> Bike selected
       expect(find.text('Delivery Vehicle Option'), findsOneWidget);
-      expect(find.text('₹12 / km (Bike)'), findsOneWidget);
+      expect(find.text('Bike'), findsOneWidget);
+      expect(find.text('Rikshaw'), findsOneWidget);
 
-      // Task Details Form, Budget, and Location fields are directly visible (no dropdown collapse)
-      expect(find.text('Task Details Form'), findsOneWidget);
+      // Task Details Form label removed; Capacity limits and Budget directly visible
+      expect(find.text('Task Details Form'), findsNothing);
+      expect(find.text('2 Wheeler Capacity Limits'), findsOneWidget);
       expect(find.text('Budget'), findsOneWidget);
 
       // Verify Task Title field disables inherited inner OutlineInputBorder
@@ -172,7 +174,6 @@ void main() {
       await tester.ensureVisible(find.text('Rikshaw'));
       await tester.tap(find.text('Rikshaw'));
       await tester.pumpAndSettle();
-      expect(find.text('₹18 / km (Rikshaw)'), findsOneWidget);
       expect(find.textContaining('Minimum budget for delivery is ₹30'), findsOneWidget);
 
       // Set Pickup & Drop localities -> computes distance fare and updates breakdown cleanly
@@ -190,7 +191,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('PostTaskScreen hides Bike/Rikshaw selector on Moving and shows ₹400 + ₹35/km banner',
+    testWidgets('PostTaskScreen hides Bike/Rikshaw selector on Moving and shows Moving Vehicle Option',
         (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
       await StorageService.init();
@@ -259,11 +260,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Delivery Vehicle Option'), findsNothing);
-      expect(find.text('Moving & Packing Rate'), findsOneWidget);
-      expect(find.text('₹400 base + ₹35 / km'), findsOneWidget);
+      expect(find.text('Moving Vehicle Option'), findsOneWidget);
+      expect(find.text('Tempo'), findsOneWidget);
+      expect(find.text('Truck'), findsOneWidget);
 
-      // Task Details Form, Budget, and Price Breakdown remain directly visible without dropdown
-      expect(find.text('Task Details Form'), findsOneWidget);
+      // Task Details Form label removed; Moving Capacity limits and Budget directly visible
+      expect(find.text('Task Details Form'), findsNothing);
+      expect(find.text('Tempo Capacity Limits'), findsOneWidget);
 
       expect(find.text('Budget'), findsOneWidget);
       expect(find.text('Price Breakdown'), findsOneWidget);
@@ -689,6 +692,77 @@ void main() {
       expect(tester.widget<TextFormField>(budgetField).controller?.text, '7500');
       expect(find.textContaining('5 pages'), findsWidgets);
       expect(tester.takeException(), isNull);
+    });
+
+    test('Repair category contains painting, and Professional contains drawing', () {
+      final repairGroup = TaskCategoryGroup.all.firstWhere((g) => g.label == 'Repair');
+      expect(repairGroup.categoryIds, contains('painting'));
+      expect(repairGroup.categoryIds, contains('electrician'));
+      expect(repairGroup.categoryIds, contains('plumbing'));
+      expect(repairGroup.categoryIds, contains('carpentry'));
+      expect(repairGroup.categoryIds, contains('vehicle'));
+
+      final proGroup = TaskCategoryGroup.all.firstWhere((g) => g.label == 'Professional');
+      expect(proGroup.categoryIds, contains('drawing'));
+      expect(proGroup.categoryIds, contains('freelancer'));
+      expect(proGroup.categoryIds, contains('data_entry'));
+      expect(proGroup.categoryIds, contains('photography'));
+      expect(proGroup.categoryIds, contains('tutoring'));
+      expect(proGroup.categoryIds, contains('tech_support'));
+      expect(proGroup.categoryIds, isNot(contains('painting')));
+
+      expect(TaskCategory.subcatAssetFor('drawing'), 'assets/images/subcats/drawing.png');
+      expect(TaskCategory.subcatAssetFor('painting'), 'assets/images/subcats/painting.png');
+    });
+
+    test('drawing category supports market pricing and dual package/hourly tiers', () {
+      expect(Task.isFreelancerCategory('drawing'), isTrue);
+      expect(Task.minBudgetForCategory('drawing'), 300.0);
+
+      // Package: Pencil sketch (2 sketches @ ₹500 suggested = ₹1000)
+      final sketch2 = Task.calculateFreelancerQuote(
+        'drawing',
+        mode: 'package',
+        tierId: 'pencil_sketch',
+        units: 2,
+      );
+      expect(sketch2.minBudget, 600.0);
+      expect(sketch2.suggestedBudget, 1000.0);
+      expect(sketch2.scopeSummary, 'Pencil Sketch (2 sketches)');
+
+      // Package: Portrait / Caricature
+      final portrait1 = Task.calculateFreelancerQuote(
+        'drawing',
+        mode: 'package',
+        tierId: 'portrait_artwork',
+        units: 1,
+      );
+      expect(portrait1.minBudget, 600.0);
+      expect(portrait1.suggestedBudget, 1000.0);
+
+      // Hourly: 3 hours @ ₹400/hr = ₹1200
+      final drawingHourly = Task.calculateFreelancerQuote(
+        'drawing',
+        mode: 'hourly',
+        hourlyRate: 400.0,
+        hours: 3,
+      );
+      expect(drawingHourly.suggestedBudget, 1200.0);
+      expect(drawingHourly.scopeSummary, 'Hourly (₹400/hr × 3 hrs)');
+    });
+
+    test('moving category offers Tempo and Truck with market pricing', () {
+      // Tempo (₹400 base + ₹35/km)
+      expect(Task.minBudgetForCategory('moving', vehicle: 'tempo'), 400.0);
+      expect(Task.ratePerKmForCategory('moving', vehicle: 'tempo'), 35.0);
+      expect(Task.calculateDistancePrice(10.0, 'moving', vehicle: 'tempo'), 750.0);
+      expect(Task.distancePriceDescription(10.0, 'moving', vehicle: 'tempo'), '₹400 base + ₹35 per km (Tempo)');
+
+      // Truck (₹950 base + ₹55/km)
+      expect(Task.minBudgetForCategory('moving', vehicle: 'truck'), 950.0);
+      expect(Task.ratePerKmForCategory('moving', vehicle: 'truck'), 55.0);
+      expect(Task.calculateDistancePrice(10.0, 'moving', vehicle: 'truck'), 1500.0);
+      expect(Task.distancePriceDescription(10.0, 'moving', vehicle: 'truck'), '₹950 base + ₹55 per km (Truck)');
     });
   });
 }

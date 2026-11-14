@@ -227,6 +227,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
         (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
     _selectedCategory = categoryId;
+    if (categoryId == 'moving') {
+      if (_deliveryVehicle != 'tempo' && _deliveryVehicle != 'truck') {
+        _deliveryVehicle = 'tempo';
+      }
+    } else if (categoryId == 'delivery') {
+      if (_deliveryVehicle != 'bike' && _deliveryVehicle != 'rikshaw') {
+        _deliveryVehicle = 'bike';
+      }
+    }
     if (Task.isFreelancerCategory(categoryId)) {
       _freelancerManualScope = false;
       final det = Task.suggestFreelancerFromDetails(
@@ -272,15 +281,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Per-category description prompt chips shown below the description field.
   static const Map<String, List<String>> _prompts = {
-    'delivery':    ['What to deliver?', 'Pickup point?', 'Drop point?', 'Item size/weight?', 'Urgent?'],
+    'delivery':    [],
     'pickup':      ['What to pick up?', 'From where?', 'Fragile?', 'Time constraint?'],
     'transport':   ['How many people/items?', 'From → To?', 'Vehicle type needed?', 'Luggage?'],
-    'moving':      ['How many rooms?', 'Pickup floor?', 'Drop floor?', 'Need packing help?'],
+    'moving':      [],
     'groceries':   ['Which items?', 'Which store/area?', 'Grocery budget?', 'Brand preference?'],
-    'cleaning':    ['How many rooms?', 'Type of cleaning?', 'Time slot?', 'Pets at home?'],
+    'cleaning':    ['Type of cleaning?', 'Time slot?', 'Pets at home?'],
     'cooking':     ['How many people?', 'What cuisine/dishes?', 'Dietary restrictions?', 'Time needed?'],
     'laundry':     ['How many clothes?', 'Wash + fold or just fold?', 'Pick up from home?'],
-    'household':   ['What chores needed?', 'How many rooms?', 'Duration?', 'Supplies provided?'],
+    'household':   ['What chores needed?', 'Duration?', 'Supplies provided?'],
     'shopping':    ['What items to buy?', 'Which store/area?', 'Item budget?', 'Urgent?'],
     'electrician': ['What electrical work?', 'Specific fault/issue?', 'Urgent?'],
     'plumbing':    ['What plumbing issue?', 'Room affected?', 'Urgent?'],
@@ -295,6 +304,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'business_admin':      ['Type of work (deck/Excel/admin)?', 'Volume / slides or pages?', 'Software / format needed?', 'Confidentiality / NDA?', 'Deadline?'],
     'carpentry':   ['What carpentry work?', 'Materials needed?', 'Approximate dimensions?'],
     'painting':    ['What to paint?', 'Colour preference?', 'Area size?'],
+    'drawing':     ['What type of drawing/sketch?', 'Medium (pencil/charcoal/digital/canvas)?', 'Reference photo available?', 'Dimensions/size?'],
     'beauty':      ['What treatment/service?', 'At-home or salon?', 'Duration?', 'Gender preference?'],
     'pet_care':    ['Type of pet?', 'Care needed?', 'Duration?', 'Vaccinated?'],
     'child_care':  ['Age of child?', 'Duration?', 'Special needs?'],
@@ -680,6 +690,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   List<Color> _squircleGradientFor(String categoryId) {
     switch (categoryId) {
       case 'graphic_design':
+      case 'drawing':
       case 'painting':
       case 'beauty':
         return const [Color(0xFFA855F7), Color(0xFFEC4899)];
@@ -2104,7 +2115,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         firstInvalidFocus ??= _titleFocus;
       }
       if (_descCtrl.text.trim().length < 10) {
-        missing.add('Task Details Form (min 10 characters)');
+        missing.add('Task Details (min 10 characters)');
         final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
         for (final p in prompts) {
           final ctrl = _descFormControllers[p];
@@ -2472,7 +2483,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         'separate_costs': _freelancerQuote?.separateCostsTitle,
       },
       if (_isDelivery) ...{
-        'vehicle': _selectedCategory == 'delivery' ? _deliveryVehicle : 'auto',
+        'vehicle': _selectedCategory == 'delivery'
+            ? _deliveryVehicle
+            : (_selectedCategory == 'moving'
+                ? (_deliveryVehicle == 'truck' ? 'truck' : 'tempo')
+                : 'auto'),
         if (_pickupAddrCtrl.text.trim().isNotEmpty)
           'pickup_address': _pickupAddrCtrl.text.trim(),
         if (_dropAddrCtrl.text.trim().isNotEmpty) ...{
@@ -2502,7 +2517,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       final postedBudget = double.tryParse(_budgetCtrl.text) ?? 0.0;
       final String vehicleType;
       if (_selectedCategory == 'moving') {
-        vehicleType = 'mini_truck';
+        vehicleType = _deliveryVehicle == 'truck' ? 'truck' : 'tempo';
       } else if (_selectedCategory == 'transport') {
         vehicleType = 'car';
       } else if (_selectedCategory == 'pickup') {
@@ -2661,6 +2676,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         lines.add('• Excluded Costs: ${q.separateCostsTitle} (separate from fee)');
       }
     }
+    if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') {
+      final cap = _currentVehicleCapacity;
+      if (cap.isNotEmpty) {
+        lines.add('• Vehicle: ${cap['vehicle']} (Max Weight: ${cap['maxWeight']}, Size: ${cap['maxSize']})');
+      }
+    }
     for (final p in prompts) {
       final ctrl = _descFormControllers[p];
       final val = ctrl?.text.trim() ?? '';
@@ -2675,7 +2696,140 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _descCtrl.text = lines.join('\n');
   }
 
+  Map<String, String> get _currentVehicleCapacity {
+    if (_selectedCategory == 'delivery') {
+      if (_deliveryVehicle == 'bike') {
+        return {
+          'vehicle': '2 Wheeler',
+          'maxWeight': '20kg',
+          'maxSize': '40*40cm',
+        };
+      } else {
+        return {
+          'vehicle': 'Rikshaw',
+          'maxWeight': '85kg',
+          'maxSize': '4*3ft',
+        };
+      }
+    } else if (_selectedCategory == 'moving') {
+      if (_deliveryVehicle == 'truck') {
+        return {
+          'vehicle': 'Truck',
+          'maxWeight': '4000kg',
+          'maxSize': '7*6ft',
+        };
+      } else {
+        return {
+          'vehicle': 'Tempo',
+          'maxWeight': '400kg',
+          'maxSize': '6*5ft',
+        };
+      }
+    }
+    return const {};
+  }
+
+  Widget _buildVehicleCapacityBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBFDBFE), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.scale_rounded, size: 18, color: Color(0xFF2563EB)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${_currentVehicleCapacity['vehicle']} Capacity Limits',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: Color(0xFF1E3A8A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDBEAFE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Max Weight',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _currentVehicleCapacity['maxWeight'] ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDBEAFE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Max Size',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _currentVehicleCapacity['maxSize'] ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDescriptionFormSection() {
+    if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') {
+      return _buildVehicleCapacityBanner();
+    }
+
     final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
     final categoryLabel = TaskCategory.all
         .firstWhere((c) => c.id == _selectedCategory,
@@ -2725,10 +2879,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     children: [
                       Row(
                         children: [
-                          const Flexible(
+                          Flexible(
                             child: Text(
-                              'Task Details Form',
-                              style: TextStyle(
+                              categoryLabel,
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 14,
                                 color: Color(0xFF102A56),
@@ -2744,9 +2898,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                 color: const Color(0xFFDCEBFF),
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: Text(
-                                categoryLabel,
-                                style: const TextStyle(
+                              child: const Text(
+                                'Guided',
+                                style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   color: Color(0xFF2563EB),
@@ -2897,54 +3051,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                   );
                 }),
-
-                // Additional notes / special instructions
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.notes_rounded, size: 16, color: AppColors.gray),
-                        SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Special Instructions / Other Notes (Optional)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
-                              color: AppColors.dark,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _additionalNotesCtrl,
-                      focusNode: _additionalNotesFocus,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText: 'Any specific instructions, parking info, access codes, etc.',
-                        hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
-                        contentPadding: const EdgeInsets.all(12),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -2966,56 +3072,30 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAF2FF),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  const Flexible(
-                    child: Text(
-                      'Delivery Vehicle Option',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: Color(0xFF102A56),
-                      ),
-                    ),
-                  ),
-                ],
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(8),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF2FF),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                    color: Color(0xFF2563EB),
-                  ),
+              child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 16),
+            ),
+            const SizedBox(width: 8),
+            const Flexible(
+              child: Text(
+                'Delivery Vehicle Option',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  color: Color(0xFF102A56),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
         Row(
@@ -3023,15 +3103,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             Expanded(
               child: _buildVehicleTile(
                 title: 'Bike',
-                rate: '₹12 / km',
-                desc: 'Small items / docs',
-                imageAsset: 'assets/images/vehicle_bike.png',
+                imageAsset: 'assets/images/popup_delivery_scooter_3d.png',
                 isSelected: _deliveryVehicle == 'bike',
                 onTap: () {
                   if (_deliveryVehicle != 'bike') {
                     setState(() => _deliveryVehicle = 'bike');
+                    _compileDescriptionFromForm();
                     _checkAndEstimateDistance();
-                    WidgetsBinding.instance.addPostFrameCallback((_) { if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate(); });
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate();
+                    });
                   }
                 },
               ),
@@ -3040,15 +3121,90 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             Expanded(
               child: _buildVehicleTile(
                 title: 'Rikshaw',
-                rate: '₹18 / km',
-                desc: 'Auto / medium items',
-                imageAsset: 'assets/images/vehicle_rikshaw.png',
+                imageAsset: 'assets/images/popup_rikshaw_3d.png',
                 isSelected: _deliveryVehicle == 'rikshaw',
                 onTap: () {
                   if (_deliveryVehicle != 'rikshaw') {
                     setState(() => _deliveryVehicle = 'rikshaw');
+                    _compileDescriptionFromForm();
                     _checkAndEstimateDistance();
-                    WidgetsBinding.instance.addPostFrameCallback((_) { if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate(); });
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate();
+                    });
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMovingVehicleSelector() {
+    final isTruck = _deliveryVehicle == 'truck';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.local_shipping_rounded, color: Color(0xFF2563EB), size: 16),
+            ),
+            const SizedBox(width: 8),
+            const Flexible(
+              child: Text(
+                'Moving Vehicle Option',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  color: Color(0xFF102A56),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildVehicleTile(
+                title: 'Tempo',
+                imageAsset: 'assets/images/popup_delivery_tempo_3d.png',
+                isSelected: !isTruck,
+                onTap: () {
+                  if (_deliveryVehicle != 'tempo') {
+                    setState(() => _deliveryVehicle = 'tempo');
+                    _compileDescriptionFromForm();
+                    _checkAndEstimateDistance();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate();
+                    });
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildVehicleTile(
+                title: 'Truck',
+                imageAsset: 'assets/images/popup_moving_truck_3d.png',
+                isSelected: isTruck,
+                onTap: () {
+                  if (_deliveryVehicle != 'truck') {
+                    setState(() => _deliveryVehicle = 'truck');
+                    _compileDescriptionFromForm();
+                    _checkAndEstimateDistance();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate();
+                    });
                   }
                 },
               ),
@@ -3061,8 +3217,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   Widget _buildVehicleTile({
     required String title,
-    required String rate,
-    required String desc,
     required String imageAsset,
     required bool isSelected,
     required VoidCallback onTap,
@@ -3071,9 +3225,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.fromLTRB(9, 10, 8, 10),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE5EDF7),
@@ -3082,68 +3236,56 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           boxShadow: [
             BoxShadow(
               color: isSelected
-                  ? const Color(0xFF2563EB).withValues(alpha: 0.12)
+                  ? const Color(0xFF2563EB).withValues(alpha: 0.10)
                   : const Color(0xFF102A56).withValues(alpha: 0.03),
-              blurRadius: 8,
+              blurRadius: 6,
               offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Row(
+        child: Stack(
           children: [
-            Image.asset(
-              imageAsset,
-              width: 44,
-              height: 44,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(Icons.two_wheeler_rounded, size: 36, color: Color(0xFF2563EB)),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: isSelected
+                  ? const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF2563EB))
+                  : Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.4),
+                      ),
+                    ),
             ),
-            const SizedBox(width: 6),
-            Expanded(
+            Center(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  Image.asset(
+                    imageAsset,
+                    width: 76,
+                    height: 72,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.directions_car_rounded, size: 48, color: Color(0xFF2563EB)),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: Color(0xFF102A56),
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    rate,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                      color: Color(0xFF2563EB),
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    desc,
-                    style: const TextStyle(fontSize: 10, color: Color(0xFF52627A), height: 1.15),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                      color: isSelected ? const Color(0xFF1D4ED8) : const Color(0xFF102A56),
+                    ),
                   ),
                 ],
               ),
             ),
-            if (isSelected) ...[
-              const SizedBox(width: 4),
-              Container(
-                width: 18,
-                height: 18,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF2563EB),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.check, size: 12, color: Colors.white),
-              ),
-            ] else
-              const SizedBox(width: 2),
           ],
         ),
       ),
@@ -5208,6 +5350,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       if (_selectedCategory == 'delivery') ...[
                         const SizedBox(height: 16),
                         _buildDeliveryVehicleSelector(),
+                      ] else if (_selectedCategory == 'moving') ...[
+                        const SizedBox(height: 16),
+                        _buildMovingVehicleSelector(),
                       ] else if (_isDelivery) ...[
                         const SizedBox(height: 16),
                         _buildDistanceCategoryRateBanner(),

@@ -530,6 +530,7 @@ class Task {
         return 250.0;
       case 'freelancer':
       case 'business_admin':
+      case 'drawing':
         return 300.0;
       case 'graphic_design':
         return 350.0;
@@ -558,7 +559,7 @@ class Task {
       case 'transport':
         return 50.0; // Vehicle transport base min
       case 'moving':
-        return 400.0; // Moving & packing base min
+        return vehicle.toLowerCase() == 'truck' ? 950.0 : 400.0; // Moving truck ₹950 vs tempo ₹400 base min
 
       case 'other':
       default:
@@ -576,7 +577,7 @@ class Task {
       case 'transport':
         return 18.0; // Cab / Transport rate
       case 'moving':
-        return 35.0; // Moving & Tempo: ₹35/km
+        return vehicle.toLowerCase() == 'truck' ? 55.0 : 35.0; // Moving Truck: ₹55/km vs Tempo: ₹35/km
       default:
         return 12.0;
     }
@@ -606,9 +607,11 @@ class Task {
         final raw = distanceKm * 18.0;
         return (raw < 50.0 ? 50.0 : raw).roundToDouble();
       case 'moving':
-        // Moving & Packing: Base ₹400 + ₹35/km across full distance
-        final fare = 400.0 + (distanceKm * 35.0);
-        return (fare < 400.0 ? 400.0 : fare).roundToDouble();
+        final isTruck = vehicle.toLowerCase() == 'truck';
+        final base = isTruck ? 950.0 : 400.0;
+        final rate = isTruck ? 55.0 : 35.0;
+        final fare = base + (distanceKm * rate);
+        return (fare < base ? base : fare).roundToDouble();
       default:
         final raw = distanceKm * 12.0;
         return (raw < 24.0 ? 24.0 : raw).roundToDouble();
@@ -621,8 +624,12 @@ class Task {
     final total = calculateDistancePrice(distanceKm, category, vehicle: vehicle).toInt();
     final cat = category.toLowerCase();
     if (cat == 'moving') {
-      final distPart = (distanceKm * 35.0).round();
-      return 'Min fare: ₹$total (₹400 base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹35/km)';
+      final isTruck = vehicle.toLowerCase() == 'truck';
+      final baseFare = isTruck ? 950 : 400;
+      final rate = isTruck ? 55 : 35;
+      final distPart = (distanceKm * rate).round();
+      final vehName = isTruck ? 'Truck' : 'Tempo';
+      return 'Min fare: ₹$total (₹$baseFare base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹$rate/km · $vehName)';
     }
     final rate = ratePerKmForCategory(cat, vehicle: vehicle).toInt();
     final baseMin = minBudgetForCategory(cat, vehicle: vehicle).toInt();
@@ -649,7 +656,9 @@ class Task {
       case 'transport':
         return '₹18 per km';
       case 'moving':
-        return '₹400 base + ₹35 per km';
+        return vehicle.toLowerCase() == 'truck'
+            ? '₹950 base + ₹55 per km (Truck)'
+            : '₹400 base + ₹35 per km (Tempo)';
       default:
         return '₹12 per km';
     }
@@ -658,7 +667,7 @@ class Task {
   /// Returns true for remote-friendly freelancer categories where physical location is optional/not needed.
   static bool isFreelancerCategory(String category) {
     final c = _normalizeCategoryKey(category);
-    return c == 'freelancer' || TaskCategoryGroup.freelancerChildIds.contains(c);
+    return c == 'freelancer' || c == 'drawing' || TaskCategoryGroup.freelancerChildIds.contains(c);
   }
 
   static const Map<String, FreelancerPricingConfig> _freelancerPricingConfigs = {
@@ -771,6 +780,68 @@ class Task {
           defaultUnits: 2,
           maxUnits: 24,
           summaryHint: 'Print-ready multi-page menu, catalogue or flyer',
+        ),
+      ],
+    ),
+    'drawing': FreelancerPricingConfig(
+      categoryId: 'drawing',
+      minHourlyRate: 250.0,
+      defaultHourlyRate: 400.0,
+      maxHourlyRate: 800.0,
+      minHours: 1,
+      defaultHours: 2,
+      maxHours: 40,
+      shortUnitHint: 'From ₹300 · /sketch or /hr',
+      separateCostsTitle: 'Framing & Courier Paid Separately',
+      separateCostsDescription:
+          'Physical paper framing, protective courier shipping, or canvas board costs are paid separately by client.',
+      tiers: [
+        FreelancerPackageTier(
+          id: 'pencil_sketch',
+          label: 'Pencil Sketch',
+          unitLabel: 'sketch',
+          unitPlural: 'sketches',
+          perUnitMin: 300.0,
+          perUnitSuggested: 500.0,
+          perUnitMax: 900.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 20,
+          summaryHint: 'Hand-drawn pencil portrait, line art or character doodle',
+        ),
+        FreelancerPackageTier(
+          id: 'portrait_artwork',
+          label: 'Portrait / Caricature',
+          unitLabel: 'portrait',
+          unitPlural: 'portraits',
+          perUnitMin: 600.0,
+          perUnitSuggested: 1000.0,
+          perUnitMax: 2000.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 10,
+          summaryHint: 'Realistic A4/A3 charcoal/graphite portrait or funny caricature',
+        ),
+        FreelancerPackageTier(
+          id: 'digital_illustration',
+          label: 'Digital Art',
+          unitLabel: 'artwork',
+          unitPlural: 'artworks',
+          perUnitMin: 800.0,
+          perUnitSuggested: 1400.0,
+          perUnitMax: 2800.0,
+          minUnits: 1,
+          defaultUnits: 1,
+          maxUnits: 15,
+          summaryHint: 'High-res digital painting, concept art, NFT or book cover art',
+        ),
+        FreelancerPackageTier(
+          id: 'canvas_painting',
+          label: 'Color / Canvas',
+          baseMin: 1500.0,
+          baseSuggested: 2500.0,
+          baseMax: 5000.0,
+          summaryHint: 'Acrylic/oil on canvas, framed custom artwork piece',
         ),
       ],
     ),
@@ -1175,6 +1246,37 @@ class Task {
           units = (cnt != null && cnt > 0) ? cnt : 1;
           matched = true;
           reason = '$units ${units == 1 ? 'design' : 'designs'} detected in task details';
+        } else if (detectedHours != null && detectedHours > 0) {
+          mode = 'hourly';
+          hours = detectedHours;
+          matched = true;
+          reason = '$hours ${hours == 1 ? 'hr' : 'hrs'} estimated in task details';
+        }
+        break;
+
+      case 'drawing':
+        if (hasAny(['canvas', 'oil', 'acrylic', 'color painting'])) {
+          tierId = 'canvas_painting';
+          matched = true;
+          reason = 'Canvas / color artwork detected in task details';
+        } else if (hasAny(['digital', 'concept art', 'illustration', 'nft', 'vector'])) {
+          tierId = 'digital_illustration';
+          final arts = _extractUnitCount(combined, ['artwork', 'illustration', 'piece', 'drawing']);
+          units = (arts != null && arts > 0) ? arts : 1;
+          matched = true;
+          reason = '$units digital ${units == 1 ? 'artwork' : 'artworks'} detected in task details';
+        } else if (hasAny(['portrait', 'caricature', 'charcoal', 'face'])) {
+          tierId = 'portrait_artwork';
+          final ports = _extractUnitCount(combined, ['portrait', 'caricature', 'face', 'sketch']);
+          units = (ports != null && ports > 0) ? ports : 1;
+          matched = true;
+          reason = '$units ${units == 1 ? 'portrait' : 'portraits'} detected in task details';
+        } else if (hasAny(['sketch', 'pencil', 'doodle', 'line art', 'drawing'])) {
+          tierId = 'pencil_sketch';
+          final cnt = _extractUnitCount(combined, ['sketch', 'drawing', 'doodle', 'page']);
+          units = (cnt != null && cnt > 0) ? cnt : 1;
+          matched = true;
+          reason = '$units ${units == 1 ? 'sketch' : 'sketches'} detected in task details';
         } else if (detectedHours != null && detectedHours > 0) {
           mode = 'hourly';
           hours = detectedHours;
@@ -1794,6 +1896,7 @@ class Task {
         baseMax = 1500.0;
         break;
       case 'graphic_design':
+      case 'drawing':
         baseSuggested = 600.0;
         baseMax = 1500.0;
         break;
@@ -1831,11 +1934,11 @@ class Task {
         break;
       case 'moving':
         if (distanceKm != null && distanceKm > 0) {
-          baseSuggested = calculateDistancePrice(distanceKm, 'moving');
+          baseSuggested = calculateDistancePrice(distanceKm, 'moving', vehicle: vehicle);
           baseMax = (baseSuggested * 1.35).roundToDouble();
         } else {
-          baseSuggested = 600.0;
-          baseMax = 1500.0;
+          baseSuggested = vehicle.toLowerCase() == 'truck' ? 1200.0 : 600.0;
+          baseMax = vehicle.toLowerCase() == 'truck' ? 2500.0 : 1500.0;
         }
         break;
       case 'delivery':
@@ -2045,6 +2148,7 @@ class TaskCategory {
     TaskCategory(id: 'vehicle', label: 'Vehicle', icon: '🚘'),
     TaskCategory(id: 'tutoring', label: 'Tutoring', icon: '📚'),
     TaskCategory(id: 'freelancer', label: 'Freelancer', icon: '💼'),
+    TaskCategory(id: 'drawing', label: 'Drawing & Sketching', icon: '🎨'),
     TaskCategory(id: 'graphic_design', label: 'Graphic Design & Branding', icon: '🎨'),
     TaskCategory(id: 'web_app_tech', label: 'Web, App & Tech Projects', icon: '🌐'),
     TaskCategory(id: 'video_audio_editing', label: 'Video & Audio Editing', icon: '🎬'),
@@ -2074,6 +2178,7 @@ class TaskCategory {
     'data_entry',
     'delivery',
     'digital_marketing',
+    'drawing',
     'elder_care',
     'electrician',
     'errands',
@@ -2285,7 +2390,7 @@ class TaskCategoryGroup {
     TaskCategoryGroup(
       label: 'Repair',
       icon: '🔧',
-      categoryIds: ['repair', 'electrician', 'plumbing', 'carpentry', 'vehicle'],
+      categoryIds: ['repair', 'electrician', 'plumbing', 'carpentry', 'painting', 'vehicle'],
     ),
     TaskCategoryGroup(
       label: 'Home & Lifestyle',
@@ -2305,7 +2410,7 @@ class TaskCategoryGroup {
     TaskCategoryGroup(
       label: 'Professional',
       icon: '💼',
-      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring', 'painting', 'tech_support'],
+      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring', 'drawing', 'tech_support'],
     ),
     TaskCategoryGroup(
       label: 'Care Services',

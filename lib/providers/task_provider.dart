@@ -423,14 +423,9 @@ class TaskProvider extends ChangeNotifier {
   }
 
   void _triggerNewTaskNotifications(String taskId) {
-    Future.microtask(() async {
-      try {
-        await ApiService.post('/tasks/$taskId/notify-skills');
-      } catch (_) {}
-      try {
-        await ApiService.post('/tasks/$taskId/notify-nearby');
-      } catch (_) {}
-    });
+    // The backend POST /api/tasks automatically dispatches skill-matched and
+    // nearby notifications asynchronously in a daemon thread upon task creation.
+    // Client-side redundant HTTP calls are suppressed to avoid double notifications.
   }
 
   Future<bool> acceptTask(String taskId) async {

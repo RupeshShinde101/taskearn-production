@@ -115,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (withLocation && effectiveLat != null && effectiveLng != null) ...{
             'lat': '$effectiveLat',
             'lng': '$effectiveLng',
-            'radius': '15',
+            'radius': '2',
           },
           if (currentUserId != null && currentUserId.isNotEmpty)
             'exclude_poster_id': currentUserId,
@@ -140,8 +140,16 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       var nearby = await queryTasks(withLocation: true);
-      if (nearby.isEmpty && effectiveLat != null && effectiveLng != null) {
-        nearby = await queryTasks(withLocation: false);
+      // Strictly enforce 2 km radius for feed section
+      if (effectiveLat != null && effectiveLng != null) {
+        nearby = nearby.where((t) {
+          final km = _taskDistanceKm(t);
+          if (km != null) return km <= 2.0;
+          final cat = t.category.toLowerCase();
+          return cat.contains('freelanc') || cat.contains('graphic') ||
+              cat.contains('web') || cat.contains('video') ||
+              cat.contains('market') || cat.contains('admin');
+        }).toList();
       }
 
       nearby.sort((a, b) {

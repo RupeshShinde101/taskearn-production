@@ -18,6 +18,7 @@ import '../../widgets/map_location_picker.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
 import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/task_posted_success_dialog.dart';
+import '../../widgets/vehicle_task_posting_dialog.dart';
 
 class PostTaskScreen extends StatefulWidget {
   const PostTaskScreen({super.key});
@@ -2491,6 +2492,52 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         },
       },
     };
+
+    final isVehicleCategory = _isDelivery ||
+        _selectedCategory == 'moving' ||
+        _selectedCategory == 'transport' ||
+        _selectedCategory == 'pickup';
+
+    if (isVehicleCategory) {
+      final postedBudget = double.tryParse(_budgetCtrl.text) ?? 0.0;
+      final vehicleType = _selectedCategory == 'moving'
+          ? 'mini_truck'
+          : (_deliveryVehicle.isNotEmpty ? _deliveryVehicle : 'bike');
+
+      final postedOk = await VehicleTaskPostingDialog.show(
+        context: context,
+        category: _selectedCategory,
+        vehicleType: vehicleType,
+        budget: postedBudget,
+        distanceKm: _calculatedDistanceKm,
+        customTitle: _titleCtrl.text.trim(),
+        onPostTask: () => context.read<TaskProvider>().postTask(taskData),
+        onTrackInMyTasks: () {
+          if (mounted) context.go('/my-tasks');
+        },
+        onBackToHome: () {
+          if (mounted) context.go('/home');
+        },
+      );
+
+      if (!mounted) return;
+      setState(() => _loading = false);
+
+      if (postedOk == true) {
+        if (mounted) {
+          context.go('/my-tasks');
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.read<TaskProvider>().error ?? 'Failed to post task',
+            ),
+          ),
+        );
+      }
+      return;
+    }
 
     final ok = await context.read<TaskProvider>().postTask(taskData);
 

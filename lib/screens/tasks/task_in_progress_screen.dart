@@ -14,6 +14,7 @@ import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/task_released_dialog.dart';
 
 class TaskInProgressScreen extends StatefulWidget {
   final String taskId;
@@ -514,36 +515,85 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Release Task'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 24),
+            SizedBox(width: 8),
+            Text('Release Task?', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+          ],
+        ),
         content: const Text(
-            'Releasing a task without completing it may result in a penalty.\n\n'
-            'More than 3 releases may trigger a 48-hour account suspension.'),
+          'Releasing a task without completing it may result in a 10% penalty deducted from your wallet.\n\n'
+          'Releasing more than 3 tasks today will trigger an automatic 48-hour account suspension.',
+          style: TextStyle(height: 1.45, color: AppColors.darkLight, fontSize: 13.5),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.gray, fontWeight: FontWeight.w600)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Release',
-                style: TextStyle(color: AppColors.danger)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Release Task', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
       ),
     );
     if (confirm != true || !mounted) return;
 
+    // Immediately stop polling timer and location stream to prevent background conflict
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _locationSub?.cancel();
+    _locationSub = null;
+
     setState(() => _abandoning = true);
-    final ok = await context.read<TaskProvider>().abandonTask(widget.taskId);
+    final provider = context.read<TaskProvider>();
+    final taskTitle = _task?.title ?? 'Task #${widget.taskId}';
+    final ok = await provider.abandonTask(widget.taskId);
     if (!mounted) return;
     setState(() => _abandoning = false);
+
     if (ok) {
-      context.go('/my-tasks');
+      final res = provider.lastAbandonResult;
+      final penalty = (res?['releasePenalty'] as num?)?.toDouble() ?? 0.0;
+      final dailyCount = (res?['dailyReleaseCount'] as num?)?.toInt() ?? 0;
+      final isSuspended = res?['suspended'] == true;
+      final message = res?['message']?.toString();
+
+      await TaskReleasedDialog.show(
+        context: context,
+        taskTitle: taskTitle,
+        releasePenalty: penalty,
+        dailyReleasesUsed: dailyCount,
+        isSuspended: isSuspended,
+        message: message,
+        onHome: () {
+          if (mounted) context.go('/home');
+        },
+      );
+
+      if (mounted) {
+        context.go('/home');
+      }
     } else {
+      // Re-enable polling timer and location if release failed
+      _pollTimer = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) { if (mounted) _load(); },
+      );
+      _startLocationUpdates();
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              context.read<TaskProvider>().error ?? 'Failed to release task'),
+              provider.error ?? 'Failed to release task'),
           backgroundColor: AppColors.danger,
         ),
       );

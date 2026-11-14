@@ -17,6 +17,7 @@ import '../../widgets/location_suggestions_dropdown.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
 import '../../widgets/task_price_breakdown_card.dart';
+import '../../widgets/task_posted_success_dialog.dart';
 
 class PostTaskScreen extends StatefulWidget {
   const PostTaskScreen({super.key});
@@ -2497,10 +2498,30 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     setState(() => _loading = false);
 
     if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task posted successfully!')),
+      final provider = context.read<TaskProvider>();
+      final createdTaskId = provider.lastCreatedTaskId;
+      final postedTitle = _titleCtrl.text.trim().isNotEmpty
+          ? _titleCtrl.text.trim()
+          : 'New Task';
+      final postedBudget = double.tryParse(_budgetCtrl.text) ?? 0.0;
+
+      await TaskPostedSuccessDialog.show(
+        context: context,
+        title: postedTitle,
+        category: _selectedCategory,
+        budget: postedBudget,
+        taskId: createdTaskId,
+        onViewTasks: () {
+          if (mounted) context.go('/my-tasks');
+        },
+        onGoHome: () {
+          if (mounted) context.go('/home');
+        },
       );
-      context.go('/my-tasks');
+
+      if (mounted) {
+        context.go('/my-tasks');
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

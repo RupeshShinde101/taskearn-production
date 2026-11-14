@@ -393,11 +393,15 @@ class TaskProvider extends ChangeNotifier {
     return null;
   }
 
+  String? _lastCreatedTaskId;
+  String? get lastCreatedTaskId => _lastCreatedTaskId;
+
   Future<bool> postTask(Map<String, dynamic> taskData) async {
     try {
       final response = await ApiService.post('/tasks', body: taskData);
       final newTaskId = _extractNewTaskId(response);
-      await fetchMyTasks();
+      _lastCreatedTaskId = newTaskId;
+      fetchMyTasks().catchError((_) {});
       if (newTaskId != null && newTaskId.isNotEmpty) {
         _triggerNewTaskNotifications(newTaskId);
       }
@@ -509,13 +513,27 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
+  Map<String, dynamic>? _lastAbandonResult;
+  Map<String, dynamic>? get lastAbandonResult => _lastAbandonResult;
+
   Future<bool> abandonTask(String taskId) async {
     try {
-      await ApiService.post('/tasks/$taskId/abandon');
-      await fetchMyTasks();
+      _lastAbandonResult = null;
+      final res = await ApiService.post('/tasks/$taskId/abandon');
+      _detailCache.remove(taskId);
+      if (res is Map<String, dynamic>) {
+        _lastAbandonResult = res;
+      } else {
+        _lastAbandonResult = {'success': true};
+      }
+      fetchMyTasks().catchError((_) {});
       return true;
     } on ApiException catch (e) {
       _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = e.toString();
       notifyListeners();
       return false;
     }

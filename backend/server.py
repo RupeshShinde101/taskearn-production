@@ -6,6 +6,7 @@ Flask + PostgreSQL + bcrypt + JWT + Razorpay
 import sys
 import os
 import io
+import threading
 
 # Set UTF-8 encoding for Windows console
 if sys.platform == 'win32':
@@ -10096,6 +10097,7 @@ def delete_account():
 # TASK NOTIFICATION BROADCAST ENDPOINTS
 # ========================================
 
+import threading
 _notified_task_events = set()  # set of (int(task_id), str(user_id), notif_type)
 _notified_events_lock = threading.Lock()
 

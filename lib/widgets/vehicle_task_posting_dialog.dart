@@ -3,22 +3,21 @@ import 'package:flutter/material.dart';
 
 /// A high-fidelity, realistic popup dialog for Workmate4u task posting.
 ///
-/// Implements the exact 2-stage interaction matching the user's design:
+/// Implements:
 /// - Stage 1 (Posting In-Progress):
 ///   - Clean white card with rounded corners (24px).
-///   - Winding road illustration with blue start location pin (📍) on left,
-///     checkered finish flag (🏁) on right, and the user's selected vehicle.
+///   - Winding road with start pin (📍) and finish flag (🏁).
+///   - Selected vehicle moves in a continuous smooth loop along the winding road!
+///   - Vehicle tilts naturally with the road curve and bobs with suspension motion.
 ///   - Contained strictly within the card boundaries (never overflows).
-///   - Graceful 3.5s animation duration with smooth road bobbing.
 ///   - Headline: "Posting your task..."
 ///   - Clean circular loading spinner.
 ///
 /// - Stage 2 (Task is Posted!):
-///   - 3D vehicle parked beside delivery parcel box (or cargo boxes + helper avatar)
-///     with a glowing green verified checkmark badge.
+///   - 3D vehicle parked beside delivery parcel box (or cargo boxes + mover) with green check badge.
 ///   - Headline: "Task is Posted!"
 ///   - Mint Status Pill: "🟢 Waiting for Helper..."
-///   - Detail Pill: "[Selected Vehicle] • Instant Radar Active"
+///   - Detail Pill: "[Vehicle] • Instant Radar Active"
 ///   - Full-width royal blue button: "Track in My Tasks"
 class VehicleTaskPostingDialog extends StatefulWidget {
   final String category;
@@ -77,11 +76,11 @@ class VehicleTaskPostingDialog extends StatefulWidget {
 
 class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
     with TickerProviderStateMixin {
-  late AnimationController _driveController;
-  late Animation<double> _driveAnimation;
+  late AnimationController _loopController;
   late AnimationController _morphController;
 
   bool _isPosted = false;
+  bool _apiCompleted = false;
   bool _postSuccess = false;
 
   bool get _isMoving =>
@@ -98,13 +97,13 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
       widget.vehicleType.toLowerCase() == 'car' ||
       widget.vehicleType.toLowerCase() == 'cab';
 
-  String get _postingAsset {
-    if (_isMoving) return 'assets/images/style_b_truck_posting.png';
-    if (_isRikshaw) return 'assets/images/style_b_rikshaw_posting.png';
-    return 'assets/images/style_b_scooter_posting.png';
+  String get _vehicleSpriteAsset {
+    if (_isMoving) return 'assets/images/popup_truck_driving.png';
+    if (_isRikshaw) return 'assets/images/vehicle_rikshaw.png';
+    return 'assets/images/scooter_sprite_clean.png';
   }
 
-  String get _postedAsset {
+  String get _postedHeroAsset {
     if (_isMoving) return 'assets/images/style_b_moving_truck_posted.png';
     if (_isRikshaw) return 'assets/images/style_b_rikshaw_posted.png';
     return 'assets/images/style_b_scooter_posted.png';
@@ -121,15 +120,10 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   void initState() {
     super.initState();
 
-    // Paced 3.4 seconds duration so user enjoys the cartoon road animation
-    _driveController = AnimationController(
+    // 2.6 seconds per loop iteration along the road track
+    _loopController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3400),
-    );
-
-    _driveAnimation = CurvedAnimation(
-      parent: _driveController,
-      curve: Curves.easeInOutCubic,
+      duration: const Duration(milliseconds: 2600),
     );
 
     _morphController = AnimationController(
@@ -137,13 +131,30 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
       duration: const Duration(milliseconds: 400),
     );
 
+    // Add status listener to smoothly transition once API finishes
+    _loopController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        if (_apiCompleted && _postSuccess) {
+          // Finished driving across: transition to Stage 2
+          if (mounted) {
+            setState(() => _isPosted = true);
+            _morphController.forward();
+          }
+        } else if (_apiCompleted && !_postSuccess) {
+          if (mounted) Navigator.of(context).pop(false);
+        } else {
+          // Continue looping along the road
+          _loopController.forward(from: 0.0);
+        }
+      }
+    });
+
     _startFlow();
   }
 
   void _startFlow() async {
-    _driveController.forward();
+    _loopController.forward();
 
-    // Call actual task creation API in parallel
     try {
       final success = await widget.onPostTask();
       _postSuccess = success;
@@ -151,30 +162,17 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
       _postSuccess = false;
     }
 
-    if (!mounted) return;
-
-    // Ensure the animation has played sufficiently (at least 2.5s) so the animation is clearly visible
-    if (_driveController.value < 0.85) {
-      await Future.delayed(
-        Duration(milliseconds: ((0.90 - _driveController.value) * 3400).toInt().clamp(200, 2500)),
-      );
-    }
+    _apiCompleted = true;
 
     if (!mounted) return;
 
-    if (_postSuccess) {
-      setState(() {
-        _isPosted = true;
-      });
-      _morphController.forward();
-    } else {
-      Navigator.of(context).pop(false);
-    }
+    // If API responded very fast, ensure at least one full loop completes
+    // The addStatusListener will trigger the transition when it reaches 1.0
   }
 
   @override
   void dispose() {
-    _driveController.dispose();
+    _loopController.dispose();
     _morphController.dispose();
     super.dispose();
   }
@@ -221,33 +219,38 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STAGE 1: WHILE POSTING (Road track + driving vehicle + spinner)
+  // STAGE 1: WHILE POSTING (Vehicle moving in a loop on winding road)
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildPostingView() {
     return Column(
       key: const ValueKey('stage1_posting'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Road track illustration strictly clipped within container boundaries
+        // Strictly contained road canvas + looping vehicle
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: Container(
             color: Colors.white,
-            height: 180,
+            height: 185,
             width: double.infinity,
             alignment: Alignment.center,
             child: AnimatedBuilder(
-              animation: _driveAnimation,
+              animation: _loopController,
               builder: (context, _) {
-                // Subtle road bobbing animation strictly within frame
-                final floatOffset = math.sin(_driveAnimation.value * 6 * math.pi) * 2.2;
-                return Transform.translate(
-                  offset: Offset(0, floatOffset),
-                  child: Image.asset(
-                    _postingAsset,
-                    height: 175,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => _buildFallbackPostingHero(),
+                final double t = _loopController.value;
+                return CustomPaint(
+                  size: const Size(275, 185),
+                  painter: _WindingRoadPainter(loopProgress: t),
+                  child: SizedBox(
+                    width: 275,
+                    height: 185,
+                    child: Stack(
+                      clipBehavior: Clip.hardEdge,
+                      children: [
+                        // Animated Vehicle traversing the winding road
+                        _buildLoopingVehicle(t),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -269,7 +272,7 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
         ),
         const SizedBox(height: 14),
 
-        // Modern circular loading spinner (as shown in reference image)
+        // Modern circular loading spinner
         const SizedBox(
           width: 26,
           height: 26,
@@ -280,6 +283,53 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
         ),
         const SizedBox(height: 8),
       ],
+    );
+  }
+
+  /// Calculates position and angle along the winding road curve
+  Widget _buildLoopingVehicle(double t) {
+    // Road curve geometry inside 275x185 box:
+    // Start Pin: (28, 70), End Flag: (245, 65)
+    // S-curve road path
+    final roadPath = Path()
+      ..moveTo(26, 96)
+      ..quadraticBezierTo(85, 134, 140, 102)
+      ..quadraticBezierTo(195, 70, 245, 88);
+
+    final metrics = roadPath.computeMetrics().first;
+    // Keep vehicle safely bounded between 0.05 and 0.95 of the track
+    final double safeT = 0.04 + (t * 0.90);
+    final tangent = metrics.getTangentForOffset(metrics.length * safeT);
+
+    final double posX = tangent?.position.dx ?? (30 + (210 * t));
+    final double posY = tangent?.position.dy ?? (100 - (20 * math.sin(t * math.pi)));
+    final double angle = tangent?.angle ?? 0.0;
+
+    // Gentle road suspension bobbing
+    final double bobY = math.sin(t * 14 * math.pi) * 1.8;
+
+    // Vehicle dimension
+    final double vWidth = _isMoving ? 75 : (_isRikshaw ? 60 : 66);
+    final double vHeight = _isMoving ? 58 : (_isRikshaw ? 54 : 54);
+
+    return Positioned(
+      left: posX - (vWidth * 0.5),
+      top: posY - (vHeight * 0.85) + bobY,
+      child: Transform.rotate(
+        angle: angle * 0.85,
+        alignment: Alignment.center,
+        child: Image.asset(
+          _vehicleSpriteAsset,
+          width: vWidth,
+          height: vHeight,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => Icon(
+            _isMoving ? Icons.local_shipping_rounded : Icons.two_wheeler_rounded,
+            size: 48,
+            color: const Color(0xFF2563EB),
+          ),
+        ),
+      ),
     );
   }
 
@@ -300,7 +350,7 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
             width: double.infinity,
             alignment: Alignment.center,
             child: Image.asset(
-              _postedAsset,
+              _postedHeroAsset,
               height: 185,
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => _buildFallbackPostedHero(),
@@ -411,14 +461,6 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
   }
 
   // ── Fallback Graphic Builders ──────────────────────────────────────────────
-  Widget _buildFallbackPostingHero() {
-    return Icon(
-      _isMoving ? Icons.local_shipping_rounded : Icons.two_wheeler_rounded,
-      size: 72,
-      color: const Color(0xFF2563EB),
-    );
-  }
-
   Widget _buildFallbackPostedHero() {
     return Stack(
       alignment: Alignment.center,
@@ -443,4 +485,152 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
       ],
     );
   }
+}
+
+/// Custom painter for the winding road track with start pin and finish flag
+class _WindingRoadPainter extends CustomPainter {
+  final double loopProgress;
+
+  _WindingRoadPainter({required this.loopProgress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // S-curve road path definition
+    final roadPath = Path()
+      ..moveTo(26, 96)
+      ..quadraticBezierTo(85, 134, 140, 102)
+      ..quadraticBezierTo(195, 70, 245, 88);
+
+    // 1. Road shadow
+    final shadowPaint = Paint()
+      ..color = const Color(0xFFCBD5E1).withValues(alpha: 0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 34
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(roadPath.shift(const Offset(0, 3)), shadowPaint);
+
+    // 2. Asphalt Road Ribbon
+    final roadPaint = Paint()
+      ..color = const Color(0xFFE2E8F0)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 30
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(roadPath, roadPaint);
+
+    // 3. Road Borders
+    final borderPaint = Paint()
+      ..color = const Color(0xFF94A3B8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round;
+
+    final topEdge = Path()
+      ..moveTo(26, 96 - 15)
+      ..quadraticBezierTo(85, 134 - 15, 140, 102 - 15)
+      ..quadraticBezierTo(195, 70 - 15, 245, 88 - 15);
+    canvas.drawPath(topEdge, borderPaint);
+
+    final bottomEdge = Path()
+      ..moveTo(26, 96 + 15)
+      ..quadraticBezierTo(85, 134 + 15, 140, 102 + 15)
+      ..quadraticBezierTo(195, 70 + 15, 245, 88 + 15);
+    canvas.drawPath(bottomEdge, borderPaint);
+
+    // 4. Center Dashed Lane Divider
+    final dashPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+
+    final metrics = roadPath.computeMetrics().first;
+    const double dashLength = 7.0;
+    const double spaceLength = 6.0;
+
+    // Animate dashed lines subtly flowing along the road
+    final double flowOffset = (loopProgress * (dashLength + spaceLength)) % (dashLength + spaceLength);
+
+    for (double d = flowOffset; d < metrics.length; d += (dashLength + spaceLength)) {
+      final t1 = metrics.getTangentForOffset(d);
+      final t2 = metrics.getTangentForOffset(math.min(d + dashLength, metrics.length));
+      if (t1 != null && t2 != null) {
+        canvas.drawLine(t1.position, t2.position, dashPaint);
+      }
+    }
+
+    // 5. Start Location Pin (📍) on left
+    _drawStartPin(canvas, const Offset(20, 68));
+
+    // 6. Checkered Finish Flag (🏁) on right
+    _drawFinishFlag(canvas, const Offset(245, 62));
+  }
+
+  void _drawStartPin(Canvas canvas, Offset pos) {
+    // Pin shadow / base circle
+    final basePaint = Paint()
+      ..color = const Color(0xFF10B981).withValues(alpha: 0.25)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(pos.dx + 4, pos.dy + 30), 8, basePaint);
+
+    final innerBasePaint = Paint()
+      ..color = const Color(0xFF10B981)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(pos.dx + 4, pos.dy + 30), 3.5, innerBasePaint);
+
+    // Pin head (Royal Blue gradient pin)
+    final pinPaint = Paint()
+      ..color = const Color(0xFF2563EB)
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    path.moveTo(pos.dx + 4, pos.dy + 28);
+    path.quadraticBezierTo(pos.dx - 6, pos.dy + 14, pos.dx - 6, pos.dy + 8);
+    path.arcToPoint(
+      Offset(pos.dx + 14, pos.dy + 8),
+      radius: const Radius.circular(10),
+    );
+    path.quadraticBezierTo(pos.dx + 14, pos.dy + 14, pos.dx + 4, pos.dy + 28);
+    path.close();
+    canvas.drawPath(path, pinPaint);
+
+    // White dot inside pin
+    final whitePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(pos.dx + 4, pos.dy + 8), 3.5, whitePaint);
+  }
+
+  void _drawFinishFlag(Canvas canvas, Offset pos) {
+    // Flag pole
+    final polePaint = Paint()
+      ..color = const Color(0xFF334155)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(pos, Offset(pos.dx, pos.dy + 30), polePaint);
+
+    // Flag banner (checkered)
+    const double w = 18;
+    const double h = 13;
+    final r = Rect.fromLTWH(pos.dx, pos.dy, w, h);
+
+    final bgPaint = Paint()..color = Colors.white;
+    canvas.drawRect(r, bgPaint);
+
+    final checkPaint = Paint()..color = const Color(0xFF0F172A);
+    // 2x2 checker pattern
+    canvas.drawRect(Rect.fromLTWH(pos.dx, pos.dy, w / 2, h / 2), checkPaint);
+    canvas.drawRect(Rect.fromLTWH(pos.dx + w / 2, pos.dy + h / 2, w / 2, h / 2), checkPaint);
+
+    // Flag border
+    final flagBorder = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawRect(r, flagBorder);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WindingRoadPainter oldDelegate) =>
+      oldDelegate.loopProgress != loopProgress;
 }

@@ -29,6 +29,7 @@ import 'screens/tutorial/tutorial_screen.dart';
 import 'screens/legal/terms_screen.dart';
 import 'screens/legal/privacy_screen.dart';
 import 'screens/auth/auth_success_screen.dart';
+import 'navigation/app_back_button_dispatcher.dart';
 
 class Workmate4uApp extends StatefulWidget {
   const Workmate4uApp({super.key});
@@ -39,6 +40,7 @@ class Workmate4uApp extends StatefulWidget {
 
 class _Workmate4uAppState extends State<Workmate4uApp> {
   late final GoRouter _router;
+  late final AppBackButtonDispatcher _backButtonDispatcher;
   AuthProvider? _authProvider;
   StreamSubscription<Map<String, dynamic>>? _notifSub;
   StreamSubscription<Map<String, dynamic>>? _taskCompletedSub;
@@ -203,6 +205,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         ),
       ],
     );
+    _backButtonDispatcher = AppBackButtonDispatcher(_router);
   }
 
   @override
@@ -414,7 +417,10 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       themeMode: ThemeMode.light,
-      routerConfig: _router,
+      routeInformationProvider: _router.routeInformationProvider,
+      routeInformationParser: _router.routeInformationParser,
+      routerDelegate: _router.routerDelegate,
+      backButtonDispatcher: _backButtonDispatcher,
     );
   }
 }

@@ -50,35 +50,46 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
     }
   }
 
-  /// Called from native Android when the back button / gesture is triggered.
-  /// Returns true  → Flutter handled it (Android does nothing).
-  /// Returns false → Android falls back to its default behaviour.
-  Future<dynamic> _onNativeBack(MethodCall call) async {
-    if (call.method != 'back_pressed' || !mounted) return false;
+  /// Unified back navigation handler:
+  /// 1. Dismisses on-screen keyboard if open.
+  /// 2. Pops any pushed GoRouter sub-routes (e.g. task detail, post-task).
+  /// 3. If on any non-home tab (Browse, Tasks, Profile), redirects to Home.
+  /// 4. If on Home tab, prompts the user with the Exit confirmation dialog.
+  Future<bool> _handleBack() async {
+    if (!mounted) return false;
 
     // If the keyboard is currently visible, dismiss it and stop here.
-    // The user's next back press will trigger navigation.
     if (_keyboardVisible) {
       FocusManager.instance.primaryFocus?.unfocus();
       return true;
     }
 
-    // If there is a pushed route on the stack (e.g. task detail, notifications,
-    // post-task, chat) — pop it normally and do NOT apply tab-level logic.
+    // If there is a pushed route on the stack — pop it normally
     if (GoRouter.of(context).canPop()) {
       GoRouter.of(context).pop();
       return true;
     }
 
     if (_currentIdx != 0) {
-      // Non-home tab → go to Home
+      // Non-home tab → redirect user to Home tab
       context.go('/home');
       return true;
     }
-    // Home tab → ask before exiting
+
+    // Home tab → show popup for exit or stay
     final shouldExit = await _showExitDialog();
-    if (shouldExit == true && mounted) SystemNavigator.pop();
+    if (shouldExit == true && mounted) {
+      SystemNavigator.pop();
+    }
     return true;
+  }
+
+  /// Called from native Android when the back button / gesture is triggered.
+  /// Returns true  → Flutter handled it (Android does nothing).
+  /// Returns false → Android falls back to its default behaviour.
+  Future<dynamic> _onNativeBack(MethodCall call) async {
+    if (call.method != 'back_pressed' || !mounted) return false;
+    return await _handleBack();
   }
 
   Future<bool?> _showExitDialog() {
@@ -267,29 +278,36 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
     final idx = _indexForPath(location);
     _currentIdx = idx;
 
-    return Scaffold(
-      extendBody: true,
-      body: widget.child,
-      bottomNavigationBar: _FloatingNavBar(
-        selectedIndex: idx,
-        onTabTap: _onTap,
-        onPostTap: () async {
-        final auth = context.read<AuthProvider>();
-        if (!auth.isPosterMode) {
-          final switched = await showProfileModeSwitchDialog(
-            context,
-            targetMode: 'poster',
-            title: 'Switch to Poster Profile',
-            message:
-                'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
-            actionLabel: 'Switch to Poster & Continue',
-          );
-          if (switched != true) return;
-        }
-        if (context.mounted) {
-          context.push('/post-task');
-        }
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
+        await _handleBack();
       },
+      child: Scaffold(
+        extendBody: true,
+        body: widget.child,
+        bottomNavigationBar: _FloatingNavBar(
+          selectedIndex: idx,
+          onTabTap: _onTap,
+          onPostTap: () async {
+            final auth = context.read<AuthProvider>();
+            if (!auth.isPosterMode) {
+              final switched = await showProfileModeSwitchDialog(
+                context,
+                targetMode: 'poster',
+                title: 'Switch to Poster Profile',
+                message:
+                    'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+                actionLabel: 'Switch to Poster & Continue',
+              );
+              if (switched != true) return;
+            }
+            if (context.mounted) {
+              context.push('/post-task');
+            }
+          },
+        ),
       ),
     );
   }

@@ -1086,7 +1086,8 @@ class _GroceryItemsCard extends StatelessWidget {
                                 fontSize: 15,
                                 color: Color(0xFF102A56),
                               ),
-                              maxLines: 1,
+                              maxLines: 2,
+                              softWrap: true,
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 2),
@@ -1100,18 +1101,20 @@ class _GroceryItemsCard extends StatelessWidget {
                             ),
                             const SizedBox(height: 6),
 
-                            // Requirements Chips (QTY, kg, gram, litr, rupee, brand)
+                            // Requirements Chips (Package, QTY, kg, gram, litr, rupee, brand)
                             Wrap(
                               spacing: 6,
                               runSpacing: 4,
                               children: [
-                                if (item.qty.trim().isNotEmpty)
+                                if (item.package.trim().isNotEmpty)
+                                  _buildTag(item.package.trim(), const Color(0xFFEFF6FF), const Color(0xFF2563EB)),
+                                if (item.package.trim().isEmpty && item.qty.trim().isNotEmpty)
                                   _buildTag('Qty: ${item.qty.trim()}', const Color(0xFFEFF6FF), const Color(0xFF2563EB)),
-                                if (item.kg.trim().isNotEmpty)
+                                if (item.package.trim().isEmpty && item.kg.trim().isNotEmpty)
                                   _buildTag('${item.kg.trim()} kg', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
-                                if (item.gram.trim().isNotEmpty)
+                                if (item.package.trim().isEmpty && item.gram.trim().isNotEmpty)
                                   _buildTag('${item.gram.trim()} g', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
-                                if (item.litr.trim().isNotEmpty)
+                                if (item.package.trim().isEmpty && item.litr.trim().isNotEmpty)
                                   _buildTag('${item.litr.trim()} L', const Color(0xFFEFF6FF), const Color(0xFF0284C7)),
                                 if (item.brand.trim().isNotEmpty)
                                   _buildTag('Brand: ${item.brand.trim()}', const Color(0xFFFAF5FF), const Color(0xFF9333EA)),

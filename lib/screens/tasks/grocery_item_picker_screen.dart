@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../models/grocery_item.dart';
-import '../../theme/app_theme.dart';
 
 class GroceryItemPickerScreen extends StatefulWidget {
   final List<SelectedGroceryItem> initialSelected;
@@ -52,12 +51,30 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
 
   void _openItemRequirementDialog(GroceryCatalogItem item) {
     final existing = _selectedMap[item.id];
-    final qtyCtrl = TextEditingController(text: existing?.qty ?? '');
-    final kgCtrl = TextEditingController(text: existing?.kg ?? '');
-    final gramCtrl = TextEditingController(text: existing?.gram ?? '');
-    final litrCtrl = TextEditingController(text: existing?.litr ?? '');
+
+    // Initial prefilled package
+    String selectedPackage = existing?.package ?? '';
+    if (selectedPackage.isEmpty) {
+      if (existing?.gram.isNotEmpty == true) {
+        selectedPackage = '${existing!.gram}g';
+      } else if (existing?.kg.isNotEmpty == true) {
+        selectedPackage = '${existing!.kg}kg';
+      } else if (existing?.litr.isNotEmpty == true) {
+        selectedPackage = '${existing!.litr}L';
+      } else if (existing?.qty.isNotEmpty == true) {
+        selectedPackage = '${existing!.qty} Pack';
+      } else if (item.effectivePackages.isNotEmpty) {
+        selectedPackage = item.effectivePackages.first;
+      }
+    }
+
+    int currentQty = int.tryParse(existing?.qty ?? '') ?? 1;
+    if (currentQty < 1) currentQty = 1;
+    final qtyCtrl = TextEditingController(text: currentQty.toString());
+
+    String selectedBrand = existing?.brand ?? '';
+    final brandCtrl = TextEditingController(text: selectedBrand);
     final rupeeCtrl = TextEditingController(text: existing?.rupee ?? '');
-    final brandCtrl = TextEditingController(text: existing?.brand ?? '');
 
     showModalBottomSheet(
       context: context,
@@ -68,7 +85,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
           builder: (modalCtx, setModalState) {
             return Container(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 20,
+                bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 18,
                 left: 18,
                 right: 18,
                 top: 14,
@@ -95,8 +112,9 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                     ),
                     const SizedBox(height: 14),
 
-                    // Header: Item name + image + close
+                    // Header: Image + Name + Remove (if editing) + Close
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Container(
                           width: 48,
@@ -127,14 +145,16 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                               Text(
                                 item.name,
                                 style: const TextStyle(
-                                  fontSize: 17,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.w800,
                                   color: Color(0xFF102A56),
                                 ),
+                                maxLines: 2,
+                                softWrap: true,
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '${item.category} • Item Requirements (Optional)',
+                                item.category,
                                 style: const TextStyle(
                                   fontSize: 11.5,
                                   color: Color(0xFF64748B),
@@ -144,164 +164,8 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                             ],
                           ),
                         ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(modalCtx),
-                          icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Notice: all optional
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF475569)),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'None of these fields are mandatory. Add any details to help your delivery person find the exact item.',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: Color(0xFF475569),
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Inputs Row 1: QTY & Est. Rupee
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildRequirementInputBox(
-                            controller: qtyCtrl,
-                            label: 'QTY (Quantity)',
-                            hint: 'e.g. 1, 2, 4',
-                            icon: Icons.tag_rounded,
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildRequirementInputBox(
-                            controller: rupeeCtrl,
-                            label: 'Rupee (₹ Approx)',
-                            hint: 'e.g. 60, 150',
-                            icon: Icons.currency_rupee_rounded,
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Inputs Row 2: Weight & Volume (Kg, Gram, Litre)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildRequirementInputBox(
-                            controller: kgCtrl,
-                            label: 'Kg',
-                            hint: 'e.g. 1, 5',
-                            icon: Icons.scale_rounded,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildRequirementInputBox(
-                            controller: gramCtrl,
-                            label: 'Gram',
-                            hint: 'e.g. 250, 500',
-                            icon: Icons.scale_outlined,
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildRequirementInputBox(
-                            controller: litrCtrl,
-                            label: 'Litre',
-                            hint: 'e.g. 1, 2',
-                            icon: Icons.local_drink_rounded,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Input Box 3: Brand Name
-                    _buildRequirementInputBox(
-                      controller: brandCtrl,
-                      label: 'Brand Name',
-                      hint: 'e.g. Amul, Aashirvaad, Tata, Fortune',
-                      icon: Icons.branding_watermark_rounded,
-                      keyboardType: TextInputType.text,
-                    ),
-
-                    // Quick-tap popular brands if any
-                    if (item.popularBrands.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 2),
-                        child: Text(
-                          'Popular brands:',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: item.popularBrands.map((b) {
-                          return GestureDetector(
-                            onTap: () {
-                              setModalState(() {
-                                brandCtrl.text = b;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFBFDBFE)),
-                              ),
-                              child: Text(
-                                b,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF2563EB),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-
-                    const SizedBox(height: 20),
-
-                    // Action buttons: "Add to List" / "Remove"
-                    Row(
-                      children: [
                         if (existing != null) ...[
-                          OutlinedButton.icon(
+                          TextButton.icon(
                             onPressed: () {
                               setState(() {
                                 _selectedMap.remove(item.id);
@@ -312,91 +176,391 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                                   content: Text('Removed ${item.name} from your list'),
                                   duration: const Duration(seconds: 2),
                                   behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 ),
                               );
                             },
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.danger,
-                              side: const BorderSide(color: Color(0xFFFECACA)),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFFDC2626),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             ),
-                            icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                            label: const Text('Remove'),
+                            icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFDC2626)),
+                            label: const Text('Remove', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                           ),
-                          const SizedBox(width: 10),
                         ],
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                        IconButton(
+                          onPressed: () => Navigator.pop(modalCtx),
+                          icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Unit Specific Package / Value Option ──
+                    if (item.unitType == GroceryUnitType.weight) ...[
+                      const Text(
+                        'Select Package Weight',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF102A56)),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: item.effectivePackages.map((pkg) {
+                          final isSel = selectedPackage == pkg;
+                          return GestureDetector(
+                            onTap: () {
+                              setModalState(() {
+                                selectedPackage = pkg;
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isSel ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                  width: 1.2,
+                                ),
                               ),
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF2563EB).withValues(alpha: 0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
+                              child: Text(
+                                pkg,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSel ? Colors.white : const Color(0xFF334155),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ] else if (item.unitType == GroceryUnitType.liquid) ...[
+                      const Text(
+                        'Select Volume / Pack',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF102A56)),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: item.effectivePackages.map((pkg) {
+                          final isSel = selectedPackage == pkg;
+                          return GestureDetector(
+                            onTap: () {
+                              setModalState(() {
+                                selectedPackage = pkg;
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isSel ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                  width: 1.2,
+                                ),
+                              ),
+                              child: Text(
+                                pkg,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSel ? Colors.white : const Color(0xFF334155),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ] else ...[
+                      // Count item: Stepper with editable value
+                      const Text(
+                        'Select Quantity',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF102A56)),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove_rounded, color: Color(0xFF1E293B)),
+                                  onPressed: () {
+                                    if (currentQty > 1) {
+                                      setModalState(() {
+                                        currentQty--;
+                                        qtyCtrl.text = currentQty.toString();
+                                        selectedPackage = '$currentQty Pack${currentQty > 1 ? 's' : ''}';
+                                      });
+                                    }
+                                  },
+                                ),
+                                Container(
+                                  width: 44,
+                                  alignment: Alignment.center,
+                                  child: TextField(
+                                    controller: qtyCtrl,
+                                    keyboardType: TextInputType.number,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF102A56),
+                                    ),
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                    onChanged: (val) {
+                                      final parsed = int.tryParse(val.trim());
+                                      if (parsed != null && parsed > 0) {
+                                        currentQty = parsed;
+                                        selectedPackage = '$currentQty Pack${currentQty > 1 ? 's' : ''}';
+                                      }
+                                    },
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add_rounded, color: Color(0xFF1E293B)),
+                                  onPressed: () {
+                                    setModalState(() {
+                                      currentQty++;
+                                      qtyCtrl.text = currentQty.toString();
+                                      selectedPackage = '$currentQty Pack${currentQty > 1 ? 's' : ''}';
+                                    });
+                                  },
                                 ),
                               ],
                             ),
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                final selected = SelectedGroceryItem(
-                                  id: item.id,
-                                  name: item.name,
-                                  category: item.category,
-                                  imageUrl: item.imageUrl,
-                                  emoji: item.emoji,
-                                  qty: qtyCtrl.text.trim(),
-                                  kg: kgCtrl.text.trim(),
-                                  gram: gramCtrl.text.trim(),
-                                  litr: litrCtrl.text.trim(),
-                                  rupee: rupeeCtrl.text.trim(),
-                                  brand: brandCtrl.text.trim(),
-                                );
-                                setState(() {
-                                  _selectedMap[item.id] = selected;
-                                });
-                                Navigator.pop(modalCtx);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Row(
-                                      children: [
-                                        const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            'Added ${item.name} to grocery list (${selected.requirementSummary})',
-                                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: item.effectivePackages.map((pkg) {
+                                  final isSel = selectedPackage == pkg;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setModalState(() {
+                                          selectedPackage = pkg;
+                                          final m = RegExp(r'(\d+)').firstMatch(pkg);
+                                          if (m != null) {
+                                            currentQty = int.tryParse(m.group(1)!) ?? currentQty;
+                                            qtyCtrl.text = currentQty.toString();
+                                          }
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                        decoration: BoxDecoration(
+                                          color: isSel ? const Color(0xFF2563EB) : const Color(0xFFF8FAFC),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
                                           ),
                                         ),
-                                      ],
+                                        child: Text(
+                                          pkg,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: isSel ? Colors.white : const Color(0xFF475569),
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                    backgroundColor: const Color(0xFF15803D),
-                                    duration: const Duration(seconds: 2),
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.transparent,
-                                foregroundColor: Colors.white,
-                                shadowColor: Colors.transparent,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              ),
-                              icon: const Icon(Icons.playlist_add_check_rounded, size: 20),
-                              label: Text(
-                                existing != null ? 'Update in List' : 'Add to List',
-                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                                  );
+                                }).toList(),
                               ),
                             ),
                           ),
+                        ],
+                      ),
+                    ],
+
+                    const SizedBox(height: 14),
+
+                    // Popular Brands (if available)
+                    if (item.popularBrands.isNotEmpty) ...[
+                      const Text(
+                        'Brand Preference (Optional)',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF102A56)),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              setModalState(() {
+                                selectedBrand = '';
+                                brandCtrl.clear();
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: selectedBrand.isEmpty ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: selectedBrand.isEmpty ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              child: Text(
+                                'Any Brand',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: selectedBrand.isEmpty ? FontWeight.w800 : FontWeight.w500,
+                                  color: selectedBrand.isEmpty ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
+                          ),
+                          ...item.popularBrands.map((b) {
+                            final isSel = selectedBrand == b;
+                            return GestureDetector(
+                              onTap: () {
+                                setModalState(() {
+                                  selectedBrand = b;
+                                  brandCtrl.text = b;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: isSel ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Text(
+                                  b,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: isSel ? FontWeight.w800 : FontWeight.w500,
+                                    color: isSel ? const Color(0xFF2563EB) : const Color(0xFF334155),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // Approximate Rupee (Optional)
+                    TextField(
+                      controller: rupeeCtrl,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        labelText: 'Approx Rupee (₹ Optional)',
+                        hintText: 'e.g. 50, 120',
+                        prefixIcon: const Icon(Icons.currency_rupee_rounded, size: 16, color: Color(0xFF2563EB)),
+                        isDense: true,
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // Direct Add / Update in List Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          final finalPkg = selectedPackage.isNotEmpty
+                              ? selectedPackage
+                              : (item.unitType == GroceryUnitType.count ? '$currentQty Pack' : item.effectivePackages.first);
+
+                          String q = '';
+                          String k = '';
+                          String g = '';
+                          String l = '';
+
+                          if (item.unitType == GroceryUnitType.count) {
+                            q = currentQty.toString();
+                          } else {
+                            final gMatch = RegExp(r'(\d+)\s*g\b', caseSensitive: false).firstMatch(finalPkg);
+                            if (gMatch != null) g = gMatch.group(1)!;
+
+                            final kgMatch = RegExp(r'(\d+)\s*kg\b', caseSensitive: false).firstMatch(finalPkg);
+                            if (kgMatch != null) k = kgMatch.group(1)!;
+
+                            final mlMatch = RegExp(r'(\d+)\s*ml\b', caseSensitive: false).firstMatch(finalPkg);
+                            if (mlMatch != null) g = mlMatch.group(1)!;
+
+                            final lMatch = RegExp(r'(\d+)\s*L\b', caseSensitive: false).firstMatch(finalPkg);
+                            if (lMatch != null) l = lMatch.group(1)!;
+                          }
+
+                          final selected = SelectedGroceryItem(
+                            id: item.id,
+                            name: item.name,
+                            category: item.category,
+                            imageUrl: item.imageUrl,
+                            emoji: item.emoji,
+                            package: finalPkg,
+                            qty: q,
+                            kg: k,
+                            gram: g,
+                            litr: l,
+                            rupee: rupeeCtrl.text.trim(),
+                            brand: selectedBrand.isNotEmpty ? selectedBrand : brandCtrl.text.trim(),
+                          );
+
+                          setState(() {
+                            _selectedMap[item.id] = selected;
+                          });
+                          Navigator.pop(modalCtx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Added ${item.name} ($finalPkg) to list'),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: const Color(0xFF15803D),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
                         ),
-                      ],
+                        icon: Icon(existing != null ? Icons.check_circle_rounded : Icons.add_shopping_cart_rounded, size: 18),
+                        label: Text(
+                          existing != null ? 'Update in List' : 'Add to List',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -405,55 +569,6 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
           },
         );
       },
-    );
-  }
-
-  Widget _buildRequirementInputBox({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    required TextInputType keyboardType,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF102A56),
-          ),
-        ),
-        const SizedBox(height: 5),
-        TextField(
-          controller: controller,
-          keyboardType: keyboardType,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF102A56)),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
-            prefixIcon: Icon(icon, size: 18, color: const Color(0xFF2563EB)),
-            isDense: true,
-            filled: true,
-            fillColor: const Color(0xFFF8FAFC),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -668,7 +783,8 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                                           color: Color(0xFF102A56),
                                           letterSpacing: -0.2,
                                         ),
-                                        maxLines: 1,
+                                        maxLines: 2,
+                                        softWrap: true,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 3),
@@ -696,7 +812,8 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                                               fontWeight: FontWeight.w700,
                                               color: Color(0xFF15803D),
                                             ),
-                                            maxLines: 1,
+                                            maxLines: 2,
+                                            softWrap: true,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
@@ -708,7 +825,8 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                                             fontSize: 10.5,
                                             color: Color(0xFF94A3B8),
                                           ),
-                                          maxLines: 1,
+                                          maxLines: 2,
+                                          softWrap: true,
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ],

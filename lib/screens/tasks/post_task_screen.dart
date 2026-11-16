@@ -81,6 +81,60 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   bool _gettingDropGps = false;
   double? _calculatedDistanceKm;
   List<SelectedGroceryItem> _selectedGroceryItems = [];
+  String? _selectedGroceryStoreName;
+  final _customStoreCtrl = TextEditingController();
+  bool _showCustomStoreInput = false;
+
+  static const List<Map<String, dynamic>> _suggestedGroceryStores = [
+    {
+      'name': 'DMart Ready / Supermarket',
+      'tag': 'Hypermarket · Best Prices & Staples',
+      'distanceKm': 1.4,
+      'address': 'Main Market Road',
+      'icon': Icons.local_convenience_store_rounded,
+      'color': Color(0xFF047857),
+    },
+    {
+      'name': 'Reliance Smart Point / Fresh',
+      'tag': 'Daily Produce, Dairy & Fruits',
+      'distanceKm': 2.3,
+      'address': 'Commercial Hub, Sector 4',
+      'icon': Icons.store_rounded,
+      'color': Color(0xFF0284C7),
+    },
+    {
+      'name': 'More Supermarket',
+      'tag': 'Full Range Groceries & Food Hall',
+      'distanceKm': 3.5,
+      'address': 'High Street Avenue',
+      'icon': Icons.shopping_basket_rounded,
+      'color': Color(0xFFD97706),
+    },
+    {
+      'name': 'Local Kirana & General Store',
+      'tag': 'Neighborhood Express Store',
+      'distanceKm': 0.8,
+      'address': 'Local Market Corner',
+      'icon': Icons.storefront_rounded,
+      'color': Color(0xFF7C3AED),
+    },
+    {
+      'name': "Nature's Basket / Star Bazaar",
+      'tag': 'Organic, Gourmet & Daily Needs',
+      'distanceKm': 5.2,
+      'address': 'City Center Mall',
+      'icon': Icons.eco_rounded,
+      'color': Color(0xFF059669),
+    },
+    {
+      'name': "Spencer's Retail & Daily Needs",
+      'tag': 'Mega Superstore & Packaged Food',
+      'distanceKm': 7.6,
+      'address': 'Ring Road Express Center',
+      'icon': Icons.store_mall_directory_rounded,
+      'color': Color(0xFFDC2626),
+    },
+  ];
 
   // ─── Saved locations ────────────────────────────────────
   List<Map<String, dynamic>> _savedLocations = [];
@@ -2717,6 +2771,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
     if (_selectedCategory == 'groceries' || _selectedCategory == 'grocery') {
       lines.add('• Vehicle: Bike / Scooty (Max Weight: 20kg)');
+      if (_selectedGroceryStoreName != null) {
+        lines.add('• Store / Supermarket: $_selectedGroceryStoreName');
+      }
       lines.add('• Grocery Items: Paid separately by task poster (excluded from budget)');
       if (_selectedGroceryItems.isNotEmpty) {
         lines.add('• Selected Grocery Items (${_selectedGroceryItems.length} items):');
@@ -3074,76 +3131,95 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     final item = entry.value;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(9),
-                              child: item.imageUrl.isNotEmpty
-                                  ? Image.network(
-                                      item.imageUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Center(
-                                        child: Text(item.emoji, style: const TextStyle(fontSize: 20)),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: _openGroceryItemPicker,
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(9),
+                                  child: item.imageUrl.isNotEmpty
+                                      ? Image.network(
+                                          item.imageUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Center(
+                                            child: Text(item.emoji, style: const TextStyle(fontSize: 20)),
+                                          ),
+                                        )
+                                      : Center(
+                                          child: Text(item.emoji, style: const TextStyle(fontSize: 20)),
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: Color(0xFF102A56),
                                       ),
-                                    )
-                                  : Center(
-                                      child: Text(item.emoji, style: const TextStyle(fontSize: 20)),
+                                      maxLines: 2,
+                                      softWrap: true,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14,
-                                    color: Color(0xFF102A56),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      item.requirementSummary,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF2563EB),
+                                      ),
+                                      maxLines: 2,
+                                      softWrap: true,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  item.requirementSummary,
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF2563EB),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF2563EB)),
+                                    tooltip: 'Edit item',
+                                    onPressed: _openGroceryItemPicker,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFDC2626)),
+                                    tooltip: 'Remove item',
+                                    onPressed: () {
+                                      setState(() {
+                                        _selectedGroceryItems.removeAt(index);
+                                      });
+                                      _compileDescriptionFromForm();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF94A3B8)),
-                            onPressed: () {
-                              setState(() {
-                                _selectedGroceryItems.removeAt(index);
-                              });
-                              _compileDescriptionFromForm();
-                            },
-                          ),
-                        ],
+                        ),
                       ),
                     );
                   }),
@@ -4519,8 +4595,434 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  void _selectGroceryStore(Map<String, dynamic> store) {
+    setState(() {
+      _selectedGroceryStoreName = store['name'] as String;
+      final dist = (store['distanceKm'] as num).toDouble();
+      _calculatedDistanceKm = dist;
+      _pickupAddrCtrl.text = '${store['name']}, ${store['address']}';
+      if (_dropLocation != null) {
+        _pickupLocation = LatLng(
+          _dropLocation!.latitude + (dist / 111.0) * 0.6,
+          _dropLocation!.longitude + (dist / 111.0) * 0.8,
+        );
+      }
+    });
+    // Base distance rate: ₹12/km, min ₹100
+    final travelFare = Task.calculateDistancePrice(_calculatedDistanceKm!, 'groceries');
+    const handlingFee = 25.0; // Additional Handling and service charges
+    final totalBudget = travelFare + handlingFee;
+    _syncAutoBudget(totalBudget);
+    _compileDescriptionFromForm();
+  }
+
+  void _setCustomGroceryStore(String storeName) {
+    if (storeName.trim().isEmpty) return;
+    setState(() {
+      _selectedGroceryStoreName = storeName.trim();
+      const dist = 2.0;
+      _calculatedDistanceKm = dist;
+      _pickupAddrCtrl.text = storeName.trim();
+      if (_dropLocation != null) {
+        _pickupLocation = LatLng(
+          _dropLocation!.latitude + 0.015,
+          _dropLocation!.longitude + 0.012,
+        );
+      }
+    });
+    final travelFare = Task.calculateDistancePrice(2.0, 'groceries');
+    const handlingFee = 25.0;
+    final totalBudget = travelFare + handlingFee;
+    _syncAutoBudget(totalBudget);
+    _compileDescriptionFromForm();
+  }
+
+  Widget _buildGroceryLocationSection() {
+    // If no store selected yet, default to first recommendation
+    _selectedGroceryStoreName ??= _suggestedGroceryStores.first['name'] as String;
+    if (_pickupAddrCtrl.text.isEmpty) {
+      final first = _suggestedGroceryStores.first;
+      _pickupAddrCtrl.text = '${first['name']}, ${first['address']}';
+      _calculatedDistanceKm ??= (first['distanceKm'] as num).toDouble();
+    }
+
+    final currentStore = _suggestedGroceryStores.firstWhere(
+      (s) => s['name'] == _selectedGroceryStoreName,
+      orElse: () => {
+        'name': _selectedGroceryStoreName ?? 'Local Store',
+        'tag': 'Custom Grocery Store',
+        'distanceKm': _calculatedDistanceKm ?? 2.0,
+        'address': 'Nearby Local Shop',
+        'icon': Icons.storefront_rounded,
+        'color': const Color(0xFF2563EB),
+      },
+    );
+
+    final dist = (_calculatedDistanceKm ?? (currentStore['distanceKm'] as num).toDouble());
+    final travelFare = Task.calculateDistancePrice(dist, 'groceries');
+    const handlingFee = 25.0;
+    final totalBudget = travelFare + handlingFee;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section Header
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.storefront_rounded, color: Color(0xFF2563EB), size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Delivery Address & Store',
+                      style: TextStyle(
+                        fontSize: 17.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF102A56),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Enter your delivery address, then pick a nearby store within 10 km',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF52627A),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // ONLY ONE ADDRESS: Delivery Address
+        TextFormField(
+          controller: _dropAddrCtrl,
+          focusNode: _dropFocus,
+          onChanged: (val) {
+            _onDropAddrChanged(val);
+            if (_selectedGroceryStoreName != null) {
+              final travel = Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.4, 'groceries');
+              _syncAutoBudget(travel + 25.0);
+            }
+          },
+          decoration: InputDecoration(
+            labelText: 'Your Delivery / Home Address *',
+            hintText: 'Enter where groceries will be delivered',
+            prefixIcon: const Icon(Icons.home_rounded, color: AppColors.danger),
+            suffixIcon: _AddressActionButtons(
+              isLoading: _gettingDropGps,
+              accentColor: AppColors.danger,
+              onGps: _getGpsForDrop,
+              onMap: _pickMapForDrop,
+            ),
+            suffixIconConstraints: const BoxConstraints(maxHeight: 48),
+          ),
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) {
+              return 'Delivery address is required';
+            }
+            return null;
+          },
+        ),
+        LocationSuggestionsDropdown(
+          suggestions: _dropSuggestions,
+          isLoading: _searchingDrop,
+          accentColor: AppColors.danger,
+          onSelect: _selectDropSuggestion,
+          onDismiss: () => setState(() => _dropSuggestions = []),
+        ),
+        if (_dropLocation != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 3, left: 12),
+            child: Text(
+              'Pinned: ${_dropLocation!.latitude.toStringAsFixed(5)}, '
+              '${_dropLocation!.longitude.toStringAsFixed(5)}',
+              style: const TextStyle(color: AppColors.success, fontSize: 11),
+            ),
+          ),
+
+        const SizedBox(height: 16),
+
+        // Suggested Supermarkets & Grocery Stores within 10km
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.store_mall_directory_rounded, size: 18, color: Color(0xFF15803D)),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Suggested Stores in 10 km Radius',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF102A56),
+                          ),
+                        ),
+                        Text(
+                          'Select where helper will buy your items (Auto-calculates ₹12/km + handling)',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Stores list
+              ..._suggestedGroceryStores.map((store) {
+                final isSelected = _selectedGroceryStoreName == store['name'];
+                final sDist = (store['distanceKm'] as num).toDouble();
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                      width: isSelected ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _selectGroceryStore(store),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: (store['color'] as Color).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(store['icon'] as IconData, size: 20, color: store['color'] as Color),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  store['name'] as String,
+                                  style: TextStyle(
+                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                                    fontSize: 13.5,
+                                    color: isSelected ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFDCFCE7),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '${sDist.toStringAsFixed(1)} km away',
+                                        style: const TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF15803D),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        store['tag'] as String,
+                                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                            size: 22,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+
+              // Custom store input
+              if (!_showCustomStoreInput) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => _showCustomStoreInput = true),
+                    icon: const Icon(Icons.add_location_alt_outlined, size: 16),
+                    label: const Text('Enter another local store name', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ] else ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _customStoreCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'e.g. Sharma Kirana Store, Sector 2',
+                          hintStyle: const TextStyle(fontSize: 12.5),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (_customStoreCtrl.text.trim().isNotEmpty) {
+                          _setCustomGroceryStore(_customStoreCtrl.text.trim());
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Select', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 10),
+
+              // Auto-calculated Fare Card
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.calculate_rounded, size: 18, color: Color(0xFF15803D)),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Task Budget (${dist.toStringAsFixed(1)} km road distance):',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF15803D),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '₹${totalBudget.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF15803D),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '• Travel from ${currentStore['name']} to Drop: ₹${travelFare.toStringAsFixed(0)} (₹12/km, min ₹100)\n'
+                      '• Handling & Service Charges: ₹${handlingFee.toStringAsFixed(0)}\n'
+                      '• Note: Grocery items cost is paid separately by poster directly to store/helper.',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF166534), height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildLocationFieldsSection() {
     final isGrocery = Task.isGroceryCategory(_selectedCategory);
+    if (isGrocery) {
+      return _buildGroceryLocationSection();
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -6079,8 +6581,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       ] else if (Task.isGroceryCategory(_selectedCategory)) ...[
                         const SizedBox(height: 16),
                         _buildGroceryItemsBanner(),
-                        const SizedBox(height: 12),
-                        _buildDistanceCategoryRateBanner(),
                         const SizedBox(height: 12),
                         _buildVehicleCapacityBanner(),
                         const SizedBox(height: 16),

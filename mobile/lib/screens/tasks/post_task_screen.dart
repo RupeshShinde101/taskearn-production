@@ -4262,6 +4262,129 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  Widget _buildCategoryCard({
+    required String label,
+    required String groupName,
+    required String defaultId,
+    required String image,
+  }) {
+    final group = TaskCategoryGroup.all.firstWhere(
+      (g) => g.label == groupName,
+      orElse: () => TaskCategoryGroup(label: groupName, icon: '📋', categoryIds: [defaultId]),
+    );
+    final isSelected = group.containsCategory(_selectedCategory);
+
+    return GestureDetector(
+      onTap: () {
+        if (group.subCategories.length <= 1) {
+          setState(() {
+            _applySelectedCategory(defaultId);
+          });
+          _checkAndEstimateDistance();
+        } else {
+          _showSubCategorySheet(group);
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 82,
+        padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? const LinearGradient(
+                  colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                )
+              : null,
+          color: isSelected ? null : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: isSelected
+              ? null
+              : Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: isSelected
+                  ? const Color(0xFF0B63F6).withValues(alpha: 0.28)
+                  : const Color(0xFF102A56).withValues(alpha: 0.03),
+              blurRadius: isSelected ? 10 : 6,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Image.asset(
+              image,
+              width: 42,
+              height: 42,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.category_rounded, size: 34, color: Color(0xFF2563EB)),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12.0,
+                      fontWeight: FontWeight.w700,
+                      color: isSelected ? Colors.white : const Color(0xFF102A56),
+                      letterSpacing: -0.2,
+                      height: 1.15,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (isSelected && _selectedCategory != defaultId) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      TaskCategory.all.firstWhere(
+                        (c) => c.id == _selectedCategory,
+                        orElse: () => const TaskCategory(id: '', label: '', icon: ''),
+                      ).label,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white70,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 2),
+            if (isSelected)
+              Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    width: 18,
+                    height: 18,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.check, size: 12, color: Color(0xFF0B63F6)),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.white),
+                ],
+              )
+            else
+              const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF94A3B8)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCategorySection() {
     final categories = [
       (
@@ -4351,133 +4474,74 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: categories.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            mainAxisExtent: 82,
-          ),
-          itemBuilder: (ctx, i) {
-            final cat = categories[i];
-            final group = TaskCategoryGroup.all.firstWhere(
-              (g) => g.label == cat.groupName,
-              orElse: () => TaskCategoryGroup(label: cat.groupName, icon: '📋', categoryIds: [cat.defaultId]),
-            );
-            final isSelected = group.containsCategory(_selectedCategory);
-
-            return GestureDetector(
-              onTap: () {
-                if (group.subCategories.length <= 1) {
-                  setState(() {
-                    _applySelectedCategory(cat.defaultId);
-                  });
-                  _checkAndEstimateDistance();
-                } else {
-                  _showSubCategorySheet(group);
-                }
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
-                decoration: BoxDecoration(
-                  gradient: isSelected
-                      ? const LinearGradient(
-                          colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        )
-                      : null,
-                  color: isSelected ? null : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: isSelected
-                      ? null
-                      : Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isSelected
-                          ? const Color(0xFF0B63F6).withValues(alpha: 0.28)
-                          : const Color(0xFF102A56).withValues(alpha: 0.03),
-                      blurRadius: isSelected ? 10 : 6,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
+        Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[0].label,
+                    groupName: categories[0].groupName,
+                    defaultId: categories[0].defaultId,
+                    image: categories[0].image,
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Image.asset(
-                      cat.image,
-                      width: 42,
-                      height: 42,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.category_rounded, size: 34, color: Color(0xFF2563EB)),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            cat.label,
-                            style: TextStyle(
-                              fontSize: 12.0,
-                              fontWeight: FontWeight.w700,
-                              color: isSelected ? Colors.white : const Color(0xFF102A56),
-                              letterSpacing: -0.2,
-                              height: 1.15,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (isSelected && _selectedCategory != cat.defaultId) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              TaskCategory.all.firstWhere(
-                                (c) => c.id == _selectedCategory,
-                                orElse: () => const TaskCategory(id: '', label: '', icon: ''),
-                              ).label,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white70,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    if (isSelected)
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Container(
-                            width: 18,
-                            height: 18,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.check, size: 12, color: Color(0xFF0B63F6)),
-                          ),
-                          const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.white),
-                        ],
-                      )
-                    else
-                      const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF94A3B8)),
-                  ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[1].label,
+                    groupName: categories[1].groupName,
+                    defaultId: categories[1].defaultId,
+                    image: categories[1].image,
+                  ),
                 ),
-              ),
-            );
-          },
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[2].label,
+                    groupName: categories[2].groupName,
+                    defaultId: categories[2].defaultId,
+                    image: categories[2].image,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[3].label,
+                    groupName: categories[3].groupName,
+                    defaultId: categories[3].defaultId,
+                    image: categories[3].image,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[4].label,
+                    groupName: categories[4].groupName,
+                    defaultId: categories[4].defaultId,
+                    image: categories[4].image,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[5].label,
+                    groupName: categories[5].groupName,
+                    defaultId: categories[5].defaultId,
+                    image: categories[5].image,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
         const SizedBox(height: 10),
         GestureDetector(

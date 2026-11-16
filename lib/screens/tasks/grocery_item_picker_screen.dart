@@ -752,26 +752,32 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            isOverLimit ? '⚠️' : '🛵',
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Bike / Scooty Capacity:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: isOverLimit
-                                  ? const Color(0xFF991B1B)
-                                  : (isNearLimit ? const Color(0xFF92400E) : const Color(0xFF166534)),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Text(
+                              isOverLimit ? '⚠️' : '🛵',
+                              style: const TextStyle(fontSize: 14),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Bike / Scooty Capacity:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: isOverLimit
+                                      ? const Color(0xFF991B1B)
+                                      : (isNearLimit ? const Color(0xFF92400E) : const Color(0xFF166534)),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         '${totalWeight.toStringAsFixed(1)} / 20.0 kg',
                         style: TextStyle(

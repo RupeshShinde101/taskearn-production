@@ -1,3 +1,5 @@
+import 'grocery_item.dart';
+
 class CategoryBudgetSuggestion {
   final double minBudget;
   final double suggestedBudget;
@@ -60,6 +62,8 @@ class Task {
   final double releasePenalty;
   /// Daily releases used (0-3) — max 3 releases per 24h before 48h suspension
   final int dailyReleasesUsed;
+  /// Structured list of grocery items for grocery delivery tasks.
+  final List<SelectedGroceryItem>? groceryItems;
 
   Task({
     required this.id,
@@ -98,6 +102,7 @@ class Task {
     this.dropLongitude,
     this.releasePenalty = 0.0,
     this.dailyReleasesUsed = 0,
+    this.groceryItems,
   });
 
   // ── Timestamp parsing ────────────────────────────────────────────────────
@@ -380,16 +385,20 @@ class Task {
       dailyReleasesUsed: int.tryParse(
           (json['daily_releases_used'] ?? json['dailyReleasesUsed'] ?? json['dailyReleaseCount'] ?? 0).toString()
       ) ?? 0,
+      groceryItems: GroceryCatalog.parseGroceryItems(
+        json['grocery_items'] ?? json['groceryItems'],
+        json['description']?.toString(),
+      ),
     );
   }
 
   /// True for task categories that involve a pickup-to-drop delivery route.
   bool get isDeliveryType =>
-      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category.toLowerCase());
+      const {'delivery', 'pickup', 'transport', 'moving', 'groceries', 'grocery'}.contains(category.toLowerCase());
 
   /// Whether this task belongs to delivery / pickup / transport / moving categories.
   bool get isDeliveryCategory =>
-      const {'delivery', 'pickup', 'transport', 'moving'}.contains(category.toLowerCase());
+      const {'delivery', 'pickup', 'transport', 'moving', 'groceries', 'grocery'}.contains(category.toLowerCase());
 
   /// True for categories under Repair (where service materials/parts are paid separately by the poster).
   static bool isRepairCategory(String categoryId) {
@@ -2058,6 +2067,7 @@ class Task {
     String? helperName,
     String? helperId,
     String? helperPhone,
+    List<SelectedGroceryItem>? groceryItems,
   }) {
     return Task(
       id: id,
@@ -2095,6 +2105,7 @@ class Task {
       dropLongitude: dropLongitude,
       releasePenalty: releasePenalty,
       dailyReleasesUsed: dailyReleasesUsed,
+      groceryItems: groceryItems ?? this.groceryItems,
     );
   }
 
@@ -2135,6 +2146,8 @@ class Task {
     if (dropLongitude != null) 'drop_lng': dropLongitude,
     'release_penalty': releasePenalty,
     'daily_releases_used': dailyReleasesUsed,
+    if (groceryItems != null && groceryItems!.isNotEmpty)
+      'grocery_items': groceryItems!.map((e) => e.toJson()).toList(),
   };
 
   String get statusLabel {

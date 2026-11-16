@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmate4u/models/task.dart';
+import 'package:workmate4u/models/grocery_item.dart';
 import 'package:workmate4u/providers/auth_provider.dart';
 import 'package:workmate4u/providers/task_provider.dart';
 import 'package:workmate4u/screens/tasks/post_task_screen.dart';
@@ -784,6 +785,46 @@ void main() {
       expect(Task.distancePriceDescription(5.0, 'groceries'), '₹12 per km (Bike / Scooty · Min ₹100)');
       expect(Task.distanceFareSummary(5.0, 'groceries'), contains('₹100 min · Bike/Scooty'));
       expect(Task.distanceFareSummary(10.0, 'groceries'), contains('10.0 km @ ₹12/km · Bike/Scooty'));
+    });
+
+    test('grocery catalog items, custom requirements, and JSON roundtrip', () {
+      expect(GroceryCatalog.allItems.length, greaterThan(20));
+      final milk = GroceryCatalog.allItems.firstWhere((i) => i.id == 'milk');
+      expect(milk.name, contains('Milk'));
+      expect(milk.popularBrands, contains('Amul'));
+
+      final selected = SelectedGroceryItem(
+        id: 'milk',
+        name: 'Fresh Milk',
+        category: 'Dairy & Breakfast',
+        imageUrl: milk.imageUrl,
+        emoji: milk.emoji,
+        qty: '2',
+        litr: '1',
+        brand: 'Amul',
+        rupee: '66',
+      );
+      expect(selected.requirementSummary, contains('2 Qty'));
+      expect(selected.requirementSummary, contains('1 L'));
+      expect(selected.requirementSummary, contains('Amul'));
+      expect(selected.requirementSummary, contains('₹66'));
+
+      final json = selected.toJson();
+      final roundtrip = SelectedGroceryItem.fromJson(json);
+      expect(roundtrip.id, 'milk');
+      expect(roundtrip.qty, '2');
+      expect(roundtrip.litr, '1');
+      expect(roundtrip.brand, 'Amul');
+      expect(roundtrip.rupee, '66');
+
+      final encoded = GroceryCatalog.encodeGroceryItemsJson([selected]);
+      expect(encoded, startsWith('[GROCERY_ITEMS]'));
+      expect(encoded, endsWith('[/GROCERY_ITEMS]'));
+
+      final parsed = GroceryCatalog.parseGroceryItems(null, encoded);
+      expect(parsed.length, 1);
+      expect(parsed.first.name, 'Fresh Milk');
+      expect(parsed.first.brand, 'Amul');
     });
   });
 }

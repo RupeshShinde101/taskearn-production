@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -6,11 +7,12 @@ import 'package:latlong2/latlong.dart' hide Path;
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
+import '../../models/grocery_item.dart';
+import 'grocery_item_picker_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../services/location_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
-import 'dart:async';
 import '../../services/location_search_service.dart';
 import '../../widgets/hero_map_background.dart';
 import '../../widgets/location_suggestions_dropdown.dart';
@@ -78,6 +80,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   bool _gettingPickupGps = false;
   bool _gettingDropGps = false;
   double? _calculatedDistanceKm;
+  List<SelectedGroceryItem> _selectedGroceryItems = [];
 
   // ─── Saved locations ────────────────────────────────────
   List<Map<String, dynamic>> _savedLocations = [];
@@ -290,7 +293,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'pickup':      ['What to pick up?', 'From where?', 'Fragile?', 'Time constraint?'],
     'transport':   ['How many people/items?', 'From → To?', 'Vehicle type needed?', 'Luggage?'],
     'moving':      [],
-    'groceries':   ['Which items?', 'Which store/area?', 'Grocery budget?', 'Brand preference?'],
+    'groceries':   [],
     'cleaning':    ['Type of cleaning?', 'Time slot?', 'Pets at home?'],
     'cooking':     ['How many people?', 'What cuisine/dishes?', 'Dietary restrictions?', 'Time needed?'],
     'laundry':     ['How many clothes?', 'Wash + fold or just fold?', 'Pick up from home?'],
@@ -2535,6 +2538,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           'address': _dropAddrCtrl.text.trim(),
         },
       },
+      if (_selectedGroceryItems.isNotEmpty) ...{
+        'grocery_items': _selectedGroceryItems.map((e) => e.toJson()).toList(),
+        'groceryItems': _selectedGroceryItems.map((e) => e.toJson()).toList(),
+      },
     };
 
     final isVehicleCategory = _isDelivery ||
@@ -2711,6 +2718,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (_selectedCategory == 'groceries' || _selectedCategory == 'grocery') {
       lines.add('• Vehicle: Bike / Scooty (Max Weight: 20kg)');
       lines.add('• Grocery Items: Paid separately by task poster (excluded from budget)');
+      if (_selectedGroceryItems.isNotEmpty) {
+        lines.add('• Selected Grocery Items (${_selectedGroceryItems.length} items):');
+        for (final item in _selectedGroceryItems) {
+          lines.add('  - ${item.formattedDescription}');
+        }
+        lines.add(GroceryCatalog.encodeGroceryItemsJson(_selectedGroceryItems));
+      }
     } else if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') {
       final cap = _currentVehicleCapacity;
       if (cap.isNotEmpty) {
@@ -2764,7 +2778,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       return {
         'vehicle': 'Bike / Scooty',
         'maxWeight': '20kg',
-        'maxSize': 'Standard Bags (20kg)',
+        'maxSize': 'Standard Bags',
       };
     }
     return const {};
@@ -2821,11 +2835,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        _currentVehicleCapacity['maxWeight'] ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _currentVehicleCapacity['maxWeight'] ?? '',
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                        ),
                       ),
                     ],
                   ),
@@ -2850,11 +2867,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        _currentVehicleCapacity['maxSize'] ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _currentVehicleCapacity['maxSize'] ?? '',
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                        ),
                       ),
                     ],
                   ),
@@ -2867,9 +2887,335 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  Future<void> _openGroceryItemPicker() async {
+    final result = await Navigator.push<List<SelectedGroceryItem>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroceryItemPickerScreen(
+          initialSelected: _selectedGroceryItems,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _selectedGroceryItems = result;
+      });
+      _compileDescriptionFromForm();
+    }
+  }
+
+  Widget _buildGroceryItemsSelectionSection() {
+    final hasItems = _selectedGroceryItems.isNotEmpty;
+    double totalEstCost = 0;
+    for (final item in _selectedGroceryItems) {
+      final r = double.tryParse(item.rupee.trim());
+      if (r != null) {
+        final q = double.tryParse(item.qty.trim()) ?? 1.0;
+        totalEstCost += r * (q > 0 ? q : 1.0);
+      }
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF6F9FF),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(bottom: BorderSide(color: Color(0xFFE5EDF7))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.shopping_basket_rounded,
+                      size: 20, color: Color(0xFF15803D)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Flexible(
+                            child: Text(
+                              'Grocery Items',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 17,
+                                color: Color(0xFF102A56),
+                                letterSpacing: -0.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: hasItems ? const Color(0xFFDCFCE7) : const Color(0xFFEAF2FF),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              hasItems ? '${_selectedGroceryItems.length} Added' : 'Required',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: hasItems ? const Color(0xFF166534) : const Color(0xFF2563EB),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Select items from market catalog with quantity, weight & brand',
+                        style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!hasItems) ...[
+                  // Empty state banner
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEFF6FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.add_shopping_cart_rounded, size: 28, color: Color(0xFF2563EB)),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No grocery items selected',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Browse complete market items with images and specify your quantity, weights, and brand preferences.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 46,
+                          child: ElevatedButton.icon(
+                            onPressed: _openGroceryItemPicker,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            icon: const Icon(Icons.playlist_add_rounded, size: 20),
+                            label: const Text(
+                              'Select Items from Catalog',
+                              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  // List of selected items
+                  ..._selectedGroceryItems.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final item = entry.value;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(9),
+                              child: item.imageUrl.isNotEmpty
+                                  ? Image.network(
+                                      item.imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Center(
+                                        child: Text(item.emoji, style: const TextStyle(fontSize: 20)),
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Text(item.emoji, style: const TextStyle(fontSize: 20)),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                    color: Color(0xFF102A56),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  item.requirementSummary,
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF2563EB),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF94A3B8)),
+                            onPressed: () {
+                              setState(() {
+                                _selectedGroceryItems.removeAt(index);
+                              });
+                              _compileDescriptionFromForm();
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 6),
+
+                  // Total estimated cost if any
+                  if (totalEstCost > 0)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Estimated Items Total (Approx):',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF166534),
+                            ),
+                          ),
+                          Text(
+                            '₹${totalEstCost.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Add more / Edit items button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: OutlinedButton.icon(
+                      onPressed: _openGroceryItemPicker,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF2563EB),
+                        side: const BorderSide(color: Color(0xFFBFDBFE), width: 1.2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text(
+                        'Add More / Edit Grocery Items',
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDescriptionFormSection() {
-    if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') {
-      return _buildVehicleCapacityBanner();
+    if (_selectedCategory == 'delivery' ||
+        _selectedCategory == 'moving' ||
+        _selectedCategory == 'groceries' ||
+        _selectedCategory == 'grocery') {
+      return const SizedBox.shrink();
     }
 
     final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
@@ -5720,9 +6066,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       if (_selectedCategory == 'delivery') ...[
                         const SizedBox(height: 16),
                         _buildDeliveryVehicleSelector(),
+                        const SizedBox(height: 12),
+                        _buildVehicleCapacityBanner(),
                       ] else if (_selectedCategory == 'moving') ...[
                         const SizedBox(height: 16),
                         _buildMovingVehicleSelector(),
+                        const SizedBox(height: 12),
+                        _buildVehicleCapacityBanner(),
                       ] else if (Task.isRepairCategory(_selectedCategory)) ...[
                         const SizedBox(height: 16),
                         _buildRepairMaterialsBanner(),
@@ -5733,6 +6083,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         _buildDistanceCategoryRateBanner(),
                         const SizedBox(height: 12),
                         _buildVehicleCapacityBanner(),
+                        const SizedBox(height: 16),
+                        _buildGroceryItemsSelectionSection(),
                       ] else if (_isDelivery) ...[
                         const SizedBox(height: 16),
                         _buildDistanceCategoryRateBanner(),

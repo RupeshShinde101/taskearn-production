@@ -23,7 +23,9 @@ import '../../widgets/task_posted_success_dialog.dart';
 import '../../widgets/vehicle_task_posting_dialog.dart';
 
 class PostTaskScreen extends StatefulWidget {
-  const PostTaskScreen({super.key});
+  final String? initialCategory;
+
+  const PostTaskScreen({super.key, this.initialCategory});
 
   @override
   State<PostTaskScreen> createState() => _PostTaskScreenState();
@@ -1109,6 +1111,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                             _budgetFieldKey.currentState
                                                 ?.validate();
                                           }
+                                          if (mounted && (c.id == 'groceries' || c.id == 'grocery')) {
+                                            _openGroceryItemPicker();
+                                          }
                                         });
                                         
                                       },
@@ -1335,12 +1340,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _addressCtrl.addListener(_onLocationAreaChanged);
     _pickupAddrCtrl.addListener(_onLocationAreaChanged);
     _dropAddrCtrl.addListener(_onLocationAreaChanged);
-    if (Task.isGroceryCategory(_selectedCategory)) {
+    if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
+      _applySelectedCategory(widget.initialCategory!);
+    } else if (Task.isGroceryCategory(_selectedCategory)) {
       _initGroceryDefaults();
     }
     // Auto-fill description with prompts for the default category on first open
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _autoFillDescription();
+      if (widget.initialCategory != null &&
+          Task.isGroceryCategory(widget.initialCategory!) &&
+          _selectedGroceryItems.isEmpty) {
+        _openGroceryItemPicker();
+      }
       if (!mounted) return;
       // auth reference
       final auth = context.read<AuthProvider>();
@@ -3135,64 +3147,68 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               children: [
                 if (!hasItems) ...[
                   // Empty state banner
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEFF6FF),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.add_shopping_cart_rounded, size: 28, color: Color(0xFF2563EB)),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No grocery items selected',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Browse complete market items with images and specify your quantity, weights, and brand preferences.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF64748B),
-                            height: 1.35,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 46,
-                          child: ElevatedButton.icon(
-                            onPressed: _openGroceryItemPicker,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: _openGroceryItemPicker,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEFF6FF),
+                              shape: BoxShape.circle,
                             ),
-                            icon: const Icon(Icons.playlist_add_rounded, size: 20),
-                            label: const Text(
-                              'Select Items from Catalog',
-                              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+                            child: const Icon(Icons.add_shopping_cart_rounded, size: 28, color: Color(0xFF2563EB)),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'No grocery items selected',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E293B),
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Browse complete market items with images and specify your quantity, weights, and brand preferences.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 46,
+                            child: ElevatedButton.icon(
+                              onPressed: _openGroceryItemPicker,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              icon: const Icon(Icons.playlist_add_rounded, size: 20),
+                              label: const Text(
+                                'Select Items from Catalog',
+                                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ] else ...[
@@ -4281,6 +4297,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _applySelectedCategory(defaultId);
           });
           _checkAndEstimateDistance();
+          if (defaultId == 'groceries' || defaultId == 'grocery') {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _openGroceryItemPicker();
+            });
+          }
         } else {
           _showSubCategorySheet(group);
         }

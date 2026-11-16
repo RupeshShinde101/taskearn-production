@@ -15,6 +15,7 @@ import 'screens/home/home_screen.dart';
 import 'screens/browse/browse_screen.dart';
 import 'screens/browse/task_detail_screen.dart';
 import 'screens/tasks/post_task_screen.dart';
+import 'screens/tasks/grocery_item_picker_screen.dart';
 import 'screens/tasks/my_tasks_screen.dart';
 import 'screens/tasks/task_in_progress_screen.dart';
 import 'screens/chat/chat_screen.dart';
@@ -58,6 +59,8 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         final status = auth.status;
         final loc = state.matchedLocation;
 
+        if (loc.startsWith('/grocery-picker')) return null;
+
         if (status == AuthStatus.unknown) {
           return loc == '/splash' ? null : '/splash';
         }
@@ -79,7 +82,8 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
 
         // Public routes: no login required, but authenticated users can also view them
         final isPublicRoute = loc.startsWith('/terms') ||
-            loc.startsWith('/privacy');
+            loc.startsWith('/privacy') ||
+            loc.startsWith('/grocery-picker');
 
         if (status == AuthStatus.unauthenticated && !isAuthFlowRoute && !isPublicRoute) return '/login';
 
@@ -152,7 +156,13 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         ),
         GoRoute(
           path: '/post-task',
-          builder: (_, __) => const PostTaskScreen(),
+          builder: (_, state) => PostTaskScreen(
+            initialCategory: state.uri.queryParameters['category'],
+          ),
+        ),
+        GoRoute(
+          path: '/grocery-picker',
+          builder: (_, __) => const GroceryItemPickerScreen(),
         ),
         GoRoute(
           path: '/task-in-progress/:id',

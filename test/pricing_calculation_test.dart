@@ -953,6 +953,14 @@ void main() {
       await tester.tap(groceryFinder);
       await tester.pumpAndSettle();
 
+      // Opening groceries auto-opens the GroceryItemPickerScreen catalog
+      expect(find.text('Select Grocery Items'), findsOneWidget);
+      expect(find.text('Save & Continue'), findsOneWidget);
+
+      // Return back to PostTaskScreen by tapping Save & Continue
+      await tester.tap(find.text('Save & Continue'));
+      await tester.pumpAndSettle();
+
       expect(find.text('Delivery Address & Store'), findsOneWidget);
       expect(find.text('Store / Supermarket (10 km Radius)'), findsOneWidget);
       expect(find.text('Grocery Items Policy'), findsOneWidget);

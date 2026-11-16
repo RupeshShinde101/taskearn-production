@@ -923,5 +923,40 @@ void main() {
       expect(find.text('₹150'), findsOneWidget);
       expect(find.textContaining('Grocery Items Policy:'), findsOneWidget);
     });
+
+    testWidgets('PostTaskScreen smoothly switches to grocery category without freezing',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(home: PostTaskScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final shoppingFinder = find.text('Shopping & Errands');
+      expect(shoppingFinder, findsOneWidget);
+      await tester.tap(shoppingFinder);
+      await tester.pumpAndSettle();
+
+      final groceryFinder = find.text('Groceries');
+      expect(groceryFinder, findsOneWidget);
+      await tester.tap(groceryFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delivery Address & Store'), findsOneWidget);
+      expect(find.text('Store / Supermarket (10 km Radius)'), findsOneWidget);
+      expect(find.text('Grocery Items Policy'), findsOneWidget);
+      expect(find.text('Select Items from Catalog'), findsOneWidget);
+    });
   });
 }

@@ -95,6 +95,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'address': 'Main Market Road',
       'icon': Icons.local_convenience_store_rounded,
       'color': Color(0xFF047857),
+      'lat': 18.5284,
+      'lng': 73.8627,
     },
     {
       'name': 'Reliance Smart Point / Fresh',
@@ -103,6 +105,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'address': 'Commercial Hub, Sector 4',
       'icon': Icons.store_rounded,
       'color': Color(0xFF0284C7),
+      'lat': 18.5084,
+      'lng': 73.8657,
     },
     {
       'name': 'More Supermarket',
@@ -111,6 +115,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'address': 'High Street Avenue',
       'icon': Icons.shopping_basket_rounded,
       'color': Color(0xFFD97706),
+      'lat': 18.5384,
+      'lng': 73.8427,
     },
     {
       'name': 'Local Kirana & General Store',
@@ -119,6 +125,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'address': 'Local Market Corner',
       'icon': Icons.storefront_rounded,
       'color': Color(0xFF7C3AED),
+      'lat': 18.5244,
+      'lng': 73.8537,
     },
     {
       'name': 'Fresh Vegetable & Fruit Mandi',
@@ -127,6 +135,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'address': 'Subzi Mandi Chowk',
       'icon': Icons.eco_rounded,
       'color': Color(0xFF16A34A),
+      'lat': 18.5144,
+      'lng': 73.8517,
     },
     {
       'name': "Nature's Basket / Star Bazaar",
@@ -135,6 +145,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'address': 'City Center Mall',
       'icon': Icons.store_mall_directory_rounded,
       'color': Color(0xFF059669),
+      'lat': 18.5454,
+      'lng': 73.8767,
     },
   ];
 
@@ -282,6 +294,29 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _syncAutoBudget(s.suggestedBudget);
   }
 
+  void _initGroceryDefaults({bool wasAutoOrEmpty = true}) {
+    if (_suggestedGroceryStoresList.isEmpty) {
+      _suggestedGroceryStoresList = List<Map<String, dynamic>>.from(_defaultGroceryStores);
+    }
+    if (_selectedGroceryStoreName == null ||
+        !_suggestedGroceryStoresList.any((s) => s['name'] == _selectedGroceryStoreName)) {
+      final firstStore = _suggestedGroceryStoresList.first;
+      _selectedGroceryStoreName = firstStore['name'] as String;
+      _pickupAddrCtrl.text = '${firstStore['name']}, ${firstStore['address']}';
+      _calculatedDistanceKm = (firstStore['distanceKm'] as num?)?.toDouble() ?? 1.4;
+      if (firstStore['lat'] != null && firstStore['lng'] != null) {
+        _pickupLocation = LatLng(firstStore['lat'] as double, firstStore['lng'] as double);
+      }
+    }
+    final dist = _calculatedDistanceKm ?? 1.4;
+    final travelFare = Task.calculateDistancePrice(dist, 'groceries', vehicle: 'bike');
+    const handlingFee = 50.0;
+    final totalBudget = travelFare + handlingFee;
+    if (wasAutoOrEmpty || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+      _syncAutoBudget(totalBudget);
+    }
+  }
+
   void _applySelectedCategory(String categoryId) {
     final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
         (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
@@ -296,9 +331,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       }
     } else if (categoryId == 'groceries' || categoryId == 'grocery') {
       _deliveryVehicle = 'bike';
-      if (wasAutoOrEmpty && _calculatedDistanceKm == null) {
-        _syncAutoBudget(100.0);
-      }
+      _initGroceryDefaults(wasAutoOrEmpty: wasAutoOrEmpty);
     }
     if (Task.isFreelancerCategory(categoryId)) {
       _freelancerManualScope = false;
@@ -528,6 +561,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           _dropSuggestions = results;
           _searchingDrop = false;
         });
+        if (Task.isGroceryCategory(_selectedCategory) && q.isNotEmpty) {
+          _updateSuggestedStoresForDrop(q, _dropLocation);
+        }
       } catch (_) {
         if (mounted) setState(() => _searchingDrop = false);
       }
@@ -600,6 +636,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (!_isDelivery) {
       if (_calculatedDistanceKm != null && mounted) {
         setState(() => _calculatedDistanceKm = null);
+      }
+      return;
+    }
+    if (Task.isGroceryCategory(_selectedCategory)) {
+      if (_dropLocation == null && _dropAddrCtrl.text.trim().isNotEmpty) {
+        final dLoc = _lookupKnownLocality(_dropAddrCtrl.text.trim());
+        if (dLoc != null) {
+          _dropLocation = dLoc;
+        }
+      }
+      if (_pickupLocation != null && _dropLocation != null) {
+        _recalcDistance();
       }
       return;
     }
@@ -678,7 +726,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         }
       } catch (_) {}
     } else {
-      if (mounted) setState(() => _calculatedDistanceKm = null);
+      if (!Task.isGroceryCategory(_selectedCategory) && mounted) {
+        setState(() => _calculatedDistanceKm = null);
+      }
     }
   }
 
@@ -1048,6 +1098,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                           );
                                           return;
                                         }
+                                        Navigator.pop(ctx);
                                         setState(() {
                                           _applySelectedCategory(c.id);
                                         });
@@ -1059,7 +1110,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                                 ?.validate();
                                           }
                                         });
-                                        Navigator.pop(ctx);
+                                        
                                       },
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
@@ -1284,6 +1335,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _addressCtrl.addListener(_onLocationAreaChanged);
     _pickupAddrCtrl.addListener(_onLocationAreaChanged);
     _dropAddrCtrl.addListener(_onLocationAreaChanged);
+    if (Task.isGroceryCategory(_selectedCategory)) {
+      _initGroceryDefaults();
+    }
     // Auto-fill description with prompts for the default category on first open
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _autoFillDescription();
@@ -4949,14 +5003,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildGroceryLocationSection() {
-    _selectedGroceryStoreName ??= _suggestedGroceryStoresList.first['name'] as String;
-    if (_pickupAddrCtrl.text.isEmpty) {
-      final first = _suggestedGroceryStoresList.first;
-      _pickupAddrCtrl.text = '${first['name']}, ${first['address']}';
-      _calculatedDistanceKm ??= (first['distanceKm'] as num).toDouble();
-      if (first['lat'] != null && first['lng'] != null) {
-        _pickupLocation ??= LatLng(first['lat'] as double, first['lng'] as double);
-      }
+    if (_selectedGroceryStoreName == null && _suggestedGroceryStoresList.isNotEmpty) {
+      _selectedGroceryStoreName = _suggestedGroceryStoresList.first['name'] as String;
     }
 
     final currentStore = _suggestedGroceryStoresList.firstWhere(
@@ -5041,14 +5089,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         TextFormField(
           controller: _dropAddrCtrl,
           focusNode: _dropFocus,
-          onChanged: (val) {
-            _onDropAddrChanged(val);
-            _updateSuggestedStoresForDrop(val, _dropLocation);
-            if (_selectedGroceryStoreName != null) {
-              final travel = Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.4, 'groceries');
-              _syncAutoBudget(travel + 50.0);
-            }
-          },
+          onChanged: _onDropAddrChanged,
           decoration: InputDecoration(
             labelText: 'Your Delivery / Home Address *',
             hintText: 'Enter where groceries will be delivered',
@@ -5448,20 +5489,27 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.calculate_rounded, size: 18, color: Color(0xFF15803D)),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Task Budget (${dist.toStringAsFixed(1)} km road distance):',
-                              style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF15803D),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calculate_rounded, size: 18, color: Color(0xFF15803D)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'Task Budget (${dist.toStringAsFixed(1)} km road distance):',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF15803D),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           '₹${totalBudget.toStringAsFixed(0)}',
                           style: const TextStyle(

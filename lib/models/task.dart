@@ -400,6 +400,14 @@ class Task {
   /// Whether this task is in the repair category hierarchy.
   bool get isRepairCategoryType => isRepairCategory(category);
 
+  static bool isGroceryCategory(String categoryId) {
+    final c = _normalizeCategoryKey(categoryId);
+    return c == 'groceries' || c == 'grocery';
+  }
+
+  /// Whether this task is a grocery delivery task.
+  bool get isGroceryCategoryType => isGroceryCategory(category);
+
   /// The effective pickup address (or standard task address).
   String get effectivePickupAddress {
     if (pickupAddress != null && pickupAddress!.trim().isNotEmpty) {
@@ -469,6 +477,8 @@ class Task {
         return 'elder_care';
       case 'errand':
         return 'errands';
+      case 'grocery':
+        return 'groceries';
       case 'queuestanding':
         return 'queue_standing';
       case 'dataentry':
@@ -578,7 +588,8 @@ class Task {
 
   /// Returns the per-km rate (in ₹) for a delivery-related category and vehicle.
   static double ratePerKmForCategory(String category, {String vehicle = 'bike'}) {
-    switch (category.toLowerCase()) {
+    final cat = _normalizeCategoryKey(category);
+    switch (cat) {
       case 'delivery':
         return vehicle.toLowerCase() == 'rikshaw' ? 18.0 : 12.0;
       case 'pickup':
@@ -587,6 +598,9 @@ class Task {
         return 18.0; // Cab / Transport rate
       case 'moving':
         return vehicle.toLowerCase() == 'truck' ? 55.0 : 35.0; // Moving Truck: ₹55/km vs Tempo: ₹35/km
+      case 'groceries':
+      case 'grocery':
+        return 12.0; // Bike / Scooty ₹12/km
       default:
         return 12.0;
     }
@@ -595,7 +609,7 @@ class Task {
   /// Calculates the price (in ₹) based on distance, category, and vehicle.
   static double calculateDistancePrice(double distanceKm, String category, {String vehicle = 'bike'}) {
     if (distanceKm <= 0) return 0.0;
-    final cat = category.toLowerCase();
+    final cat = _normalizeCategoryKey(category);
     switch (cat) {
       case 'delivery':
         if (vehicle.toLowerCase() == 'rikshaw') {
@@ -621,6 +635,11 @@ class Task {
         final rate = isTruck ? 55.0 : 35.0;
         final fare = base + (distanceKm * rate);
         return (fare < base ? base : fare).roundToDouble();
+      case 'groceries':
+      case 'grocery':
+        // Grocery: Bike / Scooty @ ₹12/km, base min ₹100
+        final raw = distanceKm * 12.0;
+        return (raw < 100.0 ? 100.0 : raw).roundToDouble();
       default:
         final raw = distanceKm * 12.0;
         return (raw < 24.0 ? 24.0 : raw).roundToDouble();
@@ -631,7 +650,7 @@ class Task {
   /// Returns user-facing itemized fare breakdown for a distance-priced category.
   static String distanceFareSummary(double distanceKm, String category, {String vehicle = 'bike'}) {
     final total = calculateDistancePrice(distanceKm, category, vehicle: vehicle).toInt();
-    final cat = category.toLowerCase();
+    final cat = _normalizeCategoryKey(category);
     if (cat == 'moving') {
       final isTruck = vehicle.toLowerCase() == 'truck';
       final baseFare = isTruck ? 950 : 400;
@@ -639,6 +658,13 @@ class Task {
       final distPart = (distanceKm * rate).round();
       final vehName = isTruck ? 'Truck' : 'Tempo';
       return 'Min fare: ₹$total (₹$baseFare base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹$rate/km · $vehName)';
+    }
+    if (cat == 'groceries' || cat == 'grocery') {
+      final raw = (distanceKm * 12.0).round();
+      if (raw < 100) {
+        return 'Min fare: ₹$total (${distanceKm.toStringAsFixed(1)} km @ ₹12/km — ₹100 min · Bike/Scooty)';
+      }
+      return 'Min fare: ₹$total (${distanceKm.toStringAsFixed(1)} km @ ₹12/km · Bike/Scooty)';
     }
     final rate = ratePerKmForCategory(cat, vehicle: vehicle).toInt();
     final baseMin = minBudgetForCategory(cat, vehicle: vehicle).toInt();
@@ -654,7 +680,7 @@ class Task {
 
   /// Returns user-facing rate and pricing description.
   static String distancePriceDescription(double distanceKm, String category, {String vehicle = 'bike'}) {
-    final cat = category.toLowerCase();
+    final cat = _normalizeCategoryKey(category);
     switch (cat) {
       case 'delivery':
         return vehicle.toLowerCase() == 'rikshaw'
@@ -668,6 +694,9 @@ class Task {
         return vehicle.toLowerCase() == 'truck'
             ? '₹950 base + ₹55 per km (Truck)'
             : '₹400 base + ₹35 per km (Tempo)';
+      case 'groceries':
+      case 'grocery':
+        return '₹12 per km (Bike / Scooty · Min ₹100)';
       default:
         return '₹12 per km';
     }
@@ -1953,14 +1982,18 @@ class Task {
       case 'delivery':
       case 'pickup':
       case 'transport':
+      case 'groceries':
+      case 'grocery':
         if (distanceKm != null && distanceKm > 0) {
           final distPrice = calculateDistancePrice(distanceKm, cat, vehicle: vehicle);
           baseSuggested = distPrice;
           baseMax = (distPrice * 1.30).roundToDouble();
         } else {
-          baseSuggested = cat == 'delivery'
-              ? (vehicle == 'rikshaw' ? 60.0 : 40.0)
-              : (cat == 'pickup' ? 70.0 : 100.0);
+          baseSuggested = (cat == 'groceries' || cat == 'grocery')
+              ? 100.0
+              : (cat == 'delivery'
+                  ? (vehicle == 'rikshaw' ? 60.0 : 40.0)
+                  : (cat == 'pickup' ? 70.0 : 100.0));
           baseMax = baseSuggested * 1.5;
         }
         break;
@@ -1972,7 +2005,7 @@ class Task {
     }
 
     final catMin = minBudgetForCategory(cat, vehicle: vehicle);
-    const distCats = {'delivery', 'pickup', 'transport', 'moving'};
+    const distCats = {'delivery', 'pickup', 'transport', 'moving', 'groceries', 'grocery'};
     final distFloor = (distCats.contains(cat) && distanceKm != null && distanceKm > 0)
         ? calculateDistancePrice(distanceKm, cat, vehicle: vehicle)
         : 0.0;

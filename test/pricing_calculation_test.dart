@@ -764,5 +764,26 @@ void main() {
       expect(Task.calculateDistancePrice(10.0, 'moving', vehicle: 'truck'), 1500.0);
       expect(Task.distancePriceDescription(10.0, 'moving', vehicle: 'truck'), '₹950 base + ₹55 per km (Truck)');
     });
+
+    test('grocery category enforces Bike/Scooty vehicle, 20kg weight limit, ₹12/km rate, min ₹100, and separate items policy', () {
+      expect(Task.isGroceryCategory('groceries'), isTrue);
+      expect(Task.isGroceryCategory('grocery'), isTrue);
+      expect(Task.minBudgetForCategory('groceries'), 100.0);
+      expect(Task.ratePerKmForCategory('groceries'), 12.0);
+
+      // Short distance (< 8.33 km) gets base min ₹100
+      expect(Task.calculateDistancePrice(5.0, 'groceries'), 100.0);
+
+      // 10 km @ ₹12/km = ₹120
+      expect(Task.calculateDistancePrice(10.0, 'groceries'), 120.0);
+
+      // 15 km @ ₹12/km = ₹180
+      expect(Task.calculateDistancePrice(15.0, 'groceries'), 180.0);
+
+      // Description & itemized summaries
+      expect(Task.distancePriceDescription(5.0, 'groceries'), '₹12 per km (Bike / Scooty · Min ₹100)');
+      expect(Task.distanceFareSummary(5.0, 'groceries'), contains('₹100 min · Bike/Scooty'));
+      expect(Task.distanceFareSummary(10.0, 'groceries'), contains('10.0 km @ ₹12/km · Bike/Scooty'));
+    });
   });
 }

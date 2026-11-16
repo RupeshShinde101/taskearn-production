@@ -9,6 +9,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
   final double posterFee;
   final double totalCost;
   final bool isRepair;
+  final bool isGrocery;
   final String? customNote;
 
   const TaskPriceBreakdownCard({
@@ -18,6 +19,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
     required this.posterFee,
     required this.totalCost,
     this.isRepair = false,
+    this.isGrocery = false,
     this.customNote,
   });
 
@@ -62,9 +64,10 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                       child: Text(
                         'Price Breakdown',
                         style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15.5,
                           color: Color(0xFF0F172A),
+                          letterSpacing: -0.2,
                         ),
                       ),
                     ),
@@ -167,6 +170,39 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11.5,
                         color: Color(0xFF92400E),
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (isGrocery) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.shopping_basket_rounded,
+                    size: 15,
+                    color: Color(0xFF16A34A),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Grocery Items Policy: Cost of grocery items is paid separately by the task poster directly to the helper/store and is NOT included in this delivery budget value.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Color(0xFF15803D),
                         fontWeight: FontWeight.w600,
                         height: 1.35,
                       ),

@@ -87,7 +87,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   final _scrollCtrl = ScrollController();
 
-  static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
+  static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving', 'groceries', 'grocery'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
 
   String _freelancerPricingMode = 'package'; // 'package' | 'hourly'
@@ -234,6 +234,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     } else if (categoryId == 'delivery') {
       if (_deliveryVehicle != 'bike' && _deliveryVehicle != 'rikshaw') {
         _deliveryVehicle = 'bike';
+      }
+    } else if (categoryId == 'groceries' || categoryId == 'grocery') {
+      _deliveryVehicle = 'bike';
+      if (wasAutoOrEmpty && _calculatedDistanceKm == null) {
+        _syncAutoBudget(100.0);
       }
     }
     if (Task.isFreelancerCategory(categoryId)) {
@@ -2368,6 +2373,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 serviceCharge: charge,
                 posterFee: posterFee,
                 totalCost: total,
+                isRepair: Task.isRepairCategory(_selectedCategory),
+                isGrocery: Task.isGroceryCategory(_selectedCategory),
               ),
               const SizedBox(height: 24),
               // Action buttons
@@ -2498,12 +2505,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (Task.isRepairCategory(_selectedCategory)) ...{
         'separate_costs': 'Materials & spare parts required for service (paid separately by poster)',
       },
+      if (Task.isGroceryCategory(_selectedCategory)) ...{
+        'separate_costs': 'Grocery items cost (paid separately by poster directly to helper/store)',
+      },
       if (_isDelivery) ...{
         'vehicle': _selectedCategory == 'delivery'
             ? _deliveryVehicle
             : (_selectedCategory == 'moving'
                 ? (_deliveryVehicle == 'truck' ? 'truck' : 'tempo')
-                : 'auto'),
+                : (Task.isGroceryCategory(_selectedCategory) ? 'bike' : 'auto')),
         if (_pickupAddrCtrl.text.trim().isNotEmpty) ...{
           'pickup_address': _pickupAddrCtrl.text.trim(),
           'pickupAddress': _pickupAddrCtrl.text.trim(),
@@ -2698,7 +2708,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (Task.isRepairCategory(_selectedCategory)) {
       lines.add('• Materials/Parts: Paid separately by task poster (excluded from budget)');
     }
-    if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') {
+    if (_selectedCategory == 'groceries' || _selectedCategory == 'grocery') {
+      lines.add('• Vehicle: Bike / Scooty (Max Weight: 20kg)');
+      lines.add('• Grocery Items: Paid separately by task poster (excluded from budget)');
+    } else if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') {
       final cap = _currentVehicleCapacity;
       if (cap.isNotEmpty) {
         lines.add('• Vehicle: ${cap['vehicle']} (Max Weight: ${cap['maxWeight']}, Size: ${cap['maxSize']})');
@@ -2747,6 +2760,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           'maxSize': '6*5ft',
         };
       }
+    } else if (_selectedCategory == 'groceries' || _selectedCategory == 'grocery') {
+      return {
+        'vehicle': 'Bike / Scooty',
+        'maxWeight': '20kg',
+        'maxSize': 'Standard Bags (20kg)',
+      };
     }
     return const {};
   }
@@ -2764,7 +2783,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.scale_rounded, size: 18, color: Color(0xFF2563EB)),
+              const Icon(Icons.scale_rounded, size: 20, color: Color(0xFF2563EB)),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -2772,9 +2791,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
                     color: Color(0xFF1E3A8A),
+                    letterSpacing: -0.2,
                   ),
                 ),
               ),
@@ -2906,8 +2926,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               categoryLabel,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
-                                fontSize: 14,
+                                fontSize: 17,
                                 color: Color(0xFF102A56),
+                                letterSpacing: -0.2,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -2936,7 +2957,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       const SizedBox(height: 2),
                       const Text(
                         'Answer these questions so helpers understand your task',
-                        style: TextStyle(fontSize: 11, color: Color(0xFF52627A)),
+                        style: TextStyle(fontSize: 12, color: Color(0xFF52627A), fontWeight: FontWeight.w500),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -2990,8 +3011,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               child: Text(
                                 q,
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14.5,
                                   color: AppColors.dark,
                                 ),
                               ),
@@ -3098,22 +3119,23 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 28,
-              height: 28,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: const Color(0xFFEAF2FF),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 16),
+              child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 18),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             const Flexible(
               child: Text(
                 'Delivery Vehicle Option',
                 style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16.5,
                   color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
                 ),
               ),
             ),
@@ -3172,22 +3194,23 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 28,
-              height: 28,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: const Color(0xFFEAF2FF),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.local_shipping_rounded, color: Color(0xFF2563EB), size: 16),
+              child: const Icon(Icons.local_shipping_rounded, color: Color(0xFF2563EB), size: 18),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             const Flexible(
               child: Text(
                 'Moving Vehicle Option',
                 style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16.5,
                   color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
                 ),
               ),
             ),
@@ -3570,94 +3593,139 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildTaskTitleInput() {
-    return AnimatedBuilder(
-      animation: _titleFocus,
-      builder: (context, child) {
-        final hasFocus = _titleFocus.hasFocus;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: hasFocus
-                  ? const Color(0xFF2563EB)
-                  : const Color(0xFFE5EDF7),
-              width: hasFocus ? 1.5 : 1.2,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.edit_note_rounded, color: Color(0xFF2563EB), size: 19),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: hasFocus
-                    ? const Color(0xFF2563EB).withValues(alpha: 0.08)
-                    : const Color(0xFF102A56).withValues(alpha: 0.04),
-                blurRadius: hasFocus ? 14 : 10,
-                offset: const Offset(0, 3),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Task Title',
+                    style: TextStyle(
+                      fontSize: 17.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF102A56),
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  SizedBox(height: 1),
+                  Text(
+                    'Give your task a clear, descriptive title',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF52627A),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        AnimatedBuilder(
+          animation: _titleFocus,
+          builder: (context, child) {
+            final hasFocus = _titleFocus.hasFocus;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: hasFocus
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFFE5EDF7),
+                  width: hasFocus ? 1.5 : 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: hasFocus
+                        ? const Color(0xFF2563EB).withValues(alpha: 0.08)
+                        : const Color(0xFF102A56).withValues(alpha: 0.04),
+                    blurRadius: hasFocus ? 14 : 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              child: child,
+            );
+          },
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCEBFF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  'T',
+                  style: TextStyle(
+                    color: Color(0xFF2563EB),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
+                  controller: _titleCtrl,
+                  focusNode: _titleFocus,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.next,
+                  style: const TextStyle(
+                    color: Color(0xFF102A56),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: const InputDecoration(
+                    filled: false,
+                    isDense: true,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    hintText: 'Task Title',
+                    hintStyle: TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    errorStyle: TextStyle(
+                      color: AppColors.danger,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  validator: _validateTaskTitle,
+                ),
               ),
             ],
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          child: child,
-        );
-      },
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFFDCEBFF),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: const Text(
-              'T',
-              style: TextStyle(
-                color: Color(0xFF2563EB),
-                fontWeight: FontWeight.w800,
-                fontSize: 17,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextFormField(
-              controller: _titleCtrl,
-              focusNode: _titleFocus,
-              textCapitalization: TextCapitalization.sentences,
-              textInputAction: TextInputAction.next,
-              style: const TextStyle(
-                color: Color(0xFF102A56),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-              decoration: const InputDecoration(
-                filled: false,
-                isDense: true,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                errorBorder: InputBorder.none,
-                focusedErrorBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                hintText: 'Task Title',
-                hintStyle: TextStyle(
-                  color: Color(0xFF94A3B8),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
-                errorStyle: TextStyle(
-                  color: AppColors.danger,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-                contentPadding: EdgeInsets.symmetric(vertical: 12),
-              ),
-              validator: _validateTaskTitle,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -3728,18 +3796,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 children: [
                   Text(
                     'Select Category',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF102A56),
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Choose the best category for your task',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 17.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF102A56),
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Choose the best category for your task',
+                    style: TextStyle(
+                      fontSize: 12.5,
                       color: Color(0xFF52627A),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -3999,7 +4069,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     Text(
                       'Budget & Price Breakdown',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 17.5,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF102A56),
                         letterSpacing: -0.2,
@@ -4009,7 +4079,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     Text(
                       'Set your offer and view detailed price breakdown',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 12.5,
                         color: Color(0xFF52627A),
                         fontWeight: FontWeight.w500,
                       ),
@@ -4024,8 +4094,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         const Text(
           'Budget',
           style: TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
             color: Color(0xFF102A56),
           ),
         ),
@@ -4104,6 +4174,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildLocationFieldsSection() {
+    final isGrocery = Task.isGroceryCategory(_selectedCategory);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4133,7 +4204,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  _isDelivery ? Icons.local_shipping_rounded : Icons.location_on_rounded,
+                  isGrocery
+                      ? Icons.shopping_basket_rounded
+                      : (_isDelivery ? Icons.local_shipping_rounded : Icons.location_on_rounded),
                   color: const Color(0xFF2563EB),
                   size: 20,
                 ),
@@ -4144,9 +4217,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isDelivery ? 'Pickup & Delivery Location' : 'Task Location',
+                      isGrocery
+                          ? 'Store & Drop Location'
+                          : (_isDelivery ? 'Pickup & Delivery Location' : 'Task Location'),
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 17.5,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF102A56),
                         letterSpacing: -0.2,
@@ -4154,11 +4229,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _isDelivery
-                          ? 'Enter pickup and drop addresses (must be different)'
-                          : 'Set where the task needs to be performed',
+                      isGrocery
+                          ? 'Enter store and delivery addresses (must be different)'
+                          : (_isDelivery
+                              ? 'Enter pickup and drop addresses (must be different)'
+                              : 'Set where the task needs to be performed'),
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 12.5,
                         color: Color(0xFF52627A),
                         fontWeight: FontWeight.w500,
                       ),
@@ -4216,10 +4293,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   focusNode: _pickupFocus,
                   onChanged: _onPickupAddrChanged,
                   decoration: InputDecoration(
-                    labelText: 'Pickup Address *',
-                    hintText: 'Where to pick up from',
+                    labelText: isGrocery ? 'Store / Supermarket Address *' : 'Pickup Address *',
+                    hintText: isGrocery ? 'Where to buy groceries from (Store / Supermarket)' : 'Where to pick up from',
                     prefixIcon:
-                        const Icon(Icons.location_on, color: AppColors.primary),
+                        Icon(isGrocery ? Icons.store_mall_directory_rounded : Icons.location_on, color: AppColors.primary),
                     suffixIcon: _AddressActionButtons(
                       isLoading: _gettingPickupGps,
                       accentColor: AppColors.primary,
@@ -4231,11 +4308,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) {
-                      return 'Pickup address is required';
+                      return isGrocery ? 'Store address is required' : 'Pickup address is required';
                     }
                     if (_dropAddrCtrl.text.trim().isNotEmpty &&
                         v.trim().toLowerCase() == _dropAddrCtrl.text.trim().toLowerCase()) {
-                      return 'Pickup address must be different from drop address';
+                      return isGrocery
+                          ? 'Store address must be different from delivery address'
+                          : 'Pickup address must be different from drop address';
                     }
                     return null;
                   },
@@ -4359,9 +4438,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   focusNode: _dropFocus,
                   onChanged: _onDropAddrChanged,
                   decoration: InputDecoration(
-                    labelText: 'Drop / Delivery Address *',
-                    hintText: 'Where to deliver / drop off',
-                    prefixIcon: const Icon(Icons.flag, color: AppColors.danger),
+                    labelText: isGrocery ? 'Delivery Address *' : 'Drop / Delivery Address *',
+                    hintText: isGrocery ? 'Where to deliver groceries' : 'Where to deliver / drop off',
+                    prefixIcon: Icon(isGrocery ? Icons.home_rounded : Icons.flag, color: AppColors.danger),
                     suffixIcon: _AddressActionButtons(
                       isLoading: _gettingDropGps,
                       accentColor: AppColors.danger,
@@ -4372,11 +4451,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) {
-                      return 'Drop address is required';
+                      return isGrocery ? 'Delivery address is required' : 'Drop address is required';
                     }
                     if (_pickupAddrCtrl.text.trim().isNotEmpty &&
                         v.trim().toLowerCase() == _pickupAddrCtrl.text.trim().toLowerCase()) {
-                      return 'Drop address must be different from pickup address';
+                      return isGrocery
+                          ? 'Delivery address must be different from store address'
+                          : 'Drop address must be different from pickup address';
                     }
                     return null;
                   },
@@ -5308,6 +5389,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               posterFee: posterFee,
               totalCost: total,
               isRepair: Task.isRepairCategory(_selectedCategory),
+              isGrocery: Task.isGroceryCategory(_selectedCategory),
             ),
             if (_isFreelancer && _freelancerQuote != null) ...[
               const SizedBox(height: 6),
@@ -5387,20 +5469,88 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  Widget _buildGroceryItemsBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF16A34A).withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFDCFCE7),
+              borderRadius: BorderRadius.all(Radius.circular(10)),
+            ),
+            child: const Icon(Icons.shopping_basket_rounded, color: Color(0xFF16A34A), size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Grocery Items Policy',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                    color: Color(0xFF15803D),
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Cost of grocery items is paid separately by the task poster directly to the helper/store and is NOT included in this delivery budget value.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF166534),
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDistanceCategoryRateBanner() {
+    final isGrocery = Task.isGroceryCategory(_selectedCategory);
     final isMoving = _selectedCategory == 'moving';
     final isPickup = _selectedCategory == 'pickup';
-    final title = isMoving
-        ? 'Moving & Packing Rate'
-        : (isPickup ? 'Pick & Drop Rate' : 'Transport Rate');
-    final rateBadge = isMoving
-        ? '₹400 base + ₹35 / km'
-        : (isPickup ? 'Min ₹30 · ₹18 / km' : 'Min ₹50 · ₹18 / km');
-    final icon = isMoving
-        ? Icons.local_shipping_rounded
-        : (isPickup
-            ? Icons.electric_rickshaw_rounded
-            : Icons.directions_car_rounded);
+    final title = isGrocery
+        ? 'Grocery Delivery Rate'
+        : (isMoving
+            ? 'Moving & Packing Rate'
+            : (isPickup ? 'Pick & Drop Rate' : 'Transport Rate'));
+    final rateBadge = isGrocery
+        ? 'Min ₹100 · ₹12 / km'
+        : (isMoving
+            ? '₹400 base + ₹35 / km'
+            : (isPickup ? 'Min ₹30 · ₹18 / km' : 'Min ₹50 · ₹18 / km'));
+    final icon = isGrocery
+        ? Icons.two_wheeler_rounded
+        : (isMoving
+            ? Icons.local_shipping_rounded
+            : (isPickup
+                ? Icons.electric_rickshaw_rounded
+                : Icons.directions_car_rounded));
+    final subtitle = isGrocery
+        ? 'Store to drop distance fare (₹12/km, Min ₹100 · Bike/Scooty up to 20kg)'
+        : 'Distance fare is included in your budget (₹0 extra service charge)';
 
     return Container(
       width: double.infinity,
@@ -5465,9 +5615,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ],
                 ),
                 const SizedBox(height: 3),
-                const Text(
-                  'Distance fare is included in your budget (₹0 extra service charge)',
-                  style: TextStyle(
+                Text(
+                  subtitle,
+                  style: const TextStyle(
                     fontSize: 11,
                     color: Color(0xFF52627A),
                   ),
@@ -5576,6 +5726,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       ] else if (Task.isRepairCategory(_selectedCategory)) ...[
                         const SizedBox(height: 16),
                         _buildRepairMaterialsBanner(),
+                      ] else if (Task.isGroceryCategory(_selectedCategory)) ...[
+                        const SizedBox(height: 16),
+                        _buildGroceryItemsBanner(),
+                        const SizedBox(height: 12),
+                        _buildDistanceCategoryRateBanner(),
+                        const SizedBox(height: 12),
+                        _buildVehicleCapacityBanner(),
                       ] else if (_isDelivery) ...[
                         const SizedBox(height: 16),
                         _buildDistanceCategoryRateBanner(),

@@ -104,7 +104,15 @@ class TaskPriceBreakdownCard extends StatelessWidget {
           const SizedBox(height: 14),
 
           // Itemized rows
-          _PriceRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
+          if (isGrocery) ...[
+            _PriceRow('Distance Travel Fare (₹12/km)', '₹${(budget >= 50.0 ? (budget - 50.0) : budget).toStringAsFixed(0)}'),
+            const SizedBox(height: 8),
+            const _PriceRow('Handling & Shopping Charge', '₹50'),
+            const SizedBox(height: 8),
+            _PriceRow('Task Delivery Budget', '₹${budget.toStringAsFixed(0)}'),
+          ] else ...[
+            _PriceRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
+          ],
           if (serviceCharge > 0) ...[
             const SizedBox(height: 8),
             _PriceRow('Service Charge', '₹${serviceCharge.toStringAsFixed(0)}'),

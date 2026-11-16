@@ -49,6 +49,110 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
     }).toList();
   }
 
+  void _showWeightLimitExceededDialog({
+    required double currentWeight,
+    required double attemptedWeight,
+    required double itemWeight,
+  }) {
+    showDialog(
+      context: context,
+      builder: (alertCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 26),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Weight Limit Exceeded',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF102A56)),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Two-wheeler (Bike / Scooty) delivery has a strict maximum capacity of 20 kg for road safety.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF334155), height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Max Allowed Weight:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                      Text('20.0 kg', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF102A56))),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Current Cart Weight:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                      Text('${currentWeight.toStringAsFixed(1)} kg', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF102A56))),
+                    ],
+                  ),
+                  if (itemWeight > 0) ...[
+                    const SizedBox(height: 5),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Item Weight:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFDC2626))),
+                        Text('+${itemWeight.toStringAsFixed(1)} kg', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
+                      ],
+                    ),
+                  ],
+                  const Divider(height: 14, thickness: 1, color: Color(0xFFFECACA)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Total If Added:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFFDC2626))),
+                      Text('${attemptedWeight.toStringAsFixed(1)} kg', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFDC2626))),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Please manage weight or reduce item quantities to keep total weight under 20 kg.',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(alertCtx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Manage Weight & Items', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openItemRequirementDialog(GroceryCatalogItem item) {
     final existing = _selectedMap[item.id];
 
@@ -74,7 +178,6 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
 
     String selectedBrand = existing?.brand ?? '';
     final brandCtrl = TextEditingController(text: selectedBrand);
-    final rupeeCtrl = TextEditingController(text: existing?.rupee ?? '');
 
     showModalBottomSheet(
       context: context,
@@ -328,7 +431,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                                     ),
                                     onChanged: (val) {
                                       final parsed = int.tryParse(val.trim());
-                                      if (parsed != null && parsed > 0) {
+                                      if (parsed != null && parsed > 0 && parsed <= 50) {
                                         currentQty = parsed;
                                         selectedPackage = '$currentQty Pack${currentQty > 1 ? 's' : ''}';
                                       }
@@ -338,11 +441,13 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                                 IconButton(
                                   icon: const Icon(Icons.add_rounded, color: Color(0xFF1E293B)),
                                   onPressed: () {
-                                    setModalState(() {
-                                      currentQty++;
-                                      qtyCtrl.text = currentQty.toString();
-                                      selectedPackage = '$currentQty Pack${currentQty > 1 ? 's' : ''}';
-                                    });
+                                    if (currentQty < 50) {
+                                      setModalState(() {
+                                        currentQty++;
+                                        qtyCtrl.text = currentQty.toString();
+                                        selectedPackage = '$currentQty Pack${currentQty > 1 ? 's' : ''}';
+                                      });
+                                    }
                                   },
                                 ),
                               ],
@@ -469,25 +574,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                       const SizedBox(height: 12),
                     ],
 
-                    // Approximate Rupee (Optional)
-                    TextField(
-                      controller: rupeeCtrl,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
-                      decoration: InputDecoration(
-                        labelText: 'Approx Rupee (₹ Optional)',
-                        hintText: 'e.g. 50, 120',
-                        prefixIcon: const Icon(Icons.currency_rupee_rounded, size: 16, color: Color(0xFF2563EB)),
-                        isDense: true,
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                      ),
-                    ),
-
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
 
                     // Direct Add / Update in List Button
                     SizedBox(
@@ -531,9 +618,26 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                             kg: k,
                             gram: g,
                             litr: l,
-                            rupee: rupeeCtrl.text.trim(),
+                            rupee: existing?.rupee ?? '',
                             brand: selectedBrand.isNotEmpty ? selectedBrand : brandCtrl.text.trim(),
                           );
+
+                          // Check 20kg weight limit for two-wheeler delivery
+                          final currentWeightExcludingThis = _selectedMap.values
+                              .where((e) => e.id != item.id)
+                              .fold<double>(0.0, (sum, e) => sum + e.estimatedWeightKg);
+                          final itemWeight = selected.estimatedWeightKg;
+                          final attemptedTotal = currentWeightExcludingThis + itemWeight;
+
+                          if (itemWeight > GroceryCatalog.maxTwoWheelerWeightKg ||
+                              attemptedTotal > GroceryCatalog.maxTwoWheelerWeightKg) {
+                            _showWeightLimitExceededDialog(
+                              currentWeight: currentWeightExcludingThis,
+                              attemptedWeight: attemptedTotal,
+                              itemWeight: itemWeight,
+                            );
+                            return;
+                          }
 
                           setState(() {
                             _selectedMap[item.id] = selected;
@@ -562,6 +666,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 8),
                   ],
                 ),
               ),
@@ -576,6 +681,10 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
   Widget build(BuildContext context) {
     final items = _filteredItems;
     final totalAdded = _selectedMap.length;
+    final totalWeight = GroceryCatalog.calculateTotalWeightKg(_selectedMap.values);
+    final weightProgress = (totalWeight / GroceryCatalog.maxTwoWheelerWeightKg).clamp(0.0, 1.0);
+    final isNearLimit = totalWeight >= 16.0;
+    final isOverLimit = totalWeight > GroceryCatalog.maxTwoWheelerWeightKg;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F8FF),
@@ -602,16 +711,16 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                 margin: const EdgeInsets.only(right: 16),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
+                  color: isOverLimit ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF86EFAC)),
+                  border: Border.all(color: isOverLimit ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC)),
                 ),
                 child: Text(
-                  '$totalAdded Selected',
-                  style: const TextStyle(
+                  '$totalAdded Items · ${totalWeight.toStringAsFixed(1)} kg',
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF166534),
+                    color: isOverLimit ? const Color(0xFF991B1B) : const Color(0xFF166534),
                   ),
                 ),
               ),
@@ -620,10 +729,84 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
       ),
       body: Column(
         children: [
+          // Vehicle capacity & Weight limit indicator
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isOverLimit
+                    ? const Color(0xFFFEF2F2)
+                    : (isNearLimit ? const Color(0xFFFFFBEB) : const Color(0xFFF0FDF4)),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isOverLimit
+                      ? const Color(0xFFFCA5A5)
+                      : (isNearLimit ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0)),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isOverLimit ? '⚠️' : '🛵',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Bike / Scooty Capacity:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isOverLimit
+                                  ? const Color(0xFF991B1B)
+                                  : (isNearLimit ? const Color(0xFF92400E) : const Color(0xFF166534)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        '${totalWeight.toStringAsFixed(1)} / 20.0 kg',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: isOverLimit
+                              ? const Color(0xFFDC2626)
+                              : (isNearLimit ? const Color(0xFFD97706) : const Color(0xFF15803D)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: weightProgress,
+                      minHeight: 5,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isOverLimit
+                            ? const Color(0xFFDC2626)
+                            : (isNearLimit ? const Color(0xFFD97706) : const Color(0xFF16A34A)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // Search & Filters Header
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -633,7 +816,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                   onChanged: (v) => setState(() => _searchQuery = v.trim()),
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   decoration: InputDecoration(
-                    hintText: 'Search items (e.g. Milk, Rice, Oil, Maggi...)',
+                    hintText: 'Search items (e.g. Methi, Palak, Milk, Atta, Maggi...)',
                     hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
                     prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF2563EB)),
                     suffixIcon: _searchQuery.isNotEmpty
@@ -910,6 +1093,15 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
               ),
               child: ElevatedButton.icon(
                 onPressed: () {
+                  final totalW = GroceryCatalog.calculateTotalWeightKg(_selectedMap.values);
+                  if (totalW > GroceryCatalog.maxTwoWheelerWeightKg) {
+                    _showWeightLimitExceededDialog(
+                      currentWeight: totalW,
+                      attemptedWeight: totalW,
+                      itemWeight: 0,
+                    );
+                    return;
+                  }
                   Navigator.pop(context, _selectedMap.values.toList());
                 },
                 style: ElevatedButton.styleFrom(
@@ -920,7 +1112,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                 ),
                 icon: const Icon(Icons.check_circle_outline_rounded, size: 20),
                 label: Text(
-                  totalAdded > 0 ? 'Save & Continue ($totalAdded Items)' : 'Save & Continue',
+                  totalAdded > 0 ? 'Save & Continue ($totalAdded Items · ${totalWeight.toStringAsFixed(1)} kg)' : 'Save & Continue',
                   style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800),
                 ),
               ),

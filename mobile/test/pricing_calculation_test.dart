@@ -826,5 +826,102 @@ void main() {
       expect(parsed.first.name, 'Fresh Milk');
       expect(parsed.first.brand, 'Amul');
     });
+
+    test('grocery catalog includes fresh leafy vegetables and enforces <= 20kg package limits', () {
+      final methi = GroceryCatalog.allItems.firstWhere((i) => i.id == 'methi');
+      expect(methi.name, contains('Methi'));
+      expect(methi.category, 'Vegetables & Fruits');
+      expect(methi.prefilledPackages, contains('1 Bunch (Gaddi)'));
+
+      final palak = GroceryCatalog.allItems.firstWhere((i) => i.id == 'palak');
+      expect(palak.name, contains('Palak'));
+      expect(palak.category, 'Vegetables & Fruits');
+
+      final coriander = GroceryCatalog.allItems.firstWhere((i) => i.id == 'coriander');
+      expect(coriander.name, contains('Coriander'));
+
+      // Verify every catalog package is <= 20kg
+      for (final item in GroceryCatalog.allItems) {
+        for (final pkg in item.effectivePackages) {
+          final testItem = SelectedGroceryItem(
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            imageUrl: item.imageUrl,
+            emoji: item.emoji,
+            package: pkg,
+          );
+          expect(testItem.estimatedWeightKg, lessThanOrEqualTo(20.0),
+              reason: '${item.name} package "$pkg" exceeds 20kg vehicle limit');
+        }
+      }
+
+      // Check estimated weight calculation and cart summing
+      final item1 = SelectedGroceryItem(
+        id: 'methi',
+        name: 'Fresh Methi',
+        category: 'Vegetables & Fruits',
+        imageUrl: '',
+        emoji: '🌿',
+        package: '500g',
+      );
+      final item2 = SelectedGroceryItem(
+        id: 'atta',
+        name: 'Atta',
+        category: 'Staples & Dals',
+        imageUrl: '',
+        emoji: '🌾',
+        package: '5kg',
+      );
+      final item3 = SelectedGroceryItem(
+        id: 'milk',
+        name: 'Milk',
+        category: 'Dairy & Breakfast',
+        imageUrl: '',
+        emoji: '🥛',
+        package: '1L',
+      );
+
+      expect(item1.estimatedWeightKg, 0.5);
+      expect(item2.estimatedWeightKg, 5.0);
+      expect(item3.estimatedWeightKg, 1.0);
+
+      final totalW = GroceryCatalog.calculateTotalWeightKg([item1, item2, item3]);
+      expect(totalW, 6.5);
+      expect(totalW, lessThanOrEqualTo(GroceryCatalog.maxTwoWheelerWeightKg));
+    });
+
+    testWidgets('TaskPriceBreakdownCard for grocery tasks displays ₹50 handling charge and distance fare',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // Grocery budget with travel fare ₹100 + handling ₹50 = ₹150 budget
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Padding(
+              padding: EdgeInsets.all(16),
+              child: TaskPriceBreakdownCard(
+                budget: 150.0,
+                serviceCharge: 0.0,
+                posterFee: 30.0,
+                totalCost: 180.0,
+                isGrocery: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Distance Travel Fare (₹12/km)'), findsOneWidget);
+      expect(find.text('₹100'), findsOneWidget);
+      expect(find.text('Handling & Shopping Charge'), findsOneWidget);
+      expect(find.text('₹50'), findsOneWidget);
+      expect(find.text('Task Delivery Budget'), findsOneWidget);
+      expect(find.text('₹150'), findsOneWidget);
+      expect(find.textContaining('Grocery Items Policy:'), findsOneWidget);
+    });
   });
 }

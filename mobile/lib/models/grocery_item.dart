@@ -132,6 +132,62 @@ class SelectedGroceryItem {
     );
   }
 
+  /// Estimated weight in kilograms (kg) for vehicle weight capacity calculation.
+  double get estimatedWeightKg {
+    // 1. Explicit kg
+    if (kg.trim().isNotEmpty) {
+      final val = double.tryParse(kg.trim());
+      if (val != null && val > 0) return val;
+    }
+    // 2. Explicit gram
+    if (gram.trim().isNotEmpty) {
+      final val = double.tryParse(gram.trim());
+      if (val != null && val > 0) return val / 1000.0;
+    }
+    // 3. Explicit litre (1L approx 1kg for milk, water, oil)
+    if (litr.trim().isNotEmpty) {
+      final val = double.tryParse(litr.trim());
+      if (val != null && val > 0) return val;
+    }
+    // 4. Parse from package text (e.g. "250g", "500g", "1kg", "2kg", "5kg", "10kg", "250ml", "1L", "5L")
+    final pkg = package.toLowerCase().trim();
+    if (pkg.isNotEmpty) {
+      final kgMatch = RegExp(r'(\d+(?:\.\d+)?)\s*kg').firstMatch(pkg);
+      if (kgMatch != null) {
+        return double.tryParse(kgMatch.group(1)!) ?? 1.0;
+      }
+      final gMatch = RegExp(r'(\d+(?:\.\d+)?)\s*g\b').firstMatch(pkg);
+      if (gMatch != null) {
+        return (double.tryParse(gMatch.group(1)!) ?? 500.0) / 1000.0;
+      }
+      final lMatch = RegExp(r'(\d+(?:\.\d+)?)\s*l\b').firstMatch(pkg);
+      if (lMatch != null) {
+        return double.tryParse(lMatch.group(1)!) ?? 1.0;
+      }
+      final mlMatch = RegExp(r'(\d+(?:\.\d+)?)\s*ml\b').firstMatch(pkg);
+      if (mlMatch != null) {
+        return (double.tryParse(mlMatch.group(1)!) ?? 500.0) / 1000.0;
+      }
+    }
+    // 5. Quantity count items
+    final count = int.tryParse(qty.trim()) ?? 1;
+    if (id == 'bread') return count * 0.4;
+    if (id == 'eggs') {
+      if (package.contains('30')) return 1.8;
+      if (package.contains('12')) return 0.7;
+      return 0.35 * count;
+    }
+    if (id == 'banana') {
+      if (package.contains('2 Dozen')) return 3.0;
+      if (package.contains('1 Dozen') || package.contains('12')) return 1.5;
+      return 0.75;
+    }
+    if (package.contains('bunch') || package.contains('gaddi')) {
+      return count * 0.25; // 250g per bunch
+    }
+    return (count * 0.3).clamp(0.1, 20.0); // 300g per item fallback
+  }
+
   /// Compact one-line summary for badges and card previews.
   String get requirementSummary {
     final parts = <String>[];
@@ -171,17 +227,311 @@ class SelectedGroceryItem {
 
 /// Comprehensive catalog of market grocery items organized by department.
 class GroceryCatalog {
+  static const double maxTwoWheelerWeightKg = 20.0;
+
   static const List<String> categories = [
     'All',
+    'Vegetables & Fruits',
     'Dairy & Breakfast',
     'Staples & Dals',
-    'Vegetables & Fruits',
     'Oils & Masalas',
     'Snacks & Beverages',
     'Cleaning & Household',
   ];
 
+  static double calculateTotalWeightKg(Iterable<SelectedGroceryItem> items) {
+    return items.fold<double>(0.0, (sum, item) => sum + item.estimatedWeightKg);
+  }
+
   static const List<GroceryCatalogItem> allItems = [
+    // ── Fresh Vegetables & Fruits ──────────────────────────────────────────
+    GroceryCatalogItem(
+      id: 'methi',
+      name: 'Fresh Methi (Fenugreek Leaves)',
+      category: 'Vegetables & Fruits',
+      emoji: '🌿',
+      bgColor: Color(0xFFECFDF5),
+      imageUrl: 'https://images.unsplash.com/photo-1576045057995-568f588f82fb?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Farm', 'Local Mandi'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['1 Bunch (Gaddi)', '2 Bunches', '250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'palak',
+      name: 'Fresh Palak (Spinach)',
+      category: 'Vegetables & Fruits',
+      emoji: '🍃',
+      bgColor: Color(0xFFF0FDF4),
+      imageUrl: 'https://images.unsplash.com/photo-1576045057995-568f588f82fb?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Farm', 'Organic Local'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['1 Bunch (Gaddi)', '2 Bunches', '250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'coriander',
+      name: 'Coriander / Kothimbir (Dhaniya)',
+      category: 'Vegetables & Fruits',
+      emoji: '🌿',
+      bgColor: Color(0xFFECFDF5),
+      imageUrl: 'https://images.unsplash.com/photo-1508747703725-719777637510?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Mandi', 'Local Market'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['1 Bunch', '2 Bunches', '100g', '250g'],
+    ),
+    GroceryCatalogItem(
+      id: 'mint',
+      name: 'Mint Leaves (Pudina)',
+      category: 'Vegetables & Fruits',
+      emoji: '🌿',
+      bgColor: Color(0xFFF0FDF4),
+      imageUrl: 'https://images.unsplash.com/photo-1628556270448-4d4e4148e1b1?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Mandi'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['1 Bunch', '100g', '250g'],
+    ),
+    GroceryCatalogItem(
+      id: 'potato',
+      name: 'Potato (Aloo)',
+      category: 'Vegetables & Fruits',
+      emoji: '🥔',
+      bgColor: Color(0xFFFEF3C7),
+      imageUrl: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local', 'Jyoti Aloo'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg', '2kg', '5kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'onion',
+      name: 'Onion (Pyaz)',
+      category: 'Vegetables & Fruits',
+      emoji: '🧅',
+      bgColor: Color(0xFFFCE7F3),
+      imageUrl: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Nashik', 'Fresh Local'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg', '2kg', '5kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'tomato',
+      name: 'Tomato (Tamatar)',
+      category: 'Vegetables & Fruits',
+      emoji: '🍅',
+      bgColor: Color(0xFFFEE2E2),
+      imageUrl: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local', 'Hybrid / Country'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg', '2kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'green_chillies',
+      name: 'Green Chillies (Hari Mirch)',
+      category: 'Vegetables & Fruits',
+      emoji: '🌶️',
+      bgColor: Color(0xFFECFDF5),
+      imageUrl: 'https://images.unsplash.com/photo-1588252303782-cb80119abd6d?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['100g', '250g', '500g'],
+    ),
+    GroceryCatalogItem(
+      id: 'lemon',
+      name: 'Fresh Lemons (Nimbu)',
+      category: 'Vegetables & Fruits',
+      emoji: '🍋',
+      bgColor: Color(0xFFFEF9C3),
+      imageUrl: 'https://images.unsplash.com/photo-1534939561126-855b8675edd7?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local'],
+      unitType: GroceryUnitType.count,
+      prefilledPackages: ['4 Pcs', '6 Pcs', '12 Pcs', '250g'],
+    ),
+    GroceryCatalogItem(
+      id: 'ginger',
+      name: 'Fresh Ginger (Adrak)',
+      category: 'Vegetables & Fruits',
+      emoji: '🫚',
+      bgColor: Color(0xFFFEF3C7),
+      imageUrl: 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['100g', '250g', '500g'],
+    ),
+    GroceryCatalogItem(
+      id: 'garlic',
+      name: 'Garlic (Lehsun)',
+      category: 'Vegetables & Fruits',
+      emoji: '🧄',
+      bgColor: Color(0xFFF8FAFC),
+      imageUrl: 'https://images.unsplash.com/photo-1540148426945-6cf22a6b2383?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local', 'Desi Garlic'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['100g', '250g', '500g'],
+    ),
+    GroceryCatalogItem(
+      id: 'bhindi',
+      name: 'Ladyfinger / Bhindi (Okra)',
+      category: 'Vegetables & Fruits',
+      emoji: '🥒',
+      bgColor: Color(0xFFECFDF5),
+      imageUrl: 'https://images.unsplash.com/photo-1625944525533-473f1a3d54e7?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Mandi'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'capsicum',
+      name: 'Capsicum (Shimla Mirch)',
+      category: 'Vegetables & Fruits',
+      emoji: '🫑',
+      bgColor: Color(0xFFDCFCE7),
+      imageUrl: 'https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Green'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'cauliflower',
+      name: 'Cauliflower (Phool Gobi)',
+      category: 'Vegetables & Fruits',
+      emoji: '🥦',
+      bgColor: Color(0xFFF1F5F9),
+      imageUrl: 'https://images.unsplash.com/photo-1568584711075-3d021a7c3ca3?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Farm'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['1 Pc (~500g)', '2 Pcs', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'cabbage',
+      name: 'Cabbage (Patta Gobi)',
+      category: 'Vegetables & Fruits',
+      emoji: '🥬',
+      bgColor: Color(0xFFECFDF5),
+      imageUrl: 'https://images.unsplash.com/photo-1550989460-0adf9ea622e2?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Farm'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['1 Pc (~500g)', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'carrot',
+      name: 'Carrot (Gajar)',
+      category: 'Vegetables & Fruits',
+      emoji: '🥕',
+      bgColor: Color(0xFFFFF7ED),
+      imageUrl: 'https://images.unsplash.com/photo-1598170845058-32b9d6a5c317?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Red Delhi', 'Orange Local'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'cucumber',
+      name: 'Cucumber (Kheera / Kakdi)',
+      category: 'Vegetables & Fruits',
+      emoji: '🥒',
+      bgColor: Color(0xFFF0FDF4),
+      imageUrl: 'https://images.unsplash.com/photo-1604977042946-1eecc30f269e?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'green_peas',
+      name: 'Fresh Green Peas (Matar)',
+      category: 'Vegetables & Fruits',
+      emoji: '🫛',
+      bgColor: Color(0xFFDCFCE7),
+      imageUrl: 'https://images.unsplash.com/photo-1587735243615-c03f25aaff15?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local', 'Safal Frozen'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'lauki',
+      name: 'Bottle Gourd (Lauki / Doodhi)',
+      category: 'Vegetables & Fruits',
+      emoji: '🥒',
+      bgColor: Color(0xFFF0FDF4),
+      imageUrl: 'https://images.unsplash.com/photo-1604977042946-1eecc30f269e?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Mandi'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['1 Pc (~500g)', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'karela',
+      name: 'Bitter Gourd (Karela)',
+      category: 'Vegetables & Fruits',
+      emoji: '🥒',
+      bgColor: Color(0xFFECFDF5),
+      imageUrl: 'https://images.unsplash.com/photo-1625944525533-473f1a3d54e7?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'baingan',
+      name: 'Brinjal / Baingan (Eggplant)',
+      category: 'Vegetables & Fruits',
+      emoji: '🍆',
+      bgColor: Color(0xFFF5F3FF),
+      imageUrl: 'https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Bharta Baingan', 'Small Round'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'beetroot',
+      name: 'Beetroot (Chukandar)',
+      category: 'Vegetables & Fruits',
+      emoji: '🍠',
+      bgColor: Color(0xFFFDF2F8),
+      imageUrl: 'https://images.unsplash.com/photo-1598170845058-32b9d6a5c317?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Fresh Local'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['250g', '500g', '1kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'apple',
+      name: 'Fresh Apples (Seb)',
+      category: 'Vegetables & Fruits',
+      emoji: '🍎',
+      bgColor: Color(0xFFFEE2E2),
+      imageUrl: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Shimla', 'Kinnaur', 'Washington'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg', '2kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'banana',
+      name: 'Bananas (Kela)',
+      category: 'Vegetables & Fruits',
+      emoji: '🍌',
+      bgColor: Color(0xFFFEF9C3),
+      imageUrl: 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Robusta', 'Yellaki'],
+      unitType: GroceryUnitType.count,
+      prefilledPackages: ['6 Pcs', '12 Pcs (1 Dozen)', '2 Dozen'],
+    ),
+    GroceryCatalogItem(
+      id: 'orange',
+      name: 'Fresh Oranges / Santra',
+      category: 'Vegetables & Fruits',
+      emoji: '🍊',
+      bgColor: Color(0xFFFFF7ED),
+      imageUrl: 'https://images.unsplash.com/photo-1611080626919-7cf5a9dbab5b?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Nagpur', 'Kinnow'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg', '2kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'pomegranate',
+      name: 'Pomegranate (Anar)',
+      category: 'Vegetables & Fruits',
+      emoji: '🍇',
+      bgColor: Color(0xFFFEE2E2),
+      imageUrl: 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Bhagwa A Grade'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg'],
+    ),
+
     // ── Dairy & Breakfast ──────────────────────────────────────────────────
     GroceryCatalogItem(
       id: 'milk',
@@ -268,7 +618,7 @@ class GroceryCatalog {
       category: 'Staples & Dals',
       emoji: '🌾',
       bgColor: Color(0xFFFEF2F2),
-      imageUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=300&q=80',
+      imageUrl: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=300&q=80',
       popularBrands: ['Aashirvaad', 'Fortune', 'Patanjali', 'Chakki Fresh'],
       unitType: GroceryUnitType.weight,
       prefilledPackages: ['1kg', '5kg', '10kg'],
@@ -282,7 +632,7 @@ class GroceryCatalog {
       imageUrl: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=300&q=80',
       popularBrands: ['India Gate', 'Daawat', 'Fortune', 'Wada Kolam'],
       unitType: GroceryUnitType.weight,
-      prefilledPackages: ['1kg', '5kg', '10kg', '25kg'],
+      prefilledPackages: ['1kg', '5kg', '10kg'],
     ),
     GroceryCatalogItem(
       id: 'toor_dal',
@@ -308,7 +658,7 @@ class GroceryCatalog {
     ),
     GroceryCatalogItem(
       id: 'chana_dal',
-      name: 'Chana Dal / Besan',
+      name: 'Chana Dal',
       category: 'Staples & Dals',
       emoji: '🧆',
       bgColor: Color(0xFFFFFBEB),
@@ -316,6 +666,50 @@ class GroceryCatalog {
       popularBrands: ['Tata Sampann', 'Rajdhani', 'Fortune'],
       unitType: GroceryUnitType.weight,
       prefilledPackages: ['500g', '1kg', '2kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'urad_dal',
+      name: 'Urad Dal (Split / White)',
+      category: 'Staples & Dals',
+      emoji: '🥣',
+      bgColor: Color(0xFFF1F5F9),
+      imageUrl: 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Tata Sampann', 'Fortune'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg', '2kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'masoor_dal',
+      name: 'Masoor Dal (Red Lentils)',
+      category: 'Staples & Dals',
+      emoji: '🥣',
+      bgColor: Color(0xFFFFF1F2),
+      imageUrl: 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Tata Sampann', 'Fortune'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg', '2kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'besan',
+      name: 'Besan / Gram Flour',
+      category: 'Staples & Dals',
+      emoji: '🌾',
+      bgColor: Color(0xFFFEF3C7),
+      imageUrl: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Tata Sampann', 'Rajdhani', 'Fortune'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg', '2kg'],
+    ),
+    GroceryCatalogItem(
+      id: 'maida',
+      name: 'Maida / All Purpose Flour',
+      category: 'Staples & Dals',
+      emoji: '🌾',
+      bgColor: Color(0xFFF8FAFC),
+      imageUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Rajdhani', 'Fortune'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg'],
     ),
     GroceryCatalogItem(
       id: 'poha',
@@ -360,6 +754,17 @@ class GroceryCatalog {
       popularBrands: ['Tata Salt', 'Aashirvaad', 'Patanjali'],
       unitType: GroceryUnitType.weight,
       prefilledPackages: ['1kg Pack', '2kg Pack'],
+    ),
+    GroceryCatalogItem(
+      id: 'jaggery',
+      name: 'Jaggery / Gud',
+      category: 'Staples & Dals',
+      emoji: '🍯',
+      bgColor: Color(0xFFFEF3C7),
+      imageUrl: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Organic Tattva', 'Local Kolhapur'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g', '1kg'],
     ),
 
     // ── Oils & Masalas ─────────────────────────────────────────────────────
@@ -419,6 +824,17 @@ class GroceryCatalog {
       prefilledPackages: ['100g', '200g', '500g'],
     ),
     GroceryCatalogItem(
+      id: 'dhaniya_powder',
+      name: 'Coriander / Dhaniya Powder',
+      category: 'Oils & Masalas',
+      emoji: '🌿',
+      bgColor: Color(0xFFECFDF5),
+      imageUrl: 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Everest', 'MDH', 'Catch', 'Tata Sampann'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['100g', '200g', '500g'],
+    ),
+    GroceryCatalogItem(
       id: 'garam_masala',
       name: 'Garam Masala',
       category: 'Oils & Masalas',
@@ -429,84 +845,27 @@ class GroceryCatalog {
       unitType: GroceryUnitType.weight,
       prefilledPackages: ['50g', '100g', '200g'],
     ),
-
-    // ── Fresh Vegetables & Fruits ──────────────────────────────────────────
     GroceryCatalogItem(
-      id: 'potato',
-      name: 'Potato (Aloo)',
-      category: 'Vegetables & Fruits',
-      emoji: '🥔',
+      id: 'jeera',
+      name: 'Cumin Seeds (Jeera)',
+      category: 'Oils & Masalas',
+      emoji: '🧂',
       bgColor: Color(0xFFFEF3C7),
-      imageUrl: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?auto=format&fit=crop&w=300&q=80',
-      popularBrands: ['Fresh Local'],
+      imageUrl: 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Catch', 'Tata Sampann', 'MDH'],
       unitType: GroceryUnitType.weight,
-      prefilledPackages: ['500g', '1kg', '2kg', '5kg'],
+      prefilledPackages: ['100g', '200g', '500g'],
     ),
     GroceryCatalogItem(
-      id: 'onion',
-      name: 'Onion (Pyaz)',
-      category: 'Vegetables & Fruits',
-      emoji: '🧅',
-      bgColor: Color(0xFFFCE7F3),
-      imageUrl: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?auto=format&fit=crop&w=300&q=80',
-      popularBrands: ['Fresh Nashik', 'Fresh Local'],
-      unitType: GroceryUnitType.weight,
-      prefilledPackages: ['250g', '500g', '1kg', '2kg', '5kg'],
-    ),
-    GroceryCatalogItem(
-      id: 'tomato',
-      name: 'Tomato (Tamatar)',
-      category: 'Vegetables & Fruits',
-      emoji: '🍅',
-      bgColor: Color(0xFFFEE2E2),
-      imageUrl: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=300&q=80',
-      popularBrands: ['Fresh Local', 'Hybrid / Country'],
-      unitType: GroceryUnitType.weight,
-      prefilledPackages: ['250g', '500g', '1kg', '2kg'],
-    ),
-    GroceryCatalogItem(
-      id: 'ginger_garlic',
-      name: 'Ginger & Garlic (Adrak Lehsun)',
-      category: 'Vegetables & Fruits',
-      emoji: '🧄',
+      id: 'rai',
+      name: 'Mustard Seeds (Rai / Sarson)',
+      category: 'Oils & Masalas',
+      emoji: '🧂',
       bgColor: Color(0xFFF8FAFC),
-      imageUrl: 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?auto=format&fit=crop&w=300&q=80',
-      popularBrands: ['Fresh Local'],
+      imageUrl: 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Catch', 'Tata Sampann'],
       unitType: GroceryUnitType.weight,
-      prefilledPackages: ['100g', '250g', '500g'],
-    ),
-    GroceryCatalogItem(
-      id: 'green_chillies',
-      name: 'Green Chillies & Lemon',
-      category: 'Vegetables & Fruits',
-      emoji: '🌶️',
-      bgColor: Color(0xFFECFDF5),
-      imageUrl: 'https://images.unsplash.com/photo-1525607551316-4a8e16d1f9ba?auto=format&fit=crop&w=300&q=80',
-      popularBrands: ['Fresh Local'],
-      unitType: GroceryUnitType.weight,
-      prefilledPackages: ['100g', '250g'],
-    ),
-    GroceryCatalogItem(
-      id: 'apple',
-      name: 'Fresh Apples',
-      category: 'Vegetables & Fruits',
-      emoji: '🍎',
-      bgColor: Color(0xFFFEE2E2),
-      imageUrl: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&w=300&q=80',
-      popularBrands: ['Shimla', 'Kinnaur', 'Washington'],
-      unitType: GroceryUnitType.weight,
-      prefilledPackages: ['500g', '1kg', '2kg'],
-    ),
-    GroceryCatalogItem(
-      id: 'banana',
-      name: 'Bananas (Kela)',
-      category: 'Vegetables & Fruits',
-      emoji: '🍌',
-      bgColor: Color(0xFFFEF9C3),
-      imageUrl: 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=300&q=80',
-      popularBrands: ['Robusta', 'Yellaki'],
-      unitType: GroceryUnitType.count,
-      prefilledPackages: ['6 Pcs', '12 Pcs (1 Dozen)', '2 Dozen'],
+      prefilledPackages: ['100g', '200g'],
     ),
 
     // ── Snacks & Beverages ─────────────────────────────────────────────────
@@ -565,6 +924,17 @@ class GroceryCatalog {
       unitType: GroceryUnitType.count,
       prefilledPackages: ['1 Pack', '2 Packs', '3 Packs'],
     ),
+    GroceryCatalogItem(
+      id: 'ketchup',
+      name: 'Tomato Ketchup',
+      category: 'Snacks & Beverages',
+      emoji: '🍅',
+      bgColor: Color(0xFFFEE2E2),
+      imageUrl: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Kissan', 'Maggi Pichkoo', 'Heinz'],
+      unitType: GroceryUnitType.weight,
+      prefilledPackages: ['500g Bottle', '1kg Refill'],
+    ),
 
     // ── Cleaning & Household ───────────────────────────────────────────────
     GroceryCatalogItem(
@@ -598,7 +968,7 @@ class GroceryCatalog {
       imageUrl: 'https://images.unsplash.com/photo-1585421514738-01798e348b17?auto=format&fit=crop&w=300&q=80',
       popularBrands: ['Vim', 'Pril', 'Exo'],
       unitType: GroceryUnitType.liquid,
-      prefilledPackages: ['250ml', '500ml', '750ml Refill'],
+      prefilledPackages: ['250ml', '500ml', '750ml Refill', '1 Bar'],
     ),
     GroceryCatalogItem(
       id: 'toothpaste',
@@ -621,6 +991,39 @@ class GroceryCatalog {
       popularBrands: ['Clinic Plus', 'Head & Shoulders', 'Dove', 'Pantene'],
       unitType: GroceryUnitType.liquid,
       prefilledPackages: ['180ml Bottle', '340ml Bottle', '650ml Pump'],
+    ),
+    GroceryCatalogItem(
+      id: 'floor_cleaner',
+      name: 'Floor Cleaner (Lizol / Surface)',
+      category: 'Cleaning & Household',
+      emoji: '🪣',
+      bgColor: Color(0xFFFEF3C7),
+      imageUrl: 'https://images.unsplash.com/photo-1583947215259-38e31be8751f?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Lizol', 'Dettol', 'Colin'],
+      unitType: GroceryUnitType.liquid,
+      prefilledPackages: ['500ml', '1L', '2L'],
+    ),
+    GroceryCatalogItem(
+      id: 'toilet_cleaner',
+      name: 'Toilet Cleaner (Harpic)',
+      category: 'Cleaning & Household',
+      emoji: '🚽',
+      bgColor: Color(0xFFE0E7FF),
+      imageUrl: 'https://images.unsplash.com/photo-1585421514738-01798e348b17?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Harpic Power Plus', 'Domex'],
+      unitType: GroceryUnitType.liquid,
+      prefilledPackages: ['500ml', '1L'],
+    ),
+    GroceryCatalogItem(
+      id: 'garbage_bags',
+      name: 'Dustbin Garbage Bags',
+      category: 'Cleaning & Household',
+      emoji: '🗑️',
+      bgColor: Color(0xFFF1F5F9),
+      imageUrl: 'https://images.unsplash.com/photo-1583947215259-38e31be8751f?auto=format&fit=crop&w=300&q=80',
+      popularBrands: ['Shalimar', 'Presto'],
+      unitType: GroceryUnitType.count,
+      prefilledPackages: ['1 Roll (30 Bags)', '2 Rolls (60 Bags)'],
     ),
   ];
 
@@ -670,6 +1073,7 @@ class GroceryCatalog {
           continue;
         }
         final details = m.group(2) ?? '';
+        String pkg = '';
         String qty = '';
         String kg = '';
         String gram = '';
@@ -681,13 +1085,22 @@ class GroceryCatalog {
         if (qtyMatch != null) qty = qtyMatch.group(1) ?? '';
 
         final kgMatch = RegExp(r'([0-9.]+)\s*kg', caseSensitive: false).firstMatch(details);
-        if (kgMatch != null) kg = kgMatch.group(1) ?? '';
+        if (kgMatch != null) {
+          kg = kgMatch.group(1) ?? '';
+          pkg = '${kg}kg';
+        }
 
         final gMatch = RegExp(r'([0-9.]+)\s*g\b', caseSensitive: false).firstMatch(details);
-        if (gMatch != null) gram = gMatch.group(1) ?? '';
+        if (gMatch != null) {
+          gram = gMatch.group(1) ?? '';
+          pkg = '${gram}g';
+        }
 
         final lMatch = RegExp(r'([0-9.]+)\s*L', caseSensitive: false).firstMatch(details);
-        if (lMatch != null) litr = lMatch.group(1) ?? '';
+        if (lMatch != null) {
+          litr = lMatch.group(1) ?? '';
+          pkg = '${litr}L';
+        }
 
         final rupeeMatch = RegExp(r'₹\s*([0-9.]+)', caseSensitive: false).firstMatch(details);
         if (rupeeMatch != null) rupee = rupeeMatch.group(1) ?? '';
@@ -701,6 +1114,7 @@ class GroceryCatalog {
           category: 'Groceries',
           imageUrl: '',
           emoji: '🛒',
+          package: pkg,
           qty: qty,
           kg: kg,
           gram: gram,

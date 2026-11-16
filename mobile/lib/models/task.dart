@@ -391,6 +391,15 @@ class Task {
   bool get isDeliveryCategory =>
       const {'delivery', 'pickup', 'transport', 'moving'}.contains(category.toLowerCase());
 
+  /// True for categories under Repair (where service materials/parts are paid separately by the poster).
+  static bool isRepairCategory(String categoryId) {
+    const repairCats = {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'};
+    return repairCats.contains(categoryId.toLowerCase());
+  }
+
+  /// Whether this task is in the repair category hierarchy.
+  bool get isRepairCategoryType => isRepairCategory(category);
+
   /// The effective pickup address (or standard task address).
   String get effectivePickupAddress {
     if (pickupAddress != null && pickupAddress!.trim().isNotEmpty) {

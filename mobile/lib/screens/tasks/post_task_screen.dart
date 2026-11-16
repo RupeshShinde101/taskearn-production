@@ -2139,6 +2139,21 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           missing.add('Drop Address');
           firstInvalidFocus ??= _dropFocus;
         }
+        if (_pickupAddrCtrl.text.trim().isNotEmpty &&
+            _dropAddrCtrl.text.trim().isNotEmpty &&
+            _pickupAddrCtrl.text.trim().toLowerCase() == _dropAddrCtrl.text.trim().toLowerCase()) {
+          _scrollCtrl.animateTo(0,
+              duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+          WidgetsBinding.instance.addPostFrameCallback((_) => _dropFocus.requestFocus());
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text('Drop address must be different from pickup address.'),
+            backgroundColor: AppColors.danger,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ));
+          return;
+        }
       }
       // Request focus on the first invalid field after next frame
       if (firstInvalidFocus != null) {
@@ -2438,9 +2453,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     } else if (_isDelivery) {
       final pickup = _pickupAddrCtrl.text.trim();
       final drop   = _dropAddrCtrl.text.trim();
-      combinedAddress = (pickup.isNotEmpty || drop.isNotEmpty)
-          ? 'Pickup: $pickup\nDrop: $drop'
-          : _locationLabel;
+      combinedAddress = pickup.isNotEmpty ? pickup : (drop.isNotEmpty ? drop : _locationLabel);
     } else {
       final typed    = _addressCtrl.text.trim();
       final flatName  = _flatNameCtrl.text.trim();
@@ -2482,18 +2495,24 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         },
         'separate_costs': _freelancerQuote?.separateCostsTitle,
       },
+      if (Task.isRepairCategory(_selectedCategory)) ...{
+        'separate_costs': 'Materials & spare parts required for service (paid separately by poster)',
+      },
       if (_isDelivery) ...{
         'vehicle': _selectedCategory == 'delivery'
             ? _deliveryVehicle
             : (_selectedCategory == 'moving'
                 ? (_deliveryVehicle == 'truck' ? 'truck' : 'tempo')
                 : 'auto'),
-        if (_pickupAddrCtrl.text.trim().isNotEmpty)
+        if (_pickupAddrCtrl.text.trim().isNotEmpty) ...{
           'pickup_address': _pickupAddrCtrl.text.trim(),
+          'pickupAddress': _pickupAddrCtrl.text.trim(),
+        },
         if (_dropAddrCtrl.text.trim().isNotEmpty) ...{
           'delivery_address': _dropAddrCtrl.text.trim(),
           'drop_location_address': _dropAddrCtrl.text.trim(),
           'drop_address': _dropAddrCtrl.text.trim(),
+          'dropAddress': _dropAddrCtrl.text.trim(),
         },
         'drop_location': {
           'lat': _dropLocation?.latitude,
@@ -2675,6 +2694,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       } else {
         lines.add('• Excluded Costs: ${q.separateCostsTitle} (separate from fee)');
       }
+    }
+    if (Task.isRepairCategory(_selectedCategory)) {
+      lines.add('• Materials/Parts: Paid separately by task poster (excluded from budget)');
     }
     if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') {
       final cap = _currentVehicleCapacity;
@@ -3506,10 +3528,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         child: Text(
                           'Post a Task',
                           style: TextStyle(
-                            fontSize: 28,
+                            fontSize: 32,
                             fontWeight: FontWeight.w800,
                             color: Color(0xFF102A56),
-                            letterSpacing: -0.5,
+                            letterSpacing: -0.6,
                           ),
                           maxLines: 1,
                         ),
@@ -3518,9 +3540,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       const Text(
                         'Tell us what you need. We\'ll help you find the right person.',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 13.5,
                           color: Color(0xFF52627A),
                           height: 1.35,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
@@ -3937,6 +3960,67 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Prominent Section Header for Budget & Price Breakdown
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: Color(0xFF4F46E5),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Budget & Price Breakdown',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF102A56),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Set your offer and view detailed price breakdown',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF52627A),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         const Text(
           'Budget',
           style: TextStyle(
@@ -4023,6 +4107,69 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Prominent Section Header for Location
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  _isDelivery ? Icons.local_shipping_rounded : Icons.location_on_rounded,
+                  color: const Color(0xFF2563EB),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _isDelivery ? 'Pickup & Delivery Location' : 'Task Location',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF102A56),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _isDelivery
+                          ? 'Enter pickup and drop addresses (must be different)'
+                          : 'Set where the task needs to be performed',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF52627A),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
 // ── Address fields (each with GPS + Map inline buttons) ──────
               if (_isDelivery) ...[
                 // ── Pickup ─────────────────────────────────────────────
@@ -4082,9 +4229,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     suffixIconConstraints:
                         const BoxConstraints(maxHeight: 48),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Pickup address is required'
-                      : null,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Pickup address is required';
+                    }
+                    if (_dropAddrCtrl.text.trim().isNotEmpty &&
+                        v.trim().toLowerCase() == _dropAddrCtrl.text.trim().toLowerCase()) {
+                      return 'Pickup address must be different from drop address';
+                    }
+                    return null;
+                  },
                 ),
                 LocationSuggestionsDropdown(
                   suggestions: _pickupSuggestions,
@@ -4216,9 +4370,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                     suffixIconConstraints: const BoxConstraints(maxHeight: 48),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Drop address is required'
-                      : null,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Drop address is required';
+                    }
+                    if (_pickupAddrCtrl.text.trim().isNotEmpty &&
+                        v.trim().toLowerCase() == _pickupAddrCtrl.text.trim().toLowerCase()) {
+                      return 'Drop address must be different from pickup address';
+                    }
+                    return null;
+                  },
                 ),
                 LocationSuggestionsDropdown(
                   suggestions: _dropSuggestions,
@@ -5146,6 +5307,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               serviceCharge: charge,
               posterFee: posterFee,
               totalCost: total,
+              isRepair: Task.isRepairCategory(_selectedCategory),
             ),
             if (_isFreelancer && _freelancerQuote != null) ...[
               const SizedBox(height: 6),
@@ -5164,6 +5326,64 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildRepairMaterialsBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFDE68A), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFB45309).withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.all(Radius.circular(10)),
+            ),
+            child: const Icon(Icons.handyman_rounded, color: Color(0xFFD97706), size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Service Materials Policy',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                    color: Color(0xFF92400E),
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Materials and spare parts required for repair services are paid directly by the task poster and will NOT be included in this budget value.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF78350F),
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -5353,6 +5573,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       ] else if (_selectedCategory == 'moving') ...[
                         const SizedBox(height: 16),
                         _buildMovingVehicleSelector(),
+                      ] else if (Task.isRepairCategory(_selectedCategory)) ...[
+                        const SizedBox(height: 16),
+                        _buildRepairMaterialsBanner(),
                       ] else if (_isDelivery) ...[
                         const SizedBox(height: 16),
                         _buildDistanceCategoryRateBanner(),

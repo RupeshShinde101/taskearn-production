@@ -8,6 +8,8 @@ class TaskPriceBreakdownCard extends StatelessWidget {
   final double serviceCharge;
   final double posterFee;
   final double totalCost;
+  final bool isRepair;
+  final String? customNote;
 
   const TaskPriceBreakdownCard({
     super.key,
@@ -15,6 +17,8 @@ class TaskPriceBreakdownCard extends StatelessWidget {
     this.serviceCharge = 0,
     required this.posterFee,
     required this.totalCost,
+    this.isRepair = false,
+    this.customNote,
   });
 
   @override
@@ -140,6 +144,39 @@ class TaskPriceBreakdownCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
+          if (isRepair) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFDE68A), width: 1.2),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.handyman_rounded,
+                    size: 15,
+                    color: Color(0xFFD97706),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Materials Policy: Spare parts and materials required for repair services will be paid directly by the task poster and are NOT included in the budget value.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Color(0xFF92400E),
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
 
           // Escrow protection guarantee note
           Container(

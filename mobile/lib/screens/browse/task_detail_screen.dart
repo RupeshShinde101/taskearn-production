@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,7 +12,6 @@ import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/confirm_payment_dialog.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
-import '../../widgets/task_price_breakdown_card.dart';
 import '../tasks/edit_task_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
@@ -802,7 +800,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
                   child: Text(
-                    task.effectiveDropAddress ?? 'Delivery address specified by poster',
+                    GroceryCatalog.unescapeHtml(
+                      task.effectiveDropAddress ?? 'Delivery address specified by poster',
+                    ),
                     style: const TextStyle(
                       color: Color(0xFF102A56),
                       fontSize: 14,
@@ -850,9 +850,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
                   child: Text(
-                    task.effectivePickupAddress.isNotEmpty
-                        ? task.effectivePickupAddress
-                        : (task.address ?? 'Store address specified by poster'),
+                    GroceryCatalog.unescapeHtml(
+                      task.effectivePickupAddress.isNotEmpty
+                          ? task.effectivePickupAddress
+                          : (task.address ?? 'Store address specified by poster'),
+                    ),
                     style: const TextStyle(
                       color: Color(0xFF102A56),
                       fontSize: 14,
@@ -861,34 +863,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     ),
                   ),
                 ),
-                const Divider(height: 28),
-
-                // Grocery Price Breakdown
-                Builder(builder: (context) {
-                  double? distKm;
-                  if (task.latitude != 0 &&
-                      task.longitude != 0 &&
-                      task.dropLatitude != null &&
-                      task.dropLongitude != null &&
-                      task.dropLatitude != 0 &&
-                      task.dropLongitude != 0) {
-                    final m = Geolocator.distanceBetween(
-                      task.latitude,
-                      task.longitude,
-                      task.dropLatitude!,
-                      task.dropLongitude!,
-                    );
-                    distKm = double.parse(((m / 1000.0) * 1.22).toStringAsFixed(1));
-                  }
-                  return TaskPriceBreakdownCard(
-                    budget: task.budget,
-                    serviceCharge: 0,
-                    posterFee: 12.0,
-                    totalCost: task.budget + 12.0,
-                    isGrocery: true,
-                    distanceKm: distKm,
-                  );
-                }),
               ] else ...[
                 const Text(
                   'Location',

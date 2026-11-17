@@ -99,4 +99,38 @@ void main() {
     expect(find.text('₹12'), findsOneWidget);
     expect(groceryTask.posterFee, 12.0);
   });
+
+  test('GroceryCatalog.parseGroceryItems parses HTML-escaped backend descriptions without leaking Store/Handling bullets', () {
+    const htmlEscapedDesc = '''• Vehicle: Bike / Scooty (Max Weight: 20kg, Cart: 1.5kg)
+• Store / Supermarket: Apna Grocery &amp; Provision Store
+• Handling &amp; Shopping Charge: ₹30 included in delivery budget
+• Grocery Items Cost: Paid separately by task poster on actual bill (excluded from delivery budget)
+• Selected Grocery Items (2 items):
+  - Fresh Palak (Spinach) (1 Bunch, Qty: 2, 500 g, Brand: Local Farm, ₹40)
+  - Amul Taaza Milk (1L, Qty: 1, Brand: Amul, ₹56)
+[GROCERY_ITEMS][{&quot;id&quot;:&quot;palak&quot;,&quot;name&quot;:&quot;Fresh Palak (Spinach)&quot;,&quot;category&quot;:&quot;Vegetables &amp; Fruits&quot;,&quot;emoji&quot;:&quot;🥬&quot;,&quot;package&quot;:&quot;1 Bunch&quot;,&quot;qty&quot;:&quot;2&quot;,&quot;gram&quot;:&quot;500&quot;,&quot;brand&quot;:&quot;Local Farm&quot;,&quot;rupee&quot;:&quot;40&quot;},{&quot;id&quot;:&quot;amul_milk&quot;,&quot;name&quot;:&quot;Amul Taaza Milk&quot;,&quot;category&quot;:&quot;Dairy &amp; Eggs&quot;,&quot;emoji&quot;:&quot;🥛&quot;,&quot;package&quot;:&quot;1L&quot;,&quot;qty&quot;:&quot;1&quot;,&quot;brand&quot;:&quot;Amul&quot;,&quot;rupee&quot;:&quot;56&quot;}][/GROCERY_ITEMS]''';
+
+    final items = GroceryCatalog.parseGroceryItems(null, htmlEscapedDesc);
+    expect(items.length, 2);
+    expect(items[0].name, 'Fresh Palak (Spinach)');
+    expect(items[0].qty, '2');
+    expect(items[0].gram, '500');
+    expect(items[0].brand, 'Local Farm');
+    expect(items[0].rupee, '40');
+    expect(items[1].name, 'Amul Taaza Milk');
+    expect(items.any((e) => e.name.toLowerCase().contains('store')), isFalse);
+    expect(items.any((e) => e.name.toLowerCase().contains('handling')), isFalse);
+
+    // Fallback test when [GROCERY_ITEMS] JSON tag is absent
+    const descNoJson = '''• Vehicle: Bike / Scooty
+• Store / Supermarket: Apna Grocery &amp; Provision Store
+• Handling &amp; Shopping Charge: ₹30 included in delivery budget
+• Selected Grocery Items (1 items):
+  - Fresh Palak (Spinach) (Qty: 2, 500 g, ₹40)''';
+    final fallbackItems = GroceryCatalog.parseGroceryItems(null, descNoJson);
+    expect(fallbackItems.length, 1);
+    expect(fallbackItems[0].name, 'Fresh Palak (Spinach)');
+    expect(fallbackItems[0].qty, '2');
+    expect(fallbackItems[0].gram, '500');
+  });
 }

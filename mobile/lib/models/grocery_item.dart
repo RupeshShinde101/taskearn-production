@@ -1055,6 +1055,20 @@ class GroceryCatalog {
     ),
   ];
 
+  /// Unescapes HTML entities that the backend's `html_escape()` applies to descriptions/addresses.
+  static String unescapeHtml(String s) {
+    if (!s.contains('&')) return s;
+    return s
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#34;', '"')
+        .replaceAll('&#x27;', "'")
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&');
+  }
+
   /// Serializes grocery items into a safe JSON tag for description storage.
   static String encodeGroceryItemsJson(List<SelectedGroceryItem> items) {
     return '[GROCERY_ITEMS]${jsonEncode(items.map((e) => e.toCompactJson()).toList())}[/GROCERY_ITEMS]';
@@ -1074,10 +1088,11 @@ class GroceryCatalog {
 
     // Try parsing encoded JSON block inside description: [GROCERY_ITEMS]...[/GROCERY_ITEMS]
     if (description != null && description.isNotEmpty) {
-      final match = RegExp(r'\[GROCERY_ITEMS\](.*?)\[/GROCERY_ITEMS\]', dotAll: true).firstMatch(description);
+      final cleanDesc = unescapeHtml(description);
+      final match = RegExp(r'\[GROCERY_ITEMS\](.*?)\[/GROCERY_ITEMS\]', dotAll: true, caseSensitive: false).firstMatch(cleanDesc);
       if (match != null) {
         try {
-          final decoded = jsonDecode(match.group(1)!);
+          final decoded = jsonDecode(match.group(1)!.trim());
           if (decoded is List) {
             for (final item in decoded) {
               if (item is Map) {
@@ -1089,69 +1104,124 @@ class GroceryCatalog {
         } catch (_) {}
       }
 
-      // Fallback: parse bullet points under "Grocery Items:"
-      final bulletMatches = RegExp(r'•\s*([^\n\(\)]+?)(?:\s*\((.*?)\))?(?:\n|$)', caseSensitive: false).allMatches(description);
+      // Fallback 1: parse indented dash lines ("  - Item Name (details)")
+      final descWithoutJson = cleanDesc.replaceAll(
+        RegExp(r'\[GROCERY_ITEMS\].*?\[/GROCERY_ITEMS\]', dotAll: true, caseSensitive: false),
+        '',
+      );
+      final dashMatches = RegExp(r'^\s*-\s+([^\n]+)$', multiLine: true).allMatches(descWithoutJson);
+      for (final m in dashMatches) {
+        final line = m.group(1)?.trim() ?? '';
+        if (line.isEmpty) continue;
+        final parsed = _parseFormattedLine(line);
+        if (parsed != null) list.add(parsed);
+      }
+      if (list.isNotEmpty) return list;
+
+      // Fallback 2: parse non-metadata bullet points
+      const skipPrefixes = [
+        'vehicle',
+        'store',
+        'supermarket',
+        'handling',
+        'grocery item',
+        'selected grocery',
+        'materials',
+        'pricing',
+        'excluded',
+        'domain',
+        'note',
+      ];
+      final bulletMatches = RegExp(r'•\s*([^\n]+)').allMatches(descWithoutJson);
       for (final m in bulletMatches) {
-        final rawName = m.group(1)?.trim() ?? '';
-        if (rawName.isEmpty ||
-            rawName.toLowerCase().startsWith('vehicle') ||
-            rawName.toLowerCase().startsWith('grocery item') ||
-            rawName.toLowerCase().startsWith('materials') ||
-            rawName.toLowerCase().startsWith('pricing')) {
+        final line = m.group(1)?.trim() ?? '';
+        final lower = line.toLowerCase();
+        if (line.isEmpty || skipPrefixes.any((p) => lower.startsWith(p))) {
           continue;
         }
-        final details = m.group(2) ?? '';
-        String pkg = '';
-        String qty = '';
-        String kg = '';
-        String gram = '';
-        String litr = '';
-        String rupee = '';
-        String brand = '';
-
-        final qtyMatch = RegExp(r'Qty:\s*([0-9]+)', caseSensitive: false).firstMatch(details);
-        if (qtyMatch != null) qty = qtyMatch.group(1) ?? '';
-
-        final kgMatch = RegExp(r'([0-9.]+)\s*kg', caseSensitive: false).firstMatch(details);
-        if (kgMatch != null) {
-          kg = kgMatch.group(1) ?? '';
-          pkg = '${kg}kg';
-        }
-
-        final gMatch = RegExp(r'([0-9.]+)\s*g\b', caseSensitive: false).firstMatch(details);
-        if (gMatch != null) {
-          gram = gMatch.group(1) ?? '';
-          pkg = '${gram}g';
-        }
-
-        final lMatch = RegExp(r'([0-9.]+)\s*L', caseSensitive: false).firstMatch(details);
-        if (lMatch != null) {
-          litr = lMatch.group(1) ?? '';
-          pkg = '${litr}L';
-        }
-
-        final rupeeMatch = RegExp(r'₹\s*([0-9.]+)', caseSensitive: false).firstMatch(details);
-        if (rupeeMatch != null) rupee = rupeeMatch.group(1) ?? '';
-
-        final brandMatch = RegExp(r'Brand:\s*([^,)]+)', caseSensitive: false).firstMatch(details);
-        if (brandMatch != null) brand = brandMatch.group(1)?.trim() ?? '';
-
-        list.add(SelectedGroceryItem(
-          id: rawName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_'),
-          name: rawName,
-          category: 'Groceries',
-          imageUrl: '',
-          emoji: '🛒',
-          package: pkg,
-          qty: qty,
-          kg: kg,
-          gram: gram,
-          litr: litr,
-          rupee: rupee,
-          brand: brand,
-        ));
+        final parsed = _parseFormattedLine(line);
+        if (parsed != null) list.add(parsed);
       }
     }
     return list;
+  }
+
+  static SelectedGroceryItem? _parseFormattedLine(String line) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return null;
+
+    // Supports formats like "Fresh Palak (Spinach) (1 Bunch, Qty: 2, 500 g, Brand: X, ₹40)"
+    // or "Fresh Palak - 500 g, Qty: 2"
+    String rawName = trimmed;
+    String details = '';
+    final parenMatch = RegExp(r'^(.+?)\s*\(([^()]*?(?:Qty:|kg|g\b|L\b|Brand:|₹|Pack|Bunch|Piece|Bottle|Box)[^()]*)\)\s*$', caseSensitive: false)
+        .firstMatch(trimmed);
+    if (parenMatch != null) {
+      rawName = parenMatch.group(1)?.trim() ?? trimmed;
+      details = parenMatch.group(2)?.trim() ?? '';
+    } else if (trimmed.contains(' — ')) {
+      final parts = trimmed.split(' — ');
+      rawName = parts.first.trim();
+      details = parts.sublist(1).join(' — ').trim();
+    } else if (trimmed.contains(': ')) {
+      final parts = trimmed.split(': ');
+      rawName = parts.first.trim();
+      details = parts.sublist(1).join(': ').trim();
+    }
+
+    String pkg = '';
+    String qty = '';
+    String kg = '';
+    String gram = '';
+    String litr = '';
+    String rupee = '';
+    String brand = '';
+
+    final qtyMatch = RegExp(r'Qty:\s*([0-9.]+)', caseSensitive: false).firstMatch(details);
+    if (qtyMatch != null) qty = qtyMatch.group(1) ?? '';
+
+    final kgMatch = RegExp(r'([0-9.]+)\s*kg\b', caseSensitive: false).firstMatch(details);
+    if (kgMatch != null) kg = kgMatch.group(1) ?? '';
+
+    final gMatch = RegExp(r'([0-9.]+)\s*g(?:ram|rams|m)?\b', caseSensitive: false).firstMatch(details);
+    if (gMatch != null) gram = gMatch.group(1) ?? '';
+
+    final lMatch = RegExp(r'([0-9.]+)\s*(?:L|ltr|litr|litre|ml)\b', caseSensitive: false).firstMatch(details);
+    if (lMatch != null) litr = lMatch.group(1) ?? '';
+
+    final rupeeMatch = RegExp(r'₹\s*([0-9.]+)', caseSensitive: false).firstMatch(details);
+    if (rupeeMatch != null) rupee = rupeeMatch.group(1) ?? '';
+
+    final brandMatch = RegExp(r'Brand:\s*([^,)]+)', caseSensitive: false).firstMatch(details);
+    if (brandMatch != null) brand = brandMatch.group(1)?.trim() ?? '';
+
+    String imageUrl = '';
+    String category = 'Groceries';
+    String emoji = '🛒';
+    String id = rawName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+    for (final c in allItems) {
+      if (c.name.toLowerCase() == rawName.toLowerCase()) {
+        id = c.id;
+        imageUrl = c.imageUrl;
+        category = c.category;
+        emoji = c.emoji;
+        break;
+      }
+    }
+
+    return SelectedGroceryItem(
+      id: id,
+      name: rawName,
+      category: category,
+      imageUrl: imageUrl,
+      emoji: emoji,
+      package: pkg,
+      qty: qty,
+      kg: kg,
+      gram: gram,
+      litr: litr,
+      rupee: rupee,
+      brand: brand,
+    );
   }
 }

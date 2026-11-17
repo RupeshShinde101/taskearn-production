@@ -678,7 +678,12 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
     );
   }
 
+  bool _isSavingAndRedirecting = false;
+
   void _saveAndRedirectToPostTask() {
+    if (_isSavingAndRedirecting || !mounted) return;
+    _isSavingAndRedirecting = true;
+
     final totalW = GroceryCatalog.calculateTotalWeightKg(_selectedMap.values);
     if (totalW > GroceryCatalog.maxTwoWheelerWeightKg) {
       _showWeightLimitExceededDialog(
@@ -686,6 +691,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
         attemptedWeight: totalW,
         itemWeight: 0,
       );
+      _isSavingAndRedirecting = false;
       return;
     }
     final selectedList = _selectedMap.values.toList();
@@ -712,30 +718,36 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
     final isNearLimit = totalWeight >= 16.0;
     final isOverLimit = totalWeight > GroceryCatalog.maxTwoWheelerWeightKg;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F8FF),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 1,
-        titleSpacing: 0,
-        centerTitle: false,
-        title: const FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Text(
-            'Select Grocery Items',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 17.5,
-              color: Color(0xFF102A56),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _saveAndRedirectToPostTask();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF4F8FF),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 1,
+          titleSpacing: 0,
+          centerTitle: false,
+          title: const FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Select Grocery Items',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 17.5,
+                color: Color(0xFF102A56),
+              ),
             ),
           ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF102A56)),
-          onPressed: _saveAndRedirectToPostTask,
-        ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF102A56)),
+            onPressed: _isSavingAndRedirecting ? null : _saveAndRedirectToPostTask,
+          ),
         actions: [
           if (totalAdded > 0)
             Padding(
@@ -1132,7 +1144,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                 ],
               ),
               child: ElevatedButton.icon(
-                onPressed: _saveAndRedirectToPostTask,
+                onPressed: _isSavingAndRedirecting ? null : _saveAndRedirectToPostTask,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,
                   foregroundColor: Colors.white,
@@ -1149,6 +1161,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

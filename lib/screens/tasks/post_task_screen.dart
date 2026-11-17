@@ -1396,12 +1396,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         if (mounted && _selectedGroceryItems.isEmpty) {
           await _openGroceryItemPicker();
         }
-      } else if (_selectedGroceryItems.isNotEmpty && _scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          320.0,
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOutCubic,
-        );
+      } else if (_selectedGroceryItems.isNotEmpty) {
+        _safeScrollTo(320.0);
       }
     });
   }
@@ -2256,8 +2252,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     // Always re-check title on every submit click (not relying on form cache)
     final titleErr = _validateTaskTitle(_titleCtrl.text);
     if (titleErr != null) {
-      _scrollCtrl.animateTo(0,
-          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      _safeScrollToTop();
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _titleFocus.requestFocus());
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2272,8 +2267,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     if (!_formKey.currentState!.validate()) {
       // Scroll to top and jump cursor to the first invalid field
-      _scrollCtrl.animateTo(0,
-          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      _safeScrollToTop();
       final missing = <String>[];
       FocusNode? firstInvalidFocus;
       if (_titleCtrl.text.trim().length < 5) {
@@ -2308,8 +2302,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         if (_pickupAddrCtrl.text.trim().isNotEmpty &&
             _dropAddrCtrl.text.trim().isNotEmpty &&
             _pickupAddrCtrl.text.trim().toLowerCase() == _dropAddrCtrl.text.trim().toLowerCase()) {
-          _scrollCtrl.animateTo(0,
-              duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+          _safeScrollToTop();
           WidgetsBinding.instance.addPostFrameCallback((_) => _dropFocus.requestFocus());
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: const Text('Drop address must be different from pickup address.'),
@@ -3059,6 +3052,43 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  void _safeScrollTo(double offset) {
+    if (!mounted) return;
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      try {
+        final pos = _scrollCtrl.position;
+        if (!pos.hasContentDimensions) return;
+        final minE = pos.minScrollExtent;
+        final maxE = pos.maxScrollExtent;
+        if (minE >= maxE) return;
+        final target = offset.clamp(minE, maxE);
+        if ((pos.pixels - target).abs() < 5) return;
+        _scrollCtrl.animateTo(
+          target,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      } catch (e) {
+        debugPrint('[PostTask] Safe scroll ignored: $e');
+      }
+    });
+  }
+
+  void _safeScrollToTop() {
+    if (!mounted) return;
+    try {
+      if (!_scrollCtrl.hasClients) return;
+      final pos = _scrollCtrl.position;
+      if (!pos.hasContentDimensions) return;
+      _scrollCtrl.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } catch (_) {}
+  }
+
   bool _isOpeningGroceryPicker = false;
   Future<void> _openGroceryItemPicker() async {
     if (_isOpeningGroceryPicker || !mounted) return;
@@ -3078,17 +3108,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _compileDescriptionFromForm();
         if (_dropLocation != null && _dropAddrCtrl.text.isNotEmpty) {
           _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+        } else {
+          _initGroceryDefaults();
         }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollCtrl.hasClients) {
-            _scrollCtrl.animateTo(
-              320.0,
-              duration: const Duration(milliseconds: 350),
-              curve: Curves.easeOutCubic,
-            );
-          }
-        });
+        _safeScrollTo(320.0);
       }
+    } catch (e) {
+      debugPrint('[PostTask] _openGroceryItemPicker error: $e');
     } finally {
       _isOpeningGroceryPicker = false;
     }

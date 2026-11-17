@@ -5440,17 +5440,21 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       ),
                       const SizedBox(width: 8),
                       // Change Store Button with Dropdown arrow
-                      OutlinedButton.icon(
-                        onPressed: () => setState(() => _isStoreDropdownOpen = true),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF2563EB),
-                          side: const BorderSide(color: Color(0xFF93C5FD)),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          visualDensity: VisualDensity.compact,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton.icon(
+                          onPressed: () => setState(() => _isStoreDropdownOpen = true),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: Size.zero,
+                            foregroundColor: const Color(0xFF2563EB),
+                            side: const BorderSide(color: Color(0xFF93C5FD)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                            visualDensity: VisualDensity.compact,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.arrow_drop_down_rounded, size: 20),
+                          label: const Text('Change', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                         ),
-                        icon: const Icon(Icons.arrow_drop_down_rounded, size: 20),
-                        label: const Text('Change', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                       ),
                     ],
                   ),
@@ -5490,6 +5494,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _pickStoreFromGoogleMap,
                           style: OutlinedButton.styleFrom(
+                            minimumSize: Size.zero,
                             foregroundColor: const Color(0xFF15803D),
                             side: const BorderSide(color: Color(0xFF86EFAC), width: 1.2),
                             backgroundColor: const Color(0xFFF0FDF4),
@@ -5619,19 +5624,23 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            ElevatedButton(
-                              onPressed: () {
-                                if (_customStoreCtrl.text.trim().isNotEmpty) {
-                                  _setCustomGroceryStore(_customStoreCtrl.text.trim());
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF2563EB),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            SizedBox(
+                              height: 36,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  if (_customStoreCtrl.text.trim().isNotEmpty) {
+                                    _setCustomGroceryStore(_customStoreCtrl.text.trim());
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: Size.zero,
+                                  backgroundColor: const Color(0xFF2563EB),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                child: const Text('Select', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                               ),
-                              child: const Text('Select', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                             ),
                           ],
                         ),

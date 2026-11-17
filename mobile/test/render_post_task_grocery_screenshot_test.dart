@@ -10,6 +10,7 @@ import 'package:workmate4u/providers/auth_provider.dart';
 import 'package:workmate4u/providers/task_provider.dart';
 import 'package:workmate4u/screens/tasks/post_task_screen.dart';
 import 'package:workmate4u/services/storage_service.dart';
+import 'package:workmate4u/theme/app_theme.dart';
 
 void main() {
   testWidgets('Render PostTaskScreen grocery view and save screenshot', (WidgetTester tester) async {
@@ -29,6 +30,7 @@ void main() {
         ],
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
           home: RepaintBoundary(
             key: repaintBoundaryKey,
             child: const PostTaskScreen(),

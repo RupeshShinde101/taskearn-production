@@ -8,6 +8,7 @@ import 'package:workmate4u/providers/task_provider.dart';
 import 'package:workmate4u/screens/tasks/grocery_item_picker_screen.dart';
 import 'package:workmate4u/screens/tasks/post_task_screen.dart';
 import 'package:workmate4u/services/storage_service.dart';
+import 'package:workmate4u/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -52,6 +53,7 @@ void main() {
           ChangeNotifierProvider(create: (_) => TaskProvider()),
         ],
         child: MaterialApp(
+          theme: AppTheme.lightTheme,
           home: PostTaskScreen(
             initialCategory: 'groceries',
             initialGroceryItems: initialItems,

@@ -24,8 +24,13 @@ import '../../widgets/vehicle_task_posting_dialog.dart';
 
 class PostTaskScreen extends StatefulWidget {
   final String? initialCategory;
+  final List<SelectedGroceryItem>? initialGroceryItems;
 
-  const PostTaskScreen({super.key, this.initialCategory});
+  const PostTaskScreen({
+    super.key,
+    this.initialCategory,
+    this.initialGroceryItems,
+  });
 
   @override
   State<PostTaskScreen> createState() => _PostTaskScreenState();
@@ -1351,10 +1356,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _addressCtrl.addListener(_onLocationAreaChanged);
     _pickupAddrCtrl.addListener(_onLocationAreaChanged);
     _dropAddrCtrl.addListener(_onLocationAreaChanged);
+    if (widget.initialGroceryItems != null && widget.initialGroceryItems!.isNotEmpty) {
+      _selectedGroceryItems = List.from(widget.initialGroceryItems!);
+    }
     if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
       _applySelectedCategory(widget.initialCategory!);
     } else if (Task.isGroceryCategory(_selectedCategory)) {
       _initGroceryDefaults();
+    }
+    if (_selectedGroceryItems.isNotEmpty) {
+      _compileDescriptionFromForm();
     }
     // Auto-fill description with prompts for the default category on first open
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -1379,11 +1390,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (widget.initialCategory != null &&
           Task.isGroceryCategory(widget.initialCategory!) &&
           _selectedGroceryItems.isEmpty &&
+          (widget.initialGroceryItems == null || widget.initialGroceryItems!.isEmpty) &&
           mounted) {
         await Future.delayed(const Duration(milliseconds: 350));
         if (mounted && _selectedGroceryItems.isEmpty) {
           await _openGroceryItemPicker();
         }
+      } else if (_selectedGroceryItems.isNotEmpty && _scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          320.0,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        );
       }
     });
   }
@@ -3061,6 +3079,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         if (_dropLocation != null && _dropAddrCtrl.text.isNotEmpty) {
           _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
         }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollCtrl.hasClients) {
+            _scrollCtrl.animateTo(
+              320.0,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+            );
+          }
+        });
       }
     } finally {
       _isOpeningGroceryPicker = false;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/grocery_item.dart';
+import 'post_task_screen.dart';
 
 class GroceryItemPickerScreen extends StatefulWidget {
   final List<SelectedGroceryItem> initialSelected;
@@ -677,6 +678,31 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
     );
   }
 
+  void _saveAndRedirectToPostTask() {
+    final totalW = GroceryCatalog.calculateTotalWeightKg(_selectedMap.values);
+    if (totalW > GroceryCatalog.maxTwoWheelerWeightKg) {
+      _showWeightLimitExceededDialog(
+        currentWeight: totalW,
+        attemptedWeight: totalW,
+        itemWeight: 0,
+      );
+      return;
+    }
+    final selectedList = _selectedMap.values.toList();
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(selectedList);
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => PostTaskScreen(
+            initialCategory: 'groceries',
+            initialGroceryItems: selectedList,
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = _filteredItems;
@@ -692,35 +718,43 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 1,
-        title: const Text(
-          'Select Grocery Items',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 18,
-            color: Color(0xFF102A56),
+        titleSpacing: 0,
+        centerTitle: false,
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Select Grocery Items',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 17.5,
+              color: Color(0xFF102A56),
+            ),
           ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF102A56)),
-          onPressed: () => Navigator.of(context).pop(_selectedMap.values.toList()),
+          onPressed: _saveAndRedirectToPostTask,
         ),
         actions: [
           if (totalAdded > 0)
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(right: 16),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isOverLimit ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isOverLimit ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC)),
-                ),
-                child: Text(
-                  '$totalAdded Items · ${totalWeight.toStringAsFixed(1)} kg',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: isOverLimit ? const Color(0xFF991B1B) : const Color(0xFF166534),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isOverLimit ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: isOverLimit ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC)),
+                  ),
+                  child: Text(
+                    '$totalAdded · ${totalWeight.toStringAsFixed(1)} kg',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: isOverLimit ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                    ),
                   ),
                 ),
               ),
@@ -1098,18 +1132,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                 ],
               ),
               child: ElevatedButton.icon(
-                onPressed: () {
-                  final totalW = GroceryCatalog.calculateTotalWeightKg(_selectedMap.values);
-                  if (totalW > GroceryCatalog.maxTwoWheelerWeightKg) {
-                    _showWeightLimitExceededDialog(
-                      currentWeight: totalW,
-                      attemptedWeight: totalW,
-                      itemWeight: 0,
-                    );
-                    return;
-                  }
-                  Navigator.of(context).pop(_selectedMap.values.toList());
-                },
+                onPressed: _saveAndRedirectToPostTask,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,
                   foregroundColor: Colors.white,

@@ -76,12 +76,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // 6. Verify we returned to PostTaskScreen cleanly without freezing
-    expect(find.text('Delivery Address & Store'), findsOneWidget);
-    expect(find.text('Store / Supermarket (10 km Radius)'), findsOneWidget);
+    expect(find.text('Delivery Address'), findsOneWidget);
+    expect(find.text('Store Address'), findsOneWidget);
     expect(find.text('Grocery Items'), findsOneWidget);
+    expect(find.text('Grocery Items Policy'), findsOneWidget);
     expect(find.text('Price Breakdown'), findsOneWidget);
-    expect(find.text('Distance Travel Fare (₹12/km)'), findsOneWidget);
+    expect(find.textContaining('Distance Travel Fare'), findsOneWidget);
     expect(find.text('Handling & Shopping Charge'), findsOneWidget);
+    expect(find.text('₹30'), findsOneWidget);
+    expect(find.text('Platform Fee & GST (Fixed)'), findsOneWidget);
+    expect(find.text('₹12'), findsOneWidget);
 
     // 7. Capture rendered image
     final boundary = repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;

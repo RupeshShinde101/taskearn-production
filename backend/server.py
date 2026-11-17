@@ -985,6 +985,7 @@ def screen_task_content(title, description, category):
     """
     import re as _re
     text = ' '.join([str(title or ''), str(description or '')]).lower()
+    text = _re.sub(r'\[grocery_items\].*?\[/grocery_items\]', ' ', text, flags=_re.DOTALL)
     if not text.strip():
         return True, ''
 
@@ -1112,9 +1113,10 @@ def screen_task_content(title, description, category):
             continue
 
     # Phone / email in title or description → forces in-app contact (anti-bypass)
-    if _re.search(r'(?:\+?91[\s\-]?)?[6-9]\d{9}', text):
+    scan_text = _re.sub(r'https?://\S+', ' ', text)
+    if _re.search(r'(?<!\d)(?:\+?91[\s\-]?)?[6-9]\d{9}(?!\d)', scan_text):
         return False, 'Sharing phone numbers in the task is not allowed. Helpers can contact you through in-app chat.'
-    if _re.search(r'[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}', text):
+    if _re.search(r'\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b', scan_text):
         return False, 'Sharing email addresses in the task is not allowed. Use in-app chat instead.'
     # Whatsapp/telegram links
     if _re.search(r'\b(?:wa\.me|t\.me|telegram\.me|chat\.whatsapp\.com)\b', text):
@@ -1188,7 +1190,8 @@ CATEGORY_MIN_PRICES = {
     'cleaning': 300.0,
 
     # Shopping, Errands & On-Demand
-    'groceries': 100.0,
+    'groceries': 50.0,
+    'grocery': 50.0,
     'shopping': 150.0,
     'errands': 200.0,
     'errand': 200.0,
@@ -4071,7 +4074,8 @@ def complete_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
-            poster_fee = task_amount * _poster_commission_rate
+            _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
+            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
@@ -4213,7 +4217,8 @@ def verify_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
-            poster_fee = task_amount * _poster_commission_rate
+            _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
+            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction

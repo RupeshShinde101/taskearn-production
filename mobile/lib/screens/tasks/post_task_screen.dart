@@ -96,40 +96,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   static const List<Map<String, dynamic>> _defaultGroceryStores = [
     {
-      'name': 'DMart Ready / Supermarket',
-      'tag': 'Hypermarket · Best Prices & Staples',
-      'distanceKm': 1.4,
-      'address': 'Main Market Road',
-      'icon': Icons.local_convenience_store_rounded,
-      'color': Color(0xFF047857),
-      'lat': 18.5284,
-      'lng': 73.8627,
-    },
-    {
-      'name': 'Reliance Smart Point / Fresh',
-      'tag': 'Daily Produce, Dairy & Fruits',
-      'distanceKm': 2.3,
-      'address': 'Commercial Hub, Sector 4',
-      'icon': Icons.store_rounded,
-      'color': Color(0xFF0284C7),
-      'lat': 18.5084,
-      'lng': 73.8657,
-    },
-    {
-      'name': 'More Supermarket',
-      'tag': 'Full Range Groceries & Food Hall',
-      'distanceKm': 3.5,
-      'address': 'High Street Avenue',
-      'icon': Icons.shopping_basket_rounded,
-      'color': Color(0xFFD97706),
-      'lat': 18.5384,
-      'lng': 73.8427,
-    },
-    {
-      'name': 'Local Kirana & General Store',
-      'tag': 'Neighborhood Express Store',
+      'name': 'Shree Ganesh Kirana & General Store',
+      'tag': 'Local Kirana · Daily Essentials, Spices & Staples',
       'distanceKm': 0.8,
-      'address': 'Local Market Corner',
+      'address': 'Local Market Corner, Station Road',
       'icon': Icons.storefront_rounded,
       'color': Color(0xFF7C3AED),
       'lat': 18.5244,
@@ -137,23 +107,93 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     },
     {
       'name': 'Fresh Vegetable & Fruit Mandi',
-      'tag': 'Farm Fresh Veggies, Leafies & Produce',
+      'tag': 'Vegetable Mandi · Farm Fresh Greens & Seasonal Fruits',
       'distanceKm': 1.2,
-      'address': 'Subzi Mandi Chowk',
+      'address': 'Subzi Mandi Chowk, Market Yard',
       'icon': Icons.eco_rounded,
       'color': Color(0xFF16A34A),
       'lat': 18.5144,
       'lng': 73.8517,
     },
     {
-      'name': "Nature's Basket / Star Bazaar",
-      'tag': 'Organic, Gourmet & Daily Needs',
-      'distanceKm': 4.8,
-      'address': 'City Center Mall',
-      'icon': Icons.store_mall_directory_rounded,
+      'name': 'Apna Grocery & Provision Store',
+      'tag': 'Grocery Store · Monthly Rations, Pulses & Oil',
+      'distanceKm': 1.6,
+      'address': 'Main Bazaar Road, Near Bank',
+      'icon': Icons.shopping_basket_rounded,
+      'color': Color(0xFFEA580C),
+      'lat': 18.5224,
+      'lng': 73.8617,
+    },
+    {
+      'name': 'DMart Ready / Supermarket',
+      'tag': 'Supermarket · Best Prices, Bulk Staples & FMCG',
+      'distanceKm': 2.2,
+      'address': 'Commercial Complex, Main Road',
+      'icon': Icons.local_convenience_store_rounded,
+      'color': Color(0xFF047857),
+      'lat': 18.5284,
+      'lng': 73.8627,
+    },
+    {
+      'name': 'Reliance Smart Point / Fresh',
+      'tag': 'Supermarket · Daily Produce, Dairy & Packaged Foods',
+      'distanceKm': 2.9,
+      'address': 'Commercial Hub, Sector 4',
+      'icon': Icons.store_rounded,
+      'color': Color(0xFF0284C7),
+      'lat': 18.5084,
+      'lng': 73.8657,
+    },
+    {
+      'name': 'Krushna Sabzi & Fruit Market',
+      'tag': 'Vegetable Mandi · Fresh Leafy Veggies & Fresh Fruits',
+      'distanceKm': 3.5,
+      'address': 'Near Bus Stand, Ring Road',
+      'icon': Icons.local_florist_rounded,
       'color': Color(0xFF059669),
-      'lat': 18.5454,
-      'lng': 73.8767,
+      'lat': 18.5324,
+      'lng': 73.8437,
+    },
+    {
+      'name': 'Mahalaxmi Daily Kirana Store',
+      'tag': 'Local Kirana · Quick Groceries & Household Items',
+      'distanceKm': 4.2,
+      'address': 'Shivaji Nagar Main Road',
+      'icon': Icons.storefront_rounded,
+      'color': Color(0xFF9333EA),
+      'lat': 18.5414,
+      'lng': 73.8487,
+    },
+    {
+      'name': 'More Supermarket',
+      'tag': 'Supermarket · Full Range Groceries & Food Hall',
+      'distanceKm': 5.4,
+      'address': 'High Street Avenue, Opposite Park',
+      'icon': Icons.shopping_bag_rounded,
+      'color': Color(0xFFD97706),
+      'lat': 18.5384,
+      'lng': 73.8427,
+    },
+    {
+      'name': 'Daily Fresh Grocery Mart',
+      'tag': 'Grocery Store · Packaged Foods, Dairy & Flour',
+      'distanceKm': 6.8,
+      'address': 'Central Plaza, Link Road',
+      'icon': Icons.shopping_cart_rounded,
+      'color': Color(0xFF2563EB),
+      'lat': 18.5484,
+      'lng': 73.8717,
+    },
+    {
+      'name': 'Star Hypermarket / Supermarket',
+      'tag': 'Supermarket · Complete Household, Fresh & Food Market',
+      'distanceKm': 8.5,
+      'address': 'Metro Mall, West Avenue',
+      'icon': Icons.store_mall_directory_rounded,
+      'color': Color(0xFF4F46E5),
+      'lat': 18.5554,
+      'lng': 73.8787,
     },
   ];
 
@@ -323,13 +363,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _pickupLocation = LatLng(firstStore['lat'] as double, firstStore['lng'] as double);
       }
     }
-    final dist = _calculatedDistanceKm ?? 1.4;
+    final dist = _calculatedDistanceKm ?? 0.8;
     final travelFare = Task.calculateDistancePrice(dist, 'groceries', vehicle: 'bike');
-    const handlingFee = 50.0;
+    const handlingFee = 30.0;
     final totalBudget = travelFare + handlingFee;
-    if (wasAutoOrEmpty || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
-      _syncAutoBudget(totalBudget);
-    }
+    _syncAutoBudget(totalBudget);
   }
 
   void _applySelectedCategory(String categoryId) {
@@ -707,26 +745,27 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _pickupLocation!,
         _dropLocation!,
       );
-      final immediateKm = (meters / 1000.0) * 1.25;
+      final immediateKm = double.parse(((meters / 1000.0) * 1.25).toStringAsFixed(1));
       final isGrocery = Task.isGroceryCategory(_selectedCategory);
-      final groceryHandling = isGrocery ? 50.0 : 0.0;
+      final groceryHandling = isGrocery ? 30.0 : 0.0;
       final immediatePrice = Task.calculateDistancePrice(
         immediateKm,
         _selectedCategory,
         vehicle: _deliveryVehicle,
       ) + groceryHandling;
       final current = double.tryParse(_budgetCtrl.text) ?? 0;
-      if (current < immediatePrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+      if (isGrocery || current < immediatePrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
         _syncAutoBudget(immediatePrice);
       }
       if (mounted) setState(() => _calculatedDistanceKm = immediateKm);
 
       // 2. Fetch exact road driving route via OSRM (Google Maps parity)
       try {
-        final roadKm = await LocationService.calculateRoadDistance(
+        final roadKmRaw = await LocationService.calculateRoadDistance(
           _pickupLocation!,
           _dropLocation!,
         );
+        final roadKm = double.parse(roadKmRaw.toStringAsFixed(1));
         if (seq == _distCalcSeq && mounted) {
           final exactPrice = Task.calculateDistancePrice(
             roadKm,
@@ -734,10 +773,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             vehicle: _deliveryVehicle,
           ) + groceryHandling;
           final currVal = double.tryParse(_budgetCtrl.text) ?? 0;
-          if (currVal < exactPrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+          if (isGrocery || currVal < exactPrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
             _syncAutoBudget(exactPrice);
           }
-          setState(() => _calculatedDistanceKm = roadKm);
+          setState(() {
+            _calculatedDistanceKm = roadKm;
+            if (isGrocery && _selectedGroceryStoreName != null) {
+              for (final s in _suggestedGroceryStoresList) {
+                if (s['name'] == _selectedGroceryStoreName) {
+                  s['distanceKm'] = roadKm;
+                  break;
+                }
+              }
+            }
+          });
         }
       } catch (_) {}
     } else {
@@ -2192,7 +2241,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   static String? _checkBannedContent(String title, String description) {
-    final text = '${title.toLowerCase()} ${description.toLowerCase()}';
+    final descClean = description.replaceAll(
+      RegExp(r'\[GROCERY_ITEMS\].*?\[/GROCERY_ITEMS\]', dotAll: true, caseSensitive: false),
+      ' ',
+    );
+    final text = '${title.toLowerCase()} ${descClean.toLowerCase()}';
     if (text.trim().isEmpty) return null;
 
     final patterns = <(RegExp, String)>[
@@ -2234,12 +2287,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (rx.hasMatch(text)) return reason;
     }
 
+    final scanText = text.replaceAll(RegExp(r'https?://\S+'), ' ');
+
     // Phone number in task content
-    if (RegExp(r'(?:\+?91[\s\-]?)?[6-9]\d{9}').hasMatch(text)) {
+    if (RegExp(r'(?<!\d)(?:\+?91[\s\-]?)?[6-9]\d{9}(?!\d)').hasMatch(scanText)) {
       return 'Sharing phone numbers in the task is not allowed. Helpers can contact you through in-app chat.';
     }
     // Email address in task content
-    if (RegExp(r'[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}', caseSensitive: false).hasMatch(text)) {
+    if (RegExp(r'\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b', caseSensitive: false).hasMatch(scanText)) {
       return 'Sharing email addresses in the task is not allowed. Helpers can contact you through in-app chat.';
     }
 
@@ -2247,6 +2302,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _submit() async {
+    if (Task.isGroceryCategory(_selectedCategory)) {
+      final dist = _calculatedDistanceKm ?? 0.8;
+      final autoGroceryBudget = Task.calculateDistancePrice(dist, 'groceries') + 30.0;
+      _syncAutoBudget(autoGroceryBudget);
+    }
     _compileDescriptionFromForm();
 
     // Always re-check title on every submit click (not relying on form cache)
@@ -2447,8 +2507,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       }
     }
     final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
+    final isGrocery = Task.isGroceryCategory(_selectedCategory);
     final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-    final posterFee = budget * 0.20;
+    final posterFee = isGrocery ? 12.0 : (budget * 0.20);
     final total  = budget + charge + posterFee;
 
     // Confirm posting — payment is collected AFTER the helper completes the task
@@ -2538,6 +2599,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 totalCost: total,
                 isRepair: Task.isRepairCategory(_selectedCategory),
                 isGrocery: Task.isGroceryCategory(_selectedCategory),
+                distanceKm: _calculatedDistanceKm,
               ),
               const SizedBox(height: 24),
               // Action buttons
@@ -2881,7 +2943,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (_selectedGroceryStoreName != null) {
         lines.add('• Store / Supermarket: $_selectedGroceryStoreName');
       }
-      lines.add('• Handling & Shopping Charge: ₹50 included in delivery budget');
+      lines.add('• Handling & Shopping Charge: ₹30 included in delivery budget');
       lines.add('• Grocery Items Cost: Paid separately by task poster on actual bill (excluded from delivery budget)');
       if (_selectedGroceryItems.isNotEmpty) {
         lines.add('• Selected Grocery Items (${_selectedGroceryItems.length} items):');
@@ -3205,11 +3267,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        'Select items from market catalog with quantity, weight & brand',
-                        style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                       ),
                     ],
                   ),
@@ -3991,6 +4048,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildSuggestedBudgetCard() {
+    if (Task.isGroceryCategory(_selectedCategory)) return const SizedBox.shrink();
     if (!_isLocationSet && !_isFreelancer) return const SizedBox.shrink();
     final areaCandidate = _currentAreaCandidate();
 
@@ -4242,28 +4300,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             ),
             const SizedBox(width: 8),
             const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Task Title',
-                    style: TextStyle(
-                      fontSize: 17.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF102A56),
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                  SizedBox(height: 1),
-                  Text(
-                    'Give your task a clear, descriptive title',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF52627A),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+              child: Text(
+                'Task Title',
+                style: TextStyle(
+                  fontSize: 17.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
           ],
@@ -4552,28 +4596,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             ),
             const SizedBox(width: 10),
             const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Select Category',
-                    style: TextStyle(
-                      fontSize: 17.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF102A56),
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Choose the best category for your task',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Color(0xFF52627A),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+              child: Text(
+                'Select Category',
+                style: TextStyle(
+                  fontSize: 17.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
           ],
@@ -4729,6 +4759,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Widget _buildBudgetField() {
+    if (Task.isGroceryCategory(_selectedCategory)) {
+      return const SizedBox.shrink();
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4875,6 +4908,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  int _storeFetchSeq = 0;
+  bool _loadingNearbyStores = false;
+  bool _userPickedStoreManually = false;
+
   void _updateSuggestedStoresForDrop(String dropAddr, LatLng? dropLoc) {
     String area = 'Nearby Area';
     if (dropAddr.trim().isNotEmpty) {
@@ -4888,98 +4925,188 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     final baseLat = dropLoc?.latitude ?? 18.5204;
     final baseLng = dropLoc?.longitude ?? 73.8567;
 
-    final stores = <Map<String, dynamic>>[
+    final fallbackStores = <Map<String, dynamic>>[
       {
-        'name': 'DMart Ready / Supermarket',
-        'tag': '$area · Best Prices & Staples',
-        'distanceKm': 1.4,
-        'address': 'Main Market Road, $area',
-        'icon': Icons.local_convenience_store_rounded,
-        'color': const Color(0xFF047857),
-        'lat': baseLat + 0.008,
-        'lng': baseLng + 0.006,
-      },
-      {
-        'name': 'Reliance Smart Point / Fresh',
-        'tag': '$area · Daily Produce & Dairy',
-        'distanceKm': 2.1,
-        'address': 'Commercial Hub, $area',
-        'icon': Icons.store_rounded,
-        'color': const Color(0xFF0284C7),
-        'lat': baseLat - 0.012,
-        'lng': baseLng + 0.009,
-      },
-      {
-        'name': 'More Supermarket',
-        'tag': '$area · Full Range Groceries',
-        'distanceKm': 3.2,
-        'address': 'Shopping Complex, $area',
-        'icon': Icons.shopping_bag_rounded,
-        'color': const Color(0xFFD97706),
-        'lat': baseLat + 0.018,
-        'lng': baseLng - 0.014,
-      },
-      {
-        'name': 'Local Kirana & General Store',
-        'tag': '$area · Quick Kirana Essentials',
-        'distanceKm': 0.7,
+        'name': 'Shree Ganesh Kirana & General Store',
+        'tag': 'Kirana Store · $area',
+        'distanceKm': 0.8,
         'address': 'Station Road, $area',
         'icon': Icons.storefront_rounded,
         'color': const Color(0xFF7C3AED),
-        'lat': baseLat + 0.004,
-        'lng': baseLng - 0.003,
+        'lat': baseLat + 0.005,
+        'lng': baseLng - 0.004,
       },
       {
         'name': 'Fresh Vegetable & Fruit Mandi',
-        'tag': '$area · Farm Fresh Veggies & Leafies',
-        'distanceKm': 1.1,
+        'tag': 'Vegetable Store · $area',
+        'distanceKm': 1.2,
         'address': 'Sabzi Mandi Chowk, $area',
         'icon': Icons.eco_rounded,
         'color': const Color(0xFF16A34A),
-        'lat': baseLat - 0.006,
+        'lat': baseLat - 0.007,
         'lng': baseLng - 0.005,
       },
       {
-        'name': "Nature's Basket / Organic Store",
-        'tag': '$area · Organic Produce & Gourmet',
-        'distanceKm': 4.5,
-        'address': 'High Street, $area',
+        'name': 'Apna Grocery & Provision Store',
+        'tag': 'Grocery Store · $area',
+        'distanceKm': 1.6,
+        'address': 'Main Bazaar Road, $area',
         'icon': Icons.shopping_basket_rounded,
-        'color': const Color(0xFFE11D48),
-        'lat': baseLat + 0.025,
-        'lng': baseLng + 0.020,
+        'color': const Color(0xFFEA580C),
+        'lat': baseLat + 0.009,
+        'lng': baseLng + 0.007,
+      },
+      {
+        'name': 'DMart Ready / Supermarket',
+        'tag': 'Supermarket · $area',
+        'distanceKm': 2.1,
+        'address': 'Main Market Road, $area',
+        'icon': Icons.local_convenience_store_rounded,
+        'color': const Color(0xFF047857),
+        'lat': baseLat + 0.012,
+        'lng': baseLng + 0.009,
+      },
+      {
+        'name': 'Reliance Smart Point / Fresh',
+        'tag': 'Supermarket · $area',
+        'distanceKm': 2.8,
+        'address': 'Commercial Hub, $area',
+        'icon': Icons.store_rounded,
+        'color': const Color(0xFF0284C7),
+        'lat': baseLat - 0.016,
+        'lng': baseLng + 0.012,
+      },
+      {
+        'name': 'Krushna Sabzi & Fruit Market',
+        'tag': 'Vegetable Store · $area',
+        'distanceKm': 3.5,
+        'address': 'Ring Road Market, $area',
+        'icon': Icons.local_florist_rounded,
+        'color': const Color(0xFF059669),
+        'lat': baseLat + 0.020,
+        'lng': baseLng - 0.015,
+      },
+      {
+        'name': 'Mahalaxmi Daily Kirana Store',
+        'tag': 'Kirana Store · $area',
+        'distanceKm': 4.3,
+        'address': 'Main Road, $area',
+        'icon': Icons.storefront_rounded,
+        'color': const Color(0xFF9333EA),
+        'lat': baseLat - 0.024,
+        'lng': baseLng - 0.019,
+      },
+      {
+        'name': 'More Supermarket',
+        'tag': 'Supermarket · $area',
+        'distanceKm': 5.4,
+        'address': 'Shopping Complex, $area',
+        'icon': Icons.shopping_bag_rounded,
+        'color': const Color(0xFFD97706),
+        'lat': baseLat + 0.030,
+        'lng': baseLng - 0.024,
+      },
+      {
+        'name': 'Daily Fresh Grocery Mart',
+        'tag': 'Grocery Store · $area',
+        'distanceKm': 6.7,
+        'address': 'Central Plaza, $area',
+        'icon': Icons.shopping_cart_rounded,
+        'color': const Color(0xFF2563EB),
+        'lat': baseLat + 0.038,
+        'lng': baseLng + 0.028,
+      },
+      {
+        'name': 'Star Hypermarket / Supermarket',
+        'tag': 'Supermarket · $area',
+        'distanceKm': 8.4,
+        'address': 'City Mall Road, $area',
+        'icon': Icons.store_mall_directory_rounded,
+        'color': const Color(0xFF4F46E5),
+        'lat': baseLat - 0.048,
+        'lng': baseLng + 0.036,
       },
     ];
 
     if (dropLoc != null) {
-      for (final s in stores) {
+      for (final s in fallbackStores) {
         final distM = Geolocator.distanceBetween(
           dropLoc.latitude,
           dropLoc.longitude,
           s['lat'] as double,
           s['lng'] as double,
         );
-        s['distanceKm'] = double.parse((distM / 1000.0).toStringAsFixed(1)).clamp(0.5, 9.8);
+        s['distanceKm'] = double.parse(((distM / 1000.0) * 1.22).clamp(0.4, 9.8).toStringAsFixed(1));
       }
-      stores.sort((a, b) => (a['distanceKm'] as num).compareTo(b['distanceKm'] as num));
+      fallbackStores.sort((a, b) => (a['distanceKm'] as num).compareTo(b['distanceKm'] as num));
     }
 
     setState(() {
-      _suggestedGroceryStoresList = stores;
-      if (_selectedGroceryStoreName == null ||
-          !stores.any((s) => s['name'] == _selectedGroceryStoreName)) {
-        final chosen = stores.first;
+      _suggestedGroceryStoresList = fallbackStores;
+      if (!_userPickedStoreManually ||
+          _selectedGroceryStoreName == null ||
+          !fallbackStores.any((s) => s['name'] == _selectedGroceryStoreName)) {
+        final chosen = fallbackStores.first;
         _selectedGroceryStoreName = chosen['name'] as String;
         _pickupAddrCtrl.text = '${chosen['name']}, ${chosen['address']}';
         _calculatedDistanceKm = (chosen['distanceKm'] as num).toDouble();
         if (chosen['lat'] != null && chosen['lng'] != null) {
           _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
         }
-        final travelFare = Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.4, 'groceries');
-        const handlingFee = 50.0;
+        final travelFare = Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries');
+        const handlingFee = 30.0;
         _syncAutoBudget(travelFare + handlingFee);
       }
     });
+
+    // Fetch real Kirana, Vegetable, Grocery & Supermarket shops from maps within 10 km
+    if (dropLoc != null) {
+      final seq = ++_storeFetchSeq;
+      if (mounted) setState(() => _loadingNearbyStores = true);
+      LocationSearchService.searchNearbyGroceryStores(
+        dropLoc,
+        radiusKm: 10.0,
+        areaFallback: area,
+      ).then((realStores) {
+        if (!mounted || seq != _storeFetchSeq) return;
+        setState(() {
+          _loadingNearbyStores = false;
+          if (realStores.isNotEmpty) {
+            final combined = <Map<String, dynamic>>[...realStores];
+            final existingNames = realStores.map((e) => (e['name'] as String).toLowerCase()).toSet();
+            if (combined.length < 6) {
+              for (final fb in fallbackStores) {
+                if (!existingNames.contains((fb['name'] as String).toLowerCase())) {
+                  combined.add(fb);
+                }
+                if (combined.length >= 10) break;
+              }
+            }
+            combined.sort((a, b) => (a['distanceKm'] as num).compareTo(b['distanceKm'] as num));
+            _suggestedGroceryStoresList = combined;
+            if (!_userPickedStoreManually) {
+              final chosen = combined.first;
+              _selectedGroceryStoreName = chosen['name'] as String;
+              _pickupAddrCtrl.text = '${chosen['name']}, ${chosen['address']}';
+              _calculatedDistanceKm = (chosen['distanceKm'] as num).toDouble();
+              if (chosen['lat'] != null && chosen['lng'] != null) {
+                _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
+              }
+              final travelFare = Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries');
+              const handlingFee = 30.0;
+              _syncAutoBudget(travelFare + handlingFee);
+            }
+          }
+        });
+        if (realStores.isNotEmpty && !_userPickedStoreManually) {
+          _recalcDistance();
+        }
+      }).catchError((_) {
+        if (mounted && seq == _storeFetchSeq) {
+          setState(() => _loadingNearbyStores = false);
+        }
+      });
+    }
   }
 
   Future<void> _pickStoreFromGoogleMap() async {
@@ -5008,14 +5135,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           _dropLocation!.latitude,
           _dropLocation!.longitude,
         );
-        distKm = double.parse((m / 1000.0).toStringAsFixed(1)).clamp(0.2, 50.0);
+        distKm = double.parse(((m / 1000.0) * 1.25).clamp(0.2, 50.0).toStringAsFixed(1));
       }
 
       final customStore = {
         'name': storeName,
-        'tag': 'Selected Store via Google Map',
+        'tag': 'Selected on Map',
         'distanceKm': distKm,
-        'address': addr.isNotEmpty ? addr : 'Market Road, Selected Location',
+        'address': addr.isNotEmpty ? addr : 'Selected Map Location',
         'icon': Icons.pin_drop_rounded,
         'color': const Color(0xFF16A34A),
         'lat': picked.latitude,
@@ -5023,26 +5150,29 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       };
 
       setState(() {
+        _userPickedStoreManually = true;
         _pickupLocation = picked;
         _pickupAddrCtrl.text = '$storeName, $addr';
         _selectedGroceryStoreName = storeName;
         _calculatedDistanceKm = distKm;
         _suggestedGroceryStoresList.removeWhere((s) => s['name'] == storeName);
         _suggestedGroceryStoresList.insert(0, customStore);
-        _isStoreDropdownOpen = false; // Automatically collapse on map pick!
+        _isStoreDropdownOpen = false;
       });
 
       final travelFare = Task.calculateDistancePrice(distKm, 'groceries');
-      const handlingFee = 50.0;
+      const handlingFee = 30.0;
       final totalBudget = travelFare + handlingFee;
       _syncAutoBudget(totalBudget);
       _compileDescriptionFromForm();
+      _recalcDistance();
     }
   }
 
   void _selectGroceryStore(Map<String, dynamic> store) {
     final dist = (store['distanceKm'] as num).toDouble();
     setState(() {
+      _userPickedStoreManually = true;
       _selectedGroceryStoreName = store['name'] as String;
       _calculatedDistanceKm = dist;
       _pickupAddrCtrl.text = '${store['name']}, ${store['address']}';
@@ -5054,20 +5184,24 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           _dropLocation!.longitude + (dist / 111.0) * 0.8,
         );
       }
-      _isStoreDropdownOpen = false; // Automatically collapse on select!
+      _isStoreDropdownOpen = false;
     });
-    // Base distance rate: ₹12/km, min ₹100 + ₹50 handling
+    // Base minimum ₹50 + ₹12/km + ₹30 handling
     final travelFare = Task.calculateDistancePrice(dist, 'groceries');
-    const handlingFee = 50.0;
+    const handlingFee = 30.0;
     final totalBudget = travelFare + handlingFee;
     _syncAutoBudget(totalBudget);
     _compileDescriptionFromForm();
+    if (_dropLocation != null && _pickupLocation != null) {
+      _recalcDistance();
+    }
   }
 
   void _setCustomGroceryStore(String storeName) {
     if (storeName.trim().isEmpty) return;
     const dist = 2.0;
     setState(() {
+      _userPickedStoreManually = true;
       _selectedGroceryStoreName = storeName.trim();
       _calculatedDistanceKm = dist;
       _pickupAddrCtrl.text = storeName.trim();
@@ -5077,11 +5211,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           _dropLocation!.longitude + 0.012,
         );
       }
-      _isStoreDropdownOpen = false; // Automatically collapse!
+      _isStoreDropdownOpen = false;
       _showCustomStoreInput = false;
     });
     final travelFare = Task.calculateDistancePrice(dist, 'groceries');
-    const handlingFee = 50.0;
+    const handlingFee = 30.0;
     final totalBudget = travelFare + handlingFee;
     _syncAutoBudget(totalBudget);
     _compileDescriptionFromForm();
@@ -5180,8 +5314,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       (s) => s['name'] == _selectedGroceryStoreName,
       orElse: () => {
         'name': _selectedGroceryStoreName ?? 'Local Store',
-        'tag': 'Custom Grocery Store',
-        'distanceKm': _calculatedDistanceKm ?? 2.0,
+        'tag': 'Grocery Store',
+        'distanceKm': _calculatedDistanceKm ?? 1.5,
         'address': 'Nearby Local Shop',
         'icon': Icons.storefront_rounded,
         'color': const Color(0xFF2563EB),
@@ -5189,14 +5323,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
 
     final dist = (_calculatedDistanceKm ?? (currentStore['distanceKm'] as num).toDouble());
-    final travelFare = Task.calculateDistancePrice(dist, 'groceries');
-    const handlingFee = 50.0;
-    final totalBudget = travelFare + handlingFee;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Section Header
+        // 1. Separate Delivery Address Header
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -5218,50 +5349,35 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: const Color(0xFFFEE2E2),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.storefront_rounded, color: Color(0xFF2563EB), size: 20),
+                child: const Icon(Icons.home_rounded, color: AppColors.danger, size: 20),
               ),
               const SizedBox(width: 12),
               const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Delivery Address & Store',
-                      style: TextStyle(
-                        fontSize: 17.5,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF102A56),
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Enter your delivery address, then pick a nearby store within 10 km',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: Color(0xFF52627A),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  'Delivery Address',
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
 
-        // ONLY ONE ADDRESS: Delivery Address
+        // Delivery Address Input Field
         TextFormField(
           controller: _dropAddrCtrl,
           focusNode: _dropFocus,
           onChanged: _onDropAddrChanged,
           decoration: InputDecoration(
-            labelText: 'Your Delivery / Home Address *',
-            hintText: 'Enter where groceries will be delivered',
+            labelText: 'Delivery Address *',
             prefixIcon: const Icon(Icons.home_rounded, color: AppColors.danger),
             suffixIcon: _AddressActionButtons(
               isLoading: _gettingDropGps,
@@ -5269,12 +5385,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               onGps: () async {
                 await _getGpsForDrop();
                 if (mounted && _dropAddrCtrl.text.isNotEmpty) {
+                  _userPickedStoreManually = false;
                   _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
                 }
               },
               onMap: () async {
                 await _pickMapForDrop();
                 if (mounted && _dropAddrCtrl.text.isNotEmpty) {
+                  _userPickedStoreManually = false;
                   _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
                 }
               },
@@ -5294,25 +5412,84 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           accentColor: AppColors.danger,
           onSelect: (s) {
             _selectDropSuggestion(s);
+            _userPickedStoreManually = false;
             _updateSuggestedStoresForDrop(s.fullAddress, s.toLatLng());
           },
           onDismiss: () => setState(() => _dropSuggestions = []),
         ),
-        if (_dropLocation != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 3, left: 12),
-            child: Text(
-              'Pinned: ${_dropLocation!.latitude.toStringAsFixed(5)}, '
-              '${_dropLocation!.longitude.toStringAsFixed(5)}',
-              style: const TextStyle(color: AppColors.success, fontSize: 11),
-            ),
-          ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
 
-        // Store Selection Section
+        // 2. Separate Store Address Header
         Container(
-          padding: const EdgeInsets.all(14),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.storefront_rounded, color: Color(0xFF15803D), size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Store Address',
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+              if (_loadingNearbyStores)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF15803D)),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                  ),
+                  child: const Text(
+                    '10 km Radius',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF15803D),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Store Selection Card
+        Container(
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
@@ -5328,46 +5505,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFDCFCE7),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.store_mall_directory_rounded, size: 18, color: Color(0xFF15803D)),
-                  ),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Store / Supermarket (10 km Radius)',
-                          style: TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF102A56),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          'Select store or pick on map (Auto-calculates ₹12/km + ₹50 handling)',
-                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // If collapsed, display selected store with Change button
+              // Collapsed view: selected store with Change button
               if (!_isStoreDropdownOpen) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -5377,6 +5515,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     border: Border.all(color: const Color(0xFF2563EB), width: 1.4),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         width: 42,
@@ -5396,21 +5535,23 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
+                            Text(
+                              currentStore['name'] as String,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13.5,
+                                color: Color(0xFF102A56),
+                              ),
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                Flexible(
-                                  child: Text(
-                                    currentStore['name'] as String,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 13.5,
-                                      color: Color(0xFF102A56),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
@@ -5426,20 +5567,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                     ),
                                   ),
                                 ),
+                                Text(
+                                  currentStore['address'] as String? ?? 'Store Address',
+                                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                  maxLines: 2,
+                                  softWrap: true,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              currentStore['address'] as String? ?? 'Store Address',
-                              style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Change Store Button with Dropdown arrow
                       SizedBox(
                         height: 36,
                         child: OutlinedButton.icon(
@@ -5474,9 +5614,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'Select Store within 10 km',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF102A56)),
+                          const Expanded(
+                            child: Text(
+                              'Nearby Stores (10 km Radius)',
+                              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF102A56)),
+                            ),
                           ),
                           IconButton(
                             onPressed: () => setState(() => _isStoreDropdownOpen = false),
@@ -5488,7 +5630,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       ),
                       const SizedBox(height: 8),
 
-                      // Manual Store Address from Google Map Button
+                      // Manual Store Address from Map Button
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
@@ -5498,16 +5640,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             foregroundColor: const Color(0xFF15803D),
                             side: const BorderSide(color: Color(0xFF86EFAC), width: 1.2),
                             backgroundColor: const Color(0xFFF0FDF4),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                           icon: const Icon(Icons.map_rounded, size: 18, color: Color(0xFF15803D)),
-                          label: const Text('📍 Pick Store Address from Google Map', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                          label: const Text('Pick Store on Map', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
                         ),
                       ),
                       const SizedBox(height: 10),
 
-                      // Store Options List
+                      // Store Options List (Kirana, Vegetable, Grocery, Supermarkets)
                       ..._suggestedGroceryStoresList.map((store) {
                         final isSel = _selectedGroceryStoreName == store['name'];
                         final sDist = (store['distanceKm'] as num).toDouble();
@@ -5525,8 +5667,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             borderRadius: BorderRadius.circular(10),
                             onTap: () => _selectGroceryStore(store),
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                               child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   Container(
                                     width: 34,
@@ -5553,11 +5696,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                             fontWeight: isSel ? FontWeight.w800 : FontWeight.w700,
                                             color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
                                           ),
-                                          maxLines: 1,
+                                          maxLines: 2,
+                                          softWrap: true,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        const SizedBox(height: 2),
-                                        Row(
+                                        const SizedBox(height: 3),
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 3,
+                                          crossAxisAlignment: WrapCrossAlignment.center,
                                           children: [
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -5574,20 +5721,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                                 ),
                                               ),
                                             ),
-                                            const SizedBox(width: 6),
-                                            Flexible(
-                                              child: Text(
-                                                store['tag'] as String? ?? store['address'] as String? ?? '',
-                                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
+                                            Text(
+                                              store['tag'] as String? ?? store['address'] as String? ?? '',
+                                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                              maxLines: 2,
+                                              softWrap: true,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ],
                                         ),
                                       ],
                                     ),
                                   ),
+                                  const SizedBox(width: 6),
                                   Icon(
                                     isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
                                     color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
@@ -5605,7 +5751,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         TextButton.icon(
                           onPressed: () => setState(() => _showCustomStoreInput = true),
                           icon: const Icon(Icons.add_location_alt_outlined, size: 16),
-                          label: const Text('Enter another local store name', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                          label: const Text('Enter another store name', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                         ),
                       ] else ...[
                         const SizedBox(height: 6),
@@ -5615,7 +5761,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               child: TextField(
                                 controller: _customStoreCtrl,
                                 decoration: InputDecoration(
-                                  hintText: 'e.g. Sharma Kirana Store, Sector 2',
+                                  hintText: 'Store name',
                                   hintStyle: const TextStyle(fontSize: 12),
                                   isDense: true,
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -5649,65 +5795,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ),
               ],
-
-              const SizedBox(height: 10),
-
-              // Auto-calculated Fare Card
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFBBF7D0)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              const Icon(Icons.calculate_rounded, size: 18, color: Color(0xFF15803D)),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'Task Budget (${dist.toStringAsFixed(1)} km road distance):',
-                                  style: const TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF15803D),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '₹${totalBudget.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF15803D),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '• Travel from ${currentStore['name']} to Drop: ₹${travelFare.toStringAsFixed(0)} (₹12/km, min ₹100)\n'
-                      '• Handling & Service Charges: ₹${handlingFee.toStringAsFixed(0)}\n'
-                      '• Note: Grocery items cost is paid separately by poster directly to store/helper.',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF166534), height: 1.4),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
@@ -6920,10 +7007,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: _budgetCtrl,
       builder: (_, value, __) {
-        final budget = double.tryParse(value.text) ?? 0;
+        final isGrocery = Task.isGroceryCategory(_selectedCategory);
+        final rawBudget = double.tryParse(value.text) ?? 0;
+        final budget = isGrocery && rawBudget <= 0
+            ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0)
+            : rawBudget;
         final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
         final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-        final posterFee = budget * 0.20;
+        final posterFee = isGrocery ? 12.0 : (budget * 0.20);
         final total = budget + charge + posterFee;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -6934,7 +7025,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               posterFee: posterFee,
               totalCost: total,
               isRepair: Task.isRepairCategory(_selectedCategory),
-              isGrocery: Task.isGroceryCategory(_selectedCategory),
+              isGrocery: isGrocery,
+              distanceKm: _calculatedDistanceKm,
             ),
             if (_isFreelancer && _freelancerQuote != null) ...[
               const SizedBox(height: 6),
@@ -7227,15 +7319,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
           ),
         ),
-        const SizedBox(height: 8),
-        const Text(
-          'You can review before posting',
-          style: TextStyle(
-            fontSize: 12,
-            color: Color(0xFF52627A),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
       ],
     );
   }
@@ -7323,9 +7406,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 16),
-                      _buildSuggestedBudgetCard(),
-                      _buildBudgetField(),
+                      if (!Task.isGroceryCategory(_selectedCategory)) ...[
+                        const SizedBox(height: 16),
+                        _buildSuggestedBudgetCard(),
+                        _buildBudgetField(),
+                      ],
                       const SizedBox(height: 16),
                       _buildPriceBreakdownSection(),
                       const SizedBox(height: 24),

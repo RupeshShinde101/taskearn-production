@@ -498,6 +498,169 @@ class LocationSearchService {
     _CuratedLocation('MIT World Peace University', 'Paud Road, Kothrud, Pune', 18.5170, 73.8150, 'landmark', ['mit', 'world peace university', 'kothrud']),
     _CuratedLocation('Bharati Vidyapeeth University', 'Katraj, Pune', 18.4590, 73.8540, 'landmark', ['bharati vidyapeeth', 'katraj campus']),
   ];
+
+  static double _haversineKm(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371.0;
+    final dLat = (lat2 - lat1) * pi / 180.0;
+    final dLon = (lon2 - lon1) * pi / 180.0;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180.0) *
+            cos(lat2 * pi / 180.0) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return r * c;
+  }
+
+  /// Fetches real nearby Kirana stores, Vegetable stores/mandis, Grocery stores,
+  /// and Supermarkets within [radiusKm] (default 10 km) using OpenStreetMap Overpass API.
+  static Future<List<Map<String, dynamic>>> searchNearbyGroceryStores(
+    LatLng center, {
+    double radiusKm = 10.0,
+    String areaFallback = 'Nearby Area',
+  }) async {
+    final radiusMeters = (radiusKm * 1000).round();
+    final query = '[out:json][timeout:6];'
+        '('
+        'node["shop"~"^(supermarket|convenience|greengrocer|general|grocery|department_store|farm)\$"](around:$radiusMeters,${center.latitude},${center.longitude});'
+        'way["shop"~"^(supermarket|convenience|greengrocer|general|grocery|department_store|farm)\$"](around:$radiusMeters,${center.latitude},${center.longitude});'
+        'node["amenity"="marketplace"](around:$radiusMeters,${center.latitude},${center.longitude});'
+        'way["amenity"="marketplace"](around:$radiusMeters,${center.latitude},${center.longitude});'
+        ');'
+        'out center 50;';
+
+    final endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+    ];
+
+    for (final ep in endpoints) {
+      try {
+        final resp = await http
+            .post(
+              Uri.parse(ep),
+              headers: {
+                'User-Agent': 'Workmate4u/1.0 (com.workmate4u.workmate4u)',
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: {'data': query},
+            )
+            .timeout(const Duration(seconds: 6));
+
+        if (resp.statusCode != 200) continue;
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final elements = data['elements'] as List<dynamic>? ?? [];
+        if (elements.isEmpty) return [];
+
+        final seen = <String>{};
+        final stores = <Map<String, dynamic>>[];
+
+        for (final el in elements) {
+          if (el is! Map<String, dynamic>) continue;
+          final tags = el['tags'] as Map<String, dynamic>? ?? {};
+          final rawName = (tags['name'] ?? tags['name:en'] ?? tags['brand'] ?? '').toString().trim();
+          if (rawName.isEmpty) continue;
+
+          final key = rawName.toLowerCase();
+          if (seen.contains(key)) continue;
+
+          double? lat;
+          double? lng;
+          if (el['lat'] != null && el['lon'] != null) {
+            lat = (el['lat'] as num).toDouble();
+            lng = (el['lon'] as num).toDouble();
+          } else if (el['center'] is Map) {
+            final c = el['center'] as Map;
+            lat = (c['lat'] as num?)?.toDouble();
+            lng = (c['lon'] as num?)?.toDouble();
+          }
+          if (lat == null || lng == null) continue;
+
+          final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
+          if (straightKm > radiusKm) continue;
+          final roadEstKm = double.parse((straightKm * 1.22).clamp(0.2, radiusKm).toStringAsFixed(1));
+
+          final shopType = (tags['shop'] ?? '').toString().toLowerCase();
+          final amenity = (tags['amenity'] ?? '').toString().toLowerCase();
+          final lowerName = rawName.toLowerCase();
+
+          String categoryLabel;
+          IconData icon;
+          Color color;
+
+          if (shopType == 'greengrocer' ||
+              shopType == 'farm' ||
+              amenity == 'marketplace' ||
+              lowerName.contains('veg') ||
+              lowerName.contains('sabzi') ||
+              lowerName.contains('bhaji') ||
+              lowerName.contains('mandi') ||
+              lowerName.contains('fruit')) {
+            categoryLabel = 'Vegetable & Fruit Store';
+            icon = Icons.eco_rounded;
+            color = const Color(0xFF16A34A);
+          } else if (shopType == 'supermarket' ||
+              shopType == 'department_store' ||
+              lowerName.contains('dmart') ||
+              lowerName.contains('d-mart') ||
+              lowerName.contains('reliance') ||
+              lowerName.contains('smart') ||
+              lowerName.contains('more') ||
+              lowerName.contains('supermarket') ||
+              lowerName.contains('super market') ||
+              lowerName.contains('hypermarket') ||
+              lowerName.contains('bazaar') ||
+              lowerName.contains('mart')) {
+            categoryLabel = 'Supermarket';
+            icon = Icons.local_convenience_store_rounded;
+            color = const Color(0xFF047857);
+          } else if (shopType == 'convenience' ||
+              shopType == 'general' ||
+              lowerName.contains('kirana') ||
+              lowerName.contains('general')) {
+            categoryLabel = 'Kirana & General Store';
+            icon = Icons.storefront_rounded;
+            color = const Color(0xFF7C3AED);
+          } else {
+            categoryLabel = 'Grocery Store';
+            icon = Icons.shopping_basket_rounded;
+            color = const Color(0xFFEA580C);
+          }
+
+          final addrParts = <String>[
+            if ((tags['addr:housenumber'] ?? '').toString().trim().isNotEmpty)
+              tags['addr:housenumber'].toString().trim(),
+            if ((tags['addr:street'] ?? '').toString().trim().isNotEmpty)
+              tags['addr:street'].toString().trim(),
+            if ((tags['addr:suburb'] ?? tags['addr:neighbourhood'] ?? '').toString().trim().isNotEmpty)
+              (tags['addr:suburb'] ?? tags['addr:neighbourhood']).toString().trim(),
+            if ((tags['addr:city'] ?? '').toString().trim().isNotEmpty)
+              tags['addr:city'].toString().trim(),
+          ];
+          final addr = addrParts.isNotEmpty ? addrParts.join(', ') : areaFallback;
+
+          seen.add(key);
+          stores.add({
+            'name': rawName,
+            'tag': categoryLabel,
+            'distanceKm': roadEstKm,
+            'address': addr,
+            'icon': icon,
+            'color': color,
+            'lat': lat,
+            'lng': lng,
+            'fromMap': true,
+          });
+        }
+
+        stores.sort((a, b) => (a['distanceKm'] as num).compareTo(b['distanceKm'] as num));
+        return stores.take(25).toList();
+      } catch (_) {
+        continue;
+      }
+    }
+    return [];
+  }
 }
 
 class _CuratedLocation {

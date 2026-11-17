@@ -10,6 +10,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
   final double totalCost;
   final bool isRepair;
   final bool isGrocery;
+  final double? distanceKm;
   final String? customNote;
 
   const TaskPriceBreakdownCard({
@@ -20,6 +21,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
     required this.totalCost,
     this.isRepair = false,
     this.isGrocery = false,
+    this.distanceKm,
     this.customNote,
   });
 
@@ -105,21 +107,28 @@ class TaskPriceBreakdownCard extends StatelessWidget {
 
           // Itemized rows
           if (isGrocery) ...[
-            _PriceRow('Distance Travel Fare (₹12/km)', '₹${(budget >= 50.0 ? (budget - 50.0) : budget).toStringAsFixed(0)}'),
+            _PriceRow(
+              distanceKm != null && distanceKm! > 0
+                  ? 'Distance Travel Fare (₹50 base + ₹12/km × ${distanceKm!.toStringAsFixed(1)} km)'
+                  : 'Distance Travel Fare (₹50 min base + ₹12/km)',
+              '₹${(budget >= 30.0 ? (budget - 30.0) : budget).toStringAsFixed(0)}',
+            ),
             const SizedBox(height: 8),
-            const _PriceRow('Handling & Shopping Charge', '₹50'),
+            const _PriceRow('Handling & Shopping Charge', '₹30'),
             const SizedBox(height: 8),
             _PriceRow('Task Delivery Budget', '₹${budget.toStringAsFixed(0)}'),
+            const SizedBox(height: 8),
+            const _PriceRow('Platform Fee & GST (Fixed)', '₹12'),
           ] else ...[
             _PriceRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
-          ],
-          if (serviceCharge > 0) ...[
-            const SizedBox(height: 8),
-            _PriceRow('Service Charge', '₹${serviceCharge.toStringAsFixed(0)}'),
-          ],
-          if (posterFee > 0) ...[
-            const SizedBox(height: 8),
-            _PriceRow('Platform Fee & GST (20%)', '₹${posterFee.toStringAsFixed(0)}'),
+            if (serviceCharge > 0) ...[
+              const SizedBox(height: 8),
+              _PriceRow('Service Charge', '₹${serviceCharge.toStringAsFixed(0)}'),
+            ],
+            if (posterFee > 0) ...[
+              const SizedBox(height: 8),
+              _PriceRow('Platform Fee & GST (20%)', '₹${posterFee.toStringAsFixed(0)}'),
+            ],
           ],
 
           const Padding(
@@ -178,39 +187,6 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11.5,
                         color: Color(0xFF92400E),
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-          if (isGrocery) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.shopping_basket_rounded,
-                    size: 15,
-                    color: Color(0xFF16A34A),
-                  ),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Grocery Items Policy: Cost of grocery items is paid separately by the task poster directly to the helper/store and is NOT included in this delivery budget value.',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Color(0xFF15803D),
                         fontWeight: FontWeight.w600,
                         height: 1.35,
                       ),

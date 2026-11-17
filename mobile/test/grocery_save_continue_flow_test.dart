@@ -65,15 +65,24 @@ void main() {
     // Initial pump & settle
     await tester.pumpAndSettle(const Duration(milliseconds: 600));
 
-    // Verify PostTaskScreen loaded with the items
+    // Verify PostTaskScreen loaded with the items & new clean grocery UI
     expect(find.text('Post a Task'), findsOneWidget);
+    expect(find.text('Grocery Items Policy'), findsOneWidget); // Top ONLY
     expect(find.text('Grocery Items'), findsOneWidget);
     expect(find.text('2 Added'), findsOneWidget);
     expect(find.text('Fresh Methi (Fenugreek Leaves)'), findsOneWidget);
     expect(find.text('Fresh Palak (Spinach)'), findsOneWidget);
-    expect(find.text('Delivery Address & Store'), findsOneWidget);
-    expect(find.text('Store / Supermarket (10 km Radius)'), findsOneWidget);
+    expect(find.text('Delivery Address'), findsOneWidget);
+    expect(find.text('Store Address'), findsOneWidget);
     expect(find.text('Price Breakdown'), findsOneWidget);
     expect(find.text('Handling & Shopping Charge'), findsOneWidget);
+    expect(find.text('₹30'), findsOneWidget);
+    expect(find.text('Platform Fee & GST (Fixed)'), findsOneWidget);
+    expect(find.text('₹12'), findsOneWidget);
+    // Suggested price and budget input box removed for groceries
+    expect(find.text('Task Budget'), findsNothing);
+    // Old combined header & hint text removed
+    expect(find.text('Delivery Address & Store'), findsNothing);
+    expect(find.textContaining('Auto-calculates'), findsNothing);
   });
 }

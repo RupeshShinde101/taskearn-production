@@ -539,7 +539,8 @@ class Task {
 
       // 3. Shopping, Errands & On-Demand
       case 'groceries':
-        return 100.0;
+      case 'grocery':
+        return 50.0;
       case 'shopping':
         return 150.0;
       case 'errands':
@@ -617,8 +618,14 @@ class Task {
 
   /// Calculates the price (in ₹) based on distance, category, and vehicle.
   static double calculateDistancePrice(double distanceKm, String category, {String vehicle = 'bike'}) {
-    if (distanceKm <= 0) return 0.0;
     final cat = _normalizeCategoryKey(category);
+    if (cat == 'groceries' || cat == 'grocery') {
+      // Grocery: ₹50 minimum base value + accurate ₹12/km from store to delivery location
+      const base = 50.0;
+      final safeKm = distanceKm > 0 ? distanceKm : 0.0;
+      return base + (safeKm * 12.0).roundToDouble();
+    }
+    if (distanceKm <= 0) return 0.0;
     switch (cat) {
       case 'delivery':
         if (vehicle.toLowerCase() == 'rikshaw') {
@@ -644,11 +651,6 @@ class Task {
         final rate = isTruck ? 55.0 : 35.0;
         final fare = base + (distanceKm * rate);
         return (fare < base ? base : fare).roundToDouble();
-      case 'groceries':
-      case 'grocery':
-        // Grocery: Bike / Scooty @ ₹12/km, base min ₹100
-        final raw = distanceKm * 12.0;
-        return (raw < 100.0 ? 100.0 : raw).roundToDouble();
       default:
         final raw = distanceKm * 12.0;
         return (raw < 24.0 ? 24.0 : raw).roundToDouble();
@@ -669,11 +671,8 @@ class Task {
       return 'Min fare: ₹$total (₹$baseFare base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹$rate/km · $vehName)';
     }
     if (cat == 'groceries' || cat == 'grocery') {
-      final raw = (distanceKm * 12.0).round();
-      if (raw < 100) {
-        return 'Min fare: ₹$total (${distanceKm.toStringAsFixed(1)} km @ ₹12/km — ₹100 min · Bike/Scooty)';
-      }
-      return 'Min fare: ₹$total (${distanceKm.toStringAsFixed(1)} km @ ₹12/km · Bike/Scooty)';
+      final distPart = (distanceKm * 12.0).round();
+      return 'Min fare: ₹$total (₹50 base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹12/km · Bike/Scooty)';
     }
     final rate = ratePerKmForCategory(cat, vehicle: vehicle).toInt();
     final baseMin = minBudgetForCategory(cat, vehicle: vehicle).toInt();

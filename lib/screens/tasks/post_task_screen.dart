@@ -297,10 +297,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _initGroceryDefaults({bool wasAutoOrEmpty = true}) {
+    if (_dropLocation == null && _location != null) {
+      _dropLocation = _location;
+      if (_dropAddrCtrl.text.isEmpty && _locationLabel != null && _locationLabel!.isNotEmpty) {
+        _dropAddrCtrl.text = _locationLabel!;
+      }
+    }
     if (_suggestedGroceryStoresList.isEmpty) {
       _suggestedGroceryStoresList = List<Map<String, dynamic>>.from(_defaultGroceryStores);
     }
-    if (_selectedGroceryStoreName == null ||
+    if (_dropLocation != null && _dropAddrCtrl.text.isNotEmpty) {
+      _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+    } else if (_selectedGroceryStoreName == null ||
         !_suggestedGroceryStoresList.any((s) => s['name'] == _selectedGroceryStoreName)) {
       final firstStore = _suggestedGroceryStoresList.first;
       _selectedGroceryStoreName = firstStore['name'] as String;
@@ -850,7 +858,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Show Option 5 centered dialog popup with category-specific illustrated
   /// banner background and crisp hairline-divided single-line rows.
-  void _showSubCategorySheet(TaskCategoryGroup group, {TaskCategoryGroup? parentGroup}) {
+  Future<void> _showSubCategorySheet(TaskCategoryGroup group, {TaskCategoryGroup? parentGroup}) async {
     FocusScope.of(context).unfocus();
     final theme = _categoryPopupTheme(group, parentGroup: parentGroup);
     final breadcrumb = parentGroup != null
@@ -860,7 +868,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         ? 'Select a freelancer category'
         : 'Select a specific category';
 
-    showGeneralDialog<void>(
+    final selectedCat = await showGeneralDialog<TaskCategory?>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
@@ -950,7 +958,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   if (parentGroup != null)
                                     GestureDetector(
                                       onTap: () {
-                                        Navigator.pop(ctx);
+                                        Navigator.pop(ctx, null);
                                         _showSubCategorySheet(parentGroup);
                                       },
                                       child: Container(
@@ -981,7 +989,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                     ),
                                   const Spacer(),
                                   GestureDetector(
-                                    onTap: () => Navigator.pop(ctx),
+                                    onTap: () => Navigator.pop(ctx, null),
                                     child: Container(
                                       padding: const EdgeInsets.all(7),
                                       decoration: BoxDecoration(
@@ -1093,29 +1101,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                       borderRadius: BorderRadius.circular(14),
                                       onTap: () {
                                         if (isFreelancerEntry) {
-                                          Navigator.pop(ctx);
+                                          Navigator.pop(ctx, null);
                                           _showSubCategorySheet(
                                             TaskCategoryGroup.freelancerGroup,
                                             parentGroup: group,
                                           );
                                           return;
                                         }
-                                        Navigator.pop(ctx);
-                                        setState(() {
-                                          _applySelectedCategory(c.id);
-                                        });
-                                        _checkAndEstimateDistance();
-                                        WidgetsBinding.instance
-                                            .addPostFrameCallback((_) {
-                                          if (_budgetCtrl.text.trim().isNotEmpty) {
-                                            _budgetFieldKey.currentState
-                                                ?.validate();
-                                          }
-                                          if (mounted && (c.id == 'groceries' || c.id == 'grocery')) {
-                                            _openGroceryItemPicker();
-                                          }
-                                        });
-                                        
+                                        Navigator.pop(ctx, c);
                                       },
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
@@ -1319,6 +1312,24 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         );
       },
     );
+
+    if (selectedCat != null && mounted) {
+      setState(() {
+        _applySelectedCategory(selectedCat.id);
+      });
+      _checkAndEstimateDistance();
+      if (_budgetCtrl.text.trim().isNotEmpty) {
+        _budgetFieldKey.currentState?.validate();
+      }
+      if (Task.isGroceryCategory(selectedCat.id)) {
+        // Wait for showGeneralDialog exit transition (230ms) to completely finish
+        // so its ModalBarrier overlay is cleanly unmounted and destroyed before pushing the picker.
+        await Future.delayed(const Duration(milliseconds: 320));
+        if (mounted && _selectedGroceryItems.isEmpty) {
+          await _openGroceryItemPicker();
+        }
+      }
+    }
   }
 
   /// Auto-fill description with category-specific prompts/questions.
@@ -1348,15 +1359,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     // Auto-fill description with prompts for the default category on first open
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _autoFillDescription();
-      if (widget.initialCategory != null &&
-          Task.isGroceryCategory(widget.initialCategory!) &&
-          _selectedGroceryItems.isEmpty) {
-        _openGroceryItemPicker();
-      }
       if (!mounted) return;
       // auth reference
       final auth = context.read<AuthProvider>();
-    if (!auth.isPosterMode) {
+      if (!auth.isPosterMode) {
         final switched = await showProfileModeSwitchDialog(
           context,
           targetMode: 'poster',
@@ -1367,6 +1373,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         );
         if (switched != true && mounted) {
           Navigator.of(context).pop();
+          return;
+        }
+      }
+      if (widget.initialCategory != null &&
+          Task.isGroceryCategory(widget.initialCategory!) &&
+          _selectedGroceryItems.isEmpty &&
+          mounted) {
+        await Future.delayed(const Duration(milliseconds: 350));
+        if (mounted && _selectedGroceryItems.isEmpty) {
+          await _openGroceryItemPicker();
         }
       }
     });
@@ -3025,20 +3041,29 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
   }
 
+  bool _isOpeningGroceryPicker = false;
   Future<void> _openGroceryItemPicker() async {
-    final result = await Navigator.push<List<SelectedGroceryItem>>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => GroceryItemPickerScreen(
-          initialSelected: _selectedGroceryItems,
+    if (_isOpeningGroceryPicker || !mounted) return;
+    _isOpeningGroceryPicker = true;
+    try {
+      final result = await Navigator.of(context).push<List<SelectedGroceryItem>>(
+        MaterialPageRoute(
+          builder: (_) => GroceryItemPickerScreen(
+            initialSelected: _selectedGroceryItems,
+          ),
         ),
-      ),
-    );
-    if (result != null && mounted) {
-      setState(() {
-        _selectedGroceryItems = result;
-      });
-      _compileDescriptionFromForm();
+      );
+      if (result != null && mounted) {
+        setState(() {
+          _selectedGroceryItems = result;
+        });
+        _compileDescriptionFromForm();
+        if (_dropLocation != null && _dropAddrCtrl.text.isNotEmpty) {
+          _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+        }
+      }
+    } finally {
+      _isOpeningGroceryPicker = false;
     }
   }
 
@@ -3360,20 +3385,26 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Text(isOverWeight ? '⚠️' : '🛵', style: const TextStyle(fontSize: 14)),
-                            const SizedBox(width: 6),
-                            Text(
-                              isOverWeight ? 'Weight Exceeds 20 kg Limit!' : 'Two-Wheeler Capacity:',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: isOverWeight ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Text(isOverWeight ? '⚠️' : '🛵', style: const TextStyle(fontSize: 14)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  isOverWeight ? 'Weight Exceeds 20 kg Limit!' : 'Two-Wheeler Capacity:',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isOverWeight ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           '${totalWeight.toStringAsFixed(1)} / 20.0 kg',
                           style: TextStyle(
@@ -4298,8 +4329,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           });
           _checkAndEstimateDistance();
           if (defaultId == 'groceries' || defaultId == 'grocery') {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _openGroceryItemPicker();
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (mounted && _selectedGroceryItems.isEmpty) _openGroceryItemPicker();
             });
           }
         } else {

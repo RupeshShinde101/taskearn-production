@@ -1991,19 +1991,27 @@ class Task {
       case 'delivery':
       case 'pickup':
       case 'transport':
-      case 'groceries':
-      case 'grocery':
         if (distanceKm != null && distanceKm > 0) {
           final distPrice = calculateDistancePrice(distanceKm, cat, vehicle: vehicle);
           baseSuggested = distPrice;
           baseMax = (distPrice * 1.30).roundToDouble();
         } else {
-          baseSuggested = (cat == 'groceries' || cat == 'grocery')
-              ? 100.0
-              : (cat == 'delivery'
-                  ? (vehicle == 'rikshaw' ? 60.0 : 40.0)
-                  : (cat == 'pickup' ? 70.0 : 100.0));
+          baseSuggested = cat == 'delivery'
+              ? (vehicle == 'rikshaw' ? 60.0 : 40.0)
+              : (cat == 'pickup' ? 70.0 : 100.0);
           baseMax = baseSuggested * 1.5;
+        }
+        break;
+      case 'groceries':
+      case 'grocery':
+        // ₹12/km (min ₹100) + ₹50 handling charge
+        if (distanceKm != null && distanceKm > 0) {
+          final distPrice = calculateDistancePrice(distanceKm, cat, vehicle: vehicle);
+          baseSuggested = distPrice + 50.0;
+          baseMax = ((distPrice + 50.0) * 1.30).roundToDouble();
+        } else {
+          baseSuggested = 150.0;
+          baseMax = 200.0;
         }
         break;
       case 'other':
@@ -2013,10 +2021,12 @@ class Task {
         break;
     }
 
-    final catMin = minBudgetForCategory(cat, vehicle: vehicle);
+    final isGroc = cat == 'groceries' || cat == 'grocery';
+    final extraHandling = isGroc ? 50.0 : 0.0;
+    final catMin = minBudgetForCategory(cat, vehicle: vehicle) + extraHandling;
     const distCats = {'delivery', 'pickup', 'transport', 'moving', 'groceries', 'grocery'};
     final distFloor = (distCats.contains(cat) && distanceKm != null && distanceKm > 0)
-        ? calculateDistancePrice(distanceKm, cat, vehicle: vehicle)
+        ? (calculateDistancePrice(distanceKm, cat, vehicle: vehicle) + extraHandling)
         : 0.0;
     final minB = distFloor > catMin ? distFloor : catMin;
     double suggested = ((baseSuggested * multiplier) / 5).round() * 5.0;

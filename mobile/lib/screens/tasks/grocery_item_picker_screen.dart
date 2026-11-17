@@ -702,7 +702,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF102A56)),
-          onPressed: () => Navigator.pop(context, _selectedMap.values.toList()),
+          onPressed: () => Navigator.of(context).pop(_selectedMap.values.toList()),
         ),
         actions: [
           if (totalAdded > 0)
@@ -1108,7 +1108,7 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
                     );
                     return;
                   }
-                  Navigator.pop(context, _selectedMap.values.toList());
+                  Navigator.of(context).pop(_selectedMap.values.toList());
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,

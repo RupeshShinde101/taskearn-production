@@ -985,6 +985,7 @@ def screen_task_content(title, description, category):
     """
     import re as _re
     text = ' '.join([str(title or ''), str(description or '')]).lower()
+    text = _re.sub(r'\[grocery_items\].*?\[/grocery_items\]', ' ', text, flags=_re.DOTALL)
     if not text.strip():
         return True, ''
 
@@ -1112,9 +1113,10 @@ def screen_task_content(title, description, category):
             continue
 
     # Phone / email in title or description → forces in-app contact (anti-bypass)
-    if _re.search(r'(?:\+?91[\s\-]?)?[6-9]\d{9}', text):
+    scan_text = _re.sub(r'https?://\S+', ' ', text)
+    if _re.search(r'(?<!\d)(?:\+?91[\s\-]?)?[6-9]\d{9}(?!\d)', scan_text):
         return False, 'Sharing phone numbers in the task is not allowed. Helpers can contact you through in-app chat.'
-    if _re.search(r'[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}', text):
+    if _re.search(r'\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b', scan_text):
         return False, 'Sharing email addresses in the task is not allowed. Use in-app chat instead.'
     # Whatsapp/telegram links
     if _re.search(r'\b(?:wa\.me|t\.me|telegram\.me|chat\.whatsapp\.com)\b', text):
@@ -1188,7 +1190,8 @@ CATEGORY_MIN_PRICES = {
     'cleaning': 300.0,
 
     # Shopping, Errands & On-Demand
-    'groceries': 100.0,
+    'groceries': 50.0,
+    'grocery': 50.0,
     'shopping': 150.0,
     'errands': 200.0,
     'errand': 200.0,
@@ -3040,12 +3043,26 @@ def create_task():
                 data.get('drop_location_address') or
                 data.get('delivery_address') or
                 data.get('drop_address') or
+                data.get('dropAddress') or
                 data.get('to_address')
             )
             if not drop_addr_val and location.get('address'):
                 m_drop_extracted = re.search(r'Drop:\s*(.+?)(?:\n|$)', str(location.get('address')), re.IGNORECASE)
                 if m_drop_extracted:
                     drop_addr_val = m_drop_extracted.group(1).strip()
+
+            pickup_addr_val = (
+                data.get('pickup_address') or
+                data.get('pickupAddress') or
+                data.get('pickup_addr') or
+                data.get('from_address')
+            )
+            if not pickup_addr_val and location.get('address'):
+                m_pickup_extracted = re.search(r'Pickup:\s*(.+?)(?:\n|$)', str(location.get('address')), re.IGNORECASE)
+                if m_pickup_extracted:
+                    pickup_addr_val = m_pickup_extracted.group(1).strip()
+
+            final_loc_address = pickup_addr_val if pickup_addr_val else (location.get('address', '') or '')
             
             print(f"   Posted at: {posted_at}")
             print(f"   Expires at: {expires_at}")
@@ -3074,7 +3091,7 @@ def create_task():
                     html_escape(data['category']),
                     location.get('lat'),
                     location.get('lng'),
-                    html_escape(location.get('address', '') or ''),
+                    html_escape(final_loc_address or ''),
                     drop_location.get('lat') if drop_location else None,
                     drop_location.get('lng') if drop_location else None,
                     html_escape(drop_addr_val or '') if drop_addr_val else None,
@@ -3099,7 +3116,7 @@ def create_task():
                     html_escape(data['category']),
                     location.get('lat'),
                     location.get('lng'),
-                    html_escape(location.get('address', '') or ''),
+                    html_escape(final_loc_address or ''),
                     drop_location.get('lat') if drop_location else None,
                     drop_location.get('lng') if drop_location else None,
                     html_escape(drop_addr_val or '') if drop_addr_val else None,
@@ -3729,6 +3746,7 @@ def get_task(task_id):
                     'lng': task.get('drop_location_lng'),
                     'address': task.get('drop_location_address') or ''
                 } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                'pickup_address': task.get('location_address') or '',
                 'drop_address': task.get('drop_location_address') or '',
                 'drop_location_address': task.get('drop_location_address') or '',
                 'price': float(task.get('price') or 0),
@@ -4056,7 +4074,8 @@ def complete_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
-            poster_fee = task_amount * _poster_commission_rate
+            _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
+            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
@@ -4198,7 +4217,8 @@ def verify_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
-            poster_fee = task_amount * _poster_commission_rate
+            _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
+            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
@@ -5299,9 +5319,9 @@ def get_tracking_info(task_id):
                 'lng': float(task['location_lng']) if task['location_lng'] else None
             },
             'destination': {
-                'address': task.get('drop_location_address') or task['location_address'] or 'Delivery Location',
-                'lat': float(task['drop_location_lat']) if task.get('drop_location_lat') else (float(task['location_lat']) if task['location_lat'] else None),
-                'lng': float(task['drop_location_lng']) if task.get('drop_location_lng') else (float(task['location_lng']) if task['location_lng'] else None)
+                'address': task.get('drop_location_address') or 'Delivery Location',
+                'lat': float(task['drop_location_lat']) if task.get('drop_location_lat') else None,
+                'lng': float(task['drop_location_lng']) if task.get('drop_location_lng') else None
             },
             'helper': {
                 'id': task['accepted_by'],

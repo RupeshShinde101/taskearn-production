@@ -2479,35 +2479,37 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
 
     final budget = double.tryParse(_budgetCtrl.text) ?? 0;
-    if (_isDelivery) {
-      if (_calculatedDistanceKm != null) {
-        final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
-        if (budget < distMin) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Minimum budget for ${_calculatedDistanceKm!.toStringAsFixed(1)} km is ₹${distMin.toInt()}')),
-          );
-          return;
+    final isGrocery = Task.isGroceryCategory(_selectedCategory);
+    if (!isGrocery) {
+      if (_isDelivery) {
+        if (_calculatedDistanceKm != null) {
+          final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
+          if (budget < distMin) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Minimum budget for ${_calculatedDistanceKm!.toStringAsFixed(1)} km is ₹${distMin.toInt()}')),
+            );
+            return;
+          }
+        } else {
+          final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+          if (catMin > 0 && budget < catMin) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+            );
+            return;
+          }
         }
       } else {
-        final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
-        if (catMin > 0 && budget < catMin) {
+        final minAllowed = _currentMinBudget();
+        if (budget < minAllowed) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+            SnackBar(content: Text(_currentMinBudgetMessage())),
           );
           return;
         }
-      }
-    } else {
-      final minAllowed = _currentMinBudget();
-      if (budget < minAllowed) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_currentMinBudgetMessage())),
-        );
-        return;
       }
     }
     final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
-    final isGrocery = Task.isGroceryCategory(_selectedCategory);
     final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
     final posterFee = isGrocery ? 12.0 : (budget * 0.20);
     final total  = budget + charge + posterFee;
@@ -7174,7 +7176,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             ? 'Moving & Packing Rate'
             : (isPickup ? 'Pick & Drop Rate' : 'Transport Rate'));
     final rateBadge = isGrocery
-        ? 'Min ₹100 · ₹12 / km'
+        ? '₹50 base + ₹12 / km'
         : (isMoving
             ? '₹400 base + ₹35 / km'
             : (isPickup ? 'Min ₹30 · ₹18 / km' : 'Min ₹50 · ₹18 / km'));
@@ -7186,7 +7188,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 ? Icons.electric_rickshaw_rounded
                 : Icons.directions_car_rounded));
     final subtitle = isGrocery
-        ? 'Store to drop distance fare (₹12/km, Min ₹100 · Bike/Scooty up to 20kg)'
+        ? 'Store to drop distance fare (₹50 base + ₹12/km · Bike/Scooty up to 20kg)'
         : 'Distance fare is included in your budget (₹0 extra service charge)';
 
     return Container(

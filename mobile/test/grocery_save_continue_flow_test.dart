@@ -84,5 +84,14 @@ void main() {
     // Old combined header & hint text removed
     expect(find.text('Delivery Address & Store'), findsNothing);
     expect(find.textContaining('Auto-calculates'), findsNothing);
+
+    // Verify encoded grocery JSON has NO Unsplash URLs or 10-digit photo IDs
+    final encoded = GroceryCatalog.encodeGroceryItemsJson(initialItems);
+    expect(encoded.contains('unsplash'), isFalse);
+    expect(RegExp(r'(?:\+?91[\s\-]?)?[6-9]\d{9}').hasMatch(encoded), isFalse);
+    // Verify parsing restores catalog imageUrl automatically
+    final parsed = GroceryCatalog.parseGroceryItems(null, encoded);
+    expect(parsed.length, 2);
+    expect(parsed.first.imageUrl, isNotEmpty);
   });
 }

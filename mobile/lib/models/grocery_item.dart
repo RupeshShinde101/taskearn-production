@@ -90,12 +90,40 @@ class SelectedGroceryItem {
     if (brand.trim().isNotEmpty) 'brand': brand.trim(),
   };
 
+  /// Compact JSON for embedding inside task description without external photo URLs
+  /// (prevents long numeric Unsplash photo IDs from triggering anti-phone filters).
+  Map<String, dynamic> toCompactJson() => {
+    'id': id,
+    'name': name,
+    'category': category,
+    'emoji': emoji,
+    if (package.trim().isNotEmpty) 'package': package.trim(),
+    if (qty.trim().isNotEmpty) 'qty': qty.trim(),
+    if (kg.trim().isNotEmpty) 'kg': kg.trim(),
+    if (gram.trim().isNotEmpty) 'gram': gram.trim(),
+    if (litr.trim().isNotEmpty) 'litr': litr.trim(),
+    if (rupee.trim().isNotEmpty) 'rupee': rupee.trim(),
+    if (brand.trim().isNotEmpty) 'brand': brand.trim(),
+  };
+
   factory SelectedGroceryItem.fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString() ?? '';
+    final name = json['name']?.toString() ?? '';
+    String resolvedImg = (json['image_url'] ?? json['imageUrl'])?.toString() ?? '';
+    if (resolvedImg.isEmpty && (id.isNotEmpty || name.isNotEmpty)) {
+      for (final c in GroceryCatalog.allItems) {
+        if ((id.isNotEmpty && c.id == id) ||
+            (name.isNotEmpty && c.name.toLowerCase() == name.toLowerCase())) {
+          resolvedImg = c.imageUrl;
+          break;
+        }
+      }
+    }
     return SelectedGroceryItem(
-      id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? '',
+      id: id,
+      name: name,
       category: json['category']?.toString() ?? 'Groceries',
-      imageUrl: (json['image_url'] ?? json['imageUrl'])?.toString() ?? '',
+      imageUrl: resolvedImg,
       emoji: json['emoji']?.toString() ?? '🛒',
       package: json['package']?.toString() ?? '',
       qty: json['qty']?.toString() ?? '',
@@ -1029,7 +1057,7 @@ class GroceryCatalog {
 
   /// Serializes grocery items into a safe JSON tag for description storage.
   static String encodeGroceryItemsJson(List<SelectedGroceryItem> items) {
-    return '[GROCERY_ITEMS]${jsonEncode(items.map((e) => e.toJson()).toList())}[/GROCERY_ITEMS]';
+    return '[GROCERY_ITEMS]${jsonEncode(items.map((e) => e.toCompactJson()).toList())}[/GROCERY_ITEMS]';
   }
 
   /// Parses grocery items from JSON or task description fallback.

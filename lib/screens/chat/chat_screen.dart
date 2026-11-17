@@ -49,7 +49,8 @@ class _ChatScreenState extends State<ChatScreen> {
     NotificationService.activeChatTaskId = widget.taskId;
     _initParticipantData();
     _loadMessages();
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => _pollMessages());
+    _pollTimer =
+        Timer.periodic(const Duration(seconds: 3), (_) => _pollMessages());
   }
 
   @override
@@ -73,14 +74,12 @@ class _ChatScreenState extends State<ChatScreen> {
           'User';
       _otherRole = extra['otherRole'] ??
           (extra['isPoster'] == true ? 'Helper' : 'Task Poster');
-      _otherPhone = extra['otherPhone'] ??
-          extra['helper_phone'] ??
-          extra['poster_phone'];
+      _otherPhone =
+          extra['otherPhone'] ?? extra['helper_phone'] ?? extra['poster_phone'];
       _taskTitle = extra['taskTitle'] ?? extra['title'] ?? 'Task Discussion';
       _taskCategory = extra['category'] ?? '';
-      _taskBudget = (extra['budget'] is num)
-          ? (extra['budget'] as num).toDouble()
-          : 0.0;
+      _taskBudget =
+          (extra['budget'] is num) ? (extra['budget'] as num).toDouble() : 0.0;
       _taskStatus = extra['status'] ?? 'in_progress';
     } else {
       _fetchTaskDetails();
@@ -156,7 +155,8 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final data = await ApiService.get('/chat/${widget.taskId}/messages');
       final msgs = (data['messages'] as List? ?? [])
-          .map((j) => ChatMessage.fromJson(j as Map<String, dynamic>, fallbackTaskId: widget.taskId))
+          .map((j) => ChatMessage.fromJson(j as Map<String, dynamic>,
+              fallbackTaskId: widget.taskId))
           .toList();
 
       if (mounted) {
@@ -178,18 +178,24 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final data = await ApiService.get('/chat/${widget.taskId}/messages');
       final msgs = (data['messages'] as List? ?? [])
-          .map((j) => ChatMessage.fromJson(j as Map<String, dynamic>, fallbackTaskId: widget.taskId))
+          .map((j) => ChatMessage.fromJson(j as Map<String, dynamic>,
+              fallbackTaskId: widget.taskId))
           .toList();
 
       if (!mounted) return;
       // Preserve local pending messages that haven't confirmed yet
-      final localPending = _messages.where((m) => m.id.startsWith('local_')).toList();
+      final localPending =
+          _messages.where((m) => m.id.startsWith('local_')).toList();
       final serverContents = msgs.map((m) => m.content).toSet();
-      final remainingLocals = localPending.where((l) => !serverContents.contains(l.content)).toList();
+      final remainingLocals = localPending
+          .where((l) => !serverContents.contains(l.content))
+          .toList();
       final merged = [...msgs, ...remainingLocals];
 
       if (merged.length != _messages.length ||
-          (msgs.isNotEmpty && _messages.isNotEmpty && msgs.last.id != _messages.last.id)) {
+          (msgs.isNotEmpty &&
+              _messages.isNotEmpty &&
+              msgs.last.id != _messages.last.id)) {
         setState(() {
           _messages = merged;
         });
@@ -269,7 +275,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _pollMessages();
     } catch (e) {
       debugPrint('[ChatScreen] Send message failed: $e');
-      final errMsg = e is ApiException ? e.message : 'Failed to deliver message. Please check connection.';
+      final errMsg = e is ApiException
+          ? e.message
+          : 'Failed to deliver message. Please check connection.';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -411,7 +419,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1.5),
                         decoration: BoxDecoration(
                           color: AppColors.primary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(6),
@@ -430,7 +439,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   const SizedBox(height: 1),
                   Row(
                     children: [
-                      const Icon(Icons.lock_rounded, size: 10, color: Color(0xFF059669)),
+                      const Icon(Icons.lock_rounded,
+                          size: 10, color: Color(0xFF059669)),
                       const SizedBox(width: 3),
                       const Text(
                         'End-to-End Encrypted',
@@ -450,12 +460,14 @@ class _ChatScreenState extends State<ChatScreen> {
         actions: [
           if (_otherPhone != null && _otherPhone!.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.phone_outlined, color: AppColors.primary, size: 21),
+              icon: const Icon(Icons.phone_outlined,
+                  color: AppColors.primary, size: 21),
               tooltip: 'Call $_otherName',
               onPressed: _callOtherParty,
             ),
           IconButton(
-            icon: const Icon(Icons.info_outline_rounded, color: AppColors.gray, size: 21),
+            icon: const Icon(Icons.info_outline_rounded,
+                color: AppColors.gray, size: 21),
             tooltip: 'Task Details',
             onPressed: () => context.push('/task/${widget.taskId}'),
           ),
@@ -549,7 +561,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right_rounded, color: AppColors.grayLight, size: 20),
+                  const Icon(Icons.chevron_right_rounded,
+                      color: AppColors.grayLight, size: 20),
                 ],
               ),
             ),
@@ -567,7 +580,8 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.shield_outlined, size: 13, color: Color(0xFF047857)),
+                const Icon(Icons.shield_outlined,
+                    size: 13, color: Color(0xFF047857)),
                 const SizedBox(width: 5),
                 Flexible(
                   child: Text(
@@ -593,7 +607,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? Center(
                         child: SingleChildScrollView(
                           physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 32, vertical: 16),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -601,7 +616,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 width: 56,
                                 height: 56,
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.08),
+                                  color:
+                                      AppColors.primary.withValues(alpha: 0.08),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
@@ -638,7 +654,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                   return ActionChip(
                                     label: Text(reply),
                                     backgroundColor: Colors.white,
-                                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                                    side: const BorderSide(
+                                        color: Color(0xFFE2E8F0)),
                                     labelStyle: const TextStyle(
                                       fontSize: 11.5,
                                       fontWeight: FontWeight.w500,
@@ -654,7 +671,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       )
                     : ListView.builder(
                         controller: _scrollCtrl,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
                         itemCount: _messages.length,
                         itemBuilder: (ctx, i) {
                           final msg = _messages[i];
@@ -666,8 +684,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              if (showDateHeader)
-                                _buildDateHeader(msg.sentAt),
+                              if (showDateHeader) _buildDateHeader(msg.sentAt),
                               _ChatBubble(
                                 message: msg,
                                 isMe: isMe,
@@ -740,12 +757,15 @@ class _ChatScreenState extends State<ChatScreen> {
                       focusNode: _focusNode,
                       minLines: 1,
                       maxLines: 4,
-                      style: const TextStyle(fontSize: 14, color: AppColors.dark),
+                      style:
+                          const TextStyle(fontSize: 14, color: AppColors.dark),
                       decoration: const InputDecoration(
                         hintText: 'Type an encrypted message…',
-                        hintStyle: TextStyle(fontSize: 13.5, color: Color(0xFF94A3B8)),
+                        hintStyle:
+                            TextStyle(fontSize: 13.5, color: Color(0xFF94A3B8)),
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       ),
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
@@ -780,7 +800,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         )
                       : IconButton(
-                          icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                          icon: const Icon(Icons.send_rounded,
+                              color: Colors.white, size: 20),
                           onPressed: () => _send(),
                         ),
                 ),
@@ -861,8 +882,10 @@ class _ChatBubble extends StatelessWidget {
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
-            bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(4),
-            bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(16),
+            bottomLeft:
+                isMe ? const Radius.circular(16) : const Radius.circular(4),
+            bottomRight:
+                isMe ? const Radius.circular(4) : const Radius.circular(16),
           ),
           border: isMe ? null : Border.all(color: const Color(0xFFE2E8F0)),
           boxShadow: [

@@ -29,6 +29,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
   AuthProvider? _authListener;
   bool _popupScheduled = false;
   bool _popupActive = false;
+  DateTime _lastBackTime = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
@@ -66,11 +67,30 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
   /// Returns false → Android falls back to its default behaviour.
   Future<dynamic> _onNativeBack(MethodCall call) async {
     if (call.method != 'back_pressed' || !mounted) return false;
+    return await _handleBackPress();
+  }
+
+  Future<bool> _handleBackPress() async {
+    if (!mounted) return false;
+
+    // Debounce rapid back presses
+    final now = DateTime.now();
+    if (now.difference(_lastBackTime).inMilliseconds < 350) {
+      return true;
+    }
+    _lastBackTime = now;
 
     // If the keyboard is currently visible, dismiss it and stop here.
     // The user's next back press will trigger navigation.
     if (_keyboardVisible) {
       FocusManager.instance.primaryFocus?.unfocus();
+      return true;
+    }
+
+    // If a dialog, popup or modal bottom sheet is open on root Navigator, pop it first!
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    if (rootNav.canPop()) {
+      rootNav.pop();
       return true;
     }
 
@@ -341,35 +361,42 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
       );
     }
 
-    return Scaffold(
-      extendBody: true,
-      body: body,
-      bottomNavigationBar: _FloatingNavBar(
-        selectedIndex: idx,
-        onTabTap: _onTap,
-        onPostTap: () async {
-        if (!auth.cityVerified) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Verify your location first to post tasks.'),
-            behavior: SnackBarBehavior.floating,
-          ));
-          return;
-        }
-        if (!auth.isPosterMode) {
-          final switched = await showProfileModeSwitchDialog(
-            context,
-            targetMode: 'poster',
-            title: 'Switch to Poster Profile',
-            message:
-                'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
-            actionLabel: 'Switch to Poster & Continue',
-          );
-          if (switched != true) return;
-        }
-        if (context.mounted) {
-          context.push('/post-task');
-        }
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleBackPress();
       },
+      child: Scaffold(
+        extendBody: true,
+        body: body,
+        bottomNavigationBar: _FloatingNavBar(
+          selectedIndex: idx,
+          onTabTap: _onTap,
+          onPostTap: () async {
+            if (!auth.cityVerified) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Verify your location first to post tasks.'),
+                behavior: SnackBarBehavior.floating,
+              ));
+              return;
+            }
+            if (!auth.isPosterMode) {
+              final switched = await showProfileModeSwitchDialog(
+                context,
+                targetMode: 'poster',
+                title: 'Switch to Poster Profile',
+                message:
+                    'Posting tasks requires a Poster profile. Would you like to switch to Poster mode to post this task?',
+                actionLabel: 'Switch to Poster & Continue',
+              );
+              if (switched != true) return;
+            }
+            if (context.mounted) {
+              context.push('/post-task');
+            }
+          },
+        ),
       ),
     );
   }

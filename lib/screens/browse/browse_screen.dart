@@ -7,6 +7,8 @@ import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
 import '../../services/location_service.dart';
+import '../../widgets/task_screen_watermark.dart';
+import '../../widgets/task_empty_state_illustration.dart';
 
 class BrowseScreen extends StatefulWidget {
   /// Set by the home screen before calling context.go('/browse') so that the
@@ -244,137 +246,204 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Browse Tasks'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.tune),
-            onPressed: _showFilters,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _searchCtrl,
-              decoration: InputDecoration(
-                hintText: 'Search tasks…',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchCtrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          _applyFilters();
-                        },
-                      )
-                    : null,
-              ),
-              onSubmitted: (_) => _applyFilters(),
+    return TaskScreenWatermark(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: true,
+          automaticallyImplyLeading: false,
+          title: const Text(
+            'Browse Tasks',
+            style: TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 21,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
             ),
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.tune_rounded, color: Color(0xFF0F172A), size: 24),
+              onPressed: _showFilters,
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: Column(
+          children: [
+            // Search bar matching Image 2
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+              child: Container(
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFDCE7F5), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF2563EB).withValues(alpha: 0.06),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Search tasks...',
+                    hintStyle: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      color: Color(0xFF2563EB),
+                      size: 24,
+                    ),
+                    suffixIcon: _searchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close_rounded,
+                                color: Color(0xFF94A3B8), size: 20),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              _applyFilters();
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                  ),
+                  onSubmitted: (_) => _applyFilters(),
+                ),
+              ),
+            ),
 
-          // Task list
-          Expanded(
-            child: Consumer<TaskProvider>(
-              builder: (_, tasks, __) {
-                if (tasks.isLoadingBrowse && tasks.browseTasks.isEmpty) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            // Task list or empty state
+            Expanded(
+              child: Consumer<TaskProvider>(
+                builder: (_, tasks, __) {
+                  if (tasks.isLoadingBrowse && tasks.browseTasks.isEmpty) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                if (tasks.browseTasks.isEmpty) {
-                  final filtersActive = _hasActiveFilters;
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              color: AppColors.grayLight.withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
+                  if (tasks.browseTasks.isEmpty) {
+                    final filtersActive = _hasActiveFilters;
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const EmptyTasksClipboardIllustration(
+                              type: EmptyTasksClipboardType.browse,
                             ),
-                            child: Icon(
+                            const SizedBox(height: 18),
+                            Text(
                               filtersActive
-                                  ? Icons.search_off_rounded
-                                  : Icons.inbox_outlined,
-                              size: 32,
-                              color: AppColors.gray,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            filtersActive
-                                ? 'No tasks match your filters'
-                                : 'No tasks available',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.dark,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            filtersActive
-                                ? 'Try adjusting or clearing your filters'
-                                : 'Check back later for new tasks',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.gray,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          if (filtersActive)
-                            OutlinedButton.icon(
-                              onPressed: _clearFilters,
-                              icon: const Icon(Icons.close_rounded, size: 16),
-                              label: const Text('Clear Filters'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: const BorderSide(color: AppColors.primary),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 24, vertical: 10),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(24)),
+                                  ? 'No tasks match your filters'
+                                  : 'No tasks available',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                                letterSpacing: -0.2,
                               ),
-                            )
-                          else
-                            TextButton(
-                              onPressed: _applyFilters,
-                              child: const Text('Refresh'),
                             ),
-                        ],
+                            const SizedBox(height: 8),
+                            Text(
+                              filtersActive
+                                  ? 'Try adjusting or clearing your filters'
+                                  : 'Check back later for new tasks',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            if (filtersActive)
+                              OutlinedButton.icon(
+                                onPressed: _clearFilters,
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                label: const Text('Clear Filters'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF2563EB),
+                                  side: const BorderSide(
+                                      color: Color(0xFF2563EB), width: 1.5),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 32, vertical: 13),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24)),
+                                  textStyle: const TextStyle(
+                                      fontSize: 15, fontWeight: FontWeight.w600),
+                                ),
+                              )
+                            else
+                              SizedBox(
+                                width: 140,
+                                height: 46,
+                                child: ElevatedButton(
+                                  onPressed: _applyFilters,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF2563EB),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                    ),
+                                    shadowColor:
+                                        const Color(0xFF2563EB).withValues(alpha: 0.35),
+                                  ),
+                                  child: const Text(
+                                    'Refresh',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  return RefreshIndicator(
+                    onRefresh: () async => _applyFilters(),
+                    child: ListView.builder(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        4,
+                        16,
+                        MediaQuery.of(context).viewPadding.bottom + 85,
+                      ),
+                      itemCount: tasks.browseTasks.length,
+                      itemBuilder: (_, i) => TaskCard(
+                        task: tasks.browseTasks[i],
+                        onTap: () =>
+                            context.push('/task/${tasks.browseTasks[i].id}'),
                       ),
                     ),
                   );
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () async => _applyFilters(),
-                  child: ListView.builder(
-                    padding: EdgeInsets.only(
-                        bottom: MediaQuery.of(context).padding.bottom),
-                    itemCount: tasks.browseTasks.length,
-                    itemBuilder: (_, i) => TaskCard(
-                      task: tasks.browseTasks[i],
-                      onTap: () =>
-                          context.push('/task/${tasks.browseTasks[i].id}'),
-                    ),
-                  ),
-                );
-              },
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -12,6 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 import 'physical_onboarding_screen.dart';
 import 'vehicle_verification_screen.dart';
+import '../../widgets/task_screen_watermark.dart';
 
 // â”€â”€ All available skills the user can select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _kAllSkills = [
@@ -54,24 +55,64 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final phyRemaining = user?.physicalVerificationReapplyRemaining ?? Duration.zero;
     final vehRemaining = user?.vehicleVerificationReapplyRemaining ?? Duration.zero;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _showEditDialog(context, auth),
+    return TaskScreenWatermark(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: true,
+          automaticallyImplyLeading: false,
+          title: const Text(
+            'Profile',
+            style: TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 21,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
+            ),
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom),
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: InkWell(
+                onTap: () => _showEditDialog(context, auth),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.edit_outlined,
+                    color: Color(0xFF2563EB),
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: _refresh,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // â”€â”€ Avatar, name, email, rating â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Center(
               child: Column(
@@ -82,20 +123,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         Selector<AuthProvider, String?>(
                           selector: (_, a) => a.user?.avatar,
-                          builder: (_, avatar, __) => CircleAvatar(
-                            radius: 48,
-                            backgroundImage: avatarImage(avatar),
-                            backgroundColor: AppColors.light,
-                            child: avatar == null
-                                ? Text(
-                                    user?.name.isNotEmpty == true
-                                        ? user!.name[0].toUpperCase()
-                                        : '?',
-                                    style: const TextStyle(
-                                        fontSize: 36,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.primary))
-                                : null,
+                          builder: (_, avatar, __) => Container(
+                            width: 96,
+                            height: 96,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFFDBEAFE),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 3,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ClipOval(
+                              child: avatar != null
+                                  ? Image(
+                                      image: avatarImage(avatar)!,
+                                      fit: BoxFit.cover,
+                                      width: 96,
+                                      height: 96,
+                                    )
+                                  : Center(
+                                      child: Text(
+                                        user?.name.isNotEmpty == true
+                                            ? user!.name[0].toUpperCase()
+                                            : 'V',
+                                        style: const TextStyle(
+                                          fontSize: 38,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF2563EB),
+                                        ),
+                                      ),
+                                    ),
+                            ),
                           ),
                         ),
                         Positioned(
@@ -104,64 +170,96 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: Container(
                             width: 30,
                             height: 30,
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(colors: AppColors.gradient),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2563EB),
                               shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2.5),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF2563EB).withValues(alpha: 0.3),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                            child: const Icon(Icons.camera_alt,
-                                color: Colors.white, size: 16),
+                            child: const Icon(
+                              Icons.camera_alt_rounded,
+                              color: Colors.white,
+                              size: 15,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text(user?.name ?? '',
-                      style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.dark)),
-                  Text(user?.email ?? '',
-                      style: const TextStyle(color: AppColors.gray)),
-                  if (user?.phone != null && user!.phone!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(user.phone!,
-                          style: const TextStyle(
-                              color: AppColors.grayLight, fontSize: 13)),
+                  Text(
+                    user?.name ?? '',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
                     ),
-                  if (user?.rating != null && user!.rating > 0) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ...List.generate(5, (i) {
-                          final filled = i < user.rating.floor();
-                          final half = !filled && i < user.rating;
-                          return Icon(
-                            filled
-                                ? Icons.star
-                                : (half ? Icons.star_half : Icons.star_border),
-                            color: AppColors.warning,
-                            size: 20,
-                          );
-                        }),
-                        const SizedBox(width: 6),
-                        Text(
-                          user.rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                              color: AppColors.gray,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14),
-                        ),
-                      ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    user?.email ?? '',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  if (user?.phone != null && user!.phone!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      user.phone!,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (context) {
+                      final userRating = user?.rating;
+                      final rating = (userRating != null && userRating > 0)
+                          ? userRating
+                          : 5.0;
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ...List.generate(5, (i) {
+                            final filled = i < rating.floor();
+                            final half = !filled && i < rating;
+                            return Icon(
+                              filled
+                                  ? Icons.star_rounded
+                                  : (half ? Icons.star_half_rounded : Icons.star_outline_rounded),
+                              color: const Color(0xFFF59E0B),
+                              size: 20,
+                            );
+                          }),
+                          const SizedBox(width: 6),
+                          Text(
+                            rating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
 
             // â”€â”€ Profile Role Switcher (Poster vs Helper) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             _ProfileRoleSwitcher(
@@ -205,23 +303,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 16),
 
             // â”€â”€ Stats card (Tasks Completed | Tasks Posted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-                child: IntrinsicHeight(
-                  child: Row(
-                    children: [
-                      _StatCell(
-                        label: 'Tasks\nCompleted',
-                        value: '${user?.tasksCompleted ?? 0}',
-                      ),
-                      const VerticalDivider(width: 1),
-                      _StatCell(
-                        label: 'Tasks\nPosted',
-                        value: '${user?.tasksPosted ?? 0}',
-                      ),
-                    ],
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
                   ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+              child: IntrinsicHeight(
+                child: Row(
+                  children: [
+                    _StatCell(
+                      label: 'Tasks\nCompleted',
+                      value: '${user?.tasksCompleted ?? 0}',
+                    ),
+                    const VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: Color(0xFFF1F5F9),
+                    ),
+                    _StatCell(
+                      label: 'Tasks\nPosted',
+                      value: '${user?.tasksPosted ?? 0}',
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -238,19 +351,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // â”€â”€ Bio section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (user?.bio != null && user!.bio!.isNotEmpty) ...[
-              const _SectionHeader('About Me'),
-              const SizedBox(height: 8),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AppColors.light,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: Text(user.bio!,
-                    style: const TextStyle(
-                        color: AppColors.dark, height: 1.5)),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _SectionHeader('About Me'),
+                    const SizedBox(height: 8),
+                    Text(
+                      user.bio!,
+                      style: const TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 13.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
             ],
@@ -545,7 +675,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
 
             // â”€â”€ Menu items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Card(
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
                   _MenuItem(
@@ -553,20 +696,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: 'My Wallet',
                     onTap: () => context.push('/wallet'),
                   ),
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
                     icon: Icons.card_giftcard_outlined,
                     title: 'Referral & Rewards',
                     badge: 'Coming Soon',
                     onTap: () => context.push('/referral'),
                   ),
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
-                    icon: Icons.notifications_outlined,
+                    icon: Icons.notifications_none_rounded,
                     title: 'Notifications',
                     onTap: () => context.push('/notifications'),
                   ),
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   if (auth.isHelperMode) ...[
                     _MenuItem(
                       icon: Icons.shield_outlined,
@@ -587,10 +730,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               : AppColors.danger),
                       onTap: () => context.push('/physical-onboarding'),
                     ),
-                    const Divider(height: 1),
+                    const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                     _MenuItem(
                       icon: Icons.directions_car_outlined,
-                      title: 'Vehical Verification',
+                      title: 'Vehicle Verification',
                       badge: vehStatus == 'verified'
                           ? 'Verified'
                           : (vehStatus == 'pending'
@@ -607,38 +750,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               : AppColors.danger),
                       onTap: () => context.push('/vehicle-verification'),
                     ),
-                    const Divider(height: 1),
+                    const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   ],
                   _MenuItem(
-                    icon: Icons.security_outlined,
+                    icon: Icons.shield_outlined,
                     title: 'Security',
                     onTap: () => _launch('https://workmate4u.com/safety'),
                   ),
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
-                    icon: Icons.lock_reset_outlined,
+                    icon: Icons.sync_lock_rounded,
                     title: 'Change Password',
                     onTap: () => _showChangePasswordDialog(context, auth),
                   ),
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
-                    icon: Icons.help_outline,
+                    icon: Icons.help_outline_rounded,
                     title: 'Help & Support',
                     onTap: () => _launch('https://workmate4u.com/help'),
                   ),
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
-                    icon: Icons.play_circle_outline,
+                    icon: Icons.play_circle_outline_rounded,
                     title: 'How to Use (Tutorial)',
                     onTap: () => context.push('/tutorial'),
                   ),
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
-                    icon: Icons.privacy_tip_outlined,
+                    icon: Icons.policy_outlined,
                     title: 'Privacy Policy',
                     onTap: () => _launch('https://workmate4u.com/privacy'),
                   ),
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
                     icon: Icons.description_outlined,
                     title: 'Terms of Service',
@@ -651,168 +794,267 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 16),
 
             // â”€â”€ Sign out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Card(
-              child: _MenuItem(
-                icon: Icons.logout,
-                title: 'Sign Out',
-                textColor: AppColors.danger,
-                iconColor: AppColors.danger,
-                onTap: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    barrierColor: Colors.black.withValues(alpha: 0.55),
-                    builder: (dialogContext) => Dialog(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24)),
-                      insetPadding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 40),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Icon + title
-                            Row(
-                              children: [
-                                Container(
-                                  width: 44, height: 44,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.danger.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(12),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      barrierColor: Colors.black.withValues(alpha: 0.55),
+                      builder: (dialogContext) => Dialog(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24)),
+                        insetPadding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 40),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Icon + title
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 44, height: 44,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEE2E2),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(Icons.logout_rounded,
+                                        color: Color(0xFFEF4444), size: 22),
                                   ),
-                                  child: const Icon(Icons.logout_rounded,
-                                      color: AppColors.danger, size: 22),
+                                  const SizedBox(width: 14),
+                                  const Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Sign Out',
+                                          style: TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w800,
+                                              color: Color(0xFF1E293B),
+                                              letterSpacing: -0.4)),
+                                      Text('You can sign back in anytime',
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFF94A3B8))),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              // Info banner
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: const Color(0xFFE2E8F0)),
                                 ),
-                                const SizedBox(width: 14),
-                                const Column(
+                                child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Sign Out',
+                                    const Icon(Icons.info_outline_rounded,
+                                        size: 16, color: Color(0xFF64748B)),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Your data and tasks will remain safe. Notifications will be disabled until you sign back in.',
                                         style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w800,
-                                            color: Color(0xFF1E293B),
-                                            letterSpacing: -0.4)),
-                                    Text('You can sign back in anytime',
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            color: Color(0xFF94A3B8))),
+                                            fontSize: 12.5,
+                                            color: const Color(0xFF64748B)
+                                                .withValues(alpha: 0.9),
+                                            height: 1.45),
+                                      ),
+                                    ),
                                   ],
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            // Info banner
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                    color: const Color(0xFFE2E8F0)),
                               ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              const SizedBox(height: 24),
+                              // Buttons
+                              Row(
                                 children: [
-                                  const Icon(Icons.info_outline_rounded,
-                                      size: 16, color: Color(0xFF64748B)),
-                                  const SizedBox(width: 8),
                                   Expanded(
-                                    child: Text(
-                                      'Your data and tasks will remain safe. Notifications will be disabled until you sign back in.',
-                                      style: TextStyle(
-                                          fontSize: 12.5,
-                                          color: const Color(0xFF64748B)
-                                              .withValues(alpha: 0.9),
-                                          height: 1.45),
+                                    child: TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(dialogContext).pop(false),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor:
+                                            const Color(0xFF64748B),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 14),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          side: const BorderSide(
+                                              color: Color(0xFFE2E8F0)),
+                                        ),
+                                      ),
+                                      child: const Text('Stay',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () =>
+                                          Navigator.of(dialogContext).pop(true),
+                                      icon: const Icon(Icons.logout_rounded,
+                                          size: 16),
+                                      label: const Text('Sign Out',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFFEF4444),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 14),
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(14)),
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(height: 24),
-                            // Buttons
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(dialogContext).pop(false),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor:
-                                          const Color(0xFF64748B),
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 14),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(14),
-                                        side: const BorderSide(
-                                            color: Color(0xFFE2E8F0)),
-                                      ),
-                                    ),
-                                    child: const Text('Stay',
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14)),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    onPressed: () =>
-                                        Navigator.of(dialogContext).pop(true),
-                                    icon: const Icon(Icons.logout_rounded,
-                                        size: 16),
-                                    label: const Text('Sign Out',
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.danger,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 14),
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(14)),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
+                    );
+                    if (confirm == true && context.mounted) {
+                      await auth.logout();
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.logout_rounded,
+                            color: Color(0xFFEF4444),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Text(
+                            'Sign Out',
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFEF4444),
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Color(0xFF94A3B8),
+                          size: 20,
+                        ),
+                      ],
                     ),
-                  );
-                  if (confirm == true && context.mounted) {
-                    await auth.logout();
-                  }
-                },
+                  ),
+                ),
               ),
             ),
 
             const SizedBox(height: 12),
 
             // â”€â”€ Delete account â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Card(
-              child: _MenuItem(
-                icon: Icons.delete_forever_outlined,
-                title: 'Delete My Account',
-                textColor: AppColors.danger,
-                iconColor: AppColors.danger,
-                onTap: () => _showDeleteAccountDialog(context, auth),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => _showDeleteAccountDialog(context, auth),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: Color(0xFFEF4444),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Text(
+                            'Delete My Account',
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFEF4444),
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Color(0xFF94A3B8),
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
 
-            const SizedBox(height: 32),
+            SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 95),
           ],
         ),
       ),
     ),
+      ),
     );
   }
 
@@ -2014,25 +2256,33 @@ class _KycCard extends StatelessWidget {
     final IconData icon;
     final String label;
     final String subtitle;
-    final Color color;
+    final Color bgColor;
+    final Color borderColor;
+    final Color primaryColor;
     final String buttonLabel;
 
     if (isVerified) {
-      icon = Icons.verified;
+      icon = Icons.verified_rounded;
       label = 'KYC Verified';
       subtitle = 'Your identity is verified.';
-      color = AppColors.success;
+      bgColor = const Color(0xFFECFDF5);
+      borderColor = const Color(0xFFA7F3D0);
+      primaryColor = const Color(0xFF059669);
       buttonLabel = '';
     } else if (kycStatus == 'pending') {
       icon = Icons.hourglass_top_rounded;
       label = 'KYC Pending';
       subtitle = 'Under review (completes in 24 hrs).';
-      color = AppColors.warning;
+      bgColor = const Color(0xFFFEF3C7);
+      borderColor = const Color(0xFFFDE68A);
+      primaryColor = const Color(0xFFD97706);
       buttonLabel = 'View Status';
     } else if (kycStatus == 'rejected') {
       icon = Icons.cancel_outlined;
       label = 'KYC Rejected';
-      color = AppColors.danger;
+      bgColor = const Color(0xFFFEE2E2);
+      borderColor = const Color(0xFFFECACA);
+      primaryColor = const Color(0xFFDC2626);
       if (!canReapply) {
         final hours = rem.inHours;
         final minutes = rem.inMinutes % 60;
@@ -2046,34 +2296,51 @@ class _KycCard extends StatelessWidget {
       icon = Icons.badge_outlined;
       label = 'KYC Not Verified';
       subtitle = 'Verify to build trust & unlock tasks.';
-      color = AppColors.gray;
+      bgColor = const Color(0xFFF8FAFC);
+      borderColor = const Color(0xFFE2E8F0);
+      primaryColor = const Color(0xFF64748B);
       buttonLabel = 'Start KYC';
     }
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(width: 12),
+          Icon(icon, color: primaryColor, size: 28),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: primaryColor,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.5,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(subtitle,
-                    style:
-                        const TextStyle(color: AppColors.gray, fontSize: 12)),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                  ),
+                ),
               ],
             ),
           ),
@@ -2081,9 +2348,18 @@ class _KycCard extends StatelessWidget {
             TextButton(
               onPressed: onStart,
               style: TextButton.styleFrom(
-                  foregroundColor: color == AppColors.gray ? AppColors.primary : color,
-                  padding: const EdgeInsets.symmetric(horizontal: 12)),
-              child: Text(buttonLabel),
+                foregroundColor: primaryColor == const Color(0xFF64748B)
+                    ? const Color(0xFF2563EB)
+                    : primaryColor,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Text(
+                buttonLabel,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              ),
             ),
         ],
       ),
@@ -2104,16 +2380,16 @@ class _ProfileRoleSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPoster = currentMode == 'poster';
-    final activeColor = isPoster ? AppColors.primary : const Color(0xFF10B981);
 
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -2128,14 +2404,14 @@ class _ProfileRoleSwitcher extends StatelessWidget {
             children: [
               const Row(
                 children: [
-                  Icon(Icons.swap_horiz_rounded, size: 20, color: AppColors.dark),
+                  Icon(Icons.swap_horiz_rounded, size: 20, color: Color(0xFF0F172A)),
                   SizedBox(width: 8),
                   Text(
                     'Profile Mode',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.dark,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
                 ],
@@ -2143,9 +2419,11 @@ class _ProfileRoleSwitcher extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: activeColor.withValues(alpha: 0.12),
+                  color: isPoster ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: activeColor.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: isPoster ? const Color(0xFFBFDBFE) : const Color(0xFFA7F3D0),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -2154,7 +2432,7 @@ class _ProfileRoleSwitcher extends StatelessWidget {
                       width: 7,
                       height: 7,
                       decoration: BoxDecoration(
-                        color: activeColor,
+                        color: isPoster ? const Color(0xFF2563EB) : const Color(0xFF10B981),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -2164,7 +2442,7 @@ class _ProfileRoleSwitcher extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: activeColor,
+                        color: isPoster ? const Color(0xFF2563EB) : const Color(0xFF10B981),
                       ),
                     ),
                   ],
@@ -2179,9 +2457,8 @@ class _ProfileRoleSwitcher extends StatelessWidget {
                 child: _RoleCard(
                   title: 'Poster Profile',
                   subtitle: 'Post tasks & hire',
-                  icon: Icons.assignment_add,
+                  icon: Icons.post_add_rounded,
                   isSelected: isPoster,
-                  selectedColor: AppColors.primary,
                   onTap: () => onModeChanged('poster'),
                 ),
               ),
@@ -2192,7 +2469,6 @@ class _ProfileRoleSwitcher extends StatelessWidget {
                   subtitle: 'Accept tasks & earn',
                   icon: Icons.handshake_rounded,
                   isSelected: !isPoster,
-                  selectedColor: const Color(0xFF10B981),
                   onTap: () => onModeChanged('helper'),
                 ),
               ),
@@ -2201,28 +2477,28 @@ class _ProfileRoleSwitcher extends StatelessWidget {
           const SizedBox(height: 12),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: const Color(0xFFEFF6FF),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
+                const Icon(
                   Icons.info_outline_rounded,
-                  size: 15,
-                  color: activeColor,
+                  size: 16,
+                  color: Color(0xFF2563EB),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     isPoster
                         ? 'Poster Mode: You can post tasks. Helper task alerts are paused.'
-                        : 'Helper Mode: You can accept tasks and receive real-time "Task available" alerts.',
+                        : 'Helper Mode: You can accept tasks and receive real-time task alerts.',
                     style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.gray,
+                      fontSize: 12,
+                      color: Color(0xFF1E40AF),
                       height: 1.35,
                     ),
                   ),
@@ -2241,7 +2517,6 @@ class _RoleCard extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final bool isSelected;
-  final Color selectedColor;
   final VoidCallback onTap;
 
   const _RoleCard({
@@ -2249,23 +2524,25 @@ class _RoleCard extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.isSelected,
-    required this.selectedColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    const selectedColor = Color(0xFF2563EB);
+
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected ? selectedColor.withValues(alpha: 0.08) : Colors.white,
+          color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? selectedColor : AppColors.border,
-            width: isSelected ? 1.8 : 1,
+            color: isSelected ? selectedColor : const Color(0xFFE2E8F0),
+            width: isSelected ? 1.5 : 1,
           ),
         ),
         child: Column(
@@ -2275,32 +2552,34 @@ class _RoleCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? selectedColor.withValues(alpha: 0.15)
-                        : AppColors.light,
-                    shape: BoxShape.circle,
+                        ? const Color(0xFFDBEAFE)
+                        : const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(8),
                   ),
+                  alignment: Alignment.center,
                   child: Icon(
                     icon,
                     size: 18,
-                    color: isSelected ? selectedColor : AppColors.gray,
+                    color: selectedColor,
                   ),
                 ),
                 if (isSelected)
-                  Icon(
+                  const Icon(
                     Icons.check_circle_rounded,
-                    size: 18,
+                    size: 19,
                     color: selectedColor,
                   )
                 else
                   Container(
-                    width: 16,
-                    height: 16,
+                    width: 17,
+                    height: 17,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.grayLight, width: 1.5),
+                      border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
                     ),
                   ),
               ],
@@ -2309,17 +2588,17 @@ class _RoleCard extends StatelessWidget {
             Text(
               title,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 13.5,
                 fontWeight: FontWeight.w700,
-                color: isSelected ? selectedColor : AppColors.dark,
+                color: isSelected ? const Color(0xFF1D4ED8) : const Color(0xFF0F172A),
               ),
             ),
             const SizedBox(height: 2),
             Text(
               subtitle,
               style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.gray,
+                fontSize: 11.5,
+                color: Color(0xFF64748B),
               ),
             ),
           ],
@@ -2384,15 +2663,25 @@ class _StatCell extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(value,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  color: AppColors.dark)),
-          const SizedBox(height: 4),
-          Text(label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.gray, fontSize: 11, height: 1.3)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 20,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              height: 1.25,
+            ),
+          ),
         ],
       ),
     );
@@ -2403,8 +2692,6 @@ class _MenuItem extends StatelessWidget {
   final IconData icon;
   final String title;
   final VoidCallback onTap;
-  final Color? textColor;
-  final Color? iconColor;
   final String? badge;
   final Color? badgeColor;
 
@@ -2412,55 +2699,87 @@ class _MenuItem extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.onTap,
-    this.textColor,
-    this.iconColor,
     this.badge,
     this.badgeColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    const effectiveContainerColor = Color(0xFFEFF6FF);
+    const effectiveIconColor = Color(0xFF2563EB);
     final bColor = badgeColor ?? const Color(0xFFD97706);
-    return ListTile(
-      leading: Icon(icon, color: iconColor ?? AppColors.gray, size: 22),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              title,
-              style: TextStyle(
-                color: textColor ?? AppColors.dark,
-                fontWeight: FontWeight.w500,
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: effectiveContainerColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  icon,
+                  color: effectiveIconColor,
+                  size: 20,
+                ),
               ),
-              overflow: TextOverflow.ellipsis,
-            ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (badge != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFFDE68A),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Text(
+                          badge!,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: bColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFF94A3B8),
+                size: 20,
+              ),
+            ],
           ),
-          if (badge != null) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: bColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: bColor.withValues(alpha: 0.35),
-                  width: 0.8,
-                ),
-              ),
-              child: Text(
-                badge!,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: bColor,
-                ),
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
-      trailing: const Icon(Icons.chevron_right, color: AppColors.grayLight),
-      onTap: onTap,
     );
   }
 }

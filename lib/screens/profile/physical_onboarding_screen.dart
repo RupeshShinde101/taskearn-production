@@ -26,7 +26,9 @@ bool hasSensitiveSkill(Iterable<String> skills) {
 /// Helper filter to extract sensitive skills from a list
 List<String> getSensitiveSkillsFrom(Iterable<String> skills) {
   final sensitiveSet = kSensitiveSkills.map((s) => s.toLowerCase()).toSet();
-  return skills.where((s) => sensitiveSet.contains(s.trim().toLowerCase())).toList();
+  return skills
+      .where((s) => sensitiveSet.contains(s.trim().toLowerCase()))
+      .toList();
 }
 
 class PhysicalOnboardingScreen extends StatefulWidget {
@@ -34,7 +36,8 @@ class PhysicalOnboardingScreen extends StatefulWidget {
   const PhysicalOnboardingScreen({super.key, this.initialSkills});
 
   @override
-  State<PhysicalOnboardingScreen> createState() => _PhysicalOnboardingScreenState();
+  State<PhysicalOnboardingScreen> createState() =>
+      _PhysicalOnboardingScreenState();
 }
 
 class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
@@ -132,7 +135,8 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     if (!_declarationAccepted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please accept the physical verification declaration to proceed.'),
+          content: Text(
+              'Please accept the physical verification declaration to proceed.'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -140,9 +144,10 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     }
 
     // Use initialSkills, or user's active sensitive skills, or default full sensitive skills list
-    List<String> targetSkills = widget.initialSkills != null && widget.initialSkills!.isNotEmpty
-        ? getSensitiveSkillsFrom(widget.initialSkills!)
-        : getSensitiveSkillsFrom(user?.skills ?? []);
+    List<String> targetSkills =
+        widget.initialSkills != null && widget.initialSkills!.isNotEmpty
+            ? getSensitiveSkillsFrom(widget.initialSkills!)
+            : getSensitiveSkillsFrom(user?.skills ?? []);
 
     if (targetSkills.isEmpty) {
       targetSkills = user?.skills.isNotEmpty == true
@@ -169,7 +174,8 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(auth.error ?? 'Failed to submit request. Please try again.'),
+          content:
+              Text(auth.error ?? 'Failed to submit request. Please try again.'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -257,9 +263,10 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
 
-    final sensitiveSkillsToDisplay = widget.initialSkills != null && widget.initialSkills!.isNotEmpty
-        ? getSensitiveSkillsFrom(widget.initialSkills!)
-        : getSensitiveSkillsFrom(user?.skills ?? []);
+    final sensitiveSkillsToDisplay =
+        widget.initialSkills != null && widget.initialSkills!.isNotEmpty
+            ? getSensitiveSkillsFrom(widget.initialSkills!)
+            : getSensitiveSkillsFrom(user?.skills ?? []);
 
     final skillsList = sensitiveSkillsToDisplay.isNotEmpty
         ? sensitiveSkillsToDisplay
@@ -273,7 +280,8 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
         elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 24),
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, MediaQuery.of(context).padding.bottom + 24),
         child: Form(
           key: _formKey,
           child: Column(
@@ -305,7 +313,8 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                             color: Colors.white.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.shield_rounded, color: Colors.white, size: 22),
+                          child: const Icon(Icons.shield_rounded,
+                              color: Colors.white, size: 22),
                         ),
                         const SizedBox(width: 12),
                         const Expanded(
@@ -359,7 +368,8 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                   children: [
                     const Row(
                       children: [
-                        Icon(Icons.verified_outlined, color: Color(0xFFD97706), size: 18),
+                        Icon(Icons.verified_outlined,
+                            color: Color(0xFFD97706), size: 18),
                         SizedBox(width: 6),
                         Text(
                           'Skill verification and onbaording',
@@ -377,16 +387,20 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                       runSpacing: 6,
                       children: skillsList.map((skill) {
                         return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
+                            border: Border.all(
+                                color: const Color(0xFFF59E0B)
+                                    .withValues(alpha: 0.5)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.check_circle, color: Color(0xFFD97706), size: 14),
+                              const Icon(Icons.check_circle,
+                                  color: Color(0xFFD97706), size: 14),
                               const SizedBox(width: 4),
                               Text(
                                 skill,
@@ -430,7 +444,8 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                       const SizedBox(height: 4),
                       const Text(
                         'All marked fields are mandatory for physical inspection and background validation.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        style:
+                            TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                       ),
                       const SizedBox(height: 18),
 
@@ -440,13 +455,18 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         controller: _nameCtrl,
                         decoration: InputDecoration(
                           hintText: 'Enter your legal name as on ID proof',
-                          prefixIcon: const Icon(Icons.person_outline, color: AppColors.primary),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          prefixIcon: const Icon(Icons.person_outline,
+                              color: AppColors.primary),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
                         ),
                         validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Full legal name is required';
-                          if (v.trim().length < 3) return 'Name must be at least 3 characters';
+                          if (v == null || v.trim().isEmpty)
+                            return 'Full legal name is required';
+                          if (v.trim().length < 3)
+                            return 'Name must be at least 3 characters';
                           return null;
                         },
                       ),
@@ -459,17 +479,23 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         controller: _addressCtrl,
                         maxLines: 3,
                         decoration: InputDecoration(
-                          hintText: 'Flat/House No., Society/Street, Landmark, City & PIN code',
+                          hintText:
+                              'Flat/House No., Society/Street, Landmark, City & PIN code',
                           prefixIcon: const Padding(
                             padding: EdgeInsets.only(bottom: 40),
-                            child: Icon(Icons.home_outlined, color: AppColors.primary),
+                            child: Icon(Icons.home_outlined,
+                                color: AppColors.primary),
                           ),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
                         ),
                         validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Complete residential address is required';
-                          if (v.trim().length < 10) return 'Please provide full address with city and PIN';
+                          if (v == null || v.trim().isEmpty)
+                            return 'Complete residential address is required';
+                          if (v.trim().length < 10)
+                            return 'Please provide full address with city and PIN';
                           return null;
                         },
                       ),
@@ -484,16 +510,21 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         maxLength: 10,
                         decoration: InputDecoration(
                           hintText: '10-digit primary contact number',
-                          prefixIcon: const Icon(Icons.phone_outlined, color: AppColors.primary),
+                          prefixIcon: const Icon(Icons.phone_outlined,
+                              color: AppColors.primary),
                           prefixText: '+91 ',
                           counterText: '',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
                         ),
                         validator: (v) {
                           final clean = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                          if (clean.isEmpty) return 'Primary mobile number is required';
-                          if (clean.length != 10) return 'Enter a valid 10-digit mobile number';
+                          if (clean.isEmpty)
+                            return 'Primary mobile number is required';
+                          if (clean.length != 10)
+                            return 'Enter a valid 10-digit mobile number';
                           return null;
                         },
                       ),
@@ -508,17 +539,23 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         maxLength: 10,
                         decoration: InputDecoration(
                           hintText: 'Secondary or family contact number',
-                          prefixIcon: const Icon(Icons.phone_android_outlined, color: AppColors.primary),
+                          prefixIcon: const Icon(Icons.phone_android_outlined,
+                              color: AppColors.primary),
                           prefixText: '+91 ',
                           counterText: '',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
                         ),
                         validator: (v) {
                           final clean = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                          if (clean.isEmpty) return 'Alternative mobile number is required';
-                          if (clean.length != 10) return 'Enter a valid 10-digit mobile number';
-                          final primaryClean = _primaryPhoneCtrl.text.replaceAll(RegExp(r'\D'), '');
+                          if (clean.isEmpty)
+                            return 'Alternative mobile number is required';
+                          if (clean.length != 10)
+                            return 'Enter a valid 10-digit mobile number';
+                          final primaryClean = _primaryPhoneCtrl.text
+                              .replaceAll(RegExp(r'\D'), '');
                           if (clean == primaryClean) {
                             return 'Alternative number must be different from primary number';
                           }
@@ -529,14 +566,18 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                       const SizedBox(height: 16),
 
                       // 5. Additional Experience / Notes (Optional)
-                      _buildFieldLabel('Experience / Additional Remarks', isRequired: false),
+                      _buildFieldLabel('Experience / Additional Remarks',
+                          isRequired: false),
                       TextFormField(
                         controller: _notesCtrl,
                         maxLines: 2,
                         decoration: InputDecoration(
-                          hintText: 'e.g., 3 years of electrical experience, valid driving license, etc.',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          hintText:
+                              'e.g., 3 years of electrical experience, valid driving license, etc.',
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
                         ),
                       ),
 
@@ -549,7 +590,9 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                           color: const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: _declarationAccepted ? AppColors.primary : const Color(0xFFCBD5E1),
+                            color: _declarationAccepted
+                                ? AppColors.primary
+                                : const Color(0xFFCBD5E1),
                           ),
                         ),
                         child: Row(
@@ -558,26 +601,35 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                             Checkbox(
                               value: _declarationAccepted,
                               activeColor: AppColors.primary,
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                               onChanged: (val) {
-                                setState(() => _declarationAccepted = val ?? false);
+                                setState(
+                                    () => _declarationAccepted = val ?? false);
                               },
                             ),
                             Expanded(
                               child: GestureDetector(
                                 onTap: () {
-                                  setState(() => _declarationAccepted = !_declarationAccepted);
+                                  setState(() => _declarationAccepted =
+                                      !_declarationAccepted);
                                 },
                                 child: const Padding(
                                   padding: EdgeInsets.only(top: 8),
                                   child: Text.rich(
                                     TextSpan(
-                                      text: 'I declare that the address and contact details provided are authentic. I agree to an in-person physical background and skill verification by an authorized Workmate4u admin or agent.',
-                                      style: TextStyle(fontSize: 11.5, color: Color(0xFF334155), height: 1.4),
+                                      text:
+                                          'I declare that the address and contact details provided are authentic. I agree to an in-person physical background and skill verification by an authorized Workmate4u admin or agent.',
+                                      style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: Color(0xFF334155),
+                                          height: 1.4),
                                       children: [
                                         TextSpan(
                                           text: ' *',
-                                          style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                                          style: TextStyle(
+                                              color: Colors.red,
+                                              fontWeight: FontWeight.bold),
                                         ),
                                       ],
                                     ),
@@ -594,13 +646,20 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                       // â”€â”€ Request Onboarding Button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                       Builder(
                         builder: (context) {
-                          final isVerified = user?.physicalVerificationStatus == 'verified';
-                          final isPending = user?.physicalVerificationStatus == 'pending';
-                          final isRejected = user?.physicalVerificationStatus == 'rejected';
-                          final canReapply = user?.canReapplyPhysicalVerification ?? true;
+                          final isVerified =
+                              user?.physicalVerificationStatus == 'verified';
+                          final isPending =
+                              user?.physicalVerificationStatus == 'pending';
+                          final isRejected =
+                              user?.physicalVerificationStatus == 'rejected';
+                          final canReapply =
+                              user?.canReapplyPhysicalVerification ?? true;
                           final cooldownActive = isRejected && !canReapply;
 
-                          final bool isDisabled = _submitting || isVerified || isPending || cooldownActive;
+                          final bool isDisabled = _submitting ||
+                              isVerified ||
+                              isPending ||
+                              cooldownActive;
 
                           String buttonText = 'Request Onboarding';
                           IconData buttonIcon = Icons.send_rounded;
@@ -615,7 +674,8 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                             buttonIcon = Icons.hourglass_top_rounded;
                             buttonBg = const Color(0xFFD97706);
                           } else if (cooldownActive) {
-                            buttonText = 'Reapply in ${_formatDuration(user!.physicalVerificationReapplyRemaining)}';
+                            buttonText =
+                                'Reapply in ${_formatDuration(user!.physicalVerificationReapplyRemaining)}';
                             buttonIcon = Icons.timer_outlined;
                             buttonBg = const Color(0xFFDC2626);
                           } else if (isRejected) {
@@ -629,13 +689,16 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                             height: 50,
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                color: isDisabled ? buttonBg.withValues(alpha: 0.6) : buttonBg,
+                                color: isDisabled
+                                    ? buttonBg.withValues(alpha: 0.6)
+                                    : buttonBg,
                                 borderRadius: BorderRadius.circular(12),
                                 boxShadow: isDisabled
                                     ? null
                                     : [
                                         BoxShadow(
-                                          color: buttonBg.withValues(alpha: 0.25),
+                                          color:
+                                              buttonBg.withValues(alpha: 0.25),
                                           blurRadius: 8,
                                           offset: const Offset(0, 3),
                                         ),
@@ -662,9 +725,11 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                                         ),
                                       )
                                     : Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
-                                          Icon(buttonIcon, color: Colors.white, size: 20),
+                                          Icon(buttonIcon,
+                                              color: Colors.white, size: 20),
                                           const SizedBox(width: 8),
                                           Flexible(
                                             child: Text(

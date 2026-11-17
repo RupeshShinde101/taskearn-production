@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -12,6 +13,7 @@ import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/confirm_payment_dialog.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
+import '../../widgets/task_price_breakdown_card.dart';
 import '../tasks/edit_task_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
@@ -686,64 +688,230 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
               const Divider(height: 28),
 
-              // Description
-              const Text('Description',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              const SizedBox(height: 10),
-              _DescriptionCard(text: task.description),
+              // Description (hidden for grocery tasks — grocery tasks show only clean item cards)
+              if (!Task.isGroceryCategory(task.category)) ...[
+                const Text(
+                  'Description',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 19,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _DescriptionCard(text: task.description),
+              ],
 
-              if (task.groceryItems != null && task.groceryItems!.isNotEmpty) ...[
-                const Divider(height: 28),
+              Builder(builder: (context) {
+                final isGrocery = Task.isGroceryCategory(task.category);
+                final groceryItems = (task.groceryItems != null && task.groceryItems!.isNotEmpty)
+                    ? task.groceryItems!
+                    : (isGrocery ? GroceryCatalog.parseGroceryItems(null, task.description) : const <SelectedGroceryItem>[]);
+                if (groceryItems.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!isGrocery) const Divider(height: 28),
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.shopping_basket_rounded,
+                              size: 19, color: Color(0xFF15803D)),
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Grocery Items',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 19,
+                              color: Color(0xFF102A56),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF86EFAC)),
+                          ),
+                          child: Text(
+                            '${groceryItems.length} ${groceryItems.length == 1 ? 'Item' : 'Items'}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF166534),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _GroceryItemsCard(items: groceryItems),
+                  ],
+                );
+              }),
+
+              const Divider(height: 28),
+
+              // Location (Grocery: separate bigger headers for Delivery Address & Store Address)
+              if (Task.isGroceryCategory(task.category)) ...[
+                // Delivery Address
                 Row(
                   children: [
-                    const Text('Grocery Items',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                    const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      width: 34,
+                      height: 34,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFF86EFAC)),
+                        color: const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(10),
                       ),
+                      child: const Icon(Icons.home_rounded,
+                          color: AppColors.danger, size: 19),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
                       child: Text(
-                        '${task.groceryItems!.length} items',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF166534),
+                        'Delivery Address',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 19,
+                          color: Color(0xFF102A56),
+                          letterSpacing: -0.2,
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                _GroceryItemsCard(items: task.groceryItems!),
-              ],
-
-              const Divider(height: 28),
-
-              // Location
-              const Text('Location',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              const SizedBox(height: 8),
-              // Delivery tasks: show pickup + drop clearly separated with dedicated cards
-              if (task.isDeliveryCategory) ...[
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  child: Column(
-                    children: [
-                      // Pickup Location
-                      Builder(builder: (context) {
-                        final isGrocery = Task.isGroceryCategory(task.category);
-                        final pickupTitle = isGrocery ? 'Store / Supermarket Location' : 'Pickup Location';
-                        final pickupIcon = isGrocery ? Icons.storefront_rounded : Icons.radio_button_checked;
-                        return Row(
+                  child: Text(
+                    task.effectiveDropAddress ?? 'Delivery address specified by poster',
+                    style: const TextStyle(
+                      color: Color(0xFF102A56),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Store Address
+                Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.storefront_rounded,
+                          color: Color(0xFF15803D), size: 19),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Store Address',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 19,
+                          color: Color(0xFF102A56),
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Text(
+                    task.effectivePickupAddress.isNotEmpty
+                        ? task.effectivePickupAddress
+                        : (task.address ?? 'Store address specified by poster'),
+                    style: const TextStyle(
+                      color: Color(0xFF102A56),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const Divider(height: 28),
+
+                // Grocery Price Breakdown
+                Builder(builder: (context) {
+                  double? distKm;
+                  if (task.latitude != 0 &&
+                      task.longitude != 0 &&
+                      task.dropLatitude != null &&
+                      task.dropLongitude != null &&
+                      task.dropLatitude != 0 &&
+                      task.dropLongitude != 0) {
+                    final m = Geolocator.distanceBetween(
+                      task.latitude,
+                      task.longitude,
+                      task.dropLatitude!,
+                      task.dropLongitude!,
+                    );
+                    distKm = double.parse(((m / 1000.0) * 1.22).toStringAsFixed(1));
+                  }
+                  return TaskPriceBreakdownCard(
+                    budget: task.budget,
+                    serviceCharge: 0,
+                    posterFee: 12.0,
+                    totalCost: task.budget + 12.0,
+                    isGrocery: true,
+                    distanceKm: distKm,
+                  );
+                }),
+              ] else ...[
+                const Text(
+                  'Location',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 19,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // Delivery tasks: show pickup + drop clearly separated with dedicated cards
+                if (task.isDeliveryCategory) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
@@ -752,7 +920,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                 color: AppColors.primary.withValues(alpha: 0.12),
                                 shape: BoxShape.circle,
                               ),
-                              child: Icon(pickupIcon,
+                              child: const Icon(Icons.radio_button_checked,
                                   color: AppColors.primary, size: 16),
                             ),
                             const SizedBox(width: 10),
@@ -760,11 +928,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(pickupTitle,
-                                      style: const TextStyle(
+                                  const Text('Pickup Location',
+                                      style: TextStyle(
                                           color: AppColors.gray,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600)),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700)),
                                   const SizedBox(height: 2),
                                   Text(
                                     task.effectivePickupAddress.isNotEmpty
@@ -772,25 +940,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                         : (task.address ?? 'Pickup location specified by poster'),
                                     style: const TextStyle(
                                         color: AppColors.dark,
-                                        fontSize: 13,
+                                        fontSize: 13.5,
                                         fontWeight: FontWeight.w600),
                                   ),
                                 ],
                               ),
                             ),
                           ],
-                        );
-                      }),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Divider(height: 1),
-                      ),
-                      // Drop / Destination Location
-                      Builder(builder: (context) {
-                        final isGrocery = Task.isGroceryCategory(task.category);
-                        final dropTitle = isGrocery ? 'Delivery Location' : 'Drop / Destination Location';
-                        final dropIcon = isGrocery ? Icons.home_rounded : Icons.location_on;
-                        return Row(
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(height: 1),
+                        ),
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
@@ -799,7 +961,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                 color: AppColors.danger.withValues(alpha: 0.12),
                                 shape: BoxShape.circle,
                               ),
-                              child: Icon(dropIcon,
+                              child: const Icon(Icons.location_on,
                                   color: AppColors.danger, size: 16),
                             ),
                             const SizedBox(width: 10),
@@ -807,53 +969,60 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(dropTitle,
-                                      style: const TextStyle(
+                                  const Text('Drop / Destination Location',
+                                      style: TextStyle(
                                           color: AppColors.danger,
-                                          fontSize: 11,
+                                          fontSize: 12,
                                           fontWeight: FontWeight.w700)),
                                   const SizedBox(height: 2),
                                   Text(
                                     task.effectiveDropAddress ?? 'Drop location specified by poster',
                                     style: const TextStyle(
                                         color: AppColors.dark,
-                                        fontSize: 13,
+                                        fontSize: 13.5,
                                         fontWeight: FontWeight.w700),
                                   ),
                                 ],
                               ),
                             ),
                           ],
-                        );
-                      }),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined,
+                          color: AppColors.primary, size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          (task.address != null && task.address!.trim().isNotEmpty)
+                              ? task.address!
+                              : ((Task.isFreelancerCategory(task.category) ||
+                                      (task.latitude == 0 && task.longitude == 0))
+                                  ? 'Remote / Online'
+                                  : '${task.latitude}, ${task.longitude}'),
+                          style: const TextStyle(color: AppColors.gray),
+                        ),
+                      ),
                     ],
                   ),
-                ),
-              ] else
-                Row(
-                  children: [
-                    const Icon(Icons.location_on_outlined,
-                        color: AppColors.primary, size: 18),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        (task.address != null && task.address!.trim().isNotEmpty)
-                            ? task.address!
-                            : ((Task.isFreelancerCategory(task.category) ||
-                                    (task.latitude == 0 && task.longitude == 0))
-                                ? 'Remote / Online'
-                                : '${task.latitude}, ${task.longitude}'),
-                        style: const TextStyle(color: AppColors.gray),
-                      ),
-                    ),
-                  ],
-                ),
+              ],
 
               const Divider(height: 28),
 
               // Poster info
-              const Text('Posted By',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              const Text(
+                'Posted By',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 19,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
+                ),
+              ),
               const SizedBox(height: 10),
               _UserRow(
                 name: (task.posterName.isEmpty || task.posterName == 'Anonymous') && isPoster
@@ -867,8 +1036,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               // Helper info (if assigned)
               if (task.helperName != null) ...[
                 const Divider(height: 28),
-                const Text('Assigned Helper',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const Text(
+                  'Assigned Helper',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 19,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 _UserRow(
                   name: task.helperName!,
@@ -932,8 +1108,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               // Completion proof
               if (task.completionProof != null) ...[
                 const Divider(height: 28),
-                const Text('Completion Proof',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const Text(
+                  'Completion Proof',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 19,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
@@ -980,8 +1163,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
               // Timeline info
               const Divider(height: 28),
-              const Text('Timeline',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              const Text(
+                'Timeline',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 19,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
+                ),
+              ),
               const SizedBox(height: 8),
               _TimelineRow('Posted', task.createdAt),
               if (task.acceptedAt != null) _TimelineRow('Accepted', task.acceptedAt!),
@@ -1005,202 +1195,139 @@ class _GroceryItemsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double totalEstCost = 0;
-    for (final item in items) {
-      final r = double.tryParse(item.rupee.trim());
-      if (r != null) {
-        final q = double.tryParse(item.qty.trim()) ?? 1.0;
-        totalEstCost += r * (q > 0 ? q : 1.0);
-      }
-    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: items.map((item) {
+        final pkg = item.package.trim();
+        final qty = item.qty.trim();
+        final kg = item.kg.trim();
+        final gram = item.gram.trim();
+        final litr = item.litr.trim();
+        final brand = item.brand.trim();
+        final rupee = item.rupee.trim();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF102A56).withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+        final tags = <Widget>[
+          if (pkg.isNotEmpty)
+            _buildTag(pkg, const Color(0xFFEFF6FF), const Color(0xFF2563EB)),
+          if (qty.isNotEmpty)
+            _buildTag('Qty: $qty', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
+          if (kg.isNotEmpty)
+            _buildTag('$kg kg', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
+          if (gram.isNotEmpty)
+            _buildTag('$gram g', const Color(0xFFF0FDF4), const Color(0xFF15803D)),
+          if (litr.isNotEmpty)
+            _buildTag('$litr L', const Color(0xFFE0F2FE), const Color(0xFF0284C7)),
+          if (brand.isNotEmpty)
+            _buildTag('Brand: $brand', const Color(0xFFFAF5FF), const Color(0xFF9333EA)),
+          if (rupee.isNotEmpty)
+            _buildTag('Est. ₹$rupee', const Color(0xFFFFFBEB), const Color(0xFFD97706)),
+        ];
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Items list - 1 item card per row
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: items.map((item) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFE5EDF7)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Item Image / emoji with rounded card
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Item Thumbnail / Emoji
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(11),
+                  child: item.imageUrl.isNotEmpty
+                      ? Image.network(
+                          item.imageUrl,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Text(item.emoji, style: const TextStyle(fontSize: 28)),
+                          ),
+                        )
+                      : Center(
+                          child: Text(item.emoji, style: const TextStyle(fontSize: 28)),
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(11),
-                          child: item.imageUrl.isNotEmpty
-                              ? Image.network(
-                                  item.imageUrl,
-                                  width: 52,
-                                  height: 52,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Center(
-                                    child: Text(item.emoji, style: const TextStyle(fontSize: 24)),
-                                  ),
-                                )
-                              : Center(
-                                  child: Text(item.emoji, style: const TextStyle(fontSize: 24)),
-                                ),
-                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // All Item Info in one full-width row card
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: Color(0xFF102A56),
+                        height: 1.25,
                       ),
-                      const SizedBox(width: 12),
-
-                      // Name, Category, and Details
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                                color: Color(0xFF102A56),
-                              ),
-                              maxLines: 2,
-                              softWrap: true,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              item.category,
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                color: Color(0xFF64748B),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-
-                            // Requirements Chips (Package, QTY, kg, gram, litr, rupee, brand)
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              children: [
-                                if (item.package.trim().isNotEmpty)
-                                  _buildTag(item.package.trim(), const Color(0xFFEFF6FF), const Color(0xFF2563EB)),
-                                if (item.package.trim().isEmpty && item.qty.trim().isNotEmpty)
-                                  _buildTag('Qty: ${item.qty.trim()}', const Color(0xFFEFF6FF), const Color(0xFF2563EB)),
-                                if (item.package.trim().isEmpty && item.kg.trim().isNotEmpty)
-                                  _buildTag('${item.kg.trim()} kg', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
-                                if (item.package.trim().isEmpty && item.gram.trim().isNotEmpty)
-                                  _buildTag('${item.gram.trim()} g', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
-                                if (item.package.trim().isEmpty && item.litr.trim().isNotEmpty)
-                                  _buildTag('${item.litr.trim()} L', const Color(0xFFEFF6FF), const Color(0xFF0284C7)),
-                                if (item.brand.trim().isNotEmpty)
-                                  _buildTag('Brand: ${item.brand.trim()}', const Color(0xFFFAF5FF), const Color(0xFF9333EA)),
-                                if (item.rupee.trim().isNotEmpty)
-                                  _buildTag('₹${item.rupee.trim()}', const Color(0xFFFFFBEB), const Color(0xFFD97706)),
-                              ],
-                            ),
-                          ],
+                      maxLines: 2,
+                      softWrap: true,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (item.category.trim().isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        item.category.trim(),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-
-          // Total cost banner if estimated
-          if (totalEstCost > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: const BoxDecoration(
-                color: Color(0xFFF0FDF4),
-                border: Border(top: BorderSide(color: Color(0xFFDCFCE7))),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Estimated Items Total:',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF15803D),
-                    ),
-                  ),
-                  Text(
-                    '₹${totalEstCost.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF15803D),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // Policy notice
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(15)),
-              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF64748B)),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Grocery item cost is paid separately by poster directly to helper/store.',
-                    style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                  ),
+                    if (tags.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: tags,
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      }).toList(),
     );
   }
 
   static Widget _buildTag(String text, Color bg, Color textCol) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: textCol.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: textCol.withValues(alpha: 0.22)),
       ),
       child: Text(
         text,
         style: TextStyle(
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: FontWeight.w700,
           color: textCol,
         ),

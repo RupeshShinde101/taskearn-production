@@ -3245,7 +3245,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               'Grocery Items',
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
-                                fontSize: 17,
+                                fontSize: 18.5,
                                 color: Color(0xFF102A56),
                                 letterSpacing: -0.2,
                               ),
@@ -4305,7 +4305,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               child: Text(
                 'Task Title',
                 style: TextStyle(
-                  fontSize: 17.5,
+                  fontSize: 18.5,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF102A56),
                   letterSpacing: -0.2,
@@ -4601,7 +4601,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               child: Text(
                 'Select Category',
                 style: TextStyle(
-                  fontSize: 17.5,
+                  fontSize: 18.5,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF102A56),
                   letterSpacing: -0.2,
@@ -5361,7 +5361,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 child: Text(
                   'Delivery Address',
                   style: TextStyle(
-                    fontSize: 16.5,
+                    fontSize: 18.5,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF102A56),
                     letterSpacing: -0.2,
@@ -5454,7 +5454,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 child: Text(
                   'Store Address',
                   style: TextStyle(
-                    fontSize: 16.5,
+                    fontSize: 18.5,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF102A56),
                     letterSpacing: -0.2,

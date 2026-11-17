@@ -456,7 +456,8 @@ class Task {
   double get posterCommissionRate => 0.20;
 
   /// Poster platform fee & GST amount: 20% of budget.
-  double get posterFee => budget * posterCommissionRate;
+  /// Poster's platform fee (fixed ₹12 incl. GST for groceries; 20% for other categories).
+  double get posterFee => isGroceryCategory(category) ? 12.0 : (budget * posterCommissionRate);
 
   /// Total base task value before helper commission: budget + service charge.
   double get totalTaskValue => budget + (serviceCharge ?? 0);

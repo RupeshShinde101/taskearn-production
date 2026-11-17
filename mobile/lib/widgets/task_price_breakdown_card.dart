@@ -67,7 +67,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                         'Price Breakdown',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
-                          fontSize: 15.5,
+                          fontSize: 18.5,
                           color: Color(0xFF0F172A),
                           letterSpacing: -0.2,
                         ),

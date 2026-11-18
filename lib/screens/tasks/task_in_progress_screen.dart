@@ -383,7 +383,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   }
 
   Future<void> _pickProof() async {
-    final capturedPath = await Navigator.of(context).push<String>(
+    final capturedPath =
+        await Navigator.of(context, rootNavigator: true).push<String>(
       MaterialPageRoute(builder: (_) => const ProofCameraScreen()),
     );
     if (mounted && capturedPath != null && capturedPath.isNotEmpty) {

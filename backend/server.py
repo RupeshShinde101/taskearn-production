@@ -448,7 +448,8 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
       workmate4u_chat    — chat messages        (max importance)
     """
     if not _has_fcm:
-        return
+        print('[FCM] ⚠️ firebase-admin not initialized — skipping push')
+        return False
     _ensure_fcm_token_column()
     try:
         with get_db() as (cursor, _):
@@ -459,11 +460,11 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
             row = cursor.fetchone()
         if not row:
             print(f'[FCM] ⚠️ No user row for user_id={user_id} — skipping push')
-            return
+            return False
         token = dict_from_row(row).get('fcm_token') if hasattr(row, 'keys') else row[0]
         if not token:
             print(f'[FCM] ⚠️ No FCM token registered for user_id={user_id} — skipping push')
-            return
+            return False
 
         # All data values must be strings for FCM data messages
         payload = {'type': data.get('type', 'general') if data else 'general',
@@ -487,11 +488,14 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
         aps_alert = None
         if include_native_notification:
             fcm_notif = fb_messaging.Notification(title=title, body=body)
+            is_chat_notif = notif_type in ('chat', 'chat_message')
             android_notif = fb_messaging.AndroidNotification(
                 channel_id=channel,
                 priority='max' if channel in ('workmate4u_chat', 'workmate4u_payment', 'workmate4u_matched') else 'high',
                 default_sound=True,
                 default_vibrate_timings=True,
+                click_action='FLUTTER_NOTIFICATION_CLICK',
+                tag=f"chat_{payload.get('task_id', '')}_{int(time.time() * 1000)}" if is_chat_notif else None,
             )
             aps_alert = fb_messaging.ApsAlert(title=title, body=body)
 
@@ -515,9 +519,11 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
             token=token,
         )
         fb_messaging.send(message)
-        print(f'[FCM] ✉ "{title}" → user {user_id}')
+        print(f'[FCM] ✉ "{title}" → user {user_id} (channel={channel})')
+        return True
     except Exception as e:
         print(f'[FCM] Error sending to user {user_id}: {e}')
+        return False
 
 
 def _safe_delete_tasks(cursor, task_ids):
@@ -1613,31 +1619,29 @@ def send_message(data):
     }, room=room)
 
     if recipient_id:
-        import threading
-        def _async_push_socket():
-            try:
-                send_fcm_to_user(
-                    recipient_id,
-                    notif_title,
-                    notif_body,
-                    data={
-                        'type': 'chat',
-                        'task_id': str(task_id),
-                        'taskId': str(task_id),
-                        'sender_name': str(user_name),
-                        'sender_id': user_id,
-                    },
-                    channel='workmate4u_chat'
-                )
-            except Exception as f_err:
-                print(f'[Chat Socket] FCM warning: {f_err}')
+        try:
+            fcm_sent = send_fcm_to_user(
+                recipient_id,
+                notif_title,
+                notif_body,
+                data={
+                    'type': 'chat',
+                    'task_id': str(task_id),
+                    'taskId': str(task_id),
+                    'message_id': str(msg_id or ''),
+                    'sender_name': str(user_name),
+                    'sender_id': str(user_id),
+                },
+                channel='workmate4u_chat'
+            )
+            print(f'[Chat Socket] FCM push to recipient={recipient_id} task={task_id} sent={fcm_sent}')
+        except Exception as f_err:
+            print(f'[Chat Socket] FCM warning: {f_err}')
 
-            try:
-                send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
-            except Exception as p_err:
-                print(f'[Chat Socket] Web push warning: {p_err}')
-
-        threading.Thread(target=_async_push_socket, daemon=True).start()
+        try:
+            send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
+        except Exception as p_err:
+            print(f'[Chat Socket] Web push warning: {p_err}')
     
     print(f"💬 Message from {user_name}: {message[:50]}...")
 
@@ -6620,37 +6624,38 @@ def send_chat_message(task_id):
         except Exception as se:
             print(f'[Chat] Socket.IO emit error: {se}')
 
-        # Dispatch FCM and WebPush asynchronously in daemon thread
-        # (Must NEVER block or slow down client HTTP response)
+        # Dispatch FCM directly (matching task_accepted / task_completed) so Gunicorn
+        # workers never kill or drop chat push notifications before delivery.
+        fcm_sent = False
         if recipient_id:
-            import threading
-            def _dispatch_push():
-                try:
-                    send_fcm_to_user(
-                        recipient_id,
-                        notif_title,
-                        notif_body,
-                        data={
-                            'type': 'chat',
-                            'task_id': str(task_id),
-                            'taskId': str(task_id),
-                            'sender_name': str(user_name),
-                            'sender_id': str(uid),
-                        },
-                        channel='workmate4u_chat'
-                    )
-                    print(f'[Chat] Async FCM delivered to {recipient_id}')
-                except Exception as fe:
-                    print(f'[Chat] Async FCM error: {fe}')
-                try:
-                    send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
-                except Exception as pe:
-                    print(f'[Chat] Async WebPush error: {pe}')
-
-            threading.Thread(target=_dispatch_push, daemon=True).start()
+            try:
+                fcm_sent = bool(send_fcm_to_user(
+                    recipient_id,
+                    notif_title,
+                    notif_body,
+                    data={
+                        'type': 'chat',
+                        'task_id': str(task_id),
+                        'taskId': str(task_id),
+                        'sender_name': str(user_name),
+                        'sender_id': str(uid),
+                        'message_id': str(msg_id or ''),
+                    },
+                    channel='workmate4u_chat'
+                ))
+                print(f'[Chat] FCM to recipient={recipient_id} (sender={uid}) sent={fcm_sent}')
+            except Exception as fe:
+                print(f'[Chat] FCM error for recipient={recipient_id}: {fe}')
+            try:
+                send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
+            except Exception as pe:
+                print(f'[Chat] WebPush error: {pe}')
+        else:
+            print(f'[Chat] ⚠️ No recipient_id for task={task_id} sender={uid} posted_by={posted_by} accepted_by={accepted_by}')
 
         return jsonify({
             'success': True,
+            'fcm_sent': fcm_sent,
             'message': {
                 'id': msg_id,
                 'taskId': task_id,

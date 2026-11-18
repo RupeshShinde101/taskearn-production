@@ -687,7 +687,182 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
               // ── Status header banner ─────────────────────────────────
               _buildStatusBanner(task),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
+
+              // ── Compact Single-Row Task Poster Card (Top) ────────────
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 21,
+                      backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                      backgroundImage: (task.posterAvatar != null &&
+                              task.posterAvatar!.isNotEmpty)
+                          ? NetworkImage(task.posterAvatar!)
+                          : null,
+                      onBackgroundImageError: (task.posterAvatar != null &&
+                              task.posterAvatar!.isNotEmpty)
+                          ? (_, __) {}
+                          : null,
+                      child: (task.posterAvatar == null ||
+                              task.posterAvatar!.isEmpty)
+                          ? Text(
+                              (task.posterName.isNotEmpty &&
+                                      task.posterName != 'Anonymous')
+                                  ? task.posterName[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            (task.posterName.isNotEmpty &&
+                                    task.posterName != 'Anonymous')
+                                ? task.posterName
+                                : 'Task Poster',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14.5,
+                              color: Color(0xFF0F172A),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              const Text(
+                                'Task Poster',
+                                style: TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              if (task.posterRating > 0) ...[
+                                const Text(
+                                  '  •  ',
+                                  style: TextStyle(
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const Icon(Icons.star_rounded,
+                                    size: 14, color: AppColors.warning),
+                                const SizedBox(width: 2),
+                                Text(
+                                  task.posterRating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    color: Color(0xFF475569),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Call icon button
+                    Tooltip(
+                      message: hasPhone ? 'Call Poster' : 'Phone not available',
+                      child: InkWell(
+                        onTap: _callPoster,
+                        borderRadius: BorderRadius.circular(11),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: hasPhone
+                                ? const Color(0xFFECFDF5)
+                                : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(11),
+                            border: Border.all(
+                              color: hasPhone
+                                  ? const Color(0xFFA7F3D0)
+                                  : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.call_rounded,
+                            size: 20,
+                            color: hasPhone
+                                ? const Color(0xFF15803D)
+                                : const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Message icon button
+                    Tooltip(
+                      message: 'Message Poster',
+                      child: InkWell(
+                        onTap: () {
+                          if (_task == null) return;
+                          context.push(
+                            '/chat/${_task!.id}',
+                            extra: {
+                              'taskId': _task!.id,
+                              'taskTitle': _task!.title,
+                              'otherName': _task!.posterName,
+                              'otherRole': 'Task Poster',
+                              'otherPhone': _task!.posterPhone,
+                              'category': _task!.category,
+                              'budget': _task!.budget,
+                              'status': _task!.status,
+                              'isPoster': false,
+                            },
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(11),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEEF2FF),
+                            borderRadius: BorderRadius.circular(11),
+                            border: Border.all(color: const Color(0xFFC7D2FE)),
+                          ),
+                          child: const Icon(
+                            Icons.chat_bubble_rounded,
+                            size: 19,
+                            color: Color(0xFF4F46E5),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
 
               // ── Navigate to Location (only while actively working) ───
               if (!_isVerifyPending && !_isDone)
@@ -696,137 +871,293 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                   final pickupAddr = GroceryCatalog.unescapeHtml(
                     task.effectivePickupAddress.isNotEmpty
                         ? task.effectivePickupAddress
-                        : (task.address ?? (isGrocery ? 'Store location' : 'Pickup location')),
+                        : (task.address ??
+                            (isGrocery ? 'Store location' : 'Pickup location')),
                   );
                   final dropAddr = GroceryCatalog.unescapeHtml(
                     task.effectiveDropAddress ??
-                        (isGrocery ? 'Delivery location specified by poster' : 'Drop location specified by poster'),
+                        (isGrocery
+                            ? 'Delivery location specified by poster'
+                            : 'Drop location specified by poster'),
                   );
-                  return _SectionCard(
-                    title: isGrocery
-                        ? 'Store & Delivery Locations'
-                        : (task.isDeliveryCategory ? 'Pickup & Drop Locations' : 'Task Location'),
-                    icon: task.isDeliveryCategory ? Icons.alt_route_rounded : Icons.location_on_outlined,
+                  final accentStore =
+                      isGrocery ? const Color(0xFF15803D) : AppColors.primary;
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Header
+                        Row(
+                          children: [
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: isGrocery
+                                    ? const Color(0xFFDCFCE7)
+                                    : AppColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                task.isDeliveryCategory
+                                    ? Icons.alt_route_rounded
+                                    : Icons.location_on_rounded,
+                                size: 19,
+                                color: accentStore,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                isGrocery
+                                    ? 'Store & Delivery Locations'
+                                    : (task.isDeliveryCategory
+                                        ? 'Pickup & Drop Locations'
+                                        : 'Task Location'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  color: Color(0xFF0F172A),
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
                         if (task.isDeliveryCategory) ...[
-                          // Store / Pickup Location
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                isGrocery ? Icons.storefront_rounded : Icons.radio_button_checked,
-                                color: isGrocery ? const Color(0xFF15803D) : AppColors.primary,
-                                size: 18,
+                          // ── Box 1: Store / Pickup Location ───────────
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isGrocery
+                                  ? const Color(0xFFF0FDF4)
+                                  : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isGrocery
+                                    ? const Color(0xFFBBF7D0)
+                                    : const Color(0xFFE2E8F0),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      isGrocery ? 'Store Location' : 'Pickup Location',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 13.5,
-                                        color: isGrocery ? const Color(0xFF15803D) : AppColors.primary,
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: accentStore,
+                                        borderRadius: BorderRadius.circular(9),
+                                      ),
+                                      child: Icon(
+                                        isGrocery
+                                            ? Icons.storefront_rounded
+                                            : Icons.my_location_rounded,
+                                        color: Colors.white,
+                                        size: 17,
                                       ),
                                     ),
-                                    const SizedBox(height: 3),
-                                    Text(
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            isGrocery
+                                                ? 'STEP 1 • STORE LOCATION'
+                                                : 'STEP 1 • PICKUP LOCATION',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 11,
+                                              letterSpacing: 0.6,
+                                              color: accentStore,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            pickupAddr,
+                                            style: const TextStyle(
+                                              color: Color(0xFF0F172A),
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              height: 1.38,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 46,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _openNavigationTo(
+                                      task.latitude,
+                                      task.longitude,
                                       pickupAddr,
+                                    ),
+                                    icon: const Icon(Icons.directions_rounded,
+                                        size: 19),
+                                    label: Text(
+                                      isGrocery
+                                          ? 'Navigate to Store Location'
+                                          : 'Navigate to Pickup Location',
                                       style: const TextStyle(
-                                        color: AppColors.dark,
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.35,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.1,
                                       ),
                                     ),
-                                  ],
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: accentStore,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          OutlinedButton.icon(
-                            onPressed: () => _openNavigationTo(
-                              task.latitude,
-                              task.longitude,
-                              pickupAddr,
-                            ),
-                            icon: const Icon(Icons.navigation_rounded, size: 17),
-                            label: Text(
-                              isGrocery ? 'Navigate to Store Location' : 'Navigate to Pickup Location',
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: isGrocery ? const Color(0xFF15803D) : AppColors.primary,
-                              side: BorderSide(color: isGrocery ? const Color(0xFF15803D) : AppColors.primary),
-                              minimumSize: const Size(double.infinity, 40),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ],
                             ),
                           ),
+
+                          // Route connector arrow
                           const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Divider(height: 1),
-                          ),
-                          // Delivery / Drop Location
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                isGrocery ? Icons.home_rounded : Icons.location_on,
-                                color: AppColors.danger,
+                            padding: EdgeInsets.symmetric(vertical: 6),
+                            child: Center(
+                              child: Icon(
+                                Icons.south_rounded,
                                 size: 18,
+                                color: Color(0xFF94A3B8),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
+                            ),
+                          ),
+
+                          // ── Box 2: Delivery / Drop Location ──────────
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFFECACA),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      isGrocery ? 'Delivery Location' : 'Drop / Destination Location',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 13.5,
-                                        color: AppColors.danger,
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFDC2626),
+                                        borderRadius: BorderRadius.circular(9),
+                                      ),
+                                      child: Icon(
+                                        isGrocery
+                                            ? Icons.home_rounded
+                                            : Icons.location_on_rounded,
+                                        color: Colors.white,
+                                        size: 17,
                                       ),
                                     ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      dropAddr,
-                                      style: const TextStyle(
-                                        color: AppColors.dark,
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.35,
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            isGrocery
+                                                ? 'STEP 2 • DELIVERY LOCATION'
+                                                : 'STEP 2 • DROP LOCATION',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 11,
+                                              letterSpacing: 0.6,
+                                              color: Color(0xFFDC2626),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            dropAddr,
+                                            style: const TextStyle(
+                                              color: Color(0xFF0F172A),
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              height: 1.38,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton.icon(
-                            onPressed: () => _openNavigationTo(
-                              task.dropLatitude,
-                              task.dropLongitude,
-                              task.effectiveDropAddress != null
-                                  ? GroceryCatalog.unescapeHtml(task.effectiveDropAddress!)
-                                  : null,
-                            ),
-                            icon: const Icon(Icons.navigation_rounded, size: 17),
-                            label: Text(
-                              isGrocery ? 'Navigate to Delivery Location' : 'Navigate to Drop Location',
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.danger,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(double.infinity, 42),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 46,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _openNavigationTo(
+                                      task.dropLatitude,
+                                      task.dropLongitude,
+                                      task.effectiveDropAddress != null
+                                          ? GroceryCatalog.unescapeHtml(
+                                              task.effectiveDropAddress!)
+                                          : null,
+                                    ),
+                                    icon: const Icon(Icons.directions_rounded,
+                                        size: 19),
+                                    label: Text(
+                                      isGrocery
+                                          ? 'Navigate to Delivery Location'
+                                          : 'Navigate to Drop Location',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.1,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFFDC2626),
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ] else if (Task.isFreelancerCategory(task.category) ||
@@ -841,7 +1172,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                                   'Remote / Online Service — No physical location needed',
                                   style: TextStyle(
                                       color: AppColors.gray,
-                                      fontSize: 13,
+                                      fontSize: 13.5,
                                       fontWeight: FontWeight.w600,
                                       height: 1.4),
                                 ),
@@ -851,26 +1182,38 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                         ] else ...[
                           if (task.address != null && task.address!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.only(bottom: 12),
                               child: Text(
                                 GroceryCatalog.unescapeHtml(task.address!),
                                 style: const TextStyle(
-                                    color: AppColors.gray,
-                                    fontSize: 13,
-                                    height: 1.4),
+                                  color: Color(0xFF0F172A),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.4,
+                                ),
                               ),
                             ),
                           SizedBox(
                             width: double.infinity,
+                            height: 46,
                             child: ElevatedButton.icon(
                               onPressed: _openNavigation,
-                              icon: const Icon(Icons.navigation_rounded, size: 18),
-                              label: const Text('Navigate to Task Location'),
+                              icon:
+                                  const Icon(Icons.directions_rounded, size: 19),
+                              label: const Text(
+                                'Navigate to Task Location',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.1,
+                                ),
+                              ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppColors.primary,
                                 foregroundColor: Colors.white,
+                                elevation: 0,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10)),
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                             ),
                           ),
@@ -881,168 +1224,6 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                 }),
 
               if (!_isVerifyPending && !_isDone) const SizedBox(height: 12),
-
-              // ── Poster Contact ───────────────────────────────────────
-              _SectionCard(
-                title: 'Task Poster',
-                icon: Icons.person_outline,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Poster info row
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor:
-                              AppColors.primary.withValues(alpha: 0.12),
-                          backgroundImage: (task.posterAvatar != null &&
-                                  task.posterAvatar!.isNotEmpty)
-                              ? NetworkImage(task.posterAvatar!)
-                              : null,
-                          onBackgroundImageError:
-                              (task.posterAvatar != null &&
-                                      task.posterAvatar!.isNotEmpty)
-                                  ? (_, __) {}
-                                  : null,
-                          child: (task.posterAvatar == null ||
-                                  task.posterAvatar!.isEmpty)
-                              ? Text(
-                                  (task.posterName.isNotEmpty &&
-                                          task.posterName != 'Anonymous')
-                                      ? task.posterName[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 18),
-                                )
-                              : null,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                (task.posterName.isNotEmpty &&
-                                        task.posterName != 'Anonymous')
-                                    ? task.posterName
-                                    : 'Task Poster',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15,
-                                    color: AppColors.dark),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                              if (task.posterRating > 0) ...[
-                                const SizedBox(height: 2),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.star,
-                                        size: 13, color: AppColors.warning),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      task.posterRating.toStringAsFixed(1),
-                                      style: const TextStyle(
-                                          color: AppColors.gray, fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                              if (hasPhone)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    task.posterPhone!.trim(),
-                                    style: const TextStyle(
-                                        color: AppColors.gray, fontSize: 12),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Contact buttons stacked to avoid overflow
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _callPoster,
-                        icon: const Icon(Icons.call, size: 17),
-                        label: Text(
-                          hasPhone ? 'Call Poster' : 'Call (no number)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor:
-                              hasPhone ? AppColors.success : AppColors.grayLight,
-                          side: BorderSide(
-                              color: hasPhone
-                                  ? AppColors.success
-                                  : AppColors.grayLight),
-                          minimumSize: const Size(double.infinity, 44),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          if (_task == null) return;
-                          context.push(
-                            '/chat/' + _task!.id,
-                            extra: {
-                              'taskId': _task!.id,
-                              'taskTitle': _task!.title,
-                              'otherName': _task!.posterName ?? 'Poster',
-                              'otherRole': 'Task Poster',
-                              'otherPhone': _task!.posterPhone,
-                              'category': _task!.category,
-                              'budget': _task!.budget,
-                              'status': _task!.status,
-                              'isPoster': false,
-                            },
-                          );
-                        },
-                        icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
-                        label: const Text(
-                          'Chat with Poster',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF6366F1),
-                          side: const BorderSide(color: Color(0xFF6366F1)),
-                          minimumSize: const Size(double.infinity, 44),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                    ),
-
-                    if (!hasPhone)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 6),
-                        child: Text(
-                          'Contact number was not provided by the poster.',
-                          style:
-                              TextStyle(color: AppColors.grayLight, fontSize: 11),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
 
               // ── Grocery Items List (replaces Task Details for grocery tasks) ─
               if (Task.isGroceryCategory(task.category))
@@ -1170,24 +1351,23 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                 ),
                 const SizedBox(height: 10),
 
-                // Proof preview
+                // Proof preview (4:3 ratio, uncropped)
                 if (_proofPath != null) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                  _buildProofFrame(
                     child: _proofPath!.startsWith('http')
                         ? Image.network(
                             _proofPath!,
-                            height: 200,
                             width: double.infinity,
-                            fit: BoxFit.cover,
+                            height: double.infinity,
+                            fit: BoxFit.contain,
                             gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           )
                         : Image.file(
                             File(_proofPath!),
-                            height: 200,
                             width: double.infinity,
-                            fit: BoxFit.cover,
+                            height: double.infinity,
+                            fit: BoxFit.contain,
                             gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           ),
@@ -1373,9 +1553,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
           if (task.completionProof != null &&
               task.completionProof!.isNotEmpty) ...[  // proof stored as base64 data URI or URL
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: _buildProofImage(task.completionProof!, height: 160),
+            _buildProofFrame(
+              child: _buildProofImage(task.completionProof!),
             ),
             const SizedBox(height: 6),
             const Text('Submitted proof photo',
@@ -1383,12 +1562,15 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     TextStyle(color: AppColors.gray, fontSize: 11)),
           ] else if (_submittedProofPath != null) ...[
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(File(_submittedProofPath!),
-                  height: 160, width: double.infinity, fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) => _proofErrorWidget()),
+            _buildProofFrame(
+              child: Image.file(
+                File(_submittedProofPath!),
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => _proofErrorWidget(),
+              ),
             ),
             const SizedBox(height: 6),
             const Text('Submitted proof photo',
@@ -1448,8 +1630,25 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     );
   }
 
+  /// Wraps proof photos in a fixed 4:3 frame without cropping the image.
+  Widget _buildProofFrame({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: AspectRatio(
+        aspectRatio: 4 / 3,
+        child: child,
+      ),
+    );
+  }
+
   /// Renders a proof image from either an HTTPS URL or a base64 data URI.
-  Widget _buildProofImage(String proof, {double height = 160}) {
+  Widget _buildProofImage(String proof) {
     final trimmed = proof.trim();
     if (trimmed.startsWith('data:')) {
       if (_cachedProofValue != trimmed) {
@@ -1457,28 +1656,24 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       }
       if (_cachedProofBytes != null) {
         return Image.memory(_cachedProofBytes!,
-            height: height,
             width: double.infinity,
-            fit: BoxFit.cover,
+            height: double.infinity,
+            fit: BoxFit.contain,
             gaplessPlayback: true,
             errorBuilder: (_, __, ___) => _proofErrorWidget());
       }
       return _proofErrorWidget();
     }
     return Image.network(trimmed,
-        height: height,
         width: double.infinity,
-        fit: BoxFit.cover,
+        height: double.infinity,
+        fit: BoxFit.contain,
         gaplessPlayback: true,
         errorBuilder: (_, __, ___) => _proofErrorWidget());
   }
 
   Widget _proofErrorWidget() => Container(
-        height: 160,
-        decoration: BoxDecoration(
-          color: AppColors.light,
-          borderRadius: BorderRadius.circular(12),
-        ),
+        color: AppColors.light,
         child: const Center(
           child: Icon(Icons.image_not_supported_outlined,
               size: 40, color: AppColors.grayLight),

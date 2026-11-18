@@ -703,35 +703,43 @@ class _PostedTaskList extends StatelessWidget {
 
   Widget _buildProofImage(String proof, {double height = 240}) {
     final trimmed = proof.trim();
+    Widget content;
     if (trimmed.startsWith('data:')) {
       final commaIdx = trimmed.indexOf(',');
       if (commaIdx != -1) {
         try {
-          return Image.memory(
+          content = Image.memory(
             base64Decode(trimmed.substring(commaIdx + 1)),
-            height: height,
             width: double.infinity,
-            fit: BoxFit.cover,
+            height: double.infinity,
+            fit: BoxFit.contain,
             errorBuilder: (_, __, ___) => _buildProofError(),
           );
         } catch (_) {
-          return _buildProofError();
+          content = _buildProofError();
         }
+      } else {
+        content = _buildProofError();
       }
-      return _buildProofError();
+    } else {
+      content = Image.network(
+        trimmed,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.contain,
+        loadingBuilder: (_, child, progress) => progress == null
+            ? child
+            : const Center(child: CircularProgressIndicator()),
+        errorBuilder: (_, __, ___) => _buildProofError(),
+      );
     }
-    return Image.network(
-      trimmed,
-      height: height,
+    return Container(
       width: double.infinity,
-      fit: BoxFit.cover,
-      loadingBuilder: (_, child, progress) => progress == null
-          ? child
-          : SizedBox(
-              height: height,
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-      errorBuilder: (_, __, ___) => _buildProofError(),
+      color: const Color(0xFFF1F5F9),
+      child: AspectRatio(
+        aspectRatio: 4 / 3,
+        child: content,
+      ),
     );
   }
 

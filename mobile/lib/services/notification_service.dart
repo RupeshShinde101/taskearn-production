@@ -410,8 +410,11 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     playSound: true,
   );
 
-  // Use type+task_id as the ID so skill_matched and nearby_task never collide.
-  final notifId = (type + (data['task_id'] ?? data['taskId'] ?? '')).hashCode.abs() % 2147483647;
+  // Use unique ID for chat messages so Android never silently merges/mutes
+  // subsequent messages from the same task chat.
+  final notifId = (type == 'chat' || type == 'new_message')
+      ? DateTime.now().millisecondsSinceEpoch & 0x7fffffff
+      : (type + (data['task_id'] ?? data['taskId'] ?? '')).hashCode.abs() % 2147483647;
   await local.show(
     id: notifId,
     title: title,
@@ -950,8 +953,9 @@ class NotificationService {
     final details =
         NotificationDetails(android: androidDetails, iOS: iosDetails);
 
-    final notifId =
-        ((notificationType ?? '') + (taskId ?? '')).hashCode.abs() % 2147483647;
+    final notifId = isChat
+        ? (DateTime.now().millisecondsSinceEpoch & 0x7fffffff)
+        : (((notificationType ?? '') + (taskId ?? '')).hashCode.abs() % 2147483647);
     await _local.show(
       id: notifId,
       title: title,

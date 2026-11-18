@@ -1092,43 +1092,49 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    task.completionProof!,
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      final total = loadingProgress.expectedTotalBytes;
-                      final received = loadingProgress.cumulativeBytesLoaded;
-                      return Container(
-                        height: 200,
-                        width: double.infinity,
-                        color: AppColors.light,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircularProgressIndicator(
-                                value: total != null ? received / total : null,
-                                color: AppColors.primary,
-                                strokeWidth: 3,
-                              ),
-                              const SizedBox(height: 10),
-                              const Text('Loading proof image…',
-                                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
-                            ],
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: AspectRatio(
+                    aspectRatio: 4 / 3,
+                    child: Image.network(
+                      task.completionProof!,
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        final total = loadingProgress.expectedTotalBytes;
+                        final received = loadingProgress.cumulativeBytesLoaded;
+                        return Container(
+                          color: const Color(0xFFF1F5F9),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: total != null ? received / total : null,
+                                  color: AppColors.primary,
+                                  strokeWidth: 3,
+                                ),
+                                const SizedBox(height: 10),
+                                const Text('Loading proof image…',
+                                    style: TextStyle(color: AppColors.gray, fontSize: 12)),
+                              ],
+                            ),
                           ),
+                        );
+                      },
+                      errorBuilder: (_, __, ___) => Container(
+                        color: AppColors.light,
+                        child: const Center(
+                          child: Text('Proof submitted', style: TextStyle(color: AppColors.gray)),
                         ),
-                      );
-                    },
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 80,
-                      color: AppColors.light,
-                      child: const Center(
-                        child: Text('Proof submitted', style: TextStyle(color: AppColors.gray)),
                       ),
                     ),
                   ),

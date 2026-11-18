@@ -36,6 +36,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   String? _proofPath;
   String? _submittedProofPath; // local path kept after submit for proof preview fallback
   Timer? _pollTimer;
+  Timer? _gpsHeartbeatTimer;
   StreamSubscription<Position>? _locationSub;
   String? _prevStatus;          // tracks last-known status to detect transitions
   bool _paymentPopupShown = false; // ensure payment popup shown only once
@@ -295,6 +296,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _gpsHeartbeatTimer?.cancel();
     _locationSub?.cancel();
     super.dispose();
   }
@@ -328,12 +330,29 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   }
 
   void _startLocationUpdates() {
-    // Push an immediate initial GPS reading so the poster sees live location right away.
-    LocationService.getCurrentLocation().then((latLng) {
-      if (latLng != null) {
-        _pushHelperLatLng(latLng.latitude, latLng.longitude);
+    Future<void> sendFreshFix() async {
+      final pos = await LocationService.getAccuratePosition();
+      if (pos != null) {
+        await _pushHelperLatLng(
+          pos.latitude,
+          pos.longitude,
+          accuracy: pos.accuracy,
+          heading: pos.heading,
+          speed: pos.speed,
+        );
       }
-    }).catchError((_) {});
+    }
+
+    // Immediate fresh GPS fix + 10-second heartbeat so poster always gets accurate GPS
+    // even when helper is stationary at store/doorstep.
+    sendFreshFix();
+    _gpsHeartbeatTimer?.cancel();
+    _gpsHeartbeatTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) {
+        if (mounted) sendFreshFix();
+      },
+    );
 
     _locationSub = LocationService.getLocationStream().listen((position) async {
       await _pushHelperLatLng(

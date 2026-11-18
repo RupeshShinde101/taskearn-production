@@ -36,8 +36,11 @@ class _PosterTaskInProgressScreenState
   bool _initialLoad = true;
   int _selectedTab = 0; // 0 = Items & Route, 1 = Proof & Pay
 
-  // Live helper tracking state
+  // Live helper tracking & authoritative helper profile state
   LatLng? _helperLatLng;
+  String? _helperName;
+  String? _helperPhone;
+  double? _helperRating;
   String? _etaText;
   String? _distanceText;
   String? _proofUrl;
@@ -45,9 +48,43 @@ class _PosterTaskInProgressScreenState
   String? _cachedProofSource;
   bool _cancelling = false;
   bool _paying = false;
+  bool _mapReady = false;
+  bool _hasCenteredOnHelper = false;
 
   Timer? _pollTimer;
   final MapController _mapController = MapController();
+
+  static bool _isPlaceholderName(String? name) {
+    final s = (name ?? '').trim().toLowerCase();
+    return s.isEmpty ||
+        s == 'helper' ||
+        s == 'assigned helper' ||
+        s == 'waiting for helper' ||
+        s == 'anonymous' ||
+        s == 'user';
+  }
+
+  String get _resolvedHelperName {
+    if (!_isPlaceholderName(_helperName)) return _helperName!.trim();
+    if (!_isPlaceholderName(_task?.helperName)) return _task!.helperName!.trim();
+    return 'Assigned Helper';
+  }
+
+  String? get _resolvedHelperPhone {
+    final p1 = _helperPhone?.trim();
+    if (p1 != null && p1.isNotEmpty) return p1;
+    final p2 = _task?.helperPhone?.trim();
+    if (p2 != null && p2.isNotEmpty) return p2;
+    return null;
+  }
+
+  double? get _resolvedHelperRating {
+    if (_helperRating != null && _helperRating! > 0) return _helperRating;
+    if (_task?.helperRating != null && _task!.helperRating! > 0) {
+      return _task!.helperRating;
+    }
+    return null;
+  }
 
   static const _verifyPendingStatuses = {'completed', 'verify_pending'};
   static const _paidStatuses = {
@@ -103,9 +140,38 @@ class _PosterTaskInProgressScreenState
     if (!mounted) return;
 
     if (task != null) {
+      // Seed helper name/phone from task or myPostedTasks cache immediately
+      String? seedName = task.helperName;
+      String? seedPhone = task.helperPhone;
+      double? seedRating = task.helperRating;
+      for (final posted in provider.myPostedTasks) {
+        if (posted.id == task.id) {
+          if (_isPlaceholderName(seedName) &&
+              !_isPlaceholderName(posted.helperName)) {
+            seedName = posted.helperName;
+          }
+          if ((seedPhone == null || seedPhone.trim().isEmpty) &&
+              posted.helperPhone != null &&
+              posted.helperPhone!.trim().isNotEmpty) {
+            seedPhone = posted.helperPhone;
+          }
+          if ((seedRating == null || seedRating <= 0) &&
+              posted.helperRating != null &&
+              posted.helperRating! > 0) {
+            seedRating = posted.helperRating;
+          }
+          break;
+        }
+      }
+
       final wasNeedsVerify = _needsVerify;
       setState(() {
         _task = task;
+        if (!_isPlaceholderName(seedName)) _helperName = seedName;
+        if (seedPhone != null && seedPhone.trim().isNotEmpty) {
+          _helperPhone = seedPhone.trim();
+        }
+        if (seedRating != null && seedRating > 0) _helperRating = seedRating;
         _loading = false;
         _initialLoad = false;
         if (!wasNeedsVerify && _verifyPendingStatuses.contains(task.status)) {
@@ -113,6 +179,7 @@ class _PosterTaskInProgressScreenState
         }
       });
       _syncProof(task);
+      await _fetchTrackingInfo();
       await _fetchLiveLocation();
     } else {
       setState(() {
@@ -125,17 +192,78 @@ class _PosterTaskInProgressScreenState
   Future<void> _pollTrackingAndStatus() async {
     await _fetchLiveLocation();
     if (!mounted) return;
+    if (_isPlaceholderName(_helperName) || _resolvedHelperPhone == null) {
+      await _fetchTrackingInfo();
+      if (!mounted) return;
+    }
     final provider = context.read<TaskProvider>();
     final fresh = await provider.getTaskDetail(widget.taskId);
     if (!mounted || fresh == null) return;
     final wasNeedsVerify = _needsVerify;
     setState(() {
       _task = fresh;
+      if (_isPlaceholderName(_helperName) &&
+          !_isPlaceholderName(fresh.helperName)) {
+        _helperName = fresh.helperName;
+      }
+      if ((_helperPhone == null || _helperPhone!.isEmpty) &&
+          fresh.helperPhone != null &&
+          fresh.helperPhone!.trim().isNotEmpty) {
+        _helperPhone = fresh.helperPhone!.trim();
+      }
       if (!wasNeedsVerify && _verifyPendingStatuses.contains(fresh.status)) {
         _selectedTab = 1;
       }
     });
     _syncProof(fresh);
+  }
+
+  /// Fetches authoritative helper name, phone, rating, and latest GPS from
+  /// GET /api/tracking/<task_id> (joined directly with users table).
+  Future<void> _fetchTrackingInfo() async {
+    try {
+      final res = await ApiService.get('/tracking/${widget.taskId}');
+      if (!mounted) return;
+      final tracking =
+          res['tracking'] is Map ? res['tracking'] as Map : (res is Map ? res : null);
+      if (tracking == null) return;
+
+      final helper = tracking['helper'] is Map ? tracking['helper'] as Map : null;
+      final hLoc = tracking['helperLocation'] is Map
+          ? tracking['helperLocation'] as Map
+          : null;
+
+      LatLng? parsedLoc;
+      if (hLoc != null) {
+        final lat = (hLoc['lat'] as num?)?.toDouble();
+        final lng = (hLoc['lng'] as num?)?.toDouble();
+        if (lat != null && lng != null && (lat != 0 || lng != 0)) {
+          parsedLoc = LatLng(lat, lng);
+        }
+      }
+
+      setState(() {
+        if (helper != null) {
+          final name = helper['name']?.toString().trim();
+          if (!_isPlaceholderName(name)) _helperName = name;
+          final phone = helper['phone']?.toString().trim();
+          if (phone != null && phone.isNotEmpty) _helperPhone = phone;
+          final rating = (helper['rating'] as num?)?.toDouble();
+          if (rating != null && rating > 0) _helperRating = rating;
+        }
+        if (parsedLoc != null) {
+          _helperLatLng = parsedLoc;
+        }
+        final eta = tracking['eta']?.toString();
+        if (eta != null && eta.isNotEmpty) _etaText = eta;
+        final dist = tracking['distance']?.toString();
+        if (dist != null && dist.isNotEmpty) _distanceText = dist;
+      });
+
+      if (parsedLoc != null) {
+        _centerMapOnHelper(force: !_hasCenteredOnHelper);
+      }
+    } catch (_) {}
   }
 
   Future<void> _syncProof(Task task) async {
@@ -183,14 +311,50 @@ class _PosterTaskInProgressScreenState
         final lat = (loc['lat'] as num?)?.toDouble();
         final lng = (loc['lng'] as num?)?.toDouble();
         if (lat != null && lng != null && (lat != 0 || lng != 0)) {
+          final updated = LatLng(lat, lng);
+          final moved = _helperLatLng == null ||
+              _haversineKm(_helperLatLng!, updated) > 0.01;
           setState(() {
-            _helperLatLng = LatLng(lat, lng);
+            _helperLatLng = updated;
             _etaText = res['eta']?.toString();
             _distanceText = res['distance']?.toString();
           });
+          if (moved || !_hasCenteredOnHelper) {
+            _centerMapOnHelper(force: !_hasCenteredOnHelper);
+          }
           return;
         }
       }
+    } catch (_) {}
+  }
+
+  void _centerMapOnHelper({bool force = false}) {
+    if (!_mapReady || _helperLatLng == null) return;
+    try {
+      final pts = <LatLng>[
+        _helperLatLng!,
+        if (_pickupLatLng != null) _pickupLatLng!,
+        if (_dropLatLng != null) _dropLatLng!,
+      ];
+      // If helper is close enough to route points (< 15 km), fit all pins cleanly;
+      // otherwise center directly on the helper's exact live GPS pin.
+      if (!force && pts.length >= 2) {
+        final maxKm = pts
+            .map((p) => _haversineKm(_helperLatLng!, p))
+            .reduce(math.max);
+        if (maxKm > 0.05 && maxKm < 15.0) {
+          _mapController.fitCamera(
+            CameraFit.bounds(
+              bounds: LatLngBounds.fromPoints(pts),
+              padding: const EdgeInsets.all(36),
+            ),
+          );
+          _hasCenteredOnHelper = true;
+          return;
+        }
+      }
+      _mapController.move(_helperLatLng!, 15.8);
+      _hasCenteredOnHelper = true;
     } catch (_) {}
   }
 
@@ -302,23 +466,34 @@ class _PosterTaskInProgressScreenState
   }
 
   Future<void> _callHelper() async {
-    final phone = _task?.helperPhone?.trim();
+    var phone = _resolvedHelperPhone;
     if (phone == null || phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Helper phone number is not available.'),
-        ),
-      );
-      return;
+      await _fetchTrackingInfo();
+      phone = _resolvedHelperPhone;
     }
-    final uri = Uri(scheme: 'tel', path: phone);
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
+    if (phone == null || phone.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open dialer.')),
+          const SnackBar(
+            content: Text('Helper phone number is not available.'),
+          ),
         );
+      }
+      return;
+    }
+    final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    final uri = Uri.parse('tel:$clean');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      try {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open dialer.')),
+          );
+        }
       }
     }
   }
@@ -331,9 +506,9 @@ class _PosterTaskInProgressScreenState
       extra: {
         'taskId': t.id,
         'taskTitle': t.title,
-        'otherName': t.helperName ?? 'Helper',
+        'otherName': _resolvedHelperName,
         'otherRole': 'Helper',
-        'otherPhone': t.helperPhone,
+        'otherPhone': _resolvedHelperPhone,
         'category': t.category,
         'budget': t.budget,
         'status': t.status,
@@ -605,7 +780,13 @@ class _PosterTaskInProgressScreenState
       mapController: interactive ? null : _mapController,
       options: MapOptions(
         initialCenter: _mapCenter,
-        initialZoom: 14.2,
+        initialZoom: 15.2,
+        onMapReady: interactive
+            ? null
+            : () {
+                _mapReady = true;
+                _centerMapOnHelper(force: true);
+              },
         interactionOptions: InteractionOptions(
           flags: interactive
               ? InteractiveFlag.all
@@ -1042,12 +1223,9 @@ class _PosterTaskInProgressScreenState
       );
     }
 
-    final helperName =
-        (task.helperName != null && task.helperName!.trim().isNotEmpty)
-            ? task.helperName!.trim()
-            : 'Assigned Helper';
-    final hasPhone =
-        task.helperPhone != null && task.helperPhone!.trim().isNotEmpty;
+    final helperName = _resolvedHelperName;
+    final hasPhone = _resolvedHelperPhone != null;
+    final helperRating = _resolvedHelperRating;
     final eta = _etaBox;
 
     return Scaffold(
@@ -1201,38 +1379,62 @@ class _PosterTaskInProgressScreenState
                     child: Stack(
                       children: [
                         _buildFlutterMap(interactive: false),
-                        // Bottom-right Live GPS + Expand overlay pill
+                        // Compact Recenter + Small Live GPS & Expand overlay
                         Positioned(
-                          right: 10,
-                          bottom: 10,
-                          child: InkWell(
-                            onTap: _openFullscreenMap,
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F172A)
-                                    .withValues(alpha: 0.82),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    _liveDistanceLabel,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
+                          right: 8,
+                          bottom: 8,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_helperLatLng != null) ...[
+                                Material(
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  shape: const CircleBorder(),
+                                  elevation: 2,
+                                  child: InkWell(
+                                    onTap: () =>
+                                        _centerMapOnHelper(force: true),
+                                    customBorder: const CircleBorder(),
+                                    child: const SizedBox(
+                                      width: 26,
+                                      height: 26,
+                                      child: Icon(Icons.my_location_rounded,
+                                          size: 14, color: Color(0xFF059669)),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.open_in_full_rounded,
-                                      color: Colors.white, size: 14),
-                                ],
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              InkWell(
+                                onTap: _openFullscreenMap,
+                                borderRadius: BorderRadius.circular(7),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A)
+                                        .withValues(alpha: 0.78),
+                                    borderRadius: BorderRadius.circular(7),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _liveDistanceLabel,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.open_in_full_rounded,
+                                          color: Colors.white, size: 11),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                         ),
                       ],
@@ -1295,9 +1497,8 @@ class _PosterTaskInProgressScreenState
                                     size: 14, color: Color(0xFF0F172A)),
                                 const SizedBox(width: 2),
                                 Text(
-                                  (task.helperRating != null &&
-                                          task.helperRating! > 0)
-                                      ? '${task.helperRating!.toStringAsFixed(1)} • Verified'
+                                  (helperRating != null && helperRating > 0)
+                                      ? '${helperRating.toStringAsFixed(1)} • Verified'
                                       : 'Verified Helper',
                                   style: const TextStyle(
                                     color: Color(0xFF64748B),

@@ -746,25 +746,6 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
           },
         ),
         actions: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(right: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEEF2FF),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFC7D2FE)),
-              ),
-              child: Text(
-                '₹${task.budget.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  color: Color(0xFF3730A3),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13.5,
-                ),
-              ),
-            ),
-          ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: Color(0xFF0F172A)),
             tooltip: 'Refresh',

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
 import '../../theme/app_theme.dart';
+import '../browse/browse_screen.dart';
 
 class MainShell extends StatefulWidget {
   final Widget child;
@@ -67,6 +68,10 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
     // If there is a pushed route on the stack — pop it normally
     if (GoRouter.of(context).canPop()) {
       GoRouter.of(context).pop();
+      return true;
+    }
+
+    if (BrowseScreen.onBackOverride?.call() == true) {
       return true;
     }
 

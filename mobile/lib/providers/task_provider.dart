@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../services/location_service.dart';
 import '../services/storage_service.dart';
 
 class TaskProvider extends ChangeNotifier {
@@ -515,6 +516,22 @@ class TaskProvider extends ChangeNotifier {
           );
 
       final response = await ApiService.post('/tasks/$taskId/accept');
+      // Immediately seed helper's live GPS into /tracking/update-location so
+      // the poster's live mini-map shows the helper pin right away.
+      LocationService.getAccuratePosition().then((pos) {
+        if (pos != null) {
+          ApiService.post('/tracking/update-location', body: {
+            'taskId': int.tryParse(taskId) ?? taskId,
+            'location': {
+              'lat': pos.latitude,
+              'lng': pos.longitude,
+              'accuracy': pos.accuracy,
+              'heading': pos.heading,
+              'speed': pos.speed,
+            },
+          }).catchError((_) => <String, dynamic>{});
+        }
+      }).catchError((_) {});
       _browseTasks.removeWhere((t) => t.id == taskId);
 
       if (browseTask != null) {

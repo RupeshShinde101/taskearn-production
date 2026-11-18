@@ -5271,7 +5271,7 @@ def get_tracking_info(task_id):
         if task['posted_by'] != request.user_id and task['accepted_by'] != request.user_id:
             return jsonify({'success': False, 'message': 'Not authorized to track this task'}), 403
         
-        # Get latest location of helper (active first, then any latest row for task/helper)
+        # Get latest location of helper (location_tracking -> latest helper track -> users.last_lat/last_lng)
         helper_location = None
         if task['accepted_by']:
             cursor.execute(f'''
@@ -5302,6 +5302,24 @@ def get_tracking_info(task_id):
                     'speed': float(loc['speed']) if loc.get('speed') is not None else None,
                     'timestamp': rec_at
                 }
+            else:
+                try:
+                    _ensure_user_location_columns()
+                    cursor.execute(f'SELECT last_lat, last_lng FROM users WHERE id = {PH}', (task['accepted_by'],))
+                    u_row = cursor.fetchone()
+                    if u_row:
+                        u_dict = dict_from_row(u_row)
+                        if u_dict.get('last_lat') and u_dict.get('last_lng'):
+                            helper_location = {
+                                'lat': float(u_dict['last_lat']),
+                                'lng': float(u_dict['last_lng']),
+                                'accuracy': None,
+                                'heading': None,
+                                'speed': None,
+                                'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            }
+                except Exception:
+                    pass
         
         # Build timeline
         timeline = []
@@ -5437,7 +5455,7 @@ def get_helper_location(task_id):
                 'message': 'Waiting for helper to accept'
             })
         
-        # Get latest location (active first, then any recent row for task/helper)
+        # Get latest location (active first -> latest helper track -> users.last_lat/last_lng)
         cursor.execute(f'''
             SELECT latitude, longitude, accuracy, heading, speed, recorded_at
             FROM location_tracking
@@ -5453,6 +5471,28 @@ def get_helper_location(task_id):
                 ORDER BY recorded_at DESC LIMIT 1
             ''', (task['accepted_by'],))
             loc = cursor.fetchone()
+
+        if loc:
+            loc = dict_from_row(loc)
+        else:
+            loc = None
+            try:
+                _ensure_user_location_columns()
+                cursor.execute(f'SELECT last_lat, last_lng FROM users WHERE id = {PH}', (task['accepted_by'],))
+                u_row = cursor.fetchone()
+                if u_row:
+                    u_dict = dict_from_row(u_row)
+                    if u_dict.get('last_lat') and u_dict.get('last_lng'):
+                        loc = {
+                            'latitude': float(u_dict['last_lat']),
+                            'longitude': float(u_dict['last_lng']),
+                            'accuracy': None,
+                            'heading': None,
+                            'speed': None,
+                            'recorded_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+                        }
+            except Exception:
+                pass
         
         if not loc:
             return jsonify({
@@ -5461,7 +5501,6 @@ def get_helper_location(task_id):
                 'message': 'Helper location not available yet'
             })
         
-        loc = dict_from_row(loc)
         rec_at = loc.get('recorded_at')
         if hasattr(rec_at, 'isoformat'):
             rec_at = rec_at.isoformat()
@@ -5582,6 +5621,14 @@ def update_location():
             recorded_at,
             True if config.USE_POSTGRES else 1
         ))
+        try:
+            _ensure_user_location_columns()
+            cursor.execute(
+                f'UPDATE users SET last_lat = {PH}, last_lng = {PH} WHERE id = {PH}',
+                (round(lat_f, 7), round(lng_f, 7), request.user_id)
+            )
+        except Exception:
+            pass
     
     return jsonify({
         'success': True,

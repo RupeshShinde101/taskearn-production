@@ -5,9 +5,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'proof_camera_screen.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
 import '../../models/grocery_item.dart';
@@ -383,45 +383,12 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   }
 
   Future<void> _pickProof() async {
-    final picker = ImagePicker();
-    await showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text('Add Completion Proof',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Take Photo'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final f = await picker.pickImage(
-                    source: ImageSource.camera, imageQuality: 70);
-                if (mounted && f != null) setState(() => _proofPath = f.path);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Choose from Gallery'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final f = await picker.pickImage(
-                    source: ImageSource.gallery, imageQuality: 70);
-                if (mounted && f != null) setState(() => _proofPath = f.path);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+    final capturedPath = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const ProofCameraScreen()),
     );
+    if (mounted && capturedPath != null && capturedPath.isNotEmpty) {
+      setState(() => _proofPath = capturedPath);
+    }
   }
 
   // ── Step 1: Helper submits proof for verification ─────────────────────────
@@ -842,52 +809,62 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                 const SizedBox(height: 12),
               ],
 
-              // ── Compact Single-Row Task Poster Card (Top) ────────────
+              // ── Enlarged Single-Row Task Poster Card (Top) ───────────
               Container(
                 width: double.infinity,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.03),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.05),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3),
                     ),
                   ],
                 ),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 21,
-                      backgroundColor: const Color(0xFF6D5BD0),
-                      backgroundImage: (task.posterAvatar != null &&
-                              task.posterAvatar!.isNotEmpty)
-                          ? NetworkImage(task.posterAvatar!)
-                          : null,
-                      onBackgroundImageError: (task.posterAvatar != null &&
-                              task.posterAvatar!.isNotEmpty)
-                          ? (_, __) {}
-                          : null,
-                      child: (task.posterAvatar == null ||
-                              task.posterAvatar!.isEmpty)
-                          ? Text(
-                              (task.posterName.isNotEmpty &&
-                                      task.posterName != 'Anonymous')
-                                  ? task.posterName[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
-                              ),
-                            )
-                          : null,
+                    Container(
+                      padding: const EdgeInsets.all(2.5),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFFC7D2FE),
+                          width: 2,
+                        ),
+                      ),
+                      child: CircleAvatar(
+                        radius: 26,
+                        backgroundColor: const Color(0xFF5B4BDB),
+                        backgroundImage: (task.posterAvatar != null &&
+                                task.posterAvatar!.isNotEmpty)
+                            ? NetworkImage(task.posterAvatar!)
+                            : null,
+                        onBackgroundImageError: (task.posterAvatar != null &&
+                                task.posterAvatar!.isNotEmpty)
+                            ? (_, __) {}
+                            : null,
+                        child: (task.posterAvatar == null ||
+                                task.posterAvatar!.isEmpty)
+                            ? Text(
+                                (task.posterName.isNotEmpty &&
+                                        task.posterName != 'Anonymous')
+                                    ? task.posterName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 20,
+                                ),
+                              )
+                            : null,
+                      ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -900,21 +877,22 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                                 : 'Task Poster',
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
-                              fontSize: 15,
+                              fontSize: 17.5,
                               color: Color(0xFF0F172A),
+                              letterSpacing: -0.2,
                             ),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 4),
                           Row(
                             children: [
                               const Text(
                                 'Task Poster',
                                 style: TextStyle(
                                   color: Color(0xFF64748B),
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w500,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                               if (task.posterRating > 0) ...[
@@ -922,17 +900,17 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                                   '  •  ',
                                   style: TextStyle(
                                     color: Color(0xFF94A3B8),
-                                    fontSize: 12,
+                                    fontSize: 13,
                                   ),
                                 ),
                                 const Icon(Icons.star_rounded,
-                                    size: 14, color: AppColors.warning),
+                                    size: 16, color: AppColors.warning),
                                 const SizedBox(width: 2),
                                 Text(
                                   task.posterRating.toStringAsFixed(1),
                                   style: const TextStyle(
-                                    color: Color(0xFF475569),
-                                    fontSize: 12,
+                                    color: Color(0xFF334155),
+                                    fontSize: 13.5,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -942,66 +920,72 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    // Call icon button
+                    const SizedBox(width: 10),
+                    // Improved Call icon button
                     Tooltip(
                       message: hasPhone ? 'Call Poster' : 'Phone not available',
-                      child: InkWell(
-                        onTap: _callPoster,
-                        borderRadius: BorderRadius.circular(11),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: hasPhone
-                                ? const Color(0xFFDCFCE7)
-                                : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          child: Icon(
-                            Icons.call_rounded,
-                            size: 20,
-                            color: hasPhone
-                                ? const Color(0xFF15803D)
-                                : const Color(0xFF94A3B8),
+                      child: Material(
+                        color: hasPhone
+                            ? const Color(0xFF16A34A)
+                            : const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(14),
+                        elevation: hasPhone ? 2 : 0,
+                        shadowColor:
+                            const Color(0xFF16A34A).withValues(alpha: 0.35),
+                        child: InkWell(
+                          onTap: _callPoster,
+                          borderRadius: BorderRadius.circular(14),
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Icon(
+                              Icons.phone_in_talk_rounded,
+                              size: 23,
+                              color: hasPhone
+                                  ? Colors.white
+                                  : const Color(0xFF94A3B8),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    // Message icon button
+                    const SizedBox(width: 10),
+                    // Improved Message icon button
                     Tooltip(
                       message: 'Message Poster',
-                      child: InkWell(
-                        onTap: () {
-                          if (_task == null) return;
-                          context.push(
-                            '/chat/${_task!.id}',
-                            extra: {
-                              'taskId': _task!.id,
-                              'taskTitle': _task!.title,
-                              'otherName': _task!.posterName,
-                              'otherRole': 'Task Poster',
-                              'otherPhone': _task!.posterPhone,
-                              'category': _task!.category,
-                              'budget': _task!.budget,
-                              'status': _task!.status,
-                              'isPoster': false,
-                            },
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(11),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE0E7FF),
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          child: const Icon(
-                            Icons.chat_bubble_rounded,
-                            size: 19,
-                            color: Color(0xFF4338CA),
+                      child: Material(
+                        color: const Color(0xFF4F46E5),
+                        borderRadius: BorderRadius.circular(14),
+                        elevation: 2,
+                        shadowColor:
+                            const Color(0xFF4F46E5).withValues(alpha: 0.35),
+                        child: InkWell(
+                          onTap: () {
+                            if (_task == null) return;
+                            context.push(
+                              '/chat/${_task!.id}',
+                              extra: {
+                                'taskId': _task!.id,
+                                'taskTitle': _task!.title,
+                                'otherName': _task!.posterName,
+                                'otherRole': 'Task Poster',
+                                'otherPhone': _task!.posterPhone,
+                                'category': _task!.category,
+                                'budget': _task!.budget,
+                                'status': _task!.status,
+                                'isPoster': false,
+                              },
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(14),
+                          child: const SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Icon(
+                              Icons.forum_rounded,
+                              size: 22,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
@@ -1456,7 +1440,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     child: OutlinedButton.icon(
                       onPressed: busy ? null : _pickProof,
                       icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                      label: const Text('Change Proof Photo'),
+                      label: const Text('Retake Proof Photo'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF3B43E6),
                         side: const BorderSide(color: Color(0xFFC7D2FE)),
@@ -1503,16 +1487,16 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Capture or Upload Proof Photo (4:3)',
+                                    'Capture Proof Photo',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      fontSize: 13.5,
+                                      fontSize: 14,
                                       color: Color(0xFF0F172A),
                                     ),
                                   ),
                                   SizedBox(height: 2),
                                   Text(
-                                    'Tap to take a photo or choose from gallery',
+                                    'Tap to open camera and take a photo',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Color(0xFF64748B),

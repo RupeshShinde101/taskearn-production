@@ -746,57 +746,11 @@ class _PosterTaskInProgressScreenState
       if (helper != null)
         Marker(
           point: helper,
-          width: 72,
-          height: 68,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF059669).withValues(alpha: 0.25),
-                  shape: BoxShape.circle,
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF059669),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.28),
-                        blurRadius: 6,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.delivery_dining_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF059669),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white, width: 1.2),
-                ),
-                child: const Text(
-                  'Helper',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
-                  ),
-                ),
-              ),
-            ],
+          width: 96,
+          height: 82,
+          alignment: Alignment.center,
+          child: _LiveHelperMapMarker(
+            label: _resolvedHelperName.split(' ').first,
           ),
         ),
     ];
@@ -1716,6 +1670,138 @@ class _PosterTaskInProgressScreenState
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Animated live rider map marker (pulsing radar ring + crisp white/emerald
+/// badge + floating helper first-name pill).
+class _LiveHelperMapMarker extends StatefulWidget {
+  final String label;
+  const _LiveHelperMapMarker({required this.label});
+
+  @override
+  State<_LiveHelperMapMarker> createState() => _LiveHelperMapMarkerState();
+}
+
+class _LiveHelperMapMarkerState extends State<_LiveHelperMapMarker>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tag = widget.label.trim().isNotEmpty ? widget.label.trim() : 'Helper';
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Floating name pill above marker
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white, width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 5.5,
+                height: 5.5,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF22C55E),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  tag,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        // Animated pulsing radar halo + crisp white/emerald rider icon
+        SizedBox(
+          width: 54,
+          height: 54,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              AnimatedBuilder(
+                animation: _pulseCtrl,
+                builder: (_, __) {
+                  final t = _pulseCtrl.value;
+                  final size = 34.0 + (20.0 * t);
+                  return Container(
+                    width: size,
+                    height: size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF10B981)
+                          .withValues(alpha: (1.0 - t) * 0.42),
+                    ),
+                  );
+                },
+              ),
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border:
+                      Border.all(color: const Color(0xFF059669), width: 2.8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF059669).withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.moped_rounded,
+                  color: Color(0xFF059669),
+                  size: 21,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

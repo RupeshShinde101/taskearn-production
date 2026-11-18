@@ -10,6 +10,7 @@ import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
 import '../../widgets/confirm_payment_dialog.dart';
+import '../../widgets/task_empty_state_illustration.dart';
 import '../../services/notification_service.dart';
 import 'edit_task_screen.dart';
 
@@ -36,7 +37,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
     return DefaultTabController(
       key: ValueKey(isHelper),
-      length: isHelper ? 3 : 2,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('My Tasks'),
@@ -45,7 +46,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             unselectedLabelColor: AppColors.gray,
             indicatorColor: AppColors.primary,
             tabs: [
-              const Tab(text: 'Posted'),
+              if (!isHelper) const Tab(text: 'Posted'),
               if (isHelper) const Tab(text: 'Accepted'),
               const Tab(text: 'Completed'),
             ],
@@ -72,7 +73,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 children: [
                   TabBarView(
                     children: [
-                      _PostedTaskList(tasks: tasks.myPostedTasks),
+                      if (!isHelper)
+                        _PostedTaskList(tasks: tasks.myPostedTasks),
                       if (isHelper)
                         _TaskList(
                           tasks: tasks.myAcceptedTasks,
@@ -125,10 +127,21 @@ class _PostedTaskList extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.task_alt, size: 64, color: AppColors.grayLight),
+            EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.posted),
             SizedBox(height: 12),
-            Text('No posted tasks',
-                style: TextStyle(color: AppColors.gray, fontSize: 15)),
+            Text(
+              'No posted tasks',
+              style: TextStyle(
+                color: AppColors.dark,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Tap + to post a new task for local helpers',
+              style: TextStyle(color: AppColors.gray, fontSize: 13),
+            ),
           ],
         ),
       );
@@ -864,13 +877,21 @@ class _CompletedTaskList extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.task_alt, size: 64, color: AppColors.grayLight),
+            EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.completed),
             SizedBox(height: 12),
-            Text('No completed tasks',
-                style: TextStyle(color: AppColors.gray, fontSize: 15)),
-            SizedBox(height: 6),
-            Text('Completed tasks are kept for 48 hours',
-                style: TextStyle(color: AppColors.grayLight, fontSize: 12)),
+            Text(
+              'No completed tasks',
+              style: TextStyle(
+                color: AppColors.dark,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Completed tasks are kept for 48 hours',
+              style: TextStyle(color: AppColors.gray, fontSize: 13),
+            ),
           ],
         ),
       );
@@ -1132,10 +1153,21 @@ class _TaskList extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.task_alt, size: 64, color: AppColors.grayLight),
+            const EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.accepted),
             const SizedBox(height: 12),
-            Text(emptyMsg,
-                style: const TextStyle(color: AppColors.gray, fontSize: 15)),
+            Text(
+              emptyMsg,
+              style: const TextStyle(
+                color: AppColors.dark,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Browse available tasks and accept one to start earning',
+              style: TextStyle(color: AppColors.gray, fontSize: 13),
+            ),
           ],
         ),
       );

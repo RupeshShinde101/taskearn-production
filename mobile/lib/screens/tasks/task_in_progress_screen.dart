@@ -299,22 +299,50 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     super.dispose();
   }
 
+  Future<void> _pushHelperLatLng(
+    double lat,
+    double lng, {
+    double? accuracy,
+    double? heading,
+    double? speed,
+  }) async {
+    if (!mounted) return;
+    if (_task != null &&
+        (_verifyPendingStatuses.contains(_task!.status) ||
+            _paymentReleasedStatuses.contains(_task!.status) ||
+            _doneStatuses.contains(_task!.status))) {
+      return;
+    }
+    try {
+      await ApiService.post('/tracking/update-location', body: {
+        'taskId': int.tryParse(widget.taskId) ?? widget.taskId,
+        'location': {
+          'lat': lat,
+          'lng': lng,
+          if (accuracy != null) 'accuracy': accuracy,
+          if (heading != null) 'heading': heading,
+          if (speed != null) 'speed': speed,
+        },
+      });
+    } catch (_) {}
+  }
+
   void _startLocationUpdates() {
-    _locationSub = LocationService.getLocationStream().listen((position) async {
-      if (!mounted) return;
-      // Only send location updates while task is still active
-      if (_task != null &&
-          !_verifyPendingStatuses.contains(_task!.status) &&
-          !_paymentReleasedStatuses.contains(_task!.status) &&
-          !_doneStatuses.contains(_task!.status)) {
-        try {
-          await ApiService.post('/tracking/update-location', body: {
-            'taskId': widget.taskId,
-            'latitude': position.latitude,
-            'longitude': position.longitude,
-          });
-        } catch (_) {}
+    // Push an immediate initial GPS reading so the poster sees live location right away.
+    LocationService.getCurrentLocation().then((latLng) {
+      if (latLng != null) {
+        _pushHelperLatLng(latLng.latitude, latLng.longitude);
       }
+    }).catchError((_) {});
+
+    _locationSub = LocationService.getLocationStream().listen((position) async {
+      await _pushHelperLatLng(
+        position.latitude,
+        position.longitude,
+        accuracy: position.accuracy,
+        heading: position.heading,
+        speed: position.speed,
+      );
     });
   }
 

@@ -468,6 +468,10 @@ class NotificationService {
   static final StreamController<Map<String, dynamic>> onTaskCompleted =
       StreamController.broadcast();
 
+  // Broadcast stream for foreground task_accepted events (auto-redirect poster to live tracking).
+  static final StreamController<Map<String, dynamic>> onTaskAccepted =
+      StreamController.broadcast();
+
   /// Holds the data from getInitialMessage() / getNotificationAppLaunchDetails()
   /// so it can be consumed AFTER the app widget has subscribed to [onNotificationTap].
   /// Using a static store prevents the race-condition where the initial message is
@@ -755,6 +759,20 @@ class NotificationService {
             isAdmin: isAdmin,
             isChat: isChat,
           );
+        }
+      }
+
+      // Notify the app to auto-redirect the poster to live tracking when a helper accepts.
+      if (type == 'task_accepted') {
+        final taskId = message.data['task_id']?.toString() ??
+            message.data['taskId']?.toString() ??
+            '';
+        if (taskId.isNotEmpty) {
+          onTaskAccepted.add({
+            'task_id': taskId,
+            'title': notification?.title ?? message.data['title'] ?? 'Task Accepted',
+            'body': notification?.body ?? message.data['body'] ?? '',
+          });
         }
       }
 

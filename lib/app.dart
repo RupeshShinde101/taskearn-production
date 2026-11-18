@@ -18,6 +18,7 @@ import 'screens/tasks/post_task_screen.dart';
 import 'screens/tasks/grocery_item_picker_screen.dart';
 import 'screens/tasks/my_tasks_screen.dart';
 import 'screens/tasks/task_in_progress_screen.dart';
+import 'screens/tasks/poster_task_in_progress_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'screens/profile/profile_screen.dart';
@@ -45,6 +46,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
   AuthProvider? _authProvider;
   StreamSubscription<Map<String, dynamic>>? _notifSub;
   StreamSubscription<Map<String, dynamic>>? _taskCompletedSub;
+  StreamSubscription<Map<String, dynamic>>? _taskAcceptedSub;
   /// Navigation path deferred until the user is authenticated.
   /// Set when a notification tap arrives before auth is established.
   String? _pendingNavPath;
@@ -170,6 +172,11 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
               TaskInProgressScreen(taskId: state.pathParameters['id']!),
         ),
         GoRoute(
+          path: '/poster-task-in-progress/:id',
+          builder: (_, state) =>
+              PosterTaskInProgressScreen(taskId: state.pathParameters['id']!),
+        ),
+        GoRoute(
           path: '/chat/:taskId',
           builder: (_, state) => ChatScreen(
             taskId: state.pathParameters['taskId']!,
@@ -247,6 +254,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       });
     }
 
+    // Auto-redirect task poster to live tracking screen when a helper accepts their task.
+    _taskAcceptedSub ??= NotificationService.onTaskAccepted.stream.listen((data) {
+      final taskId = data['task_id']?.toString() ?? '';
+      if (taskId.isEmpty) return;
+      if (_authProvider?.status == AuthStatus.authenticated) {
+        _router.push('/poster-task-in-progress/$taskId');
+      }
+    });
+
     // Show in-app popup when a task_completed event arrives while the poster
     // is actively using the app.
     _taskCompletedSub ??= NotificationService.onTaskCompleted.stream.listen((data) {
@@ -283,7 +299,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
               ),
               onPressed: () {
                 Navigator.of(dialogCtx).pop();
-                _router.push('/task/$taskId');
+                _router.push('/poster-task-in-progress/$taskId');
               },
               child: const Text('Verify & Pay Now'),
             ),
@@ -300,11 +316,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         ?? data['id']?.toString();
     final type = data['type']?.toString() ?? '';
 
-    // Determine where to navigate.
-    // inProgressTypes — these screens should open the in-progress view.
+    // Poster live-tracking notification types → Poster's Task In Progress screen.
+    const posterTrackingTypes = {
+      'task_accepted',
+      'task_completed',
+      'verify_and_pay',
+    };
+    // Helper in-progress notification types → Helper's Task In Progress screen.
     const inProgressTypes = {
       'task_assigned',       // helper just accepted
-      'task_accepted',       // poster confirmation
       'task_started',
       'task_completed_helper',
       'task_verify_sent',
@@ -357,9 +377,11 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     } else if (chatTypes.contains(type) && taskId != null && taskId.isNotEmpty) {
       destination = '/chat/$taskId';
     } else if (taskId != null && taskId.isNotEmpty) {
-      destination = inProgressTypes.contains(type)
-          ? '/task-in-progress/$taskId'
-          : '/task/$taskId';
+      destination = posterTrackingTypes.contains(type)
+          ? '/poster-task-in-progress/$taskId'
+          : inProgressTypes.contains(type)
+              ? '/task-in-progress/$taskId'
+              : '/task/$taskId';
     } else {
       // No task ID in the FCM payload — pick the most appropriate screen.
       if (adminTypes.contains(type)) {
@@ -417,6 +439,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     _authProvider?.removeListener(_onAuthChanged);
     _notifSub?.cancel();
     _taskCompletedSub?.cancel();
+    _taskAcceptedSub?.cancel();
     super.dispose();
   }
 

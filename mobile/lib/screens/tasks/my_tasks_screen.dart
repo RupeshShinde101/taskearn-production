@@ -151,7 +151,9 @@ class _PostedTaskList extends StatelessWidget {
           return Card(
             margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: InkWell(
-              onTap: () => context.push('/task/${t.id}'),
+              onTap: () => hasHelper
+                  ? context.push('/poster-task-in-progress/${t.id}')
+                  : context.push('/task/${t.id}'),
               borderRadius: BorderRadius.circular(16),
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -986,18 +988,6 @@ class _CompletedTaskList extends StatelessWidget {
                               ),
                             ],
                           ),
-                          if (t.description.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              t.description,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.gray,
-                                  height: 1.4),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
                           const SizedBox(height: 10),
                           const Divider(height: 1),
                           const SizedBox(height: 10),

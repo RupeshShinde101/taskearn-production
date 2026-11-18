@@ -1289,7 +1289,7 @@ class _PosterTaskInProgressScreenState
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w800,
-                                        fontSize: 22,
+                                        fontSize: 20,
                                         letterSpacing: -0.3,
                                       ),
                                     ),
@@ -1299,29 +1299,30 @@ class _PosterTaskInProgressScreenState
                                       style: TextStyle(
                                         color: Colors.white
                                             .withValues(alpha: 0.92),
-                                        fontSize: 13.5,
+                                        fontSize: 12.5,
                                         fontWeight: FontWeight.w500,
+                                        height: 1.3,
                                       ),
-                                      maxLines: 1,
+                                      maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              // Crisp white boxed ETA card
+                              const SizedBox(width: 10),
+                              // Compact white boxed ETA / LIVE GPS badge
                               Container(
-                                width: 64,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 8),
+                                constraints: const BoxConstraints(minWidth: 50),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 9, vertical: 6),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(11),
                                   boxShadow: [
                                     BoxShadow(
                                       color:
                                           Colors.black.withValues(alpha: 0.1),
-                                      blurRadius: 8,
+                                      blurRadius: 6,
                                       offset: const Offset(0, 2),
                                     ),
                                   ],
@@ -1331,19 +1332,21 @@ class _PosterTaskInProgressScreenState
                                   children: [
                                     Text(
                                       eta.top,
-                                      style: const TextStyle(
-                                        color: Color(0xFF0F172A),
+                                      style: TextStyle(
+                                        color: const Color(0xFF0F172A),
                                         fontWeight: FontWeight.w900,
-                                        fontSize: 20,
+                                        fontSize:
+                                            eta.top.length > 2 ? 11.5 : 16,
                                         height: 1.1,
                                       ),
                                     ),
+                                    const SizedBox(height: 1),
                                     Text(
                                       eta.bottom,
                                       style: const TextStyle(
                                         color: Color(0xFF475569),
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 11.5,
+                                        fontSize: 9.5,
                                       ),
                                     ),
                                   ],

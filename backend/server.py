@@ -5271,25 +5271,36 @@ def get_tracking_info(task_id):
         if task['posted_by'] != request.user_id and task['accepted_by'] != request.user_id:
             return jsonify({'success': False, 'message': 'Not authorized to track this task'}), 403
         
-        # Get latest location of helper
+        # Get latest location of helper (active first, then any latest row for task/helper)
         helper_location = None
         if task['accepted_by']:
             cursor.execute(f'''
                 SELECT latitude, longitude, accuracy, heading, speed, recorded_at
                 FROM location_tracking
-                WHERE task_id = {PH} AND user_id = {PH} AND is_active = {PH}
-                ORDER BY recorded_at DESC LIMIT 1
-            ''', (task_id, task['accepted_by'], True if config.USE_POSTGRES else 1))
+                WHERE task_id = {PH} AND user_id = {PH}
+                ORDER BY is_active DESC, recorded_at DESC LIMIT 1
+            ''', (task_id, task['accepted_by']))
             loc = cursor.fetchone()
+            if not loc:
+                cursor.execute(f'''
+                    SELECT latitude, longitude, accuracy, heading, speed, recorded_at
+                    FROM location_tracking
+                    WHERE user_id = {PH}
+                    ORDER BY recorded_at DESC LIMIT 1
+                ''', (task['accepted_by'],))
+                loc = cursor.fetchone()
             if loc:
                 loc = dict_from_row(loc)
+                rec_at = loc.get('recorded_at')
+                if hasattr(rec_at, 'isoformat'):
+                    rec_at = rec_at.isoformat()
                 helper_location = {
                     'lat': float(loc['latitude']),
                     'lng': float(loc['longitude']),
-                    'accuracy': float(loc['accuracy']) if loc['accuracy'] else None,
-                    'heading': float(loc['heading']) if loc['heading'] else None,
-                    'speed': float(loc['speed']) if loc['speed'] else None,
-                    'timestamp': loc['recorded_at']
+                    'accuracy': float(loc['accuracy']) if loc.get('accuracy') is not None else None,
+                    'heading': float(loc['heading']) if loc.get('heading') is not None else None,
+                    'speed': float(loc['speed']) if loc.get('speed') is not None else None,
+                    'timestamp': rec_at
                 }
         
         # Build timeline
@@ -5426,14 +5437,22 @@ def get_helper_location(task_id):
                 'message': 'Waiting for helper to accept'
             })
         
-        # Get latest location
+        # Get latest location (active first, then any recent row for task/helper)
         cursor.execute(f'''
             SELECT latitude, longitude, accuracy, heading, speed, recorded_at
             FROM location_tracking
-            WHERE task_id = {PH} AND user_id = {PH} AND is_active = {PH}
-            ORDER BY recorded_at DESC LIMIT 1
-        ''', (task_id, task['accepted_by'], True if config.USE_POSTGRES else 1))
+            WHERE task_id = {PH} AND user_id = {PH}
+            ORDER BY is_active DESC, recorded_at DESC LIMIT 1
+        ''', (task_id, task['accepted_by']))
         loc = cursor.fetchone()
+        if not loc:
+            cursor.execute(f'''
+                SELECT latitude, longitude, accuracy, heading, speed, recorded_at
+                FROM location_tracking
+                WHERE user_id = {PH}
+                ORDER BY recorded_at DESC LIMIT 1
+            ''', (task['accepted_by'],))
+            loc = cursor.fetchone()
         
         if not loc:
             return jsonify({
@@ -5443,6 +5462,9 @@ def get_helper_location(task_id):
             })
         
         loc = dict_from_row(loc)
+        rec_at = loc.get('recorded_at')
+        if hasattr(rec_at, 'isoformat'):
+            rec_at = rec_at.isoformat()
         
         # Calculate ETA
         eta = "Calculating..."
@@ -5455,7 +5477,7 @@ def get_helper_location(task_id):
             lat2, lon2 = math.radians(float(task['location_lat'])), math.radians(float(task['location_lng']))
             dlat, dlon = lat2 - lat1, lon2 - lon1
             a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-            c = 2 * math.asin(math.sqrt(a))
+            c = 2 * math.asin(math.sqrt(min(1.0, max(0.0, a))))
             dist_km = R * c
             
             distance = f"{dist_km:.1f} km"
@@ -5467,10 +5489,10 @@ def get_helper_location(task_id):
             'location': {
                 'lat': float(loc['latitude']),
                 'lng': float(loc['longitude']),
-                'accuracy': float(loc['accuracy']) if loc['accuracy'] else None,
-                'heading': float(loc['heading']) if loc['heading'] else None,
-                'speed': float(loc['speed']) if loc['speed'] else None,
-                'timestamp': loc['recorded_at']
+                'accuracy': float(loc['accuracy']) if loc.get('accuracy') is not None else None,
+                'heading': float(loc['heading']) if loc.get('heading') is not None else None,
+                'speed': float(loc['speed']) if loc.get('speed') is not None else None,
+                'timestamp': rec_at
             },
             'eta': eta,
             'distance': distance
@@ -5480,18 +5502,43 @@ def get_helper_location(task_id):
 @app.route('/api/tracking/update-location', methods=['POST'])
 @require_auth
 def update_location():
-    """Update user's current location for tracking"""
-    data = request.get_json()
-    
-    task_id = data.get('taskId')
-    location = data.get('location', {})
-    
-    if not task_id:
+    """Update user's current location for tracking (accepts nested or flat lat/lng)."""
+    import math as _m
+    data = request.get_json(silent=True) or {}
+
+    raw_task_id = data.get('taskId') or data.get('task_id')
+    if not raw_task_id:
         return jsonify({'success': False, 'message': 'Task ID required'}), 400
-    
-    if not location.get('lat') or not location.get('lng'):
+    try:
+        task_id = int(raw_task_id)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Invalid task ID'}), 400
+
+    location = data.get('location') if isinstance(data.get('location'), dict) else {}
+    lat_val = location.get('lat', location.get('latitude', data.get('latitude', data.get('lat'))))
+    lng_val = location.get('lng', location.get('longitude', data.get('longitude', data.get('lng'))))
+
+    try:
+        lat_f = float(lat_val)
+        lng_f = float(lng_val)
+        if not (_m.isfinite(lat_f) and _m.isfinite(lng_f)) or (lat_f == 0 and lng_f == 0):
+            raise ValueError('zero/nan coords')
+    except (TypeError, ValueError):
         return jsonify({'success': False, 'message': 'Valid location required'}), 400
-    
+
+    def _safe_dec(val, max_abs):
+        try:
+            f = float(val)
+            if not _m.isfinite(f):
+                return None
+            return round(max(-max_abs, min(max_abs, f)), 2)
+        except (TypeError, ValueError):
+            return None
+
+    acc_val = _safe_dec(location.get('accuracy', data.get('accuracy')), 999999.0)
+    hdg_val = _safe_dec(location.get('heading', data.get('heading')), 360.0)
+    spd_val = _safe_dec(location.get('speed', data.get('speed')), 999.0)
+
     with get_db() as (cursor, conn):
         # Verify user is part of this task
         cursor.execute(f'''
@@ -5504,11 +5551,11 @@ def update_location():
         
         task = dict_from_row(task)
         
-        if task['posted_by'] != request.user_id and task['accepted_by'] != request.user_id:
+        if str(task['posted_by']) != str(request.user_id) and str(task['accepted_by']) != str(request.user_id):
             return jsonify({'success': False, 'message': 'Not authorized'}), 403
         
         # Determine user type
-        user_type = 'poster' if task['posted_by'] == request.user_id else 'helper'
+        user_type = 'poster' if str(task['posted_by']) == str(request.user_id) else 'helper'
         
         # Deactivate old locations
         cursor.execute(f'''
@@ -5527,11 +5574,11 @@ def update_location():
             task_id,
             request.user_id,
             user_type,
-            location['lat'],
-            location['lng'],
-            location.get('accuracy'),
-            location.get('heading'),
-            location.get('speed'),
+            round(lat_f, 7),
+            round(lng_f, 7),
+            acc_val,
+            hdg_val,
+            spd_val,
             recorded_at,
             True if config.USE_POSTGRES else 1
         ))

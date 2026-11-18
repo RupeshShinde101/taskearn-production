@@ -66,74 +66,16 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   bool _isStoreDropdownOpen = false;
   bool _showCustomStoreInput = false;
   final TextEditingController _customStoreCtrl = TextEditingController();
+  final TextEditingController _storeSearchCtrl = TextEditingController();
+  Timer? _storeSearchDebounce;
+  List<Map<String, dynamic>> _storeSearchResults = [];
+  bool _searchingStoresByName = false;
+  bool _hasFetchedNearbyStores = false;
   bool _isOpeningGroceryPicker = false;
   int _storeFetchSeq = 0;
   bool _loadingNearbyStores = false;
   bool _userPickedStoreManually = false;
   List<Map<String, dynamic>> _suggestedGroceryStoresList = [];
-
-  static const List<Map<String, dynamic>> _defaultGroceryStores = [
-    {
-      'name': 'Shree Ganesh Kirana & General Store',
-      'tag': 'Kirana Store · Daily Essentials & Spices',
-      'distanceKm': 0.8,
-      'address': 'Local Market Corner, Station Road',
-      'icon': Icons.storefront_rounded,
-      'color': Color(0xFF7C3AED),
-      'lat': 18.5244,
-      'lng': 73.8537,
-    },
-    {
-      'name': 'Fresh Vegetable & Fruit Mandi',
-      'tag': 'Vegetable Store · Farm Fresh Veggies & Leafies',
-      'distanceKm': 1.2,
-      'address': 'Subzi Mandi Chowk',
-      'icon': Icons.eco_rounded,
-      'color': Color(0xFF16A34A),
-      'lat': 18.5144,
-      'lng': 73.8517,
-    },
-    {
-      'name': 'Apna Grocery & Provision Store',
-      'tag': 'Grocery Store · Monthly Rations & Staples',
-      'distanceKm': 1.6,
-      'address': 'Main Bazaar Road',
-      'icon': Icons.shopping_basket_rounded,
-      'color': Color(0xFFEA580C),
-      'lat': 18.5224,
-      'lng': 73.8617,
-    },
-    {
-      'name': 'DMart Ready / Supermarket',
-      'tag': 'Supermarket · Best Prices & Bulk Groceries',
-      'distanceKm': 2.2,
-      'address': 'Main Market Road',
-      'icon': Icons.local_convenience_store_rounded,
-      'color': Color(0xFF047857),
-      'lat': 18.5284,
-      'lng': 73.8627,
-    },
-    {
-      'name': 'Reliance Smart Point / Fresh',
-      'tag': 'Supermarket · Daily Produce & Dairy',
-      'distanceKm': 2.9,
-      'address': 'Commercial Hub, Sector 4',
-      'icon': Icons.store_rounded,
-      'color': Color(0xFF0284C7),
-      'lat': 18.5084,
-      'lng': 73.8657,
-    },
-    {
-      'name': 'More Supermarket',
-      'tag': 'Supermarket · Full Range Groceries',
-      'distanceKm': 4.8,
-      'address': 'High Street Avenue',
-      'icon': Icons.shopping_bag_rounded,
-      'color': Color(0xFFD97706),
-      'lat': 18.5384,
-      'lng': 73.8427,
-    },
-  ];
 
   void _syncAutoBudget(double fare) {
     final formatted = fare.toStringAsFixed(0);
@@ -393,7 +335,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _budgetCtrl     = TextEditingController(text: t.budget.toStringAsFixed(0));
     _selectedCategory = t.category;
 
-    _suggestedGroceryStoresList = List<Map<String, dynamic>>.from(_defaultGroceryStores);
+    _suggestedGroceryStoresList = [];
     if (_isGrocery) {
       _selectedGroceryItems = (t.groceryItems != null && t.groceryItems!.isNotEmpty)
           ? List<SelectedGroceryItem>.from(t.groceryItems!)
@@ -461,12 +403,14 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _pickupDebounce?.cancel();
     _dropDebounce?.cancel();
     _addressDebounce?.cancel();
+    _storeSearchDebounce?.cancel();
     _titleCtrl.removeListener(_onFreelancerDetailsChanged);
     _descCtrl.removeListener(_onFreelancerDetailsChanged);
     _titleCtrl.dispose();
     _descCtrl.dispose();
     _budgetCtrl.dispose();
     _customStoreCtrl.dispose();
+    _storeSearchCtrl.dispose();
     _addressCtrl.removeListener(_onLocationAreaChanged);
     _pickupAddrCtrl.removeListener(_onLocationAreaChanged);
     _dropAddrCtrl.removeListener(_onLocationAreaChanged);
@@ -648,151 +592,111 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     }
   }
 
+  String _extractAreaName(String dropAddr) {
+    if (dropAddr.trim().isEmpty) return 'Nearby Area';
+    final parts = dropAddr.split(',');
+    var area = parts.first.trim();
+    if (area.length > 25 && parts.length > 1) {
+      area = parts[1].trim();
+    }
+    return area.isEmpty ? 'Nearby Area' : area;
+  }
+
   void _updateSuggestedStoresForDrop(String dropAddr, LatLng? dropLoc) {
-    String area = 'Nearby Area';
-    if (dropAddr.trim().isNotEmpty) {
-      final parts = dropAddr.split(',');
-      area = parts.first.trim();
-      if (area.length > 25 && parts.length > 1) {
-        area = parts[1].trim();
-      }
-    }
-    final baseLat = dropLoc?.latitude ?? 18.5204;
-    final baseLng = dropLoc?.longitude ?? 73.8567;
-
-    final fallbackStores = <Map<String, dynamic>>[
-      {
-        'name': 'Shree Ganesh Kirana & General Store',
-        'tag': 'Kirana Store · $area',
-        'distanceKm': 0.8,
-        'address': 'Station Road, $area',
-        'icon': Icons.storefront_rounded,
-        'color': const Color(0xFF7C3AED),
-        'lat': baseLat + 0.005,
-        'lng': baseLng - 0.004,
-      },
-      {
-        'name': 'Fresh Vegetable & Fruit Mandi',
-        'tag': 'Vegetable Store · $area',
-        'distanceKm': 1.2,
-        'address': 'Sabzi Mandi Chowk, $area',
-        'icon': Icons.eco_rounded,
-        'color': const Color(0xFF16A34A),
-        'lat': baseLat - 0.007,
-        'lng': baseLng - 0.005,
-      },
-      {
-        'name': 'Apna Grocery & Provision Store',
-        'tag': 'Grocery Store · $area',
-        'distanceKm': 1.6,
-        'address': 'Main Bazaar Road, $area',
-        'icon': Icons.shopping_basket_rounded,
-        'color': const Color(0xFFEA580C),
-        'lat': baseLat + 0.009,
-        'lng': baseLng + 0.007,
-      },
-      {
-        'name': 'DMart Ready / Supermarket',
-        'tag': 'Supermarket · $area',
-        'distanceKm': 2.1,
-        'address': 'Main Market Road, $area',
-        'icon': Icons.local_convenience_store_rounded,
-        'color': const Color(0xFF047857),
-        'lat': baseLat + 0.012,
-        'lng': baseLng + 0.009,
-      },
-      {
-        'name': 'Reliance Smart Point / Fresh',
-        'tag': 'Supermarket · $area',
-        'distanceKm': 2.8,
-        'address': 'Commercial Hub, $area',
-        'icon': Icons.store_rounded,
-        'color': const Color(0xFF0284C7),
-        'lat': baseLat - 0.016,
-        'lng': baseLng + 0.012,
-      },
-      {
-        'name': 'More Supermarket',
-        'tag': 'Supermarket · $area',
-        'distanceKm': 5.0,
-        'address': 'Shopping Complex, $area',
-        'icon': Icons.shopping_bag_rounded,
-        'color': const Color(0xFFD97706),
-        'lat': baseLat + 0.030,
-        'lng': baseLng - 0.024,
-      },
-    ];
-
-    if (dropLoc != null) {
-      for (final s in fallbackStores) {
-        final distM = Geolocator.distanceBetween(
-          dropLoc.latitude,
-          dropLoc.longitude,
-          s['lat'] as double,
-          s['lng'] as double,
-        );
-        s['distanceKm'] = double.parse(((distM / 1000.0) * 1.22).clamp(0.4, 9.8).toStringAsFixed(1));
-      }
-      fallbackStores.sort((a, b) => (a['distanceKm'] as num).compareTo(b['distanceKm'] as num));
-    }
-
-    setState(() {
-      _suggestedGroceryStoresList = fallbackStores;
-      if (!_userPickedStoreManually ||
-          _selectedGroceryStoreName == null ||
-          _selectedGroceryStoreName!.trim().isEmpty) {
-        final chosen = fallbackStores.first;
-        _selectedGroceryStoreName = chosen['name'] as String;
-        _pickupAddrCtrl.text = '${chosen['name']}, ${chosen['address']}';
-        _calculatedDistanceKm = (chosen['distanceKm'] as num).toDouble();
-        _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
-        _syncAutoBudget(Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0);
-      }
-    });
-
-    if (dropLoc != null) {
-      final seq = ++_storeFetchSeq;
-      if (mounted) setState(() => _loadingNearbyStores = true);
-      LocationSearchService.searchNearbyGroceryStores(
-        dropLoc,
-        radiusKm: 10.0,
-        areaFallback: area,
-      ).then((realStores) {
-        if (!mounted || seq != _storeFetchSeq) return;
+    final area = _extractAreaName(dropAddr);
+    if (dropLoc == null) {
+      if (mounted) {
         setState(() {
           _loadingNearbyStores = false;
-          if (realStores.isNotEmpty) {
-            final combined = <Map<String, dynamic>>[...realStores];
-            final existing = realStores.map((e) => (e['name'] as String).toLowerCase()).toSet();
-            if (combined.length < 6) {
-              for (final fb in fallbackStores) {
-                if (!existing.contains((fb['name'] as String).toLowerCase())) {
-                  combined.add(fb);
-                }
-                if (combined.length >= 10) break;
-              }
-            }
-            combined.sort((a, b) => (a['distanceKm'] as num).compareTo(b['distanceKm'] as num));
-            _suggestedGroceryStoresList = combined;
-            if (!_userPickedStoreManually) {
-              final chosen = combined.first;
-              _selectedGroceryStoreName = chosen['name'] as String;
-              _pickupAddrCtrl.text = '${chosen['name']}, ${chosen['address']}';
-              _calculatedDistanceKm = (chosen['distanceKm'] as num).toDouble();
-              _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
-              _syncAutoBudget(Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0);
-            }
+          _hasFetchedNearbyStores = false;
+          if (!_userPickedStoreManually) {
+            _suggestedGroceryStoresList = [];
+            _selectedGroceryStoreName = null;
           }
         });
-        if (realStores.isNotEmpty && !_userPickedStoreManually) {
-          _recalcDistance();
-        }
-      }).catchError((_) {
-        if (mounted && seq == _storeFetchSeq) {
-          setState(() => _loadingNearbyStores = false);
+      }
+      return;
+    }
+
+    final seq = ++_storeFetchSeq;
+    if (mounted) {
+      setState(() {
+        _loadingNearbyStores = true;
+        _storeSearchResults = [];
+        _storeSearchCtrl.clear();
+        if (!_userPickedStoreManually) {
+          _suggestedGroceryStoresList = [];
+          _selectedGroceryStoreName = null;
         }
       });
     }
+
+    LocationSearchService.searchNearbyGroceryStores(
+      dropLoc,
+      radiusKm: 10.0,
+      areaFallback: area,
+    ).then((realStores) {
+      if (!mounted || seq != _storeFetchSeq) return;
+      setState(() {
+        _loadingNearbyStores = false;
+        _hasFetchedNearbyStores = true;
+        _suggestedGroceryStoresList = realStores;
+        if (realStores.isNotEmpty &&
+            (!_userPickedStoreManually ||
+                _selectedGroceryStoreName == null ||
+                _selectedGroceryStoreName!.trim().isEmpty)) {
+          final chosen = realStores.first;
+          _selectedGroceryStoreName = chosen['name'] as String;
+          _pickupAddrCtrl.text = '${chosen['name']}, ${chosen['address']}';
+          _calculatedDistanceKm = (chosen['distanceKm'] as num).toDouble();
+          _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
+          _syncAutoBudget(Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.0, 'groceries') + 30.0);
+        }
+      });
+      if (realStores.isNotEmpty && !_userPickedStoreManually) {
+        _recalcDistance();
+      }
+    }).catchError((_) {
+      if (mounted && seq == _storeFetchSeq) {
+        setState(() {
+          _loadingNearbyStores = false;
+          _hasFetchedNearbyStores = true;
+        });
+      }
+    });
+  }
+
+  void _onStoreSearchChanged(String raw) {
+    _storeSearchDebounce?.cancel();
+    final q = raw.trim();
+    if (q.length < 2) {
+      if (_storeSearchResults.isNotEmpty || _searchingStoresByName) {
+        setState(() {
+          _storeSearchResults = [];
+          _searchingStoresByName = false;
+        });
+      }
+      return;
+    }
+    final center = _dropLocation ?? _location;
+    if (center == null) return;
+
+    setState(() => _searchingStoresByName = true);
+    _storeSearchDebounce = Timer(const Duration(milliseconds: 350), () async {
+      final area = _extractAreaName(_dropAddrCtrl.text);
+      final matches = await LocationSearchService.searchStoresByName(
+        q,
+        center,
+        radiusKm: 10.0,
+        areaFallback: area,
+      );
+      if (!mounted) return;
+      if (_storeSearchCtrl.text.trim() != q) return;
+      setState(() {
+        _storeSearchResults = matches;
+        _searchingStoresByName = false;
+      });
+    });
   }
 
   Future<void> _pickStoreFromGoogleMap() async {
@@ -866,21 +770,37 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     }
   }
 
-  void _setCustomGroceryStore(String storeName) {
-    if (storeName.trim().isEmpty) return;
+  Future<void> _setCustomGroceryStore(String storeName) async {
+    final trimmed = storeName.trim();
+    if (trimmed.isEmpty) return;
+
+    final center = _dropLocation ?? _location;
+    if (center != null) {
+      final matches = await LocationSearchService.searchStoresByName(
+        trimmed,
+        center,
+        radiusKm: 10.0,
+        areaFallback: _extractAreaName(_dropAddrCtrl.text),
+      );
+      if (mounted && matches.isNotEmpty) {
+        final best = matches.first;
+        if (!_suggestedGroceryStoresList.any((s) => s['name'] == best['name'])) {
+          _suggestedGroceryStoresList.insert(0, best);
+        }
+        _selectGroceryStore(best);
+        setState(() => _showCustomStoreInput = false);
+        return;
+      }
+    }
+
+    if (!mounted) return;
     const dist = 2.0;
     setState(() {
       _userPickedStoreManually = true;
-      _selectedGroceryStoreName = storeName.trim();
+      _selectedGroceryStoreName = trimmed;
       _calculatedDistanceKm = dist;
-      _pickupAddrCtrl.text = storeName.trim();
-      if (_dropLocation != null) {
-        _pickupLocation = LatLng(
-          _dropLocation!.latitude + 0.015,
-          _dropLocation!.longitude + 0.012,
-        );
-        _location ??= _pickupLocation;
-      }
+      _pickupAddrCtrl.text = trimmed;
+      _pickupLocation = null;
       _isStoreDropdownOpen = false;
       _showCustomStoreInput = false;
     });
@@ -1723,19 +1643,38 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       _selectedGroceryStoreName = _suggestedGroceryStoresList.first['name'] as String;
     }
 
+    final hasSelectedStore = _selectedGroceryStoreName != null &&
+        _selectedGroceryStoreName!.trim().isNotEmpty;
+
     final currentStore = _suggestedGroceryStoresList.firstWhere(
       (s) => s['name'] == _selectedGroceryStoreName,
       orElse: () => {
-        'name': _selectedGroceryStoreName ?? 'Local Store',
+        'name': hasSelectedStore
+            ? _selectedGroceryStoreName!
+            : (_dropLocation == null
+                ? 'Set Delivery Address first'
+                : (_loadingNearbyStores
+                    ? 'Finding real stores within 10 km...'
+                    : 'Search or Pick a Store')),
         'tag': 'Grocery Store',
-        'distanceKm': _calculatedDistanceKm ?? 1.5,
-        'address': _pickupAddrCtrl.text.trim().isNotEmpty ? _pickupAddrCtrl.text.trim() : 'Nearby Local Shop',
+        'distanceKm': _calculatedDistanceKm ?? 0.0,
+        'address': hasSelectedStore
+            ? (_pickupAddrCtrl.text.trim().isNotEmpty
+                ? _pickupAddrCtrl.text.trim()
+                : 'Selected Store')
+            : (_dropLocation == null
+                ? 'Real nearby stores load automatically once you set Delivery Address'
+                : (_loadingNearbyStores
+                    ? 'Fetching verified map stores near your delivery location'
+                    : 'Tap Select to search by store name or pick on map')),
         'icon': Icons.storefront_rounded,
         'color': const Color(0xFF2563EB),
       },
     );
 
     final dist = (_calculatedDistanceKm ?? (currentStore['distanceKm'] as num).toDouble());
+    final isSearchingQuery = _storeSearchCtrl.text.trim().length >= 2;
+    final displayedStores = isSearchingQuery ? _storeSearchResults : _suggestedGroceryStoresList;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1871,17 +1810,18 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                               runSpacing: 4,
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFDCFCE7),
-                                    borderRadius: BorderRadius.circular(6),
+                                if (hasSelectedStore && dist > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDCFCE7),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${dist.toStringAsFixed(1)} km',
+                                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+                                    ),
                                   ),
-                                  child: Text(
-                                    '${dist.toStringAsFixed(1)} km',
-                                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
-                                  ),
-                                ),
                                 Text(
                                   currentStore['address'] as String? ?? 'Store Address',
                                   style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
@@ -1908,7 +1848,10 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                           icon: const Icon(Icons.arrow_drop_down_rounded, size: 20),
-                          label: const Text('Change', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                          label: Text(
+                            hasSelectedStore ? 'Change' : 'Select',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
                         ),
                       ),
                     ],
@@ -1926,6 +1869,14 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF102A56)),
                           ),
                         ),
+                        if (_dropLocation != null && !_loadingNearbyStores)
+                          IconButton(
+                            onPressed: () => _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation),
+                            tooltip: 'Refresh nearby stores',
+                            icon: const Icon(Icons.refresh_rounded, size: 19, color: Color(0xFF2563EB)),
+                            padding: const EdgeInsets.only(right: 6),
+                            constraints: const BoxConstraints(),
+                          ),
                         IconButton(
                           onPressed: () => setState(() => _isStoreDropdownOpen = false),
                           icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
@@ -1933,6 +1884,49 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                           constraints: const BoxConstraints(),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _storeSearchCtrl,
+                      onChanged: _onStoreSearchChanged,
+                      decoration: InputDecoration(
+                        hintText: 'Search real store (DMart, Reliance, Kirana...)',
+                        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                        prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF2563EB)),
+                        suffixIcon: _searchingStoresByName
+                            ? const Padding(
+                                padding: EdgeInsets.all(10),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : (_storeSearchCtrl.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF64748B)),
+                                    onPressed: () {
+                                      _storeSearchCtrl.clear();
+                                      setState(() {
+                                        _storeSearchResults = [];
+                                        _searchingStoresByName = false;
+                                      });
+                                    },
+                                  )
+                                : null),
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -1952,9 +1946,49 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    ..._suggestedGroceryStoresList.map((store) {
+                    if (_dropLocation == null)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Set your Delivery Address above to automatically load real nearby stores within 10 km.',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                      )
+                    else if ((!isSearchingQuery && _loadingNearbyStores && displayedStores.isEmpty) ||
+                        (isSearchingQuery && _searchingStoresByName && displayedStores.isEmpty))
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
+                            ),
+                            SizedBox(width: 10),
+                            Text(
+                              'Searching verified stores within 10 km...',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (displayedStores.isEmpty && (_hasFetchedNearbyStores || isSearchingQuery))
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Text(
+                          isSearchingQuery
+                              ? 'No matching mapped store found within 10 km for "${_storeSearchCtrl.text.trim()}". Try another keyword or Pick Store on Map.'
+                              : 'No mapped stores found within 10 km of this address. Search by store name above or tap Pick Store on Map.',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                      ),
+                    ...displayedStores.map((store) {
                       final isSel = _selectedGroceryStoreName == store['name'];
                       final sDist = (store['distanceKm'] as num).toDouble();
+                      final addrText = (store['address'] as String? ?? '').trim();
+                      final tagText = (store['tag'] as String? ?? '').trim();
                       return Container(
                         margin: const EdgeInsets.only(bottom: 6),
                         decoration: BoxDecoration(
@@ -1967,7 +2001,12 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                         ),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(10),
-                          onTap: () => _selectGroceryStore(store),
+                          onTap: () {
+                            if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
+                              _suggestedGroceryStoresList.insert(0, store);
+                            }
+                            _selectGroceryStore(store);
+                          },
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                             child: Row(
@@ -2005,6 +2044,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                                       Wrap(
                                         spacing: 6,
                                         runSpacing: 3,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
                                         children: [
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -2017,15 +2057,23 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                                               style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
                                             ),
                                           ),
-                                          Text(
-                                            store['tag'] as String? ?? store['address'] as String? ?? '',
-                                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                                            maxLines: 2,
-                                            softWrap: true,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
+                                          if (tagText.isNotEmpty)
+                                            Text(
+                                              tagText,
+                                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                                            ),
                                         ],
                                       ),
+                                      if (addrText.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          addrText,
+                                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                          maxLines: 2,
+                                          softWrap: true,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),
